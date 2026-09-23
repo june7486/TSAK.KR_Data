@@ -128,6 +128,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
           ),
+          // 하단 명단 크기 조절 바 — body 레이아웃 흐름 안에 배치하여
+          // Scaffold body 높이 계산을 방해하지 않도록 함
+          _fontSizeBar(context, state),
         ],
       ),
       floatingActionButton: _selectMode
@@ -144,91 +147,93 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.person_add_alt_1),
               label: const Text('인가자 추가'),
             ),
-      bottomNavigationBar: _fontSizeBar(state),
+      // bottomNavigationBar: _fontSizeBar(context, state),
     );
   }
 
   /// 하단 명단 크기 조절 바
-  Widget _fontSizeBar(AppState state) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(8, 4, 6, 4),
+  Widget _fontSizeBar(BuildContext context, AppState state) {
+    return Material(
+      color: Colors.white,
+      elevation: 8,
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: '작게',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(
-                Icons.remove_circle_outline,
-                size: 20,
-                color: AppColors.purple,
-              ),
-              onPressed: () => state.setListScale(state.listScale - 0.05),
-            ),
-            const Text(
-              '명단 크기',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textDark,
-              ),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 4,
-                  activeTrackColor: AppColors.purple,
-                  inactiveTrackColor: AppColors.purple.withValues(alpha: 0.15),
-                  thumbColor: AppColors.purple,
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 14,
-                  ),
-                ),
-                child: Slider(
-                  value: state.listScale,
-                  min: AppState.listScaleMin,
-                  max: AppState.listScaleMax,
-                  divisions:
-                      ((AppState.listScaleMax - AppState.listScaleMin) / 0.05)
-                          .round(),
-                  onChanged: (v) => state.setListScale(v),
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: '크게',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(
-                Icons.add_circle_outline,
-                size: 20,
-                color: AppColors.purple,
-              ),
-              onPressed: () => state.setListScale(state.listScale + 0.05),
-            ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 40),
-              child: Text(
-                '${(state.listScale * 100).round()}%',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: '작게',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(
+                  Icons.remove_circle_outline,
+                  size: 20,
                   color: AppColors.purple,
                 ),
+                onPressed: () => state.setListScale(state.listScale - 0.05),
               ),
-            ),
-          ],
+              const Text(
+                '명단 크기',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    activeTrackColor: AppColors.purple,
+                    inactiveTrackColor:
+                        AppColors.purple.withValues(alpha: 0.15),
+                    thumbColor: AppColors.purple,
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                  ),
+                  child: Slider(
+                    value: state.listScale,
+                    min: AppState.listScaleMin,
+                    max: AppState.listScaleMax,
+                    divisions:
+                        ((AppState.listScaleMax - AppState.listScaleMin) / 0.05)
+                            .round(),
+                    onChanged: (v) => state.setListScale(v),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '크게',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(
+                  Icons.add_circle_outline,
+                  size: 20,
+                  color: AppColors.purple,
+                ),
+                onPressed: () => state.setListScale(state.listScale + 0.05),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 38),
+                child: Text(
+                  '${(state.listScale * 100).round()}%',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.purple,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+          ),
         ),
       ),
     );

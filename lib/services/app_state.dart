@@ -9,6 +9,8 @@ class AppState extends ChangeNotifier {
   AppState(this.repo) {
     repo.revision.addListener(_onRepoChanged);
     _loadFontScale();
+    // 첫 화면에서 명단이 즉시 보이도록 초기 로드
+    refresh();
   }
 
   final MemberRepository repo;
