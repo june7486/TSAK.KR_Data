@@ -39,10 +39,11 @@ class MemberRepository {
     _box = await Hive.openBox(boxName);
     _meta = await Hive.openBox(metaBoxName);
 
-    final seeded = _meta!.get('seeded_v1', defaultValue: false) as bool;
+    // v2: ATAS 인가번호(atASNo) 포함 시드 — 버전을 올려 기존 저장소도 재시딩
+    final seeded = _meta!.get('seeded_v2', defaultValue: false) as bool;
     if (!seeded || _box!.isEmpty) {
       await _seedFromAssets();
-      await _meta!.put('seeded_v1', true);
+      await _meta!.put('seeded_v2', true);
     }
     revision.value++;
   }
@@ -60,8 +61,12 @@ class MemberRepository {
           name: '${m['name'] ?? ''}',
           league: '${m['league'] ?? ''}',
           unit: '${m['unit'] ?? ''}',
-          date: '${m['date'] ?? ''}',
+          address: '${m['address'] ?? ''}',
           phone: '${m['phone'] ?? ''}',
+          email: '${m['email'] ?? ''}',
+          date: '${m['date'] ?? ''}',
+          atasNo: '${m['atasNo'] ?? ''}',
+          activity: '${m['activity'] ?? ''}',
           memo: '${m['memo'] ?? ''}',
         );
         batch[member.id] = member.toMap();

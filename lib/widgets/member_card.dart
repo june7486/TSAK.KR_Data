@@ -143,15 +143,51 @@ class MemberCard extends StatelessWidget {
                         ],
                       ],
                     ),
-                    if (member.date.isNotEmpty) ...[
+                    if (member.date.isNotEmpty ||
+                        member.atasNo.isNotEmpty) ...[
                       SizedBox(height: 3 * s),
-                      Text(
-                        '인가 ${member.date}'
-                        '${member.atasNo.isNotEmpty ? '  ·  ATAS ${member.atasNo}' : ''}',
-                        style: TextStyle(
-                          color: AppColors.textGray.withValues(alpha: 0.85),
-                          fontSize: 11.5 * s,
-                        ),
+                      Row(
+                        children: [
+                          if (member.date.isNotEmpty)
+                            Text(
+                              '인가 ${member.date}',
+                              style: TextStyle(
+                                color:
+                                    AppColors.textGray.withValues(alpha: 0.85),
+                                fontSize: 11.5 * s,
+                              ),
+                            ),
+                          if (member.date.isNotEmpty &&
+                              member.atasNo.isNotEmpty)
+                            Text(
+                              '   ·   ',
+                              style: TextStyle(
+                                color:
+                                    AppColors.textGray.withValues(alpha: 0.85),
+                                fontSize: 11.5 * s,
+                              ),
+                            ),
+                          if (member.atasNo.isNotEmpty)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 6 * s,
+                                vertical: 1 * s,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.tigerGold.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'ATAS ${member.atasNo}',
+                                style: TextStyle(
+                                  color: const Color(0xFF9A6A00),
+                                  fontSize: 11 * s,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ],
