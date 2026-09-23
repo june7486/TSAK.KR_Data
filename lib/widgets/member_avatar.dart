@@ -14,12 +14,16 @@ class MemberAvatar extends StatelessWidget {
     this.photoPath = '',
     this.size = 52,
     this.league = '',
+    this.number = '',
   });
 
   final String name;
   final String photoPath;
   final double size;
   final String league;
+
+  /// 인가번호 — 사진이 없을 때 동그라미 안에 표시
+  final String number;
 
   @override
   Widget build(BuildContext context) {
@@ -29,15 +33,25 @@ class MemberAvatar extends StatelessWidget {
     if (photoPath.isNotEmpty) {
       child = _buildImage();
     } else {
+      // 글자(이니셜) 대신 인가번호를 표시
+      final label = number.trim().isNotEmpty ? number.trim() : _initial(name);
+      final isNumber = number.trim().isNotEmpty;
       child = Container(
         color: border.withValues(alpha: 0.15),
         alignment: Alignment.center,
-        child: Text(
-          _initial(name),
-          style: TextStyle(
-            color: border,
-            fontWeight: FontWeight.w800,
-            fontSize: size * 0.4,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: size * 0.12),
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: border,
+                fontWeight: FontWeight.w800,
+                fontSize: size * (isNumber ? 0.42 : 0.4),
+              ),
+            ),
           ),
         ),
       );

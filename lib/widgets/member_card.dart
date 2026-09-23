@@ -73,6 +73,7 @@ class MemberCard extends StatelessWidget {
                 photoPath: member.photoPath,
                 league: member.league,
                 size: 50 * s,
+                number: member.number,
               ),
               SizedBox(width: 12 * s),
               Expanded(

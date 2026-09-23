@@ -41,8 +41,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Image.asset(
                     'assets/images/tsak_emblem.png',
-                    width: 30,
-                    height: 30,
+                    width: 34,
+                    height: 34,
+                    errorBuilder: (c, e, s) => const Icon(
+                      Icons.shield,
+                      size: 30,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   const Text('TSAK 인가자 관리'),

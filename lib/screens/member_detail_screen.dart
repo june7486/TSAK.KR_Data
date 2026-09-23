@@ -81,6 +81,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             photoPath: m.photoPath,
             league: m.league,
             size: 96,
+            number: m.number,
           ),
           const SizedBox(height: 10),
           Row(
