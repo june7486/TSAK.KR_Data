@@ -72,10 +72,10 @@ class MemberCard extends StatelessWidget {
                 name: member.name,
                 photoPath: member.photoPath,
                 league: member.league,
-                size: 50 * s,
+                size: 25 * s,
                 number: member.number,
               ),
-              SizedBox(width: 12 * s),
+              SizedBox(width: 10 * s),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
