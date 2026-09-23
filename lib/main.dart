@@ -28,19 +28,10 @@ class TsakApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 글자 배율을 앱 전체에 반영 (사용자가 하단 슬라이더로 조절)
-    final scale = context.select<AppState, double>((s) => s.fontScale);
     return MaterialApp(
       title: 'TSAK 인가자 관리',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
-      builder: (context, child) {
-        return MediaQuery.withClampedTextScaling(
-          minScaleFactor: scale,
-          maxScaleFactor: scale,
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
       home: const HomeScreen(),
     );
   }

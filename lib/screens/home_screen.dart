@@ -105,6 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       final m = members[i];
                       return MemberCard(
                         member: m,
+                        scale: state.listScale,
                         selectMode: _selectMode,
                         selected: _selected.contains(m.id),
                         onTap: () {
@@ -147,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 하단 글자 크기 조절 바
+  /// 하단 명단 크기 조절 바
   Widget _fontSizeBar(AppState state) {
     return Container(
       decoration: BoxDecoration(
@@ -160,22 +161,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+      padding: const EdgeInsets.fromLTRB(8, 4, 6, 4),
       child: SafeArea(
         top: false,
         child: Row(
           children: [
-            const Icon(Icons.text_fields, size: 18, color: AppColors.purple),
-            const SizedBox(width: 6),
+            IconButton(
+              tooltip: '작게',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(
+                Icons.remove_circle_outline,
+                size: 20,
+                color: AppColors.purple,
+              ),
+              onPressed: () => state.setListScale(state.listScale - 0.05),
+            ),
             const Text(
-              '글자 크기',
+              '명단 크기',
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textDark,
               ),
             ),
-            const SizedBox(width: 8),
             Expanded(
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
@@ -188,33 +196,37 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 child: Slider(
-                  value: state.fontScale,
-                  min: AppState.fontScaleMin,
-                  max: AppState.fontScaleMax,
+                  value: state.listScale,
+                  min: AppState.listScaleMin,
+                  max: AppState.listScaleMax,
                   divisions:
-                      ((AppState.fontScaleMax - AppState.fontScaleMin) / 0.05)
+                      ((AppState.listScaleMax - AppState.listScaleMin) / 0.05)
                           .round(),
-                  onChanged: (v) => state.setFontScale(v),
-                ),
-              ),
-            ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 44),
-              child: Text(
-                '${(state.fontScale * 100).round()}%',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.purple,
+                  onChanged: (v) => state.setListScale(v),
                 ),
               ),
             ),
             IconButton(
-              tooltip: '기본값으로',
+              tooltip: '크게',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.restart_alt, size: 18),
-              onPressed: () => state.setFontScale(0.9),
+              icon: const Icon(
+                Icons.add_circle_outline,
+                size: 20,
+                color: AppColors.purple,
+              ),
+              onPressed: () => state.setListScale(state.listScale + 0.05),
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 40),
+              child: Text(
+                '${(state.listScale * 100).round()}%',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
             ),
           ],
         ),

@@ -19,6 +19,11 @@ class MemberRepository {
 
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
+  MemberRepository();
+
+  /// 테스트용: 이미 열린 Box를 주입
+  MemberRepository.withBoxes(this._box, this._meta);
+
   Future<void> init() async {
     await Hive.initFlutter();
     _box = await Hive.openBox(boxName);

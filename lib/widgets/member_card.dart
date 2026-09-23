@@ -11,6 +11,7 @@ class MemberCard extends StatelessWidget {
     required this.member,
     this.selected = false,
     this.selectMode = false,
+    this.scale = 1.0,
     this.onTap,
     this.onLongPress,
     this.onCheckToggle,
@@ -19,6 +20,7 @@ class MemberCard extends StatelessWidget {
   final Member member;
   final bool selected;
   final bool selectMode;
+  final double scale;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onCheckToggle;
@@ -26,9 +28,10 @@ class MemberCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = leagueColor(member.league);
+    final s = scale;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 5 * s),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: selected
@@ -40,7 +43,7 @@ class MemberCard extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12 * s),
           child: Row(
             children: [
               if (selectMode)
@@ -49,8 +52,8 @@ class MemberCard extends StatelessWidget {
                   child: GestureDetector(
                     onTap: onCheckToggle,
                     child: Container(
-                      width: 26,
-                      height: 26,
+                      width: 26 * s,
+                      height: 26 * s,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: selected ? AppColors.purple : Colors.white,
@@ -60,11 +63,7 @@ class MemberCard extends StatelessWidget {
                         ),
                       ),
                       child: selected
-                          ? const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 16,
-                            )
+                          ? Icon(Icons.check, color: Colors.white, size: 16 * s)
                           : null,
                     ),
                   ),
@@ -73,9 +72,9 @@ class MemberCard extends StatelessWidget {
                 name: member.name,
                 photoPath: member.photoPath,
                 league: member.league,
-                size: 50,
+                size: 50 * s,
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12 * s),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,19 +84,19 @@ class MemberCard extends StatelessWidget {
                         Flexible(
                           child: Text(
                             member.name.isEmpty ? '(이름없음)' : member.name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w700,
-                              fontSize: 15,
+                              fontSize: 15 * s,
                               color: AppColors.textDark,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        SizedBox(width: 6 * s),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8 * s,
+                            vertical: 2 * s,
                           ),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
@@ -107,36 +106,36 @@ class MemberCard extends StatelessWidget {
                           ),
                           child: Text(
                             '#${member.number}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Colors.white,
-                              fontSize: 11,
+                              fontSize: 11 * s,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                         if (member.lifetimeMember) ...[
-                          const SizedBox(width: 4),
-                          const Icon(
+                          SizedBox(width: 4 * s),
+                          Icon(
                             Icons.star,
-                            size: 16,
+                            size: 16 * s,
                             color: AppColors.tigerGold,
                           ),
                         ],
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4 * s),
                     Row(
                       children: [
                         if (member.league.isNotEmpty)
-                          _badge(member.league, color),
+                          _badge(member.league, color, s),
                         if (member.unit.isNotEmpty) ...[
-                          const SizedBox(width: 5),
+                          SizedBox(width: 5 * s),
                           Flexible(
                             child: Text(
                               member.unit,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textGray,
-                                fontSize: 12.5,
+                                fontSize: 12.5 * s,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -145,13 +144,13 @@ class MemberCard extends StatelessWidget {
                       ],
                     ),
                     if (member.date.isNotEmpty) ...[
-                      const SizedBox(height: 3),
+                      SizedBox(height: 3 * s),
                       Text(
                         '인가 ${member.date}'
                         '${member.atasNo.isNotEmpty ? '  ·  ATAS ${member.atasNo}' : ''}',
                         style: TextStyle(
                           color: AppColors.textGray.withValues(alpha: 0.85),
-                          fontSize: 11.5,
+                          fontSize: 11.5 * s,
                         ),
                       ),
                     ],
@@ -162,7 +161,7 @@ class MemberCard extends StatelessWidget {
                 Icon(
                   Icons.phone,
                   color: AppColors.scoutGreen.withValues(alpha: 0.8),
-                  size: 20,
+                  size: 20 * s,
                 ),
             ],
           ),
@@ -171,9 +170,9 @@ class MemberCard extends StatelessWidget {
     );
   }
 
-  Widget _badge(String text, Color color) {
+  Widget _badge(String text, Color color, double s) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: 8 * s, vertical: 2 * s),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
@@ -182,7 +181,7 @@ class MemberCard extends StatelessWidget {
         text,
         style: TextStyle(
           color: color,
-          fontSize: 11.5,
+          fontSize: 11.5 * s,
           fontWeight: FontWeight.w700,
         ),
       ),

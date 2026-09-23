@@ -19,27 +19,28 @@ class AppState extends ChangeNotifier {
   String _yearFilter = '';
   bool _onlyLifetime = false;
 
-  /// 글자 크기 배율 (0.8 ~ 1.4), 기본 0.9 (이름 글자가 너무 크지 않도록)
-  double _fontScale = 0.9;
-  static const double fontScaleMin = 0.8;
-  static const double fontScaleMax = 1.4;
+  /// 명단(리스트 카드) 크기 배율 (0.7 ~ 1.3), 기본 0.85
+  /// 리스트에만 적용되어 글자/여백/아바타가 함께 축소·확대됩니다.
+  double _listScale = 0.85;
+  static const double listScaleMin = 0.7;
+  static const double listScaleMax = 1.3;
 
-  double get fontScale => _fontScale;
+  double get listScale => _listScale;
 
   Future<void> _loadFontScale() async {
     try {
       final p = await SharedPreferences.getInstance();
-      final v = p.getDouble('fontScale');
+      final v = p.getDouble('listScale');
       if (v != null) {
-        _fontScale = v.clamp(fontScaleMin, fontScaleMax);
+        _listScale = v.clamp(listScaleMin, listScaleMax);
         notifyListeners();
       }
     } catch (_) {}
   }
 
-  void setFontScale(double v) {
-    _fontScale = double.parse(
-      v.clamp(fontScaleMin, fontScaleMax).toStringAsFixed(2),
+  void setListScale(double v) {
+    _listScale = double.parse(
+      v.clamp(listScaleMin, listScaleMax).toStringAsFixed(2),
     );
     notifyListeners();
     _persistFontScale();
@@ -48,7 +49,7 @@ class AppState extends ChangeNotifier {
   Future<void> _persistFontScale() async {
     try {
       final p = await SharedPreferences.getInstance();
-      await p.setDouble('fontScale', _fontScale);
+      await p.setDouble('listScale', _listScale);
     } catch (_) {}
   }
 
