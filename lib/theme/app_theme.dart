@@ -1,0 +1,107 @@
+import 'package:flutter/material.dart';
+
+/// TSAK 브랜드 테마 — 컬러풀 커스텀 디자인 (스타일 2)
+/// 한국범스카우트 색상: 보라(중앙회), 태극 레드/블루, 호랑이 골드
+class AppColors {
+  static const purple = Color(0xFF5B2C8D);
+  static const purpleLight = Color(0xFF7E4FB0);
+  static const purpleDark = Color(0xFF3D1B63);
+  static const taegeukRed = Color(0xFFD62828);
+  static const taegeukBlue = Color(0xFF1B4F9C);
+  static const tigerGold = Color(0xFFF2B705);
+  static const scoutGreen = Color(0xFF2E7D32);
+  static const bg = Color(0xFFF6F4FB);
+  static const card = Colors.white;
+  static const textDark = Color(0xFF1F1A2E);
+  static const textGray = Color(0xFF6E6A7C);
+
+  static const brandGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [purple, purpleLight, taegeukRed],
+  );
+}
+
+class AppTheme {
+  static ThemeData light() {
+    final base = ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.purple,
+        primary: AppColors.purple,
+      ),
+      scaffoldBackgroundColor: AppColors.bg,
+      fontFamily: 'Roboto',
+    );
+
+    return base.copyWith(
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.purple,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 19,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.card,
+        elevation: 2,
+        shadowColor: AppColors.purple.withValues(alpha: 0.12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      chipTheme: base.chipTheme.copyWith(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppColors.taegeukRed,
+        foregroundColor: Colors.white,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: AppColors.purple.withValues(alpha: 0.2),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: AppColors.purple.withValues(alpha: 0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.purple, width: 2),
+        ),
+      ),
+    );
+  }
+}
+
+/// 연맹별 색상 (시각적 구분)
+Color leagueColor(String league) {
+  const palette = [
+    AppColors.purple,
+    AppColors.taegeukBlue,
+    AppColors.taegeukRed,
+    AppColors.scoutGreen,
+    Color(0xFFB8860B),
+    Color(0xFF00838F),
+    Color(0xFF6D4C41),
+    Color(0xFFAD1457),
+    Color(0xFF283593),
+    Color(0xFF2E7D32),
+  ];
+  if (league.isEmpty) return AppColors.textGray;
+  final idx = league.codeUnits.fold<int>(0, (p, e) => p + e) % palette.length;
+  return palette[idx];
+}

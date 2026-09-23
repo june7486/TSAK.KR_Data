@@ -1,0 +1,53 @@
+name: tsak_credential_manager
+description: "한국범스카우트 중앙회(TSAK) 인가자 통합 관리 애플리케이션"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 상태 관리
+  provider: ^6.1.2
+
+  # 로컬 저장소 (오프라인 2,186명 즉시 검색)
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.4
+
+  # QR 코드 생성 / 스캔
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.3
+
+  # 내보내기 (엑셀/PDF/워드/이미지/텍스트)
+  excel: ^4.0.6
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  file_saver: ^0.2.14
+
+  # 사진 선택/촬영
+  image_picker: ^1.1.2
+
+  # 전화 / 문자 / 메일 / 공유
+  url_launcher: ^6.3.1
+  share_plus: ^10.1.2
+
+  # 유틸
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/
+    - assets/images/
