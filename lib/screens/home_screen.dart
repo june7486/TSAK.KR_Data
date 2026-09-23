@@ -219,8 +219,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 onPressed: () => state.setListScale(state.listScale + 0.05),
               ),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 38),
+              Container(
+                constraints: const BoxConstraints(minWidth: 40),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.purple.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Text(
                   '${(state.listScale * 100).round()}%',
                   textAlign: TextAlign.center,
@@ -231,7 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              // 우측 하단 FAB(추가/내보내기)와 겹치지 않도록 여백 확보
+              SizedBox(width: _selectMode ? 215 : 152),
             ],
           ),
         ),
