@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/member.dart';
 import 'member_repository.dart';
@@ -7,6 +8,7 @@ import 'member_repository.dart';
 class AppState extends ChangeNotifier {
   AppState(this.repo) {
     repo.revision.addListener(_onRepoChanged);
+    _loadFontScale();
   }
 
   final MemberRepository repo;
@@ -16,6 +18,39 @@ class AppState extends ChangeNotifier {
   String _leagueFilter = '';
   String _yearFilter = '';
   bool _onlyLifetime = false;
+
+  /// 글자 크기 배율 (0.8 ~ 1.4), 기본 0.9 (이름 글자가 너무 크지 않도록)
+  double _fontScale = 0.9;
+  static const double fontScaleMin = 0.8;
+  static const double fontScaleMax = 1.4;
+
+  double get fontScale => _fontScale;
+
+  Future<void> _loadFontScale() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final v = p.getDouble('fontScale');
+      if (v != null) {
+        _fontScale = v.clamp(fontScaleMin, fontScaleMax);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  void setFontScale(double v) {
+    _fontScale = double.parse(
+      v.clamp(fontScaleMin, fontScaleMax).toStringAsFixed(2),
+    );
+    notifyListeners();
+    _persistFontScale();
+  }
+
+  Future<void> _persistFontScale() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setDouble('fontScale', _fontScale);
+    } catch (_) {}
+  }
 
   List<Member> get members => _members;
   String get query => _query;

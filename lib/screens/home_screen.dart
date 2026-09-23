@@ -143,6 +143,82 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.person_add_alt_1),
               label: const Text('인가자 추가'),
             ),
+      bottomNavigationBar: _fontSizeBar(state),
+    );
+  }
+
+  /// 하단 글자 크기 조절 바
+  Widget _fontSizeBar(AppState state) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            const Icon(Icons.text_fields, size: 18, color: AppColors.purple),
+            const SizedBox(width: 6),
+            const Text(
+              '글자 크기',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  activeTrackColor: AppColors.purple,
+                  inactiveTrackColor: AppColors.purple.withValues(alpha: 0.15),
+                  thumbColor: AppColors.purple,
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                ),
+                child: Slider(
+                  value: state.fontScale,
+                  min: AppState.fontScaleMin,
+                  max: AppState.fontScaleMax,
+                  divisions:
+                      ((AppState.fontScaleMax - AppState.fontScaleMin) / 0.05)
+                          .round(),
+                  onChanged: (v) => state.setFontScale(v),
+                ),
+              ),
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44),
+              child: Text(
+                '${(state.fontScale * 100).round()}%',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: '기본값으로',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.restart_alt, size: 18),
+              onPressed: () => state.setFontScale(0.9),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

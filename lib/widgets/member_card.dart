@@ -87,7 +87,7 @@ class MemberCard extends StatelessWidget {
                             member.name.isEmpty ? '(이름없음)' : member.name,
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              fontSize: 16,
+                              fontSize: 15,
                               color: AppColors.textDark,
                             ),
                             overflow: TextOverflow.ellipsis,
