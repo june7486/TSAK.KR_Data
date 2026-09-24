@@ -18,10 +18,11 @@ class FinanceService extends ChangeNotifier {
   final NasApi nas;
 
   List<FinanceTransaction> _tx = [];
-  List<String> _incomeCats = ['후원', '수품구매', '참가비', '연회비', '기타'];
+  List<String> _incomeCats = ['후원', '수품구매', '참가비', '연회비', '평생회비', '기타'];
   List<String> _expenseCats = ['행사비', '운영비', '수품구매', '후원금집행', '기타'];
   Map<String, String> _aliases = {}; // 입금자 별칭 → 인가번호
   Map<String, String> _eventRules = {}; // 행사명 키워드 → 분류
+  Map<String, dynamic> _stats = {}; // 서버 종합 통계 캐시
   String? _updated;
   int _version = 0;
   bool _loading = false;
@@ -32,6 +33,7 @@ class FinanceService extends ChangeNotifier {
   List<String> get expenseCategories => _expenseCats;
   Map<String, String> get aliases => _aliases;
   Map<String, String> get eventRules => _eventRules;
+  Map<String, dynamic> get serverStats => _stats;
   String? get updated => _updated;
   int get version => _version;
   bool get loading => _loading;
@@ -54,6 +56,9 @@ class FinanceService extends ChangeNotifier {
           _aliases = _asStringMap(rr['aliases']);
           _eventRules = _asStringMap(rr['events']);
         }
+      } catch (_) {}
+      try {
+        _stats = await nas.fetchFinanceStats();
       } catch (_) {}
       _status = 'saved';
     } catch (e) {
@@ -261,7 +266,7 @@ class FinanceService extends ChangeNotifier {
       final t = FinanceTransaction(
         id: 'tx_${DateTime.now().microsecondsSinceEpoch}_${_tx.length}',
         date: r.date,
-        type: 'income',
+        type: r.type == 'expense' ? 'expense' : 'income',
         payer: r.payer,
         name: r.name,
         number: r.number,
@@ -418,12 +423,149 @@ class FinanceService extends ChangeNotifier {
   /// 미매칭 건수
   int get unmatchedCount =>
       _tx.where((t) => !t.isExpense && t.status != 'matched').length;
+
+  // ---------------------------------------------------------------------------
+  //  검색 · 통계 (연도별 / 기간별 / 행사별 / 분류별)
+  // ---------------------------------------------------------------------------
+
+  /// 서버 통계 재조회(백그라운드 갱신)
+  Future<void> refreshStats() async {
+    try {
+      _stats = await nas.fetchFinanceStats();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// 현재 로드된 거래로부터 로컬 종합 통계 계산(서버 미응답 시 폴백)
+  Map<String, dynamic> localStats() {
+    final byYear = <String, Map<String, int>>{};
+    final byCategory = <String, int>{};
+    final byExpenseCategory = <String, int>{};
+    final byEvent = <String, Map<String, int>>{};
+    final byMonth = <String, Map<String, int>>{};
+    var income = 0, expense = 0;
+    for (final t in _tx) {
+      final y = t.year.isEmpty ? _yearOf(t.date) : t.year;
+      final yy = byYear.putIfAbsent(
+          y, () => {'income': 0, 'expense': 0, 'count': 0});
+      yy['count'] = (yy['count'] ?? 0) + 1;
+      final mo = _monthOf(t.date);
+      if (t.isExpense) {
+        expense += t.amount;
+        yy['expense'] = (yy['expense'] ?? 0) + t.amount;
+        byExpenseCategory[t.category] =
+            (byExpenseCategory[t.category] ?? 0) + t.amount;
+      } else {
+        income += t.amount;
+        yy['income'] = (yy['income'] ?? 0) + t.amount;
+        byCategory[t.category] = (byCategory[t.category] ?? 0) + t.amount;
+      }
+      if (mo.isNotEmpty) {
+        final mk = '$y-$mo';
+        final mm = byMonth.putIfAbsent(mk, () => {'income': 0, 'expense': 0});
+        mm[t.isExpense ? 'expense' : 'income'] =
+            (mm[t.isExpense ? 'expense' : 'income'] ?? 0) + t.amount;
+      }
+      final ev = t.event.trim().isEmpty ? '(미지정)' : t.event.trim();
+      final er = byEvent.putIfAbsent(ev, () => {'income': 0, 'expense': 0});
+      er[t.isExpense ? 'expense' : 'income'] =
+          (er[t.isExpense ? 'expense' : 'income'] ?? 0) + t.amount;
+    }
+    return {
+      'total': {
+        'income': income,
+        'expense': expense,
+        'net': income - expense,
+        'count': _tx.length,
+      },
+      'byYear': byYear,
+      'byMonth': byMonth,
+      'byCategory': byCategory,
+      'byExpenseCategory': byExpenseCategory,
+      'byEvent': byEvent,
+    };
+  }
+
+  static String _monthOf(String date) =>
+      RegExp(r'20\d{2}[.\-/]?(\d{1,2})').firstMatch(date)?.group(1)?.padLeft(2, '0') ??
+      '';
+
+  String get statsUpdated => '${_stats['updated'] ?? _updated ?? ''}';
+
+  /// 기간/행사/분류/유형 복합 검색 — 조건에 맞는 거래 반환
+  List<FinanceTransaction> search({
+    String? year,
+    DateTime? from,
+    DateTime? to,
+    String? event,
+    String? category,
+    String? type, // 'income' | 'expense' | null(전체)
+    String? keyword,
+  }) {
+    final kw = (keyword ?? '').trim();
+    return _tx.where((t) {
+      if (year != null && year != '전체') {
+        final y = t.year.isEmpty ? _yearOf(t.date) : t.year;
+        if (y != year) return false;
+      }
+      if (from != null || to != null) {
+        final d = _dateOf(t.date);
+        if (d != null) {
+          if (from != null && d.isBefore(from)) return false;
+          if (to != null && d.isAfter(to)) return false;
+        }
+      }
+      if (event != null && event.isNotEmpty && event != '전체') {
+        final ev = t.event.trim().isEmpty ? '(미지정)' : t.event.trim();
+        if (ev != event) return false;
+      }
+      if (category != null && category.isNotEmpty && category != '전체') {
+        if (t.category != category) return false;
+      }
+      if (type == 'income' && t.isExpense) return false;
+      if (type == 'expense' && !t.isExpense) return false;
+      if (kw.isNotEmpty) {
+        final hay = '${t.name} ${t.payer} ${t.memo} ${t.event} '
+            '${t.category} ${t.number} ${t.context}';
+        if (!hay.contains(kw)) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  /// 전체 행사명 목록(내림차순 집계순)
+  List<String> allEvents() {
+    final m = <String, int>{};
+    for (final t in _tx) {
+      final ev = t.event.trim().isEmpty ? '(미지정)' : t.event.trim();
+      m[ev] = (m[ev] ?? 0) + 1;
+    }
+    final list = m.keys.toList()
+      ..sort((a, b) => (m[b] ?? 0).compareTo(m[a] ?? 0));
+    return list;
+  }
+
+  static DateTime? _dateOf(String date) {
+    final m = RegExp(r'(20\d{2})[.\-/]?(\d{1,2})[.\-/]?(\d{1,2})?')
+        .firstMatch(date);
+    if (m == null) return null;
+    final y = int.tryParse(m.group(1) ?? '');
+    final mo = int.tryParse(m.group(2) ?? '') ?? 1;
+    final d = int.tryParse(m.group(3) ?? '') ?? 1;
+    if (y == null) return null;
+    try {
+      return DateTime(y, mo, d);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// 분류 결과 행 (미리보기용)
 class ClassifiedRow {
   ClassifiedRow({
     this.date = '',
+    this.type = 'income',
     this.payer = '',
     this.name = '',
     this.number = '',
@@ -438,6 +580,7 @@ class ClassifiedRow {
   });
 
   String date;
+  String type; // 'income' | 'expense'
   String payer;
   String name;
   String number;
@@ -451,9 +594,11 @@ class ClassifiedRow {
   String status;
 
   bool get matched => status == 'matched';
+  bool get isExpense => type == 'expense';
 
   Map<String, dynamic> toMap() => {
         'date': date,
+        'type': type,
         'payer': payer,
         'name': name,
         'number': number,
@@ -469,6 +614,7 @@ class ClassifiedRow {
 
   factory ClassifiedRow.fromMap(Map<dynamic, dynamic> m) => ClassifiedRow(
         date: '${m['date'] ?? ''}',
+        type: '${m['type'] ?? 'income'}',
         payer: '${m['payer'] ?? ''}',
         name: '${m['name'] ?? ''}',
         number: '${m['number'] ?? ''}',

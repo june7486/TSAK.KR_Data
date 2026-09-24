@@ -241,8 +241,11 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// 은행거래파일(엑셀/CSV base64) → 서버 자동분류 결과
-  Future<List<Map<String, dynamic>>> parseBank(
+  /// 은행거래파일(엑셀/CSV/이미지/PDF base64) → 서버 자동분류 결과
+  ///
+  /// 반환: { rows: [...], count: N, engine: 'excel'|'ocr' }
+  /// 이미지/PDF는 서버가 OCR로 자동 분석한다.
+  Future<Map<String, dynamic>> parseBankFull(
       String filename, List<int> bytes) async {
     final r = await http
         .post(
@@ -253,11 +256,26 @@ class NasApi {
             'data': base64.encode(bytes),
           }),
         )
-        .timeout(const Duration(seconds: 60));
-    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+        .timeout(const Duration(seconds: 180));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 은행거래파일 → 서버 자동분류 행 목록 (하위 호환)
+  Future<List<Map<String, dynamic>>> parseBank(
+      String filename, List<int> bytes) async {
+    final j = await parseBankFull(filename, bytes);
     return ((j['rows'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
+  }
+
+  /// DB 거래내역 종합 통계 (연도/월/분류/지출분류/행사/인가자별)
+  Future<Map<String, dynamic>> fetchFinanceStats() async {
+    final r = await http
+        .get(_uri('/api/finance/stats'))
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return (j['stats'] as Map?)?.cast<String, dynamic>() ?? {};
   }
 
   /// 기본자료 폴더 파일 목록

@@ -25,9 +25,14 @@ class _FinanceScreenState extends State<FinanceScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
   final _scroll = ScrollController();
+  final _searchCtrl = TextEditingController();
   String _selectedYear = '전체';
+  String _selEvent = '전체';
+  String _selType = '전체'; // 전체 | 수입 | 지출
+  DateTime? _from;
+  DateTime? _to;
 
-  static const _tabs = ['전체현황', '후원', '수품구매', '참가비', '지출', '결산'];
+  static const _tabs = ['전체현황', '통계', '후원', '수품구매', '참가비', '연회비', '평생회비', '지출', '결산'];
 
   @override
   void initState() {
@@ -47,6 +52,7 @@ class _FinanceScreenState extends State<FinanceScreen>
   void dispose() {
     _tab.dispose();
     _scroll.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -115,14 +121,18 @@ class _FinanceScreenState extends State<FinanceScreen>
           : Column(
               children: [
                 _yearBar(fs),
+                _searchBar(fs),
                 Expanded(
                   child: TabBarView(
                     controller: _tab,
                     children: [
                       _overview(fs, state),
+                      _statsView(fs),
                       _categoryView(fs, state, '후원', AppColors.taegeukRed),
                       _categoryView(fs, state, '수품구매', AppColors.taegeukBlue),
                       _categoryView(fs, state, '참가비', AppColors.tigerGold),
+                      _categoryView(fs, state, '연회비', AppColors.purple),
+                      _categoryView(fs, state, '평생회비', AppColors.lifetimeGold),
                       _expenseView(fs),
                       _settlementView(fs),
                     ],
@@ -172,6 +182,207 @@ class _FinanceScreenState extends State<FinanceScreen>
 
   bool _inYear(FinanceTransaction t) =>
       _selectedYear == '전체' || t.year == _selectedYear;
+
+  // ---- 검색 바 (연도/기간/행사/유형/키워드) ----
+  Widget _searchBar(FinanceService fs) {
+    final events = ['전체', ...fs.allEvents()];
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 38,
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: '이름/입금자/적요/행사 검색',
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      suffixIcon: _searchCtrl.text.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close, size: 16),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() {});
+                              },
+                            ),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              _periodButton(),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _miniChip('전체', _selType, (v) => setState(() => _selType = v),
+                    AppColors.purple),
+                _miniChip('수입', _selType, (v) => setState(() => _selType = v),
+                    AppColors.scoutGreen),
+                _miniChip('지출', _selType, (v) => setState(() => _selType = v),
+                    AppColors.taegeukRed),
+                const SizedBox(width: 10),
+                const Text('행사:',
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                for (final e in events.take(12))
+                  _miniChip(e, _selEvent, (v) => setState(() => _selEvent = v),
+                      AppColors.taegeukBlue),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniChip(String label, String cur, ValueChanged<String> onSel, Color c) {
+    final sel = cur == label;
+    return Padding(
+      padding: const EdgeInsets.only(right: 5),
+      child: GestureDetector(
+        onTap: () => onSel(label),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          decoration: BoxDecoration(
+            color: sel ? c : c.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: sel ? Colors.white : c)),
+        ),
+      ),
+    );
+  }
+
+  Widget _periodButton() {
+    final has = _from != null || _to != null;
+    final label = has
+        ? '${_from != null ? _d(_from!) : ''}~${_to != null ? _d(_to!) : ''}'
+        : '기간';
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 38),
+      ),
+      onPressed: () async {
+        final picked = await showDateRangePicker(
+          context: context,
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+        );
+        if (picked != null) {
+          setState(() {
+            _from = picked.start;
+            _to = picked.end;
+          });
+        }
+      },
+      icon: Icon(has ? Icons.event_available : Icons.date_range, size: 16),
+      label: Text(label, style: const TextStyle(fontSize: 11.5)),
+    );
+  }
+
+  static String _d(DateTime d) =>
+      '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
+
+  // ---- 통계 대시보드 ----
+  Widget _statsView(FinanceService fs) {
+    final st = fs.serverStats.isNotEmpty ? fs.serverStats : fs.localStats();
+    final total = (st['total'] as Map?) ?? {};
+    final income = (total['income'] as num?)?.toInt() ?? 0;
+    final expense = (total['expense'] as num?)?.toInt() ?? 0;
+    final count = (total['count'] as num?)?.toInt() ?? 0;
+    final byYear = (st['byYear'] as Map?) ?? {};
+    final byCat = (st['byCategory'] as Map?) ?? {};
+    final byExpCat = (st['byExpenseCategory'] as Map?) ?? {};
+    final byEvent = (st['byEvent'] as Map?) ?? {};
+
+    final catMap = <String, int>{};
+    byCat.forEach((k, v) => catMap['$k'] = (v is num) ? v.toInt() : 0);
+    final expMap = <String, int>{};
+    byExpCat.forEach((k, v) => expMap['$k'] = (v is num) ? v.toInt() : 0);
+    final yearIncome = <String, int>{};
+    byYear.forEach((k, v) {
+      if (v is Map) yearIncome['$k'] = ((v['income'] as num?) ?? 0).toInt();
+    });
+    final eventNet = <String, int>{};
+    byEvent.forEach((k, v) {
+      if (v is Map) {
+        eventNet['$k'] = (((v['income'] as num?) ?? 0) -
+                ((v['expense'] as num?) ?? 0))
+            .toInt();
+      }
+    });
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        const Text('DB 자동분석 통계',
+            style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textDark)),
+        const SizedBox(height: 2),
+        Text('갱신 ${fs.statsUpdated}',
+            style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+        const SizedBox(height: 10),
+        Row(children: [
+          _metricCard('총 수입', income, AppColors.scoutGreen, Icons.savings),
+          const SizedBox(width: 8),
+          _metricCard('총 지출', expense, AppColors.taegeukRed, Icons.payments),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          _metricCard('순액', income - expense, AppColors.purple,
+              Icons.account_balance),
+          const SizedBox(width: 8),
+          _metricCard('거래건수', count, AppColors.taegeukBlue,
+              Icons.receipt_long, isMoney: false),
+        ]),
+        const SizedBox(height: 14),
+        _sectionTitle('연도별 수입'),
+        _card(child: MiniBarChart(data: yearIncome, color: AppColors.purple)),
+        const SizedBox(height: 14),
+        _sectionTitle('수입 분류별'),
+        _card(child: MiniDonut(data: catMap)),
+        const SizedBox(height: 14),
+        _sectionTitle('지출 분류별'),
+        _card(
+          child: expMap.isEmpty
+              ? const Text('지출 내역 없음',
+                  style: TextStyle(color: AppColors.textGray, fontSize: 12))
+              : MiniBarChart(data: expMap, color: AppColors.taegeukRed),
+        ),
+        const SizedBox(height: 14),
+        _sectionTitle('행사별 순액 (수입−지출)'),
+        _card(
+          child: eventNet.isEmpty
+              ? const Text('행사 내역 없음',
+                  style: TextStyle(color: AppColors.textGray, fontSize: 12))
+              : MiniBarChart(data: eventNet, color: AppColors.scoutGreen),
+        ),
+        const SizedBox(height: 80),
+      ],
+    );
+  }
 
   // ---- 전체 현황 ----
   Widget _overview(FinanceService fs, AppState state) {
