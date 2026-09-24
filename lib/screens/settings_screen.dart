@@ -47,13 +47,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _sectionTitle(String t, IconData icon) => Row(
-        children: [
-          Icon(icon, color: AppColors.purple, size: 20),
-          const SizedBox(width: 8),
-          Text(t,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-        ],
-      );
+    children: [
+      Icon(icon, color: AppColors.purple, size: 20),
+      const SizedBox(width: 8),
+      Text(
+        t,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+      ),
+    ],
+  );
 
   Widget _nasStatusCard(AppState state) {
     return Card(
@@ -64,7 +66,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle('NAS 서버 상태', Icons.cloud),
             const SizedBox(height: 10),
-            _kv('서버', state.nas.baseUrl.isEmpty ? '(웹 앱 자체 서버)' : state.nas.baseUrl),
+            _kv(
+              '서버',
+              state.nas.baseUrl.isEmpty ? '(웹 앱 자체 서버)' : state.nas.baseUrl,
+            ),
             _kv('버전', state.versionText),
             _kv('동기화', _syncLabel(state.syncStatus)),
             _kv('인가자 수', '${state.total}명'),
@@ -82,9 +87,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content: Text(ok
+                                  content: Text(
+                                    ok
                                         ? 'NAS 최신 데이터를 불러왔습니다'
-                                        : 'NAS 연결 실패 (오프라인 데이터 사용)')),
+                                        : 'NAS 연결 실패 (오프라인 데이터 사용)',
+                                  ),
+                                ),
                               );
                             }
                           },
@@ -104,9 +112,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content: Text(ok
+                                  content: Text(
+                                    ok
                                         ? 'NAS에 저장했습니다 (이전 버전 자동 백업)'
-                                        : 'NAS 저장 실패')),
+                                        : 'NAS 저장 실패',
+                                  ),
+                                ),
                               );
                             }
                           },
@@ -118,8 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             TextField(
-              controller:
-                  TextEditingController(text: state.nas.baseUrl),
+              controller: TextEditingController(text: state.nas.baseUrl),
               decoration: const InputDecoration(
                 labelText: 'NAS 서버 주소 (비우면 웹 자체 서버)',
                 hintText: 'https://your-proxy.example.com',
@@ -141,9 +151,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle('관리자 이메일', Icons.mail_outline),
             const SizedBox(height: 8),
-            Text('현재: ${state.adminEmail}',
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700)),
+            Text(
+              '현재: ${state.adminEmail}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () => _editAdminEmail(state),
@@ -174,29 +185,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextField(
               controller: pwCtrl,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '앱비밀번호 입력',
-              ),
+              decoration: const InputDecoration(labelText: '앱비밀번호 입력'),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('변경')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('변경'),
+          ),
         ],
       ),
     );
     if (ok == true) {
-      final success =
-          await state.setAdminEmail(emailCtrl.text.trim(), pwCtrl.text.trim());
+      final success = await state.setAdminEmail(
+        emailCtrl.text.trim(),
+        pwCtrl.text.trim(),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(success ? '이메일을 변경했습니다' : '비밀번호가 올바르지 않습니다')),
+          SnackBar(content: Text(success ? '이메일을 변경했습니다' : '비밀번호가 올바르지 않습니다')),
         );
       }
     }
@@ -229,9 +241,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content: Text(name != null
+                                  content: Text(
+                                    name != null
                                         ? '백업 생성: $name'
-                                        : '백업 실패 (NAS 연결 필요)')),
+                                        : '백업 실패 (NAS 연결 필요)',
+                                  ),
+                                ),
                               );
                             }
                           },
@@ -252,7 +267,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             if (list.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                    content: Text('백업본이 없습니다 (NAS 연결 필요)')),
+                                  content: Text('백업본이 없습니다 (NAS 연결 필요)'),
+                                ),
                               );
                               return;
                             }
@@ -285,10 +301,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return ListTile(
                 dense: true,
                 leading: const Icon(Icons.description, size: 20),
-                title: Text('${b['name']}',
-                    style: const TextStyle(fontSize: 13)),
-                subtitle: Text('${b['size']} bytes',
-                    style: const TextStyle(fontSize: 11)),
+                title: Text(
+                  '${b['name']}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                subtitle: Text(
+                  '${b['size']} bytes',
+                  style: const TextStyle(fontSize: 11),
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   setState(() => _busy = true);
@@ -301,9 +321,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                          content: Text(members != null
+                        content: Text(
+                          members != null
                               ? '복원 완료 (${members.length}명)'
-                              : '복원 실패')),
+                              : '복원 실패',
+                        ),
+                      ),
                     );
                   }
                 },
@@ -313,7 +336,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -335,21 +360,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.tigerGold.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Text('${d['label']}',
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w800)),
+                      child: Text(
+                        '${d['label']}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '${d['bank']} ${d['account']}',
                         style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w700),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     IconButton(
@@ -365,8 +398,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             const Divider(),
-            Text('예금주: ${state.donationHolder}',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              '예금주: ${state.donationHolder}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ],
         ),
       ),
@@ -419,7 +454,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showPasswordGuide(AppState state) {
     // 현재 설정된 앱 접근 비밀번호(서버/로컬 설정 반영, 없으면 기본값)
-    final curApp = '${state.adminState['appPassword'] ?? AppConfig.appPassword}';
+    final curApp =
+        '${state.adminState['appPassword'] ?? AppConfig.appPassword}';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -428,42 +464,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('• 앱 접근: $curApp (1시간 유지)',
-                style: const TextStyle(fontSize: 13)),
+            Text(
+              '• 앱 접근: $curApp (1시간 유지)',
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 4),
-            const Text('• 개인 접근: 인가번호 + !@@ (예: 0000!@@)',
-                style: TextStyle(fontSize: 13)),
+            const Text(
+              '• 개인 접근: 인가번호 + !@@ (예: 000!@@)',
+              style: TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 4),
-            const Text('• 마스터: 모든 기능/통제 (변경 불가)',
-                style: TextStyle(fontSize: 13)),
+            const Text(
+              '• 마스터: 모든 기능/통제 (변경 불가)',
+              style: TextStyle(fontSize: 13),
+            ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('확인')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('확인'),
+          ),
         ],
       ),
     );
   }
 
   Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 64,
-              child: Text(k,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textGray)),
-            ),
-            Expanded(
-              child: Text(v,
-                  style: const TextStyle(
-                      fontSize: 12.5, fontWeight: FontWeight.w700)),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(
+            k,
+            style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            v,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
 
   String _syncLabel(String s) {
     switch (s) {

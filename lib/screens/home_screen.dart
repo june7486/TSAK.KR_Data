@@ -1420,7 +1420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   obscureText: true,
                   decoration: const InputDecoration(
                     labelText: '현재 비밀번호',
-                    hintText: '예: 0000!@@',
+                    hintText: '예: 000!@@',
                   ),
                 ),
                 const SizedBox(height: 8),

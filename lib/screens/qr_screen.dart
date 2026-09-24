@@ -141,7 +141,10 @@ class _QrGenerateView extends StatelessWidget {
                       const Text(
                         '이 QR을 스캔하면 해당 인가자 정보를 수정할 수 있습니다.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textGray,
+                        ),
                       ),
                     ],
                   ),
@@ -152,8 +155,7 @@ class _QrGenerateView extends StatelessWidget {
                 children: [
                   OutlinedButton.icon(
                     onPressed: () {
-                      Clipboard.setData(
-                          ClipboardData(text: _payload(context)));
+                      Clipboard.setData(ClipboardData(text: _payload(context)));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('QR 데이터가 복사되었습니다')),
                       );
@@ -203,9 +205,9 @@ class _QrScanViewState extends State<_QrScanView> {
 
     if (number == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('TSAK 인가자 QR이 아닙니다')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('TSAK 인가자 QR이 아닙니다')));
         Future.delayed(const Duration(seconds: 2), () => _handled = false);
       }
       return;
@@ -234,9 +236,9 @@ class _QrScanViewState extends State<_QrScanView> {
     final target = state.byNumber(number);
     if (target == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('인가번호 $number 를 찾을 수 없습니다')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('인가번호 $number 를 찾을 수 없습니다')));
         Future.delayed(const Duration(seconds: 2), () => _handled = false);
       }
       return;
@@ -270,23 +272,26 @@ class _QrScanViewState extends State<_QrScanView> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('인가번호 $number 의 정보를 수정하려면\n개인 비밀번호를 입력하세요.',
-                style: const TextStyle(fontSize: 13)),
+            Text(
+              '인가번호 $number 의 정보를 수정하려면\n개인 비밀번호를 입력하세요.',
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 10),
             TextField(
               controller: ctrl,
               obscureText: true,
               decoration: InputDecoration(
                 labelText: '인가번호 + ${AppConfig.personalSuffix}',
-                hintText: '0000${AppConfig.personalSuffix}',
+                hintText: '000${AppConfig.personalSuffix}',
               ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
             onPressed: () async {
               final v = ctrl.text.trim();

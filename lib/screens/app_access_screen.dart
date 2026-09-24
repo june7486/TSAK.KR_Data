@@ -109,7 +109,10 @@ class AppAccessScreen extends StatelessWidget {
                     const Text(
                       '이 QR을 스캔하면 누구나 앱에 접속할 수 있습니다.\n최초 접속 시 비밀번호가 필요합니다.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textGray,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -139,14 +142,20 @@ class AppAccessScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('접속 비밀번호 안내',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    Text(
+                      '접속 비밀번호 안내',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
                     SizedBox(height: 6),
-                    Text('• 앱 접근: 관리자에게 문의 (1시간마다 재입력)',
-                        style: TextStyle(fontSize: 12.5)),
+                    Text(
+                      '• 앱 접근: 관리자에게 문의 (1시간마다 재입력)',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
                     SizedBox(height: 3),
-                    Text('• 개인 접근: 본인 인가번호 + !@@  (예: 0000!@@)',
-                        style: TextStyle(fontSize: 12.5)),
+                    Text(
+                      '• 개인 접근: 본인 인가번호 + !@@  (예: 000!@@)',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
                   ],
                 ),
               ),

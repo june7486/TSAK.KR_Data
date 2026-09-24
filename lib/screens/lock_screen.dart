@@ -7,7 +7,7 @@ import '../theme/app_theme.dart';
 
 /// 앱 잠금(인증) 화면
 ///  - 앱 접근: Tsak1988!!  (설치/접근용, 1시간 후 재입력)
-///  - 개인 접근: {인가번호}!@@  (예: 415 → 415!@@)
+///  - 개인 접근: {인가번호}!@@  (예: 인가번호 000 → 000!@@)
 ///  - 마스터: Corbuser7!@@ (모든 기능/통제, 불변)
 class LockScreen extends StatefulWidget {
   const LockScreen({super.key, this.onUnlocked});
@@ -59,7 +59,7 @@ class _LockScreenState extends State<LockScreen> {
       case 'master':
         return '마스터 비밀번호가 올바르지 않습니다';
       case 'personal':
-        return '인가번호 + !@@ 형식이 아니거나 등록되지 않은 번호입니다 (예: 0000!@@)';
+        return '인가번호 + !@@ 형식이 아니거나 등록되지 않은 번호입니다 (예: 000!@@)';
       default:
         return '앱 비밀번호가 올바르지 않습니다';
     }
@@ -81,11 +81,8 @@ class _LockScreenState extends State<LockScreen> {
                     'assets/images/tsak_emblem.png',
                     width: 96,
                     height: 96,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.shield,
-                      size: 84,
-                      color: Colors.white,
-                    ),
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.shield, size: 84, color: Colors.white),
                   ),
                   const SizedBox(height: 14),
                   const Text(
@@ -129,7 +126,7 @@ class _LockScreenState extends State<LockScreen> {
                           onSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
                             labelText: _tier == 'personal' ? '인가번호!@@' : '비밀번호',
-                            hintText: _tier == 'personal' ? '예: 0000!@@' : '',
+                            hintText: _tier == 'personal' ? '예: 000!@@' : '',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               icon: Icon(
@@ -234,9 +231,7 @@ class _LockScreenState extends State<LockScreen> {
                       Icon(
                         t.$3,
                         size: 18,
-                        color: _tier == t.$1
-                            ? Colors.white
-                            : AppColors.purple,
+                        color: _tier == t.$1 ? Colors.white : AppColors.purple,
                       ),
                       const SizedBox(height: 4),
                       Text(
