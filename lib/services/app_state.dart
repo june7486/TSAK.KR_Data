@@ -498,7 +498,8 @@ class AppState extends ChangeNotifier {
     }).toList();
   }
 
-  List<Member> _filterBase() => isPersonal ? repo.allUnscoped() : repo.all();
+  // 개인 접근 시에는 본인 정보만 노출한다(all()이 restrictedNumber로 제한).
+  List<Member> _filterBase() => repo.all();
 
   /// AI 자연어 검색 결과 적용
   List<Member> _applyAiQuery(List<Member> list, AiQuery ai) {
@@ -597,10 +598,6 @@ class AppState extends ChangeNotifier {
 
   Member? byId(String id) => repo.byId(id);
   Member? byNumber(String number) => repo.byNumber(number);
-
-  /// 개인 접근: 본인 외 인가자도 "명단"으로는 볼 수 있다(연결성).
-  /// 단, 클릭하여 상세를 여는 것은 차단한다(개인정보 보호).
-  List<Member> get personalRoster => repo.allUnscoped();
 
   /// 개인 접근에서 특정 인가자가 본인인지 여부
   bool isSelfNumber(String number) {
