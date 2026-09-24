@@ -3,7 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsak_credential_manager/models/member.dart';
+import 'package:tsak_credential_manager/services/finance_service.dart';
 import 'package:tsak_credential_manager/services/import_parser.dart';
+import 'package:tsak_credential_manager/services/nas_api.dart';
 
 void main() {
   group('ImportParser (AI 자동 인식)', () {
@@ -50,6 +52,49 @@ void main() {
           id: 'm1', number: '100', name: '이승준', atasNo: '358');
       expect(m.searchText.contains('358'), isTrue);
       expect(m.searchText.contains('100'), isTrue);
+    });
+  });
+
+  group('FinanceService — 입금자 자동분류 (이름 앞뒤 텍스트/행사명 인식)', () {
+    final members = [
+      Member(id: 'm1', number: '415', name: '이승준', league: '제주'),
+      Member(id: 'm2', number: '200', name: '홍길동', league: '광주'),
+    ];
+
+    test('이름 앞뒤 텍스트가 있어도 동일인으로 인식 + 맥락 기록', () {
+      final fs = FinanceService(NasApi());
+      final r = fs.classify(
+        {'date': '2024-05-01', 'payer': '홍길동 제405단 후원', 'amount': '100000'},
+        members: members,
+      );
+      expect(r.matched, isTrue);
+      expect(r.number, '200');
+      expect(r.context.contains('제405단'), isTrue);
+    });
+
+    test('행사명이 포함되어도 동일인으로 인식', () {
+      final fs = FinanceService(NasApi());
+      final r = fs.classify(
+        {
+          'date': '2024-05-03',
+          'payer': '이승준',
+          'memo': '2024 정기총회 참가비',
+          'amount': 30000,
+        },
+        members: members,
+      );
+      expect(r.matched, isTrue);
+      expect(r.number, '415');
+      expect(r.category, '참가비');
+    });
+
+    test('미매칭 입금은 unmatched 로 표시', () {
+      final fs = FinanceService(NasApi());
+      final r = fs.classify(
+        {'date': '2024-05-09', 'payer': '알수없는입금자', 'amount': 5000},
+        members: members,
+      );
+      expect(r.matched, isFalse);
     });
   });
 }

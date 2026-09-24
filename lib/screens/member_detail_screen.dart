@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/finance_transaction.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/finance_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
+import 'finance_transaction_edit_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 
@@ -62,6 +65,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _quickActions(m),
+                _depositSection(m),
                 _feeTracker(m),
                 _eventSection(m),
                 _infoCard(m),
@@ -234,6 +238,170 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// 개인별 입금 내역 — 후원/수품구매/참가비 등 모든 입금을 즉시 확인
+  Widget _depositSection(Member m) {
+    final fs = context.watch<FinanceService>();
+    final deposits = fs.depositsOf(m.number);
+    final total = deposits.fold<int>(0, (s, t) => s + t.amount);
+    final byCat = <String, int>{};
+    for (final t in deposits) {
+      byCat[t.category] = (byCat[t.category] ?? 0) + t.amount;
+    }
+    return _section(
+      title: '입금 내역 (${deposits.length}건 · ${_won(total)}원)',
+      icon: Icons.savings,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (byCat.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final e in byCat.entries)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.purple.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${e.key} ${_won(e.value)}원',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.purple,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (deposits.isEmpty)
+            Row(
+              children: [
+                Text(
+                  '입금 내역이 없습니다.',
+                  style: TextStyle(color: AppColors.textGray, fontSize: 13),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _addDeposit(m),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('입금 추가'),
+                ),
+              ],
+            )
+          else ...[
+            for (final t in deposits)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      t.category == '후원'
+                          ? Icons.volunteer_activism
+                          : t.category == '수품구매'
+                              ? Icons.shopping_bag
+                              : t.category == '참가비'
+                                  ? Icons.event_available
+                                  : Icons.savings,
+                      size: 18,
+                      color: AppColors.scoutGreen,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${t.category}'
+                            '${t.event.isNotEmpty ? ' · ${t.event}' : ''}',
+                            style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark),
+                          ),
+                          Text(
+                            '${t.date}'
+                            '${t.context.isNotEmpty ? ' · ${t.context}' : ''}',
+                            style: const TextStyle(
+                                fontSize: 11, color: AppColors.textGray),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${_won(t.amount)}원',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.scoutGreen),
+                    ),
+                    GestureDetector(
+                      onTap: () => _addDeposit(m, existing: t),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 6),
+                        child: Icon(Icons.edit, size: 15,
+                            color: AppColors.textGray),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _addDeposit(m),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('입금 추가'),
+              ),
+            ),
+          ],
+          Text(
+            '* 입금 내역은 재무 관리 화면과 NAS 데이터베이스에 즉시 반영됩니다.',
+            style: TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addDeposit(Member m, {FinanceTransaction? existing}) async {
+    final fs = context.read<FinanceService>();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FinanceTransactionEditScreen(
+          finance: fs,
+          members: [m],
+          existing: existing,
+        ),
+      ),
+    );
+    if (mounted) fs.load();
+  }
+
+  static String _won(int v) {
+    final neg = v < 0;
+    final s = v.abs().toString();
+    final b = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+      b.write(s[i]);
+    }
+    return '${neg ? '-' : ''}$b';
   }
 
   Widget _feeTracker(Member m) {

@@ -9,10 +9,12 @@ import '../widgets/member_card.dart';
 import 'app_access_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
+import 'finance_screen.dart';
 import 'import_screen.dart';
 import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
 import 'settings_screen.dart';
+import 'source_folder_screen.dart';
 import 'stats_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -162,6 +164,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(builder: (_) => const ImportScreen()),
                     );
                     break;
+                  case 'finance':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const FinanceScreen()),
+                    );
+                    break;
+                  case 'source':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const SourceFolderScreen()),
+                    );
+                    break;
                   case 'select':
                     setState(() => _selectMode = true);
                     break;
@@ -174,6 +189,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
               itemBuilder: (ctx) => const [
+                PopupMenuItem(value: 'finance', child: Text('재무 관리 (후원·수품·참가비)')),
+                PopupMenuItem(value: 'source', child: Text('기본자료 폴더 (첨부·자동분석)')),
                 PopupMenuItem(value: 'import', child: Text('자료 가져오기 (AI 인식)')),
                 PopupMenuItem(value: 'settings', child: Text('설정 · 백업/복원')),
                 PopupMenuItem(value: 'refresh', child: Text('NAS 최신 데이터 불러오기')),
@@ -450,7 +467,65 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 8),
+          // 재무 바로가기 — 후원현황 / 수품구매 / 참가비 / 지출 / 결산
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _finButton('후원현황', Icons.volunteer_activism, AppColors.taegeukRed, 1),
+                _finButton('수품구매', Icons.shopping_bag, AppColors.taegeukBlue, 2),
+                _finButton('참가비', Icons.event_available, AppColors.tigerGold, 3),
+                _finButton('지출현황', Icons.payments, Color(0xFF00838F), 4),
+                _finButton('결산', Icons.calculate, AppColors.scoutGreen, 5),
+                _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _finButton(String label, IconData icon, Color color, int tab) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () {
+          if (tab < 0) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SourceFolderScreen()),
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => FinanceScreen(initialTab: tab)),
+            );
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 14, color: Colors.white),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -167,4 +167,103 @@ class NasApi {
   }
 
   String photoUrl(String number) => '$_base/api/photo/$number';
+
+  // ---- 재무 (Finance) ----
+  Future<Map<String, dynamic>> fetchFinance() async {
+    final r = await http
+        .get(_uri('/api/finance'))
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> saveFinance(
+      Map<String, dynamic> finance) async {
+    final r = await http
+        .post(
+          _uri('/api/finance'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(finance),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> fetchRules() async {
+    final r = await http
+        .get(_uri('/api/finance/rules'))
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> saveRules(Map<String, dynamic> rules) async {
+    final r = await http
+        .post(
+          _uri('/api/finance/rules'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(rules),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> fetchHistory() async {
+    final r = await http
+        .get(_uri('/api/finance/history'))
+        .timeout(const Duration(seconds: 30));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 은행거래파일(엑셀/CSV base64) → 서버 자동분류 결과
+  Future<List<Map<String, dynamic>>> parseBank(
+      String filename, List<int> bytes) async {
+    final r = await http
+        .post(
+          _uri('/api/finance/parse-bank'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'filename': filename,
+            'data': base64.encode(bytes),
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['rows'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 기본자료 폴더 파일 목록
+  Future<List<Map<String, dynamic>>> listFiles(String folder) async {
+    final r = await http
+        .get(_uri('/api/files?folder=$folder'))
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['files'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 기본자료 폴더에 파일 업로드(+자동분석)
+  Future<Map<String, dynamic>> uploadFile(
+      String folder, String name, List<int> bytes) async {
+    final r = await http
+        .post(
+          _uri('/api/files'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'folder': folder,
+            'name': name,
+            'data': base64.encode(bytes),
+          }),
+        )
+        .timeout(const Duration(seconds: 90));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  String fileDownloadUrl(String folder, String name) =>
+      '$_base/api/files/download?folder=${Uri.encodeComponent(folder)}&name=${Uri.encodeComponent(name)}';
+
+  /// 통합 재무 엑셀 다운로드 URL
+  String financeExcelUrl([String kind = 'finance']) =>
+      '$_base/api/finance/excel?kind=$kind';
 }

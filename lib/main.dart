@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
 import 'services/app_state.dart';
+import 'services/finance_service.dart';
 import 'services/member_repository.dart';
 import 'services/nas_api.dart';
 import 'theme/app_theme.dart';
@@ -21,8 +22,10 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
+        Provider<NasApi>.value(value: nas),
         Provider<MemberRepository>.value(value: repo),
         ChangeNotifierProvider<AppState>(create: (_) => AppState(repo, nas: nas)),
+        ChangeNotifierProvider<FinanceService>(create: (_) => FinanceService(nas)),
       ],
       child: const TsakApp(),
     ),
