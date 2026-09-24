@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import 'roster_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
 ///
@@ -1420,8 +1421,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   Future<void> _openRoster() async {
-    final url = _nas.eventRosterUrl(widget.year, widget.title);
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    // 외부 브라우저 대신 앱 내부 화면으로 열어 뒤로가기·출력·공유가 정상 동작
+    final e = _event;
+    final attendees = [
+      for (final a in _attendees)
+        {
+          ...a,
+          'visited': _isVisited(a),
+        },
+    ];
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RosterScreen(
+          title: widget.title,
+          year: widget.year,
+          period: '${e['period'] ?? e['date'] ?? ''}',
+          place: '${e['place'] ?? ''}',
+          desc: '${e['desc'] ?? ''}',
+          attendees: attendees,
+        ),
+      ),
+    );
+  }
+
+  bool _isVisited(Map<String, dynamic> a) {
+    final ident =
+        '${a['number'] ?? a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    return ident.isNotEmpty && _access.containsKey(ident);
   }
 
   Future<void> _sendSms() async {

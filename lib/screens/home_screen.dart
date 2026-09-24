@@ -972,6 +972,50 @@ class _HomeScreenState extends State<HomeScreen> {
             '※ 개인 접근에서는 다른 인가자의 정보를 볼 수 없습니다.',
             style: TextStyle(color: Colors.white70, fontSize: 10.5),
           ),
+          const SizedBox(height: 10),
+          // 본인이 참석한 행사 폴더 접근 — 사진 업로드 / 참가비·후원금 납부 안내
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const EventYearScreen()),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.tigerGold, width: 2),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.photo_library,
+                            size: 18, color: AppColors.purple),
+                        SizedBox(width: 6),
+                        Text(
+                          '내 행사 (사진 업로드·참가비/후원)',
+                          style: TextStyle(
+                            color: AppColors.purple,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '※ 본인이 참석자로 등록된 행사만 보입니다.',
+            style: TextStyle(color: Colors.white70, fontSize: 10),
+          ),
         ],
       ),
     );
