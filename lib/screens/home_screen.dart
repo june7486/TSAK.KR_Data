@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
@@ -219,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.isMaster)
                   const PopupMenuItem(
                       value: 'admin',
-                      child: Text('앱 관리 (마스터: 비번·정지·복구)')),
+                      child: Text('앱 관리 — 앱접근 비번 변경/정지/복구')),
                 if (!state.isPersonal) ...[
                   const PopupMenuItem(
                       value: 'finance',
@@ -463,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _searchCtrl,
             onChanged: (v) => state.setQuery(v),
             decoration: InputDecoration(
-              hintText: '이름 / 인가번호 / 전화번호 / 주소 / 소속대 통합검색',
+              hintText: '통합검색 · AI 자연어 · 범위(1-100) · 전화번호',
               prefixIcon: const Icon(Icons.search, color: AppColors.purple),
               suffixIcon: _searchCtrl.text.isEmpty
                   ? null
@@ -474,6 +475,50 @@ class _HomeScreenState extends State<HomeScreen> {
                         state.setQuery('');
                       },
                     ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          // AI 자연어 검색 예시 칩 — 누르면 바로 검색 실행
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Icon(Icons.auto_awesome, size: 13, color: Colors.white70),
+                const SizedBox(width: 4),
+                const Text('AI 검색',
+                    style: TextStyle(color: Colors.white70, fontSize: 10)),
+                const SizedBox(width: 6),
+                for (final ex in const [
+                  '2026년 연회비 납부자 명단',
+                  '현재까지 후원자 명단',
+                  '평생회원 명단',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GestureDetector(
+                      onTap: () {
+                        _searchCtrl.text = ex;
+                        state.setQuery(ex);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          ex,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
@@ -530,6 +575,101 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 10),
+          _donationBanner(state),
+        ],
+      ),
+    );
+  }
+
+  /// 홈 첫 페이지 후원 안내 — 계좌를 바로 복사할 수 있다.
+  Widget _donationBanner(AppState state) {
+    final donations = state.donations;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.volunteer_activism,
+                  color: AppColors.purple, size: 18),
+              const SizedBox(width: 6),
+              const Text(
+                '후원 안내',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '예금주 ${state.donationHolder}',
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textGray),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final d in donations)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.lifetimeGold.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${d['label']}',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.lifetimeGold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${d['bank']} ${d['account']}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(
+                          ClipboardData(text: '${d['account']}'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${d['account']} 복사됨'),
+                          duration: const Duration(milliseconds: 900),
+                        ),
+                      );
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.copy,
+                          size: 16, color: AppColors.textGray),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -704,7 +844,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _filterChip(
                   label: '평생회원',
                   selected: state.onlyLifetime,
-                  color: AppColors.tigerGold,
+                  color: AppColors.lifetimeGold,
                   onTap: () => state.setOnlyLifetime(!state.onlyLifetime),
                 ),
                 const SizedBox(width: 6),

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/phone_format.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
@@ -34,12 +35,24 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _date,
       _atas,
       _activity,
-      _memo;
+      _memo,
+      _birthday,
+      _anniversary;
 
   String _photoPath = '';
+  String _trainingStatus = '';
   bool _lifetime = false;
   Map<String, bool> _fees = {};
   Member? _existing;
+
+  /// 훈련현황 선택 항목
+  static const List<String> _trainingOptions = [
+    '중급',
+    '상급',
+    '커미셔너과정',
+    '부교수',
+    '교수',
+  ];
 
   final _picker = ImagePicker();
 
@@ -63,7 +76,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _atas = TextEditingController(text: m?.atasNo ?? '');
     _activity = TextEditingController(text: m?.activity ?? '');
     _memo = TextEditingController(text: m?.memo ?? '');
+    _birthday = TextEditingController(text: m?.birthday ?? '');
+    _anniversary = TextEditingController(text: m?.anniversary ?? '');
     _photoPath = m?.photoPath ?? '';
+    _trainingStatus = m?.trainingStatus ?? '';
     _lifetime = m?.lifetimeMember ?? false;
     _fees = Map<String, bool>.from(m?.feeYears ?? {});
   }
@@ -82,6 +98,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _atas,
       _activity,
       _memo,
+      _birthday,
+      _anniversary,
     ]) {
       c.dispose();
     }
@@ -91,6 +109,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   @override
   Widget build(BuildContext context) {
     final isNew = _existing == null;
+    final state = context.watch<AppState>();
+    // 개인 접근: 본인 정보만 수정 가능 (인가번호 변경·삭제·신규추가 금지)
+    final personal = state.isPersonal;
     return UnsavedGuard(
       dirty: _isDirty,
       onSave: () async {
@@ -144,6 +165,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 hint: '예: 2186',
                 icon: Icons.tag,
                 numeric: true,
+                readOnly: personal,
               ),
               _field(
                 '성명',
@@ -177,7 +199,21 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 hint: '010-0000-0000',
                 icon: Icons.phone,
                 keyboard: TextInputType.phone,
+                phone: true,
               ),
+              _field(
+                '생일',
+                _birthday,
+                hint: '예: 1980.05.14 (또는 05-14)',
+                icon: Icons.cake,
+              ),
+              _field(
+                '기념일',
+                _anniversary,
+                hint: '예: 2005.03.01 (입단·기념일)',
+                icon: Icons.celebration,
+              ),
+              _trainingStatusField(),
               _field(
                 '이메일',
                 _email,
@@ -225,7 +261,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: const Icon(Icons.save),
                 label: Text(isNew ? '인가자 등록' : '변경사항 저장'),
               ),
-              if (!isNew)
+              if (!isNew && !personal)
                 TextButton.icon(
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.taegeukRed,
@@ -257,6 +293,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _atas.text.trim() != m.atasNo ||
         _activity.text.trim() != m.activity ||
         _memo.text.trim() != m.memo ||
+        _birthday.text.trim() != m.birthday ||
+        _anniversary.text.trim() != m.anniversary ||
+        _trainingStatus != m.trainingStatus ||
         _photoPath != m.photoPath ||
         _lifetime != m.lifetimeMember;
   }
@@ -408,6 +447,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     bool numeric = false,
     int maxLines = 1,
     TextInputType? keyboard,
+    bool phone = false,
+    bool readOnly = false,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -415,6 +456,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         controller: ctrl,
         maxLines: maxLines,
         keyboardType: keyboard,
+        readOnly: readOnly,
+        // 핸드폰: 010 입력 시 010-0000-0000 자동 하이픈
+        inputFormatters: phone ? const [PhoneHyphenFormatter()] : null,
         onChanged: (_) => setState(() {}),
         validator: required
             ? (v) => (v == null || v.trim().isEmpty) ? '필수 입력 항목입니다' : null
@@ -423,7 +467,33 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
           labelText: label + (required ? ' *' : ''),
           hintText: hint,
           prefixIcon: icon != null ? Icon(icon, size: 20) : null,
+          suffixIcon: readOnly
+              ? const Icon(Icons.lock_outline, size: 18,
+                  color: AppColors.textGray)
+              : null,
         ),
+      ),
+    );
+  }
+
+  /// 훈련현황 선택 필드 (중급/상급/커미셔너과정/부교수/교수)
+  Widget _trainingStatusField() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: DropdownButtonFormField<String>(
+        initialValue:
+            _trainingOptions.contains(_trainingStatus) ? _trainingStatus : null,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: '훈련현황',
+          prefixIcon: Icon(Icons.school, size: 20),
+        ),
+        hint: const Text('훈련 과정을 선택하세요'),
+        items: [
+          for (final t in _trainingOptions)
+            DropdownMenuItem(value: t, child: Text(t)),
+        ],
+        onChanged: (v) => setState(() => _trainingStatus = v ?? ''),
       ),
     );
   }
@@ -447,6 +517,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       atasNo: _atas.text.trim(),
       activity: _activity.text.trim(),
       memo: _memo.text.trim(),
+      birthday: _birthday.text.trim(),
+      anniversary: _anniversary.text.trim(),
+      trainingStatus: _trainingStatus,
       photoPath: _photoPath,
       lifetimeMember: _lifetime,
       feeYears: Map<String, bool>.from(_fees)

@@ -19,13 +19,20 @@ Future<void> main() async {
   final repo = MemberRepository(nas: nas);
   await repo.init();
 
+  final appState = AppState(repo, nas: nas);
+  final finance = FinanceService(nas);
+  // AI 자연어 검색(후원자 명단 등)에서 재무 데이터를 참조할 수 있도록 연결
+  appState.finance = finance;
+  // 재무 데이터 로드 (AI 후원 검색 대비)
+  finance.load();
+
   runApp(
     MultiProvider(
       providers: [
         Provider<NasApi>.value(value: nas),
         Provider<MemberRepository>.value(value: repo),
-        ChangeNotifierProvider<AppState>(create: (_) => AppState(repo, nas: nas)),
-        ChangeNotifierProvider<FinanceService>(create: (_) => FinanceService(nas)),
+        ChangeNotifierProvider<AppState>.value(value: appState),
+        ChangeNotifierProvider<FinanceService>.value(value: finance),
       ],
       child: const TsakApp(),
     ),

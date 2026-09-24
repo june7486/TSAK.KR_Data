@@ -9,6 +9,8 @@ class AppColors {
   static const taegeukRed = Color(0xFFD62828);
   static const taegeukBlue = Color(0xFF1B4F9C);
   static const tigerGold = Color(0xFFF2B705);
+  /// 평생회원 강조용 — 흰 배경 위에서도 가독성 높은 진한 골드
+  static const lifetimeGold = Color(0xFFB8860B);
   static const scoutGreen = Color(0xFF2E7D32);
   static const bg = Color(0xFFF6F4FB);
   static const card = Colors.white;

@@ -31,10 +31,21 @@ class _ExportScreenState extends State<ExportScreen>
   bool _busy = false;
   ExportFormat _format = ExportFormat.excel;
 
+  /// 선택된 개인정보 항목 (기본: 전체)
+  final Set<String> _selectedFields = {...kDefaultFieldKeys};
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+  }
+
+  List<String> get _fieldKeys {
+    // kExportFields 순서를 유지하며 선택된 항목만
+    return kExportFields
+        .map((f) => f.key)
+        .where(_selectedFields.contains)
+        .toList();
   }
 
   @override
@@ -110,6 +121,8 @@ class _ExportScreenState extends State<ExportScreen>
           }).toList(),
         ),
         const SizedBox(height: 14),
+        _fieldSelector(),
+        const SizedBox(height: 14),
         Card(
           child: SwitchListTile(
             value: _chunk100,
@@ -169,6 +182,86 @@ class _ExportScreenState extends State<ExportScreen>
     );
   }
 
+  /// 개인정보 출력 항목 선택 UI (명단에 넣을 항목을 골라서 출력)
+  Widget _fieldSelector() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.checklist, color: AppColors.purple, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  '출력할 개인정보 항목',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+                const Spacer(),
+                Text(
+                  '${_selectedFields.length}/${kExportFields.length}',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textGray,
+                      fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '선택한 항목만 명단(모든 형식)에 포함됩니다.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final f in kExportFields)
+                  FilterChip(
+                    label: Text(f.label),
+                    selected: _selectedFields.contains(f.key),
+                    selectedColor: AppColors.purple,
+                    checkmarkColor: Colors.white,
+                    labelStyle: TextStyle(
+                      color: _selectedFields.contains(f.key)
+                          ? Colors.white
+                          : AppColors.textDark,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    onSelected: (v) => setState(() {
+                      if (v) {
+                        _selectedFields.add(f.key);
+                      } else {
+                        _selectedFields.remove(f.key);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => setState(
+                      () => _selectedFields.addAll(kExportFields.map((e) => e.key))),
+                  child: const Text('전체 선택'),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _selectedFields.addAll(kDefaultFieldKeys)),
+                  child: const Text('기본값'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _countBanner() {
     return Container(
       width: double.infinity,
@@ -218,6 +311,7 @@ class _ExportScreenState extends State<ExportScreen>
     setState(() => _busy = true);
     try {
       final chunks = _chunks;
+      final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
       final baseName = 'TSAK_인가자명단_${DateTime.now().millisecondsSinceEpoch}';
       for (var i = 0; i < chunks.length; i++) {
         final list = chunks[i];
@@ -226,19 +320,22 @@ class _ExportScreenState extends State<ExportScreen>
         Uint8List bytes;
         switch (_format) {
           case ExportFormat.excel:
-            bytes = ExportService.buildExcel(list);
+            bytes = ExportService.buildExcel(list, fieldKeys: fields);
             break;
           case ExportFormat.pdf:
-            bytes = await ExportService.buildPdf(list);
+            bytes = await ExportService.buildPdf(list, fieldKeys: fields);
             break;
           case ExportFormat.word:
-            bytes = ExportService.buildWord(list);
+            bytes = ExportService.buildWord(list, fieldKeys: fields);
             break;
           case ExportFormat.txt:
-            bytes = ExportService.buildTxt(list);
+            bytes = ExportService.buildTxt(list, fieldKeys: fields);
+            break;
+          case ExportFormat.ppt:
+            bytes = ExportService.buildPpt(list, fieldKeys: fields);
             break;
           case ExportFormat.jpg:
-            bytes = await ExportService.buildPdf(list);
+            bytes = await ExportService.buildPdf(list, fieldKeys: fields);
             break;
         }
         if (_format == ExportFormat.jpg) {
@@ -280,6 +377,8 @@ class _ExportScreenState extends State<ExportScreen>
         return MimeType.text;
       case ExportFormat.jpg:
         return MimeType.jpeg;
+      case ExportFormat.ppt:
+        return MimeType.microsoftPresentation;
     }
   }
 

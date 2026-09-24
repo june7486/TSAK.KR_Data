@@ -15,6 +15,9 @@ class Member {
     this.atasNo = '',
     this.activity = '',
     this.memo = '',
+    this.birthday = '',
+    this.anniversary = '',
+    this.trainingStatus = '',
     this.photoPath = '',
     this.lifetimeMember = false,
     Map<String, bool>? feeYears,
@@ -59,6 +62,15 @@ class Member {
   /// 메모
   String memo;
 
+  /// 생일 (예: "1980.05.14" 또는 "05-14")
+  String birthday;
+
+  /// 기념일 (예: "2005.03.01" — 입단/기념일 등)
+  String anniversary;
+
+  /// 훈련현황 (중급 / 상급 / 커미셔너과정 / 부교수 / 교수)
+  String trainingStatus;
+
   /// 사진 경로 (로컬 파일 경로 또는 base64), 사진을 선택/촬영하여 저장
   String photoPath;
 
@@ -76,8 +88,11 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $address $phone $email $atasNo $activity $memo'
+      '$number $name $league $unit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus'
           .toLowerCase();
+
+  /// 전화번호에서 숫자만 추출 (하이픈 무관 검색용)
+  String get phoneDigits => phone.replaceAll(RegExp(r'[^0-9]'), '');
 
   int get numberInt => int.tryParse(number) ?? 0;
 
@@ -103,6 +118,9 @@ class Member {
     'atasNo': atasNo,
     'activity': activity,
     'memo': memo,
+    'birthday': birthday,
+    'anniversary': anniversary,
+    'trainingStatus': trainingStatus,
     'photoPath': photoPath,
     'lifetimeMember': lifetimeMember,
     'feeYears': feeYears,
@@ -132,6 +150,9 @@ class Member {
       atasNo: '${map['atasNo'] ?? ''}',
       activity: '${map['activity'] ?? ''}',
       memo: '${map['memo'] ?? ''}',
+      birthday: '${map['birthday'] ?? ''}',
+      anniversary: '${map['anniversary'] ?? ''}',
+      trainingStatus: '${map['trainingStatus'] ?? ''}',
       photoPath: '${map['photoPath'] ?? ''}',
       lifetimeMember: map['lifetimeMember'] == true,
       feeYears: castBoolMap(map['feeYears']),
@@ -154,6 +175,9 @@ class Member {
     String? atasNo,
     String? activity,
     String? memo,
+    String? birthday,
+    String? anniversary,
+    String? trainingStatus,
     String? photoPath,
     bool? lifetimeMember,
     Map<String, bool>? feeYears,
@@ -173,6 +197,9 @@ class Member {
       atasNo: atasNo ?? this.atasNo,
       activity: activity ?? this.activity,
       memo: memo ?? this.memo,
+      birthday: birthday ?? this.birthday,
+      anniversary: anniversary ?? this.anniversary,
+      trainingStatus: trainingStatus ?? this.trainingStatus,
       photoPath: photoPath ?? this.photoPath,
       lifetimeMember: lifetimeMember ?? this.lifetimeMember,
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),

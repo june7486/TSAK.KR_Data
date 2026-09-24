@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/member.dart';
+import 'ai_query.dart';
 import 'app_config.dart';
+import 'finance_service.dart';
 import 'member_repository.dart';
 import 'nas_api.dart';
 
@@ -22,6 +24,9 @@ class AppState extends ChangeNotifier {
 
   final MemberRepository repo;
   final NasApi nas;
+
+  /// 재무 서비스 참조 (AI 검색에서 후원자 명단 조회에 사용)
+  FinanceService? finance;
 
   // ---------- 인증 / 세션 ----------
   bool _unlocked = false;
@@ -74,9 +79,25 @@ class AppState extends ChangeNotifier {
   Future<bool> login(String tier, String value) async {
     bool ok;
     if (tier == 'master') {
+      // 마스터는 서버 검증(있으면) 우선, 없으면 로컬 상수
       ok = value == AppConfig.masterPassword;
+      if (!ok && repo.isNasMode) {
+        try {
+          final r = await nas.login('master', value);
+          ok = r['ok'] == true;
+        } catch (_) {}
+      }
     } else if (tier == 'app') {
-      ok = value == AppConfig.appPassword;
+      // 앱 접근: NAS 모드에서는 서버에 설정된 (마스터가 변경한) 비번으로 검증
+      ok = false;
+      if (repo.isNasMode) {
+        try {
+          final r = await nas.login('app', value);
+          ok = r['ok'] == true;
+        } catch (_) {}
+      }
+      // 서버 미연결/오프라인이면 로컬 상수로 폴백
+      if (!ok) ok = value == AppConfig.appPassword;
     } else {
       // 개인: 인가번호 + !@@  (오프라인이면 로컬에서도 검증)
       final no = value.replaceAll(RegExp(r'[^0-9]'), '');
@@ -413,17 +434,116 @@ class AppState extends ChangeNotifier {
       list = list.where((m) => m.lifetimeMember).toList();
     }
     if (_query.trim().isNotEmpty) {
-      final q = _query.trim().toLowerCase();
-      final parts = q.split(RegExp(r'\s+'));
-      list = list
-          .where((m) => parts.every((p) => m.searchText.contains(p)))
-          .toList();
+      list = _applyQuery(list, _query.trim());
     }
     _members = list;
     notifyListeners();
   }
 
+  /// 검색 질의 적용 — 범위 검색(1-100) / 하이픈 무관 전화 / 일반 통합검색 / AI 자연어
+  List<Member> _applyQuery(List<Member> list, String rawQuery) {
+    // 1) AI 자연어 검색 (복합 의도: "... 명단", "...납부자" 등)
+    final ai = AiQuery.tryParse(rawQuery);
+    if (ai != null) {
+      return _applyAiQuery(list, ai);
+    }
+
+    // 2) 인가번호 범위 검색: "1-100", "500 - 1000"
+    final range = RegExp(r'^\s*(\d{1,5})\s*[-~]\s*(\d{1,5})\s*$')
+        .firstMatch(rawQuery);
+    if (range != null) {
+      final a = int.parse(range.group(1)!);
+      final b = int.parse(range.group(2)!);
+      final lo = a <= b ? a : b;
+      final hi = a <= b ? b : a;
+      return list
+          .where((m) => m.numberInt >= lo && m.numberInt <= hi)
+          .toList();
+    }
+
+    // 3) 일반 통합검색 — 하이픈 무관 전화번호 매칭 포함
+    final q = rawQuery.toLowerCase();
+    final parts = q.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final qDigits = rawQuery.replaceAll(RegExp(r'[^0-9]'), '');
+    final qLooksLikePhone = qDigits.length >= 4;
+
+    return list.where((m) {
+      // 모든 토큰이 통합 텍스트에 포함되어야 함
+      if (parts.every((p) => m.searchText.contains(p))) return true;
+      // 하이픈을 제거한 숫자열이 전화번호에 포함되면 매칭 (예: 01012345678)
+      if (qLooksLikePhone && m.phoneDigits.contains(qDigits)) return true;
+      // 행사명(참석한 행사)으로 검색 — 행사 참가자 명단
+      if (m.eventAttend.keys
+          .any((e) => e.toLowerCase().contains(q))) {
+        return true;
+      }
+      return false;
+    }).toList();
+  }
+
   List<Member> _filterBase() => repo.all();
+
+  /// AI 자연어 검색 결과 적용
+  List<Member> _applyAiQuery(List<Member> list, AiQuery ai) {
+    switch (ai.kind) {
+      case AiKind.feePaid:
+        final y = ai.year;
+        return list
+            .where((m) => y.isEmpty
+                ? m.feeYears.values.any((v) => v)
+                : m.feeYears[y] == true)
+            .toList();
+      case AiKind.lifetime:
+        return list.where((m) => m.lifetimeMember).toList();
+      case AiKind.training:
+        final kw = ai.keyword.trim();
+        if (kw.isEmpty) {
+          return list.where((m) => m.trainingStatus.trim().isNotEmpty).toList();
+        }
+        return list
+            .where((m) =>
+                m.trainingStatus.contains(kw) || m.searchText.contains(kw))
+            .toList();
+      case AiKind.eventAttend:
+        final kw = ai.keyword.trim().toLowerCase();
+        if (kw.isEmpty) {
+          return list
+              .where((m) => m.eventAttend.values.any((v) => v))
+              .toList();
+        }
+        return list.where((m) {
+          // 행사명 키워드가 참석 행사명에 포함되면 매칭
+          return m.eventAttend.keys
+              .any((e) => e.toLowerCase().contains(kw) && m.eventAttend[e] == true);
+        }).toList();
+      case AiKind.donor:
+        final fs = finance;
+        if (fs == null) return [];
+        final kw = ai.keyword.trim().toLowerCase();
+        // 후원 카테고리 + (선택)키워드/연도로 매칭된 인가번호 집합
+        final numbers = <String>{};
+        for (final t in fs.transactions) {
+          if (t.isExpense) continue;
+          final isDonation = t.category == '후원' ||
+              t.category == '찬조' ||
+              t.category == '기부' ||
+              t.category.contains('후원');
+          if (!isDonation) continue;
+          if (ai.year.isNotEmpty && t.year != ai.year) continue;
+          if (kw.isNotEmpty) {
+            final hay = '${t.event} ${t.memo} ${t.context} ${t.payer}'
+                .toLowerCase();
+            if (!hay.contains(kw)) continue;
+          }
+          final no = t.number.replaceAll(RegExp(r'[^0-9]'), '');
+          if (no.isNotEmpty) numbers.add(no);
+        }
+        return list
+            .where((m) =>
+                numbers.contains(m.number.replaceAll(RegExp(r'[^0-9]'), '')))
+            .toList();
+    }
+  }
 
   void setQuery(String q) {
     _query = q;

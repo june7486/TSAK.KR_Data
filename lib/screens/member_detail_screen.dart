@@ -12,6 +12,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import 'finance_transaction_edit_screen.dart';
+import 'export_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 
@@ -45,6 +46,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             flexibleSpace: FlexibleSpaceBar(background: _header(m)),
             actions: [
               const AppHomeEmblem(size: 24),
+              IconButton(
+                icon: const Icon(Icons.ios_share),
+                tooltip: '개인정보 출력 (PDF·JPG·엑셀·워드·PPT)',
+                onPressed: () => _exportPersonal(m),
+              ),
               IconButton(
                 icon: const Icon(Icons.qr_code_2),
                 tooltip: 'QR코드',
@@ -603,6 +609,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final rows = <List<String>>[
       ['소속대', m.unit],
       ['인가일', m.date],
+      ['생일', m.birthday],
+      ['기념일', m.anniversary],
+      ['훈련현황', m.trainingStatus],
       ['ATAS 인가번호', m.atasNo],
       ['핸드폰', m.phone],
       ['이메일', m.email],
@@ -720,6 +729,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
     );
     if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// 개인정보 최종 출력 — 선택한 형식(PDF/JPG/엑셀/워드/PPT)으로 내보낸다.
+  void _exportPersonal(Member m) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExportScreen(
+          members: [m],
+          title: '개인정보 출력 — ${m.name} (#${m.number})',
+        ),
+      ),
+    );
   }
 }
 

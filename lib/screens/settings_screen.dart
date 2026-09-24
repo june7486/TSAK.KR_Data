@@ -175,7 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: pwCtrl,
               obscureText: true,
               decoration: const InputDecoration(
-                labelText: '앱 비밀번호 (Tsak1988!!)',
+                labelText: '앱비밀번호 입력',
               ),
             ),
           ],
@@ -400,12 +400,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: const Icon(Icons.email, size: 18),
                   label: const Text('개발자에게 메일'),
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _showPasswordGuide,
-                  icon: const Icon(Icons.password, size: 18),
-                  label: const Text('비밀번호 안내'),
-                ),
+                // 비밀번호 체계 안내는 마스터로 로그인한 경우에만 노출
+                if (state.isMaster) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showPasswordGuide(state),
+                    icon: const Icon(Icons.password, size: 18),
+                    label: const Text('비밀번호 안내'),
+                  ),
+                ],
               ],
             ),
           ],
@@ -414,22 +417,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showPasswordGuide() {
+  void _showPasswordGuide(AppState state) {
+    // 현재 설정된 앱 접근 비밀번호(서버/로컬 설정 반영, 없으면 기본값)
+    final curApp = '${state.adminState['appPassword'] ?? AppConfig.appPassword}';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('비밀번호 체계 안내'),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('• 앱 접근: Tsak1988!! (1시간 유지)',
+            Text('• 앱 접근: $curApp (1시간 유지)',
+                style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 4),
+            const Text('• 개인 접근: 인가번호 + !@@ (예: 0000!@@)',
                 style: TextStyle(fontSize: 13)),
-            SizedBox(height: 4),
-            Text('• 개인 접근: 인가번호 + !@@ (예: 0000!@@)',
-                style: TextStyle(fontSize: 13)),
-            SizedBox(height: 4),
-            Text('• 마스터: 모든 기능/통제 (변경 불가)',
+            const SizedBox(height: 4),
+            const Text('• 마스터: 모든 기능/통제 (변경 불가)',
                 style: TextStyle(fontSize: 13)),
           ],
         ),

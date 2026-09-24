@@ -155,6 +155,9 @@ class MemberRepository {
           atasNo: '${m['atasNo'] ?? ''}',
           activity: '${m['activity'] ?? ''}',
           memo: '${m['memo'] ?? ''}',
+          birthday: '${m['birthday'] ?? ''}',
+          anniversary: '${m['anniversary'] ?? ''}',
+          trainingStatus: '${m['trainingStatus'] ?? ''}',
         );
         batch[member.id] = member.toMap();
       }
