@@ -326,6 +326,60 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 개인 접근 전용 — 명단 아래 "개인정보 수정" 액션 바
+  Widget _personalActionBar(AppState state) {
+    final me = state.who.isNotEmpty
+        ? state.byNumber(state.who)
+        : (state.members.isNotEmpty ? state.members.first : null);
+    return Material(
+      color: Colors.white,
+      elevation: 6,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: me == null
+                    ? null
+                    : () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MemberEditScreen(memberId: me.id),
+                          ),
+                        );
+                        if (mounted) context.read<AppState>().refresh();
+                      },
+                icon: const Icon(Icons.edit_note, size: 19),
+                label: const Text(
+                  '개인정보 수정',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.taegeukBlue,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: me == null
+                  ? null
+                  : () => _openPasswordMenuItem(state, me),
+              icon: const Icon(Icons.password, size: 18),
+              label: const Text('비밀번호'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 하단: 명단 크기 조절 + 초소형 버전(최종 수정 일시)
   Widget _bottomBar(BuildContext context, AppState state) {
     return Material(
@@ -1259,18 +1313,72 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showLostPasswordDialog() {
+    final adminEmail = context.read<AppState>().adminEmail;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.help_outline, color: AppColors.purple, size: 32),
         title: const Text('비밀번호를 분실하셨나요?', textAlign: TextAlign.center),
-        content: const Text(
-          '비밀번호를 분실한 경우 관리자에게 문의하세요.\n\n'
-          '· 관리자(마스터)가 인가번호 기준으로\n'
-          '  비밀번호를 초기화하거나 재설정할 수 있습니다.\n'
-          '· 초기화 시 기본값은 「본인 인가번호!@@」 입니다.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13, height: 1.5),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '비밀번호를 분실한 경우 관리자에게 문의하세요.\n\n'
+              '· 관리자(마스터)가 인가번호 기준으로\n'
+              '  비밀번호를 초기화하거나 재설정할 수 있습니다.\n'
+              '· 초기화 시 기본값은 「본인 인가번호!@@」 입니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.purple.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.mail_outline,
+                    size: 16,
+                    color: AppColors.purple,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    '관리자: ',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    adminEmail,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purple,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: adminEmail));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('관리자 이메일이 복사되었습니다'),
+                    duration: Duration(milliseconds: 900),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy, size: 15),
+              label: const Text('이메일 복사'),
+            ),
+          ],
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [

@@ -235,7 +235,13 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.directions_run,
                 maxLines: 2,
               ),
-              _field('메모', _memo, hint: '자유 메모', icon: Icons.notes, maxLines: 3),
+              _field(
+                '메모',
+                _memo,
+                hint: '자유 메모',
+                icon: Icons.notes,
+                maxLines: 3,
+              ),
               const SizedBox(height: 8),
               _feeEditor(),
               const SizedBox(height: 10),
@@ -468,32 +474,89 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
           hintText: hint,
           prefixIcon: icon != null ? Icon(icon, size: 20) : null,
           suffixIcon: readOnly
-              ? const Icon(Icons.lock_outline, size: 18,
-                  color: AppColors.textGray)
+              ? const Icon(
+                  Icons.lock_outline,
+                  size: 18,
+                  color: AppColors.textGray,
+                )
               : null,
         ),
       ),
     );
   }
 
-  /// 훈련현황 선택 필드 (중급/상급/커미셔너과정/부교수/교수)
+  /// 훈련현황 선택 필드 — 복수 선택 가능 (중급/상급/커미셔너과정/부교수/교수)
   Widget _trainingStatusField() {
+    final selected = _trainingStatus
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: DropdownButtonFormField<String>(
-        initialValue:
-            _trainingOptions.contains(_trainingStatus) ? _trainingStatus : null,
-        isExpanded: true,
-        decoration: const InputDecoration(
-          labelText: '훈련현황',
-          prefixIcon: Icon(Icons.school, size: 20),
-        ),
-        hint: const Text('훈련 과정을 선택하세요'),
-        items: [
-          for (final t in _trainingOptions)
-            DropdownMenuItem(value: t, child: Text(t)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.school, size: 18, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Text(
+                '훈련현황',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const Spacer(),
+              if (selected.isNotEmpty)
+                Text(
+                  '${selected.length}개 선택',
+                  style: const TextStyle(fontSize: 11, color: AppColors.purple),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '※ 훈련 과정은 복수 선택이 가능합니다 (여러 과정 이수 시 모두 선택)',
+            style: TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in _trainingOptions)
+                FilterChip(
+                  label: Text(t),
+                  selected: selected.contains(t),
+                  showCheckmark: true,
+                  checkmarkColor: Colors.white,
+                  selectedColor: AppColors.purple,
+                  labelStyle: TextStyle(
+                    color: selected.contains(t)
+                        ? Colors.white
+                        : AppColors.textDark,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
+                  onSelected: (on) {
+                    setState(() {
+                      if (on) {
+                        selected.add(t);
+                      } else {
+                        selected.remove(t);
+                      }
+                      // 표준 순서로 정렬 저장
+                      _trainingStatus = _trainingOptions
+                          .where((o) => selected.contains(o))
+                          .join(', ');
+                    });
+                  },
+                ),
+            ],
+          ),
         ],
-        onChanged: (v) => setState(() => _trainingStatus = v ?? ''),
       ),
     );
   }
