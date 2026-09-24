@@ -400,7 +400,7 @@ class NasApi {
   Future<bool> deleteEventMedia(String name) async {
     final r = await http
         .post(
-          _uri('/api/event/delete'),
+          _uri('/api/event/media/delete'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'name': name}),
         )
