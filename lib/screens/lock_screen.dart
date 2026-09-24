@@ -11,18 +11,30 @@ import '../widgets/privacy_consent.dart';
 ///  - 비인가자 접근: ID "휴대폰 전화번호" + 비밀번호(뒤 4자리) / 신규회원 생성
 ///  - 마스터 접근: Corbuser7!@@ (모든 기능/통제, 불변)
 class LockScreen extends StatefulWidget {
-  const LockScreen({super.key, this.onUnlocked});
+  const LockScreen({
+    super.key,
+    this.onUnlocked,
+    this.initialTier = 'app',
+    this.initialId = '',
+  });
 
   final VoidCallback? onUnlocked;
+
+  /// 시작 탭 (QR 딥링크 등에서 지정)
+  final String initialTier;
+
+  /// 시작 시 프리필할 ID (QR 인가번호 등)
+  final String initialId;
 
   @override
   State<LockScreen> createState() => _LockScreenState();
 }
 
 class _LockScreenState extends State<LockScreen> {
-  String _tier = 'app';
+  late String _tier = widget.initialTier;
   final _ctrl = TextEditingController();
-  final _idCtrl = TextEditingController();
+  late final TextEditingController _idCtrl =
+      TextEditingController(text: widget.initialId);
   bool _obscure = true;
   bool _busy = false;
   String? _error;

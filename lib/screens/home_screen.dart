@@ -23,7 +23,10 @@ import 'source_folder_screen.dart';
 import 'stats_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.openMemberNo = ''});
+
+  /// 로그인 직후 자동으로 열 개인정보 편집 인가번호 (QR 딥링크)
+  final String openMemberNo;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -34,6 +37,31 @@ class _HomeScreenState extends State<HomeScreen> {
   final _scroll = ScrollController();
   bool _selectMode = false;
   final Set<String> _selected = {};
+  bool _deepLinkHandled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openMemberNo.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkMember());
+    }
+  }
+
+  /// QR 딥링크 — 로그인 후 해당 인가자 정보 편집 페이지를 바로 연다.
+  Future<void> _openDeepLinkMember() async {
+    if (_deepLinkHandled) return;
+    _deepLinkHandled = true;
+    final no = widget.openMemberNo.replaceAll(RegExp(r'[^0-9]'), '');
+    if (no.isEmpty) return;
+    final state = context.read<AppState>();
+    final m = state.byNumber(no);
+    if (m == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
+    );
+    if (mounted) context.read<AppState>().refresh();
+  }
 
   @override
   void dispose() {

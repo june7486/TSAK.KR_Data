@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
@@ -66,15 +67,30 @@ class _AuthGateState extends State<AuthGate> {
   Timer? _timer;
   bool _initialized = false;
 
+  /// QR 딥링크 파라미터 (?access=personal&no=415)
+  String _prefillNo = '';
+
   @override
   void initState() {
     super.initState();
+    _readDeepLink();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final state = context.read<AppState>();
       await state.restoreSession();
       if (mounted) setState(() => _initialized = true);
       _startTimer();
     });
+  }
+
+  /// URL 쿼리스트링에서 인가자 QR 딥링크를 읽는다 (웹).
+  void _readDeepLink() {
+    if (!kIsWeb) return;
+    final uri = Uri.base;
+    final no = uri.queryParameters['no'] ?? '';
+    final access = uri.queryParameters['access'] ?? '';
+    if (access == 'personal' && no.isNotEmpty) {
+      _prefillNo = no.replaceAll(RegExp(r'[^0-9]'), '');
+    }
   }
 
   void _startTimer() {
@@ -105,8 +121,12 @@ class _AuthGateState extends State<AuthGate> {
     }
     final state = context.watch<AppState>();
     if (!state.unlocked || !state.sessionValid) {
-      return LockScreen(onUnlocked: () => setState(() {}));
+      return LockScreen(
+        onUnlocked: () => setState(() {}),
+        initialTier: _prefillNo.isNotEmpty ? 'personal' : 'app',
+        initialId: _prefillNo,
+      );
     }
-    return const HomeScreen();
+    return HomeScreen(openMemberNo: _prefillNo);
   }
 }
