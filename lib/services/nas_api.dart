@@ -10,16 +10,15 @@ import 'app_config.dart';
 /// baseUrl 이 비어 있으면 웹앱과 동일 origin(상대경로)으로 호출한다.
 class NasApi {
   NasApi({String? baseUrl})
-      : _base = (baseUrl ?? AppConfig.defaultServerBase).replaceAll(
-          RegExp(r'/+$'),
-          '',
-        );
+    : _base = (baseUrl ?? AppConfig.defaultServerBase).replaceAll(
+        RegExp(r'/+$'),
+        '',
+      );
 
   String _base;
 
   String get baseUrl => _base;
-  set baseUrl(String v) =>
-      _base = v.replaceAll(RegExp(r'/+$'), '');
+  set baseUrl(String v) => _base = v.replaceAll(RegExp(r'/+$'), '');
 
   Uri _uri(String path) => Uri.parse('$_base$path');
 
@@ -70,9 +69,7 @@ class NasApi {
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     final list = (j['members'] as List?) ?? [];
-    return list
-        .map((e) => Member.fromMap(e as Map))
-        .toList();
+    return list.map((e) => Member.fromMap(e as Map)).toList();
   }
 
   /// 전체 DB 저장(서버가 자동 백업 후 교체)
@@ -181,8 +178,11 @@ class NasApi {
   }
 
   // ---- Photos ----
-  Future<bool> uploadPhoto(String number, List<int> bytes,
-      {String ext = 'jpg'}) async {
+  Future<bool> uploadPhoto(
+    String number,
+    List<int> bytes, {
+    String ext = 'jpg',
+  }) async {
     final r = await http
         .post(
           _uri('/api/photo/$number'),
@@ -204,8 +204,7 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> saveFinance(
-      Map<String, dynamic> finance) async {
+  Future<Map<String, dynamic>> saveFinance(Map<String, dynamic> finance) async {
     final r = await http
         .post(
           _uri('/api/finance'),
@@ -246,7 +245,9 @@ class NasApi {
   /// 반환: { rows: [...], count: N, engine: 'excel'|'ocr' }
   /// 이미지/PDF는 서버가 OCR로 자동 분석한다.
   Future<Map<String, dynamic>> parseBankFull(
-      String filename, List<int> bytes) async {
+    String filename,
+    List<int> bytes,
+  ) async {
     final r = await http
         .post(
           _uri('/api/finance/parse-bank'),
@@ -262,7 +263,9 @@ class NasApi {
 
   /// 은행거래파일 → 서버 자동분류 행 목록 (하위 호환)
   Future<List<Map<String, dynamic>>> parseBank(
-      String filename, List<int> bytes) async {
+    String filename,
+    List<int> bytes,
+  ) async {
     final j = await parseBankFull(filename, bytes);
     return ((j['rows'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
@@ -291,7 +294,10 @@ class NasApi {
 
   /// 기본자료 폴더에 파일 업로드(+자동분석)
   Future<Map<String, dynamic>> uploadFile(
-      String folder, String name, List<int> bytes) async {
+    String folder,
+    String name,
+    List<int> bytes,
+  ) async {
     final r = await http
         .post(
           _uri('/api/files'),
@@ -309,6 +315,72 @@ class NasApi {
   String fileDownloadUrl(String folder, String name) =>
       '$_base/api/files/download?folder=${Uri.encodeComponent(folder)}&name=${Uri.encodeComponent(name)}';
 
+  // ---- 행사관리 (행사 사진·동영상 갤러리) ----
+  /// 행사관리 폴더의 미디어 목록 (사진/동영상)
+  Future<List<Map<String, dynamic>>> eventList() async {
+    final r = await http
+        .get(_uri('/api/event/list'))
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['files'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 행사 미디어 원본 URL (view=보기, download=다운로드)
+  String eventFileUrl(String name, {bool download = false}) =>
+      '$_base/api/event/file?name=${Uri.encodeComponent(name)}'
+      '${download ? '&dl=1' : ''}';
+
+  /// 행사 썸네일 URL (없으면 404 → 원본 사용)
+  String eventThumbUrl(String name) =>
+      '$_base/api/event/thumb?name=${Uri.encodeComponent(name)}';
+
+  /// 행사 미디어 업로드 — 대용량 스트리밍(무제한), 진행률 콜백 지원
+  Future<Map<String, dynamic>> uploadEventMedia(
+    String name,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final uri = Uri.parse(
+      '$_base/api/event/upload?name=${Uri.encodeComponent(name)}',
+    );
+    final req = http.StreamedRequest('POST', uri);
+    req.headers['Content-Type'] = contentType;
+    req.headers['Content-Length'] = '${bytes.length}';
+    // 스트리밍 전송 (메모리 청크)
+    const chunk = 262144;
+    var sent = 0;
+    Future<void> pump() async {
+      for (var i = 0; i < bytes.length; i += chunk) {
+        final end = (i + chunk < bytes.length) ? i + chunk : bytes.length;
+        req.sink.add(bytes.sublist(i, end));
+        sent = end;
+        onProgress?.call(sent, bytes.length);
+      }
+      await req.sink.close();
+    }
+
+    pump();
+    final streamed = await req.send().timeout(const Duration(seconds: 1200));
+    final resp = await http.Response.fromStream(streamed);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 행사 미디어 삭제
+  Future<bool> deleteEventMedia(String name) async {
+    final r = await http
+        .post(
+          _uri('/api/event/delete'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'name': name}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
   /// 통합 재무 엑셀 다운로드 URL
   String financeExcelUrl([String kind = 'finance']) =>
       '$_base/api/finance/excel?kind=$kind';
@@ -322,7 +394,9 @@ class NasApi {
   }
 
   Future<Map<String, dynamic>> changeAppPassword(
-      String master, String newPw) async {
+    String master,
+    String newPw,
+  ) async {
     final r = await http
         .post(
           _uri('/api/admin/app-password'),
@@ -354,8 +428,30 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 개인 셀프 비밀번호 변경 (본인) — 현재 비번 검증 후 새 비번 저장
+  Future<Map<String, dynamic>> changePersonalPassword(
+    String number,
+    String current,
+    String newPw,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/personal/password'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'number': number,
+            'current': current,
+            'new': newPw,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> setServerPaused(
-      String master, bool paused) async {
+    String master,
+    bool paused,
+  ) async {
     final r = await http
         .post(
           _uri('/api/admin/server-pause'),

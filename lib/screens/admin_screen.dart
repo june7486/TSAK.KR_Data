@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -34,9 +35,7 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     if (!state.isMaster) {
-      return const Scaffold(
-        body: Center(child: Text('마스터만 접근할 수 있습니다')),
-      );
+      return const Scaffold(body: Center(child: Text('마스터만 접근할 수 있습니다')));
     }
     return Scaffold(
       appBar: AppBar(
@@ -61,13 +60,15 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _title(String t, IconData icon, Color color) => Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 8),
-          Text(t,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-        ],
-      );
+    children: [
+      Icon(icon, color: color, size: 20),
+      const SizedBox(width: 8),
+      Text(
+        t,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+      ),
+    ],
+  );
 
   // ---- 3) 앱 서버 일시 정지 ----
   Widget _serverPauseCard(AppState state) {
@@ -79,8 +80,11 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title('앱 서버 일시 정지', Icons.pause_circle_outline,
-                paused ? AppColors.taegeukRed : AppColors.purple),
+            _title(
+              '앱 서버 일시 정지',
+              Icons.pause_circle_outline,
+              paused ? AppColors.taegeukRed : AppColors.purple,
+            ),
             const SizedBox(height: 8),
             Text(
               paused
@@ -94,10 +98,13 @@ class _AdminScreenState extends State<AdminScreen> {
                 Expanded(
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      backgroundColor:
-                          paused ? AppColors.scoutGreen : AppColors.taegeukRed,
+                      backgroundColor: paused
+                          ? AppColors.scoutGreen
+                          : AppColors.taegeukRed,
                     ),
-                    onPressed: _busy ? null : () => _togglePause(state, !paused),
+                    onPressed: _busy
+                        ? null
+                        : () => _togglePause(state, !paused),
                     icon: Icon(paused ? Icons.play_arrow : Icons.pause),
                     label: Text(paused ? '서버 재개' : '서버 일시 정지'),
                   ),
@@ -134,9 +141,10 @@ class _AdminScreenState extends State<AdminScreen> {
           children: [
             _title('앱 접근 비밀번호', Icons.password, AppColors.taegeukBlue),
             const SizedBox(height: 8),
-            Text('현재: $cur',
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700)),
+            Text(
+              '현재: $cur',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: _busy ? null : () => _changeAppPassword(state),
@@ -173,17 +181,22 @@ class _AdminScreenState extends State<AdminScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('변경')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('변경'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
     setState(() => _busy = true);
-    final err = await state.changeAppPassword(masterCtrl.text, newCtrl.text.trim());
+    final err = await state.changeAppPassword(
+      masterCtrl.text,
+      newCtrl.text.trim(),
+    );
     await state.loadAdmin();
     if (mounted) setState(() => _busy = false);
     if (mounted) {
@@ -202,18 +215,23 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title('개인 비밀번호 초기화 / 변경', Icons.person_outline,
-                AppColors.scoutGreen),
+            _title(
+              '개인 비밀번호 초기화 / 재설정',
+              Icons.person_outline,
+              AppColors.scoutGreen,
+            ),
             const SizedBox(height: 8),
             const Text(
-              '개인 접근 기본값은 「인가번호!@@」 입니다.\n'
-              '초기화하면 기본값으로 되돌리고, 변경하면 지정 비밀번호로 설정합니다.',
+              '특정 인가자를 선택해 비밀번호를 초기화(기본값)하거나 재설정할 수 있습니다.\n'
+              '기본값은 「인가번호!@@」 입니다.',
               style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
             ),
             if (pws.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('변경 지정된 번호: ${pws.keys.join(', ')}',
-                  style: const TextStyle(fontSize: 11.5, color: AppColors.purple)),
+              Text(
+                '변경 지정된 번호: ${pws.keys.join(', ')}',
+                style: const TextStyle(fontSize: 11.5, color: AppColors.purple),
+              ),
             ],
             const SizedBox(height: 10),
             Row(
@@ -224,7 +242,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         ? null
                         : () => _managePersonal(state, reset: false),
                     icon: const Icon(Icons.settings, size: 18),
-                    label: const Text('개인비번 변경'),
+                    label: const Text('비번 재설정'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -246,63 +264,176 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _managePersonal(AppState state, {required bool reset}) async {
-    final noCtrl = TextEditingController();
+    // 인가번호 입력 대신 "인가자 선택"으로 지정 (오타 방지)
+    final member = await _pickMember(state);
+    if (member == null) return;
+    await _applyPersonalPassword(state, member, reset: reset);
+  }
+
+  /// 특정 인가자 선택 — 번호/이름 검색 팝업
+  Future<Member?> _pickMember(AppState state) async {
+    final all = state.repo.allUnscoped();
+    final ctrl = TextEditingController();
+    return showDialog<Member>(
+      context: context,
+      builder: (ctx) {
+        var query = '';
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final list = query.trim().isEmpty
+                ? all
+                : all.where((m) {
+                    final q = query.trim().toLowerCase();
+                    return m.number.contains(q) ||
+                        m.name.toLowerCase().contains(q) ||
+                        m.unit.toLowerCase().contains(q);
+                  }).toList();
+            return AlertDialog(
+              title: const Text('인가자 선택'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 420,
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      onChanged: (v) => setLocal(() => query = v),
+                      decoration: const InputDecoration(
+                        hintText: '인가번호 또는 이름으로 검색',
+                        prefixIcon: Icon(Icons.search, size: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: list.isEmpty
+                          ? const Center(child: Text('검색 결과가 없습니다'))
+                          : ListView.builder(
+                              itemCount: list.length,
+                              itemBuilder: (c, i) {
+                                final m = list[i];
+                                return ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: AppColors.purple
+                                        .withValues(alpha: 0.12),
+                                    child: Text(
+                                      m.number,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.purple,
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    '${m.name.isEmpty ? '(이름없음)' : m.name}'
+                                    ' · #${m.number}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  subtitle: Text(
+                                    m.unit,
+                                    style: const TextStyle(fontSize: 11),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onTap: () => Navigator.pop(ctx, m),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('취소'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 선택한 인가자에 대해 마스터가 초기화(기본값) 또는 재설정(지정값)
+  Future<void> _applyPersonalPassword(
+    AppState state,
+    Member member, {
+    required bool reset,
+  }) async {
     final valCtrl = TextEditingController();
     final masterCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(reset ? '개인 비밀번호 초기화' : '개인 비밀번호 변경'),
+        title: Text(reset ? '개인 비밀번호 초기화' : '개인 비밀번호 재설정'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              controller: noCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '인가번호 (예: 415)'),
+            Text(
+              '#${member.number} ${member.name}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppColors.purple,
+              ),
             ),
-            if (!reset) ...[
-              const SizedBox(height: 8),
+            const SizedBox(height: 8),
+            if (!reset)
               TextField(
                 controller: valCtrl,
-                decoration:
-                    const InputDecoration(labelText: '새 개인 비밀번호'),
+                decoration: const InputDecoration(labelText: '새 개인 비밀번호'),
               ),
-            ],
-            const SizedBox(height: 8),
+            if (!reset) const SizedBox(height: 8),
             TextField(
               controller: masterCtrl,
               obscureText: true,
               decoration: const InputDecoration(labelText: '마스터 비밀번호 확인'),
             ),
-            const SizedBox(height: 6),
-            if (reset)
-              Text('초기화하면 ${noCtrl.text} → ${noCtrl.text}!@@ 로 되돌아갑니다.',
-                  style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+            const SizedBox(height: 8),
+            Text(
+              reset
+                  ? '초기화하면 ${member.number} → ${member.number}!@@ 로 되돌아갑니다.'
+                  : '지정한 비밀번호로 재설정합니다.',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(reset ? '초기화' : '변경')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(reset ? '초기화' : '재설정'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
     setState(() => _busy = true);
     final err = await state.setPersonalPassword(
-      masterCtrl.text,
-      noCtrl.text.trim(),
+      masterCtrl.text.trim(),
+      member.number,
       value: valCtrl.text.trim(),
       reset: reset,
     );
     if (mounted) setState(() => _busy = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err == null ? '적용되었습니다' : '실패: $err')),
+        SnackBar(
+          content: Text(
+            err == null
+                ? (reset
+                      ? '#${member.number} ${member.name} 비밀번호를 초기화했습니다 (${member.number}!@@)'
+                      : '#${member.number} ${member.name} 비밀번호를 재설정했습니다')
+                : '실패: $err',
+          ),
+        ),
       );
     }
   }
@@ -365,9 +496,9 @@ class _AdminScreenState extends State<AdminScreen> {
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     if (list.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('백업본이 없습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('백업본이 없습니다')));
       return;
     }
     showDialog(
@@ -384,9 +515,14 @@ class _AdminScreenState extends State<AdminScreen> {
               return ListTile(
                 dense: true,
                 leading: const Icon(Icons.description, size: 20),
-                title: Text('${b['name']}', style: const TextStyle(fontSize: 12.5)),
-                subtitle: Text('${b['size']} bytes',
-                    style: const TextStyle(fontSize: 11)),
+                title: Text(
+                  '${b['name']}',
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+                subtitle: Text(
+                  '${b['size']} bytes',
+                  style: const TextStyle(fontSize: 11),
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _restore(state, '${b['name']}');
@@ -397,7 +533,9 @@ class _AdminScreenState extends State<AdminScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -417,9 +555,10 @@ class _AdminScreenState extends State<AdminScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(members != null
-                ? '복구 완료 (${members.length}명) · $name'
-                : '복구 실패')),
+          content: Text(
+            members != null ? '복구 완료 (${members.length}명) · $name' : '복구 실패',
+          ),
+        ),
       );
     }
   }
@@ -433,8 +572,10 @@ class _AdminScreenState extends State<AdminScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('$action 을(를) 진행하려면 마스터 비밀번호를 입력하세요.',
-                style: const TextStyle(fontSize: 13)),
+            Text(
+              '$action 을(를) 진행하려면 마스터 비밀번호를 입력하세요.',
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 10),
             TextField(
               controller: ctrl,
@@ -445,11 +586,13 @@ class _AdminScreenState extends State<AdminScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('확인')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('확인'),
+          ),
         ],
       ),
     );

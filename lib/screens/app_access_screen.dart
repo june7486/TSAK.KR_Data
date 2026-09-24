@@ -145,7 +145,7 @@ class AppAccessScreen extends StatelessWidget {
                     Text('• 앱 접근: 관리자에게 문의 (1시간마다 재입력)',
                         style: TextStyle(fontSize: 12.5)),
                     SizedBox(height: 3),
-                    Text('• 개인 접근: 본인 인가번호 + !@@  (예: 415!@@)',
+                    Text('• 개인 접근: 본인 인가번호 + !@@  (예: 0000!@@)',
                         style: TextStyle(fontSize: 12.5)),
                   ],
                 ),

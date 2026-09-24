@@ -145,7 +145,9 @@ class AppState extends ChangeNotifier {
     try {
       final p = await SharedPreferences.getInstance();
       await p.setInt(
-          AppConfig.kSessionTs, _sessionStart!.millisecondsSinceEpoch);
+        AppConfig.kSessionTs,
+        _sessionStart!.millisecondsSinceEpoch,
+      );
       await p.setString(AppConfig.kAuthTier, _tier);
       await p.setString(AppConfig.kAuthWho, _who);
     } catch (_) {}
@@ -319,18 +321,34 @@ class AppState extends ChangeNotifier {
     bool reset = false,
   }) async {
     try {
-      final r = await nas.setPersonalPassword(master, number,
-          value: value, reset: reset);
+      final r = await nas.setPersonalPassword(
+        master,
+        number,
+        value: value,
+        reset: reset,
+      );
       if (r['ok'] == true) {
         _admin = {
           ..._admin,
           'personalPasswords': {
             ...((_admin['personalPasswords'] as Map?) ?? {}),
-          }
+          },
         };
         await loadAdmin();
         return null;
       }
+      return '${r['error'] ?? '실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  /// 개인 셀프 비밀번호 변경 (본인) — 성공 시 null, 실패 시 오류 메시지
+  Future<String?> changePersonalPassword(String current, String newPw) async {
+    if (who.isEmpty) return '본인 인가번호를 확인할 수 없습니다';
+    try {
+      final r = await nas.changePersonalPassword(who, current, newPw);
+      if (r['ok'] == true) return null;
       return '${r['error'] ?? '실패'}';
     } catch (e) {
       return '$e';
@@ -411,8 +429,9 @@ class AppState extends ChangeNotifier {
 
   int get total => repo.count;
   int get lifetimeCount => _filterBase().where((m) => m.lifetimeMember).length;
-  Map<String, int> get feeCountMap =>
-      {for (final e in repo.feeCountsByYear()) e.key: e.value};
+  Map<String, int> get feeCountMap => {
+    for (final e in repo.feeCountsByYear()) e.key: e.value,
+  };
 
   void _onRepoChanged() {
     refresh();
@@ -449,16 +468,15 @@ class AppState extends ChangeNotifier {
     }
 
     // 2) 인가번호 범위 검색: "1-100", "500 - 1000"
-    final range = RegExp(r'^\s*(\d{1,5})\s*[-~]\s*(\d{1,5})\s*$')
-        .firstMatch(rawQuery);
+    final range = RegExp(
+      r'^\s*(\d{1,5})\s*[-~]\s*(\d{1,5})\s*$',
+    ).firstMatch(rawQuery);
     if (range != null) {
       final a = int.parse(range.group(1)!);
       final b = int.parse(range.group(2)!);
       final lo = a <= b ? a : b;
       final hi = a <= b ? b : a;
-      return list
-          .where((m) => m.numberInt >= lo && m.numberInt <= hi)
-          .toList();
+      return list.where((m) => m.numberInt >= lo && m.numberInt <= hi).toList();
     }
 
     // 3) 일반 통합검색 — 하이픈 무관 전화번호 매칭 포함
@@ -473,15 +491,14 @@ class AppState extends ChangeNotifier {
       // 하이픈을 제거한 숫자열이 전화번호에 포함되면 매칭 (예: 01012345678)
       if (qLooksLikePhone && m.phoneDigits.contains(qDigits)) return true;
       // 행사명(참석한 행사)으로 검색 — 행사 참가자 명단
-      if (m.eventAttend.keys
-          .any((e) => e.toLowerCase().contains(q))) {
+      if (m.eventAttend.keys.any((e) => e.toLowerCase().contains(q))) {
         return true;
       }
       return false;
     }).toList();
   }
 
-  List<Member> _filterBase() => repo.all();
+  List<Member> _filterBase() => isPersonal ? repo.allUnscoped() : repo.all();
 
   /// AI 자연어 검색 결과 적용
   List<Member> _applyAiQuery(List<Member> list, AiQuery ai) {
@@ -489,9 +506,11 @@ class AppState extends ChangeNotifier {
       case AiKind.feePaid:
         final y = ai.year;
         return list
-            .where((m) => y.isEmpty
-                ? m.feeYears.values.any((v) => v)
-                : m.feeYears[y] == true)
+            .where(
+              (m) => y.isEmpty
+                  ? m.feeYears.values.any((v) => v)
+                  : m.feeYears[y] == true,
+            )
             .toList();
       case AiKind.lifetime:
         return list.where((m) => m.lifetimeMember).toList();
@@ -501,20 +520,20 @@ class AppState extends ChangeNotifier {
           return list.where((m) => m.trainingStatus.trim().isNotEmpty).toList();
         }
         return list
-            .where((m) =>
-                m.trainingStatus.contains(kw) || m.searchText.contains(kw))
+            .where(
+              (m) => m.trainingStatus.contains(kw) || m.searchText.contains(kw),
+            )
             .toList();
       case AiKind.eventAttend:
         final kw = ai.keyword.trim().toLowerCase();
         if (kw.isEmpty) {
-          return list
-              .where((m) => m.eventAttend.values.any((v) => v))
-              .toList();
+          return list.where((m) => m.eventAttend.values.any((v) => v)).toList();
         }
         return list.where((m) {
           // 행사명 키워드가 참석 행사명에 포함되면 매칭
-          return m.eventAttend.keys
-              .any((e) => e.toLowerCase().contains(kw) && m.eventAttend[e] == true);
+          return m.eventAttend.keys.any(
+            (e) => e.toLowerCase().contains(kw) && m.eventAttend[e] == true,
+          );
         }).toList();
       case AiKind.donor:
         final fs = finance;
@@ -524,7 +543,8 @@ class AppState extends ChangeNotifier {
         final numbers = <String>{};
         for (final t in fs.transactions) {
           if (t.isExpense) continue;
-          final isDonation = t.category == '후원' ||
+          final isDonation =
+              t.category == '후원' ||
               t.category == '찬조' ||
               t.category == '기부' ||
               t.category.contains('후원');
@@ -539,8 +559,10 @@ class AppState extends ChangeNotifier {
           if (no.isNotEmpty) numbers.add(no);
         }
         return list
-            .where((m) =>
-                numbers.contains(m.number.replaceAll(RegExp(r'[^0-9]'), '')))
+            .where(
+              (m) =>
+                  numbers.contains(m.number.replaceAll(RegExp(r'[^0-9]'), '')),
+            )
             .toList();
     }
   }
@@ -575,6 +597,18 @@ class AppState extends ChangeNotifier {
 
   Member? byId(String id) => repo.byId(id);
   Member? byNumber(String number) => repo.byNumber(number);
+
+  /// 개인 접근: 본인 외 인가자도 "명단"으로는 볼 수 있다(연결성).
+  /// 단, 클릭하여 상세를 여는 것은 차단한다(개인정보 보호).
+  List<Member> get personalRoster => repo.allUnscoped();
+
+  /// 개인 접근에서 특정 인가자가 본인인지 여부
+  bool isSelfNumber(String number) {
+    if (!isPersonal || who.isEmpty) return true;
+    final a = who.replaceAll(RegExp(r'[^0-9]'), '');
+    final b = number.replaceAll(RegExp(r'[^0-9]'), '');
+    return a == b;
+  }
 
   Future<void> save(Member m) async {
     await repo.save(m);

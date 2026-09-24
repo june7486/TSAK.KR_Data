@@ -43,6 +43,9 @@ dependencies:
   url_launcher: ^6.3.1
   share_plus: ^10.1.2
 
+  # 행사관리 동영상 재생
+  video_player: ^2.10.0
+
   # 유틸
   intl: ^0.19.0
   http: ^1.2.0

@@ -11,6 +11,7 @@ import 'app_access_screen.dart';
 import 'admin_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
+import 'event_gallery_screen.dart';
 import 'finance_screen.dart';
 import 'import_screen.dart';
 import 'member_detail_screen.dart';
@@ -103,8 +104,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.white.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.qr_code_2,
-                          size: 20, color: Colors.white),
+                      child: const Icon(
+                        Icons.qr_code_2,
+                        size: 20,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ],
@@ -202,7 +206,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => const SourceFolderScreen()),
+                        builder: (_) => const SourceFolderScreen(),
+                      ),
                     );
                     break;
                   case 'select':
@@ -219,24 +224,36 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (ctx) => [
                 if (state.isMaster)
                   const PopupMenuItem(
-                      value: 'admin',
-                      child: Text('앱 관리 — 앱접근 비번 변경/정지/복구')),
+                    value: 'admin',
+                    child: Text('앱 관리 — 앱접근 비번 변경/정지/복구'),
+                  ),
                 if (!state.isPersonal) ...[
                   const PopupMenuItem(
-                      value: 'finance',
-                      child: Text('재무 관리 (후원·수품·참가비)')),
+                    value: 'finance',
+                    child: Text('재무 관리 (후원·수품·참가비)'),
+                  ),
                   const PopupMenuItem(
-                      value: 'source', child: Text('기본자료 폴더 (첨부·자동분석)')),
+                    value: 'source',
+                    child: Text('기본자료 폴더 (첨부·자동분석)'),
+                  ),
                   const PopupMenuItem(
-                      value: 'import', child: Text('자료 가져오기 (AI 인식)')),
+                    value: 'import',
+                    child: Text('자료 가져오기 (AI 인식)'),
+                  ),
                 ],
                 const PopupMenuItem(
-                    value: 'settings', child: Text('설정 · 백업/복원')),
+                  value: 'settings',
+                  child: Text('설정 · 백업/복원'),
+                ),
                 if (!state.isPersonal) ...[
                   const PopupMenuItem(
-                      value: 'refresh', child: Text('NAS 최신 데이터 불러오기')),
+                    value: 'refresh',
+                    child: Text('NAS 최신 데이터 불러오기'),
+                  ),
                   const PopupMenuItem(
-                      value: 'select', child: Text('명단 선택 (일괄작업)')),
+                    value: 'select',
+                    child: Text('명단 선택 (일괄작업)'),
+                  ),
                 ],
                 const PopupMenuItem(value: 'lock', child: Text('잠금')),
               ],
@@ -291,20 +308,20 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: state.isPersonal
           ? null
           : (_selectMode
-              ? FloatingActionButton.extended(
-                  backgroundColor: AppColors.purple,
-                  onPressed: _selected.isEmpty
-                      ? null
-                      : () => _openExport(state, members),
-                  icon: const Icon(Icons.ios_share),
-                  label: Text('내보내기 (${_selected.length})'),
-                )
-              : FloatingActionButton.small(
-                  backgroundColor: AppColors.taegeukRed,
-                  tooltip: '인가자 추가',
-                  onPressed: () => _addNew(state),
-                  child: const Icon(Icons.person_add_alt_1, size: 20),
-                )),
+                ? FloatingActionButton.extended(
+                    backgroundColor: AppColors.purple,
+                    onPressed: _selected.isEmpty
+                        ? null
+                        : () => _openExport(state, members),
+                    icon: const Icon(Icons.ios_share),
+                    label: Text('내보내기 (${_selected.length})'),
+                  )
+                : FloatingActionButton.small(
+                    backgroundColor: AppColors.taegeukRed,
+                    tooltip: '인가자 추가',
+                    onPressed: () => _addNew(state),
+                    child: const Icon(Icons.person_add_alt_1, size: 20),
+                  )),
     );
   }
 
@@ -326,12 +343,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     tooltip: '작게',
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 34, minHeight: 34),
-                    icon: const Icon(Icons.remove_circle_outline,
-                        size: 19, color: AppColors.purple),
-                    onPressed: () =>
-                        state.setListScale(state.listScale - 0.05),
+                    constraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 34,
+                    ),
+                    icon: const Icon(
+                      Icons.remove_circle_outline,
+                      size: 19,
+                      color: AppColors.purple,
+                    ),
+                    onPressed: () => state.setListScale(state.listScale - 0.05),
                   ),
                   const Text(
                     '명단 크기',
@@ -346,11 +367,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       data: SliderTheme.of(context).copyWith(
                         trackHeight: 4,
                         activeTrackColor: AppColors.purple,
-                        inactiveTrackColor:
-                            AppColors.purple.withValues(alpha: 0.15),
+                        inactiveTrackColor: AppColors.purple.withValues(
+                          alpha: 0.15,
+                        ),
                         thumbColor: AppColors.purple,
-                        overlayShape:
-                            const RoundSliderOverlayShape(overlayRadius: 13),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 13,
+                        ),
                       ),
                       child: Slider(
                         value: state.listScale,
@@ -368,17 +391,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     tooltip: '크게',
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 34, minHeight: 34),
-                    icon: const Icon(Icons.add_circle_outline,
-                        size: 19, color: AppColors.purple),
-                    onPressed: () =>
-                        state.setListScale(state.listScale + 0.05),
+                    constraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 34,
+                    ),
+                    icon: const Icon(
+                      Icons.add_circle_outline,
+                      size: 19,
+                      color: AppColors.purple,
+                    ),
+                    onPressed: () => state.setListScale(state.listScale + 0.05),
                   ),
                   Container(
                     constraints: const BoxConstraints(minWidth: 38),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.purple.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(8),
@@ -485,8 +514,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const Icon(Icons.auto_awesome, size: 13, color: Colors.white70),
                 const SizedBox(width: 4),
-                const Text('AI 검색',
-                    style: TextStyle(color: Colors.white70, fontSize: 10)),
+                const Text(
+                  'AI 검색',
+                  style: TextStyle(color: Colors.white70, fontSize: 10),
+                ),
                 const SizedBox(width: 6),
                 for (final ex in const [
                   '2026년 연회비 납부자 명단',
@@ -502,7 +533,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(12),
@@ -537,8 +570,11 @@ class _HomeScreenState extends State<HomeScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                const Icon(Icons.card_membership,
-                    size: 13, color: Colors.white70),
+                const Icon(
+                  Icons.card_membership,
+                  size: 13,
+                  color: Colors.white70,
+                ),
                 const SizedBox(width: 4),
                 const Text(
                   '평생회원수',
@@ -566,11 +602,27 @@ class _HomeScreenState extends State<HomeScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _finButton('후원현황', Icons.volunteer_activism, AppColors.taegeukRed, 1),
-                _finButton('수품구매', Icons.shopping_bag, AppColors.taegeukBlue, 2),
-                _finButton('참가비', Icons.event_available, AppColors.tigerGold, 3),
+                _finButton(
+                  '후원현황',
+                  Icons.volunteer_activism,
+                  AppColors.taegeukRed,
+                  1,
+                ),
+                _finButton(
+                  '수품구매',
+                  Icons.shopping_bag,
+                  AppColors.taegeukBlue,
+                  2,
+                ),
+                _finButton(
+                  '참가비',
+                  Icons.event_available,
+                  AppColors.tigerGold,
+                  3,
+                ),
                 _finButton('지출현황', Icons.payments, Color(0xFF00838F), 4),
                 _finButton('결산', Icons.calculate, AppColors.scoutGreen, 5),
+                _eventButton(),
                 _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
               ],
             ),
@@ -582,78 +634,120 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 홈 첫 페이지 후원 안내 — 컴팩트 한 줄 가로 스크롤(계좌 탭 시 복사)
+  /// 홈 첫 페이지 후원 안내 — 3개 계좌를 작은 글씨로 한눈에(스크롤 없음) + 복사 버튼
   Widget _donationBanner(AppState state) {
     final donations = state.donations;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.5)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.volunteer_activism,
-              color: AppColors.purple, size: 14),
-          const SizedBox(width: 4),
-          const Text(
-            '후원',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-              color: AppColors.textDark,
-            ),
+          Row(
+            children: [
+              const Icon(
+                Icons.volunteer_activism,
+                color: AppColors.purple,
+                size: 14,
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                '후원 계좌',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                state.donationHolder,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  color: AppColors.textGray,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+          const SizedBox(height: 5),
+          // 3개 계좌를 세로로 동시에 표시 (스크롤 없음)
+          for (final d in donations)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 children: [
-                  for (final d in donations)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 5),
-                      child: GestureDetector(
-                        onTap: () {
-                          Clipboard.setData(
-                              ClipboardData(text: '${d['account']}'));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${d['account']} 복사됨'),
-                              duration: const Duration(milliseconds: 900),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.lifetimeGold
-                                .withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${d['label']} ${d['bank']} ${d['account']}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.lifetimeGold,
-                            ),
-                          ),
+                  SizedBox(
+                    width: 60,
+                    child: Text(
+                      '${d['label']}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.lifetimeGold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${d['bank']} ${d['account']}',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: '${d['account']}'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${d['label']} ${d['account']} 복사됨'),
+                          duration: const Duration(milliseconds: 900),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.purple.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.purple.withValues(alpha: 0.3),
                         ),
                       ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.copy, size: 11, color: AppColors.purple),
+                          SizedBox(width: 3),
+                          Text(
+                            '복사',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.purple,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            state.donationHolder,
-            style: const TextStyle(fontSize: 9.5, color: AppColors.textGray),
-          ),
         ],
       ),
     );
@@ -675,16 +769,50 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const Icon(Icons.person, color: Colors.white, size: 18),
               const SizedBox(width: 6),
-              const Text('개인 접근',
-                  style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700)),
+              const Text(
+                '개인 접근',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const Spacer(),
-              const Icon(Icons.lock_outline, color: Colors.white70, size: 15),
-              const SizedBox(width: 4),
-              const Text('본인 정보만 열람·수정',
-                  style: TextStyle(color: Colors.white70, fontSize: 11)),
+              // V 표시 영역 — 누르면 본인 정보 편집(수정/저장) 시트 열림
+              if (me != null)
+                GestureDetector(
+                  onTap: () => _openPersonalEditSheet(state, me),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.scoutGreen, width: 2),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified,
+                          color: AppColors.scoutGreen,
+                          size: 18,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          '본인 정보 편집',
+                          style: TextStyle(
+                            color: AppColors.scoutGreen,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -692,25 +820,33 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: AppColors.tigerGold, width: 2),
                   ),
-                  child: Text('#${me.number}',
-                      style: const TextStyle(
-                          color: AppColors.purple,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18)),
+                  child: Text(
+                    '#${me.number}',
+                    style: const TextStyle(
+                      color: AppColors.purple,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 10),
-                Text(me.name.isEmpty ? '(이름없음)' : me.name,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800)),
+                Text(
+                  me.name.isEmpty ? '(이름없음)' : me.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 if (me.lifetimeMember) ...[
                   const SizedBox(width: 6),
                   const Icon(Icons.star, color: AppColors.tigerGold, size: 18),
@@ -723,14 +859,51 @@ class _HomeScreenState extends State<HomeScreen> {
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ] else
-            const Text('본인 정보를 찾을 수 없습니다',
-                style: TextStyle(color: Colors.white, fontSize: 13)),
+            const Text(
+              '본인 정보를 찾을 수 없습니다',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
           const SizedBox(height: 4),
           const Text(
             '※ 개인 접근에서는 다른 인가자의 정보를 볼 수 없습니다.',
             style: TextStyle(color: Colors.white70, fontSize: 10.5),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 행사관리(사진·동영상 갤러리) 진입 버튼
+  Widget _eventButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EventGalleryScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            children: const [
+              Icon(Icons.photo_library, size: 14, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '행사관리',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -796,7 +969,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(color: Colors.white70, fontSize: 9.5),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 9.5,
+                    ),
                   ),
                   Text(
                     value,
@@ -939,6 +1115,37 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openDetail(Member m) async {
+    final state = context.read<AppState>();
+    // 개인 접근: 본인 외 인가자 클릭 시 경고 후 차단 (개인정보 보호)
+    if (state.isPersonal && !state.isSelfNumber(m.number)) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(
+            Icons.lock_outline,
+            color: AppColors.taegeukRed,
+            size: 32,
+          ),
+          title: const Text('열람 제한', textAlign: TextAlign.center),
+          content: Text(
+            '개인 로그인 시 다른 인가자의 정보를 볼 수 없습니다.\n\n'
+            '#${m.number} ${m.name} 님의 정보는 본인만 열람할 수 있습니다.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13.5, height: 1.4),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.arrow_back, size: 18),
+              label: const Text('돌아가기'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
@@ -966,6 +1173,362 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => ExportScreen(
           members: selected,
           title: '선택한 인가자 명단 (${selected.length}명)',
+        ),
+      ),
+    );
+  }
+
+  // ================= 개인 접근 — 본인 정보 편집 / 비밀번호 관리 =================
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 개인 접근: V 영역에서 여는 "본인 정보 편집" 시트
+  void _openPersonalEditSheet(AppState state, Member me) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PersonalEditSheet(
+        me: me,
+        onEditInfo: () async {
+          Navigator.pop(ctx);
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MemberEditScreen(memberId: me.id),
+            ),
+          );
+          if (mounted) context.read<AppState>().refresh();
+        },
+        onPassword: () {
+          Navigator.pop(ctx);
+          _openPasswordMenuItem(state, me);
+        },
+        onLost: () {
+          Navigator.pop(ctx);
+          _showLostPasswordDialog();
+        },
+      ),
+    );
+  }
+
+  /// 비밀번호 변경 경고 후 진행
+  Future<void> _openPasswordMenuItem(AppState state, Member me) async {
+    final warn = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.tigerGold,
+          size: 34,
+        ),
+        title: const Text('개인 비밀번호 변경', textAlign: TextAlign.center),
+        content: const Text(
+          '개인 비밀번호를 변경하시겠습니까?\n\n'
+          '· 비밀번호는 「본인 인가번호!@@」 형식이 기본값입니다.\n'
+          '· 변경하면 다음 접속부터 새 비밀번호를 사용해야 합니다.\n'
+          '· 분실 시 관리자(마스터)에게 재설정을 요청하세요.',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('나중에'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx, false);
+              _showLostPasswordDialog();
+            },
+            child: const Text('분실 안내'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('변경하기'),
+          ),
+        ],
+      ),
+    );
+    if (warn != true) return;
+    if (!mounted) return;
+    _showPasswordChangeDialog(state, me);
+  }
+
+  void _showLostPasswordDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.help_outline, color: AppColors.purple, size: 32),
+        title: const Text('비밀번호를 분실하셨나요?', textAlign: TextAlign.center),
+        content: const Text(
+          '비밀번호를 분실한 경우 관리자에게 문의하세요.\n\n'
+          '· 관리자(마스터)가 인가번호 기준으로\n'
+          '  비밀번호를 초기화하거나 재설정할 수 있습니다.\n'
+          '· 초기화 시 기본값은 「본인 인가번호!@@」 입니다.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPasswordChangeDialog(AppState state, Member me) {
+    final curCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final newCtrl2 = TextEditingController();
+    bool busy = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('개인 비밀번호 변경'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '인가번호 #${me.number} (${me.name})',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.purple,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: curCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '현재 비밀번호',
+                    hintText: '예: 0000!@@',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: newCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '새 비밀번호'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: newCtrl2,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '새 비밀번호 확인'),
+                ),
+                const SizedBox(height: 8),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '※ 비밀번호를 분실한 경우 관리자에게 문의하세요.',
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final cur = curCtrl.text.trim();
+                      final nw = newCtrl.text.trim();
+                      final nw2 = newCtrl2.text.trim();
+                      if (cur.isEmpty || nw.isEmpty) {
+                        _snack('모든 항목을 입력하세요');
+                        return;
+                      }
+                      if (nw.length < 4) {
+                        _snack('새 비밀번호는 4자 이상이어야 합니다');
+                        return;
+                      }
+                      if (nw != nw2) {
+                        _snack('새 비밀번호가 서로 다릅니다');
+                        return;
+                      }
+                      setLocal(() => busy = true);
+                      final err = await state.changePersonalPassword(cur, nw);
+                      if (!ctx.mounted) return;
+                      setLocal(() => busy = false);
+                      if (err == null) {
+                        Navigator.pop(ctx);
+                        _snack('개인 비밀번호가 변경되었습니다');
+                      } else {
+                        _snack('변경 실패: $err');
+                      }
+                    },
+              child: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('변경'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 개인 접근 — V 영역 "본인 정보 편집" 바텀시트
+class _PersonalEditSheet extends StatelessWidget {
+  const _PersonalEditSheet({
+    required this.me,
+    required this.onEditInfo,
+    required this.onPassword,
+    required this.onLost,
+  });
+
+  final Member me;
+  final VoidCallback onEditInfo;
+  final VoidCallback onPassword;
+  final VoidCallback onLost;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textGray.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Icon(
+                  Icons.verified,
+                  color: AppColors.scoutGreen,
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '본인 정보 — #${me.number} ${me.name}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '개인 접근에서는 본인 정보만 수정할 수 있습니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 16),
+            _tile(
+              icon: Icons.edit_note,
+              color: AppColors.purple,
+              title: '개인정보 편집 (수정·저장)',
+              subtitle: '소속·연락처·주소·사진 등 본인 정보 수정',
+              onTap: onEditInfo,
+            ),
+            const SizedBox(height: 8),
+            _tile(
+              icon: Icons.password,
+              color: AppColors.taegeukBlue,
+              title: '개인 비밀번호 변경',
+              subtitle: '접속 비밀번호 변경 (경고 안내 후 진행)',
+              onTap: onPassword,
+            ),
+            const SizedBox(height: 8),
+            _tile(
+              icon: Icons.help_outline,
+              color: AppColors.tigerGold,
+              title: '비밀번호 분실 안내',
+              subtitle: '분실 시 관리자에게 문의하세요',
+              onTap: onLost,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: color.withValues(alpha: 0.15),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textGray),
+          ],
         ),
       ),
     );

@@ -278,7 +278,7 @@ class _QrScanViewState extends State<_QrScanView> {
               obscureText: true,
               decoration: InputDecoration(
                 labelText: '인가번호 + ${AppConfig.personalSuffix}',
-                hintText: '$number${AppConfig.personalSuffix}',
+                hintText: '0000${AppConfig.personalSuffix}',
               ),
             ),
           ],
