@@ -1,12 +1,12 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/file_pick.dart';
 import '../services/import_parser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -228,15 +228,13 @@ class _ImportScreenState extends State<ImportScreen> {
   // ---------- 파일/이미지 선택 ----------
   Future<void> _pickFile() async {
     try {
-      final res = await FilePicker.platform.pickFiles(
-        withData: true,
-        type: FileType.custom,
+      final res = await pickDataFiles(
         allowedExtensions: ['xlsx', 'xls', 'csv', 'tsv', 'txt', 'json'],
       );
-      if (res == null || res.files.isEmpty) return;
-      final file = res.files.first;
+      if (res.isEmpty) return;
+      final file = res.first;
       final bytes = file.bytes;
-      if (bytes == null) return;
+      if (bytes.isEmpty) return;
       setState(() {
         _busy = true;
         _sourceName = file.name;

@@ -1,7 +1,7 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -218,11 +218,11 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
 
   Future<void> _pickAndUpload() async {
     final nas = context.read<NasApi>();
-    final res = await FilePicker.platform.pickFiles(withData: true);
-    if (res == null || res.files.isEmpty) return;
-    final f = res.files.first;
+    final res = await pickDataFiles();
+    if (res.isEmpty) return;
+    final f = res.first;
     final bytes = f.bytes;
-    if (bytes == null) return;
+    if (bytes.isEmpty) return;
     setState(() => _busy = true);
     try {
       final r = await nas.uploadFile(_selected, f.name, bytes);

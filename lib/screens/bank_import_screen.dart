@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/file_pick.dart';
 import '../services/finance_service.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
@@ -251,15 +251,13 @@ class _BankImportScreenState extends State<BankImportScreen> {
 
   Future<void> _pickFile() async {
     final nas = context.read<NasApi>();
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final res = await pickDataFiles(
       allowedExtensions: ['xlsx', 'xls', 'csv', 'txt'],
-      withData: true,
     );
-    if (res == null || res.files.isEmpty) return;
-    final f = res.files.first;
+    if (res.isEmpty) return;
+    final f = res.first;
     final bytes = f.bytes;
-    if (bytes == null) return;
+    if (bytes.isEmpty) return;
     if (!mounted) return;
     setState(() {
       _busy = true;

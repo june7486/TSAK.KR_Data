@@ -36,6 +36,9 @@ dependencies:
   # 파일 선택 (엑셀/CSV/JSON/PDF/워드/이미지)
   file_picker: ^8.1.4
 
+  # 웹 파일 선택기 직접 구현용 (file_picker 웹 버그 우회)
+  web: ^1.1.0
+
   # 전화 / 문자 / 메일 / 공유
   url_launcher: ^6.3.1
   share_plus: ^10.1.2
