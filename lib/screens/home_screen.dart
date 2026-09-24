@@ -933,22 +933,38 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: AppColors.tigerGold, width: 2),
                   ),
-                  child: Text(
-                    '#${me.number}',
-                    style: const TextStyle(
-                      color: AppColors.purple,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '범스카우트 #${me.number.isEmpty ? '-' : me.number}',
+                        style: const TextStyle(
+                          color: AppColors.purple,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'ATAS #${me.atasNo.isEmpty ? '-' : me.atasNo}',
+                        style: const TextStyle(
+                          color: AppColors.taegeukBlue,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  me.name.isEmpty ? '(이름없음)' : me.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
+                Expanded(
+                  child: Text(
+                    me.name.isEmpty ? '(이름없음)' : me.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 if (me.lifetimeMember) ...[
@@ -997,7 +1013,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             size: 18, color: AppColors.purple),
                         SizedBox(width: 6),
                         Text(
-                          '내 행사 (사진 업로드·참가비/후원)',
+                          '내 행사 관리 (사진 업로드·참가비·후원)',
                           style: TextStyle(
                             color: AppColors.purple,
                             fontSize: 12.5,
@@ -1015,6 +1031,126 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text(
             '※ 본인이 참석자로 등록된 행사만 보입니다.',
             style: TextStyle(color: Colors.white70, fontSize: 10),
+          ),
+          const SizedBox(height: 10),
+          _personalDonationBanner(state),
+        ],
+      ),
+    );
+  }
+
+  /// 개인 접근 전용 — 범스카우트 중앙회 계좌 3개 노출 (참가비·후원 납부 안내)
+  Widget _personalDonationBanner(AppState state) {
+    final donations = state.donations;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.tigerGold, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.account_balance,
+                  color: AppColors.purple, size: 15),
+              const SizedBox(width: 5),
+              const Text(
+                '한국범스카우트중앙회 계좌',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                state.donationHolder,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  color: AppColors.textGray,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final d in donations)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      '${d['label']}',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.lifetimeGold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${d['bank']} ${d['account']}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: '${d['account']}'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${d['label']} ${d['account']} 복사됨'),
+                          duration: const Duration(milliseconds: 900),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.purple.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.purple.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.copy, size: 11, color: AppColors.purple),
+                          SizedBox(width: 3),
+                          Text(
+                            '복사',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.purple,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 2),
+          const Text(
+            '※ 참가비·후원금은 위 계좌로 납부해 주세요.',
+            style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
           ),
         ],
       ),
