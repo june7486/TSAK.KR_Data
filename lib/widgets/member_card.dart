@@ -74,6 +74,7 @@ class MemberCard extends StatelessWidget {
                 league: member.league,
                 size: 25 * s,
                 number: member.number,
+                showNumber: false,
               ),
               SizedBox(width: 10 * s),
               Expanded(
@@ -86,8 +87,9 @@ class MemberCard extends StatelessWidget {
                           child: Text(
                             member.name.isEmpty ? '(이름없음)' : member.name,
                             style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15 * s,
+                              fontWeight: FontWeight.w800,
+                              // 인가번호(원형)와 비슷한 크기로 확대
+                              fontSize: 19 * s,
                               color: AppColors.textDark,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -109,7 +111,7 @@ class MemberCard extends StatelessWidget {
                             '#${member.number}',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 11 * s,
+                              fontSize: 12 * s,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -168,6 +170,7 @@ class MemberCard extends StatelessWidget {
                                 fontSize: 11.5 * s,
                               ),
                             ),
+                          // ATAS 번호가 있으면 인가번호를 초록색으로 함께 표시
                           if (member.atasNo.isNotEmpty)
                             Container(
                               padding: EdgeInsets.symmetric(
@@ -175,16 +178,16 @@ class MemberCard extends StatelessWidget {
                                 vertical: 1 * s,
                               ),
                               decoration: BoxDecoration(
-                                color:
-                                    AppColors.tigerGold.withValues(alpha: 0.16),
+                                color: AppColors.scoutGreen
+                                    .withValues(alpha: 0.14),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                'ATAS ${member.atasNo}',
+                                'ATAS ${member.atasNo} · #${member.number}',
                                 style: TextStyle(
-                                  color: const Color(0xFF9A6A00),
-                                  fontSize: 11 * s,
-                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.scoutGreen,
+                                  fontSize: 11.5 * s,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ),

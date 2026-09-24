@@ -7,15 +7,16 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../models/member.dart';
+import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
-import 'member_detail_screen.dart';
+import '../widgets/app_back_button.dart';
+import 'member_edit_screen.dart';
 
 /// 인가자 QR코드 생성 + 스캔 화면
 class QrScreen extends StatelessWidget {
   const QrScreen({super.key, this.member});
 
-  /// member가 있으면 QR 생성, 없으면 스캔 모드
   final Member? member;
 
   @override
@@ -32,21 +33,28 @@ class _QrGenerateView extends StatelessWidget {
 
   final Member member;
 
-  /// QR에 담을 요약 데이터 (JSON)
-  String get _payload => json.encode({
-    'tsak': 1,
-    'no': member.number,
-    'name': member.name,
-    'league': member.league,
-    'unit': member.unit,
-    'date': member.date,
-    'phone': member.phone,
-  });
+  /// QR에 담을 요약 데이터 (JSON) — 인가번호·이름·개인접속 안내 포함
+  String _payload(BuildContext context) {
+    final state = context.read<AppState>();
+    return json.encode({
+      'tsak': 1,
+      'no': member.number,
+      'name': member.name,
+      'league': member.league,
+      'unit': member.unit,
+      'date': member.date,
+      'phone': member.phone,
+      'atas': member.atasNo,
+      'url': state.repo.isNasMode ? state.nas.baseUrl : '',
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const AppBackButton(label: '뒤로'),
+        leadingWidth: 84,
         title: Text('#${member.number} ${member.name} QR'),
         actions: [
           IconButton(
@@ -76,6 +84,8 @@ class _QrGenerateView extends StatelessWidget {
                             'assets/images/tsak_emblem.png',
                             width: 44,
                             height: 44,
+                            errorBuilder: (_, __, ___) =>
+                                const Icon(Icons.shield, size: 40),
                           ),
                           const SizedBox(width: 10),
                           const Expanded(
@@ -92,7 +102,7 @@ class _QrGenerateView extends StatelessWidget {
                       ),
                       const Divider(height: 24),
                       QrImageView(
-                        data: _payload,
+                        data: _payload(context),
                         version: QrVersions.auto,
                         size: 230,
                         backgroundColor: Colors.white,
@@ -117,14 +127,20 @@ class _QrGenerateView extends StatelessWidget {
                         '인가번호 #${member.number}',
                         style: const TextStyle(color: AppColors.purple),
                       ),
-                      if (member.league.isNotEmpty || member.unit.isNotEmpty)
+                      if (member.atasNo.isNotEmpty)
                         Text(
-                          '${member.league} ${member.unit}',
+                          'ATAS ${member.atasNo} · #${member.number}',
                           style: const TextStyle(
-                            color: AppColors.textGray,
-                            fontSize: 12.5,
+                            color: AppColors.scoutGreen,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '이 QR을 스캔하면 해당 인가자 정보를 수정할 수 있습니다.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                      ),
                     ],
                   ),
                 ),
@@ -134,7 +150,8 @@ class _QrGenerateView extends StatelessWidget {
                 children: [
                   OutlinedButton.icon(
                     onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _payload));
+                      Clipboard.setData(
+                          ClipboardData(text: _payload(context)));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('QR 데이터가 복사되었습니다')),
                       );
@@ -170,47 +187,107 @@ class _QrScanViewState extends State<_QrScanView> {
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handled) return;
     final code = capture.barcodes.firstOrNull?.rawValue;
     if (code == null) return;
+    _handled = true;
 
-    // TSAK QR이면 해당 인가자로 이동, 아니면 텍스트 검색
-    String? targetId;
+    String? number;
     try {
       final map = json.decode(code) as Map<String, dynamic>;
-      if (map['tsak'] == 1) {
-        final no = '${map['no']}';
-        final appState = context.read<AppState>();
-        final match = appState.members.where((m) => m.number == no).toList();
-        if (match.isNotEmpty) targetId = match.first.id;
+      if (map['tsak'] == 1) number = '${map['no']}';
+    } catch (_) {}
+
+    if (number == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('TSAK 인가자 QR이 아닙니다')),
+        );
+        Future.delayed(const Duration(seconds: 2), () => _handled = false);
       }
-    } catch (_) {
-      // 일반 텍스트 QR — 무시
+      return;
     }
 
-    _handled = true;
-    if (!mounted) return;
+    final state = context.read<AppState>();
+    final target = state.byNumber(number);
+    if (target == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('인가번호 $number 를 찾을 수 없습니다')),
+        );
+        Future.delayed(const Duration(seconds: 2), () => _handled = false);
+      }
+      return;
+    }
 
-    if (targetId != null) {
+    // 개인 접근 비밀번호 확인 (마스터는 생략)
+    if (!state.isMaster) {
+      final ok = await _askPersonalPassword(state, number);
+      if (ok != true) {
+        _handled = false;
+        return;
+      }
+    }
+
+    if (mounted) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => MemberDetailScreen(memberId: targetId!),
+          builder: (_) => MemberEditScreen(memberId: target.id),
         ),
       );
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('TSAK 인가자 QR이 아닙니다')));
-      Future.delayed(const Duration(seconds: 2), () => _handled = false);
     }
+  }
+
+  Future<bool?> _askPersonalPassword(AppState state, String number) {
+    final ctrl = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('본인 확인'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('인가번호 $number 의 정보를 수정하려면\n개인 비밀번호를 입력하세요.',
+                style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: '인가번호 + ${AppConfig.personalSuffix}',
+                hintText: '$number${AppConfig.personalSuffix}',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+            onPressed: () {
+              final v = ctrl.text.trim();
+              final ok = v == '$number${AppConfig.personalSuffix}' ||
+                  v == AppConfig.masterPassword;
+              Navigator.pop(ctx, ok);
+            },
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('QR 코드 스캔')),
+      appBar: AppBar(
+        leading: const AppBackButton(label: '뒤로'),
+        leadingWidth: 84,
+        title: const Text('QR 코드 스캔 → 수정'),
+      ),
       body: Stack(
         children: [
           MobileScanner(controller: _controller, onDetect: _onDetect),

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'scout_silhouette.dart';
 
 /// 인가자 사진 아바타 — 사진이 없으면 이름 첫 글자를 이니셜로 표시
 class MemberAvatar extends StatelessWidget {
@@ -15,6 +16,8 @@ class MemberAvatar extends StatelessWidget {
     this.size = 52,
     this.league = '',
     this.number = '',
+    this.showNumber = true,
+    this.square = false,
   });
 
   final String name;
@@ -25,6 +28,12 @@ class MemberAvatar extends StatelessWidget {
   /// 인가번호 — 사진이 없을 때 동그라미 안에 표시
   final String number;
 
+  /// false면 사진이 없을 때 번호 대신 회색 실루엣 표시
+  final bool showNumber;
+
+  /// true면 사각형(라운드) 프레임
+  final bool square;
+
   @override
   Widget build(BuildContext context) {
     final border = leagueColor(league);
@@ -32,6 +41,9 @@ class MemberAvatar extends StatelessWidget {
     Widget child;
     if (photoPath.isNotEmpty) {
       child = _buildImage();
+    } else if (!showNumber) {
+      // 사진 없음 → 회색 스카우트 실루엣 (배낭 + 로빙햇)
+      child = ScoutSilhouette(size: size);
     } else {
       // 글자(이니셜) 대신 인가번호를 표시
       final label = number.trim().isNotEmpty ? number.trim() : _initial(name);
@@ -61,7 +73,8 @@ class MemberAvatar extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        shape: square ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: square ? BorderRadius.circular(size * 0.14) : null,
         border: Border.all(color: border, width: 2),
       ),
       clipBehavior: Clip.antiAlias,

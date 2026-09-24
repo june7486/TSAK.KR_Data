@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_back_button.dart';
 import '../widgets/member_avatar.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
@@ -32,9 +33,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 250,
+            expandedHeight: 176,
             pinned: true,
             backgroundColor: AppColors.purple,
+            leading: const AppBackButton(label: '뒤로'),
+            leadingWidth: 84,
             flexibleSpace: FlexibleSpaceBar(background: _header(m)),
             actions: [
               IconButton(
@@ -69,82 +72,90 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 상세 헤더 — 좌(번호 박스+이름) / 우(사진) 2분할, 축소
   Widget _header(Member m) {
     return Container(
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
-      padding: const EdgeInsets.fromLTRB(20, 70, 20, 20),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
+      padding: const EdgeInsets.fromLTRB(16, 44, 16, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // 좌측 패널: 인가번호(박스) + 이름
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 원형 대신 각진 박스로 인가번호 표시
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.tigerGold,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    '#${m.number}',
+                    style: const TextStyle(
+                      color: AppColors.purple,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 22,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        m.name.isEmpty ? '(이름없음)' : m.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (m.lifetimeMember) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.star,
+                          color: AppColors.tigerGold, size: 20),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (m.league.isNotEmpty || m.unit.isNotEmpty)
+                  Text(
+                    [m.league, m.unit]
+                        .where((e) => e.isNotEmpty)
+                        .join(' · '),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 우측 패널: 사진 (없으면 회색 스카우트 실루엣)
           MemberAvatar(
             name: m.name,
             photoPath: m.photoPath,
             league: m.league,
-            size: 96,
             number: m.number,
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                m.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              if (m.lifetimeMember) ...[
-                const SizedBox(width: 6),
-                const Icon(Icons.star, color: AppColors.tigerGold, size: 22),
-              ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '인가번호 #${m.number}',
-                  style: const TextStyle(
-                    color: AppColors.purple,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              if (m.league.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    m.league,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            showNumber: false,
+            square: true,
+            size: 104,
           ),
         ],
       ),

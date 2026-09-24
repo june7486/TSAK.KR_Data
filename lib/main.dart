@@ -1,22 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'screens/home_screen.dart';
+import 'screens/lock_screen.dart';
 import 'services/app_state.dart';
 import 'services/member_repository.dart';
-import 'screens/home_screen.dart';
+import 'services/nas_api.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final repo = MemberRepository();
+  // 1) 저장소 초기화 — NAS 프록시 연결 시도, 실패하면 로컬 시드로 폴백
+  final nas = NasApi();
+  final repo = MemberRepository(nas: nas);
   await repo.init();
 
   runApp(
     MultiProvider(
       providers: [
         Provider<MemberRepository>.value(value: repo),
-        ChangeNotifierProvider<AppState>(create: (_) => AppState(repo)),
+        ChangeNotifierProvider<AppState>(create: (_) => AppState(repo, nas: nas)),
       ],
       child: const TsakApp(),
     ),
@@ -32,7 +38,64 @@ class TsakApp extends StatelessWidget {
       title: 'TSAK 인가자 관리',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
-      home: const HomeScreen(),
+      home: const AuthGate(),
     );
+  }
+}
+
+/// 인증 게이트 — 잠금 화면 ↔ 홈 화면, 1시간 세션 만료 시 재잠금
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  Timer? _timer;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final state = context.read<AppState>();
+      await state.restoreSession();
+      if (mounted) setState(() => _initialized = true);
+      _startTimer();
+    });
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    // 30초마다 세션 만료 확인 → 만료 시 잠금 화면으로
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      final state = context.read<AppState>();
+      if (state.unlocked && !state.sessionValid) {
+        state.lock();
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initialized) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final state = context.watch<AppState>();
+    if (!state.unlocked || !state.sessionValid) {
+      return LockScreen(onUnlocked: () => setState(() {}));
+    }
+    return const HomeScreen();
   }
 }

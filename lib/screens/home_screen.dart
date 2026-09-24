@@ -5,9 +5,13 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/member_card.dart';
+import 'app_access_screen.dart';
+import 'bulk_screen.dart';
+import 'export_screen.dart';
+import 'import_screen.dart';
 import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
-import 'export_screen.dart';
+import 'settings_screen.dart';
 import 'stats_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -35,22 +39,55 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const SizedBox(width: 4),
+        titleSpacing: 0,
         title: _selectMode
             ? Text('${_selected.length}명 선택됨')
             : Row(
                 children: [
                   Image.asset(
                     'assets/images/tsak_emblem.png',
-                    width: 34,
-                    height: 34,
+                    width: 30,
+                    height: 30,
                     errorBuilder: (c, e, s) => const Icon(
                       Icons.shield,
-                      size: 30,
+                      size: 26,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  const Text('TSAK 인가자 관리'),
+                  const SizedBox(width: 6),
+                  // 앱 접근 안내(주소+QR) — 제목 버튼
+                  InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AppAccessScreen(),
+                      ),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                      child: Text('TSAK 인가자 관리'),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  // 상단 QR 링크 픽토그램
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AppAccessScreen(),
+                      ),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.qr_code_2,
+                          size: 20, color: Colors.white),
+                    ),
+                  ),
                 ],
               ),
         actions: [
@@ -80,6 +117,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ] else ...[
             IconButton(
+              tooltip: '단체 소식/문자',
+              icon: const Icon(Icons.campaign),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BulkScreen()),
+              ),
+            ),
+            IconButton(
               tooltip: '통계',
               icon: const Icon(Icons.insights),
               onPressed: () => Navigator.push(
@@ -87,10 +132,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(builder: (_) => const StatsScreen()),
               ),
             ),
-            IconButton(
-              tooltip: '명단 선택 (일괄작업)',
-              icon: const Icon(Icons.checklist),
-              onPressed: () => setState(() => _selectMode = true),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (v) {
+                switch (v) {
+                  case 'settings':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                    break;
+                  case 'import':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ImportScreen()),
+                    );
+                    break;
+                  case 'select':
+                    setState(() => _selectMode = true);
+                    break;
+                  case 'refresh':
+                    context.read<AppState>().refreshFromNas();
+                    break;
+                  case 'lock':
+                    context.read<AppState>().lock();
+                    break;
+                }
+              },
+              itemBuilder: (ctx) => const [
+                PopupMenuItem(value: 'import', child: Text('자료 가져오기 (AI 인식)')),
+                PopupMenuItem(value: 'settings', child: Text('설정 · 백업/복원')),
+                PopupMenuItem(value: 'refresh', child: Text('NAS 최신 데이터 불러오기')),
+                PopupMenuItem(value: 'select', child: Text('명단 선택 (일괄작업)')),
+                PopupMenuItem(value: 'lock', child: Text('잠금')),
+              ],
             ),
           ],
         ],
@@ -133,9 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
           ),
-          // 하단 명단 크기 조절 바 — body 레이아웃 흐름 안에 배치하여
-          // Scaffold body 높이 계산을 방해하지 않도록 함
-          _fontSizeBar(context, state),
+          _bottomBar(context, state),
         ],
       ),
       floatingActionButton: _selectMode
@@ -145,108 +218,147 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? null
                   : () => _openExport(state, members),
               icon: const Icon(Icons.ios_share),
-              label: Text('내보내기/발송 (${_selected.length})'),
+              label: Text('내보내기 (${_selected.length})'),
             )
-          : FloatingActionButton.extended(
+          : FloatingActionButton.small(
+              backgroundColor: AppColors.taegeukRed,
+              tooltip: '인가자 추가',
               onPressed: () => _addNew(state),
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('인가자 추가'),
+              child: const Icon(Icons.person_add_alt_1, size: 20),
             ),
-      // bottomNavigationBar: _fontSizeBar(context, state),
     );
   }
 
-  /// 하단 명단 크기 조절 바
-  Widget _fontSizeBar(BuildContext context, AppState state) {
+  /// 하단: 명단 크기 조절 + 초소형 버전(최종 수정 일시)
+  Widget _bottomBar(BuildContext context, AppState state) {
     return Material(
       color: Colors.white,
       elevation: 8,
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 48,
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: '작게',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 36, minHeight: 36),
-                icon: const Icon(
-                  Icons.remove_circle_outline,
-                  size: 20,
-                  color: AppColors.purple,
-                ),
-                onPressed: () => state.setListScale(state.listScale - 0.05),
-              ),
-              const Text(
-                '명단 크기',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textDark,
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    activeTrackColor: AppColors.purple,
-                    inactiveTrackColor:
-                        AppColors.purple.withValues(alpha: 0.15),
-                    thumbColor: AppColors.purple,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 14,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 44,
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: '작게',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 34, minHeight: 34),
+                    icon: const Icon(Icons.remove_circle_outline,
+                        size: 19, color: AppColors.purple),
+                    onPressed: () =>
+                        state.setListScale(state.listScale - 0.05),
+                  ),
+                  const Text(
+                    '명단 크기',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
                     ),
                   ),
-                  child: Slider(
-                    value: state.listScale,
-                    min: AppState.listScaleMin,
-                    max: AppState.listScaleMax,
-                    divisions:
-                        ((AppState.listScaleMax - AppState.listScaleMin) / 0.05)
-                            .round(),
-                    onChanged: (v) => state.setListScale(v),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 4,
+                        activeTrackColor: AppColors.purple,
+                        inactiveTrackColor:
+                            AppColors.purple.withValues(alpha: 0.15),
+                        thumbColor: AppColors.purple,
+                        overlayShape:
+                            const RoundSliderOverlayShape(overlayRadius: 13),
+                      ),
+                      child: Slider(
+                        value: state.listScale,
+                        min: AppState.listScaleMin,
+                        max: AppState.listScaleMax,
+                        divisions:
+                            ((AppState.listScaleMax - AppState.listScaleMin) /
+                                    0.05)
+                                .round(),
+                        onChanged: (v) => state.setListScale(v),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              IconButton(
-                tooltip: '크게',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 36, minHeight: 36),
-                icon: const Icon(
-                  Icons.add_circle_outline,
-                  size: 20,
-                  color: AppColors.purple,
-                ),
-                onPressed: () => state.setListScale(state.listScale + 0.05),
-              ),
-              Container(
-                constraints: const BoxConstraints(minWidth: 40),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.purple.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${(state.listScale * 100).round()}%',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.purple,
+                  IconButton(
+                    tooltip: '크게',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 34, minHeight: 34),
+                    icon: const Icon(Icons.add_circle_outline,
+                        size: 19, color: AppColors.purple),
+                    onPressed: () =>
+                        state.setListScale(state.listScale + 0.05),
                   ),
-                ),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 38),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.purple.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${(state.listScale * 100).round()}%',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purple,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
               ),
-              // 우측 하단 FAB(추가/내보내기)와 겹치지 않도록 여백 확보
-              SizedBox(width: _selectMode ? 215 : 152),
-            ],
-          ),
+            ),
+            // 초소형 버전(최종 업데이트 일시) — 서버 동기화 상태
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3, right: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _syncDot(state),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${state.versionText} · ${state.total}명',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      color: AppColors.textGray.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _syncDot(AppState state) {
+    Color c = AppColors.textGray;
+    switch (state.syncStatus) {
+      case 'saving':
+        c = AppColors.tigerGold;
+        break;
+      case 'saved':
+        c = AppColors.scoutGreen;
+        break;
+      case 'error':
+        c = AppColors.taegeukRed;
+        break;
+    }
+    return Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(color: c, shape: BoxShape.circle),
     );
   }
 
@@ -264,7 +376,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         children: [
           TextField(
@@ -284,15 +396,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             children: [
               _statChip('전체', '${state.total}명', Icons.groups),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _statChip('검색결과', '${state.members.length}명', Icons.search),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _statChip('평생회원', '${state.lifetimeCount}명', Icons.star),
             ],
+          ),
+          const SizedBox(height: 6),
+          // 연회비 연도별 납부 인원 (작게)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Icon(Icons.card_membership,
+                    size: 13, color: Colors.white70),
+                const SizedBox(width: 4),
+                const Text(
+                  '평생회원수',
+                  style: TextStyle(color: Colors.white70, fontSize: 10),
+                ),
+                const SizedBox(width: 6),
+                for (final e in state.feeCounts.take(4))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      '${e.key} ${e.value}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -302,28 +443,28 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _statChip(String label, String value, IconData icon) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white, size: 16),
-            const SizedBox(width: 5),
+            Icon(icon, color: Colors.white, size: 15),
+            const SizedBox(width: 4),
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(color: Colors.white70, fontSize: 10),
+                    style: const TextStyle(color: Colors.white70, fontSize: 9.5),
                   ),
                   Text(
                     value,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 13,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

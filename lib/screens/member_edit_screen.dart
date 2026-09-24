@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_back_button.dart';
 import '../widgets/member_avatar.dart';
 
 class MemberEditScreen extends StatefulWidget {
@@ -91,6 +92,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     final isNew = _existing == null;
     return Scaffold(
       appBar: AppBar(
+        leading: const AppBackButton(label: '뒤로'),
+        leadingWidth: 84,
         title: Text(isNew ? '인가자 추가' : '인가자 편집'),
         actions: [
           TextButton(
@@ -410,6 +413,18 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       eventAttend: _existing?.eventAttend ?? {},
     );
     await state.save(member);
+
+    // 사진이 있으면 NAS 서버에도 업로드 (인가번호 기준)
+    if (_photoPath.startsWith('data:image') &&
+        state.repo.isNasMode &&
+        member.number.trim().isNotEmpty) {
+      try {
+        final base64Part = _photoPath.split(',').last;
+        final bytes = base64Decode(base64Part);
+        await state.nas.uploadPhoto(member.number.trim(), bytes);
+      } catch (_) {}
+    }
+
     if (mounted) {
       ScaffoldMessenger.of(
         context,
