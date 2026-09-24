@@ -5,9 +5,9 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 
 /// 앱 잠금(인증) 화면
-///  - 앱 접근: ID "TSAK"(대문자, 기본값) + 앱 비밀번호 (Tsak1988!!)
-///  - 개인 접근: ID "인가번호" + 개인 비밀번호 (예: 인가번호 000 → 000!@@)
-///  - 마스터: Corbuser7!@@ (모든 기능/통제, 불변)
+///  - 관리자 접근: ID "TSAK"(대문자) + 앱 비밀번호 (Tsak1988!!)
+///  - 범 인가자 접근: ID "인가번호" + 개인 비밀번호 (예: 인가번호 000 → 000!@@)
+///  - 마스터 접근: Corbuser7!@@ (모든 기능/통제, 불변)
 class LockScreen extends StatefulWidget {
   const LockScreen({super.key, this.onUnlocked});
 
@@ -38,7 +38,7 @@ class _LockScreenState extends State<LockScreen> {
       setState(() => _error = '비밀번호를 입력하세요');
       return;
     }
-    if (_tier == 'personal' && _idCtrl.text.trim().isEmpty) {
+    if (_tier != 'master' && _idCtrl.text.trim().isEmpty) {
       setState(() => _error = 'ID를 입력하세요');
       return;
     }
@@ -47,7 +47,7 @@ class _LockScreenState extends State<LockScreen> {
       _error = null;
     });
     final state = context.read<AppState>();
-    // 앱 접근은 ID를 노출하지 않음(내부 고정값 TSAK), 개인 접근은 입력한 인가번호 사용
+    // 관리자만 ID 고정(TSAK), 범 인가자는 입력한 인가번호 사용
     final idInput = _tier == 'app' ? 'TSAK' : _idCtrl.text.trim();
     final ok = await state.login(_tier, v, id: idInput);
     if (!mounted) return;
@@ -131,12 +131,14 @@ class _LockScreenState extends State<LockScreen> {
                           child: _tierHelp(),
                         ),
                         const SizedBox(height: 12),
-                        // ID 입력 — 개인 접근에서만 표시 (앱/마스터는 ID 비노출)
-                        if (_tier == 'personal') ...[
+                        // ID 입력 — 관리자·범 인가자 모두 표시 (마스터만 비밀번호 전용)
+                        if (_tier != 'master') ...[
                           TextField(
                             controller: _idCtrl,
                             autofocus: true,
-                            keyboardType: TextInputType.number,
+                            keyboardType: _tier == 'personal'
+                                ? TextInputType.number
+                                : TextInputType.text,
                             textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'ID',
@@ -148,7 +150,7 @@ class _LockScreenState extends State<LockScreen> {
                         TextField(
                           controller: _ctrl,
                           obscureText: _obscure,
-                          autofocus: _tier != 'personal',
+                          autofocus: _tier == 'master',
                           textInputAction: TextInputAction.go,
                           onSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
@@ -228,8 +230,8 @@ class _LockScreenState extends State<LockScreen> {
 
   Widget _tierTabs() {
     final tabs = [
-      ('app', '앱 접근', Icons.phone_android),
-      ('personal', '개인 접근', Icons.person),
+      ('app', '관리자', Icons.admin_panel_settings),
+      ('personal', '범 인가자', Icons.person),
       ('master', '마스터', Icons.workspace_premium),
     ];
     return Row(
@@ -286,7 +288,7 @@ class _LockScreenState extends State<LockScreen> {
         text = 'ID에 본인 인가번호를 입력하세요';
         break;
       default:
-        text = '앱 접근 비밀번호 · 1시간마다 재입력';
+        text = 'ID와 비밀번호를 입력하세요';
     }
     return Row(
       key: ValueKey(_tier),

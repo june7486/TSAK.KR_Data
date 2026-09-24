@@ -148,12 +148,12 @@ class AppAccessScreen extends StatelessWidget {
                     ),
                     SizedBox(height: 6),
                     Text(
-                      '• 앱 접근: 비밀번호는 관리자에게 문의 (1시간마다 재입력)',
+                      '• 관리자 접근: ID = TSAK  ·  비밀번호는 관리자에게 문의',
                       style: TextStyle(fontSize: 12.5),
                     ),
                     SizedBox(height: 3),
                     Text(
-                      '• 개인 접근: ID = 본인 인가번호  ·  비밀번호 = 인가번호 + !@@ (예: 000!@@)',
+                      '• 범 인가자 접근: ID = 본인 인가번호  ·  비밀번호 = 인가번호 + !@@ (예: 000!@@)',
                       style: TextStyle(fontSize: 12.5),
                     ),
                   ],

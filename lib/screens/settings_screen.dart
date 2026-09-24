@@ -465,12 +465,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '• 앱 접근: 비밀번호=$curApp (1시간 유지)',
+              '• 관리자 접근: ID=TSAK · 비밀번호=$curApp (1시간 유지)',
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 4),
             const Text(
-              '• 개인 접근: ID=인가번호 · 비밀번호=인가번호 + !@@ (예: 000!@@)',
+              '• 범 인가자 접근: ID=인가번호 · 비밀번호=인가번호 + !@@ (예: 000!@@)',
               style: TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 4),
