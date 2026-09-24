@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/privacy_consent.dart';
 import '../widgets/unsaved_guard.dart';
 
 class MemberEditScreen extends StatefulWidget {
@@ -44,6 +45,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   bool _lifetime = false;
   Map<String, bool> _fees = {};
   Member? _existing;
+
+  /// 개인정보 수집·이용 및 제3자 제공 동의 (저장/가입 필수)
+  bool _privacyAgreed = false;
+  String _privacyAgreedAt = '';
 
   /// 멘토/페런츠 인가번호 목록 (복수 입력)
   List<String> _mentors = [];
@@ -88,6 +93,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _fees = Map<String, bool>.from(m?.feeYears ?? {});
     _mentors = List<String>.from(m?.mentors ?? []);
     _parents = List<String>.from(m?.parents ?? []);
+    _privacyAgreed = m?.privacyAgreed ?? false;
+    _privacyAgreedAt = m?.privacyAgreedAt ?? '';
   }
 
   @override
@@ -262,6 +269,12 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
               ),
               const SizedBox(height: 8),
               _feeEditor(),
+              const SizedBox(height: 12),
+              // 개인정보 수집·이용 및 제3자 제공 동의 (필수)
+              PrivacyConsentField(
+                agreed: _privacyAgreed,
+                onChanged: (v) => setState(() => _privacyAgreed = v),
+              ),
               const SizedBox(height: 10),
               Card(
                 child: SwitchListTile(
@@ -323,7 +336,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _photoPath != m.photoPath ||
         _lifetime != m.lifetimeMember ||
         _mentors.join(',') != m.mentors.join(',') ||
-        _parents.join(',') != m.parents.join(',');
+        _parents.join(',') != m.parents.join(',') ||
+        _privacyAgreed != m.privacyAgreed;
   }
 
   Widget _photoPicker() {
@@ -681,11 +695,34 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     onChanged([...list, c]);
   }
 
+  /// 현재 시각 문자열 (예: "2025.09.24 10:30")
+  String _nowStamp() {
+    final n = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${n.year}.${two(n.month)}.${two(n.day)} ${two(n.hour)}:${two(n.minute)}';
+  }
+
   /// 공용 저장 로직 — 저장만 수행 (pop 없음)
   Future<bool> _saveInternal() async {
     if (!(_formKey.currentState?.validate() ?? false)) return false;
+    // 개인정보 수집·이용 동의(필수) 없이는 저장/가입 불가
+    if (!_privacyAgreed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('개인정보 수집·이용에 동의해야 저장할 수 있습니다'),
+            backgroundColor: AppColors.taegeukRed,
+          ),
+        );
+      }
+      return false;
+    }
     final state = context.read<AppState>();
     final id = _existing?.id ?? 'u${DateTime.now().millisecondsSinceEpoch}';
+    // 최초 동의 시각 기록
+    if (_privacyAgreedAt.isEmpty) {
+      _privacyAgreedAt = _nowStamp();
+    }
 
     final member = Member(
       id: id,
@@ -710,6 +747,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       eventAttend: _existing?.eventAttend ?? {},
       mentors: List<String>.from(_mentors),
       parents: List<String>.from(_parents),
+      isRegular: _existing?.isRegular ?? false,
+      personalPassword: _existing?.personalPassword ?? '',
+      accessPhone: _existing?.accessPhone ?? '',
+      privacyAgreed: _privacyAgreed,
+      privacyAgreedAt: _privacyAgreedAt,
     );
     await state.save(member);
     _existing = member; // 이후 dirty 비교 기준 갱신

@@ -75,6 +75,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _feeTracker(m),
                 _eventSection(m),
                 _infoCard(m),
+                _passwordSection(m),
                 const SizedBox(height: 30),
               ],
             ),
@@ -620,6 +621,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ['주소', m.address],
       ['활동', m.activity],
       ['메모', m.memo],
+      [
+        '개인정보 동의',
+        m.privacyAgreed
+            ? '동의함${m.privacyAgreedAt.isNotEmpty ? ' (${m.privacyAgreedAt})' : ''}'
+            : '미동의',
+      ],
     ].where((r) => r[1].trim().isNotEmpty).toList();
 
     return _section(
@@ -665,6 +672,126 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   .toList(),
             ),
     );
+  }
+
+  /// 비밀번호 관리 — 관리자·마스터 전용 (강제 변경/초기화)
+  Widget _passwordSection(Member m) {
+    final state = context.watch<AppState>();
+    if (!(state.isApp || state.isMaster)) return const SizedBox.shrink();
+    final isRegular = m.isRegular;
+    return _section(
+      title: '접속 비밀번호 관리 (관리자)',
+      icon: Icons.password,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isRegular ? Icons.person_outline : Icons.badge_outlined,
+                size: 16,
+                color: AppColors.textGray,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isRegular
+                      ? '일반회원 · ID ${m.loginId} · 기본비번(뒤 4자리) ${m.phoneLast4}'
+                      : '인가자 · ID ${m.number} · 기본비번 ${m.number}!@@',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _forceReset(m),
+                icon: const Icon(Icons.lock_reset, size: 17),
+                label: const Text('비번 초기화'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _forceChange(m),
+                icon: const Icon(Icons.lock_open, size: 17),
+                label: const Text('비번 강제 변경'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _forceReset(Member m) async {
+    final target = m.isRegular ? m.phoneLast4 : '${m.number}!@@';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('비밀번호 초기화'),
+        content: Text(
+          '${m.name}(${m.loginId}) 님의 비밀번호를 기본값으로 초기화할까요?\n\n'
+          '초기화 값: $target',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('초기화'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final err = await context.read<AppState>().setMemberPassword(m, reset: true);
+    if (!mounted) return;
+    _snack(err == null ? '비밀번호를 초기화했습니다 ($target)' : '실패: $err');
+  }
+
+  Future<void> _forceChange(Member m) async {
+    final ctrl = TextEditingController();
+    final nw = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('비밀번호 강제 변경 — ${m.name}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '새 비밀번호',
+            helperText: '4자 이상 입력하세요',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('변경'),
+          ),
+        ],
+      ),
+    );
+    if (nw == null || nw.length < 4 || !mounted) {
+      if (nw != null && mounted) _snack('4자 이상 입력하세요');
+      return;
+    }
+    final err = await context
+        .read<AppState>()
+        .setMemberPassword(m, value: nw);
+    if (!mounted) return;
+    _snack(err == null ? '비밀번호를 변경했습니다' : '실패: $err');
   }
 
   Widget _section({

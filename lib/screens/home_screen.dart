@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
+import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -84,9 +85,31 @@ class _HomeScreenState extends State<HomeScreen> {
                         builder: (_) => const AppAccessScreen(),
                       ),
                     ),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                      child: Text('TSAK 인가자 관리'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 6,
+                        horizontal: 4,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '한국 범스카우트중앙회',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            '통합 앱 · v${AppConfig.appVersion}',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 2),
@@ -264,7 +287,8 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Column(
         children: [
           _header(state),
-          if (!state.isPersonal) _filterBar(state),
+          // 개인/비인가자(본인 1인) 접근에서는 검색·필터를 숨겨 다른 회원 열람 차단
+          if (!state.isSelfAccess) _filterBar(state),
           const SizedBox(height: 4),
           Expanded(
             child: members.isEmpty
@@ -287,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             _openDetail(m);
                           }
                         },
-                        onLongPress: state.isPersonal
+                        onLongPress: state.isSelfAccess
                             ? null
                             : () {
                                 if (!_selectMode) {
@@ -298,15 +322,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 }
                               },
                         onCheckToggle: () => _toggle(m.id),
+                        onEdit: () => _openEdit(m),
                       );
                     },
                   ),
           ),
-          if (state.isPersonal) _personalActionBar(state),
+          if (state.isSelfAccess) _personalActionBar(state),
           _bottomBar(context, state),
         ],
       ),
-      floatingActionButton: state.isPersonal
+      floatingActionButton: state.isSelfAccess
           ? null
           : (_selectMode
                 ? FloatingActionButton.extended(
@@ -1242,6 +1267,17 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
     );
     if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// 이름 좌측 편집창 → 실명/개인정보 편집 화면
+  void _openEdit(Member m) async {
+    final state = context.read<AppState>();
+    // 개인/비인가자 접근에서도 본인은 편집 가능(저장소가 본인으로 제한됨)
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
+    );
+    if (mounted) state.refresh();
   }
 
   void _addNew(AppState state) async {

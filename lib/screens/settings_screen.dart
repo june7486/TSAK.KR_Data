@@ -419,7 +419,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle('앱 정보 / 개발', Icons.info_outline),
             const SizedBox(height: 8),
-            _kv('앱', 'TSAK 인가자 관리'),
+            _kv('앱', '한국 범스카우트중앙회 통합 앱'),
+            _kv('버전', 'v${AppConfig.appVersion} · 업데이트 ${AppConfig.appUpdated}'),
             _kv('개발', '${dev['name']} · ${dev['unit']}'),
             _kv('이메일', '${dev['email']}'),
             const SizedBox(height: 8),

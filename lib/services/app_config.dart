@@ -4,6 +4,13 @@
 /// - 앱 비밀번호(App): 앱 설치/접근용. 1시간 후 재입력 요구.
 /// - 개인 비밀번호(Personal): 인가번호 + "!@@" (예: 인가번호 000 → "000!@@")
 class AppConfig {
+  /// 앱 표시 제목
+  static const String appTitle = '한국 범스카우트중앙회 통합 앱';
+
+  /// 프로그램 버전 / 업데이트 날짜
+  static const String appVersion = '1.0.0';
+  static const String appUpdated = '2025.09.24';
+
   /// 마스터 비밀번호 (불변, 절대 변경 금지)
   static const String masterPassword = 'Corbuser7!@@';
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/privacy_consent.dart';
 
 /// 앱 잠금(인증) 화면
 ///  - 관리자 접근: ID "TSAK"(대문자) + 앱 비밀번호 (Tsak1988!!)
@@ -64,44 +65,64 @@ class _LockScreenState extends State<LockScreen> {
   Future<void> _createRegular() async {
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
+    bool agreed = false;
     final created = await showDialog<Map<String, String>?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('신규회원 생성'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'ID는 휴대폰 전화번호, 비밀번호는 전화번호 뒤 4자리로 자동 생성됩니다.',
-              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('신규회원 생성'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'ID는 휴대폰 전화번호, 비밀번호는 전화번호 뒤 4자리로 자동 생성됩니다.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '이름 (실명)',
+                      helperText: '실명을 입력하세요 (닉네임 불가)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(labelText: '휴대폰 전화번호'),
+                  ),
+                  const SizedBox(height: 12),
+                  // 개인정보 수집·이용 동의 (필수) — 동의해야 가입 가능
+                  PrivacyConsentField(
+                    agreed: agreed,
+                    onChanged: (v) => setLocal(() => agreed = v),
+                    showTitle: false,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: '이름'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('취소'),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: '휴대폰 전화번호'),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+              onPressed: agreed
+                  ? () => Navigator.pop(ctx, {
+                      'name': nameCtrl.text.trim(),
+                      'phone': phoneCtrl.text.trim(),
+                    })
+                  : null,
+              child: const Text('생성'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-            onPressed: () => Navigator.pop(ctx, {
-              'name': nameCtrl.text.trim(),
-              'phone': phoneCtrl.text.trim(),
-            }),
-            child: const Text('생성'),
-          ),
-        ],
       ),
     );
     if (created == null || !mounted) return;
@@ -179,16 +200,17 @@ class _LockScreenState extends State<LockScreen> {
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'TSAK 인가자 관리',
+                    '한국 범스카우트중앙회 통합 앱',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 22,
+                      fontSize: 21,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    '한국범스카우트 중앙회',
+                    'TSAK 인가자 · 회원 통합 관리',
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   const SizedBox(height: 24),
@@ -306,6 +328,11 @@ class _LockScreenState extends State<LockScreen> {
                   const Text(
                     '개발: 이승준 · 범스카우트415 · june7558@gmail.com',
                     style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  const SizedBox(height: 3),
+                  const Text(
+                    '한국 범스카우트중앙회 통합 앱 v1.0.0 · 업데이트 2025.09.24',
+                    style: TextStyle(color: Colors.white60, fontSize: 10.5),
                   ),
                 ],
               ),

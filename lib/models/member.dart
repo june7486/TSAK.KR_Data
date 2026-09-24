@@ -23,6 +23,8 @@ class Member {
     this.isRegular = false,
     this.personalPassword = '',
     this.accessPhone = '',
+    this.privacyAgreed = false,
+    this.privacyAgreedAt = '',
     List<String>? mentors,
     List<String>? parents,
     Map<String, bool>? feeYears,
@@ -93,6 +95,12 @@ class Member {
   /// 일반회원 접속 ID (휴대폰 전화번호). 비어 있으면 인가번호/전화로 로그인
   String accessPhone;
 
+  /// 개인정보 수집·이용 및 제3자 제공 동의 여부 (가입/저장 필수)
+  bool privacyAgreed;
+
+  /// 개인정보 동의 일시 (예: "2025.09.24 10:30")
+  String privacyAgreedAt;
+
   /// 멘토 인가번호 목록 (복수 지정 가능)
   List<String> mentors;
 
@@ -159,6 +167,8 @@ class Member {
     'isRegular': isRegular,
     'personalPassword': personalPassword,
     'accessPhone': accessPhone,
+    'privacyAgreed': privacyAgreed,
+    'privacyAgreedAt': privacyAgreedAt,
     'mentors': mentors,
     'parents': parents,
     'feeYears': feeYears,
@@ -204,6 +214,8 @@ class Member {
       isRegular: map['isRegular'] == true,
       personalPassword: '${map['personalPassword'] ?? ''}',
       accessPhone: '${map['accessPhone'] ?? ''}',
+      privacyAgreed: map['privacyAgreed'] == true,
+      privacyAgreedAt: '${map['privacyAgreedAt'] ?? ''}',
       mentors: castStrList(map['mentors']),
       parents: castStrList(map['parents']),
       feeYears: castBoolMap(map['feeYears']),
@@ -234,6 +246,8 @@ class Member {
     bool? isRegular,
     String? personalPassword,
     String? accessPhone,
+    bool? privacyAgreed,
+    String? privacyAgreedAt,
     List<String>? mentors,
     List<String>? parents,
     Map<String, bool>? feeYears,
@@ -261,6 +275,8 @@ class Member {
       isRegular: isRegular ?? this.isRegular,
       personalPassword: personalPassword ?? this.personalPassword,
       accessPhone: accessPhone ?? this.accessPhone,
+      privacyAgreed: privacyAgreed ?? this.privacyAgreed,
+      privacyAgreedAt: privacyAgreedAt ?? this.privacyAgreedAt,
       mentors: mentors ?? List<String>.from(this.mentors),
       parents: parents ?? List<String>.from(this.parents),
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),

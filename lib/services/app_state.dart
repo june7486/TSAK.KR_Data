@@ -667,12 +667,19 @@ class AppState extends ChangeNotifier {
   Member? byId(String id) => repo.byId(id);
   Member? byNumber(String number) => repo.byNumber(number);
 
-  /// 개인 접근에서 특정 인가자가 본인인지 여부
+  /// 개인/비인가자 접근에서 특정 회원이 본인인지 여부
   bool isSelfNumber(String number) {
-    if (!isPersonal || who.isEmpty) return true;
+    if (!isSelfAccess || who.isEmpty) return true;
     final a = who.replaceAll(RegExp(r'[^0-9]'), '');
     final b = number.replaceAll(RegExp(r'[^0-9]'), '');
-    return a == b;
+    if (a == b) return true;
+    // 전화번호 기반(일반회원) 매칭
+    for (final m in repo.all()) {
+      final n = m.number.replaceAll(RegExp(r'[^0-9]'), '');
+      final l = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
+      if (n == b && l == a) return true;
+    }
+    return false;
   }
 
   Future<void> save(Member m) async {
@@ -682,9 +689,16 @@ class AppState extends ChangeNotifier {
   /// 신규 일반회원(비인가자) 생성.
   /// id = 휴대폰 전화번호, pw = 전화번호 뒤 4자리 자동 설정.
   /// 반환: 성공 시 생성된 Member, 실패 시 null.
-  Future<Member?> createRegularMember(String name, String phone) async {
+  Future<Member?> createRegularMember(
+    String name,
+    String phone, {
+    bool privacyAgreed = true,
+    String privacyAgreedAt = '',
+  }) async {
     final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
     if (name.trim().isEmpty || digits.length < 4) return null;
+    // 개인정보 동의 없이는 가입 불가
+    if (!privacyAgreed) return null;
     // 중복 번호 방지 (인가자/일반회원 모두)
     for (final m in repo.allUnscoped()) {
       final pid = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
@@ -703,9 +717,18 @@ class AppState extends ChangeNotifier {
       accessPhone: digits,
       isRegular: true,
       personalPassword: last4,
+      privacyAgreed: true,
+      privacyAgreedAt: privacyAgreedAt.isNotEmpty ? privacyAgreedAt : _stamp(),
     );
     await repo.save(m);
     return m;
+  }
+
+  /// 현재 시각 문자열 (예: "2025.09.24 10:30")
+  String _stamp() {
+    final n = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${n.year}.${two(n.month)}.${two(n.day)} ${two(n.hour)}:${two(n.minute)}';
   }
 
   /// 특정 회원(인가자/일반회원) 비밀번호 강제 변경/초기화 (마스터·관리자 전용)

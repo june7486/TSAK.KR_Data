@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
+import 'services/app_config.dart';
 import 'services/app_state.dart';
 import 'services/finance_service.dart';
 import 'services/member_repository.dart';
@@ -45,7 +46,7 @@ class TsakApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TSAK 인가자 관리',
+      title: AppConfig.appTitle,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       home: const AuthGate(),

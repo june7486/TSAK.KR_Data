@@ -15,6 +15,7 @@ class MemberCard extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onCheckToggle,
+    this.onEdit,
   });
 
   final Member member;
@@ -24,6 +25,9 @@ class MemberCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onCheckToggle;
+
+  /// 이름 좌측 편집창 — 실명/개인정보 입력 화면으로 이동
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +72,50 @@ class MemberCard extends StatelessWidget {
                     ),
                   ),
                 ),
+              // 이름 좌측 편집창 — 실명/개인정보를 바로 입력·수정
+              if (!selectMode && onEdit != null)
+                Padding(
+                  padding: EdgeInsets.only(right: 8 * s),
+                  child: Tooltip(
+                    message: '개인정보 편집 (실명·연락처 등)',
+                    child: InkWell(
+                      onTap: onEdit,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 7 * s,
+                          vertical: 8 * s,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.purple.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.purple.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.edit_note,
+                              size: 18 * s,
+                              color: AppColors.purple,
+                            ),
+                            SizedBox(height: 1 * s),
+                            Text(
+                              '편집',
+                              style: TextStyle(
+                                fontSize: 9.5 * s,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.purple,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               MemberAvatar(
                 name: member.name,
                 photoPath: member.photoPath,
@@ -108,7 +156,9 @@ class MemberCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
-                            '#${member.number}',
+                            member.number.trim().isEmpty
+                                ? '일반 ${member.loginId}'
+                                : '#${member.number}',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 12 * s,
@@ -129,6 +179,10 @@ class MemberCard extends StatelessWidget {
                     SizedBox(height: 4 * s),
                     Row(
                       children: [
+                        if (member.isRegular)
+                          _badge('일반회원', AppColors.textGray, s),
+                        if (member.isRegular && member.league.isNotEmpty)
+                          SizedBox(width: 5 * s),
                         if (member.league.isNotEmpty)
                           _badge(member.league, color, s),
                         if (member.unit.isNotEmpty) ...[

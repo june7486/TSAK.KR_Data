@@ -48,7 +48,7 @@ class AppHomeEmblem extends StatelessWidget {
                 children: [
                   emblem,
                   const SizedBox(width: 6),
-                  const Text('TSAK 인가자 관리'),
+                  const Text('한국 범스카우트중앙회 통합 앱'),
                 ],
               )
             : emblem,

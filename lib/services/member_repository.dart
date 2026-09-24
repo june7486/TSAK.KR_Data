@@ -214,14 +214,21 @@ class MemberRepository {
   }
 
   // ---- 공개 API ----
+  bool _matchesRestricted(Member m) {
+    if (!isRestricted) return true;
+    final r = restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '');
+    if (r.isEmpty) return false;
+    final num = m.number.replaceAll(RegExp(r'[^0-9]'), '');
+    final login = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
+    final phone = m.phone.replaceAll(RegExp(r'[^0-9]'), '');
+    return num == r || login == r || phone == r;
+  }
+
   List<Member> all() {
     final list = _values.map((v) => Member.fromMap(v)).toList()
       ..sort((a, b) => a.numberInt.compareTo(b.numberInt));
     if (isRestricted) {
-      final r = restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '');
-      return list
-          .where((m) => m.number.replaceAll(RegExp(r'[^0-9]'), '') == r)
-          .toList();
+      return list.where(_matchesRestricted).toList();
     }
     return list;
   }
@@ -234,8 +241,7 @@ class MemberRepository {
     if (isRestricted) {
       final m = _rawById(id);
       if (m == null) return null;
-      final r = restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '');
-      return m.number.replaceAll(RegExp(r'[^0-9]'), '') == r ? m : null;
+      return _matchesRestricted(m) ? m : null;
     }
     return _rawById(id);
   }
@@ -253,9 +259,14 @@ class MemberRepository {
   Member? byNumber(String number) {
     final n = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (n.isEmpty) return null;
-    if (isRestricted &&
-        n != restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '')) {
-      return null; // 개인 접근: 본인 외 접근 차단
+    if (isRestricted) {
+      for (final m in all()) {
+        if (m.loginId.replaceAll(RegExp(r'[^0-9]'), '') == n ||
+            m.number.replaceAll(RegExp(r'[^0-9]'), '') == n) {
+          return m;
+        }
+      }
+      return null;
     }
     for (final m in all()) {
       if (m.number.replaceAll(RegExp(r'[^0-9]'), '') == n) return m;

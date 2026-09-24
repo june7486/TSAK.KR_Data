@@ -70,34 +70,75 @@ class StatsScreen extends StatelessWidget {
   }
 
   Widget _summary(AppState state) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            _statBox(
-              '전체 인가자',
-              '${state.total}',
-              Icons.groups,
-              AppColors.purple,
+    return Column(
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                _statBox(
+                  '전체',
+                  '${state.total}',
+                  Icons.groups,
+                  AppColors.purple,
+                ),
+                _divider(),
+                _statBox(
+                  '범 인가자',
+                  '${state.credentialCount}',
+                  Icons.verified_user,
+                  AppColors.taegeukBlue,
+                ),
+                _divider(),
+                _statBox(
+                  '검색결과',
+                  '${state.members.length}',
+                  Icons.search,
+                  AppColors.scoutGreen,
+                ),
+              ],
             ),
-            _divider(),
-            _statBox(
-              '평생회원',
-              '${state.lifetimeCount}',
-              Icons.star,
-              AppColors.tigerGold,
-            ),
-            _divider(),
-            _statBox(
-              '연맹 수',
-              '${state.leagues.length}',
-              Icons.flag,
-              AppColors.taegeukBlue,
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                _statBox(
+                  '멘토 연결',
+                  '${state.mentorLinkedCount}',
+                  Icons.supervisor_account,
+                  AppColors.purpleLight,
+                ),
+                _divider(),
+                _statBox(
+                  '페런츠 연결',
+                  '${state.parentLinkedCount}',
+                  Icons.family_restroom,
+                  AppColors.taegeukRed,
+                ),
+                _divider(),
+                _statBox(
+                  '평생회원',
+                  '${state.lifetimeCount}',
+                  Icons.star,
+                  AppColors.tigerGold,
+                ),
+                _divider(),
+                _statBox(
+                  '일반회원',
+                  '${state.regularCount}',
+                  Icons.person_outline,
+                  AppColors.textGray,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
