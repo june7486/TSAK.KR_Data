@@ -45,6 +45,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   Map<String, bool> _fees = {};
   Member? _existing;
 
+  /// 멘토/페런츠 인가번호 목록 (복수 입력)
+  List<String> _mentors = [];
+  List<String> _parents = [];
+
   /// 훈련현황 선택 항목
   static const List<String> _trainingOptions = [
     '중급',
@@ -82,6 +86,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _trainingStatus = m?.trainingStatus ?? '';
     _lifetime = m?.lifetimeMember ?? false;
     _fees = Map<String, bool>.from(m?.feeYears ?? {});
+    _mentors = List<String>.from(m?.mentors ?? []);
+    _parents = List<String>.from(m?.parents ?? []);
   }
 
   @override
@@ -214,6 +220,18 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.celebration,
               ),
               _trainingStatusField(),
+              _codeListField(
+                label: '멘토',
+                icon: Icons.supervisor_account,
+                list: _mentors,
+                onChanged: (v) => setState(() => _mentors = v),
+              ),
+              _codeListField(
+                label: '페런츠',
+                icon: Icons.family_restroom,
+                list: _parents,
+                onChanged: (v) => setState(() => _parents = v),
+              ),
               _field(
                 '이메일',
                 _email,
@@ -303,7 +321,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _anniversary.text.trim() != m.anniversary ||
         _trainingStatus != m.trainingStatus ||
         _photoPath != m.photoPath ||
-        _lifetime != m.lifetimeMember;
+        _lifetime != m.lifetimeMember ||
+        _mentors.join(',') != m.mentors.join(',') ||
+        _parents.join(',') != m.parents.join(',');
   }
 
   Widget _photoPicker() {
@@ -561,6 +581,106 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     );
   }
 
+  /// 멘토/페런츠 등 인가번호 목록 입력 필드 (복수)
+  Widget _codeListField({
+    required String label,
+    required IconData icon,
+    required List<String> list,
+    required ValueChanged<List<String>> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.purple),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _addCode(label, list, onChanged),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('추가', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          if (list.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(left: 24, bottom: 4),
+              child: Text(
+                '등록된 인가번호 없음 (복수 입력 가능)',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final code in list)
+                  Chip(
+                    label: Text('#$code'),
+                    backgroundColor: AppColors.purple.withValues(alpha: 0.08),
+                    labelStyle: const TextStyle(
+                      color: AppColors.purple,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                    onDeleted: () {
+                      final next = List<String>.from(list)..remove(code);
+                      onChanged(next);
+                    },
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addCode(
+    String label,
+    List<String> list,
+    ValueChanged<List<String>> onChanged,
+  ) async {
+    final ctrl = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$label 인가번호 추가'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: '인가번호'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('추가'),
+          ),
+        ],
+      ),
+    );
+    final c = (code ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (c.isEmpty) return;
+    if (list.contains(c)) return;
+    onChanged([...list, c]);
+  }
+
   /// 공용 저장 로직 — 저장만 수행 (pop 없음)
   Future<bool> _saveInternal() async {
     if (!(_formKey.currentState?.validate() ?? false)) return false;
@@ -588,6 +708,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       feeYears: Map<String, bool>.from(_fees)
         ..removeWhere((k, v) => v == false),
       eventAttend: _existing?.eventAttend ?? {},
+      mentors: List<String>.from(_mentors),
+      parents: List<String>.from(_parents),
     );
     await state.save(member);
     _existing = member; // 이후 dirty 비교 기준 갱신

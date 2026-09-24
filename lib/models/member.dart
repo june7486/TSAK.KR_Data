@@ -20,10 +20,17 @@ class Member {
     this.trainingStatus = '',
     this.photoPath = '',
     this.lifetimeMember = false,
+    this.isRegular = false,
+    this.personalPassword = '',
+    this.accessPhone = '',
+    List<String>? mentors,
+    List<String>? parents,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     this.updatedAt,
-  }) : feeYears = feeYears ?? <String, bool>{},
+  }) : mentors = mentors ?? <String>[],
+       parents = parents ?? <String>[],
+       feeYears = feeYears ?? <String, bool>{},
        eventAttend = eventAttend ?? <String, bool>{};
 
   /// 내부 고유 ID
@@ -77,6 +84,21 @@ class Member {
   /// 평생회원 여부
   bool lifetimeMember;
 
+  /// 일반회원(비인가자) 여부 — true면 인가자가 아닌 일반 참가자/신규회원
+  bool isRegular;
+
+  /// 개인 접속용 비밀번호 (일반회원: 전화번호 뒤 4자리 자동, 이후 변경 가능)
+  String personalPassword;
+
+  /// 일반회원 접속 ID (휴대폰 전화번호). 비어 있으면 인가번호/전화로 로그인
+  String accessPhone;
+
+  /// 멘토 인가번호 목록 (복수 지정 가능)
+  List<String> mentors;
+
+  /// 페런츠(보호자) 인가번호 목록 (복수 지정 가능)
+  List<String> parents;
+
   /// 연간회비 납부 이력: {"2024": true, "2025": true, ...}
   Map<String, bool> feeYears;
 
@@ -88,8 +110,19 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus'
+      '$number $name $league $unit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
+
+  /// 로그인 아이디 (일반회원은 전화번호, 인가자는 인가번호)
+  String get loginId => accessPhone.trim().isNotEmpty
+      ? accessPhone.replaceAll(RegExp(r'[^0-9]'), '')
+      : number;
+
+  /// 전화번호 뒤 4자리 (기본 개인비밀번호)
+  String get phoneLast4 {
+    final d = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    return d.length >= 4 ? d.substring(d.length - 4) : d;
+  }
 
   /// 전화번호에서 숫자만 추출 (하이픈 무관 검색용)
   String get phoneDigits => phone.replaceAll(RegExp(r'[^0-9]'), '');
@@ -123,6 +156,11 @@ class Member {
     'trainingStatus': trainingStatus,
     'photoPath': photoPath,
     'lifetimeMember': lifetimeMember,
+    'isRegular': isRegular,
+    'personalPassword': personalPassword,
+    'accessPhone': accessPhone,
+    'mentors': mentors,
+    'parents': parents,
     'feeYears': feeYears,
     'eventAttend': eventAttend,
     'updatedAt': updatedAt?.millisecondsSinceEpoch,
@@ -135,6 +173,14 @@ class Member {
         v.forEach((k, val) => out['$k'] = val == true);
       }
       return out;
+    }
+
+    List<String> castStrList(dynamic v) {
+      if (v is List) return v.map((e) => '$e').where((s) => s.isNotEmpty).toList();
+      if (v is String && v.trim().isNotEmpty) {
+        return v.split(RegExp(r'[,\s]+')).where((s) => s.isNotEmpty).toList();
+      }
+      return <String>[];
     }
 
     return Member(
@@ -155,6 +201,11 @@ class Member {
       trainingStatus: '${map['trainingStatus'] ?? ''}',
       photoPath: '${map['photoPath'] ?? ''}',
       lifetimeMember: map['lifetimeMember'] == true,
+      isRegular: map['isRegular'] == true,
+      personalPassword: '${map['personalPassword'] ?? ''}',
+      accessPhone: '${map['accessPhone'] ?? ''}',
+      mentors: castStrList(map['mentors']),
+      parents: castStrList(map['parents']),
       feeYears: castBoolMap(map['feeYears']),
       eventAttend: castBoolMap(map['eventAttend']),
       updatedAt: map['updatedAt'] != null
@@ -180,6 +231,11 @@ class Member {
     String? trainingStatus,
     String? photoPath,
     bool? lifetimeMember,
+    bool? isRegular,
+    String? personalPassword,
+    String? accessPhone,
+    List<String>? mentors,
+    List<String>? parents,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     DateTime? updatedAt,
@@ -202,6 +258,11 @@ class Member {
       trainingStatus: trainingStatus ?? this.trainingStatus,
       photoPath: photoPath ?? this.photoPath,
       lifetimeMember: lifetimeMember ?? this.lifetimeMember,
+      isRegular: isRegular ?? this.isRegular,
+      personalPassword: personalPassword ?? this.personalPassword,
+      accessPhone: accessPhone ?? this.accessPhone,
+      mentors: mentors ?? List<String>.from(this.mentors),
+      parents: parents ?? List<String>.from(this.parents),
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),
       eventAttend: eventAttend ?? Map<String, bool>.from(this.eventAttend),
       updatedAt: updatedAt ?? this.updatedAt,

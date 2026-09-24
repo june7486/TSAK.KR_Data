@@ -11,7 +11,7 @@ import 'app_access_screen.dart';
 import 'admin_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
-import 'event_gallery_screen.dart';
+import 'event_year_screen.dart';
 import 'finance_screen.dart';
 import 'import_screen.dart';
 import 'member_detail_screen.dart';
@@ -652,33 +652,57 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          // 재무 바로가기 — 후원현황 / 수품구매 / 참가비 / 지출 / 결산
+          // 재무 바로가기 — 관리자·마스터 전용(후원현황/수품구매/참가비/지출/결산/기본자료)
+          // 관리자 전용 항목은 테두리 색을 다르게 표시한다.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _finButton(
-                  '후원현황',
-                  Icons.volunteer_activism,
-                  AppColors.taegeukRed,
-                  1,
-                ),
-                _finButton(
-                  '수품구매',
-                  Icons.shopping_bag,
-                  AppColors.taegeukBlue,
-                  2,
-                ),
-                _finButton(
-                  '참가비',
-                  Icons.event_available,
-                  AppColors.tigerGold,
-                  3,
-                ),
-                _finButton('지출현황', Icons.payments, Color(0xFF00838F), 4),
-                _finButton('결산', Icons.calculate, AppColors.scoutGreen, 5),
+                if (state.isApp || state.isMaster) ...[
+                  _finButton(
+                    '후원현황',
+                    Icons.volunteer_activism,
+                    AppColors.taegeukRed,
+                    1,
+                    adminOnly: true,
+                  ),
+                  _finButton(
+                    '수품구매',
+                    Icons.shopping_bag,
+                    AppColors.taegeukBlue,
+                    2,
+                    adminOnly: true,
+                  ),
+                  _finButton(
+                    '참가비',
+                    Icons.event_available,
+                    AppColors.tigerGold,
+                    3,
+                    adminOnly: true,
+                  ),
+                  _finButton(
+                    '지출현황',
+                    Icons.payments,
+                    const Color(0xFF00838F),
+                    4,
+                    adminOnly: true,
+                  ),
+                  _finButton(
+                    '결산',
+                    Icons.calculate,
+                    AppColors.scoutGreen,
+                    5,
+                    adminOnly: true,
+                  ),
+                  _finButton(
+                    '기본자료',
+                    Icons.folder_open,
+                    AppColors.purple,
+                    -1,
+                    adminOnly: true,
+                  ),
+                ],
                 _eventButton(),
-                _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
               ],
             ),
           ),
@@ -928,14 +952,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 행사관리(사진·동영상 갤러리) 진입 버튼
+  /// 행사관리(연도별 행사 목록) 진입 버튼
   Widget _eventButton() {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: GestureDetector(
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const EventGalleryScreen()),
+          MaterialPageRoute(builder: (_) => const EventYearScreen()),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -963,7 +987,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _finButton(String label, IconData icon, Color color, int tab) {
+  Widget _finButton(
+    String label,
+    IconData icon,
+    Color color,
+    int tab, {
+    bool adminOnly = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: GestureDetector(
@@ -985,7 +1015,13 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.20),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+            // 관리자 전용 항목은 금색 테두리로 확실히 구분
+            border: Border.all(
+              color: adminOnly
+                  ? AppColors.tigerGold
+                  : Colors.white.withValues(alpha: 0.5),
+              width: adminOnly ? 2 : 1,
+            ),
           ),
           child: Row(
             children: [

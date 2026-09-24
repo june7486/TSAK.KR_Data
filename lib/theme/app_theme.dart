@@ -26,6 +26,11 @@ class AppColors {
 
 class AppTheme {
   static ThemeData light() {
+    // 한글 폰트: Roboto 고정 시 한글 글리프가 없어 일부 기기에서 깨짐.
+    // fontFamily를 지정하지 않아 플랫폼 기본 한글 폰트를 사용한다.
+    //  - iOS : Apple SD Gothic Neo (시스템 기본)
+    //  - Android : Noto Sans CJK / Roboto(한글 폴백, 시스템 기본)
+    //  - Web/기타 : 브라우저가 지정한 sans-serif 폰트
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
@@ -33,7 +38,6 @@ class AppTheme {
         primary: AppColors.purple,
       ),
       scaffoldBackgroundColor: AppColors.bg,
-      fontFamily: 'Roboto',
     );
 
     return base.copyWith(

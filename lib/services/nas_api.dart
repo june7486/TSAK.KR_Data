@@ -50,15 +50,43 @@ class NasApi {
   }
 
   // ---- Auth ----
-  /// tier: master | app | personal
-  Future<Map<String, dynamic>> login(String tier, String value) async {
+  /// tier: master | app | personal | guest
+  Future<Map<String, dynamic>> login(
+    String tier,
+    String value, {
+    String id = '',
+  }) async {
     final r = await http
         .post(
           _uri('/api/login'),
           headers: {'Content-Type': 'application/json'},
-          body: json.encode({'tier': tier, 'value': value}),
+          body: json.encode({'tier': tier, 'value': value, 'id': id}),
         )
         .timeout(const Duration(seconds: 15));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 마스터/관리자 전용 — 특정 회원 비밀번호 강제 변경(reset=false) 또는 초기화(reset=true)
+  Future<Map<String, dynamic>> setAdminPassword({
+    required String tier, // master | app
+    required String id, // 인가번호 또는 전화번호
+    String value = '',
+    bool reset = false,
+    String? master,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/set-password'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'tier': tier,
+            'id': id,
+            'value': value,
+            'reset': reset,
+            if (master != null) 'master': master,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
@@ -375,6 +403,395 @@ class NasApi {
           _uri('/api/event/delete'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'name': name}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  // ==================== 행사관리 v2 (연도/행사/항목 폴더) ====================
+  /// 행사 목록
+  Future<List<Map<String, dynamic>>> eventList2() async {
+    final r = await http
+        .get(_uri('/api/event/list2'))
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['events'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 행사 상세
+  Future<Map<String, dynamic>> eventGet(String year, String title) async {
+    final r = await http
+        .get(_uri('/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}'))
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
+  }
+
+  /// 행사 폴더(항목) 파일 목록
+  Future<List<Map<String, dynamic>>> eventFiles(
+    String year,
+    String title,
+    String key,
+  ) async {
+    final r = await http
+        .get(
+          _uri('/api/event/files?year=${Uri.encodeComponent(year)}'
+              '&title=${Uri.encodeComponent(title)}&key=$key'),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['files'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 행사 썸네일 URL (size: normal=480px, view=1600px 최적본, orig=원본)
+  String eventThumb2Url(
+    String year,
+    String title,
+    String name, {
+    String size = 'normal',
+  }) =>
+      '$_base/api/event/thumb2?year=${Uri.encodeComponent(year)}'
+      '&title=${Uri.encodeComponent(title)}&name=${Uri.encodeComponent(name)}'
+      '&size=$size';
+
+  /// 행사 항목 파일 URL (원본 보기 / 다운로드)
+  String eventFile2Url(
+    String year,
+    String title,
+    String key,
+    String name, {
+    bool download = false,
+  }) =>
+      '$_base/api/event/f2?year=${Uri.encodeComponent(year)}'
+      '&title=${Uri.encodeComponent(title)}&key=$key'
+      '&name=${Uri.encodeComponent(name)}${download ? '&dl=1' : ''}';
+
+  /// 행사 폴더 ZIP 다운로드 URL
+  String eventZipUrl(String year, String title, String key) =>
+      '$_base/api/event/zip?year=${Uri.encodeComponent(year)}'
+      '&title=${Uri.encodeComponent(title)}&key=$key';
+
+  /// 참가자 명단 HTML URL (인쇄/저장용)
+  String eventRosterUrl(String year, String title) =>
+      '$_base/api/event/roster?year=${Uri.encodeComponent(year)}'
+      '&title=${Uri.encodeComponent(title)}';
+
+  /// 행사 생성
+  Future<Map<String, dynamic>> eventCreate({
+    required String year,
+    required String title,
+    String period = '',
+    String place = '',
+    String desc = '',
+    String by = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/create'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'period': period,
+            'place': place,
+            'desc': desc,
+            'by': by,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 행사 이름/연도 변경
+  Future<Map<String, dynamic>> eventRename({
+    required String year,
+    required String title,
+    String? newTitle,
+    String? newYear,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/rename'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'newTitle': newTitle ?? title,
+            'newYear': newYear ?? year,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 행사 삭제
+  Future<bool> eventDelete(String year, String title) async {
+    final r = await http
+        .post(
+          _uri('/api/event/delete'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'year': year, 'title': title}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 참석자 목록 저장 (+회원 프로필 자동 반영)
+  Future<bool> eventSetAttendees(
+    String year,
+    String title,
+    List<Map<String, dynamic>> attendees,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/attendee/set'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'attendees': attendees,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 인가자/회원 검색 (참석자 선택용)
+  Future<List<Map<String, dynamic>>> eventSearchMember(String q) async {
+    final r = await http
+        .post(
+          _uri('/api/event/search-member'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'q': q}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['results'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 행사 항목 파일 업로드 (스트리밍)
+  Future<Map<String, dynamic>> eventUpload2(
+    String year,
+    String title,
+    String key,
+    String name,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+    String uploader = '',
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final uri = Uri.parse(
+      '$_base/api/event/upload2?year=${Uri.encodeComponent(year)}'
+      '&title=${Uri.encodeComponent(title)}&key=$key'
+      '&name=${Uri.encodeComponent(name)}&uploader=${Uri.encodeComponent(uploader)}',
+    );
+    final req = http.StreamedRequest('POST', uri);
+    req.headers['Content-Type'] = contentType;
+    req.headers['Content-Length'] = '${bytes.length}';
+    const chunk = 262144;
+    var sent = 0;
+    Future<void> pump() async {
+      for (var i = 0; i < bytes.length; i += chunk) {
+        final end = (i + chunk < bytes.length) ? i + chunk : bytes.length;
+        req.sink.add(bytes.sublist(i, end));
+        sent = end;
+        onProgress?.call(sent, bytes.length);
+      }
+      await req.sink.close();
+    }
+
+    pump();
+    final streamed = await req.send().timeout(const Duration(seconds: 1800));
+    final resp = await http.Response.fromStream(streamed);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 행사 항목 파일 삭제
+  Future<bool> eventFileDelete(
+    String year,
+    String title,
+    String key,
+    String name,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/file/delete'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'key': key,
+            'name': name,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 행사 항목 파일 이름변경
+  Future<bool> eventFileRename(
+    String year,
+    String title,
+    String key,
+    String name,
+    String newName,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/file/rename'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'key': key,
+            'name': name,
+            'newName': newName,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 행사 재무(참가비/후원금/지출) 조회
+  Future<Map<String, dynamic>> eventFinance(String year, String title) async {
+    final r = await http
+        .get(
+          _uri('/api/event/finance?year=${Uri.encodeComponent(year)}'
+              '&title=${Uri.encodeComponent(title)}'),
+        )
+        .timeout(const Duration(seconds: 30));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 행사 재무 항목 추가 (kind: fee | expense) → 재무관리 자동연동
+  Future<bool> eventFinanceAdd(
+    String year,
+    String title,
+    String kind,
+    Map<String, dynamic> row,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/finance/add'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'kind': kind,
+            'row': row,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 행사 재무 항목 수정
+  Future<bool> eventFinanceUpdate(
+    String year,
+    String title,
+    String kind,
+    String id,
+    Map<String, dynamic> row,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/finance/update'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'kind': kind,
+            'id': id,
+            'row': row,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 행사 재무 항목 삭제 (재무관리 연동 해제 포함)
+  Future<bool> eventFinanceDelete(
+    String year,
+    String title,
+    String kind,
+    String id,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/finance/delete'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'kind': kind,
+            'id': id,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 사진+동영상 폴더 접근 로그 기록
+  Future<void> eventAccessLog(
+    String year,
+    String title, {
+    String id = '',
+    String name = '',
+    String role = '',
+  }) async {
+    try {
+      await http
+          .post(
+            _uri('/api/event/access/log'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'year': year,
+              'title': title,
+              'id': id,
+              'name': name,
+              'role': role,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {}
+  }
+
+  /// 참가자 접근 이력 맵 (v표시용)
+  Future<Map<String, dynamic>> eventAccessMap(
+    String year,
+    String title,
+  ) async {
+    final r = await http
+        .get(
+          _uri('/api/event/access?year=${Uri.encodeComponent(year)}'
+              '&title=${Uri.encodeComponent(title)}'),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return (j['access'] as Map?)?.cast<String, dynamic>() ?? {};
+  }
+
+  /// 모든 참가자에게 사진 업로드 요청 기록
+  Future<bool> eventRequestPhoto(String year, String title, {String by = '', String message = ''}) async {
+    final r = await http
+        .post(
+          _uri('/api/event/request-photo'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'year': year, 'title': title, 'by': by, 'message': message}),
         )
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;

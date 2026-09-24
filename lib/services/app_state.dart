@@ -30,8 +30,8 @@ class AppState extends ChangeNotifier {
 
   // ---------- 인증 / 세션 ----------
   bool _unlocked = false;
-  String _tier = ''; // master | app | personal
-  String _who = ''; // 개인 로그인 시 인가번호
+  String _tier = ''; // master | app | personal | guest
+  String _who = ''; // 개인 로그인 시 식별자(인가번호 또는 전화번호)
   DateTime? _sessionStart;
 
   bool get unlocked => _unlocked;
@@ -40,10 +40,14 @@ class AppState extends ChangeNotifier {
   bool get isMaster => _tier == 'master';
   bool get isPersonal => _tier == 'personal';
   bool get isApp => _tier == 'app';
+  bool get isGuest => _tier == 'guest';
+
+  /// 본인 1인 열람(개인 접근) 모드 여부
+  bool get isSelfAccess => _tier == 'personal' || _tier == 'guest';
 
   /// 개인 접근 시 본인 정보만 열람·수정 가능하도록 저장소 제한을 갱신
   void _applyAccessScope() {
-    if (_tier == 'personal' && _who.isNotEmpty) {
+    if (isSelfAccess && _who.isNotEmpty) {
       repo.restrictedNumber = _who;
     } else {
       repo.restrictedNumber = null;
@@ -104,6 +108,42 @@ class AppState extends ChangeNotifier {
         // 서버 미연결/오프라인이면 로컬 상수로 폴백
         if (!ok) ok = value == AppConfig.appPassword;
       }
+    } else if (tier == 'guest') {
+      // 비인가자(일반회원) 접근: ID = 휴대폰 전화번호, PW = 전화번호 뒤 4자리
+      final phone = id.replaceAll(RegExp(r'[^0-9]'), '');
+      ok = false;
+      if (phone.length >= 4) {
+        Member? reg;
+        if (repo.isNasMode && phone.isNotEmpty) {
+          try {
+            final r = await nas.login('guest', value, id: phone);
+            if (r['ok'] == true) {
+              ok = true;
+              final no = '${r['number'] ?? ''}';
+              reg = no.isNotEmpty ? repo.byNumber(no) : null;
+            }
+          } catch (_) {}
+        }
+        if (!ok) {
+          for (final m in repo.allUnscoped()) {
+            final mid = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
+            if (mid == phone || m.phone.replaceAll(RegExp(r'[^0-9]'), '') == phone) {
+              final pw = m.personalPassword.trim().isNotEmpty
+                  ? m.personalPassword.trim()
+                  : m.phoneLast4;
+              if (value == pw ||
+                  value == '$phone$pw' ||
+                  value == m.phoneLast4) {
+                ok = true;
+                reg = m;
+              }
+              break;
+            }
+          }
+        }
+        personalNo = reg?.number ?? '';
+        if (ok && personalNo.isEmpty) personalNo = phone; // 번호 미상 시 전화로 식별
+      }
     } else {
       // 개인 접근: ID=인가번호, 비밀번호=개인비밀번호
       //  - ID(인가번호)로 번호를 확정하고, 비밀번호는 다음 중 하나로 인정:
@@ -145,7 +185,7 @@ class AppState extends ChangeNotifier {
     if (ok) {
       _unlocked = true;
       _tier = tier;
-      _who = tier == 'personal' ? personalNo : '';
+      _who = (tier == 'personal' || tier == 'guest') ? personalNo : '';
       _sessionStart = DateTime.now();
       _applyAccessScope();
       _persistSession();
@@ -638,6 +678,67 @@ class AppState extends ChangeNotifier {
   Future<void> save(Member m) async {
     await repo.save(m);
   }
+
+  /// 신규 일반회원(비인가자) 생성.
+  /// id = 휴대폰 전화번호, pw = 전화번호 뒤 4자리 자동 설정.
+  /// 반환: 성공 시 생성된 Member, 실패 시 null.
+  Future<Member?> createRegularMember(String name, String phone) async {
+    final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (name.trim().isEmpty || digits.length < 4) return null;
+    // 중복 번호 방지 (인가자/일반회원 모두)
+    for (final m in repo.allUnscoped()) {
+      final pid = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
+      final pph = m.phone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (pid == digits || pph == digits) return null;
+    }
+    final last4 = digits.length >= 4
+        ? digits.substring(digits.length - 4)
+        : digits;
+    final id = 'reg_${digits}_${DateTime.now().millisecondsSinceEpoch}';
+    final m = Member(
+      id: id,
+      number: '', // 인가번호 없음(비인가자)
+      name: name.trim(),
+      phone: phone.trim(),
+      accessPhone: digits,
+      isRegular: true,
+      personalPassword: last4,
+    );
+    await repo.save(m);
+    return m;
+  }
+
+  /// 특정 회원(인가자/일반회원) 비밀번호 강제 변경/초기화 (마스터·관리자 전용)
+  Future<String?> setMemberPassword(
+    Member m, {
+    String? value,
+    bool reset = false,
+  }) async {
+    final newPw = reset
+        ? (m.isRegular ? m.phoneLast4 : '${m.number}${AppConfig.personalSuffix}')
+        : (value ?? '').trim();
+    if (newPw.isEmpty) return '비밀번호가 비어 있습니다';
+    await repo.save(m.copyWith(personalPassword: newPw));
+    if (repo.isNasMode) {
+      try {
+        await nas.setAdminPassword(
+          tier: isMaster ? 'master' : 'app',
+          id: m.loginId,
+          value: newPw,
+          reset: reset,
+        );
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// 멘토/페런츠로 지정된(연결된) 회원 수 등 파생 통계
+  int get mentorLinkedCount =>
+      repo.all().where((m) => m.mentors.isNotEmpty).length;
+  int get parentLinkedCount =>
+      repo.all().where((m) => m.parents.isNotEmpty).length;
+  int get regularCount => repo.all().where((m) => m.isRegular).length;
+  int get credentialCount => repo.all().where((m) => !m.isRegular).length;
 
   Future<void> delete(String id) async {
     await repo.delete(id);

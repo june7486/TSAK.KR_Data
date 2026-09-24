@@ -612,6 +612,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ['생일', m.birthday],
       ['기념일', m.anniversary],
       ['훈련현황', m.trainingStatus],
+      ['멘토', m.mentors.map((e) => '#$e').join(', ')],
+      ['페런츠', m.parents.map((e) => '#$e').join(', ')],
       ['ATAS 인가번호', m.atasNo],
       ['핸드폰', m.phone],
       ['이메일', m.email],
