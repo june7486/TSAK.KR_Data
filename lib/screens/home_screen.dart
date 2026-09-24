@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
 import '../widgets/member_card.dart';
 import 'app_access_screen.dart';
 import 'bulk_screen.dart';
@@ -23,12 +24,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _searchCtrl = TextEditingController();
+  final _scroll = ScrollController();
   bool _selectMode = false;
   final Set<String> _selected = {};
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -45,15 +48,26 @@ class _HomeScreenState extends State<HomeScreen> {
             ? Text('${_selected.length}명 선택됨')
             : Row(
                 children: [
-                  Image.asset(
-                    'assets/images/tsak_emblem.png',
-                    width: 30,
-                    height: 30,
-                    errorBuilder: (c, e, s) => const Icon(
-                      Icons.shield,
-                      size: 26,
-                      color: Colors.white,
-                    ),
+                  // 엠블럼 — 누르면 초기 화면(필터 초기화 + 맨 위로)
+                  AppHomeEmblem(
+                    size: 30,
+                    onHome: () {
+                      _searchCtrl.clear();
+                      state.clearFilters();
+                      if (_scroll.hasClients) {
+                        _scroll.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                        );
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('초기 화면으로 이동했습니다'),
+                          duration: Duration(milliseconds: 900),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(width: 6),
                   // 앱 접근 안내(주소+QR) — 제목 버튼
@@ -179,6 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: members.isEmpty
                 ? _empty()
                 : ListView.builder(
+                    controller: _scroll,
                     padding: const EdgeInsets.only(bottom: 90),
                     itemCount: members.length,
                     itemBuilder: (context, i) {

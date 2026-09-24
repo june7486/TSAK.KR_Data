@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 
 /// 앱 접근 안내 — NAS에 배포된 앱 주소 + QR
 /// (상단 QR 픽토그램 / 제목 버튼에서 진입)
@@ -33,6 +34,7 @@ class AppAccessScreen extends StatelessWidget {
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('앱 접근 주소 · QR'),
+        actions: const [AppHomeEmblem(size: 26)],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

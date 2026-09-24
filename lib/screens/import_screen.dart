@@ -10,6 +10,7 @@ import '../services/app_state.dart';
 import '../services/import_parser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 
 /// 자료 가져오기 (AI 자동 인식)
@@ -41,6 +42,7 @@ class _ImportScreenState extends State<ImportScreen> {
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('자료 가져오기 (AI 인식)'),
+        actions: const [AppHomeEmblem(size: 26)],
       ),
       body: Column(
         children: [

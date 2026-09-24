@@ -10,6 +10,7 @@ import '../models/member.dart';
 import '../services/contact_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
 import '../widgets/member_card.dart';
 
 /// 명단 내보내기 + 단체 문자/메일 화면
@@ -61,6 +62,7 @@ class _ExportScreenState extends State<ExportScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title, style: const TextStyle(fontSize: 16)),
+        actions: const [AppHomeEmblem(size: 24)],
         bottom: TabBar(
           controller: _tab,
           indicatorColor: AppColors.tigerGold,

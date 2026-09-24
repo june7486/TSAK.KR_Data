@@ -11,6 +11,7 @@ import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 import 'member_edit_screen.dart';
 
 /// 인가자 QR코드 생성 + 스캔 화면
@@ -57,6 +58,7 @@ class _QrGenerateView extends StatelessWidget {
         leadingWidth: 84,
         title: Text('#${member.number} ${member.name} QR'),
         actions: [
+          const AppHomeEmblem(size: 24),
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: '스캔',
@@ -287,6 +289,7 @@ class _QrScanViewState extends State<_QrScanView> {
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('QR 코드 스캔 → 수정'),
+        actions: const [AppHomeEmblem(size: 24)],
       ),
       body: Stack(
         children: [

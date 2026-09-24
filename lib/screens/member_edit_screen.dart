@@ -9,6 +9,7 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 
 class MemberEditScreen extends StatefulWidget {
@@ -96,6 +97,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         leadingWidth: 84,
         title: Text(isNew ? '인가자 추가' : '인가자 편집'),
         actions: [
+          const AppHomeEmblem(size: 24),
           TextButton(
             onPressed: _save,
             child: const Text(

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
 
 /// 통계 대시보드 — 연맹별/연도별 인가자 분포, 회비 현황
 class StatsScreen extends StatelessWidget {
@@ -21,7 +22,10 @@ class StatsScreen extends StatelessWidget {
         : leagues.values.reduce((a, b) => a > b ? a : b);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('통계 / 현황')),
+      appBar: AppBar(
+        title: const Text('통계 / 현황'),
+        actions: const [AppHomeEmblem(size: 26)],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [

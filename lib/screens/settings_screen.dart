@@ -6,6 +6,7 @@ import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 
 /// 설정 · 백업/복원 · 후원 · 개발자 정보
 class SettingsScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('설정 · 백업/복원'),
+        actions: const [AppHomeEmblem(size: 26)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(14),

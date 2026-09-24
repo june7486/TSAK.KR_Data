@@ -7,6 +7,7 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
@@ -40,6 +41,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             leadingWidth: 84,
             flexibleSpace: FlexibleSpaceBar(background: _header(m)),
             actions: [
+              const AppHomeEmblem(size: 24),
               IconButton(
                 icon: const Icon(Icons.qr_code_2),
                 tooltip: 'QR코드',

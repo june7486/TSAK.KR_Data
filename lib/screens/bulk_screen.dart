@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../services/contact_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/app_home_emblem.dart';
 
 /// 단체 소식 / 단체 문자
 class BulkScreen extends StatefulWidget {
@@ -42,6 +43,7 @@ class _BulkScreenState extends State<BulkScreen> {
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('단체 소식 / 문자'),
+        actions: const [AppHomeEmblem(size: 26)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(14),
