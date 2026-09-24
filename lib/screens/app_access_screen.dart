@@ -143,12 +143,12 @@ class AppAccessScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '접속 안내 (ID · 비밀번호)',
+                      '접속 안내',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                     SizedBox(height: 6),
                     Text(
-                      '• 앱 접근: ID = TSAK  ·  비밀번호는 관리자에게 문의 (1시간마다 재입력)',
+                      '• 앱 접근: 비밀번호는 관리자에게 문의 (1시간마다 재입력)',
                       style: TextStyle(fontSize: 12.5),
                     ),
                     SizedBox(height: 3),

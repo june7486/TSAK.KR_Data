@@ -20,7 +20,7 @@ class LockScreen extends StatefulWidget {
 class _LockScreenState extends State<LockScreen> {
   String _tier = 'app';
   final _ctrl = TextEditingController();
-  final _idCtrl = TextEditingController(text: 'TSAK');
+  final _idCtrl = TextEditingController();
   bool _obscure = true;
   bool _busy = false;
   String? _error;
@@ -38,7 +38,7 @@ class _LockScreenState extends State<LockScreen> {
       setState(() => _error = '비밀번호를 입력하세요');
       return;
     }
-    if (_tier != 'master' && _idCtrl.text.trim().isEmpty) {
+    if (_tier == 'personal' && _idCtrl.text.trim().isEmpty) {
       setState(() => _error = 'ID를 입력하세요');
       return;
     }
@@ -47,7 +47,9 @@ class _LockScreenState extends State<LockScreen> {
       _error = null;
     });
     final state = context.read<AppState>();
-    final ok = await state.login(_tier, v, id: _idCtrl.text.trim());
+    // 앱 접근은 ID를 노출하지 않음(내부 고정값 TSAK), 개인 접근은 입력한 인가번호 사용
+    final idInput = _tier == 'app' ? 'TSAK' : _idCtrl.text.trim();
+    final ok = await state.login(_tier, v, id: idInput);
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) {
@@ -75,8 +77,7 @@ class _LockScreenState extends State<LockScreen> {
       _tier = t;
       _error = null;
       _ctrl.clear();
-      // 앱 접근은 ID 기본값 TSAK, 그 외는 비움
-      _idCtrl.text = t == 'app' ? 'TSAK' : '';
+      _idCtrl.clear();
     });
   }
 
@@ -130,14 +131,12 @@ class _LockScreenState extends State<LockScreen> {
                           child: _tierHelp(),
                         ),
                         const SizedBox(height: 12),
-                        // ID 입력 (마스터 제외)
-                        if (_tier != 'master') ...[
+                        // ID 입력 — 개인 접근에서만 표시 (앱/마스터는 ID 비노출)
+                        if (_tier == 'personal') ...[
                           TextField(
                             controller: _idCtrl,
                             autofocus: true,
-                            keyboardType: _tier == 'personal'
-                                ? TextInputType.number
-                                : TextInputType.text,
+                            keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'ID',
@@ -149,7 +148,7 @@ class _LockScreenState extends State<LockScreen> {
                         TextField(
                           controller: _ctrl,
                           obscureText: _obscure,
-                          autofocus: _tier == 'master',
+                          autofocus: _tier != 'personal',
                           textInputAction: TextInputAction.go,
                           onSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
@@ -287,7 +286,7 @@ class _LockScreenState extends State<LockScreen> {
         text = 'ID에 본인 인가번호를 입력하세요';
         break;
       default:
-        text = 'ID에 TSAK 입력 · 1시간마다 재입력';
+        text = '앱 접근 비밀번호 · 1시간마다 재입력';
     }
     return Row(
       key: ValueKey(_tier),
