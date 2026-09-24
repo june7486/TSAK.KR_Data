@@ -575,101 +575,85 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           _donationBanner(state),
         ],
       ),
     );
   }
 
-  /// 홈 첫 페이지 후원 안내 — 계좌를 바로 복사할 수 있다.
+  /// 홈 첫 페이지 후원 안내 — 컴팩트 한 줄 가로 스크롤(계좌 탭 시 복사)
   Widget _donationBanner(AppState state) {
     final donations = state.donations;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.5)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.volunteer_activism,
-                  color: AppColors.purple, size: 18),
-              const SizedBox(width: 6),
-              const Text(
-                '후원 안내',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13.5,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '예금주 ${state.donationHolder}',
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textGray),
-              ),
-            ],
+          const Icon(Icons.volunteer_activism,
+              color: AppColors.purple, size: 14),
+          const SizedBox(width: 4),
+          const Text(
+            '후원',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+              color: AppColors.textDark,
+            ),
           ),
-          const SizedBox(height: 6),
-          for (final d in donations)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
+          const SizedBox(width: 6),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.lifetimeGold.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${d['label']}',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.lifetimeGold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${d['bank']} ${d['account']}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(
-                          ClipboardData(text: '${d['account']}'));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${d['account']} 복사됨'),
-                          duration: const Duration(milliseconds: 900),
+                  for (final d in donations)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 5),
+                      child: GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(
+                              ClipboardData(text: '${d['account']}'));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${d['account']} 복사됨'),
+                              duration: const Duration(milliseconds: 900),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.lifetimeGold
+                                .withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${d['label']} ${d['bank']} ${d['account']}',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.lifetimeGold,
+                            ),
+                          ),
                         ),
-                      );
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.copy,
-                          size: 16, color: AppColors.textGray),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            state.donationHolder,
+            style: const TextStyle(fontSize: 9.5, color: AppColors.textGray),
+          ),
         ],
       ),
     );
