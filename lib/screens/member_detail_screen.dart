@@ -75,6 +75,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _feeTracker(m),
                 _eventSection(m),
                 _infoCard(m),
+                _membershipSection(m),
                 _passwordSection(m),
                 const SizedBox(height: 30),
               ],
@@ -674,13 +675,165 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 회원 구분 관리 — 일반회원(비인가자) → 인가자 승격 / 강등 (관리자·마스터)
+  Widget _membershipSection(Member m) {
+    final state = context.watch<AppState>();
+    if (!(state.isApp || state.isMaster)) return const SizedBox.shrink();
+    return _section(
+      title: '회원 구분 관리 (관리자)',
+      icon: Icons.swap_horiz,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                m.isRegular ? Icons.person_outline : Icons.verified_user,
+                size: 16,
+                color: m.isRegular
+                    ? AppColors.textGray
+                    : AppColors.taegeukBlue,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                m.isRegular
+                    ? '현재: 일반회원 (비인가자)'
+                    : '현재: 인가자 (#${m.number})',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (m.isRegular)
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.taegeukBlue,
+              ),
+              onPressed: () => _promote(m),
+              icon: const Icon(Icons.arrow_upward, size: 18),
+              label: const Text('인가자로 승격'),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: () => _demote(m),
+              icon: const Icon(Icons.person_off_outlined, size: 18),
+              label: const Text('일반회원으로 강등'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _promote(Member m) async {
+    final noCtrl = TextEditingController();
+    final leagueCtrl = TextEditingController(text: m.league);
+    final unitCtrl = TextEditingController(text: m.unit);
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('인가자 승격 — ${m.name}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '일반회원을 정식 인가자로 승격합니다. 부여할 인가번호를 입력하세요.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noCtrl,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '인가번호',
+                  helperText: '기존 번호와 중복되지 않아야 합니다',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: leagueCtrl,
+                decoration: const InputDecoration(labelText: '소속 연맹'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: unitCtrl,
+                decoration: const InputDecoration(labelText: '소속 단위대'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukBlue),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('승격'),
+          ),
+        ],
+      ),
+    );
+    if (res != true || !mounted) return;
+    final updated = await context.read<AppState>().promoteToCredential(
+      m,
+      number: noCtrl.text.trim(),
+      league: leagueCtrl.text.trim(),
+      unit: unitCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    if (updated == null) {
+      _snack('승격 실패: 인가번호가 비었거나 중복됩니다');
+    } else {
+      _snack('인가자로 승격했습니다 (#${updated.number})');
+      setState(() {});
+    }
+  }
+
+  Future<void> _demote(Member m) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('일반회원으로 강등'),
+        content: Text(
+          '${m.name}(#${m.number}) 님을 일반회원(비인가자)으로 강등할까요?\n\n'
+          '인가번호가 제거됩니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('강등'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final updated = await context.read<AppState>().demoteToRegular(m);
+    if (!mounted) return;
+    _snack(updated == null ? '강등 실패' : '일반회원으로 강등했습니다');
+    if (updated != null) setState(() {});
+  }
+
   /// 비밀번호 관리 — 관리자·마스터 전용 (강제 변경/초기화)
   Widget _passwordSection(Member m) {
     final state = context.watch<AppState>();
     if (!(state.isApp || state.isMaster)) return const SizedBox.shrink();
     final isRegular = m.isRegular;
+    // 서버 정책: 관리자(비마스터)는 일반회원 비번만 변경 가능, 인가자는 마스터 전용
+    final canEditThis = state.isMaster || isRegular;
     return _section(
-      title: '접속 비밀번호 관리 (관리자)',
+      title: '접속 비밀번호 관리',
       icon: Icons.password,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -707,22 +860,51 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _forceReset(m),
-                icon: const Icon(Icons.lock_reset, size: 17),
-                label: const Text('비번 초기화'),
+          if (!canEditThis)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.tigerGold.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.tigerGold.withValues(alpha: 0.5),
+                ),
               ),
-              OutlinedButton.icon(
-                onPressed: () => _forceChange(m),
-                icon: const Icon(Icons.lock_open, size: 17),
-                label: const Text('비번 강제 변경'),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      color: AppColors.lifetimeGold, size: 16),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '인가자 비밀번호 변경·초기화는 마스터만 가능합니다',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.lifetimeGold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _forceReset(m),
+                  icon: const Icon(Icons.lock_reset, size: 17),
+                  label: const Text('비번 초기화'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _forceChange(m),
+                  icon: const Icon(Icons.lock_open, size: 17),
+                  label: const Text('비번 강제 변경'),
+                ),
+              ],
+            ),
         ],
       ),
     );

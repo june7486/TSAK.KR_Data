@@ -138,6 +138,73 @@ class StatsScreen extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.privacy_tip, color: AppColors.purple, size: 18),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '개인정보 동의 현황',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _statBox(
+                      '동의 완료',
+                      '${state.privacyAgreedCount}',
+                      Icons.verified,
+                      AppColors.scoutGreen,
+                    ),
+                    _divider(),
+                    _statBox(
+                      '미동의',
+                      '${state.privacyPendingCount}',
+                      Icons.warning_amber_rounded,
+                      AppColors.taegeukRed,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: state.total == 0
+                      ? 0
+                      : state.privacyAgreedCount / state.total,
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(6),
+                  backgroundColor: AppColors.taegeukRed.withValues(alpha: 0.15),
+                  valueColor: const AlwaysStoppedAnimation(AppColors.scoutGreen),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '동의율 ${state.total == 0 ? 0 : (state.privacyAgreedCount / state.total * 100).toStringAsFixed(1)}%'
+                  ' (${state.privacyAgreedCount}/${state.total})',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textGray,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '※ 개인정보 수집·이용 및 제3자 제공 동의는 가입/저장 시 필수입니다.',
+                  style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

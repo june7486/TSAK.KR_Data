@@ -763,6 +763,49 @@ class AppState extends ChangeNotifier {
   int get regularCount => repo.all().where((m) => m.isRegular).length;
   int get credentialCount => repo.all().where((m) => !m.isRegular).length;
 
+  /// 개인정보 동의 현황
+  int get privacyAgreedCount =>
+      repo.all().where((m) => m.privacyAgreed).length;
+  int get privacyPendingCount =>
+      repo.all().where((m) => !m.privacyAgreed).length;
+
+  /// 비인가자(일반회원) → 인가자 승격
+  ///  - number: 부여할 인가번호, league/unit: 소속 정보
+  ///  - 성공 시 갱신된 Member, 실패 시 null
+  Future<Member?> promoteToCredential(
+    Member m, {
+    required String number,
+    String league = '',
+    String unit = '',
+  }) async {
+    if (!(isApp || isMaster)) return null;
+    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (n.isEmpty) return null;
+    // 인가번호 중복 방지
+    for (final x in repo.allUnscoped()) {
+      if (x.id != m.id &&
+          x.number.replaceAll(RegExp(r'[^0-9]'), '') == n) {
+        return null;
+      }
+    }
+    final updated = m.copyWith(
+      number: n,
+      isRegular: false,
+      league: league.trim().isEmpty ? m.league : league.trim(),
+      unit: unit.trim().isEmpty ? m.unit : unit.trim(),
+    );
+    await repo.save(updated);
+    return updated;
+  }
+
+  /// 인가자 → 일반회원(비인가자) 강등 (잘못 등록된 경우)
+  Future<Member?> demoteToRegular(Member m) async {
+    if (!(isApp || isMaster)) return null;
+    final updated = m.copyWith(isRegular: true, number: '');
+    await repo.save(updated);
+    return updated;
+  }
+
   Future<void> delete(String id) async {
     await repo.delete(id);
   }

@@ -171,7 +171,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
             padding: const EdgeInsets.all(14),
             children: [
               _photoPicker(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              _privacyStatusBanner(state),
+              const SizedBox(height: 12),
               _field(
                 '인가번호',
                 _number,
@@ -338,6 +340,58 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _mentors.join(',') != m.mentors.join(',') ||
         _parents.join(',') != m.parents.join(',') ||
         _privacyAgreed != m.privacyAgreed;
+  }
+
+  /// 개인정보 동의 상태 안내 배너 (상단)
+  Widget _privacyStatusBanner(AppState state) {
+    final agreed = _privacyAgreed;
+    final c = agreed ? AppColors.scoutGreen : AppColors.taegeukRed;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(agreed ? Icons.verified : Icons.warning_amber_rounded,
+              color: c, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  agreed ? '개인정보 동의 완료' : '개인정보 동의 필요 (필수)',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: c,
+                  ),
+                ),
+                if (agreed && _privacyAgreedAt.isNotEmpty)
+                  Text(
+                    '동의일시: $_privacyAgreedAt',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
+                  )
+                else if (!agreed)
+                  const Text(
+                    '아래 「개인정보 수집·이용 및 제3자 제공 동의」에 체크해야 저장됩니다',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _photoPicker() {
