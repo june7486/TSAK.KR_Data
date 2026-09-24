@@ -37,6 +37,19 @@ class NasApi {
     }
   }
 
+  /// 서버 정지 여부까지 함께 확인
+  Future<Map<String, dynamic>> healthState() async {
+    try {
+      final r = await http
+          .get(_uri('/api/health'))
+          .timeout(const Duration(seconds: 12));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j.cast<String, dynamic>();
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
   // ---- Auth ----
   /// tier: master | app | personal
   Future<Map<String, dynamic>> login(String tier, String value) async {
@@ -77,6 +90,21 @@ class NasApi {
           }),
         )
         .timeout(const Duration(seconds: 90));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 단일 인가자 부분 저장 (전체 DB 덮어쓰기 없이 안전하게 갱신)
+  Future<Map<String, dynamic>> saveMember(
+    Member member, {
+    String by = 'app',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'member': member.toMap(), 'by': by}),
+        )
+        .timeout(const Duration(seconds: 60));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
@@ -266,4 +294,57 @@ class NasApi {
   /// 통합 재무 엑셀 다운로드 URL
   String financeExcelUrl([String kind = 'finance']) =>
       '$_base/api/finance/excel?kind=$kind';
+
+  // ---- 마스터 앱관리 ----
+  Future<Map<String, dynamic>> adminState() async {
+    final r = await http
+        .get(_uri('/api/admin/state'))
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> changeAppPassword(
+      String master, String newPw) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/app-password'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'master': master, 'new': newPw}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setPersonalPassword(
+    String master,
+    String number, {
+    String? value,
+    bool reset = false,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/personal'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'master': master,
+            'number': number,
+            if (reset) 'reset': true,
+            if (!reset) 'value': value ?? '',
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setServerPaused(
+      String master, bool paused) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/server-pause'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'master': master, 'paused': paused}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
 }

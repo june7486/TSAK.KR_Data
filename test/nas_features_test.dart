@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsak_credential_manager/models/member.dart';
 import 'package:tsak_credential_manager/services/finance_service.dart';
 import 'package:tsak_credential_manager/services/import_parser.dart';
+import 'package:tsak_credential_manager/services/member_repository.dart';
 import 'package:tsak_credential_manager/services/nas_api.dart';
 
 void main() {
@@ -52,6 +53,24 @@ void main() {
           id: 'm1', number: '100', name: '이승준', atasNo: '358');
       expect(m.searchText.contains('358'), isTrue);
       expect(m.searchText.contains('100'), isTrue);
+    });
+  });
+
+  group('개인 접근 격리 (restrictedNumber)', () {
+    test('개인 접근 시 본인만 조회, byNumber 차단', () async {
+      final repo = MemberRepository.memory();
+      await repo.save(Member(id: 'm1', number: '415', name: '이승준'));
+      await repo.save(Member(id: 'm2', number: '200', name: '홍길동'));
+      expect(repo.all().length, 2);
+
+      repo.restrictedNumber = '415';
+      expect(repo.all().length, 1);
+      expect(repo.all().first.number, '415');
+      expect(repo.byNumber('415')?.name, '이승준');
+      expect(repo.byNumber('200'), isNull); // 타인 접근 차단
+
+      repo.restrictedNumber = null;
+      expect(repo.all().length, 2);
     });
   });
 

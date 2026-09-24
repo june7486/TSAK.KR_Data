@@ -27,6 +27,12 @@ class MemberRepository {
 
   final NasApi? nas;
 
+  /// 개인 접근 시 본인 인가번호 — 설정되면 이 번호 외 데이터 접근을 차단한다.
+  String? restrictedNumber;
+
+  bool get isRestricted =>
+      restrictedNumber != null && restrictedNumber!.trim().isNotEmpty;
+
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
   final ValueNotifier<Map<String, dynamic>> serverMeta =
       ValueNotifier<Map<String, dynamic>>({});
@@ -170,7 +176,7 @@ class MemberRepository {
     }
   }
 
-  int get count => isMemory ? _mem!.length : _box!.length;
+  int get count => isRestricted ? all().length : (isMemory ? _mem!.length : _box!.length);
 
   Future<void> _put(String id, Map<String, dynamic> map) async {
     if (isMemory) {
@@ -206,12 +212,32 @@ class MemberRepository {
 
   // ---- 공개 API ----
   List<Member> all() {
-    final list = _values.map((v) => Member.fromMap(v)).toList();
-    list.sort((a, b) => a.numberInt.compareTo(b.numberInt));
+    final list = _values.map((v) => Member.fromMap(v)).toList()
+      ..sort((a, b) => a.numberInt.compareTo(b.numberInt));
+    if (isRestricted) {
+      final r = restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '');
+      return list
+          .where((m) => m.number.replaceAll(RegExp(r'[^0-9]'), '') == r)
+          .toList();
+    }
     return list;
   }
 
+  /// 제한 없이 전체 목록(관리자/마스터 전용)
+  List<Member> allUnscoped() => _values.map((v) => Member.fromMap(v)).toList()
+    ..sort((a, b) => a.numberInt.compareTo(b.numberInt));
+
   Member? byId(String id) {
+    if (isRestricted) {
+      final m = _rawById(id);
+      if (m == null) return null;
+      final r = restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '');
+      return m.number.replaceAll(RegExp(r'[^0-9]'), '') == r ? m : null;
+    }
+    return _rawById(id);
+  }
+
+  Member? _rawById(String id) {
     if (isMemory) {
       final v = _mem![id];
       return v == null ? null : Member.fromMap(v);
@@ -224,6 +250,10 @@ class MemberRepository {
   Member? byNumber(String number) {
     final n = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (n.isEmpty) return null;
+    if (isRestricted &&
+        n != restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '')) {
+      return null; // 개인 접근: 본인 외 접근 차단
+    }
     for (final m in all()) {
       if (m.number.replaceAll(RegExp(r'[^0-9]'), '') == n) return m;
     }
@@ -247,8 +277,7 @@ class MemberRepository {
 
   Map<String, int> leaguesWithCount() {
     final map = <String, int>{};
-    for (final v in _values) {
-      final m = Member.fromMap(v);
+    for (final m in all()) {
       final key = m.league.trim().isEmpty ? '(미지정)' : m.league.trim();
       map[key] = (map[key] ?? 0) + 1;
     }
@@ -299,7 +328,35 @@ class MemberRepository {
     final updated = member.copyWith(updatedAt: DateTime.now());
     await _put(updated.id, updated.toMap());
     revision.value++;
-    if (syncing && isNasMode) unawaited(syncToNas(by: 'app'));
+    if (syncing && isNasMode) {
+      if (isRestricted) {
+        unawaited(_saveOne(updated)); // 개인 접근: 본인 1건만 부분 저장
+      } else {
+        unawaited(syncToNas(by: 'app'));
+      }
+    }
+  }
+
+  /// 단일 인가자만 NAS에 부분 저장 (전체 DB 덮어쓰기 방지)
+  Future<bool> _saveOne(Member member) async {
+    final api = nas;
+    if (api == null) return false;
+    try {
+      syncStatus.value = 'saving';
+      final res = await api.saveMember(member, by: 'personal');
+      if (res['ok'] == true) {
+        final meta = (res['meta'] as Map?)?.cast<String, dynamic>();
+        if (meta != null) serverMeta.value = meta;
+        syncStatus.value = 'saved';
+        return true;
+      }
+      syncStatus.value = 'error';
+      return false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('saveOne failed: $e');
+      syncStatus.value = 'error';
+      return false;
+    }
   }
 
   Future<void> addNew(Member member) => save(member);
@@ -307,7 +364,8 @@ class MemberRepository {
   Future<void> delete(String id) async {
     await _deleteKey(id);
     revision.value++;
-    if (isNasMode) unawaited(syncToNas(by: 'app'));
+    // 개인 접근에서는 전체 DB 덮어쓰기를 유발하는 일괄 동기화 금지
+    if (isNasMode && !isRestricted) unawaited(syncToNas(by: 'app'));
   }
 
   Future<int> nextNumber() async {
@@ -327,6 +385,6 @@ class MemberRepository {
       await _meta!.put('seeded_v1', true);
     }
     revision.value++;
-    if (isNasMode) unawaited(syncToNas(by: 'restore'));
+    if (isNasMode && !isRestricted) unawaited(syncToNas(by: 'restore'));
   }
 }

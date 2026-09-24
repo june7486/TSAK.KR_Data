@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 
 /// 모든 화면에서 사용할 뒤로가기 버튼
 /// (하드웨어 뒤로가기 버튼이 없는 폰을 위해 항상 표시)
+/// [onTap] 을 지정하면 커스텀 동작(미저장 확인 등)을 수행한다.
 class AppBackButton extends StatelessWidget {
-  const AppBackButton({super.key, this.label});
+  const AppBackButton({super.key, this.label, this.onTap});
 
   final String? label;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.of(context).canPop();
     return TextButton.icon(
       onPressed: () {
-        if (canPop) {
+        if (onTap != null) {
+          onTap!();
+        } else if (canPop) {
           Navigator.of(context).maybePop();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(

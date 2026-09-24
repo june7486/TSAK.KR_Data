@@ -59,7 +59,7 @@ class _LockScreenState extends State<LockScreen> {
       case 'master':
         return '마스터 비밀번호가 올바르지 않습니다';
       case 'personal':
-        return '인가번호 + !@@ 형식이 아니거나 등록되지 않은 번호입니다';
+        return '인가번호 + !@@ 형식이 아니거나 등록되지 않은 번호입니다 (예: 0000!@@)';
       default:
         return '앱 비밀번호가 올바르지 않습니다';
     }
@@ -129,7 +129,7 @@ class _LockScreenState extends State<LockScreen> {
                           onSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
                             labelText: _tier == 'personal' ? '인가번호!@@' : '비밀번호',
-                            hintText: _tier == 'personal' ? '예: 415!@@' : '',
+                            hintText: _tier == 'personal' ? '예: 0000!@@' : '',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               icon: Icon(

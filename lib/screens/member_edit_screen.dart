@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/unsaved_guard.dart';
 
 class MemberEditScreen extends StatefulWidget {
   const MemberEditScreen({super.key, this.memberId, this.suggestedNumber});
@@ -91,133 +91,174 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   @override
   Widget build(BuildContext context) {
     final isNew = _existing == null;
-    return Scaffold(
-      appBar: AppBar(
-        leading: const AppBackButton(label: '뒤로'),
-        leadingWidth: 84,
-        title: Text(isNew ? '인가자 추가' : '인가자 편집'),
-        actions: [
-          const AppHomeEmblem(size: 24),
-          TextButton(
-            onPressed: _save,
-            child: const Text(
-              '저장',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+    return UnsavedGuard(
+      dirty: _isDirty,
+      onSave: () async {
+        await _saveInternal();
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: AppBackButton(
+            label: '뒤로',
+            onTap: () async {
+              if (_isDirty()) {
+                final choice = await showUnsavedDialog(context);
+                if (!context.mounted) return;
+                if (choice == UnsavedChoice.save) {
+                  await _save();
+                } else if (choice == UnsavedChoice.discard) {
+                  if (context.mounted) Navigator.pop(context);
+                }
+              } else {
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
           ),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(14),
-          children: [
-            _photoPicker(),
-            const SizedBox(height: 16),
-            _field(
-              '인가번호',
-              _number,
-              hint: '예: 2186',
-              icon: Icons.tag,
-              numeric: true,
-            ),
-            _field(
-              '성명',
-              _name,
-              hint: '홍길동',
-              icon: Icons.person,
-              required: true,
-            ),
-            _field(
-              '소속 연맹',
-              _league,
-              hint: '예: 제주 / 광주 / 서울남부',
-              icon: Icons.groups,
-            ),
-            _field('소속 단위대', _unit, hint: '예: 제405단 샘물지역대', icon: Icons.flag),
-            _field(
-              '인가일',
-              _date,
-              hint: '예: 2025.12.19.',
-              icon: Icons.event_available,
-            ),
-            _field(
-              'ATAS 인가번호',
-              _atas,
-              hint: 'ATAS 번호',
-              icon: Icons.confirmation_number,
-            ),
-            _field(
-              '핸드폰',
-              _phone,
-              hint: '010-0000-0000',
-              icon: Icons.phone,
-              keyboard: TextInputType.phone,
-            ),
-            _field(
-              '이메일',
-              _email,
-              hint: 'name@example.com',
-              icon: Icons.email,
-              keyboard: TextInputType.emailAddress,
-            ),
-            _field(
-              '주소',
-              _address,
-              hint: '주소 입력',
-              icon: Icons.home,
-              maxLines: 2,
-            ),
-            _field(
-              '활동',
-              _activity,
-              hint: '활동 내용 (예: 지도자 양성, 캠프 운영 등)',
-              icon: Icons.directions_run,
-              maxLines: 2,
-            ),
-            _field('메모', _memo, hint: '자유 메모', icon: Icons.notes, maxLines: 3),
-            const SizedBox(height: 8),
-            _feeEditor(),
-            const SizedBox(height: 10),
-            Card(
-              child: SwitchListTile(
-                title: const Text(
-                  '평생회원',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: const Text('평생회원으로 지정합니다'),
-                value: _lifetime,
-                activeThumbColor: AppColors.tigerGold,
-                onChanged: (v) => setState(() => _lifetime = v),
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.purple,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
+          leadingWidth: 84,
+          title: Text(isNew ? '인가자 추가' : '인가자 편집'),
+          actions: [
+            const AppHomeEmblem(size: 24),
+            TextButton(
               onPressed: _save,
-              icon: const Icon(Icons.save),
-              label: Text(isNew ? '인가자 등록' : '변경사항 저장'),
-            ),
-            if (!isNew)
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.taegeukRed,
+              child: const Text(
+                '저장',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
                 ),
-                onPressed: _delete,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('삭제'),
               ),
-            const SizedBox(height: 30),
+            ),
           ],
+        ),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(14),
+            children: [
+              _photoPicker(),
+              const SizedBox(height: 16),
+              _field(
+                '인가번호',
+                _number,
+                hint: '예: 2186',
+                icon: Icons.tag,
+                numeric: true,
+              ),
+              _field(
+                '성명',
+                _name,
+                hint: '홍길동',
+                icon: Icons.person,
+                required: true,
+              ),
+              _field(
+                '소속 연맹',
+                _league,
+                hint: '예: 제주 / 광주 / 서울남부',
+                icon: Icons.groups,
+              ),
+              _field('소속 단위대', _unit, hint: '예: 제405단 샘물지역대', icon: Icons.flag),
+              _field(
+                '인가일',
+                _date,
+                hint: '예: 2025.12.19.',
+                icon: Icons.event_available,
+              ),
+              _field(
+                'ATAS 인가번호',
+                _atas,
+                hint: 'ATAS 번호',
+                icon: Icons.confirmation_number,
+              ),
+              _field(
+                '핸드폰',
+                _phone,
+                hint: '010-0000-0000',
+                icon: Icons.phone,
+                keyboard: TextInputType.phone,
+              ),
+              _field(
+                '이메일',
+                _email,
+                hint: 'name@example.com',
+                icon: Icons.email,
+                keyboard: TextInputType.emailAddress,
+              ),
+              _field(
+                '주소',
+                _address,
+                hint: '주소 입력',
+                icon: Icons.home,
+                maxLines: 2,
+              ),
+              _field(
+                '활동',
+                _activity,
+                hint: '활동 내용 (예: 지도자 양성, 캠프 운영 등)',
+                icon: Icons.directions_run,
+                maxLines: 2,
+              ),
+              _field('메모', _memo, hint: '자유 메모', icon: Icons.notes, maxLines: 3),
+              const SizedBox(height: 8),
+              _feeEditor(),
+              const SizedBox(height: 10),
+              Card(
+                child: SwitchListTile(
+                  title: const Text(
+                    '평생회원',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text('평생회원으로 지정합니다'),
+                  value: _lifetime,
+                  activeThumbColor: AppColors.tigerGold,
+                  onChanged: (v) => setState(() => _lifetime = v),
+                ),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: _save,
+                icon: const Icon(Icons.save),
+                label: Text(isNew ? '인가자 등록' : '변경사항 저장'),
+              ),
+              if (!isNew)
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.taegeukRed,
+                  ),
+                  onPressed: _delete,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('삭제'),
+                ),
+              const SizedBox(height: 30),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// 수정 여부 판정 (원본과 비교)
+  bool _isDirty() {
+    final m = _existing;
+    return m == null ||
+        _number.text.trim() != m.number ||
+        _name.text.trim() != m.name ||
+        _league.text.trim() != m.league ||
+        _unit.text.trim() != m.unit ||
+        _address.text.trim() != m.address ||
+        _phone.text.trim() != m.phone ||
+        _email.text.trim() != m.email ||
+        _date.text.trim() != m.date ||
+        _atas.text.trim() != m.atasNo ||
+        _activity.text.trim() != m.activity ||
+        _memo.text.trim() != m.memo ||
+        _photoPath != m.photoPath ||
+        _lifetime != m.lifetimeMember;
   }
 
   Widget _photoPicker() {
@@ -387,11 +428,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     );
   }
 
-  void _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (kIsWeb || _photoPath.startsWith('data:')) {
-      // base64는 그대로 저장
-    }
+  /// 공용 저장 로직 — 저장만 수행 (pop 없음)
+  Future<bool> _saveInternal() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return false;
     final state = context.read<AppState>();
     final id = _existing?.id ?? 'u${DateTime.now().millisecondsSinceEpoch}';
 
@@ -415,6 +454,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       eventAttend: _existing?.eventAttend ?? {},
     );
     await state.save(member);
+    _existing = member; // 이후 dirty 비교 기준 갱신
 
     // 사진이 있으면 NAS 서버에도 업로드 (인가번호 기준)
     if (_photoPath.startsWith('data:image') &&
@@ -426,7 +466,12 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         await state.nas.uploadPhoto(member.number.trim(), bytes);
       } catch (_) {}
     }
+    return true;
+  }
 
+  Future<void> _save() async {
+    final ok = await _saveInternal();
+    if (!ok) return;
     if (mounted) {
       ScaffoldMessenger.of(
         context,

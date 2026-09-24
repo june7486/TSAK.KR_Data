@@ -33,6 +33,17 @@ class AppState extends ChangeNotifier {
   String get tier => _tier;
   String get who => _who;
   bool get isMaster => _tier == 'master';
+  bool get isPersonal => _tier == 'personal';
+  bool get isApp => _tier == 'app';
+
+  /// 개인 접근 시 본인 정보만 열람·수정 가능하도록 저장소 제한을 갱신
+  void _applyAccessScope() {
+    if (_tier == 'personal' && _who.isNotEmpty) {
+      repo.restrictedNumber = _who;
+    } else {
+      repo.restrictedNumber = null;
+    }
+  }
 
   /// 세션 유효성 검사 (1시간)
   bool get sessionValid {
@@ -53,6 +64,7 @@ class AppState extends ChangeNotifier {
           _tier = tier;
           _who = who;
           _sessionStart = start;
+          _applyAccessScope();
         }
       }
     } catch (_) {}
@@ -86,6 +98,7 @@ class AppState extends ChangeNotifier {
       _tier = tier;
       _who = tier == 'personal' ? value.replaceAll(RegExp(r'[^0-9]'), '') : '';
       _sessionStart = DateTime.now();
+      _applyAccessScope();
       _persistSession();
       notifyListeners();
     }
@@ -97,6 +110,7 @@ class AppState extends ChangeNotifier {
     _tier = '';
     _who = '';
     _sessionStart = null;
+    repo.restrictedNumber = null;
     try {
       final p = await SharedPreferences.getInstance();
       await p.remove(AppConfig.kSessionTs);
@@ -248,6 +262,80 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
     return true;
+  }
+
+  // ---------- 마스터 앱관리 ----------
+  Map<String, dynamic> _admin = {};
+  Map<String, dynamic> get adminState => _admin;
+  bool get serverPaused => _admin['serverPaused'] == true;
+
+  Future<void> loadAdmin() async {
+    if (!repo.isNasMode) return;
+    try {
+      final r = await nas.adminState();
+      if (r['ok'] == true) {
+        _admin = r;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<String?> changeAppPassword(String master, String newPw) async {
+    try {
+      final r = await nas.changeAppPassword(master, newPw);
+      if (r['ok'] == true) return null;
+      return '${r['error'] ?? '실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  /// 개인비번 초기화(reset=true) 또는 지정 변경
+  Future<String?> setPersonalPassword(
+    String master,
+    String number, {
+    String? value,
+    bool reset = false,
+  }) async {
+    try {
+      final r = await nas.setPersonalPassword(master, number,
+          value: value, reset: reset);
+      if (r['ok'] == true) {
+        _admin = {
+          ..._admin,
+          'personalPasswords': {
+            ...((_admin['personalPasswords'] as Map?) ?? {}),
+          }
+        };
+        await loadAdmin();
+        return null;
+      }
+      return '${r['error'] ?? '실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  Future<bool> setServerPaused(String master, bool paused) async {
+    try {
+      final r = await nas.setServerPaused(master, paused);
+      if (r['ok'] == true) {
+        _admin = {..._admin, 'serverPaused': paused};
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// 서버 정지 여부만 조회 (health)
+  Future<bool> refreshServerPaused() async {
+    if (!repo.isNasMode) return false;
+    final h = await nas.healthState();
+    final p = h['paused'] == true;
+    _admin = {..._admin, 'serverPaused': p};
+    notifyListeners();
+    return p;
   }
 
   // ---------- 리스트 크기 ----------

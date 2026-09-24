@@ -212,6 +212,25 @@ class _QrScanViewState extends State<_QrScanView> {
     }
 
     final state = context.read<AppState>();
+
+    // 개인 접근: 본인 QR만 허용
+    if (state.isPersonal) {
+      final mine = state.who.replaceAll(RegExp(r'[^0-9]'), '');
+      final scanned = number.replaceAll(RegExp(r'[^0-9]'), '');
+      if (mine.isNotEmpty && mine != scanned) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('개인 접근에서는 본인 QR만 열람·수정할 수 있습니다'),
+              backgroundColor: AppColors.taegeukRed,
+            ),
+          );
+          Future.delayed(const Duration(seconds: 2), () => _handled = false);
+        }
+        return;
+      }
+    }
+
     final target = state.byNumber(number);
     if (target == null) {
       if (mounted) {
@@ -223,8 +242,8 @@ class _QrScanViewState extends State<_QrScanView> {
       return;
     }
 
-    // 개인 접근 비밀번호 확인 (마스터는 생략)
-    if (!state.isMaster) {
+    // 마스터가 아니면 개인 접근 비밀번호 확인 (개인 접근은 본인 것 통과)
+    if (!state.isMaster && !state.isPersonal) {
       final ok = await _askPersonalPassword(state, number);
       if (ok != true) {
         _handled = false;
@@ -269,11 +288,21 @@ class _QrScanViewState extends State<_QrScanView> {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('취소')),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final v = ctrl.text.trim();
-              final ok = v == '$number${AppConfig.personalSuffix}' ||
-                  v == AppConfig.masterPassword;
-              Navigator.pop(ctx, ok);
+              if (v == AppConfig.masterPassword) {
+                Navigator.pop(ctx, true);
+                return;
+              }
+              // 서버(개인별 지정 비번) 우선 검증, 실패 시 기본 규칙
+              bool ok = v == '$number${AppConfig.personalSuffix}';
+              if (!ok && state.repo.isNasMode) {
+                try {
+                  final r = await state.nas.login('personal', v);
+                  ok = r['ok'] == true;
+                } catch (_) {}
+              }
+              if (ctx.mounted) Navigator.pop(ctx, ok);
             },
             child: const Text('확인'),
           ),

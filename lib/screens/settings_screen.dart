@@ -426,7 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('• 앱 접근: Tsak1988!! (1시간 유지)',
                 style: TextStyle(fontSize: 13)),
             SizedBox(height: 4),
-            Text('• 개인 접근: 인가번호 + !@@ (예: 415!@@)',
+            Text('• 개인 접근: 인가번호 + !@@ (예: 0000!@@)',
                 style: TextStyle(fontSize: 13)),
             SizedBox(height: 4),
             Text('• 마스터: 모든 기능/통제 (변경 불가)',

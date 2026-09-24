@@ -7,12 +7,14 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_card.dart';
 import 'app_access_screen.dart';
+import 'admin_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'import_screen.dart';
 import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
+import 'qr_screen.dart';
 import 'settings_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
@@ -132,22 +134,41 @@ class _HomeScreenState extends State<HomeScreen> {
               }),
             ),
           ] else ...[
-            IconButton(
-              tooltip: '단체 소식/문자',
-              icon: const Icon(Icons.campaign),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const BulkScreen()),
+            // 개인 접근: 본인 정보만 → 단체/통계/재무 메뉴 숨김
+            if (!state.isPersonal) ...[
+              IconButton(
+                tooltip: '단체 소식/문자',
+                icon: const Icon(Icons.campaign),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BulkScreen()),
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: '통계',
-              icon: const Icon(Icons.insights),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const StatsScreen()),
+              IconButton(
+                tooltip: '통계',
+                icon: const Icon(Icons.insights),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StatsScreen()),
+                ),
               ),
-            ),
+            ],
+            if (state.isPersonal)
+              IconButton(
+                tooltip: '내 QR',
+                icon: const Icon(Icons.qr_code_2),
+                onPressed: () {
+                  final me = state.who.isNotEmpty
+                      ? state.byNumber(state.who)
+                      : (members.isNotEmpty ? members.first : null);
+                  if (me != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                    );
+                  }
+                },
+              ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (v) {
@@ -156,6 +177,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                    break;
+                  case 'admin':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AdminScreen()),
                     );
                     break;
                   case 'import':
@@ -188,14 +215,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     break;
                 }
               },
-              itemBuilder: (ctx) => const [
-                PopupMenuItem(value: 'finance', child: Text('재무 관리 (후원·수품·참가비)')),
-                PopupMenuItem(value: 'source', child: Text('기본자료 폴더 (첨부·자동분석)')),
-                PopupMenuItem(value: 'import', child: Text('자료 가져오기 (AI 인식)')),
-                PopupMenuItem(value: 'settings', child: Text('설정 · 백업/복원')),
-                PopupMenuItem(value: 'refresh', child: Text('NAS 최신 데이터 불러오기')),
-                PopupMenuItem(value: 'select', child: Text('명단 선택 (일괄작업)')),
-                PopupMenuItem(value: 'lock', child: Text('잠금')),
+              itemBuilder: (ctx) => [
+                if (state.isMaster)
+                  const PopupMenuItem(
+                      value: 'admin',
+                      child: Text('앱 관리 (마스터: 비번·정지·복구)')),
+                if (!state.isPersonal) ...[
+                  const PopupMenuItem(
+                      value: 'finance',
+                      child: Text('재무 관리 (후원·수품·참가비)')),
+                  const PopupMenuItem(
+                      value: 'source', child: Text('기본자료 폴더 (첨부·자동분석)')),
+                  const PopupMenuItem(
+                      value: 'import', child: Text('자료 가져오기 (AI 인식)')),
+                ],
+                const PopupMenuItem(
+                    value: 'settings', child: Text('설정 · 백업/복원')),
+                if (!state.isPersonal) ...[
+                  const PopupMenuItem(
+                      value: 'refresh', child: Text('NAS 최신 데이터 불러오기')),
+                  const PopupMenuItem(
+                      value: 'select', child: Text('명단 선택 (일괄작업)')),
+                ],
+                const PopupMenuItem(value: 'lock', child: Text('잠금')),
               ],
             ),
           ],
@@ -204,7 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Column(
         children: [
           _header(state),
-          _filterBar(state),
+          if (!state.isPersonal) _filterBar(state),
           const SizedBox(height: 4),
           Expanded(
             child: members.isEmpty
@@ -227,14 +269,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             _openDetail(m);
                           }
                         },
-                        onLongPress: () {
-                          if (!_selectMode) {
-                            setState(() {
-                              _selectMode = true;
-                              _selected.add(m.id);
-                            });
-                          }
-                        },
+                        onLongPress: state.isPersonal
+                            ? null
+                            : () {
+                                if (!_selectMode) {
+                                  setState(() {
+                                    _selectMode = true;
+                                    _selected.add(m.id);
+                                  });
+                                }
+                              },
                         onCheckToggle: () => _toggle(m.id),
                       );
                     },
@@ -243,21 +287,23 @@ class _HomeScreenState extends State<HomeScreen> {
           _bottomBar(context, state),
         ],
       ),
-      floatingActionButton: _selectMode
-          ? FloatingActionButton.extended(
-              backgroundColor: AppColors.purple,
-              onPressed: _selected.isEmpty
-                  ? null
-                  : () => _openExport(state, members),
-              icon: const Icon(Icons.ios_share),
-              label: Text('내보내기 (${_selected.length})'),
-            )
-          : FloatingActionButton.small(
-              backgroundColor: AppColors.taegeukRed,
-              tooltip: '인가자 추가',
-              onPressed: () => _addNew(state),
-              child: const Icon(Icons.person_add_alt_1, size: 20),
-            ),
+      floatingActionButton: state.isPersonal
+          ? null
+          : (_selectMode
+              ? FloatingActionButton.extended(
+                  backgroundColor: AppColors.purple,
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () => _openExport(state, members),
+                  icon: const Icon(Icons.ios_share),
+                  label: Text('내보내기 (${_selected.length})'),
+                )
+              : FloatingActionButton.small(
+                  backgroundColor: AppColors.taegeukRed,
+                  tooltip: '인가자 추가',
+                  onPressed: () => _addNew(state),
+                  child: const Icon(Icons.person_add_alt_1, size: 20),
+                )),
     );
   }
 
@@ -405,6 +451,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _header(AppState state) {
+    // 개인 접근: 본인 정보만 표시하는 간소 헤더
+    if (state.isPersonal) return _personalHeader(state);
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
@@ -481,6 +529,82 @@ class _HomeScreenState extends State<HomeScreen> {
                 _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 개인 접근 전용 헤더 — 본인 요약만 노출 (타인 정보 접근 불가)
+  Widget _personalHeader(AppState state) {
+    final me = state.who.isNotEmpty
+        ? state.byNumber(state.who)
+        : (state.members.isNotEmpty ? state.members.first : null);
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(gradient: AppColors.brandGradient),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.person, color: Colors.white, size: 18),
+              const SizedBox(width: 6),
+              const Text('개인 접근',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const Spacer(),
+              const Icon(Icons.lock_outline, color: Colors.white70, size: 15),
+              const SizedBox(width: 4),
+              const Text('본인 정보만 열람·수정',
+                  style: TextStyle(color: Colors.white70, fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (me != null) ...[
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.tigerGold, width: 2),
+                  ),
+                  child: Text('#${me.number}',
+                      style: const TextStyle(
+                          color: AppColors.purple,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18)),
+                ),
+                const SizedBox(width: 10),
+                Text(me.name.isEmpty ? '(이름없음)' : me.name,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800)),
+                if (me.lifetimeMember) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.star, color: AppColors.tigerGold, size: 18),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              [me.league, me.unit].where((e) => e.isNotEmpty).join(' · '),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ] else
+            const Text('본인 정보를 찾을 수 없습니다',
+                style: TextStyle(color: Colors.white, fontSize: 13)),
+          const SizedBox(height: 4),
+          const Text(
+            '※ 개인 접근에서는 다른 인가자의 정보를 볼 수 없습니다.',
+            style: TextStyle(color: Colors.white70, fontSize: 10.5),
           ),
         ],
       ),
