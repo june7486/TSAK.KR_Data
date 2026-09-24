@@ -522,9 +522,17 @@ class _FinanceScreenState extends State<FinanceScreen>
             child: Text('지출 내역이 없습니다',
                 style: TextStyle(color: AppColors.textGray)),
           )
-        else
-          for (final t in tx)
-            _txTile(t, null, isExpense: true),
+        else ...[
+          for (final t in tx.take(150)) _txTile(t, null, isExpense: true),
+          if (tx.length > 150)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text('외 ${tx.length - 150}건 (검색/기간 필터로 좁혀보세요)',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.textGray)),
+            ),
+        ],
         const SizedBox(height: 80),
       ],
     );
@@ -635,7 +643,19 @@ class _FinanceScreenState extends State<FinanceScreen>
             style: TextStyle(color: AppColors.textGray, fontSize: 12)),
       );
     }
-    return Column(children: [for (final t in tx) _txTile(t, state)]);
+    // 성능: 다량 거래시 상위 N건만 렌더(무한 스크롤 대신 요약)
+    const cap = 150;
+    final shown = tx.length > cap ? tx.take(cap).toList() : tx;
+    return Column(children: [
+      for (final t in shown) _txTile(t, state),
+      if (tx.length > cap)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text('외 ${tx.length - cap}건 (검색/기간 필터로 좁혀보세요)',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+        ),
+    ]);
   }
 
   Widget _txTile(FinanceTransaction t, AppState? state, {bool isExpense = false}) {
