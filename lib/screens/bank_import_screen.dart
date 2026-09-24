@@ -88,7 +88,7 @@ class _BankImportScreenState extends State<BankImportScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '은행에서 내려받은 거래내역(엑셀/CSV)뿐 아니라 '
+              '은행에서 내려받은 거래내역(엑셀/CSV)의 모든 탭(시트)을 자동 분석합니다. '
               '거래내역 이미지·출력물(PNG/JPG/PDF)도 자동 인식(OCR)합니다.\n'
               '입금자 텍스트에서 이름 앞뒤 내용을 검색해 인가번호를 자동 기입하고, '
               '후원/수품/참가비/연회비/평생회비/행사 및 지출로 자동 분류합니다.',
@@ -171,6 +171,38 @@ class _BankImportScreenState extends State<BankImportScreen> {
                                 fontWeight: FontWeight.w800,
                                 color: color)),
                       ),
+                      if (r.isExpense) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.taegeukRed.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text('지출',
+                              style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.taegeukRed)),
+                        ),
+                      ],
+                      if (r.sheet.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.tigerGold.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text('탭:${r.sheet}',
+                              style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textDark)),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 2),

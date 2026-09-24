@@ -275,7 +275,7 @@ class FinanceService extends ChangeNotifier {
         category: r.category,
         event: r.event,
         context: r.context,
-        memo: r.memo,
+        memo: r.sheet.isNotEmpty ? '${r.memo} [탭:${r.sheet}]' : r.memo,
         status: r.status,
         year: _yearOf(r.date),
         source: 'bank',
@@ -577,6 +577,7 @@ class ClassifiedRow {
     this.event = '',
     this.context = '',
     this.status = 'unmatched',
+    this.sheet = '',
   });
 
   String date;
@@ -592,6 +593,7 @@ class ClassifiedRow {
   String event;
   String context;
   String status;
+  String sheet; // 출처 시트명(엑셀 다중탭)
 
   bool get matched => status == 'matched';
   bool get isExpense => type == 'expense';
@@ -610,6 +612,7 @@ class ClassifiedRow {
         'event': event,
         'context': context,
         'status': status,
+        'sheet': sheet,
       };
 
   factory ClassifiedRow.fromMap(Map<dynamic, dynamic> m) => ClassifiedRow(
@@ -626,6 +629,7 @@ class ClassifiedRow {
         event: '${m['event'] ?? ''}',
         context: '${m['context'] ?? ''}',
         status: '${m['status'] ?? 'unmatched'}',
+        sheet: '${m['sheet'] ?? ''}',
       );
 }
 
