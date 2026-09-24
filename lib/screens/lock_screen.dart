@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 
 /// 앱 잠금(인증) 화면
-///  - 앱 접근: Tsak1988!!  (설치/접근용, 1시간 후 재입력)
-///  - 개인 접근: {인가번호}!@@  (예: 인가번호 000 → 000!@@)
+///  - 앱 접근: ID "TSAK"(대문자, 기본값) + 앱 비밀번호 (Tsak1988!!)
+///  - 개인 접근: ID "인가번호" + 개인 비밀번호 (예: 인가번호 000 → 000!@@)
 ///  - 마스터: Corbuser7!@@ (모든 기능/통제, 불변)
 class LockScreen extends StatefulWidget {
   const LockScreen({super.key, this.onUnlocked});
@@ -21,6 +20,7 @@ class LockScreen extends StatefulWidget {
 class _LockScreenState extends State<LockScreen> {
   String _tier = 'app';
   final _ctrl = TextEditingController();
+  final _idCtrl = TextEditingController(text: 'TSAK');
   bool _obscure = true;
   bool _busy = false;
   String? _error;
@@ -28,6 +28,7 @@ class _LockScreenState extends State<LockScreen> {
   @override
   void dispose() {
     _ctrl.dispose();
+    _idCtrl.dispose();
     super.dispose();
   }
 
@@ -37,12 +38,16 @@ class _LockScreenState extends State<LockScreen> {
       setState(() => _error = '비밀번호를 입력하세요');
       return;
     }
+    if (_tier != 'master' && _idCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'ID를 입력하세요');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     final state = context.read<AppState>();
-    final ok = await state.login(_tier, v);
+    final ok = await state.login(_tier, v, id: _idCtrl.text.trim());
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) {
@@ -59,10 +64,20 @@ class _LockScreenState extends State<LockScreen> {
       case 'master':
         return '마스터 비밀번호가 올바르지 않습니다';
       case 'personal':
-        return '인가번호 + !@@ 형식이 아니거나 등록되지 않은 번호입니다 (예: 000!@@)';
+        return 'ID(인가번호) 또는 비밀번호가 올바르지 않습니다';
       default:
-        return '앱 비밀번호가 올바르지 않습니다';
+        return 'ID 또는 앱 비밀번호가 올바르지 않습니다';
     }
+  }
+
+  void _switchTier(String t) {
+    setState(() {
+      _tier = t;
+      _error = null;
+      _ctrl.clear();
+      // 앱 접근은 ID 기본값 TSAK, 그 외는 비움
+      _idCtrl.text = t == 'app' ? 'TSAK' : '';
+    });
   }
 
   @override
@@ -115,18 +130,30 @@ class _LockScreenState extends State<LockScreen> {
                           child: _tierHelp(),
                         ),
                         const SizedBox(height: 12),
+                        // ID 입력 (마스터 제외)
+                        if (_tier != 'master') ...[
+                          TextField(
+                            controller: _idCtrl,
+                            autofocus: true,
+                            keyboardType: _tier == 'personal'
+                                ? TextInputType.number
+                                : TextInputType.text,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'ID',
+                              prefixIcon: Icon(Icons.badge_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         TextField(
                           controller: _ctrl,
                           obscureText: _obscure,
-                          autofocus: true,
-                          keyboardType: _tier == 'personal'
-                              ? TextInputType.text
-                              : TextInputType.text,
+                          autofocus: _tier == 'master',
                           textInputAction: TextInputAction.go,
                           onSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
-                            labelText: _tier == 'personal' ? '인가번호!@@' : '비밀번호',
-                            hintText: _tier == 'personal' ? '예: 000!@@' : '',
+                            labelText: '비밀번호',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               icon: Icon(
@@ -213,11 +240,7 @@ class _LockScreenState extends State<LockScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
               child: GestureDetector(
-                onTap: () => setState(() {
-                  _tier = t.$1;
-                  _error = null;
-                  _ctrl.clear();
-                }),
+                onTap: () => _switchTier(t.$1),
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
@@ -261,10 +284,10 @@ class _LockScreenState extends State<LockScreen> {
         text = '모든 기능·초기화·통제 권한 (변경 불가)';
         break;
       case 'personal':
-        text = '본인 인가번호 + ${AppConfig.personalSuffix} 형식으로 접속';
+        text = 'ID에 본인 인가번호를 입력하세요';
         break;
       default:
-        text = '앱 설치/접근 비밀번호 · 1시간마다 재입력';
+        text = 'ID에 TSAK 입력 · 1시간마다 재입력';
     }
     return Row(
       key: ValueKey(_tier),

@@ -76,8 +76,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String tier, String value) async {
+  Future<bool> login(String tier, String value, {String id = ''}) async {
     bool ok;
+    // 개인 접근에서 입력된 인가번호 (ID 필드)
+    String personalNo = '';
     if (tier == 'master') {
       // 마스터는 서버 검증(있으면) 우선, 없으면 로컬 상수
       ok = value == AppConfig.masterPassword;
@@ -88,28 +90,54 @@ class AppState extends ChangeNotifier {
         } catch (_) {}
       }
     } else if (tier == 'app') {
-      // 앱 접근: NAS 모드에서는 서버에 설정된 (마스터가 변경한) 비번으로 검증
+      // 앱 접근: ID 는 "TSAK" (대문자, 고정) + 앱 비밀번호
+      final idOk = id.trim().toUpperCase() == 'TSAK';
       ok = false;
-      if (repo.isNasMode) {
-        try {
-          final r = await nas.login('app', value);
-          ok = r['ok'] == true;
-        } catch (_) {}
-      }
-      // 서버 미연결/오프라인이면 로컬 상수로 폴백
-      if (!ok) ok = value == AppConfig.appPassword;
-    } else {
-      // 개인: 인가번호 + !@@  (오프라인이면 로컬에서도 검증)
-      final no = value.replaceAll(RegExp(r'[^0-9]'), '');
-      final expected = '$no${AppConfig.personalSuffix}';
-      if (value != expected) {
-        ok = false;
-      } else {
-        ok = repo.byNumber(no) != null;
-        if (!ok && repo.isNasMode) {
+      if (idOk) {
+        // NAS 모드에서는 서버에 설정된 (마스터가 변경한) 비번으로 검증
+        if (repo.isNasMode) {
           try {
-            final r = await nas.login('personal', value);
+            final r = await nas.login('app', value);
             ok = r['ok'] == true;
+          } catch (_) {}
+        }
+        // 서버 미연결/오프라인이면 로컬 상수로 폴백
+        if (!ok) ok = value == AppConfig.appPassword;
+      }
+    } else {
+      // 개인 접근: ID=인가번호, 비밀번호=개인비밀번호
+      //  - ID(인가번호)로 번호를 확정하고, 비밀번호는 다음 중 하나로 인정:
+      //    ① 번호 + !@@ (예: 415!@@)   ② 접미사만 (예: !@@)
+      //    ③ 관리자가 지정한 개인 비밀번호 / 마스터 비밀번호
+      personalNo = id.replaceAll(RegExp(r'[^0-9]'), '');
+      if (personalNo.isEmpty) {
+        personalNo = value.replaceAll(RegExp(r'[^0-9]'), '');
+      }
+      final expected = '$personalNo${AppConfig.personalSuffix}';
+      final candidates = <String>{value};
+      if (personalNo.isNotEmpty) {
+        candidates.add('$personalNo$value'); // 번호 + 입력값
+      }
+      // 로컬 검증 (기본값/마스터)
+      ok = candidates.any(
+        (c) =>
+            c == expected ||
+            c == AppConfig.masterPassword ||
+            c == '$personalNo${AppConfig.personalSuffix}',
+      );
+      // 인가번호 존재 확인
+      if (ok) {
+        ok = repo.byNumber(personalNo) != null;
+      }
+      // 서버(개인별 지정 비번) 검증 (오프라인/로컬 실패 시)
+      if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
+        for (final c in candidates) {
+          try {
+            final r = await nas.login('personal', c);
+            if (r['ok'] == true) {
+              ok = true;
+              break;
+            }
           } catch (_) {}
         }
       }
@@ -117,7 +145,7 @@ class AppState extends ChangeNotifier {
     if (ok) {
       _unlocked = true;
       _tier = tier;
-      _who = tier == 'personal' ? value.replaceAll(RegExp(r'[^0-9]'), '') : '';
+      _who = tier == 'personal' ? personalNo : '';
       _sessionStart = DateTime.now();
       _applyAccessScope();
       _persistSession();
