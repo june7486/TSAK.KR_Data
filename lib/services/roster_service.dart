@@ -13,10 +13,10 @@ class RosterService {
   /// 한글 폰트(나눔고딕) 로드 — 최초 1회 캐시.
   static Future<void> _ensureFonts() async {
     _regular ??= pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NanumGothic-Regular.ttf'),
+      await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
     );
     _bold ??= pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NanumGothic-Bold.ttf'),
+      await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
     );
   }
 

@@ -177,9 +177,9 @@ class FinanceExportService {
     pw.Font? bold;
     try {
       base = pw.Font.ttf(
-          await rootBundle.load('assets/fonts/NanumGothic-Regular.ttf'));
+          await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'));
       bold = pw.Font.ttf(
-          await rootBundle.load('assets/fonts/NanumGothic-Bold.ttf'));
+          await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'));
     } catch (_) {
       base = null;
       bold = null;
