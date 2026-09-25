@@ -430,16 +430,18 @@ class NasApi {
     return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
   }
 
-  /// 행사 폴더(항목) 파일 목록
+  /// 행사 폴더(항목) 파일 목록 (+하위폴더: isdir=true 항목 포함)
   Future<List<Map<String, dynamic>>> eventFiles(
     String year,
     String title,
-    String key,
-  ) async {
+    String key, {
+    String sub = '',
+  }) async {
     final r = await http
         .get(
           _uri('/api/event/files?year=${Uri.encodeComponent(year)}'
-              '&title=${Uri.encodeComponent(title)}&key=$key'),
+              '&title=${Uri.encodeComponent(title)}&key=$key'
+              '&sub=${Uri.encodeComponent(sub)}'),
         )
         .timeout(const Duration(seconds: 40));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
@@ -448,16 +450,42 @@ class NasApi {
         .toList();
   }
 
+  /// 행사 항목 하위폴더 생성
+  Future<bool> eventMediaMkdir(
+    String year,
+    String title,
+    String key,
+    String name, {
+    String sub = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/mkdir'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'key': key,
+            'sub': sub,
+            'name': name,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
   /// 행사 썸네일 URL (size: normal=480px, view=1600px 최적본, orig=원본)
   String eventThumb2Url(
     String year,
     String title,
     String name, {
     String size = 'normal',
+    String sub = '',
   }) =>
       '$_base/api/event/thumb2?year=${Uri.encodeComponent(year)}'
       '&title=${Uri.encodeComponent(title)}&name=${Uri.encodeComponent(name)}'
-      '&size=$size';
+      '&sub=${Uri.encodeComponent(sub)}&size=$size';
 
   /// 행사 항목 파일 URL (원본 보기 / 다운로드)
   String eventFile2Url(
@@ -466,15 +494,28 @@ class NasApi {
     String key,
     String name, {
     bool download = false,
+    String sub = '',
   }) =>
       '$_base/api/event/f2?year=${Uri.encodeComponent(year)}'
       '&title=${Uri.encodeComponent(title)}&key=$key'
-      '&name=${Uri.encodeComponent(name)}${download ? '&dl=1' : ''}';
+      '&name=${Uri.encodeComponent(name)}&sub=${Uri.encodeComponent(sub)}'
+      '${download ? '&dl=1' : ''}';
 
-  /// 행사 폴더 ZIP 다운로드 URL
-  String eventZipUrl(String year, String title, String key) =>
-      '$_base/api/event/zip?year=${Uri.encodeComponent(year)}'
-      '&title=${Uri.encodeComponent(title)}&key=$key';
+  /// 행사 폴더 ZIP 다운로드 URL (sub=현재 하위폴더, files=선택 다운로드 'sub:name|..')
+  String eventZipUrl(
+    String year,
+    String title,
+    String key, {
+    String sub = '',
+    List<String>? files,
+  }) {
+    final fb = (files == null || files.isEmpty)
+        ? ''
+        : '&files=${Uri.encodeComponent(files.join('|'))}';
+    return '$_base/api/event/zip?year=${Uri.encodeComponent(year)}'
+        '&title=${Uri.encodeComponent(title)}&key=$key'
+        '&sub=${Uri.encodeComponent(sub)}$fb';
+  }
 
   /// 참가자 명단 HTML URL (인쇄/저장용)
   String eventRosterUrl(String year, String title) =>
@@ -587,12 +628,14 @@ class NasApi {
     List<int> bytes, {
     String contentType = 'application/octet-stream',
     String uploader = '',
+    String sub = '',
     void Function(int sent, int total)? onProgress,
   }) async {
     final uri = Uri.parse(
       '$_base/api/event/upload2?year=${Uri.encodeComponent(year)}'
       '&title=${Uri.encodeComponent(title)}&key=$key'
-      '&name=${Uri.encodeComponent(name)}&uploader=${Uri.encodeComponent(uploader)}',
+      '&name=${Uri.encodeComponent(name)}&uploader=${Uri.encodeComponent(uploader)}'
+      '&sub=${Uri.encodeComponent(sub)}',
     );
     final req = http.StreamedRequest('POST', uri);
     req.headers['Content-Type'] = contentType;
@@ -615,13 +658,15 @@ class NasApi {
     return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// 행사 항목 파일 삭제
+  /// 행사 항목 파일 삭제 (isdir=true 이면 하위폴더 삭제)
   Future<bool> eventFileDelete(
     String year,
     String title,
     String key,
-    String name,
-  ) async {
+    String name, {
+    String sub = '',
+    bool isdir = false,
+  }) async {
     final r = await http
         .post(
           _uri('/api/event/file/delete'),
@@ -631,6 +676,8 @@ class NasApi {
             'title': title,
             'key': key,
             'name': name,
+            'sub': sub,
+            'isdir': isdir,
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -644,8 +691,9 @@ class NasApi {
     String title,
     String key,
     String name,
-    String newName,
-  ) async {
+    String newName, {
+    String sub = '',
+  }) async {
     final r = await http
         .post(
           _uri('/api/event/file/rename'),
@@ -656,6 +704,7 @@ class NasApi {
             'key': key,
             'name': name,
             'newName': newName,
+            'sub': sub,
           }),
         )
         .timeout(const Duration(seconds: 30));

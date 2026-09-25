@@ -43,6 +43,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   List<Map<String, dynamic>> _expenses = [];
   int _cols = 3;
 
+  /// 사진+동영상 하위폴더 탐색 스택 (예: ['봄행사','1팀'])
+  List<String> _mediaPath = [];
+  bool _mediaSelect = false;
+  final Set<String> _mediaSel = {};
+
+  String get _mediaSub => _mediaPath.join('/');
+
   @override
   void initState() {
     super.initState();
@@ -74,7 +81,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     try {
       final e = await _nas.eventGet(widget.year, widget.title);
       final plan = await _nas.eventFiles(widget.year, widget.title, 'plan');
-      final media = await _nas.eventFiles(widget.year, widget.title, 'media');
+      final media = await _nas.eventFiles(
+        widget.year,
+        widget.title,
+        'media',
+        sub: _mediaSub,
+      );
       final access = await _nas.eventAccessMap(widget.year, widget.title);
       final fin = await _nas.eventFinance(widget.year, widget.title);
       final atts = ((e['attendees'] as List?) ?? [])
@@ -335,6 +347,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     String key, {
     List<String> allowedExts = const [],
     String? uploader,
+    String sub = '',
     VoidCallback? onDone,
   }) async {
     final state = context.read<AppState>();
@@ -383,6 +396,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           p.bytes,
           contentType: _contentType(p.name),
           uploader: upName,
+          sub: sub,
         );
         if (mounted) Navigator.pop(context);
         done++;
@@ -407,7 +421,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     return 'application/octet-stream';
   }
 
-  Future<void> _renameFile(String key, String name) async {
+  Future<void> _renameFile(String key, String name, {String sub = ''}) async {
     final ctrl = TextEditingController(text: name);
     final ok = await showDialog<bool>(
       context: context,
@@ -436,16 +450,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       key,
       name,
       ctrl.text.trim(),
+      sub: sub,
     );
     await _load();
   }
 
-  Future<void> _deleteFile(String key, String name) async {
+  Future<void> _deleteFile(
+    String key,
+    String name, {
+    String sub = '',
+    bool isdir = false,
+  }) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('삭제'),
-        content: Text('“$name”을(를) 삭제할까요?'),
+        content: Text(isdir ? '“$name” 폴더를 삭제할까요?' : '“$name”을(를) 삭제할까요?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -460,7 +480,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       ),
     );
     if (ok != true) return;
-    await _nas.eventFileDelete(widget.year, widget.title, key, name);
+    await _nas.eventFileDelete(
+      widget.year,
+      widget.title,
+      key,
+      name,
+      sub: sub,
+      isdir: isdir,
+    );
     await _load();
   }
 
@@ -967,9 +994,55 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   // ============================ 사진+동영상 ============================
+  static const List<String> _mediaExts = [
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'mp4',
+    'mov',
+    'webm',
+  ];
+
   Widget _mediaTab() {
+    final folders = _media.where((m) => m['isdir'] == true).toList();
+    final files = _media.where((m) => m['isdir'] != true).toList();
     return Column(
       children: [
+        // ---- 브레드크럼 (하위폴더 탐색) ----
+        if (_mediaPath.isNotEmpty)
+          Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _crumb('사진+동영상', () => setState(() {
+                        _mediaPath = [];
+                        _mediaSel.clear();
+                        _load();
+                      })),
+                  for (var i = 0; i < _mediaPath.length; i++) ...[
+                    const Icon(Icons.chevron_right,
+                        size: 16, color: AppColors.textGray),
+                    _crumb(
+                      _mediaPath[i],
+                      i == _mediaPath.length - 1
+                          ? null
+                          : () => setState(() {
+                                _mediaPath = _mediaPath.sublist(0, i + 1);
+                                _mediaSel.clear();
+                                _load();
+                              }),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        // ---- 업로드 / 폴더 / 선택 툴바 ----
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
@@ -981,22 +1054,33 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                   onPressed: () => _uploadFiles(
                     'media',
-                    allowedExts: const [
-                      'jpg',
-                      'jpeg',
-                      'png',
-                      'gif',
-                      'webp',
-                      'mp4',
-                      'mov',
-                      'webm',
-                    ],
+                    allowedExts: _mediaExts,
+                    sub: _mediaSub,
                   ),
                   icon: const Icon(Icons.add_photo_alternate),
-                  label: const Text('사진/동영상 올리기'),
+                  label: Text(_mediaPath.isEmpty ? '사진/동영상 올리기' : '이 폴더에 올리기'),
                 ),
               ),
               const SizedBox(width: 8),
+              // 새 폴더 만들기
+              IconButton(
+                tooltip: '새 폴더 만들기',
+                onPressed: _createMediaFolder,
+                icon: const Icon(Icons.create_new_folder_outlined),
+              ),
+              // 선택 모드 토글 (항목 있을 때만)
+              if (files.isNotEmpty || folders.isNotEmpty)
+                IconButton(
+                  tooltip: _mediaSelect ? '선택 취소' : '선택',
+                  onPressed: () => setState(() {
+                    _mediaSelect = !_mediaSelect;
+                    if (!_mediaSelect) _mediaSel.clear();
+                  }),
+                  icon: Icon(
+                    _mediaSelect ? Icons.close : Icons.check_circle_outline,
+                    color: _mediaSelect ? AppColors.taegeukRed : null,
+                  ),
+                ),
               // 그리드 열 선택 (1~5열)
               PopupMenuButton<int>(
                 tooltip: '그리드',
@@ -1023,12 +1107,60 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ],
           ),
         ),
+        // ---- 다운로드 바 ----
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _media.isEmpty
+                      ? null
+                      : () => _download(_nas.eventZipUrl(
+                            widget.year,
+                            widget.title,
+                            'media',
+                            sub: _mediaSub,
+                          )),
+                  icon: const Icon(Icons.download),
+                  label: const Text('전체 다운로드'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _mediaSel.isEmpty
+                        ? Colors.grey
+                        : AppColors.scoutGreen,
+                  ),
+                  onPressed: _mediaSelect && _mediaSel.isNotEmpty
+                      ? _downloadSelectedMedia
+                      : null,
+                  icon: const Icon(Icons.check_circle),
+                  label: Text('선택 다운로드 (${_mediaSel.length})'),
+                ),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: _media.isEmpty
-              ? const Center(
-                  child: Text(
-                    '사진·동영상을 올려주세요',
-                    style: TextStyle(color: AppColors.textGray),
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '사진·동영상을 올려주세요',
+                        style: TextStyle(color: AppColors.textGray),
+                      ),
+                      const SizedBox(height: 6),
+                      TextButton.icon(
+                        onPressed: _createMediaFolder,
+                        icon: const Icon(Icons.create_new_folder_outlined),
+                        label: const Text('새 폴더 만들기'),
+                      ),
+                    ],
                   ),
                 )
               : GridView.builder(
@@ -1047,15 +1179,157 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
   }
 
+  Widget _crumb(String label, VoidCallback? onTap) {
+    final isLast = onTap == null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: isLast ? FontWeight.w800 : FontWeight.w600,
+          color: isLast ? AppColors.purple : AppColors.textGray,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createMediaFolder() async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('새 폴더 만들기'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: '폴더 이름',
+            hintText: _mediaPath.isEmpty ? '예: 1일차, 단체사진' : '하위 폴더',
+          ),
+          onSubmitted: (_) => Navigator.pop(ctx, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('만들기'),
+          ),
+        ],
+      ),
+    );
+    final name = ctrl.text.trim();
+    if (ok != true || name.isEmpty) return;
+    final done = await _nas.eventMediaMkdir(
+      widget.year,
+      widget.title,
+      'media',
+      name,
+      sub: _mediaSub,
+    );
+    if (!done) _snack('폴더 생성 실패');
+    await _load();
+  }
+
+  void _enterFolder(String name) {
+    setState(() {
+      _mediaPath = [..._mediaPath, name];
+      _mediaSel.clear();
+    });
+    _load();
+  }
+
+  /// 선택 항목 토큰 ('현재폴더 파일'=name, '하위폴더 파일'=segSub:name)
+  void _downloadSelectedMedia() {
+    if (_mediaSel.isEmpty) return;
+    final tokens = _mediaSel.toList();
+    _download(_nas.eventZipUrl(
+      widget.year,
+      widget.title,
+      'media',
+      sub: _mediaSub,
+      files: tokens,
+    ));
+  }
+
   Widget _mediaTile(int i) {
     final m = _media[i];
     final name = '${m['name']}';
+    final isDir = m['isdir'] == true;
     final kind = '${m['kind'] ?? 'image'}';
     final uploader = '${m['uploader'] ?? ''}';
-    final thumbUrl = _nas.eventThumb2Url(widget.year, widget.title, name);
+    final selected = _mediaSel.contains(name);
+    final thumbUrl =
+        _nas.eventThumb2Url(widget.year, widget.title, name, sub: _mediaSub);
+
+    if (isDir) {
+      final cnt = m['count'] ?? 0;
+      return RepaintBoundary(
+        child: GestureDetector(
+          onTap: () => _enterFolder(name),
+          onLongPress: () => _mediaFolderMenu(name),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3EEFA),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.purple.withValues(alpha: 0.25)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.folder, size: 40, color: AppColors.purple),
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$cnt개',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return RepaintBoundary(
       child: GestureDetector(
-        onTap: () => _openViewer(i),
+        onTap: () {
+          if (_mediaSelect) {
+            setState(() {
+              if (selected) {
+                _mediaSel.remove(name);
+              } else {
+                _mediaSel.add(name);
+              }
+            });
+          } else {
+            _openViewer(i);
+          }
+        },
+        onLongPress: () {
+          setState(() {
+            _mediaSelect = true;
+            _mediaSel.add(name);
+          });
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1109,6 +1383,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                           size: 34,
                         ),
                       ),
+                    // 선택 표시
+                    if (_mediaSelect)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? AppColors.scoutGreen
+                                : Colors.black38,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(3),
+                          child: Icon(
+                            selected ? Icons.check : Icons.circle_outlined,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1132,6 +1426,48 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
   }
 
+  Future<void> _mediaFolderMenu(String name) async {
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('이 폴더 전체 다운로드 (ZIP)'),
+              onTap: () => Navigator.pop(ctx, 'zip'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: const Text('이름 변경'),
+              onTap: () => Navigator.pop(ctx, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline,
+                  color: AppColors.taegeukRed),
+              title: const Text('폴더 삭제',
+                  style: TextStyle(color: AppColors.taegeukRed)),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (v == 'zip') {
+      _download(_nas.eventZipUrl(
+        widget.year,
+        widget.title,
+        'media',
+        sub: _mediaSub.isEmpty ? name : '$_mediaSub/$name',
+      ));
+    } else if (v == 'rename') {
+      await _renameFile('media', name, sub: _mediaSub);
+    } else if (v == 'delete') {
+      await _deleteFile('media', name, sub: _mediaSub, isdir: true);
+    }
+  }
+
   void _openViewer(int index) {
     Navigator.push(
       context,
@@ -1139,7 +1475,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         builder: (_) => _MediaViewer(
           year: widget.year,
           title: widget.title,
-          items: _media,
+          sub: _mediaSub,
+          items: _media.where((m) => m['isdir'] != true).toList(),
           initialIndex: index,
           canDeleteAll: widget.canManage,
           myName: _uploaderName(),
@@ -1525,10 +1862,12 @@ class _MediaViewer extends StatefulWidget {
     required this.initialIndex,
     required this.canDeleteAll,
     required this.myName,
+    this.sub = '',
   });
 
   final String year;
   final String title;
+  final String sub;
   final List<Map<String, dynamic>> items;
   final int initialIndex;
   final bool canDeleteAll;
@@ -1599,12 +1938,14 @@ class _MediaViewerState extends State<_MediaViewer> {
                       'media',
                       name,
                       download: true,
+                      sub: widget.sub,
                     )
                   : _nas.eventThumb2Url(
                       widget.year,
                       widget.title,
                       name,
                       size: _original ? 'orig' : 'view',
+                      sub: widget.sub,
                     );
               await launchUrl(
                 Uri.parse(url),
@@ -1641,6 +1982,7 @@ class _MediaViewerState extends State<_MediaViewer> {
                       widget.title,
                       'media',
                       n,
+                      sub: widget.sub,
                     ),
                   );
                 }
@@ -1650,6 +1992,7 @@ class _MediaViewerState extends State<_MediaViewer> {
                   widget.title,
                   n,
                   size: size,
+                  sub: widget.sub,
                 );
                 return Center(
                   child: InteractiveViewer(
@@ -1714,6 +2057,7 @@ class _MediaViewerState extends State<_MediaViewer> {
       widget.title,
       'media',
       '${_cur['name']}',
+      sub: widget.sub,
     );
     if (mounted) Navigator.pop(context);
   }
