@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../models/finance_transaction.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/finance_export.dart';
 import '../services/finance_service.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/finance_export_sheet.dart';
 import '../widgets/mini_charts.dart';
 import 'bank_import_screen.dart';
 import 'finance_transaction_edit_screen.dart';
@@ -335,6 +337,7 @@ class _FinanceScreenState extends State<FinanceScreen>
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        _exportBar(1),
         const Text('DB 자동분석 통계',
             style: TextStyle(
                 fontSize: 15,
@@ -407,6 +410,7 @@ class _FinanceScreenState extends State<FinanceScreen>
       controller: _scroll,
       padding: const EdgeInsets.all(12),
       children: [
+        _exportBar(0),
         Row(
           children: [
             _metricCard('총 수입', income, AppColors.scoutGreen, Icons.savings),
@@ -456,10 +460,12 @@ class _FinanceScreenState extends State<FinanceScreen>
     final top = byMember.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final names = <String, Member>{for (final m in state.repo.all()) m.number: m};
     final maxV = top.isEmpty ? 0 : top.first.value;
+    final tabIdx = _tabs.indexOf(category);
 
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        if (tabIdx >= 0) _exportBar(tabIdx),
         _metricCard('$category 총액', total, color, Icons.volunteer_activism),
         const SizedBox(height: 12),
         _sectionTitle('연도별 $category'),
@@ -507,6 +513,7 @@ class _FinanceScreenState extends State<FinanceScreen>
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        _exportBar(7),
         _metricCard('총 지출', total, AppColors.taegeukRed, Icons.payments),
         const SizedBox(height: 12),
         _sectionTitle('분류별 지출'),
@@ -544,6 +551,7 @@ class _FinanceScreenState extends State<FinanceScreen>
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        _exportBar(8),
         _sectionTitle('행사별 결산 현황 (수입 − 지출)'),
         if (list.isEmpty)
           const Padding(
@@ -766,5 +774,417 @@ class _FinanceScreenState extends State<FinanceScreen>
       buf.write(s[i]);
     }
     return '${neg ? '-' : ''}$buf';
+  }
+
+  static String _money(int v) => '${_won(v)}원';
+
+  // ==========================================================================
+  //  출력 (다중 포맷) — 각 탭의 데이터를 동일 구성으로 내보낸다
+  // ==========================================================================
+
+  /// 각 탭 상단에 놓이는 출력 버튼 (해당 항목만 내보냄)
+  Widget _exportBar(int tabIndex) {
+    final label = _tabs[tabIndex.clamp(0, _tabs.length - 1)];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.purple,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+              ),
+              onPressed: () => _exportTab(tabIndex),
+              icon: const Icon(Icons.ios_share, size: 18),
+              label: Text('「$label」 출력 (엑셀·PDF·워드·PPT·CSV·TXT·JPG)',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _exportTab(int tabIndex) {
+    final fs = context.read<FinanceService>();
+    final state = context.read<AppState>();
+    final data = _buildExportData(fs, state, tabIndex);
+    showFinanceExportSheet(context, data: data);
+  }
+
+  FinanceExportData _buildExportData(
+      FinanceService fs, AppState state, int tabIndex) {
+    switch (tabIndex) {
+      case 0:
+        return _overviewExport(fs, state);
+      case 1:
+        return _statsExport(fs);
+      case 7:
+        return _expenseExport(fs);
+      case 8:
+        return _settlementExport(fs);
+      default:
+        final cat = (tabIndex >= 2 && tabIndex <= 6) ? _tabs[tabIndex] : '후원';
+        return _categoryExport(fs, state, cat);
+    }
+  }
+
+  String _nameOf(AppState state, FinanceTransaction t) {
+    if (t.number.isNotEmpty) {
+      final m = state.byNumber(t.number);
+      if (m != null && m.name.isNotEmpty) return m.name;
+    }
+    return t.name.isNotEmpty ? t.name : t.payer;
+  }
+
+  FinanceExportData _overviewExport(FinanceService fs, AppState state) {
+    final tx = fs.transactions.where(_inYear).toList();
+    final income =
+        tx.where((t) => !t.isExpense).fold<int>(0, (s, t) => s + t.amount);
+    final expense =
+        tx.where((t) => t.isExpense).fold<int>(0, (s, t) => s + t.amount);
+
+    final catTotals = <String, int>{};
+    for (final t in tx) {
+      if (t.isExpense) continue;
+      catTotals[t.category] = (catTotals[t.category] ?? 0) + t.amount;
+    }
+    final catTotalSum = catTotals.values.fold<int>(0, (s, v) => s + v);
+
+    final yearMap = <String, int>{};
+    for (final t in fs.transactions) {
+      if (t.isExpense) continue;
+      final y = t.year.isEmpty ? '미지정' : t.year;
+      yearMap[y] = (yearMap[y] ?? 0) + t.amount;
+    }
+    final sortedYears = Map.fromEntries(
+        yearMap.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+
+    final unmatched =
+        tx.where((t) => !t.isExpense && !t.matched).toList();
+
+    final tables = <FinanceTable>[
+      FinanceTable(
+        title: '요약',
+        headers: const ['항목', '금액'],
+        rows: [
+          ['총 수입', _money(income)],
+          ['총 지출', _money(expense)],
+          ['순액', _money(income - expense)],
+          ['입금건수', '${tx.where((t) => !t.isExpense).length}건'],
+          ['지출건수', '${tx.where((t) => t.isExpense).length}건'],
+        ],
+      ),
+      FinanceTable(
+        title: '연도별 입금현황',
+        headers: const ['연도', '입금액'],
+        rows: [
+          for (final e in sortedYears.entries) [e.key, _money(e.value)],
+        ],
+        totals: ['합계', _money(sortedYears.values.fold<int>(0, (s, v) => s + v))],
+      ),
+      FinanceTable(
+        title: '분류별 비중 (수입)',
+        headers: const ['분류', '금액', '비중'],
+        rows: [
+          for (final e in (catTotals.entries.toList()
+                ..sort((a, b) => b.value.compareTo(a.value))))
+            [
+              e.key,
+              _money(e.value),
+              catTotalSum == 0
+                  ? '0%'
+                  : '${(e.value * 100 / catTotalSum).toStringAsFixed(1)}%',
+            ],
+        ],
+        totals: ['합계', _money(catTotalSum), '100%'],
+      ),
+      FinanceTable(
+        title: '미매칭 입금 (인가자 미확인)',
+        note: '입금자 텍스트에서 인가자를 인식하지 못한 건',
+        headers: const ['일자', '입금자(원문)', '인식정보', '금액', '분류'],
+        rows: [
+          for (final t in unmatched)
+            [
+              t.date,
+              t.payer,
+              t.context,
+              _money(t.amount),
+              t.category,
+            ],
+        ],
+      ),
+    ];
+    return FinanceExportData(
+      title: '전체 재무 현황',
+      subtitle: '기간: $_selectedYear',
+      tables: tables,
+      footnote: '출력일 기준 · 한국범스카우트중앙회 통합 재무',
+    );
+  }
+
+  FinanceExportData _statsExport(FinanceService fs) {
+    final st = fs.serverStats.isNotEmpty ? fs.serverStats : fs.localStats();
+    final total = (st['total'] as Map?) ?? {};
+    final income = (total['income'] as num?)?.toInt() ?? 0;
+    final expense = (total['expense'] as num?)?.toInt() ?? 0;
+    final count = (total['count'] as num?)?.toInt() ?? 0;
+    final byYear = (st['byYear'] as Map?) ?? {};
+    final byCat = (st['byCategory'] as Map?) ?? {};
+    final byExpCat = (st['byExpenseCategory'] as Map?) ?? {};
+    final byEvent = (st['byEvent'] as Map?) ?? {};
+
+    final yearRows = <List<String>>[];
+    final yEntries = byYear.entries.toList()
+      ..sort((a, b) => '${b.key}'.compareTo('${a.key}'));
+    for (final e in yEntries) {
+      final v = e.value;
+      if (v is Map) {
+        final yi = ((v['income'] as num?) ?? 0).toInt();
+        final ye = ((v['expense'] as num?) ?? 0).toInt();
+        yearRows.add(['${e.key}', _money(yi), _money(ye), _money(yi - ye)]);
+      }
+    }
+
+    final catRows = <List<String>>[];
+    final cEntries = byCat.entries.toList()
+      ..sort((a, b) =>
+          (((b.value as num?) ?? 0)).compareTo((a.value as num?) ?? 0));
+    for (final e in cEntries) {
+      catRows.add(['${e.key}', _money(((e.value as num?) ?? 0).toInt())]);
+    }
+
+    final expRows = <List<String>>[];
+    final eEntries = byExpCat.entries.toList()
+      ..sort((a, b) =>
+          (((b.value as num?) ?? 0)).compareTo((a.value as num?) ?? 0));
+    for (final e in eEntries) {
+      expRows.add(['${e.key}', _money(((e.value as num?) ?? 0).toInt())]);
+    }
+
+    final eventRows = <List<String>>[];
+    for (final e in byEvent.entries) {
+      final v = e.value;
+      if (v is Map) {
+        final ei = ((v['income'] as num?) ?? 0).toInt();
+        final ee = ((v['expense'] as num?) ?? 0).toInt();
+        eventRows.add(['${e.key}', _money(ei), _money(ee), _money(ei - ee)]);
+      }
+    }
+
+    return FinanceExportData(
+      title: '재무 통계',
+      subtitle: 'DB 자동분석 · 갱신 ${fs.statsUpdated}',
+      tables: [
+        FinanceTable(
+          title: '총계',
+          headers: const ['항목', '값'],
+          rows: [
+            ['총 수입', _money(income)],
+            ['총 지출', _money(expense)],
+            ['순액', _money(income - expense)],
+            ['거래건수', '$count건'],
+          ],
+        ),
+        FinanceTable(
+          title: '연도별 수입/지출',
+          headers: const ['연도', '수입', '지출', '순액'],
+          rows: yearRows,
+        ),
+        FinanceTable(
+          title: '수입 분류별',
+          headers: const ['분류', '금액'],
+          rows: catRows,
+          totals: [
+            '합계',
+            _money(catRows.fold<int>(
+                0, (s, r) => s + _parseWon(r.length > 1 ? r[1] : ''))),
+          ],
+        ),
+        FinanceTable(
+          title: '지출 분류별',
+          headers: const ['분류', '금액'],
+          rows: expRows,
+          totals: [
+            '합계',
+            _money(expRows.fold<int>(
+                0, (s, r) => s + _parseWon(r.length > 1 ? r[1] : ''))),
+          ],
+        ),
+        FinanceTable(
+          title: '행사별 순액 (수입−지출)',
+          headers: const ['행사', '수입', '지출', '순액'],
+          rows: eventRows,
+        ),
+      ],
+    );
+  }
+
+  static int _parseWon(String s) =>
+      int.tryParse(s.replaceAll(RegExp(r'[^0-9\-]'), '')) ?? 0;
+
+  FinanceExportData _categoryExport(
+      FinanceService fs, AppState state, String category) {
+    final tx = fs.transactions
+        .where(_inYear)
+        .where((t) => !t.isExpense && t.category == category)
+        .toList();
+    final total = tx.fold<int>(0, (s, t) => s + t.amount);
+    final yearMap = <String, int>{};
+    final byMember = <String, int>{};
+    for (final t in tx) {
+      final y = t.year.isEmpty ? '미지정' : t.year;
+      yearMap[y] = (yearMap[y] ?? 0) + t.amount;
+      final no = t.number.replaceAll(RegExp(r'[^0-9]'), '');
+      if (no.isNotEmpty) byMember[no] = (byMember[no] ?? 0) + t.amount;
+    }
+    final top = byMember.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final names = <String, Member>{for (final m in state.repo.all()) m.number: m};
+
+    return FinanceExportData(
+      title: '$category 현황',
+      subtitle: '기간: $_selectedYear',
+      tables: [
+        FinanceTable(
+          title: '요약',
+          headers: const ['항목', '값'],
+          rows: [
+            ['$category 총액', _money(total)],
+            ['건수', '${tx.length}건'],
+            ['납부 인원', '${top.length}명'],
+          ],
+        ),
+        FinanceTable(
+          title: '연도별 $category',
+          headers: const ['연도', '금액'],
+          rows: [
+            for (final e in (yearMap.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key))))
+              [e.key, _money(e.value)],
+          ],
+          totals: ['합계', _money(total)],
+        ),
+        FinanceTable(
+          title: '개인별 TOP (${top.length}명)',
+          headers: const ['인가번호', '성명', '금액'],
+          rows: [
+            for (final e in top.take(100))
+              [
+                e.key,
+                names[e.key]?.name ?? '번호 ${e.key}',
+                _money(e.value),
+              ],
+          ],
+        ),
+        FinanceTable(
+          title: '$category 입금 상세 (${tx.length}건)',
+          headers: const ['일자', '인가번호', '성명', '금액', '행사', '메모'],
+          rows: [
+            for (final t in tx)
+              [
+                t.date,
+                t.number,
+                _nameOf(state, t),
+                _money(t.amount),
+                t.event,
+                t.memo,
+              ],
+          ],
+          totals: ['합계', '', '', _money(total), '', ''],
+        ),
+      ],
+    );
+  }
+
+  FinanceExportData _expenseExport(FinanceService fs) {
+    final tx =
+        fs.transactions.where(_inYear).where((t) => t.isExpense).toList();
+    final total = tx.fold<int>(0, (s, t) => s + t.amount);
+    final catMap = <String, int>{};
+    for (final t in tx) {
+      catMap[t.category] = (catMap[t.category] ?? 0) + t.amount;
+    }
+    final byEvent = <String, int>{};
+    for (final t in tx) {
+      final k = t.event.trim().isEmpty ? '(미지정)' : t.event.trim();
+      byEvent[k] = (byEvent[k] ?? 0) + t.amount;
+    }
+
+    return FinanceExportData(
+      title: '지출 현황',
+      subtitle: '기간: $_selectedYear',
+      tables: [
+        FinanceTable(
+          title: '요약',
+          headers: const ['항목', '값'],
+          rows: [
+            ['총 지출', _money(total)],
+            ['건수', '${tx.length}건'],
+          ],
+        ),
+        FinanceTable(
+          title: '분류별 지출',
+          headers: const ['분류', '금액'],
+          rows: [
+            for (final e in (catMap.entries.toList()
+              ..sort((a, b) => b.value.compareTo(a.value))))
+              [e.key, _money(e.value)],
+          ],
+          totals: ['합계', _money(total)],
+        ),
+        FinanceTable(
+          title: '행사별 지출',
+          headers: const ['행사', '금액'],
+          rows: [
+            for (final e in (byEvent.entries.toList()
+              ..sort((a, b) => b.value.compareTo(a.value))))
+              [e.key, _money(e.value)],
+          ],
+        ),
+        FinanceTable(
+          title: '지출 상세 (${tx.length}건)',
+          headers: const ['일자', '분류', '행사', '내용', '금액', '메모'],
+          rows: [
+            for (final t in tx)
+              [
+                t.date,
+                t.category,
+                t.event,
+                t.name.isNotEmpty ? t.name : t.payer,
+                _money(t.amount),
+                t.memo,
+              ],
+          ],
+          totals: ['합계', '', '', '', _money(total), ''],
+        ),
+      ],
+    );
+  }
+
+  FinanceExportData _settlementExport(FinanceService fs) {
+    final list = fs.eventSettlements();
+    return FinanceExportData(
+      title: '행사별 결산',
+      subtitle: '수입 − 지출',
+      tables: [
+        FinanceTable(
+          title: '행사별 결산 현황',
+          headers: const ['행사', '수입', '지출', '순액'],
+          rows: [
+            for (final s in list)
+              [s.event, _money(s.income), _money(s.expense), _money(s.net)],
+          ],
+          totals: [
+            '합계',
+            _money(list.fold<int>(0, (a, s) => a + s.income)),
+            _money(list.fold<int>(0, (a, s) => a + s.expense)),
+            _money(list.fold<int>(0, (a, s) => a + s.net)),
+          ],
+        ),
+      ],
+    );
   }
 }
