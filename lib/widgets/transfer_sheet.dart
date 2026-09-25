@@ -6,16 +6,18 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_theme.dart';
+import '../services/web_nav.dart';
 
 /// 계좌로 '바로 송금' — **웹 우선** 시트.
 ///
 /// 앱 설치 없이 웹 브라우저에서 바로 송금할 수 있도록 설계:
 ///  - 금액 입력(프리셋 칩 포함)
+///  - **계좌 선택**(계좌번호 앞에 종류 명기) — 대표/수품구매/행사비 등
 ///  - 송금 정보(은행·계좌·금액·예금주) **원탭 복사** → 은행 앱/인터넷뱅킹에 붙여넣기
 ///  - **QR 코드** 생성 → 휴대폰 카메라로 스캔하면 송금 정보 그대로 전달
-///  - (참고) 실제 폰에서 딥링크 앱 실행도 지원(앱 설치형 사용자용)
+///  - 금융사 아이콘 → 폰 브라우저에서 앱 딥링크 실행(미설치 시 복사 폴백)
 ///
-/// 금액·계좌를 미리 지정해주면 더 편하다. (amount 미지정 시 사용자가 입력)
+/// accounts 를 넘기면 계좌를 골라 송금할 수 있다. (없으면 단일 계좌)
 Future<void> showTransferSheet(
   BuildContext context, {
   required String label,
@@ -24,6 +26,8 @@ Future<void> showTransferSheet(
   String holder = '',
   int? amount,
   String memo = '',
+  List<Map<String, dynamic>>? accounts,
+  int initialIndex = 0,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -36,6 +40,8 @@ Future<void> showTransferSheet(
       holder: holder,
       amount: amount,
       memo: memo,
+      accounts: accounts,
+      initialIndex: initialIndex,
     ),
   );
 }
@@ -48,6 +54,8 @@ class _TransferSheet extends StatefulWidget {
     required this.holder,
     required this.amount,
     required this.memo,
+    this.accounts,
+    this.initialIndex = 0,
   });
 
   final String label;
@@ -56,6 +64,8 @@ class _TransferSheet extends StatefulWidget {
   final String holder;
   final int? amount;
   final String memo;
+  final List<Map<String, dynamic>>? accounts;
+  final int initialIndex;
 
   @override
   State<_TransferSheet> createState() => _TransferSheetState();
@@ -64,10 +74,32 @@ class _TransferSheet extends StatefulWidget {
 class _TransferSheetState extends State<_TransferSheet> {
   late final TextEditingController _amt;
   int _amount = 0;
+  late int _acctIdx;
+
+  List<Map<String, dynamic>> get _accounts {
+    final a = widget.accounts;
+    if (a != null && a.isNotEmpty) return a;
+    return [
+      {
+        'label': widget.label,
+        'bank': widget.bank,
+        'account': widget.account,
+      },
+    ];
+  }
+
+  Map<String, dynamic> get _acct => _accounts[_acctIdx.clamp(0, _accounts.length - 1)];
+
+  /// 현재 선택 계좌의 종류 라벨 (혼선 방지용 — 계좌번호 앞에 명기).
+  String get _label => '${_acct['label'] ?? widget.label}';
+  String get _account => '${_acct['account'] ?? widget.account}';
 
   @override
   void initState() {
     super.initState();
+    _acctIdx = (widget.initialIndex >= 0 && widget.initialIndex < _accounts.length)
+        ? widget.initialIndex
+        : 0;
     final initial =
         (widget.amount != null && widget.amount! > 0) ? widget.amount! : 0;
     _amount = initial;
@@ -85,14 +117,14 @@ class _TransferSheetState extends State<_TransferSheet> {
         (m) => '${m[1]},',
       );
 
-  String get _accountDigits => widget.account.replaceAll(RegExp(r'[^0-9]'), '');
+  String get _accountDigits => _account.replaceAll(RegExp(r'[^0-9]'), '');
 
   /// 송금 은행은 우리은행으로 고정.
   String get _bankName => '우리은행';
 
   void _toast(String m) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(m), duration: const Duration(milliseconds: 1400)),
+      SnackBar(content: Text(m), duration: const Duration(milliseconds: 1600)),
     );
   }
 
@@ -104,10 +136,11 @@ class _TransferSheetState extends State<_TransferSheet> {
   /// 송금 정보 전체를 붙여넣기 좋은 한 덩어리 텍스트로.
   String _copyAllText() {
     final b = StringBuffer();
-    b.writeln('[$_bankName] ${widget.account}');
+    b.writeln('[$_bankName] $_label');
+    b.writeln('계좌번호: $_account');
     if (widget.holder.isNotEmpty) b.writeln('예금주: ${widget.holder}');
     if (_amount > 0) b.writeln('금액: ${_won(_amount)}원');
-    b.write('사용처: ${widget.label}');
+    b.write('사용처: $_label');
     return b.toString();
   }
 
@@ -122,7 +155,8 @@ class _TransferSheetState extends State<_TransferSheet> {
       if (base.host.isNotEmpty) {
         final qp = <String, String>{
           'bank': _bankName,
-          'account': widget.account,
+          'account': _account,
+          'label': _label,
           if (_amount > 0) 'amount': '$_amount',
           if (widget.holder.isNotEmpty) 'holder': widget.holder,
           if (widget.memo.isNotEmpty) 'memo': widget.memo,
@@ -134,8 +168,9 @@ class _TransferSheetState extends State<_TransferSheet> {
     }
     return [
       'TSAK 송금정보',
+      '종류=$_label',
       '은행=$_bankName',
-      '계좌=${widget.account}',
+      '계좌=$_account',
       if (_amount > 0) '금액=$_amount',
       if (widget.holder.isNotEmpty) '예금주=${widget.holder}',
       if (widget.memo.isNotEmpty) '메모=${widget.memo}',
@@ -144,6 +179,16 @@ class _TransferSheetState extends State<_TransferSheet> {
 
   /// 앱 딥링크를 열고, 실패하면 스토어 설치 페이지로 폴백한다.
   Future<void> _tryOpen(List<String> urls, List<String> stores) async {
+    // 웹(특히 모바일 브라우저): 커스텀 스킴은 location.href 로만 열린다.
+    if (isWebRuntime) {
+      try {
+        openUrlInTab(urls.first);
+        _toast('앱이 열리지 않으면 「송금 정보 복사」 후 은행 앱에 붙여넣으세요');
+      } catch (_) {
+        _toast('송금 정보를 복사해 은행 앱에 붙여넣으세요');
+      }
+      return;
+    }
     for (final u in urls) {
       try {
         final ok = await launchUrl(
@@ -261,7 +306,7 @@ class _TransferSheetState extends State<_TransferSheet> {
                   const SizedBox(height: 12),
                   _bankPicker(),
                   const SizedBox(height: 10),
-                  _accountCard(),
+                  _accountSelector(),
                   const SizedBox(height: 14),
                   _amountField(),
                   const SizedBox(height: 14),
@@ -323,7 +368,7 @@ class _TransferSheetState extends State<_TransferSheet> {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
-            widget.label,
+            _label,
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
           ),
         ),
@@ -479,48 +524,136 @@ class _TransferSheetState extends State<_TransferSheet> {
     );
   }
 
-  Widget _accountCard() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.purple.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _bankName,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textGray,
+  /// 계좌 선택 카드 — 누르면 다른 계좌를 고를 수 있다.
+  /// 계좌번호 앞에 계좌 종류(라벨)를 반드시 명기해 혼선을 막는다.
+  Widget _accountSelector() {
+    final multi = _accounts.length > 1;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: multi ? _pickAccount : null,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.purple.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.purple.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // 계좌 종류 명기 (혼선 방지)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.tigerGold.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          _label,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _bankName,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                      if (multi) ...[
+                        const Spacer(),
+                        const Icon(Icons.expand_more,
+                            size: 20, color: AppColors.purple),
+                      ],
+                    ],
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  widget.account,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
+                  const SizedBox(height: 4),
+                  Text(
+                    _account,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: '계좌번호 복사',
-            onPressed: () => _copy(widget.account, '계좌번호가 복사됐어요'),
-            icon: const Icon(Icons.copy, color: AppColors.purple),
-          ),
-        ],
+            IconButton(
+              tooltip: '계좌번호 복사',
+              onPressed: () => _copy(_account, '계좌번호가 복사됐어요'),
+              icon: const Icon(Icons.copy, color: AppColors.purple),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _pickAccount() async {
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.account_balance, size: 18, color: AppColors.purple),
+                  SizedBox(width: 6),
+                  Text('송금할 계좌 선택',
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ),
+            for (var i = 0; i < _accounts.length; i++)
+              ListTile(
+                leading: Icon(
+                  i == _acctIdx
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: i == _acctIdx
+                      ? AppColors.purple
+                      : AppColors.textGray,
+                ),
+                title: Text(
+                  '${_accounts[i]['label']}',
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(
+                  '${_accounts[i]['bank']} ${_accounts[i]['account']}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                onTap: () => Navigator.pop(ctx, i),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked != null && picked != _acctIdx) {
+      setState(() => _acctIdx = picked);
+    }
   }
 
   Widget _amountField() {

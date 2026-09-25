@@ -355,7 +355,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle('후원 안내', Icons.volunteer_activism),
             const SizedBox(height: 8),
-            for (final d in state.donations)
+            for (var di = 0; di < state.donations.length; di++)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),
                 child: Row(
@@ -370,7 +370,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        '${d['label']}',
+                        '${state.donations[di]['label']}',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -380,7 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${d['bank']} ${d['account']}',
+                        '${state.donations[di]['bank']} ${state.donations[di]['account']}',
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -399,10 +399,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       onPressed: () => showTransferSheet(
                         context,
-                        label: '${d['label']}',
-                        bank: '${d['bank']}',
-                        account: '${d['account']}',
+                        label: '${state.donations[di]['label']}',
+                        bank: '${state.donations[di]['bank']}',
+                        account: '${state.donations[di]['account']}',
                         holder: state.donationHolder,
+                        accounts: state.donations,
+                        initialIndex: di,
+                        memo: '${state.donations[di]['label']}',
                       ),
                       icon: const Icon(Icons.send_rounded, size: 15),
                       label: const Text('송금'),
@@ -411,11 +414,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: const Icon(Icons.copy, size: 18),
                       onPressed: () async {
                         await Clipboard.setData(
-                          ClipboardData(text: '${d['account']}'),
+                          ClipboardData(text: '${state.donations[di]['account']}'),
                         );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('${d['account']} 복사됨')),
+                            SnackBar(
+                                content: Text(
+                                    '${state.donations[di]['account']} 복사됨')),
                           );
                         }
                       },

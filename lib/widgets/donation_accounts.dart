@@ -30,14 +30,14 @@ class DonationAccounts extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final rows = <Widget>[
-      for (final d in state.donations)
+      for (var index = 0; index < state.donations.length; index++)
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Row(
             children: [
               Expanded(
                 child: Text(
-                  '${d['label']}',
+                  '${state.donations[index]['label']}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -50,7 +50,7 @@ class DonationAccounts extends StatelessWidget {
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  '${d['bank']} ${d['account']}',
+                  '${state.donations[index]['bank']} ${state.donations[index]['account']}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -67,10 +67,13 @@ class DonationAccounts extends StatelessWidget {
                 color: AppColors.scoutGreen,
                 onTap: () => showTransferSheet(
                   context,
-                  label: '${d['label']}',
-                  bank: '${d['bank']}',
-                  account: '${d['account']}',
+                  label: '${state.donations[index]['label']}',
+                  bank: '${state.donations[index]['bank']}',
+                  account: '${state.donations[index]['account']}',
                   holder: state.donationHolder,
+                  accounts: state.donations,
+                  initialIndex: index,
+                  memo: '${state.donations[index]['label']}',
                 ),
               ),
               const SizedBox(width: 4),
@@ -80,12 +83,13 @@ class DonationAccounts extends StatelessWidget {
                 color: AppColors.purple,
                 onTap: () async {
                   await Clipboard.setData(
-                    ClipboardData(text: '${d['account']}'),
+                    ClipboardData(text: '${state.donations[index]['account']}'),
                   );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('${d['label']} ${d['account']} 복사됨'),
+                        content: Text(
+                            '${state.donations[index]['label']} ${state.donations[index]['account']} 복사됨'),
                         duration: const Duration(milliseconds: 900),
                       ),
                     );
