@@ -420,7 +420,7 @@ class _LockScreenState extends State<LockScreen> {
         text = 'ID=휴대폰 전화번호 · 비밀번호=전화번호 뒤 4자리';
         break;
       default:
-        text = 'ID와 비밀번호를 입력하세요 (평소에는 관리자를 선택하세요)';
+        text = 'ID와 비밀번호를 입력하세요 (불법접속은 처벌됩니다.)';
     }
     return Row(
       key: ValueKey(_tier),
