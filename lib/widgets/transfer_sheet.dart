@@ -259,6 +259,30 @@ class _TransferSheetState extends State<_TransferSheet> {
                   _accountCard(),
                   const SizedBox(height: 14),
                   _amountField(),
+                  const SizedBox(height: 14),
+                  // 주 동작: 토스로 바로 송금 (휴대폰 브라우저에서 즉시 실행)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF0064FF),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: _payToss,
+                    icon: const Icon(Icons.send_rounded, size: 20),
+                    label: const Text(
+                      '토스로 송금',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '휴대폰에서는 토스 앱이 바로 열려요. PC라면 아래 QR을 폰으로 스캔하세요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                  ),
                   const SizedBox(height: 16),
                   _qrCard(),
                   const SizedBox(height: 14),
@@ -559,7 +583,7 @@ class _TransferSheetState extends State<_TransferSheet> {
     );
   }
 
-  /// 앱을 설치한 사람을 위한 선택 기능. 웹에서는 열리지 않을 수 있음을 안내.
+  /// 은행 앱을 설치한 사람을 위한 선택 기능. 웹에서는 열리지 않을 수 있음을 안내.
   /// 좁은 화면(휴대폰 브라우저)에서는 딥링크가 실제로 열리므로 자동 펼침.
   Widget _appSection() {
     final narrow = MediaQuery.sizeOf(context).width < 600;
@@ -569,35 +593,13 @@ class _TransferSheetState extends State<_TransferSheet> {
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(bottom: 6),
         initiallyExpanded: narrow,
-        leading: const Icon(Icons.install_mobile_rounded,
+        leading: const Icon(Icons.account_balance_rounded,
             size: 18, color: AppColors.textGray),
         title: const Text(
-          '앱 설치형 — 토스·은행 앱으로 바로 열기 (선택)',
+          '은행 앱으로 바로 열기 (선택)',
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF0064FF),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: _payToss,
-                  icon: const Icon(Icons.send_rounded, size: 18),
-                  label: const Text(
-                    '토스로 송금',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
             child: Wrap(
@@ -625,7 +627,7 @@ class _TransferSheetState extends State<_TransferSheet> {
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '※ 웹 브라우저에서는 앱 실행이 막힐 수 있어요. 휴대폰(앱 설치)에서 유용합니다.',
+              '※ 웹 브라우저에서는 앱 실행이 막힐 수 있어요. 휴대폰에서 유용합니다.',
               style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
             ),
           ),
