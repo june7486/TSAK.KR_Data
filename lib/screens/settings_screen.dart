@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -7,6 +8,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/transfer_sheet.dart';
 
 /// 설정 · 백업/복원 · 후원 · 개발자 정보
 class SettingsScreen extends StatefulWidget {
@@ -385,13 +387,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ),
+                    FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                            AppColors.scoutGreen.withValues(alpha: 0.14),
+                        foregroundColor: AppColors.scoutGreen,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => showTransferSheet(
+                        context,
+                        label: '${d['label']}',
+                        bank: '${d['bank']}',
+                        account: '${d['account']}',
+                        holder: state.donationHolder,
+                      ),
+                      icon: const Icon(Icons.send_rounded, size: 15),
+                      label: const Text('송금'),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.copy, size: 18),
-                      onPressed: () {
-                        // 클립보드 복사
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${d['account']} 복사됨')),
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: '${d['account']}'),
                         );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('${d['account']} 복사됨')),
+                          );
+                        }
                       },
                     ),
                   ],

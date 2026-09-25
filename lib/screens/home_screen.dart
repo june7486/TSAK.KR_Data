@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_card.dart';
+import '../widgets/transfer_sheet.dart';
 import 'app_access_screen.dart';
 import 'admin_screen.dart';
 import 'bulk_screen.dart';
@@ -834,6 +835,46 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: AppColors.textDark,
                       ),
                       overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => showTransferSheet(
+                      context,
+                      label: '${d['label']}',
+                      bank: '${d['bank']}',
+                      account: '${d['account']}',
+                      holder: state.donationHolder,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.scoutGreen.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.scoutGreen.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.send_rounded,
+                              size: 11, color: AppColors.scoutGreen),
+                          SizedBox(width: 3),
+                          Text(
+                            '송금',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.scoutGreen,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 4),
