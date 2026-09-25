@@ -31,8 +31,60 @@
 
   <title>한국 범스카우트중앙회 통합 앱</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* 앱 초기 로딩 중 브랜드 스플래시 (Flutter 첫 프레임 전까지 표시) */
+    html, body { margin: 0; height: 100%; }
+    #tsak-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 18px;
+      background: linear-gradient(160deg, #5B2C8D 0%, #3a1a5e 100%);
+      color: #fff; font-family: -apple-system, BlinkMacSystemFont,
+        'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+      transition: opacity .45s ease;
+    }
+    #tsak-splash.hide { opacity: 0; pointer-events: none; }
+    #tsak-splash img { width: 108px; height: 108px; filter: drop-shadow(0 6px 16px rgba(0,0,0,.35)); }
+    #tsak-splash .t { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; }
+    #tsak-splash .s { font-size: 12px; opacity: .8; }
+    #tsak-splash .bar {
+      width: 168px; height: 4px; border-radius: 4px;
+      background: rgba(255,255,255,.22); overflow: hidden; margin-top: 4px;
+    }
+    #tsak-splash .bar > i {
+      display: block; width: 40%; height: 100%; border-radius: 4px;
+      background: #FFC93C; animation: tsak-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes tsak-slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
+  </style>
 </head>
 <body>
+  <div id="tsak-splash">
+    <img src="assets/assets/images/tsak_emblem.png" alt="TSAK">
+    <div class="t">한국 범스카우트중앙회 통합 앱</div>
+    <div class="bar"><i></i></div>
+    <div class="s">안전하게 불러오는 중…</div>
+  </div>
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Flutter 엔진 첫 프레임 후 스플래시 제거
+    (function () {
+      var done = false;
+      function hide() {
+        if (done) return; done = true;
+        var el = document.getElementById('tsak-splash');
+        if (!el) return;
+        el.classList.add('hide');
+        setTimeout(function () { el && el.remove(); }, 500);
+      }
+      window.addEventListener('flutter-first-frame', hide);
+      // 엔진 준비 완료(_flutter.loader) 후 안전장치
+      setTimeout(hide, 15000);
+    })();
+  </script>
 </body>
 </html>
