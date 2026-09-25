@@ -166,48 +166,64 @@ class _TransferSheetState extends State<_TransferSheet> {
     _toast('앱을 열 수 없어요. 송금 정보를 복사해 주세요');
   }
 
-  Future<void> _payToss() async {
-    final bank = _bankName;
-    final urls = [
+  /// 선택한 금융사로 바로 송금 (딥링크 → 앱 스토어 폴백).
+  Future<void> _payWith(Map<String, String> b) async {
+    final bank = b['code'] ?? _bankName;
+    final scheme = b['scheme']!;
+    final name = b['name']!;
+    final urls = <String>[
       if (_amount > 0 && _accountDigits.isNotEmpty)
-        'supertoss://send?bank=$bank&accountNo=$_accountDigits&amount=$_amount',
-      'supertoss://send?bank=$bank&accountNo=$_accountDigits',
-      'supertoss://',
+        '$scheme?bank=$bank&accountNo=$_accountDigits&amount=$_amount',
+      '$scheme?bank=$bank&accountNo=$_accountDigits',
+      scheme,
     ];
-    await _tryOpen(urls, [
-      'https://apps.apple.com/kr/app/id839333328',
-      'https://play.google.com/store/apps/details?id=viva.republica.toss',
-    ]);
+    await _tryOpen(urls, [_storeUrl(name)]);
   }
 
-  Future<void> _openBankApp(String scheme) async {
-    await _tryOpen([scheme], const []);
+  /// 금융사 앱 스토어 링크(대표앱) — 미설치 시 설치 유도.
+  static String _storeUrl(String name) {
+    const ids = {
+      '토스': 'viva.republica.toss',
+      '카카오뱅크': 'com.kakaobank.channel',
+      '케이뱅크': 'com.kbankwith.kbankwith',
+      'KB국민은행': 'com.kbstar.kbbank',
+      '신한은행': 'com.shinhan.sbanking',
+      '우리은행': 'com.wooribank.smart',
+      '하나은행': 'com.hanabank.ebk.channel.android.hanabank',
+      'NH농협은행': 'nh.smart.nhall',
+      'IBK기업은행': 'com.ibk.android.ionebank',
+    };
+    final id = ids[name];
+    return id == null
+        ? 'https://play.google.com/store/search?q=$name&c=apps'
+        : 'https://play.google.com/store/apps/details?id=$id';
   }
 
   /// 딥링크 가능한 은행·핀테크 앱 전체 목록.
-  /// scheme: 앱 실행용 URL 스킴(참고용 — 웹에서는 실행되지 않음).
+  /// scheme: 앱 실행용 URL 스킴. code: 은행 표준코드(딥링크 파라미터용).
+  /// short: 아이콘용 약칭. color: 브랜드 색.
   static const List<Map<String, String>> _banks = [
-    {'name': '토스', 'scheme': 'supertoss://'},
-    {'name': '카카오뱅크', 'scheme': 'kakaobank://'},
-    {'name': '케이뱅크', 'scheme': 'kbank://'},
-    {'name': '국민은행', 'scheme': 'kbbank://'},
-    {'name': '신한은행', 'scheme': 'shinhan-sbank://'},
-    {'name': '우리은행', 'scheme': 'wooribank://'},
-    {'name': '하나은행', 'scheme': 'hanabank://'},
-    {'name': '농협은행', 'scheme': 'nhbapp://'},
-    {'name': '기업은행', 'scheme': 'ibkonebank://'},
-    {'name': 'SC제일은행', 'scheme': 'scbank://'},
-    {'name': '한국씨티은행', 'scheme': 'citibank://'},
-    {'name': '부산은행', 'scheme': 'busanbank://'},
-    {'name': '경남은행', 'scheme': 'knbank://'},
-    {'name': '대구은행', 'scheme': 'dgbbank://'},
-    {'name': '광주은행', 'scheme': 'kjbank://'},
-    {'name': '전북은행', 'scheme': 'jbbank://'},
-    {'name': '제주은행', 'scheme': 'jejubank://'},
-    {'name': '수협은행', 'scheme': 'suhyupbank://'},
-    {'name': '우체국', 'scheme': 'epostbank://'},
-    {'name': '새마을금고', 'scheme': 'mgbank://'},
-    {'name': '신협', 'scheme': 'cuapp://'},
+    {'name': '토스', 'scheme': 'supertoss://', 'code': '092', 'short': '토스', 'color': '0064FF'},
+    {'name': '카카오뱅크', 'scheme': 'kakaobank://', 'code': '090', 'short': '카뱅', 'color': 'FFCD00'},
+    {'name': '케이뱅크', 'scheme': 'kbank://', 'code': '089', 'short': '케이', 'color': '00B4B0'},
+    {'name': 'KB국민은행', 'scheme': 'kbbank://', 'code': '004', 'short': 'KB', 'color': 'FFB800'},
+    {'name': '신한은행', 'scheme': 'shinhan-sbank://', 'code': '088', 'short': '신한', 'color': '0046FF'},
+    {'name': '우리은행', 'scheme': 'wooribank://', 'code': '020', 'short': '우리', 'color': '0067AC'},
+    {'name': '하나은행', 'scheme': 'hanabank://', 'code': '081', 'short': '하나', 'color': '009A93'},
+    {'name': 'NH농협은행', 'scheme': 'nhbapp://', 'code': '011', 'short': 'NH', 'color': '1B7C3D'},
+    {'name': 'IBK기업은행', 'scheme': 'ibkonebank://', 'code': '003', 'short': 'IBK', 'color': '005EB8'},
+    {'name': 'SC제일은행', 'scheme': 'scbank://', 'code': '023', 'short': 'SC', 'color': '00694E'},
+    {'name': '한국씨티은행', 'scheme': 'citibank://', 'code': '027', 'short': '씨티', 'color': '0F4FA8'},
+    {'name': '부산은행', 'scheme': 'busanbank://', 'code': '032', 'short': '부산', 'color': '0059A5'},
+    {'name': '경남은행', 'scheme': 'knbank://', 'code': '039', 'short': '경남', 'color': 'C8102E'},
+    {'name': '대구은행', 'scheme': 'dgbbank://', 'code': '031', 'short': '대구', 'color': '0B4DA2'},
+    {'name': '광주은행', 'scheme': 'kjbank://', 'code': '034', 'short': '광주', 'color': 'F0A500'},
+    {'name': '전북은행', 'scheme': 'jbbank://', 'code': '037', 'short': '전북', 'color': '005BAC'},
+    {'name': '제주은행', 'scheme': 'jejubank://', 'code': '035', 'short': '제주', 'color': 'E87722'},
+    {'name': '수협은행', 'scheme': 'suhyupbank://', 'code': '007', 'short': '수협', 'color': '0067A3'},
+    {'name': '우체국', 'scheme': 'epostbank://', 'code': '071', 'short': '우체국', 'color': 'E8442E'},
+    {'name': '새마을금고', 'scheme': 'mgbank://', 'code': '045', 'short': '새마을', 'color': '00703C'},
+    {'name': '신협', 'scheme': 'cuapp://', 'code': '048', 'short': '신협', 'color': '0083C6'},
   ];
 
   @override
@@ -249,26 +265,11 @@ class _TransferSheetState extends State<_TransferSheet> {
                   const SizedBox(height: 14),
                   _amountField(),
                   const SizedBox(height: 14),
-                  // 주 동작: 토스로 바로 송금 (휴대폰 브라우저에서 즉시 실행)
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF0064FF),
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: _payToss,
-                    icon: const Icon(Icons.send_rounded, size: 20),
-                    label: const Text(
-                      '토스로 송금',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  // 바로 송금 가능한 금융사 아이콘 목록
+                  _payIcons(),
+                  const SizedBox(height: 10),
                   const Text(
-                    '휴대폰에서는 토스 앱이 바로 열려요. PC라면 아래 QR을 폰으로 스캔하세요.',
+                    '휴대폰에서는 선택한 앱이 바로 열려요. PC라면 아래 QR을 폰으로 스캔하세요.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 11, color: AppColors.textGray),
                   ),
@@ -293,8 +294,6 @@ class _TransferSheetState extends State<_TransferSheet> {
                   ),
                   const SizedBox(height: 12),
                   _howTo(),
-                  const SizedBox(height: 8),
-                  _appSection(),
                   const SizedBox(height: 12),
                   Text(
                     '※ 입금자명을 꼭 남겨주세요. 앱이 자동으로 납부 내역과 매칭합니다.'
@@ -337,6 +336,103 @@ class _TransferSheetState extends State<_TransferSheet> {
       ],
     );
   }
+
+  /// 바로 송금 가능한 금융사 아이콘 목록.
+  Widget _payIcons() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bolt_rounded, size: 16, color: AppColors.purple),
+              const SizedBox(width: 4),
+              const Text(
+                '바로 송금',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+              const Spacer(),
+              Text(
+                '앱이 열려요',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textGray.withValues(alpha: 0.9),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 12,
+            children: [for (final b in _banks) _payIcon(b)],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _payIcon(Map<String, String> b) {
+    final color = _hex(b['color'] ?? '5B2C8D');
+    final short = b['short'] ?? b['name']!;
+    return InkWell(
+      onTap: () => _payWith(b),
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 56,
+        child: Column(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.28),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                short,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: TextStyle(
+                  fontSize: short.length > 3 ? 9.5 : 12,
+                  fontWeight: FontWeight.w800,
+                  color: _onColor(color),
+                ),
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              b['name']!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 9.5, color: AppColors.textDark),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Color _hex(String h) => Color(int.parse('FF$h', radix: 16));
+
+  /// 밝은 배경색 위에서는 검정 글씨 (카카오뱅크 등).
+  static Color _onColor(Color c) =>
+      c.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
 
   Widget _bankPicker() {
     return Row(
@@ -568,59 +664,6 @@ class _TransferSheetState extends State<_TransferSheet> {
               fontSize: 11.5,
               color: AppColors.textDark,
               height: 1.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 은행 앱을 설치한 사람을 위한 선택 기능. 웹에서는 열리지 않을 수 있음을 안내.
-  /// 좁은 화면(휴대폰 브라우저)에서는 딥링크가 실제로 열리므로 자동 펼침.
-  Widget _appSection() {
-    final narrow = MediaQuery.sizeOf(context).width < 600;
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.only(bottom: 6),
-        initiallyExpanded: narrow,
-        leading: const Icon(Icons.account_balance_rounded,
-            size: 18, color: AppColors.textGray),
-        title: const Text(
-          '은행 앱으로 바로 열기 (선택)',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final b in _banks)
-                  OutlinedButton(
-                    onPressed: () => _openBankApp(b['scheme']!),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      b['name']!,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '※ 웹 브라우저에서는 앱 실행이 막힐 수 있어요. 휴대폰에서 유용합니다.',
-              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
             ),
           ),
         ],
