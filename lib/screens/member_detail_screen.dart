@@ -718,10 +718,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               label: const Text('인가자로 승격'),
             )
           else
-            OutlinedButton.icon(
-              onPressed: () => _demote(m),
-              icon: const Icon(Icons.person_off_outlined, size: 18),
-              label: const Text('일반회원으로 강등'),
+            const Text(
+              '인가자로 등록되어 있습니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
             ),
         ],
       ),
@@ -794,35 +793,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       _snack('인가자로 승격했습니다 (#${updated.number})');
       setState(() {});
     }
-  }
-
-  Future<void> _demote(Member m) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('일반회원으로 강등'),
-        content: Text(
-          '${m.name}(#${m.number}) 님을 일반회원(비인가자)으로 강등할까요?\n\n'
-          '인가번호가 제거됩니다.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('강등'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    final updated = await context.read<AppState>().demoteToRegular(m);
-    if (!mounted) return;
-    _snack(updated == null ? '강등 실패' : '일반회원으로 강등했습니다');
-    if (updated != null) setState(() {});
   }
 
   /// 비밀번호 관리 — 관리자·마스터 전용 (강제 변경/초기화)

@@ -769,7 +769,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 홈 첫 페이지 후원 안내 — 3개 계좌를 작은 글씨로 한눈에(스크롤 없음) + 복사 버튼
   Widget _donationBanner(AppState state) {
-    final donations = state.donations;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
@@ -809,127 +808,128 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 5),
           // 3개 계좌를 세로로 동시에 표시 (스크롤 없음)
-          for (final d in donations)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 60,
-                    child: Text(
-                      '${d['label']}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.lifetimeGold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 2,
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${d['bank']} ${d['account']}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () => showTransferSheet(
-                      context,
-                      label: '${d['label']}',
-                      bank: '${d['bank']}',
-                      account: '${d['account']}',
-                      holder: state.donationHolder,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.scoutGreen.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.scoutGreen.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.send_rounded,
-                              size: 11, color: AppColors.scoutGreen),
-                          SizedBox(width: 3),
-                          Text(
-                            '송금',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.scoutGreen,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: '${d['account']}'));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${d['label']} ${d['account']} 복사됨'),
-                          duration: const Duration(milliseconds: 900),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.purple.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.purple.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.copy, size: 11, color: AppColors.purple),
-                          SizedBox(width: 3),
-                          Text(
-                            '복사',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          ..._donationRows(state),
         ],
       ),
     );
+  }
+
+  /// 계좌 1행 — 좌측 라벨(한 줄) · 우측 계좌번호 · 송금 · 복사
+  List<Widget> _donationRows(AppState state) {
+    return [
+      for (final d in state.donations)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            children: [
+              // 좌측 라벨 (한 줄, 넘치면 말줄임)
+              Expanded(
+                child: Text(
+                  '${d['label']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.lifetimeGold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // 우측 계좌번호
+              Flexible(
+                child: Text(
+                  '${d['bank']} ${d['account']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => showTransferSheet(
+                  context,
+                  label: '${d['label']}',
+                  bank: '${d['bank']}',
+                  account: '${d['account']}',
+                  holder: state.donationHolder,
+                ),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.scoutGreen.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: AppColors.scoutGreen.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.send_rounded,
+                          size: 11, color: AppColors.scoutGreen),
+                      SizedBox(width: 3),
+                      Text(
+                        '송금',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.scoutGreen,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: '${d['account']}'));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${d['label']} ${d['account']} 복사됨'),
+                      duration: const Duration(milliseconds: 900),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: AppColors.purple.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.copy, size: 11, color: AppColors.purple),
+                      SizedBox(width: 3),
+                      Text(
+                        '복사',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.purple,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ];
   }
 
   /// 개인 접근 전용 헤더 — 본인 요약만 노출 (타인 정보 접근 불가)
@@ -1109,7 +1109,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 개인 접근 전용 — 범스카우트 중앙회 계좌 3개 노출 (참가비·후원 납부 안내)
   Widget _personalDonationBanner(AppState state) {
-    final donations = state.donations;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -1145,115 +1144,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          for (final d in donations)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 64,
-                    child: Text(
-                      '${d['label']}',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.lifetimeGold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 2,
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      '${d['bank']} ${d['account']}',
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () => showTransferSheet(
-                      context,
-                      label: '${d['label']}',
-                      bank: '${d['bank']}',
-                      account: '${d['account']}',
-                      holder: state.donationHolder,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppColors.scoutGreen.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.scoutGreen.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.send_rounded,
-                              size: 11, color: AppColors.scoutGreen),
-                          SizedBox(width: 3),
-                          Text(
-                            '송금',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.scoutGreen,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: '${d['account']}'));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${d['label']} ${d['account']} 복사됨'),
-                          duration: const Duration(milliseconds: 900),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppColors.purple.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.purple.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.copy, size: 11, color: AppColors.purple),
-                          SizedBox(width: 3),
-                          Text(
-                            '복사',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          ..._donationRows(state),
           const SizedBox(height: 2),
           const Text(
             '※ 참가비·후원금은 위 계좌로 납부해 주세요.',
