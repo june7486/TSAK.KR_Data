@@ -8,7 +8,7 @@ import '../theme/app_theme.dart';
 /// 계좌로 '바로 송금' 시트.
 ///
 /// - 금액 입력(프리셋 칩 포함)
-/// - 토스(supertoss://) · 카카오페이 · 주요 은행 앱 등록된 딥링크로 바로 이동
+/// - 토스(supertoss://) · 주요 은행 앱 등록된 딥링크로 바로 이동
 /// - 앱이 없거나 실패하면 스토어 설치 페이지로 폴백
 /// - 계좌번호 복사 안전망 (모든 경우에 사용 가능)
 ///
@@ -136,31 +136,34 @@ class _TransferSheetState extends State<_TransferSheet> {
     ]);
   }
 
-  Future<void> _payKakao() async {
-    // 카카오페이는 상대 지정 송금 딥링크가 공개돼 있지 않아 앱 실행까지 지원.
-    // 정확한 송금은 계좌 복사 후 카카오페이 송금 화면에서 진행.
-    await _tryOpen([
-      'kakaopay://kakaopay/home',
-      'kakaopay://',
-    ], [
-      'https://apps.apple.com/kr/app/id911927630',
-      'https://play.google.com/store/apps/details?id=com.kakaopay.app',
-    ]);
-  }
-
   Future<void> _openBankApp(String scheme) async {
     await _tryOpen([scheme], const []);
   }
 
+  /// 딥링크 가능한 은행·핀테크 앱 전체 목록.
+  /// scheme: 앱 실행용 URL 스킴.
   static const List<Map<String, String>> _banks = [
-    {'name': '토스뱅크', 'scheme': 'supertoss://'},
+    {'name': '토스', 'scheme': 'supertoss://'},
     {'name': '카카오뱅크', 'scheme': 'kakaobank://'},
+    {'name': '케이뱅크', 'scheme': 'kbank://'},
     {'name': '국민은행', 'scheme': 'kbbank://'},
     {'name': '신한은행', 'scheme': 'shinhan-sbank://'},
     {'name': '우리은행', 'scheme': 'wooribank://'},
     {'name': '하나은행', 'scheme': 'hanabank://'},
     {'name': '농협은행', 'scheme': 'nhbapp://'},
     {'name': '기업은행', 'scheme': 'ibkonebank://'},
+    {'name': 'SC제일은행', 'scheme': 'scbank://'},
+    {'name': '한국씨티은행', 'scheme': 'citibank://'},
+    {'name': '부산은행', 'scheme': 'busanbank://'},
+    {'name': '경남은행', 'scheme': 'knbank://'},
+    {'name': '대구은행', 'scheme': 'dgbbank://'},
+    {'name': '광주은행', 'scheme': 'kjbank://'},
+    {'name': '전북은행', 'scheme': 'jbbank://'},
+    {'name': '제주은행', 'scheme': 'jejubank://'},
+    {'name': '수협은행', 'scheme': 'suhyupbank://'},
+    {'name': '우체국', 'scheme': 'epostbank://'},
+    {'name': '새마을금고', 'scheme': 'mgbank://'},
+    {'name': '신협', 'scheme': 'cuapp://'},
   ];
 
   @override
@@ -296,7 +299,7 @@ class _TransferSheetState extends State<_TransferSheet> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                // 바로 송금 버튼
+                // 바로 송금 버튼 (토스 전폭)
                 Row(
                   children: [
                     Expanded(
@@ -305,16 +308,6 @@ class _TransferSheetState extends State<_TransferSheet> {
                         color: const Color(0xFF0064FF),
                         icon: Icons.send_rounded,
                         onTap: _payToss,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _payBtn(
-                        label: '카카오페이',
-                        color: const Color(0xFFFEE500),
-                        textColor: Colors.black87,
-                        icon: Icons.chat_bubble_rounded,
-                        onTap: _payKakao,
                       ),
                     ),
                   ],
