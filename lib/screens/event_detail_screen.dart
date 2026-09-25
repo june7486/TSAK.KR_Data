@@ -1514,6 +1514,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final title = kind == 'fee' ? '참가비 / 후원금 납부자' : '행사비 지출내역';
     return Column(
       children: [
+        // 참가비·후원금 항목 상단: 납부 계좌 3개 + 송금 버튼
+        if (kind == 'fee')
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: DonationAccounts(
+              title: '참가비·후원 납부 계좌',
+              showHolder: true,
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
