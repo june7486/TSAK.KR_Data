@@ -1,0 +1,330 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:file_saver/file_saver.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io' show File;
+
+import '../theme/app_theme.dart';
+
+/// 인가자 사진을 PiP(작은 창)로 확대해 보여주고,
+/// 「저장」 시 하단에 범 로고 + 인가번호 + ATAS번호 + 이름을 합성한 카드 JPG로 저장한다.
+Future<void> showPhotoPip(
+  BuildContext context, {
+  required String name,
+  required String number,
+  required String atasNo,
+  String league = '',
+  String unit = '',
+  Uint8List? photoBytes,
+  String photoPath = '',
+}) {
+  return showDialog<void>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.72),
+    builder: (_) => _PhotoPip(
+      name: name,
+      number: number,
+      atasNo: atasNo,
+      league: league,
+      unit: unit,
+      photoBytes: photoBytes,
+      photoPath: photoPath,
+    ),
+  );
+}
+
+class _PhotoPip extends StatefulWidget {
+  const _PhotoPip({
+    required this.name,
+    required this.number,
+    required this.atasNo,
+    required this.league,
+    required this.unit,
+    required this.photoBytes,
+    required this.photoPath,
+  });
+
+  final String name;
+  final String number;
+  final String atasNo;
+  final String league;
+  final String unit;
+  final Uint8List? photoBytes;
+  final String photoPath;
+
+  @override
+  State<_PhotoPip> createState() => _PhotoPipState();
+}
+
+class _PhotoPipState extends State<_PhotoPip> {
+  final GlobalKey _boundaryKey = GlobalKey();
+  bool _busy = false;
+  Uint8List? _imgBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveImage();
+  }
+
+  /// 사진 소스 정리 (data URI/base64 → 바이트, URL은 그대로 위젯에서 로드)
+  Future<void> _resolveImage() async {
+    final p = widget.photoPath;
+    try {
+      if (widget.photoBytes != null && widget.photoBytes!.isNotEmpty) {
+        _imgBytes = widget.photoBytes;
+      } else if (p.startsWith('data:image')) {
+        _imgBytes = base64Decode(p.split(',').last);
+      } else if (p.isNotEmpty && !p.contains('/') && p.length > 200) {
+        _imgBytes = base64Decode(p);
+      }
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  bool get _hasPhoto =>
+      (_imgBytes != null && _imgBytes!.isNotEmpty) ||
+      widget.photoPath.startsWith('http') ||
+      (widget.photoPath.isNotEmpty && widget.photoPath.contains('/'));
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 저장될 카드 (캡처 대상)
+            RepaintBoundary(
+              key: _boundaryKey,
+              child: _card(),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _btn(
+                  icon: Icons.close,
+                  label: '닫기',
+                  bg: Colors.white24,
+                  fg: Colors.white,
+                  onTap: () => Navigator.pop(context),
+                ),
+                const SizedBox(width: 12),
+                _btn(
+                  icon: Icons.download,
+                  label: _busy ? '저장 중…' : '저장',
+                  bg: AppColors.tigerGold,
+                  fg: Colors.black87,
+                  onTap: _busy ? null : _save,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _card() {
+    return Container(
+      width: 340,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.tigerGold, width: 2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 사진
+          AspectRatio(
+            aspectRatio: 1,
+            child: _hasPhoto
+                ? (_imgBytes != null
+                    ? Image.memory(_imgBytes!, fit: BoxFit.cover)
+                    : Image.network(
+                        widget.photoPath,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _placeholder(),
+                      ))
+                : _placeholder(),
+          ),
+          // 하단 정보 밴드 (보라)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            color: AppColors.purple,
+            child: Row(
+              children: [
+                // 범 로고
+                Image.asset(
+                  'assets/images/tsak_emblem.png',
+                  width: 46,
+                  height: 46,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.shield,
+                    color: AppColors.tigerGold,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (widget.number.trim().isNotEmpty)
+                            _tag('인가번호 #${widget.number}'),
+                          if (widget.atasNo.trim().isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _tag('ATAS #${widget.atasNo}',
+                                color: AppColors.tigerGold, dark: true),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'NanumGothic',
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          fontSize: 19,
+                        ),
+                      ),
+                      if ((widget.unit.isNotEmpty) || (widget.league.isNotEmpty))
+                        Text(
+                          [widget.league, widget.unit]
+                              .where((e) => e.isNotEmpty)
+                              .join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'NanumGothic',
+                            color: Colors.white70,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tag(String text, {Color color = Colors.white, bool dark = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: dark ? color : color.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'NanumGothic',
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: dark ? Colors.black87 : color,
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder() => Container(
+        color: AppColors.purple.withValues(alpha: 0.15),
+        alignment: Alignment.center,
+        child: const Icon(Icons.person, color: Colors.white24, size: 120),
+      );
+
+  Widget _btn({
+    required IconData icon,
+    required String label,
+    required Color bg,
+    required Color fg,
+    VoidCallback? onTap,
+  }) {
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: bg,
+        foregroundColor: fg,
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      onPressed: onTap,
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+    );
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      final boundary =
+          _boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final ratio = MediaQuery.of(context).devicePixelRatio.clamp(2.0, 4.0);
+      final image = await boundary.toImage(pixelRatio: ratio);
+      final byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw '이미지 변환 실패';
+      final png = byteData.buffer.asUint8List();
+      final fname =
+          'TSAK_${widget.number.isNotEmpty ? widget.number : widget.name}';
+      if (!mounted) return;
+
+      // 웹: 다운로드 / 모바일: 갤러리·공유
+      try {
+        await FileSaver.instance.saveFile(
+          name: fname,
+          bytes: png,
+          ext: 'png',
+          mimeType: MimeType.png,
+        );
+      } catch (_) {
+        // 폴백: 임시 파일로 저장 후 공유 시트
+        if (!kIsWeb) {
+          final dir = await getTemporaryDirectory();
+          final f = File('${dir.path}/$fname.png');
+          await f.writeAsBytes(png);
+          await Share.shareXFiles([XFile(f.path)], text: '${widget.name} 인가증');
+        } else {
+          rethrow;
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('저장 완료: $fname.png')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('저장 실패: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+

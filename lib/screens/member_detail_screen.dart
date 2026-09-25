@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/photo_pip.dart';
 import 'finance_transaction_edit_screen.dart';
 import 'export_screen.dart';
 import 'member_edit_screen.dart';
@@ -162,14 +163,43 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ),
           const SizedBox(width: 12),
           // 우측 패널: 사진 (없으면 회색 스카우트 실루엣)
-          MemberAvatar(
-            name: m.name,
-            photoPath: m.photoPath,
-            league: m.league,
-            number: m.number,
-            showNumber: false,
-            square: true,
-            size: 104,
+          GestureDetector(
+            onTap: () => showPhotoPip(
+              context,
+              name: m.name,
+              number: m.number,
+              atasNo: m.atasNo,
+              league: m.league,
+              unit: m.unit,
+              photoPath: m.photoPath,
+            ),
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                MemberAvatar(
+                  name: m.name,
+                  photoPath: m.photoPath,
+                  league: m.league,
+                  number: m.number,
+                  showNumber: false,
+                  square: true,
+                  size: 104,
+                ),
+                // 확대 아이콘 힌트
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.zoom_out_map,
+                    size: 13,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
