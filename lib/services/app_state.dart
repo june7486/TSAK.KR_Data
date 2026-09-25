@@ -290,9 +290,9 @@ class AppState extends ChangeNotifier {
       return raw.map((e) => (e as Map).cast<String, dynamic>()).toList();
     }
     return const [
-      {'label': '후원계좌', 'bank': '기업은행', 'account': '1005-202-281140'},
-      {'label': '수품구매계좌', 'bank': '기업은행', 'account': '1005-102-281143'},
-      {'label': '행사비계좌', 'bank': '기업은행', 'account': '1005-003-886274'},
+      {'label': '대표 (참가비·후원 등)', 'bank': '우리은행', 'account': '1005-202-281140'},
+      {'label': '수품구매계좌', 'bank': '우리은행', 'account': '1005-102-281143'},
+      {'label': '행사비계좌', 'bank': '우리은행', 'account': '1005-003-886274'},
     ];
   }
 

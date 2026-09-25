@@ -824,17 +824,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: AppColors.lifetimeGold,
                       ),
                       overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                     ),
                   ),
                   Expanded(
-                    child: Text(
-                      '${d['bank']} ${d['account']}',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${d['bank']} ${d['account']}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -1058,51 +1064,44 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(color: Colors.white70, fontSize: 10.5),
           ),
           const SizedBox(height: 10),
+          // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
+          _personalDonationBanner(state),
+          const SizedBox(height: 8),
           // 본인이 참석한 행사 폴더 접근 — 사진 업로드 / 참가비·후원금 납부 안내
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const EventYearScreen()),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 11),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.tigerGold, width: 2),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.photo_library,
-                            size: 18, color: AppColors.purple),
-                        SizedBox(width: 6),
-                        Text(
-                          '내 행사 관리 (사진 업로드·참가비·후원)',
-                          style: TextStyle(
-                            color: AppColors.purple,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EventYearScreen()),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.tigerGold, width: 2),
               ),
-            ],
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.photo_library, size: 18, color: AppColors.purple),
+                  SizedBox(width: 6),
+                  Text(
+                    '내 행사 관리 (사진 업로드·참가비·후원)',
+                    style: TextStyle(
+                      color: AppColors.purple,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 4),
           const Text(
             '※ 본인이 참석자로 등록된 행사만 보입니다.',
             style: TextStyle(color: Colors.white70, fontSize: 10),
           ),
-          const SizedBox(height: 10),
-          _personalDonationBanner(state),
         ],
       ),
     );
@@ -1161,17 +1160,56 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: AppColors.lifetimeGold,
                       ),
                       overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                     ),
                   ),
                   Expanded(
                     child: Text(
                       '${d['bank']} ${d['account']}',
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         color: AppColors.textDark,
                       ),
                       overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => showTransferSheet(
+                      context,
+                      label: '${d['label']}',
+                      bank: '${d['bank']}',
+                      account: '${d['account']}',
+                      holder: state.donationHolder,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.scoutGreen.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.scoutGreen.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.send_rounded,
+                              size: 11, color: AppColors.scoutGreen),
+                          SizedBox(width: 3),
+                          Text(
+                            '송금',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.scoutGreen,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 4),
