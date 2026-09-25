@@ -560,12 +560,15 @@ class _TransferSheetState extends State<_TransferSheet> {
   }
 
   /// 앱을 설치한 사람을 위한 선택 기능. 웹에서는 열리지 않을 수 있음을 안내.
+  /// 좁은 화면(휴대폰 브라우저)에서는 딥링크가 실제로 열리므로 자동 펼침.
   Widget _appSection() {
+    final narrow = MediaQuery.sizeOf(context).width < 600;
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(bottom: 6),
+        initiallyExpanded: narrow,
         leading: const Icon(Icons.install_mobile_rounded,
             size: 18, color: AppColors.textGray),
         title: const Text(
