@@ -64,7 +64,6 @@ class _TransferSheet extends StatefulWidget {
 class _TransferSheetState extends State<_TransferSheet> {
   late final TextEditingController _amt;
   int _amount = 0;
-  String? _bankOverride;
 
   @override
   void initState() {
@@ -88,18 +87,8 @@ class _TransferSheetState extends State<_TransferSheet> {
 
   String get _accountDigits => widget.account.replaceAll(RegExp(r'[^0-9]'), '');
 
-  String get _bankName => _bankOverride ?? _matchBank(widget.bank);
-
-  /// 시트에 전달된 은행명을 딥링크 목록의 표준 이름으로 정규화.
-  static String _matchBank(String raw) {
-    final t = raw.replaceAll(RegExp(r'\s+'), '');
-    if (t.isEmpty) return '토스';
-    for (final b in _banks) {
-      final n = b['name']!;
-      if (t.contains(n) || n.contains(t)) return n;
-    }
-    return '토스';
-  }
+  /// 송금 은행은 우리은행으로 고정.
+  String get _bankName => '우리은행';
 
   void _toast(String m) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -359,31 +348,34 @@ class _TransferSheetState extends State<_TransferSheet> {
         const SizedBox(width: 10),
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             decoration: BoxDecoration(
+              color: AppColors.purple.withValues(alpha: 0.06),
               border: Border.all(color: AppColors.purple.withValues(alpha: 0.3)),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _bankName,
-                isExpanded: true,
-                isDense: true,
-                icon: const Icon(Icons.expand_more, color: AppColors.purple),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textDark,
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline, size: 16, color: AppColors.purple),
+                const SizedBox(width: 8),
+                const Text(
+                  '우리은행',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
                 ),
-                items: [
-                  for (final b in _banks)
-                    DropdownMenuItem<String>(
-                      value: b['name']!,
-                      child: Text(b['name']!),
-                    ),
-                ],
-                onChanged: (v) => setState(() => _bankOverride = v),
-              ),
+                const Spacer(),
+                Text(
+                  '고정',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textGray.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
