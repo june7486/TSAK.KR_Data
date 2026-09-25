@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/donation_accounts.dart';
 import 'roster_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
@@ -196,17 +197,32 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       ),
       body: _loading || _tab == null
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tab,
-              children: widget.canManage
-                  ? [
-                      _planTab(),
-                      _attendeeTab(),
-                      _mediaTab(),
-                      _financeTab('fee'),
-                      _financeTab('expense'),
-                    ]
-                  : [_mediaTab()],
+          : Column(
+              children: [
+                // 참가자(개인 접근): 참가비·후원 납부 계좌 3개 + 송금 버튼
+                if (!widget.canManage)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: DonationAccounts(
+                      title: '참가비·후원 납부 계좌',
+                      showHolder: true,
+                    ),
+                  ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tab,
+                    children: widget.canManage
+                        ? [
+                            _planTab(),
+                            _attendeeTab(),
+                            _mediaTab(),
+                            _financeTab('fee'),
+                            _financeTab('expense'),
+                          ]
+                        : [_mediaTab()],
+                  ),
+                ),
+              ],
             ),
     );
   }
