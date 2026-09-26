@@ -25,6 +25,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    // 개인(personal)·비인가자(guest)는 관리자 설정에 접근 불가.
+    //   NAS 서버 주소 변경 / NAS 저장(마스터 데이터 덮어쓰기) / QR 공개주소 /
+    //   관리자 이메일 변경 / DB 백업·복원은 관리자(app)·마스터만 노출한다.
+    final canAdmin = state.isApp || state.isMaster;
     return Scaffold(
       appBar: AppBar(
         leading: const AppBackButton(label: '뒤로'),
@@ -35,14 +39,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
-          _nasStatusCard(state),
-          const SizedBox(height: 12),
-          _qrBaseCard(state),
-          const SizedBox(height: 12),
-          _adminEmailCard(state),
-          const SizedBox(height: 12),
-          _backupCard(state),
-          const SizedBox(height: 12),
+          if (canAdmin) ...[
+            _nasStatusCard(state),
+            const SizedBox(height: 12),
+            _qrBaseCard(state),
+            const SizedBox(height: 12),
+            _adminEmailCard(state),
+            const SizedBox(height: 12),
+            _backupCard(state),
+            const SizedBox(height: 12),
+          ] else
+            _selfLimitedNotice(state),
           _donationCard(state),
           const SizedBox(height: 12),
           _developerCard(state),
@@ -61,6 +68,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     ],
   );
+
+  /// 개인/비인가자 로그인 시 표시되는 안내 + 읽기 전용 요약 카드
+  Widget _selfLimitedNotice(AppState state) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('내 정보', Icons.badge_outlined),
+            const SizedBox(height: 10),
+            _kv('접근 등급', state.isGuest ? '비인가자' : '범스카우트(개인)'),
+            _kv('인가번호', state.who.isEmpty ? '-' : '#${state.who}'),
+            _kv('버전', state.versionText),
+            const SizedBox(height: 10),
+            const Text(
+              '서버 주소 변경·데이터 저장·QR 공개주소·백업/복원 등 관리자 설정은\n'
+              '관리자(인가 담당) 이상만 사용할 수 있습니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray, height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _nasStatusCard(AppState state) {
     return Card(

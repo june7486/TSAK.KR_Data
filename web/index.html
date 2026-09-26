@@ -48,6 +48,11 @@
     #tsak-splash img { width: 108px; height: 108px; filter: drop-shadow(0 6px 16px rgba(0,0,0,.35)); }
     #tsak-splash .t { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; }
     #tsak-splash .s { font-size: 12px; opacity: .8; }
+    #tsak-splash .slow {
+      display: none; font-size: 11.5px; opacity: .75; margin-top: 2px;
+      line-height: 1.5; max-width: 260px; text-align: center;
+    }
+    #tsak-splash.slow-on .slow { display: block; }
     #tsak-splash .bar {
       width: 168px; height: 4px; border-radius: 4px;
       background: rgba(255,255,255,.22); overflow: hidden; margin-top: 4px;
@@ -68,6 +73,12 @@
     <div class="t">TSAK 한국범스카우트중앙회</div>
     <div class="bar"><i></i></div>
     <div class="s">안전하게 불러오는 중…</div>
+    <!-- 오래 걸릴 때만 나타나는 안내 (도메인 호스팅 최초 접속 대비) -->
+    <div class="slow">
+      접속에 시간이 걸리고 있습니다.<br>
+      최초 접속은 앱을 내려받는 과정이라 잠시 걸릴 수 있어요.<br>
+      잠시 후에도 그대로면 새로고침(또는 홈으로 다시 접속)해 주세요.
+    </div>
   </div>
   <script src="flutter_bootstrap.js" async></script>
   <script>
@@ -84,6 +95,11 @@
       window.addEventListener('flutter-first-frame', hide);
       // 엔진 준비 완료(_flutter.loader) 후 안전장치
       setTimeout(hide, 20000);
+      // 4.5초 넘게 로딩이 지속되면 '접속에 시간이 걸리고 있습니다' 안내 노출
+      setTimeout(function () {
+        var el = document.getElementById('tsak-splash');
+        if (el) el.classList.add('slow-on');
+      }, 4500);
     })();
 
     // 업데이트/캐시 정리 (단일 로직)

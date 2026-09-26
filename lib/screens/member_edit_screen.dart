@@ -123,8 +123,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   Widget build(BuildContext context) {
     final isNew = _existing == null;
     final state = context.watch<AppState>();
-    // 개인 접근: 본인 정보만 수정 가능 (인가번호 변경·삭제·신규추가 금지)
-    final personal = state.isPersonal;
+    // 개인/비인가자(본인) 접근: 본인 정보만 수정 가능 (인가번호 변경·삭제·신규추가 금지)
+    final personal = state.isSelfAccess;
     return UnsavedGuard(
       dirty: _isDirty,
       onSave: () async {

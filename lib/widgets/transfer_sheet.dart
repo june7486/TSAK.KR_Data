@@ -259,9 +259,14 @@ class _TransferSheetState extends State<_TransferSheet> {
   /// (스토어 폴백은 하지 않는다 — 없으면 조용히 false)
   Future<bool> _openSchemes(List<String> urls) async {
     if (isWebRuntime) {
-      // 모바일 브라우저: 커스텀 스킴은 location.href 로만 열린다.
+      // 웹: PC면 현재 탭이 망가지지 않도록 격리 탭(iframe/새창)으로,
+      //     모바일 브라우저면 location.href 로 앱을 연다.
       try {
-        openUrlInTab(urls.first);
+        if (isMobileWeb) {
+          openUrlInTab(urls.first);
+        } else {
+          openUrlInIsolatedTab(urls.first);
+        }
       } catch (_) {}
       return true;
     }

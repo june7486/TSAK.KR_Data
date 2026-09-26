@@ -80,6 +80,7 @@ external _Window get _window;
 
 extension type _Window(JSObject _) implements JSObject {
   external void open(String url, String target);
+  external double get innerWidth;
 }
 
 /// 자동 재로드를 세션당 1회로 제한한다. (허용되면 true)
@@ -97,6 +98,18 @@ bool guardAutoReloadOnce() {
 }
 
 bool get isWebRuntime => true;
+
+/// 모바일(터치) 브라우저인지 — 좁은 화면/터치 포인트로 판정.
+///
+/// 데스크톱(PC) 웹과 모바일 웹은 앱 스킴 처리 방식이 달라 구분이 필요하다.
+bool get isMobileWeb {
+  try {
+    final w = _window.innerWidth;
+    return w <= 820;
+  } catch (_) {
+    return false;
+  }
+}
 
 /// 현재 페이지의 origin (예: https://example.com). 실패 시 빈 문자열.
 String webOrigin() {
@@ -125,6 +138,27 @@ void openUrlInTab(String url) {
   // 2) 직접 이동 (Android Chrome 등에서 안정적)
   try {
     _location.href = url;
+  } catch (_) {}
+}
+
+/// 커스텀 스킴을 **새 탭/새 창**으로 연다 (PC 웹 전용 처리).
+///
+/// PC 브라우저는 `location.href` 로 커스텀 스킴을 지정하면 "알 수 없는
+/// 프로토콜" 오류로 **현재 페이지가 망가진다.** 따라서 먼저 숨은 iframe
+/// 으로 앱 실행을 유도하고(현재 탭 보존), 그래도 반응이 없으면 새 창으로
+/// 한 번 더 시도한다. 앱 실행이 실패해도 현재 탭은 그대로 남는다.
+void openUrlInIsolatedTab(String url) {
+  // 1) 숨은 iframe — PC에서도 OS 프로토콜 핸들러가 잡으면 앱이 열린다.
+  try {
+    final ifr = _document.createElement('iframe');
+    ifr.style.display = 'none';
+    ifr.src = url;
+    (_document.body as _Body).appendChild(ifr);
+    _setTimeout((() => ifr.remove()).toJS, 1500);
+  } catch (_) {}
+  // 2) 폴백: 새 창 (현재 페이지를 보존한다)
+  try {
+    _window.open(url, '_blank');
   } catch (_) {}
 }
 

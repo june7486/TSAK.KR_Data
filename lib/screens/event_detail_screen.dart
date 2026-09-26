@@ -11,6 +11,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
+import '../widgets/privacy_consent.dart';
 import 'roster_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
@@ -375,6 +376,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     VoidCallback? onDone,
   }) async {
     final state = context.read<AppState>();
+    // 사진·동영상(초상 포함) 업로드 시에는 초상 활용 동의를 먼저 확인한다.
+    if (key == 'media') {
+      final ok = await _confirmPhotoConsent();
+      if (ok != true) return;
+    }
     final upName = uploader ??
         (state.isMaster
             ? '마스터'
@@ -443,6 +449,100 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     if (n.endsWith('.mov')) return 'video/quicktime';
     if (n.endsWith('.pdf')) return 'application/pdf';
     return 'application/octet-stream';
+  }
+
+  /// 사진·동영상 업로드 전 초상(사진) 활용 동의 확인 다이얼로그.
+  /// (청소년 얼굴이 포함될 수 있어 행사 사진 게시 전 동의를 받는다)
+  Future<bool?> _confirmPhotoConsent() {
+    bool agreed = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          icon: const Icon(Icons.photo_camera_front, color: AppColors.purple),
+          title: const Text('사진·영상 게시 동의 확인'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '행사 사진·영상에는 참가자(청소년 포함)의 얼굴(초상)이 담길 수 '
+                    '있습니다. 게시 전 아래 내용을 확인하고 동의해 주세요.',
+                    style: TextStyle(fontSize: 12.5, height: 1.5),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.purple.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppColors.purple.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: const Text(
+                      '· 촬영·게시 목적: 행사 기록·결과 보고·중앙회 홍보\n'
+                      '· 게시 범위: 중앙회 앱(인가자 열람)·홈페이지·네이버 카페·소식지\n'
+                      '· 동의 철회: 게시 후 삭제 요청 가능(담당자에게 연락)\n'
+                      '· 업로드 권한은 인가자(관리자)에게 있으며, 게시 책임은 업로드한 사람에게 있습니다.',
+                      style: TextStyle(fontSize: 11.5, height: 1.55),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  InkWell(
+                    onTap: () => setLocal(() => agreed = !agreed),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: agreed,
+                            onChanged: (v) => setLocal(() => agreed = v ?? false),
+                          ),
+                          const Expanded(
+                            child: Text(
+                              '참가자(보호자 포함)의 초상 활용에 동의하며 게시합니다',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    '※ 동의 없이 게시할 수 없습니다. 원하지 않는 참가자는 게시 전 담당자에게 알릴 수 있습니다.',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: agreed ? AppColors.purple : Colors.grey,
+              ),
+              onPressed: agreed ? () => Navigator.pop(ctx, true) : null,
+              child: const Text('동의하고 업로드'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _renameFile(String key, String name, {String sub = ''}) async {

@@ -99,7 +99,13 @@ class _DonateSheetState extends State<_DonateSheet> {
         : 'supertoss://send?bank=$_kDonateBank&accountNo=$_kDonateDigits';
     if (isWebRuntime) {
       try {
-        openUrlInNewTab(url);
+        // 모바일 브라우저는 현재 탭에서, PC 브라우저는 현재 탭을 보존하는
+        // 격리 탭(iframe/새창)에서 토스 앱 실행을 시도한다.
+        if (isMobileWeb) {
+          openUrlInTab(url);
+        } else {
+          openUrlInIsolatedTab(url);
+        }
         _toast('토스 앱이 열립니다. 열리지 않으면 아래 계좌로 입금해 주세요.');
       } catch (_) {
         _toast('계좌를 복사해 토스·은행 앱에 붙여넣으세요');

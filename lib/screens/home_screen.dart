@@ -338,52 +338,99 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.isMaster)
                   const PopupMenuItem(
                     value: 'admin',
-                    child: Text('앱 관리 — 앱접근 비번 변경/정지/복구'),
+                    child: _MenuItem(
+                      icon: Icons.admin_panel_settings,
+                      label: '앱 관리 — 앱접근 비번 변경/정지/복구',
+                      color: AppColors.taegeukRed,
+                    ),
                   ),
                 if (!state.isSelfAccess) ...[
                   const PopupMenuItem(
                     value: 'finance',
-                    child: Text('재무 관리 (후원·수품·참가비)'),
+                    child: _MenuItem(
+                      icon: Icons.account_balance_wallet,
+                      label: '재무 관리 (후원·수품·참가비)',
+                      color: AppColors.taegeukBlue,
+                    ),
                   ),
                   const PopupMenuItem(
                     value: 'source',
-                    child: Text('기본자료 폴더 (첨부·자동분석)'),
+                    child: _MenuItem(
+                      icon: Icons.folder_special,
+                      label: '기본자료 폴더 (첨부·자동분석)',
+                      color: AppColors.taegeukBlue,
+                    ),
                   ),
                   const PopupMenuItem(
                     value: 'import',
-                    child: Text('자료 가져오기 (AI 인식)'),
+                    child: _MenuItem(
+                      icon: Icons.auto_awesome,
+                      label: '자료 가져오기 (AI 인식)',
+                      color: AppColors.taegeukBlue,
+                    ),
                   ),
                 ],
                 const PopupMenuItem(
                   value: 'settings',
-                  child: Text('설정 · 백업/복원'),
+                  child: _MenuItem(
+                    icon: Icons.settings,
+                    label: '설정 · 백업/복원',
+                    color: AppColors.purple,
+                  ),
                 ),
                 if (!state.isSelfAccess) ...[
                   const PopupMenuItem(
                     value: 'refresh',
-                    child: Text('NAS 최신 데이터 불러오기'),
+                    child: _MenuItem(
+                      icon: Icons.cloud_download,
+                      label: 'NAS 최신 데이터 불러오기',
+                      color: AppColors.taegeukBlue,
+                    ),
                   ),
                   const PopupMenuItem(
                     value: 'select',
-                    child: Text('명단 선택 (일괄작업)'),
+                    child: _MenuItem(
+                      icon: Icons.checklist,
+                      label: '명단 선택 (일괄작업)',
+                      color: AppColors.taegeukBlue,
+                    ),
                   ),
                 ],
                 // 첫 화면으로 이동 (모든 접근 등급)
                 const PopupMenuItem(
                   value: 'home',
-                  child: Text('첫 화면으로 이동'),
+                  child: _MenuItem(
+                    icon: Icons.home_outlined,
+                    label: '첫 화면으로 이동',
+                    color: AppColors.textDark,
+                  ),
                 ),
                 // 개발자 후원 (모든 접근 등급)
                 const PopupMenuItem(
                   value: 'donate',
-                  child: Text('개발자 후원 ❤'),
+                  child: _MenuItem(
+                    icon: Icons.favorite,
+                    label: '개발자 후원',
+                    color: AppColors.tigerGold,
+                  ),
                 ),
                 // 문의 (모든 접근 등급)
                 const PopupMenuItem(
                   value: 'inquiry',
-                  child: Text('문의하기 ✉'),
+                  child: _MenuItem(
+                    icon: Icons.mail_outline,
+                    label: '문의하기',
+                    color: AppColors.textDark,
+                  ),
                 ),
-                const PopupMenuItem(value: 'lock', child: Text('로그아웃')),
+                const PopupMenuItem(
+                  value: 'lock',
+                  child: _MenuItem(
+                    icon: Icons.lock_outline,
+                    label: '로그아웃',
+                    color: AppColors.taegeukRed,
+                  ),
+                ),
               ],
             ),
           ],
@@ -1972,6 +2019,39 @@ class _PersonalEditSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 팝업 메뉴 항목 — 관리자 전용/일반 항목을 색·아이콘으로 구분.
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 13.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
