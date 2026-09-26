@@ -79,3 +79,23 @@
 
 커밋: `01e5b17`(본조치) → `8e75814`(정적 CORS 와일드카드 제거·F02 완결)
 
+## 6. 기능 검증 로그 (2026-09-26, 요청 K · QR 자동로그인)
+
+| 시험 | 방법 | 결과 |
+|------|------|------|
+| 행사관리 통합목록(union) | `GET /api/event/list2?media=1` | events.json + 개인프로필 합집합, `defined`·`createdBy`·`memberCount`·`media` 포함 |
+| 연도 필수(생성) | `POST /api/event/create` (연도 없음) | **400** 거부 / 연도 있으면 ok |
+| 삭제 왕복(net-zero) | `event/create`→`event/delete` | members.json 해시 **BEFORE==AFTER**(회원 데이터 0변경), events.json 원복 |
+| 개인프로필 캐스케이드 | 합성데이터 `_ev_remove_member_events` | 정확 일치만 제거(부분일치 오탐 0), True만 대상 |
+| 게스트/개인 스코프 | `_scope_members`/`_redact_member`/`_scope_finance` | 본인 1건 · 민감필드 제거 · 재무 차단 |
+| 티어 차단(HTTP) | 개인 세션 → `/api/{finance,backups,admin/state}` | 전부 **401** |
+| 개인 QR 자동로그인 | `?access=personal&no=1` (Playwright) | session/grant 200 → `/api/members` **200(본인1건)** → 본인 편집화면 렌더, **JS 에러 0** |
+| 관리자 회귀 | Playwright 로그인→회원조회 | 정상 · **JS 에러 0** |
+
+커밋: `b1ea978`(요청 K) → `2b5c0e9`(QR 자동로그인/게스트 수정)
+
+> ⚠️ **주의**: 본 검증은 운영 NAS(`TSAK_인가자관리`)에 연결된 상태에서 **읽기/무해**
+> 방식으로만 수행했습니다. 회원 프로필을 변경하는 파괴적 테스트는 하지 않았고,
+> events.json 왕복 테스트도 회원 데이터 무손상(net-zero)을 해시로 확인했습니다.
+
+
