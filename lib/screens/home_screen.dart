@@ -279,6 +279,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   case 'inquiry':
                     showInquirySheet(context);
                     break;
+                  case 'home':
+                    _searchCtrl.clear();
+                    context.read<AppState>().clearFilters();
+                    if (_scroll.hasClients) {
+                      _scroll.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('첫 화면으로 이동했습니다'),
+                        duration: Duration(milliseconds: 900),
+                      ),
+                    );
+                    break;
                   case 'lock':
                     context.read<AppState>().lock();
                     break;
@@ -318,6 +335,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text('명단 선택 (일괄작업)'),
                   ),
                 ],
+                // 첫 화면으로 이동 (모든 접근 등급)
+                const PopupMenuItem(
+                  value: 'home',
+                  child: Text('첫 화면으로 이동'),
+                ),
                 // 개발자 후원 (모든 접근 등급)
                 const PopupMenuItem(
                   value: 'donate',
@@ -328,7 +350,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   value: 'inquiry',
                   child: Text('문의하기 ✉'),
                 ),
-                const PopupMenuItem(value: 'lock', child: Text('잠금')),
+                const PopupMenuItem(value: 'lock', child: Text('로그아웃')),
               ],
             ),
           ],

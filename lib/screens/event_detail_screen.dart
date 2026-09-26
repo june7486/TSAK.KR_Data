@@ -44,6 +44,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
   int _cols = 3;
+  int _pinchBaseCols = 3;
 
   /// 사진+동영상 하위폴더 탐색 스택 (예: ['봄행사','1팀'])
   List<String> _mediaPath = [];
@@ -1105,7 +1106,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 icon: const Icon(Icons.grid_view),
                 onSelected: (v) => setState(() => _cols = v),
                 itemBuilder: (_) => [
-                  for (var i = 1; i <= 5; i++)
+                  for (var i = 1; i <= 10; i++)
                     PopupMenuItem(
                       value: i,
                       child: Row(
@@ -1181,16 +1182,27 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     ],
                   ),
                 )
-              : GridView.builder(
-                  padding: const EdgeInsets.all(10),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: _cols,
-                    mainAxisSpacing: 6,
-                    crossAxisSpacing: 6,
-                    childAspectRatio: 0.82,
+              : GestureDetector(
+                  // 핀치(두 손가락) 확대/축소 → 이미지 열 수 조절 (1~10열, 아이폰식)
+                  onScaleStart: (_) => _pinchBaseCols = _cols,
+                  onScaleUpdate: (d) {
+                    if (d.pointerCount < 2 || d.scale == 0) return;
+                    // 확대(scale>1)하면 열이 줄어 이미지가 커지고, 축소하면 열이 늘어남
+                    final target = (_pinchBaseCols / d.scale).round();
+                    final clamped = target.clamp(1, 10);
+                    if (clamped != _cols) setState(() => _cols = clamped);
+                  },
+                  child: GridView.builder(
+                    padding: const EdgeInsets.all(10),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: _cols,
+                      mainAxisSpacing: _cols > 5 ? 3 : 6,
+                      crossAxisSpacing: _cols > 5 ? 3 : 6,
+                      childAspectRatio: 0.82,
+                    ),
+                    itemCount: _media.length,
+                    itemBuilder: (_, i) => _mediaTile(i),
                   ),
-                  itemCount: _media.length,
-                  itemBuilder: (_, i) => _mediaTile(i),
                 ),
         ),
       ],
@@ -1428,7 +1440,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             // 업로더 이름 (사진 아래, 구글포토식)
             const SizedBox(height: 2),
             Text(
-              uploader.isEmpty ? '—' : uploader,
+              uploader.isEmpty ? '415호' : uploader,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -2013,21 +2025,30 @@ class _MediaViewerState extends State<_MediaViewer> {
                     ),
                   );
                 }
-                final size = (i == _index && _original) ? 'orig' : 'view';
+                final isOrig = i == _index && _original;
+                // 로딩 속도를 위해 항상 최적화본(1600px, 캐시됨)을 사용.
+                // '원본 보기'는 최적화본 화면을 더 크게(완전 확대) 볼 수 있게 한다.
                 final url = _nas.eventThumb2Url(
                   widget.year,
                   widget.title,
                   n,
-                  size: size,
+                  size: 'view',
                   sub: widget.sub,
                 );
-                return Center(
+                // 최적화 보기·원본 보기 모두 확대(핀치/더블탭) 가능.
+                // 원본은 화면을 가득 채우되 잘리지 않게(contain) 전체가 보인다.
+                return SizedBox.expand(
                   child: InteractiveViewer(
-                    minScale: 0.8,
-                    maxScale: 5,
+                    minScale: 1.0,
+                    maxScale: isOrig ? 10 : 6,
+                    panEnabled: true,
+                    scaleEnabled: true,
+                    clipBehavior: Clip.none,
                     child: Image.network(
                       url,
                       fit: BoxFit.contain,
+                      width: double.infinity,
+                      height: double.infinity,
                       loadingBuilder: (_, child, prog) => prog == null
                           ? child
                           : const Center(
