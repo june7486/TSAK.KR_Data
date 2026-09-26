@@ -64,11 +64,22 @@ class MemberRepository {
       final batch = {for (final m in members) m.id: m.toMap()};
       final mem = _mem;
       if (mem != null) {
-        mem.clear();
-        mem.addAll(batch);
+        if (isRestricted) {
+          // 개인/게스트(본인 1건) 접근: 전체 목록을 덮어쓰지 않고 병합한다.
+          //  (시드 폴백으로 채운 목록을 보존하여 QR 자동로그인/본인 조회가
+          //   관리자 데이터를 다시 받아온 뒤에도 계속 동작하게 함)
+          mem.addAll(batch);
+        } else {
+          mem.clear();
+          mem.addAll(batch);
+        }
       } else {
-        await _box!.clear();
-        await _box!.putAll(batch);
+        if (isRestricted) {
+          await _box!.putAll(batch);
+        } else {
+          await _box!.clear();
+          await _box!.putAll(batch);
+        }
       }
       try {
         final meta = await api.fetchMeta();
@@ -120,7 +131,18 @@ class MemberRepository {
         revision.value++;
         return;
       }
-      // NAS 실패 시 로컬/시드로 폴백
+      // NAS 실패(로그인 전 401 등) 시 로컬/시드로 폴백
+    }
+
+    // 웹(memory) 모드: 로그인 전에는 서버가 401 이라 목록이 비어 있다.
+    //  시드(합성) 목록을 채워 잠금화면 목록/QR 자동로그인(byNumber)이 동작하게
+    //  한다. 로그인 후에는 _reloadAfterLogin → syncFromNas 로 실데이터를 채운다.
+    if (isMemory) {
+      if (_mem!.isEmpty) {
+        await _seedFromAssets();
+      }
+      revision.value++;
+      return;
     }
 
     if (!isMemory) {
@@ -129,8 +151,6 @@ class MemberRepository {
         await _seedFromAssets();
         await _meta!.put('seeded_v2', true);
       }
-    } else if (_mem!.isEmpty && !isNasMode) {
-      await _seedFromAssets();
     }
     revision.value++;
   }

@@ -289,21 +289,42 @@ class AppState extends ChangeNotifier {
   Future<bool> qrPersonalLogin(String number) async {
     final no = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (no.isEmpty) return false;
-    final m = repo.byNumber(no);
+
+    // [보안] 서버에서 세션을 먼저 발급받는다 (QR 자체가 자격증명).
+    //  · 세션 발급에 실패하면 다른 회원 정보가 노출되지 않도록 즉시 중단.
+    //  · 개인 QR 이므로 항상 personal 등급(영구 마스터라 해도 승격하지 않음).
+    var granted = false;
+    if (repo.isNasMode) {
+      try {
+        granted = await nas.grantSession('personal', id: no);
+      } catch (_) {}
+      if (!granted) return false;
+    }
+
+    var m = repo.byNumber(no);
+    // 세션 발급 직후에는 서버가 본인 1건을 반환하므로, 로컬에 없으면 서버에서
+    //  본인 정보를 다시 받아 채운다(웹 memory 모드/시드 미포함 대응).
+    if (m == null && granted) {
+      try {
+        await repo.syncFromNas();
+      } catch (_) {}
+      m = repo.byNumber(no);
+    }
     if (m == null) return false;
+
     _unlocked = true;
-    // 영구 마스터(예: 415)는 QR 스캔 시에도 master 권한.
     _tier = AppConfig.isPermanentMaster(no) ? 'master' : 'personal';
     _who = no;
     _sessionStart = DateTime.now();
-    // [보안] 서버에서 세션 발급 (QR 자체가 자격증명).
-    //  영구 마스터라도 서버측 권한 상승을 막기 위해 personal 로 발급한다.
-    try {
-      await nas.grantSession('personal', id: no);
-    } catch (_) {}
     _applyAccessScope();
     _persistSession();
     notifyListeners();
+    // 로그인 후 권한 범위 데이터 재조회.
+    //  단, 개인 QR 로 발급된 personal 세션으로는 전체 목록을 받을 수 없으므로
+    //  영구 마스터(415 등)는 시드 목록을 그대로 유지한다(권한 축소 방지).
+    if (repo.isNasMode && !isMaster) {
+      unawaited(_reloadAfterLogin());
+    }
     return true;
   }
 
