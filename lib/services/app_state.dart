@@ -74,9 +74,19 @@ class AppState extends ChangeNotifier {
       final ts = p.getInt(AppConfig.kSessionTs);
       final tier = p.getString(AppConfig.kAuthTier) ?? '';
       final who = p.getString(AppConfig.kAuthWho) ?? '';
+      final sid = p.getString(AppConfig.kSessionSid) ?? '';
       if (ts != null && tier.isNotEmpty) {
         final start = DateTime.fromMillisecondsSinceEpoch(ts);
         if (DateTime.now().difference(start) < AppConfig.sessionTimeout) {
+          // [보안] 저장된 세션토큰 복원 → 이후 API 요청이 인증된다.
+          if (sid.isNotEmpty) {
+            nas.sessionId = sid;
+          } else if (repo.isNasMode) {
+            // 토큰이 없으면 서버에서 재발급 시도(개인 QR 세션 등).
+            try {
+              await nas.grantSession(tier, id: who);
+            } catch (_) {}
+          }
           _unlocked = true;
           _tier = tier;
           _who = who;
@@ -216,11 +226,16 @@ class AppState extends ChangeNotifier {
     _who = '';
     _sessionStart = null;
     repo.restrictedNumber = null;
+    // [보안] 서버측 세션도 폐기 (세션토큰 탈취 재사용 방지)
+    try {
+      await nas.logout();
+    } catch (_) {}
     try {
       final p = await SharedPreferences.getInstance();
       await p.remove(AppConfig.kSessionTs);
       await p.remove(AppConfig.kAuthTier);
       await p.remove(AppConfig.kAuthWho);
+      await p.remove(AppConfig.kSessionSid);
     } catch (_) {}
     notifyListeners();
   }
@@ -240,6 +255,11 @@ class AppState extends ChangeNotifier {
     _tier = AppConfig.isPermanentMaster(no) ? 'master' : 'personal';
     _who = no;
     _sessionStart = DateTime.now();
+    // [보안] 서버에서 세션 발급 (QR 자체가 자격증명).
+    //  영구 마스터라도 서버측 권한 상승을 막기 위해 personal 로 발급한다.
+    try {
+      await nas.grantSession('personal', id: no);
+    } catch (_) {}
     _applyAccessScope();
     _persistSession();
     notifyListeners();
@@ -255,6 +275,7 @@ class AppState extends ChangeNotifier {
       );
       await p.setString(AppConfig.kAuthTier, _tier);
       await p.setString(AppConfig.kAuthWho, _who);
+      await p.setString(AppConfig.kSessionSid, nas.sessionId);
     } catch (_) {}
   }
 

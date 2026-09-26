@@ -63,5 +63,6 @@ class AppConfig {
   static const String kSessionTs = 'auth_session_ts';
   static const String kAuthTier = 'auth_tier';
   static const String kAuthWho = 'auth_who';
+  static const String kSessionSid = 'auth_session_sid'; // 서버 발급 세션토큰
   static const String kAdminEmail = 'admin_email';
 }

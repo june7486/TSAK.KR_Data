@@ -8,6 +8,10 @@ import 'app_config.dart';
 /// NAS 프록시 REST API 클라이언트
 ///
 /// baseUrl 이 비어 있으면 웹앱과 동일 origin(상대경로)으로 호출한다.
+///
+/// [보안] 서버가 로그인 시 발급하는 세션토큰(sid)을 모든 요청에 실어 보낸다.
+///  - 웹: 같은 출처라 쿠키(tsak_sid)가 자동 전송되지만, 방어적으로 헤더도 함께 전송.
+///  - 비웹(모바일): 쿠키 jar 가 없으므로 X-TSAK-Session 헤더로 전송.
 class NasApi {
   NasApi({String? baseUrl})
     : _base = (baseUrl ?? AppConfig.defaultServerBase).replaceAll(
@@ -16,8 +20,19 @@ class NasApi {
       );
 
   String _base;
+  String _sid = ''; // 서버 발급 세션토큰 (로그인 시 설정)
 
   String get baseUrl => _base;
+
+  /// 현재 세션토큰 (로그아웃/만료 시 비움)
+  String get sessionId => _sid;
+  // ignore: unnecessary_getters_setters
+  set sessionId(String v) => _sid = v;
+
+  /// 모든 요청에 공통으로 붙는 인증 헤더.
+  Map<String, String> get _authHeaders =>
+      _sid.isEmpty ? const {} : {'X-TSAK-Session': _sid};
+
   set baseUrl(String v) => _base = v.replaceAll(RegExp(r'/+$'), '');
 
   Uri _uri(String path) => Uri.parse('$_base$path');
@@ -26,7 +41,7 @@ class NasApi {
   Future<bool> health() async {
     try {
       final r = await http
-          .get(_uri('/api/health'))
+          .get(_uri('/api/health'), headers: _authHeaders)
           .timeout(const Duration(seconds: 12));
       if (r.statusCode != 200) return false;
       final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
@@ -40,7 +55,7 @@ class NasApi {
   Future<Map<String, dynamic>> healthState() async {
     try {
       final r = await http
-          .get(_uri('/api/health'))
+          .get(_uri('/api/health'), headers: _authHeaders)
           .timeout(const Duration(seconds: 12));
       final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
       return j.cast<String, dynamic>();
@@ -51,6 +66,9 @@ class NasApi {
 
   // ---- Auth ----
   /// tier: master | app | personal | guest
+  ///
+  /// [보안] 서버가 발급한 세션토큰(sid)을 자동 저장한다. 이후 모든 요청에
+  /// X-TSAK-Session 헤더로 실려 나간다(웹은 동일출처 쿠키도 함께).
   Future<Map<String, dynamic>> login(
     String tier,
     String value, {
@@ -59,11 +77,57 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/login'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'tier': tier, 'value': value, 'id': id}),
         )
         .timeout(const Duration(seconds: 15));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    final sid = '${j['sid'] ?? ''}';
+    if (j['ok'] == true && sid.isNotEmpty) _sid = sid;
+    return j;
+  }
+
+  /// QR/세션복원용 세션 발급 (비번 입력 없이 열리는 개인 QR 전용).
+  /// master 등급은 마스터 비번 확인값이 없으면 서버가 거부한다.
+  Future<bool> grantSession(
+    String tier, {
+    String id = '',
+    String? master,
+    String? app,
+  }) async {
+    try {
+      final r = await http
+          .post(
+            _uri('/api/session/grant'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({
+              'tier': tier,
+              'id': id,
+              if (master != null) 'master': master,
+              if (app != null) 'app': app,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      final sid = '${j['sid'] ?? ''}';
+      if (j['ok'] == true && sid.isNotEmpty) {
+        _sid = sid;
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// 세션 종료(서버측 세션 폐기)
+  Future<void> logout() async {
+    final old = _sid;
+    _sid = '';
+    if (old.isEmpty) return;
+    try {
+      await http
+          .post(_uri('/api/logout'), headers: {'X-TSAK-Session': old})
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {}
   }
 
   /// 마스터/관리자 전용 — 특정 회원 비밀번호 강제 변경(reset=false) 또는 초기화(reset=true)
@@ -77,7 +141,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/admin/set-password'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'tier': tier,
             'id': id,
@@ -93,7 +157,7 @@ class NasApi {
   // ---- Members ----
   Future<List<Member>> fetchMembers() async {
     final r = await http
-        .get(_uri('/api/members'))
+        .get(_uri('/api/members'), headers: _authHeaders)
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     final list = (j['members'] as List?) ?? [];
@@ -108,7 +172,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/members'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'members': members.map((m) => m.toMap()).toList(),
             'by': by,
@@ -126,7 +190,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/member'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'member': member.toMap(), 'by': by}),
         )
         .timeout(const Duration(seconds: 60));
@@ -136,14 +200,14 @@ class NasApi {
   // ---- Meta / Config ----
   Future<Map<String, dynamic>> fetchMeta() async {
     final r = await http
-        .get(_uri('/api/meta'))
+        .get(_uri('/api/meta'), headers: _authHeaders)
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> fetchConfig() async {
     final r = await http
-        .get(_uri('/api/config'))
+        .get(_uri('/api/config'), headers: _authHeaders)
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -161,7 +225,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/config'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode(body),
         )
         .timeout(const Duration(seconds: 20));
@@ -171,7 +235,7 @@ class NasApi {
   // ---- Backups ----
   Future<List<Map<String, dynamic>>> backups() async {
     final r = await http
-        .get(_uri('/api/backups'))
+        .get(_uri('/api/backups'), headers: _authHeaders)
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['backups'] as List?) ?? [])
@@ -183,7 +247,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/backup'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'name': name ?? ''}),
         )
         .timeout(const Duration(seconds: 60));
@@ -195,7 +259,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/restore'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'name': name}),
         )
         .timeout(const Duration(seconds: 60));
@@ -214,7 +278,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/photo/$number'),
-          headers: {'Content-Type': 'image/$ext'},
+          headers: {..._authHeaders, 'Content-Type': 'image/$ext'},
           body: bytes,
         )
         .timeout(const Duration(seconds: 60));
@@ -227,7 +291,7 @@ class NasApi {
   // ---- 재무 (Finance) ----
   Future<Map<String, dynamic>> fetchFinance() async {
     final r = await http
-        .get(_uri('/api/finance'))
+        .get(_uri('/api/finance'), headers: _authHeaders)
         .timeout(const Duration(seconds: 40));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -236,7 +300,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/finance'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode(finance),
         )
         .timeout(const Duration(seconds: 60));
@@ -245,7 +309,7 @@ class NasApi {
 
   Future<Map<String, dynamic>> fetchRules() async {
     final r = await http
-        .get(_uri('/api/finance/rules'))
+        .get(_uri('/api/finance/rules'), headers: _authHeaders)
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -254,7 +318,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/finance/rules'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode(rules),
         )
         .timeout(const Duration(seconds: 20));
@@ -263,7 +327,7 @@ class NasApi {
 
   Future<Map<String, dynamic>> fetchHistory() async {
     final r = await http
-        .get(_uri('/api/finance/history'))
+        .get(_uri('/api/finance/history'), headers: _authHeaders)
         .timeout(const Duration(seconds: 30));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -279,7 +343,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/finance/parse-bank'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'filename': filename,
             'data': base64.encode(bytes),
@@ -303,7 +367,7 @@ class NasApi {
   /// DB 거래내역 종합 통계 (연도/월/분류/지출분류/행사/인가자별)
   Future<Map<String, dynamic>> fetchFinanceStats() async {
     final r = await http
-        .get(_uri('/api/finance/stats'))
+        .get(_uri('/api/finance/stats'), headers: _authHeaders)
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return (j['stats'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -312,7 +376,7 @@ class NasApi {
   /// 기본자료 폴더 파일 목록
   Future<List<Map<String, dynamic>>> listFiles(String folder) async {
     final r = await http
-        .get(_uri('/api/files?folder=$folder'))
+        .get(_uri('/api/files?folder=$folder'), headers: _authHeaders)
         .timeout(const Duration(seconds: 40));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['files'] as List?) ?? [])
@@ -329,7 +393,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/files'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'folder': folder,
             'name': name,
@@ -347,7 +411,7 @@ class NasApi {
   /// 행사관리 폴더의 미디어 목록 (사진/동영상)
   Future<List<Map<String, dynamic>>> eventList() async {
     final r = await http
-        .get(_uri('/api/event/list'))
+        .get(_uri('/api/event/list'), headers: _authHeaders)
         .timeout(const Duration(seconds: 40));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['files'] as List?) ?? [])
@@ -401,7 +465,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/media/delete'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'name': name}),
         )
         .timeout(const Duration(seconds: 30));
@@ -413,7 +477,7 @@ class NasApi {
   /// 행사 목록
   Future<List<Map<String, dynamic>>> eventList2() async {
     final r = await http
-        .get(_uri('/api/event/list2'))
+        .get(_uri('/api/event/list2'), headers: _authHeaders)
         .timeout(const Duration(seconds: 40));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['events'] as List?) ?? [])
@@ -424,7 +488,7 @@ class NasApi {
   /// 행사 상세
   Future<Map<String, dynamic>> eventGet(String year, String title) async {
     final r = await http
-        .get(_uri('/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}'))
+        .get(_uri('/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}'), headers: _authHeaders)
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -461,7 +525,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/mkdir'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -534,7 +598,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/create'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -558,7 +622,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/rename'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -575,7 +639,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/delete'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'year': year, 'title': title}),
         )
         .timeout(const Duration(seconds: 60));
@@ -592,7 +656,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/attendee/set'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -609,7 +673,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/search-member'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'q': q}),
         )
         .timeout(const Duration(seconds: 30));
@@ -670,7 +734,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/file/delete'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -697,7 +761,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/file/rename'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -733,7 +797,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/finance/add'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -757,7 +821,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/finance/update'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -781,7 +845,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/finance/delete'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'year': year,
             'title': title,
@@ -806,7 +870,7 @@ class NasApi {
       await http
           .post(
             _uri('/api/event/access/log'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
             body: json.encode({
               'year': year,
               'title': title,
@@ -839,7 +903,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/event/request-photo'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'year': year, 'title': title, 'by': by, 'message': message}),
         )
         .timeout(const Duration(seconds: 30));
@@ -854,7 +918,7 @@ class NasApi {
   // ---- 마스터 앱관리 ----
   Future<Map<String, dynamic>> adminState() async {
     final r = await http
-        .get(_uri('/api/admin/state'))
+        .get(_uri('/api/admin/state'), headers: _authHeaders)
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -866,7 +930,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/admin/app-password'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'master': master, 'new': newPw}),
         )
         .timeout(const Duration(seconds: 20));
@@ -882,7 +946,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/admin/personal'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'master': master,
             'number': number,
@@ -903,7 +967,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/personal/password'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'number': number,
             'current': current,
@@ -921,7 +985,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/admin/server-pause'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'master': master, 'paused': paused}),
         )
         .timeout(const Duration(seconds: 20));
@@ -945,7 +1009,7 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/inquiry/submit'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({
             'name': name,
             'email': email,
