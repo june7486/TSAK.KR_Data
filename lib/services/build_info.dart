@@ -58,6 +58,9 @@ DateTime? parseStamp(int stamp) {
 const int _kVersionToleranceMin = 15;
 
 /// 서버(프록시)의 최신 빌드 버전을 조회한다. (웹 전용, 실패 시 null)
+///
+/// 네트워크/서버 오류·CORS·오프라인 등 어떤 이유로든 실패하면 null을 반환한다
+/// → 호출부는 "오프라인(알 수 없음)"으로 간주하고 기존 버전을 그대로 진행한다.
 Future<ServerVersion?> fetchServerVersion() async {
   if (!kIsWeb) return null;
   try {
@@ -97,4 +100,17 @@ Future<VersionStatus> checkVersion() async {
   if (diffMin >= _kVersionToleranceMin) return VersionStatus.serverNewer;
   if (diffMin <= -_kVersionToleranceMin) return VersionStatus.serverOlder;
   return VersionStatus.upToDate;
+}
+
+/// 서버에 더 새로운 버전이 있으면 true.
+///
+/// 네트워크가 안 되거나(오프라인) 판단할 수 없으면 **false** —
+/// 호출부는 기존(캐시된) 버전으로 그대로 진행한다.
+Future<bool> serverHasNewerVersion() async {
+  try {
+    final st = await checkVersion();
+    return st == VersionStatus.serverNewer;
+  } catch (_) {
+    return false;
+  }
 }

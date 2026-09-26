@@ -41,7 +41,46 @@ class _LockScreenState extends State<LockScreen> {
   bool _busy = false;
   bool _cacheBusy = false;
   bool _verBusy = false;
+  bool _updating = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // 로그인 화면 진입 시: 구버전이면 캐시 자동 삭제 후 최신 버전을 재다운로드.
+    //  (인터넷이 안 되면 아무 것도 하지 않고 기존 버전으로 그대로 진행)
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdateCheck());
+  }
+
+  /// 구버전 감지 시 1회성으로 캐시를 지우고 최신 자산을 다시 받는다.
+  ///
+  /// - 오프라인/서버 오류 → [serverHasNewerVersion] 이 false → 그대로 진행.
+  /// - 이미 이번 세션에서 재로드했으면 무한 루프 방지를 위해 건너뛴다.
+  Future<void> _autoUpdateCheck() async {
+    if (!mounted) return;
+    bool newer;
+    try {
+      newer = await serverHasNewerVersion();
+    } catch (_) {
+      newer = false;
+    }
+    if (!mounted || !newer) return;
+
+    // 세션당 1회만 자동 캐시삭제+재로드 (루프 방지)
+    bool allowed = true;
+    try {
+      if (isWebRuntime && !guardAutoReloadOnce()) allowed = false;
+    } catch (_) {}
+    if (!allowed) return;
+
+    setState(() => _updating = true);
+    try {
+      await clearAppCache();
+    } catch (_) {}
+    if (!mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    reloadPage(); // 최신 버전을 다시 다운로드
+  }
 
   @override
   void dispose() {
@@ -293,6 +332,35 @@ class _LockScreenState extends State<LockScreen> {
                     'TSAK 인가자 · 회원 통합 관리',
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
+                  if (_updating) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            '새 버전으로 업데이트 중…',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   Container(
                     padding: const EdgeInsets.all(18),
@@ -379,7 +447,7 @@ class _LockScreenState extends State<LockScreen> {
                               backgroundColor: AppColors.purple,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
-                            onPressed: _busy ? null : _submit,
+                            onPressed: (_busy || _updating) ? null : _submit,
                             icon: _busy
                                 ? const SizedBox(
                                     width: 18,

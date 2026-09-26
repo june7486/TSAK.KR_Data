@@ -66,6 +66,28 @@ extension type _Storage(JSObject _) implements JSObject {
   external void removeItem(JSString key);
 }
 
+@JS('sessionStorage')
+external _SessionStorage get _sessionStorage;
+
+extension type _SessionStorage(JSObject _) implements JSObject {
+  external String? getItem(JSString key);
+  external void setItem(JSString key, JSString value);
+}
+
+/// 자동 재로드를 세션당 1회로 제한한다. (허용되면 true)
+///
+/// 구버전 감지 → 캐시삭제 → 재로드가 반복(루프)되지 않도록 막는다.
+bool guardAutoReloadOnce() {
+  try {
+    const key = 'tsak_auto_reload';
+    if (_sessionStorage.getItem(key.toJS) == '1') return false;
+    _sessionStorage.setItem(key.toJS, '1'.toJS);
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
 bool get isWebRuntime => true;
 
 /// 현재 탭에서 URL(커스텀 스킴 포함)로 이동을 시도한다.
