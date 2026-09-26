@@ -209,6 +209,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// QR 스캔 = 개인 로그인으로 간주 (비밀번호 없이).
+  ///
+  /// 개인 QR에는 인가번호가 담겨 있고, 그 QR 자체가 자격증명이다.
+  /// 권한은 **기존 개인 로그인과 완전히 동일** (추가 권한 없음).
+  /// → 본인 정보만 열람·수정 가능.
+  Future<bool> qrPersonalLogin(String number) async {
+    final no = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (no.isEmpty) return false;
+    final m = repo.byNumber(no);
+    if (m == null) return false;
+    _unlocked = true;
+    _tier = 'personal';
+    _who = no;
+    _sessionStart = DateTime.now();
+    _applyAccessScope();
+    _persistSession();
+    notifyListeners();
+    return true;
+  }
+
   Future<void> _persistSession() async {
     try {
       final p = await SharedPreferences.getInstance();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -189,9 +190,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   case 'request':
                     _requestPhoto();
                     break;
+                  case 'qr':
+                    _showEventQr();
+                    break;
                 }
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'qr', child: Text('행사 QR 코드 (참가 등록)')),
                 PopupMenuItem(value: 'zip', child: Text('사진 전체 ZIP 다운로드')),
                 PopupMenuItem(value: 'request', child: Text('전체 참가자 사진 업로드 요청')),
               ],
@@ -510,9 +515,90 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     await _load();
   }
 
+  /// 행사 QR 코드 표시 — 회원/비회원이 스캔하면 이 행사로 바로 들어온다.
+  ///
+  /// · 기존 회원: 로그인 후 행사 화면으로 이동
+  /// · 비회원: 아이디(신규회원 가입) 후 행사 화면으로 이동
+  /// (행사 생성/관리는 관리자만 — 이 메뉴도 canManage 에서만 노출)
+  void _showEventQr() {
+    final state = context.read<AppState>();
+    final nasBase = state.repo.isNasMode ? state.nas.baseUrl : '';
+    final base = state.appAccessUrl.isNotEmpty ? state.appAccessUrl : nasBase;
+    final qrUrl = '$base/?access=event'
+        '&year=${Uri.encodeComponent(widget.year)}'
+        '&title=${Uri.encodeComponent(widget.title)}';
+    final payload = qrUrl;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('행사 QR 코드'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${widget.year} · ${widget.title}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.purple.withValues(alpha: 0.2)),
+                ),
+                child: QrImageView(
+                  data: payload,
+                  version: QrVersions.auto,
+                  size: 220,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: AppColors.purple,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: AppColors.purpleDark,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '회원은 로그인 후, 비회원은 가입 후 이 행사 화면으로 바로 이동합니다.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: payload));
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(content: Text('행사 QR 링크가 복사되었습니다')),
+              );
+            },
+            child: const Text('링크 복사'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ============================ 참석자 ============================
-  Widget _attendeeTab() {
-    return Column(
+  Widget _attendeeTab() {    return Column(
       children: [
         Padding(
           padding: const EdgeInsets.all(12),

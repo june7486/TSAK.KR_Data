@@ -18,6 +18,7 @@ import 'admin_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'event_year_screen.dart';
+import 'event_detail_screen.dart';
 import 'finance_screen.dart';
 import 'import_screen.dart';
 import 'member_detail_screen.dart';
@@ -29,10 +30,19 @@ import 'source_folder_screen.dart';
 import 'stats_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.openMemberNo = ''});
+  const HomeScreen({
+    super.key,
+    this.openMemberNo = '',
+    this.openEventYear = '',
+    this.openEventTitle = '',
+  });
 
   /// 로그인 직후 자동으로 열 개인정보 편집 인가번호 (QR 딥링크)
   final String openMemberNo;
+
+  /// 로그인 직후 자동으로 열 행사 QR 딥링크 (연도/행사명)
+  final String openEventYear;
+  final String openEventTitle;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -50,7 +60,30 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     if (widget.openMemberNo.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkMember());
+    } else if (widget.openEventTitle.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkEvent());
     }
+  }
+
+  /// 행사 QR 딥링크 — 로그인 후 해당 행사 상세 화면을 바로 연다.
+  Future<void> _openDeepLinkEvent() async {
+    if (_deepLinkHandled) return;
+    _deepLinkHandled = true;
+    final state = context.read<AppState>();
+    final year = widget.openEventYear.trim();
+    final title = widget.openEventTitle.trim();
+    if (title.isEmpty) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventDetailScreen(
+          year: year,
+          title: title,
+          canManage: state.isApp || state.isMaster,
+        ),
+      ),
+    );
+    if (mounted) context.read<AppState>().refresh();
   }
 
   /// QR 딥링크 — 로그인 후 해당 인가자 정보 편집 페이지를 바로 연다.

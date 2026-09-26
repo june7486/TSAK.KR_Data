@@ -69,6 +69,11 @@ class _AuthGateState extends State<AuthGate> {
 
   /// QR 딥링크 파라미터 (?access=personal&no=415)
   String _prefillNo = '';
+  bool _fromQr = false;
+
+  /// 행사 QR 딥링크 파라미터 (?access=event&year=..&title=..)
+  String _eventYear = '';
+  String _eventTitle = '';
 
   @override
   void initState() {
@@ -77,12 +82,16 @@ class _AuthGateState extends State<AuthGate> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final state = context.read<AppState>();
       await state.restoreSession();
+      // 개인 QR 스캔 → 로그인으로 간주(비밀번호 없이) 하고 바로 정보수정으로.
+      if (_fromQr && _prefillNo.isNotEmpty && !state.sessionValid) {
+        await state.qrPersonalLogin(_prefillNo);
+      }
       if (mounted) setState(() => _initialized = true);
       _startTimer();
     });
   }
 
-  /// URL 쿼리스트링에서 인가자 QR 딥링크를 읽는다 (웹).
+  /// URL 쿼리스트링에서 QR 딥링크를 읽는다 (웹).
   void _readDeepLink() {
     if (!kIsWeb) return;
     final uri = Uri.base;
@@ -90,6 +99,10 @@ class _AuthGateState extends State<AuthGate> {
     final access = uri.queryParameters['access'] ?? '';
     if (access == 'personal' && no.isNotEmpty) {
       _prefillNo = no.replaceAll(RegExp(r'[^0-9]'), '');
+      _fromQr = true;
+    } else if (access == 'event') {
+      _eventYear = uri.queryParameters['year'] ?? '';
+      _eventTitle = uri.queryParameters['title'] ?? '';
     }
   }
 
@@ -127,6 +140,10 @@ class _AuthGateState extends State<AuthGate> {
         initialId: _prefillNo,
       );
     }
-    return HomeScreen(openMemberNo: _prefillNo);
+    return HomeScreen(
+      openMemberNo: _prefillNo,
+      openEventYear: _eventYear,
+      openEventTitle: _eventTitle,
+    );
   }
 }

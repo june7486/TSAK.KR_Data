@@ -175,7 +175,7 @@ class _QrGenerateView extends StatelessWidget {
                         ),
                       const SizedBox(height: 8),
                       const Text(
-                        '이 QR을 스캔하면 앱이 열리고,\n로그인 후 해당 인가자 정보를 수정할 수 있습니다.',
+                        '이 QR을 스캔하면 앱이 열리고,\n본인 확인 후 인가자 정보를 바로 수정할 수 있습니다.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 11.5,
@@ -464,17 +464,20 @@ class _QrScanViewState extends State<_QrScanView> {
       return;
     }
 
-    // 마스터/개인 접근이 아니면 로그인 확인 후 정보 수정 페이지로 이동
-    if (!state.isMaster && !state.isPersonal) {
-      final ok = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => _QrLoginDialog(number: number!, name: target.name),
-      );
-      if (ok != true) {
-        _handled = false;
-        return;
+    // 개인 QR 스캔 = 개인 로그인으로 간주 (비밀번호 없이) → 정보수정 바로 이동.
+    // 권한은 기존 개인 로그인과 완전히 동일 (추가 권한 없음, 본인만 수정).
+    final ok = await state.qrPersonalLogin(number);
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('QR 인증에 실패했습니다'),
+            backgroundColor: AppColors.taegeukRed,
+          ),
+        );
+        Future.delayed(const Duration(seconds: 2), () => _handled = false);
       }
+      return;
     }
 
     if (mounted) {
