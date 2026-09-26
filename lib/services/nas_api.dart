@@ -470,15 +470,33 @@ class NasApi {
   }
 
   // ==================== 행사관리 v2 (연도/행사/항목 폴더) ====================
-  /// 행사 목록
-  Future<List<Map<String, dynamic>>> eventList2() async {
+  /// 행사 목록 (행사관리 정의 + 개인프로필 행사명 합집합, 참가인원/장소/
+  /// 사진·동영상 개수/생성자 포함)
+  Future<List<Map<String, dynamic>>> eventList2({bool media = true}) async {
     final r = await http
-        .get(_uri('/api/event/list2'), headers: _authHeaders)
+        .get(
+          _uri('/api/event/list2${media ? '?media=1' : ''}'),
+          headers: _authHeaders,
+        )
         .timeout(const Duration(seconds: 40));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['events'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
+  }
+
+  /// 행사명만 제거 — events.json(있으면) + 모든 개인 프로필(eventAttend).
+  /// 관리목록누락(프로필에만 있는) 행사 정리에 사용.
+  Future<bool> eventNameDelete(List<String> names) async {
+    final r = await http
+        .post(
+          _uri('/api/event/name/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'names': names}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
   }
 
   /// 행사 상세

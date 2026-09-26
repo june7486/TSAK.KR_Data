@@ -173,6 +173,24 @@ void openUrlInNewTab(String url) {
   }
 }
 
+/// 외부 사이트를 **새 탭으로 확실하게** 연다 (PC 인터넷뱅킹 등).
+///
+/// 일반 https 주소만 대상으로 한다. 새 창을 열어 현재 앱(SPA) 상태를 보존한다.
+/// 팝업 차단으로 실패하면 `location.href` 로 폴백한다.
+bool openExternalUrl(String url) {
+  try {
+    _window.open(url, '_blank');
+    return true;
+  } catch (_) {
+    try {
+      _location.href = url;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
 /// 브라우저에 캐시된 앱 자산(Cache Storage·서비스워커)을 정리한다.
 ///
 /// 최신 배포(업데이트)가 반영되지 않을 때 사용한다. 사용자 데이터(Hive 등)는

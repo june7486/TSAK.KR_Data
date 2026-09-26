@@ -14,6 +14,9 @@ void openUrlInTab(String url) {}
 /// (호출부에서 url_launcher 로 기본 브라우저를 연다.)
 void openUrlInNewTab(String url) {}
 
+/// 네이티브에는 브라우저 새 탭 개념이 없다 → 실패 신호(false)를 준다.
+bool openExternalUrl(String url) => false;
+
 /// 네이티브에서는 격리 탭 개념이 없다(호출부에서 launchUrl 사용).
 void openUrlInIsolatedTab(String url) {}
 

@@ -7,6 +7,7 @@ import '../models/finance_transaction.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/finance_service.dart';
+import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
@@ -27,6 +28,37 @@ class MemberDetailScreen extends StatefulWidget {
 }
 
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
+  /// 행사관리(events.json)에 정의된 행사명 집합 — 관리목록누락 판정용.
+  Set<String> _knownEvents = <String>{};
+  bool _knownLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadKnownEvents());
+  }
+
+  Future<void> _loadKnownEvents() async {
+    try {
+      final api = context.read<NasApi>();
+      final ev = await api.eventList2(media: false);
+      final names = <String>{};
+      for (final e in ev) {
+        if (e['defined'] == false) continue;
+        final t = '${e['title'] ?? ''}'.trim();
+        if (t.isNotEmpty) names.add(t);
+      }
+      if (mounted) {
+        setState(() {
+          _knownEvents = names;
+          _knownLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _knownLoaded = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -572,26 +604,79 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 ...events.map((e) {
                   final attend = m.eventAttend[e] == true;
-                  return CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    value: attend,
-                    activeColor: AppColors.taegeukBlue,
-                    title: Text(
-                      e,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      attend ? '참가' : '불참',
-                      style: TextStyle(fontSize: 11),
-                    ),
-                    onChanged: (v) {
-                      final map = Map<String, bool>.from(m.eventAttend);
-                      map[e] = v == true;
-                      context.read<AppState>().save(
-                        m.copyWith(eventAttend: map),
-                      );
-                    },
+                  final missing = _knownLoaded && !_knownEvents.contains(e);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: CheckboxListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              value: attend,
+                              activeColor: AppColors.taegeukBlue,
+                              title: Text(
+                                e,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                attend ? '참가' : '불참',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              onChanged: (v) {
+                                final map = Map<String, bool>.from(
+                                  m.eventAttend,
+                                );
+                                map[e] = v == true;
+                                context.read<AppState>().save(
+                                  m.copyWith(eventAttend: map),
+                                );
+                              },
+                            ),
+                          ),
+                          if (missing)
+                            IconButton(
+                              tooltip: '관리목록누락 행사 삭제 (내 프로필에서 제거)',
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: AppColors.taegeukRed,
+                              ),
+                              onPressed: () => _removeEventName(m, e),
+                            ),
+                        ],
+                      ),
+                      if (missing)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.tigerGold.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: AppColors.tigerGold.withValues(
+                                  alpha: 0.6,
+                                ),
+                              ),
+                            ),
+                            child: const Text(
+                              '(관리목록누락)',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.lifetimeGold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   );
                 }),
                 Align(
@@ -607,16 +692,80 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 관리목록누락 행사명을 본인 프로필(eventAttend)에서 제거.
+  Future<void> _removeEventName(Member m, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('행사명 삭제'),
+        content: Text(
+          '“$name” 은(는) 행사관리 목록에 없는 행사입니다.\n'
+          '내 프로필(행사 참가 여부)에서 이 행사명을 삭제할까요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final map = Map<String, bool>.from(m.eventAttend);
+    map.remove(name);
+    await context.read<AppState>().save(m.copyWith(eventAttend: map));
+    if (mounted) setState(() {});
+  }
+
   Future<void> _addEvent(Member m) async {
     final ctrl = TextEditingController();
+    // 행사관리 목록에 있는 행사를 우선 선택하도록 제안 (관리목록누락 예방)
+    final suggestions = _knownEvents.toList()..sort();
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('행사 추가'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '예: 2026 정기총회 / 하계캠프'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (suggestions.isNotEmpty) ...[
+              const Text(
+                '행사관리 목록에서 선택',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final s in suggestions)
+                    ActionChip(
+                      label: Text(s, style: const TextStyle(fontSize: 12)),
+                      onPressed: () => Navigator.pop(ctx, s),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '또는 새 이름 직접 입력',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+            ],
+            TextField(
+              controller: ctrl,
+              autofocus: suggestions.isEmpty,
+              decoration: const InputDecoration(
+                hintText: '예: 2026 정기총회 / 하계캠프',
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -634,6 +783,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       final map = Map<String, bool>.from(m.eventAttend);
       map[name] = true;
       await context.read<AppState>().save(m.copyWith(eventAttend: map));
+      if (mounted) setState(() {});
     }
   }
 

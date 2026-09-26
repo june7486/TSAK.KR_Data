@@ -189,28 +189,29 @@ class _TransferSheetState extends State<_TransferSheet> {
   /// · mode = 'open'   : 계좌번호 복사 + 앱 실행(스킴) , 없으면 브라우저/스토어
   ///   scheme: 앱 실행용 URL 스킴(있으면 앱 실행, 미설치면 스토어로 폴백)
   ///   store : 미설치 시 설치 유도용 패키지 ID(없으면 Play 검색)
+  ///   site  : **PC(데스크톱) 웹**에서 여는 인터넷뱅킹 주소 (핵심)
   static const List<Map<String, String>> _banks = [
-    {'name': '토스', 'mode': 'toss', 'scheme': 'supertoss://send', 'short': '토스', 'color': '0064FF'},
-    {'name': '카카오뱅크', 'mode': 'open', 'scheme': 'kakaobank://', 'store': 'com.kakaobank.channel', 'short': '카뱅', 'color': 'FFCD00'},
-    {'name': '케이뱅크', 'mode': 'open', 'scheme': 'kbank://', 'store': 'com.kbankwith.kbankwith', 'short': '케이', 'color': '00B4B0'},
-    {'name': 'KB국민은행', 'mode': 'open', 'scheme': 'kb-acp://', 'store': 'com.kbstar.kbbank', 'short': 'KB', 'color': 'FFB800'},
-    {'name': '신한은행', 'mode': 'open', 'scheme': 'shinhan-sbank://', 'store': 'com.shinhan.sbanking', 'short': '신한', 'color': '0046FF'},
-    {'name': '우리은행', 'mode': 'open', 'scheme': 'wooribank://', 'store': 'com.wooribank.smart', 'short': '우리', 'color': '0067AC'},
-    {'name': '하나은행', 'mode': 'open', 'scheme': 'hanabank://', 'store': 'com.hanabank.ebk.channel.android.hanabank', 'short': '하나', 'color': '009A93'},
-    {'name': 'NH농협은행', 'mode': 'open', 'scheme': 'nhbapp://', 'store': 'nh.smart.nhall', 'short': 'NH', 'color': '1B7C3D'},
-    {'name': 'IBK기업은행', 'mode': 'open', 'scheme': 'ibkonebank://', 'store': 'com.ibk.android.ionebank', 'short': 'IBK', 'color': '005EB8'},
-    {'name': 'SC제일은행', 'mode': 'open', 'scheme': 'scbank://', 'store': 'com.scbank.smart', 'short': 'SC', 'color': '00694E'},
-    {'name': '한국씨티은행', 'mode': 'open', 'scheme': 'citibank://', 'store': 'com.citibank.mobile.kr', 'short': '씨티', 'color': '0F4FA8'},
-    {'name': '부산은행', 'mode': 'open', 'scheme': 'busanbank://', 'store': 'kr.co.busanbank.mobile', 'short': '부산', 'color': '0059A5'},
-    {'name': '경남은행', 'mode': 'open', 'scheme': 'knbank://', 'store': 'kr.co.knbank.smart', 'short': '경남', 'color': 'C8102E'},
-    {'name': '대구은행', 'mode': 'open', 'scheme': 'dgbbank://', 'store': 'com.dgb.imbank', 'short': '대구', 'color': '0B4DA2'},
-    {'name': '광주은행', 'mode': 'open', 'scheme': 'kjbank://', 'store': 'com.kjbank.smart', 'short': '광주', 'color': 'F0A500'},
-    {'name': '전북은행', 'mode': 'open', 'scheme': 'jbbank://', 'store': 'com.jbbank.smart', 'short': '전북', 'color': '005BAC'},
-    {'name': '제주은행', 'mode': 'open', 'scheme': 'jejubank://', 'store': 'com.jejubank.smart', 'short': '제주', 'color': 'E87722'},
-    {'name': '수협은행', 'mode': 'open', 'scheme': 'suhyupbank://', 'store': 'com.suhyup.heydan', 'short': '수협', 'color': '0067A3'},
-    {'name': '우체국', 'mode': 'open', 'scheme': 'epostbank://', 'store': 'com.epost.psf.smart', 'short': '우체국', 'color': 'E8442E'},
-    {'name': '새마을금고', 'mode': 'open', 'scheme': 'mgbank://', 'store': 'com.kfcc.mgbank', 'short': '새마을', 'color': '00703C'},
-    {'name': '신협', 'mode': 'open', 'scheme': 'cuapp://', 'store': 'com.cu.smartbank', 'short': '신협', 'color': '0083C6'},
+    {'name': '토스', 'mode': 'toss', 'scheme': 'supertoss://send', 'short': '토스', 'color': '0064FF', 'site': 'https://www.tossbank.com/'},
+    {'name': '카카오뱅크', 'mode': 'open', 'scheme': 'kakaobank://', 'store': 'com.kakaobank.channel', 'short': '카뱅', 'color': 'FFCD00', 'site': 'https://www.kakaobank.com/'},
+    {'name': '케이뱅크', 'mode': 'open', 'scheme': 'kbank://', 'store': 'com.kbankwith.kbankwith', 'short': '케이', 'color': '00B4B0', 'site': 'https://www.kbanknow.com/'},
+    {'name': 'KB국민은행', 'mode': 'open', 'scheme': 'kb-acp://', 'store': 'com.kbstar.kbbank', 'short': 'KB', 'color': 'FFB800', 'site': 'https://www.kbstar.com/'},
+    {'name': '신한은행', 'mode': 'open', 'scheme': 'shinhan-sbank://', 'store': 'com.shinhan.sbanking', 'short': '신한', 'color': '0046FF', 'site': 'https://www.shinhan.com/'},
+    {'name': '우리은행', 'mode': 'open', 'scheme': 'wooribank://', 'store': 'com.wooribank.smart', 'short': '우리', 'color': '0067AC', 'site': 'https://www.wooribank.com/'},
+    {'name': '하나은행', 'mode': 'open', 'scheme': 'hanabank://', 'store': 'com.hanabank.ebk.channel.android.hanabank', 'short': '하나', 'color': '009A93', 'site': 'https://www.kebhana.com/'},
+    {'name': 'NH농협은행', 'mode': 'open', 'scheme': 'nhbapp://', 'store': 'nh.smart.nhall', 'short': 'NH', 'color': '1B7C3D', 'site': 'https://banking.nonghyup.com/'},
+    {'name': 'IBK기업은행', 'mode': 'open', 'scheme': 'ibkonebank://', 'store': 'com.ibk.android.ionebank', 'short': 'IBK', 'color': '005EB8', 'site': 'https://www.ibk.co.kr/'},
+    {'name': 'SC제일은행', 'mode': 'open', 'scheme': 'scbank://', 'store': 'com.scbank.smart', 'short': 'SC', 'color': '00694E', 'site': 'https://www.standardchartered.co.kr/'},
+    {'name': '한국씨티은행', 'mode': 'open', 'scheme': 'citibank://', 'store': 'com.citibank.mobile.kr', 'short': '씨티', 'color': '0F4FA8', 'site': 'https://www.citibank.co.kr/'},
+    {'name': '부산은행', 'mode': 'open', 'scheme': 'busanbank://', 'store': 'kr.co.busanbank.mobile', 'short': '부산', 'color': '0059A5', 'site': 'https://www.busanbank.co.kr/'},
+    {'name': '경남은행', 'mode': 'open', 'scheme': 'knbank://', 'store': 'kr.co.knbank.smart', 'short': '경남', 'color': 'C8102E', 'site': 'https://www.knbank.co.kr/'},
+    {'name': '대구은행', 'mode': 'open', 'scheme': 'dgbbank://', 'store': 'com.dgb.imbank', 'short': '대구', 'color': '0B4DA2', 'site': 'https://www.imbank.com/'},
+    {'name': '광주은행', 'mode': 'open', 'scheme': 'kjbank://', 'store': 'com.kjbank.smart', 'short': '광주', 'color': 'F0A500', 'site': 'https://www.kjbank.com/'},
+    {'name': '전북은행', 'mode': 'open', 'scheme': 'jbbank://', 'store': 'com.jbbank.smart', 'short': '전북', 'color': '005BAC', 'site': 'https://www.jbbank.co.kr/'},
+    {'name': '제주은행', 'mode': 'open', 'scheme': 'jejubank://', 'store': 'com.jejubank.smart', 'short': '제주', 'color': 'E87722', 'site': 'https://www.jejubank.com/'},
+    {'name': '수협은행', 'mode': 'open', 'scheme': 'suhyupbank://', 'store': 'com.suhyup.heydan', 'short': '수협', 'color': '0067A3', 'site': 'https://www.suhyup-bank.com/'},
+    {'name': '우체국', 'mode': 'open', 'scheme': 'epostbank://', 'store': 'com.epost.psf.smart', 'short': '우체국', 'color': 'E8442E', 'site': 'https://www.epostbank.go.kr/'},
+    {'name': '새마을금고', 'mode': 'open', 'scheme': 'mgbank://', 'store': 'com.kfcc.mgbank', 'short': '새마을', 'color': '00703C', 'site': 'https://www.kfcc.co.kr/'},
+    {'name': '신협', 'mode': 'open', 'scheme': 'cuapp://', 'store': 'com.cu.smartbank', 'short': '신협', 'color': '0083C6', 'site': 'https://www.cu.co.kr/'},
   ];
 
   /// 계좌번호만(숫자) 클립보드에 복사 — 은행 앱 송금화면에 붙여넣기용.
@@ -223,13 +224,32 @@ class _TransferSheetState extends State<_TransferSheet> {
 
   /// 금융사 아이콘 탭 동작.
   ///
-  /// 토스 → 계좌·금액 자동 입력 딥링크.
-  /// 그 외 → 계좌번호 복사 후 앱 실행. 스킴이 없으면 앱을 열 수는 없으니
-  /// 복사만 하고 안내(스토어로 튕기지 않는다).
+  /// **[PC/데스크톱 웹]** 모바일 앱 스킴(`wooribank://`)은 PC 브라우저에서 열 수
+  /// 없으므로, 각 은행의 **인터넷뱅킹 사이트**를 새 탭으로 연다. (계좌번호도 복사)
+  /// **[모바일 웹/앱]** 토스는 계좌·금액 자동 입력 딥링크, 그 외는 계좌번호 복사
+  /// 후 앱 실행(스킴).
   Future<void> _onBankTap(Map<String, String> b) async {
     final name = b['name']!;
     final mode = b['mode'] ?? 'open';
     final recipientBank = '${_acct['bank'] ?? _bankName}';
+    final site = b['site'] ?? '';
+    final isPcWeb = isWebRuntime && !isMobileWeb;
+
+    // ---- PC(데스크톱) 웹: 은행 인터넷뱅킹 사이트로 ----
+    if (isPcWeb) {
+      await _copyAccountOnly(name);
+      if (site.isNotEmpty) {
+        final ok = openExternalUrl(site);
+        if (!ok) {
+          _toast('브라우저가 새 탭을 막았어요 — $name 사이트를 직접 열어주세요: $site');
+        } else {
+          _toast('$name 인터넷뱅킹 새 탭 · 계좌번호 복사됨');
+        }
+      } else {
+        _toast('계좌번호 복사됨 — $name 인터넷뱅킹에 붙여넣기 하세요');
+      }
+      return;
+    }
 
     if (mode == 'toss') {
       final scheme = b['scheme']!;
@@ -259,8 +279,7 @@ class _TransferSheetState extends State<_TransferSheet> {
   /// (스토어 폴백은 하지 않는다 — 없으면 조용히 false)
   Future<bool> _openSchemes(List<String> urls) async {
     if (isWebRuntime) {
-      // 웹: PC면 현재 탭이 망가지지 않도록 격리 탭(iframe/새창)으로,
-      //     모바일 브라우저면 location.href 로 앱을 연다.
+      // 웹: PC는 위 _onBankTap 에서 사이트로 처리되므로 여기는 모바일 웹 경로.
       try {
         if (isMobileWeb) {
           openUrlInTab(urls.first);
@@ -324,13 +343,20 @@ class _TransferSheetState extends State<_TransferSheet> {
                   // 금융사별 동작이 다른 송금 아이콘 목록
                   _payIcons(),
                   const SizedBox(height: 10),
-                  const Text(
-                    '토스: 계좌·금액이 자동 입력된 송금화면이 열려요.\n'
-                    '그 외 은행: 계좌번호가 복사되고 앱이 열려요 → 앱에서 붙여넣기.\n'
-                    'PC라면 아래 QR을 폰으로 스캔하세요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.45),
-                  ),
+                  if (isWebRuntime && !isMobileWeb)
+                    const Text(
+                      'PC(데스크톱): 은행 아이콘을 누르면 계좌번호가 복사되고 '
+                      '해당 은행 인터넷뱅킹 사이트가 새 탭으로 열려요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.45),
+                    )
+                  else
+                    const Text(
+                      '토스: 계좌·금액이 자동 입력된 송금화면이 열려요.\n'
+                      '그 외 은행: 계좌번호가 복사되고 앱이 열려요 → 앱에서 붙여넣기.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.45),
+                    ),
                   const SizedBox(height: 16),
                   _qrCard(),
                   const SizedBox(height: 14),
@@ -841,7 +867,9 @@ class _TransferSheetState extends State<_TransferSheet> {
             '① 토스로 보내기 — 계좌·금액이 자동 입력된 토스 송금화면이 열립니다.\n'
             '② 다른 은행 — 아이콘을 누르면 계좌번호가 복사되고 앱이 열립니다. '
             '앱의 송금화면에서 계좌번호 칸을 길게 눌러 「붙여넣기」.\n'
-            '③ 어느 앱이든 — 「송금 정보 복사」 후 은행 앱에 붙여넣어도 됩니다.',
+            '③ PC(데스크톱) — 은행 아이콘을 누르면 계좌번호가 복사되고 그 은행 '
+            '인터넷뱅킹 사이트가 새 탭으로 열립니다.\n'
+            '④ 어느 앱이든 — 「송금 정보 복사」 후 은행 앱에 붙여넣어도 됩니다.',
             style: TextStyle(
               fontSize: 11.5,
               color: AppColors.textDark,

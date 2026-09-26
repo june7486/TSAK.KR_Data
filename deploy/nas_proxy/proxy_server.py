@@ -1097,6 +1097,119 @@ def _ev_load_stats():
     }
 
 
+def _ev_media_counts(year, title):
+    """행사 '사진+동영상' 폴더의 이미지/동영상 개수(재귀)."""
+    d = _ev_sub_dir(year, title, "media")
+    if not d or not NAS.exists(d):
+        return {"photo": 0, "video": 0}
+    photo = video = 0
+    for it in _ev_collect_under(d):
+        k = _kind_of(str(it["rel"]).rsplit("/", 1)[-1])
+        if k == "image":
+            photo += 1
+        elif k == "video":
+            video += 1
+    return {"photo": photo, "video": video}
+
+
+def _ev_known_names():
+    """행사관리(events.json)에 정의된 행사명 집합."""
+    doc = _ev_doc()
+    return {str(e.get("title", "")) for e in doc.get("events", {}).values()}
+
+
+def _ev_all_member_event_names():
+    """모든 회원 프로필(eventAttend)에 등록된 행사명 집합."""
+    names = set()
+    for m in _ev_members():
+        ev = m.get("eventAttend")
+        if isinstance(ev, dict):
+            for k in ev.keys():
+                if str(k).strip():
+                    names.add(str(k))
+    return names
+
+
+def _ev_member_event_counts():
+    """행사명별 (참가=true) 인원 수."""
+    counts = {}
+    for m in _ev_members():
+        ev = m.get("eventAttend")
+        if isinstance(ev, dict):
+            for k, v in ev.items():
+                if v:
+                    counts[str(k)] = counts.get(str(k), 0) + 1
+    return counts
+
+
+def _ev_union_events():
+    """행사관리 목록 + 개인 프로필(eventAttend) 행사명의 합집합.
+
+    - events.json 에 정의된 행사: defined=True
+    - 프로필에만 있는 행사(관리목록누락): defined=False (id=null, year='')
+    각 항목에 참가인원/장소/사진·동영상 개수/생성자 포함.
+    """
+    doc = _ev_doc()
+    defined = doc.get("events", {})
+    mot = _ev_member_event_counts()
+    by_title = {str(e.get("title", "")): eid for eid, e in defined.items()}
+    out = []
+    for eid, e in defined.items():
+        info = dict(e)
+        info["id"] = eid
+        info.setdefault("attendees", [])
+        info["createdBy"] = str(e.get("createdBy", "") or "")
+        info["defined"] = True
+        info["media"] = _ev_media_counts(e.get("year", ""), e.get("title", ""))
+        info["memberCount"] = mot.get(str(e.get("title", "")), 0)
+        out.append(info)
+    for name in sorted(_ev_all_member_event_names()):
+        if name in by_title:
+            continue
+        out.append({
+            "id": None, "year": "", "title": name, "period": "", "place": "",
+            "desc": "", "created": "", "createdBy": "", "attendees": [],
+            "defined": False, "media": {"photo": 0, "video": 0},
+            "memberCount": mot.get(name, 0),
+        })
+    out.sort(
+        key=lambda x: (str(x.get("year", "") or "0000"), str(x.get("title", ""))),
+        reverse=True,
+    )
+    return out
+
+
+def _ev_remove_member_events(names):
+    """여러 행사명을 모든 회원의 eventAttend 에서 제거 → 개인 프로필 반영."""
+    names = {str(n) for n in names if str(n).strip()}
+    if not names:
+        return 0
+    members = _ev_members()
+    changed = 0
+    for i, m in enumerate(members):
+        ev = m.get("eventAttend")
+        if not isinstance(ev, dict):
+            continue
+        hit = [k for k in list(ev.keys()) if k in names]
+        if hit:
+            for k in hit:
+                ev.pop(k, None)
+            m["eventAttend"] = ev
+            members[i] = m
+            changed += 1
+    if changed:
+        if NAS.exists(DB_FILE):
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            try:
+                NAS.write(f"{BASE}/backups/members_{stamp}.json",
+                          NAS.read(DB_FILE).encode("utf-8"))
+            except Exception:
+                pass
+        _save_json(DB_FILE, members)
+        _touch_meta({"count": len(members), "updatedBy": "event-delete"})
+    return changed
+
+
 def _ev_list(tree=False):
     """행사 목록. tree=True면 참석자/폴더 정보 요약 포함."""
     doc = _ev_doc()
@@ -2669,7 +2782,14 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/event/list2":
                 if not self._require():
                     return
-                return self._json({"ok": True, "events": _ev_list()})
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                want_media = q.get("media", ["1"])[0] == "1"
+                try:
+                    events = _ev_union_events() if want_media else _ev_list()
+                except Exception as e:
+                    print("list2 fail", e)
+                    events = _ev_list()
+                return self._json({"ok": True, "events": events})
             if p == "/api/event/get":
                 if not self._require():
                     return
@@ -3376,8 +3496,11 @@ class Handler(BaseHTTPRequestHandler):
                 title = _ev_safe(d.get("title", ""))
                 if not title:
                     return self._json({"ok": False, "error": "title"}, 400)
-                if not year:
-                    year = str(datetime.datetime.now().year)
+                # 연도는 필수 — 미지정/비정상 값은 거부 (요청: 모든 행사는 연도 필수)
+                if not year or not re.match(r"^\d{4}$", year):
+                    return self._json(
+                        {"ok": False, "error": "year required",
+                         "message": "행사 생성 시 연도(4자리)는 필수입니다."}, 400)
                 with LOCK:
                     doc = _ev_doc()
                     eid = _ev_id(year, title)
@@ -3466,7 +3589,34 @@ class Handler(BaseHTTPRequestHandler):
                         NAS.delete(_ev_thumb_dir(year, title))
                     except Exception:
                         pass
+                # 개인 프로필(eventAttend)에서도 행사명 제거
+                try:
+                    _ev_remove_member_events([title])
+                except Exception as e:
+                    print("member event remove fail", e)
                 return self._json({"ok": True})
+            if p == "/api/event/name/delete":
+                # 행사명만 제거 — events.json(있으면) + 모든 개인 프로필(eventAttend)
+                d = json.loads(self._body() or b"{}")
+                names = d.get("names")
+                if names is None:
+                    names = [d.get("title", "")]
+                names = [_ev_safe(n) for n in names if str(n).strip()]
+                removed = 0
+                with LOCK:
+                    doc = _ev_doc()
+                    events = doc.get("events", {})
+                    for name in names:
+                        for eid in [k for k, e in events.items()
+                                    if str(e.get("title", "")) == name]:
+                            events.pop(eid, None)
+                            removed += 1
+                    _ev_save(doc)
+                try:
+                    _ev_remove_member_events(names)
+                except Exception as e:
+                    print("member event name remove fail", e)
+                return self._json({"ok": True, "removed": removed, "names": names})
             if p == "/api/event/attendee/set":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))

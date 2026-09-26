@@ -68,16 +68,22 @@ class _EventYearScreenState extends State<EventYearScreen> {
           .replaceAll(RegExp(r'[^0-9]'), '');
       if (id == who) return true;
     }
+    // 개인 프로필(eventAttend)에 본인 행사명이 있으면 참가 이력으로 간주
     return false;
   }
 
+  /// 연도 집합 — 연도가 비어 있는(관리목록누락) 행사는 '' 키로 두고 '미분류'로 표시.
   List<String> _yearsOf(List<Map<String, dynamic>> ev) {
     final ys = <String>{};
     for (final e in ev) {
       ys.add('${e['year'] ?? ''}');
     }
-    ys.remove('');
-    final list = ys.toList()..sort((a, b) => b.compareTo(a));
+    final list = ys.toList()
+      ..sort((a, b) {
+        if (a == '') return 1;
+        if (b == '') return -1;
+        return b.compareTo(a);
+      });
     return list;
   }
 
@@ -169,7 +175,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
   Widget _yearTabs(List<String> years) {
     final all = <String>{...years};
     if (all.isEmpty) all.add(_year);
-    final list = all.toList()..sort((a, b) => b.compareTo(a));
+    final list = all.toList()
+      ..sort((a, b) {
+        if (a == '') return 1;
+        if (b == '') return -1;
+        return b.compareTo(a);
+      });
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -181,11 +192,17 @@ class _EventYearScreenState extends State<EventYearScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
-                  label: Text('$y년'),
+                  label: Text(y.isEmpty ? '미분류' : '$y년'),
                   selected: _year == y,
-                  selectedColor: AppColors.purple,
+                  selectedColor: y.isEmpty
+                      ? AppColors.tigerGold
+                      : AppColors.purple,
                   labelStyle: TextStyle(
-                    color: _year == y ? Colors.white : AppColors.purple,
+                    color: _year == y
+                        ? Colors.white
+                        : (y.isEmpty
+                              ? AppColors.lifetimeGold
+                              : AppColors.purple),
                     fontWeight: FontWeight.w700,
                   ),
                   onSelected: (_) => setState(() => _year = y),
@@ -200,15 +217,30 @@ class _EventYearScreenState extends State<EventYearScreen> {
   Widget _eventCard(AppState state, Map<String, dynamic> e) {
     final year = '${e['year']}';
     final title = '${e['title']}';
-    final count = (e['attendees'] as List?)?.length ?? 0;
+    final defined = e['defined'] != false;
+    final attendeeLen = (e['attendees'] as List?)?.length ?? 0;
+    final memberCnt = (e['memberCount'] as num?)?.toInt() ?? 0;
+    final count = attendeeLen > 0 ? attendeeLen : memberCnt;
     final period = '${e['period'] ?? ''}';
     final place = '${e['place'] ?? ''}';
+    final createdBy = '${e['createdBy'] ?? ''}';
+    final media = (e['media'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final photos = (media['photo'] as num?)?.toInt() ?? 0;
+    final videos = (media['video'] as num?)?.toInt() ?? 0;
     final mine = _isMyEvent(state, e);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: () async {
+          if (!defined) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('행사관리 목록에 없는 행사입니다 — 삭제하거나 새로 만들어 주세요'),
+              ),
+            );
+            return;
+          }
           await Navigator.push(
             context,
             MaterialPageRoute(
@@ -234,13 +266,15 @@ class _EventYearScreenState extends State<EventYearScreen> {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.purple.withValues(alpha: 0.1),
+                      color: defined
+                          ? AppColors.purple.withValues(alpha: 0.1)
+                          : AppColors.textGray.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      year,
-                      style: const TextStyle(
-                        color: AppColors.purple,
+                      defined && year.isNotEmpty ? year : '연도미정',
+                      style: TextStyle(
+                        color: defined ? AppColors.purple : AppColors.textGray,
                         fontWeight: FontWeight.w800,
                         fontSize: 12,
                       ),
@@ -256,7 +290,29 @@ class _EventYearScreenState extends State<EventYearScreen> {
                       ),
                     ),
                   ),
-                  if (!_canManage(state) && mine)
+                  if (!defined)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.tigerGold.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.tigerGold.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: const Text(
+                        '(관리목록누락)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.lifetimeGold,
+                        ),
+                      ),
+                    ),
+                  if (defined && !_canManage(state) && mine)
                     const Icon(
                       Icons.photo_library,
                       size: 18,
@@ -278,23 +334,34 @@ class _EventYearScreenState extends State<EventYearScreen> {
                 ),
               ],
               const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _metaChip(Icons.people_alt_outlined, '참가인원 $count명'),
+                  _metaChip(Icons.photo_camera_outlined, '사진 $photos장'),
+                  _metaChip(Icons.videocam_outlined, '동영상 $videos개'),
+                  if (place.isNotEmpty)
+                    _metaChip(Icons.place_outlined, place),
+                ],
+              ),
+              if (createdBy.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '생성자: $createdBy',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textGray,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 6),
               Row(
                 children: [
-                  const Icon(
-                    Icons.people_alt_outlined,
-                    size: 15,
-                    color: AppColors.textGray,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '참가자 $count명',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textGray,
-                    ),
-                  ),
                   const Spacer(),
-                  if (_canManage(state))
+                  if (_canManage(state) && defined)
                     IconButton(
                       tooltip: '이름/연도 변경',
                       icon: const Icon(Icons.edit_outlined, size: 18),
@@ -302,7 +369,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
                     ),
                   if (_canManage(state))
                     IconButton(
-                      tooltip: '삭제',
+                      tooltip: defined ? '삭제 (행사 + 개인프로필)' : '삭제 (개인프로필 행사명)',
                       icon: const Icon(
                         Icons.delete_outline,
                         size: 18,
@@ -319,65 +386,141 @@ class _EventYearScreenState extends State<EventYearScreen> {
     );
   }
 
+  Widget _metaChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: AppColors.textGray),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+        ),
+      ],
+    );
+  }
+
   Future<void> _createEvent() async {
-    final yearCtrl = TextEditingController(text: _year.isEmpty
-        ? '${DateTime.now().year}'
-        : _year);
+    final initialYear = _year.isEmpty ? '${DateTime.now().year}' : _year;
+    final yearCtrl = TextEditingController(text: initialYear);
     final titleCtrl = TextEditingController();
     final periodCtrl = TextEditingController();
     final placeCtrl = TextEditingController();
     final descCtrl = TextEditingController();
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('새 행사 만들기'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: yearCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '연도'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final yearOk = RegExp(r'^\d{4}$').hasMatch(yearCtrl.text.trim());
+          return AlertDialog(
+            title: const Text('새 행사 만들기'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: yearCtrl,
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          onChanged: (_) => setSt(() {}),
+                          decoration: InputDecoration(
+                            labelText: '연도 * (필수)',
+                            counterText: '',
+                            errorText: yearCtrl.text.trim().isEmpty ||
+                                    yearOk
+                                ? null
+                                : '4자리 연도를 입력하세요',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () async {
+                          final now = DateTime.now().year;
+                          final picked = await showDialog<int>(
+                            context: ctx,
+                            builder: (_) => AlertDialog(
+                              title: const Text('연도 선택'),
+                              content: SizedBox(
+                                width: 300,
+                                height: 300,
+                                child: YearPicker(
+                                  firstDate: DateTime(1980),
+                                  lastDate: DateTime(now + 5),
+                                  selectedDate: DateTime(
+                                    int.tryParse(yearCtrl.text.trim()) ?? now,
+                                  ),
+                                  onChanged: (d) => Navigator.pop(ctx, d.year),
+                                ),
+                              ),
+                            ),
+                          );
+                          if (picked != null) {
+                            yearCtrl.text = '$picked';
+                            setSt(() {});
+                          }
+                        },
+                        child: const Text('선택'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(labelText: '행사명 *'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: periodCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '행사기간 (예: 2026.03.14~15)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: placeCtrl,
+                    decoration: const InputDecoration(labelText: '장소'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 2,
+                    decoration: const InputDecoration(labelText: '행사 소개/개요'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(labelText: '행사명'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소'),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: periodCtrl,
-                decoration: const InputDecoration(labelText: '행사기간 (예: 2026.03.14~15)'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: placeCtrl,
-                decoration: const InputDecoration(labelText: '장소'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: descCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(labelText: '행사 소개/개요'),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+                onPressed: (yearOk && titleCtrl.text.trim().isNotEmpty)
+                    ? () => Navigator.pop(ctx, true)
+                    : null,
+                child: const Text('생성'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('생성'),
-          ),
-        ],
+          );
+        },
       ),
     );
     if (ok != true) return;
+    // 이중 확인: 연도 필수 (요청 K#4)
+    if (!RegExp(r'^\d{4}$').hasMatch(yearCtrl.text.trim())) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('연도를 선택해야 행사를 만들 수 있습니다')),
+        );
+      }
+      return;
+    }
     if (titleCtrl.text.trim().isEmpty) return;
     final nas = context.read<NasApi>();
     final state = context.read<AppState>();
@@ -393,7 +536,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
         period: periodCtrl.text.trim(),
         place: placeCtrl.text.trim(),
         desc: descCtrl.text.trim(),
-        by: state.who.isNotEmpty ? state.who : 'admin',
+        by: state.who.isNotEmpty ? state.who : (state.isMaster ? '마스터' : '관리자'),
       );
     } catch (e) {
       if (mounted) {
@@ -467,11 +610,19 @@ class _EventYearScreenState extends State<EventYearScreen> {
   }
 
   Future<void> _deleteEvent(Map<String, dynamic> e) async {
+    final defined = e['defined'] != false;
+    final title = '${e['title']}';
+    final msg = defined
+        ? '“$title” 행사와 모든 파일을 삭제할까요?\n'
+          '개인 프로필(행사 참가 여부)에 등록된 같은 행사명도 함께 삭제됩니다.\n'
+          '이 작업은 되돌릴 수 없습니다.'
+        : '“$title” 은(는) 행사관리 목록에 없는 행사입니다.\n'
+          '개인 프로필(행사 참가 여부)에서 이 행사명을 삭제할까요?';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('행사 삭제'),
-        content: Text('“${e['title']}” 행사와 모든 파일을 삭제할까요?\n이 작업은 되돌릴 수 없습니다.'),
+        title: Text(defined ? '행사 삭제' : '행사명 삭제 (관리목록누락)'),
+        content: Text(msg),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -487,7 +638,24 @@ class _EventYearScreenState extends State<EventYearScreen> {
     );
     if (ok != true) return;
     final nas = context.read<NasApi>();
-    await nas.eventDelete('${e['year']}', '${e['title']}');
+    try {
+      if (defined) {
+        await nas.eventDelete('${e['year']}', title);
+      } else {
+        await nas.eventNameDelete([title]);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('“$title” 삭제했습니다')),
+        );
+      }
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('삭제 실패: $err')),
+        );
+      }
+    }
     await _load();
   }
 }
