@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_state.dart';
 import '../services/build_info.dart';
@@ -319,7 +320,7 @@ class _LockScreenState extends State<LockScreen> {
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    '한국 범스카우트중앙회 통합 앱',
+                    '한국 범스카우트중앙회',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
@@ -479,8 +480,31 @@ class _LockScreenState extends State<LockScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '한국 범스카우트중앙회 통합 앱 $versionShortLabel',
+                    '한국 범스카우트중앙회 $versionShortLabel',
                     style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+                  ),
+                  const SizedBox(height: 12),
+                  // 바로가기: 홈페이지 / 네이버 카페 (클릭 시 새창 열기)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _shortcutBtn(
+                          icon: Icons.public,
+                          label: 'Homepage',
+                          url: 'https://www.tigerscout.kr',
+                          color: AppColors.taegeukBlue,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _shortcutBtn(
+                          icon: Icons.forum_outlined,
+                          label: 'Naver Cafe',
+                          url: 'https://cafe.naver.com/tigerscoutkr',
+                          color: AppColors.scoutGreen,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   // 업데이트 반영: 캐시 정리 / 버전 확인 (작게)
@@ -534,6 +558,53 @@ class _LockScreenState extends State<LockScreen> {
         ),
       ),
     );
+  }
+
+  /// 하단 바로가기 버튼 — 클릭 시 새창으로 외부 링크를 연다.
+  Widget _shortcutBtn({
+    required IconData icon,
+    required String label,
+    required String url,
+    required Color color,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: () => _openExternal(url),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.5)),
+        backgroundColor: color.withValues(alpha: 0.28),
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      icon: Icon(icon, size: 16),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+
+  /// 외부 링크를 새창(웹) / 기본 브라우저(네이티브)로 연다.
+  Future<void> _openExternal(String url) async {
+    try {
+      if (isWebRuntime) {
+        openUrlInNewTab(url);
+        return;
+      }
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('링크를 열 수 없습니다: $url')),
+          );
+        }
+      }
+    }
   }
 
   Widget _tierTabs() {

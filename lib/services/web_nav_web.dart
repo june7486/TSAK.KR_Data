@@ -74,6 +74,13 @@ extension type _SessionStorage(JSObject _) implements JSObject {
   external void setItem(JSString key, JSString value);
 }
 
+@JS('window')
+external _Window get _window;
+
+extension type _Window(JSObject _) implements JSObject {
+  external void open(String url, String target);
+}
+
 /// 자동 재로드를 세션당 1회로 제한한다. (허용되면 true)
 ///
 /// 구버전 감지 → 캐시삭제 → 재로드가 반복(루프)되지 않도록 막는다.
@@ -108,6 +115,17 @@ void openUrlInTab(String url) {
   try {
     _location.href = url;
   } catch (_) {}
+}
+
+/// 브라우저 새 탭/새 창으로 URL을 연다. (외부 바로가기용)
+void openUrlInNewTab(String url) {
+  try {
+    _window.open(url, '_blank');
+  } catch (_) {
+    try {
+      _location.href = url;
+    } catch (_) {}
+  }
 }
 
 /// 브라우저에 캐시된 앱 자산(Cache Storage·서비스워커)을 정리한다.
