@@ -7,6 +7,7 @@ import 'app_config.dart';
 import 'finance_service.dart';
 import 'member_repository.dart';
 import 'nas_api.dart';
+import 'web_nav.dart';
 
 /// 전역 앱 상태 (Provider)
 class AppState extends ChangeNotifier {
@@ -340,6 +341,56 @@ class AppState extends ChangeNotifier {
   }
 
   String get appAccessUrl => '${_config['appAccessUrl'] ?? ''}';
+  /// QR에 담을 **절대 접속 URL의 origin** 을 구한다.
+  ///
+  /// QR은 카메라/스캐너로 열리므로 반드시 http(s) 절대 주소여야 한다.
+  /// 규칙(우선순위):
+  ///   1) 마스터가 설정한 공개 주소(appAccessUrl) — 서버 저장
+  ///   2) 웹에서 실행 중이면 현재 origin (배포 주소)
+  ///   3) 빌드 시 지정한 공개 주소(--dart-define=APP_BASE_URL)
+  /// ❌ NAS DSM 주소(:5001, 39.123.241.4)는 앱 주소가 아니므로 **절대 사용하지 않는다.**
+  ///    (QR에 넣으면 스캔 시 DSM 로그인 페이지가 열려 앱이 뜨지 않음)
+  String get qrBaseUrl {
+    String norm(String s) => s.trim().replaceAll(RegExp(r'/+$'), '');
+
+    // 1) 서버 설정(마스터 지정 공개 주소)
+    final configured = norm(appAccessUrl);
+    if (configured.startsWith('http') &&
+        !AppConfig.isUnusableQrBase(configured)) {
+      return configured;
+    }
+    // 2) 웹에서 실행 중이면 현재 origin 이 곧 배포 주소.
+    final origin = norm(webOrigin());
+    if (origin.startsWith('http') && !AppConfig.isUnusableQrBase(origin)) {
+      return origin;
+    }
+    // 3) 빌드 시 지정한 공개 주소(--dart-define=APP_BASE_URL)
+    final baked = norm(AppConfig.defaultAppBase);
+    if (baked.startsWith('http') && !AppConfig.isUnusableQrBase(baked)) {
+      return baked;
+    }
+    // 4) 공개 주소를 못 찾음 → 빈값 (QR 생성부에서 경고 표시)
+    return '';
+  }
+
+  /// QR 생성이 가능한 상태인지(공개 접속 주소가 준비됨).
+  bool get hasQrBase => qrBaseUrl.isNotEmpty;
+
+  /// 개인 QR 딥링크 (절대 URL). 없으면 스킴 없는 상대경로.
+  String personalQrLink(String number) {
+    final base = qrBaseUrl;
+    final q = '/?access=personal&no=${Uri.encodeComponent(number)}';
+    return base.isEmpty ? q : '$base$q';
+  }
+
+  /// 행사 QR 딥링크 (절대 URL).
+  String eventQrLink(String year, String title) {
+    final base = qrBaseUrl;
+    final q = '/?access=event'
+        '&year=${Uri.encodeComponent(year)}'
+        '&title=${Uri.encodeComponent(title)}';
+    return base.isEmpty ? q : '$base$q';
+  }
 
   Future<void> loadConfig() async {
     try {

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -15,12 +14,11 @@ class AppAccessScreen extends StatelessWidget {
   const AppAccessScreen({super.key});
 
   String _url(AppState state) {
-    if (state.appAccessUrl.isNotEmpty) return state.appAccessUrl;
-    if (kIsWeb) {
-      // 웹에서 실행 중이면 현재 origin이 곧 배포 주소
-      return Uri.base.origin;
-    }
-    return '(NAS 주소 미설정 — 설정에서 입력)';
+    // QR/딥링크와 동일한 단일 소스(qrBaseUrl)를 사용한다.
+    // (설정된 공개주소 → 웹 origin → 빌드 지정주소, NAS DSM 주소는 제외)
+    final base = state.qrBaseUrl;
+    if (base.isNotEmpty) return base;
+    return '(공개 접속 주소 미설정 — 설정 → “QR 공개 주소”에서 입력)';
   }
 
   @override

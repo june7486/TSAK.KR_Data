@@ -37,6 +37,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _nasStatusCard(state),
           const SizedBox(height: 12),
+          _qrBaseCard(state),
+          const SizedBox(height: 12),
           _adminEmailCard(state),
           const SizedBox(height: 12),
           _backupCard(state),
@@ -143,6 +145,120 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// QR 공개 주소 — QR/딥링크의 기준이 되는 웹 배포 주소 (마스터만 편집).
+  Widget _qrBaseCard(AppState state) {
+    final effective = state.qrBaseUrl;
+    final configured = state.appAccessUrl.trim();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('QR 공개 주소 (QR · 딥링크 기준)', Icons.qr_code_2),
+            const SizedBox(height: 6),
+            const Text(
+              '개인 QR·행사 QR을 스캔하면 열리는 앱 주소입니다.\n'
+              'NAS DSM 주소(:5001)는 절대 넣지 마세요 — 스캔 시 관리자 로그인 페이지가 열립니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            _kv(
+              '설정값',
+              configured.isEmpty ? '(미설정 — 현재 주소 사용)' : configured,
+            ),
+            _kv('현재 QR 기준', effective.isEmpty ? '⚠ 공개 주소 없음' : effective),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _editQrBase(state),
+                    icon: const Icon(Icons.edit, size: 18),
+                    label: const Text('공개 주소 설정'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (configured.isNotEmpty)
+                  IconButton(
+                    tooltip: '설정 해제',
+                    onPressed: () async {
+                      await state.setConfig({'appAccessUrl': ''});
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('QR 공개 주소 설정을 해제했습니다')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.clear, size: 20),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editQrBase(AppState state) async {
+    final ctrl = TextEditingController(text: state.appAccessUrl);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('QR 공개 주소 설정'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '예: https://tsak.example.com\n'
+              '(앱이 실제로 배포된 웹 주소. 끝의 / 는 자동 제거됩니다)',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '공개 주소 (https://...)',
+                hintText: 'https://my-app.example.com',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final v = ctrl.text.trim().replaceAll(RegExp(r'/+$'), '');
+    if (v.isNotEmpty && AppConfig.isUnusableQrBase(v)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('NAS DSM 주소(:5001)는 QR 공개 주소로 쓸 수 없습니다'),
+            backgroundColor: AppColors.taegeukRed,
+          ),
+        );
+      }
+      return;
+    }
+    await state.setConfig({'appAccessUrl': v});
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(v.isEmpty ? '설정을 해제했습니다' : 'QR 공개 주소를 저장했습니다')),
+      );
+    }
   }
 
   Widget _adminEmailCard(AppState state) {

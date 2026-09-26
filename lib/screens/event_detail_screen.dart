@@ -522,12 +522,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   /// (행사 생성/관리는 관리자만 — 이 메뉴도 canManage 에서만 노출)
   void _showEventQr() {
     final state = context.read<AppState>();
-    final nasBase = state.repo.isNasMode ? state.nas.baseUrl : '';
-    final base = state.appAccessUrl.isNotEmpty ? state.appAccessUrl : nasBase;
-    final qrUrl = '$base/?access=event'
-        '&year=${Uri.encodeComponent(widget.year)}'
-        '&title=${Uri.encodeComponent(widget.title)}';
-    final payload = qrUrl;
+    final payload = state.eventQrLink(widget.year, widget.title);
 
     showDialog<void>(
       context: context,
@@ -569,6 +564,43 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              SelectableText(
+                payload,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.purple,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+              if (!state.hasQrBase) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.taegeukRed.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.taegeukRed.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: const Text(
+                    '⚠ 공개 접속 주소가 설정되지 않아 QR이 상대경로입니다.\n'
+                    '스캔해도 앱이 열리지 않습니다.\n'
+                    '설정 → “QR 공개 주소”에서 배포 주소를 입력하세요.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.4,
+                      color: AppColors.taegeukRed,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               const Text(
                 '회원은 로그인 후, 비회원은 가입 후 이 행사 화면으로 바로 이동합니다.',

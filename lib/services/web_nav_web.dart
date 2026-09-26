@@ -17,6 +17,7 @@ external _Caches get _caches;
 external _Navigator get _navigator;
 
 extension type _Location(JSObject _) implements JSObject {
+  external String? get origin;
   external set href(String v);
   external void reload();
 }
@@ -96,6 +97,16 @@ bool guardAutoReloadOnce() {
 }
 
 bool get isWebRuntime => true;
+
+/// 현재 페이지의 origin (예: https://example.com). 실패 시 빈 문자열.
+String webOrigin() {
+  try {
+    final o = _location.origin;
+    return o ?? '';
+  } catch (_) {
+    return '';
+  }
+}
 
 /// 현재 탭에서 URL(커스텀 스킴 포함)로 이동을 시도한다.
 ///

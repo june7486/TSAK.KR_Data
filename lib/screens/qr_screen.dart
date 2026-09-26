@@ -34,34 +34,22 @@ class _QrGenerateView extends StatelessWidget {
 
   final Member member;
 
-  /// QR에 담을 요약 데이터 (JSON) — 인가번호·이름·개인접속 안내 포함
+  /// QR에 담을 값 — **카메라로 스캔하면 앱이 바로 열리는 절대 URL**.
   ///
-  /// 스캔 시 앱/웹 접속 페이지로 바로 이동할 수 있도록 접속 URL 을 함께 담는다.
+  /// 이전에는 여러 정보를 담은 JSON을 넣어 데이터가 커져 인식률이 낮고,
+  /// 상대경로라 스캔해도 열리지 않았다. 이제 짧은 절대 URL 하나만 담는다.
+  /// (인가번호는 URL의 `no` 파라미터에 들어가며, 스캔 시 본인확인 후
+  ///  바로 정보수정 페이지로 연결된다.)
   String _payload(BuildContext context) {
     final state = context.read<AppState>();
-    final nasBase = state.repo.isNasMode ? state.nas.baseUrl : '';
-    // 개인접속(인가자) 접속 페이지 주소 — 스캔하면 바로 로그인 화면으로 진입
-    final accessUrl = state.appAccessUrl.isNotEmpty
-        ? state.appAccessUrl
-        : nasBase;
-    return json.encode({
-      'tsak': 1,
-      'no': member.number,
-      'name': member.name,
-      'league': member.league,
-      'unit': member.unit,
-      'date': member.date,
-      'phone': member.phone,
-      'atas': member.atasNo,
-      'url': '$accessUrl/?access=personal&no=${member.number}',
-    });
+    return state.personalQrLink(member.number);
   }
 
   /// QR 화면에서 해당 인가자 정보수정 페이지로 이동.
   /// 마스터/본인(개인접근)은 바로, 그 외는 로그인 확인 후 이동.
   Future<void> _openEdit(BuildContext context) async {
     final state = context.read<AppState>();
-    final isSelf = state.isPersonal &&
+    final isSelf = (state.isPersonal || state.isMaster) &&
         state.who.replaceAll(RegExp(r'[^0-9]'), '') ==
             member.number.replaceAll(RegExp(r'[^0-9]'), '');
     if (!state.isMaster && !isSelf) {
@@ -182,6 +170,45 @@ class _QrGenerateView extends StatelessWidget {
                           color: AppColors.textGray,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      // 실제로 QR에 인코딩된 주소(검증용). 스캔이 안 되면 이 값이
+                      // http(s)로 시작하는지 확인하면 된다.
+                      SelectableText(
+                        _payload(context),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.purple,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
+                      if (!context.read<AppState>().hasQrBase) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.taegeukRed.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: AppColors.taegeukRed.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: const Text(
+                            '⚠ 공개 접속 주소가 설정되지 않아 QR이 상대경로입니다.\n'
+                            '스캔해도 앱이 열리지 않습니다.\n'
+                            '설정 → “QR 공개 주소”에서 배포 주소를 입력하세요.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              height: 1.4,
+                              color: AppColors.taegeukRed,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -418,10 +445,24 @@ class _QrScanViewState extends State<_QrScanView> {
     _handled = true;
 
     String? number;
+    // 1) 새 형식: 절대/상대 URL (…?access=personal&no=415)
     try {
-      final map = json.decode(code) as Map<String, dynamic>;
-      if (map['tsak'] == 1) number = '${map['no']}';
+      final uri = Uri.parse(code);
+      final acc = uri.queryParameters['access'];
+      if (acc == 'personal') {
+        number = uri.queryParameters['no'];
+      } else if (uri.queryParameters['no'] != null &&
+          uri.queryParameters['tsak'] != null) {
+        number = uri.queryParameters['no'];
+      }
     } catch (_) {}
+    // 2) 구 형식: JSON 페이로드 {tsak:1, no:415, …}
+    if (number == null) {
+      try {
+        final map = json.decode(code) as Map<String, dynamic>;
+        if (map['tsak'] == 1) number = '${map['no']}';
+      } catch (_) {}
+    }
 
     if (number == null) {
       if (mounted) {
@@ -432,10 +473,21 @@ class _QrScanViewState extends State<_QrScanView> {
       }
       return;
     }
+    number = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (number.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('인가번호가 없는 QR입니다')));
+        Future.delayed(const Duration(seconds: 2), () => _handled = false);
+      }
+      return;
+    }
 
     final state = context.read<AppState>();
 
-    // 개인 접근: 본인 QR만 허용
+    // 다른 사람이 개인 로그인 중일 때만 본인 QR 제한.
+    // (로그인 안 됨 / 마스터 / 관리자 세션이면 그대로 진행)
     if (state.isPersonal) {
       final mine = state.who.replaceAll(RegExp(r'[^0-9]'), '');
       final scanned = number.replaceAll(RegExp(r'[^0-9]'), '');
