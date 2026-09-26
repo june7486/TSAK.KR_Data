@@ -1180,6 +1180,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   label: Text('선택 다운로드 (${_mediaSel.length})'),
                 ),
               ),
+              if (_mediaSelect && _mediaSel.isNotEmpty && widget.canManage) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.taegeukRed,
+                    ),
+                    onPressed: _deleteSelectedMedia,
+                    icon: const Icon(Icons.delete_outline),
+                    label: Text('선택 삭제 (${_mediaSel.length})'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1303,6 +1316,63 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       sub: _mediaSub,
       files: tokens,
     ));
+  }
+
+  /// 선택한 사진/동영상 일괄 삭제 (선택 모드)
+  Future<void> _deleteSelectedMedia() async {
+    if (_mediaSel.isEmpty) return;
+    final items = _media
+        .where((m) => _mediaSel.contains('${m['name']}'))
+        .toList();
+    final hasDir = items.any((m) => m['isdir'] == true);
+    final n = _mediaSel.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('선택 삭제'),
+        content: Text(hasDir
+            ? '선택한 $n개 항목(폴더 포함)을 삭제할까요?\n폴더는 안의 내용까지 모두 삭제됩니다.'
+            : '선택한 $n개 항목을 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    var fail = 0;
+    for (final m in items) {
+      final name = '${m['name']}';
+      final isdir = m['isdir'] == true;
+      try {
+        final done = await _nas.eventFileDelete(
+          widget.year,
+          widget.title,
+          'media',
+          name,
+          sub: _mediaSub,
+          isdir: isdir,
+        );
+        if (done != true) fail++;
+      } catch (_) {
+        fail++;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _mediaSel.clear();
+      _mediaSelect = false;
+    });
+    await _load();
+    _snack(fail == 0 ? '선택한 항목을 삭제했습니다' : '$fail개 삭제 실패');
   }
 
   Widget _mediaTile(int i) {
