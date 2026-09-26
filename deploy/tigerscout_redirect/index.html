@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!-- 브라우저 탭 제목: '접속에 시간이...' 대신 TSAK 로 표시 -->
+  <title>TSAK 한국범스카우트중앙회</title>
+  <meta name="apple-mobile-web-app-title" content="TSAK 한국범스카우트중앙회">
+  <meta name="application-name" content="TSAK 한국범스카우트중앙회">
+  <style>
+    html,body{height:100%;margin:0;display:flex;align-items:center;justify-content:center;
+      font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+      background:#5B2C8D;color:#fff;text-align:center}
+    .box{padding:24px}
+    a{color:#FFD24D;font-weight:800}
+    .spin{width:34px;height:34px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;
+      border-radius:50%;animation:s 1s linear infinite;margin:0 auto 14px}
+    @keyframes s{to{transform:rotate(360deg)}}
+  </style>
+  <script>
+    // ───────────────────────────────────────────────────────────────
+    //  TSAK 랜딩 → 앱(웹) 포워딩  ★ 쿼리스트링/해시 보존 필수
+    //
+    //  QR 딥링크 예: https://tsak.kr/?access=personal&no=415
+    //  · frameset(마스킹) 포워딩은 ?access=... 를 전달하지 못해
+    //    "QR 스캔 → 정보수정" 이 동작하지 않는다.
+    //  · 이 페이지는 location.search + location.hash 를 100% 보존해
+    //    앱(샌드박스/운영)으로 넘긴다.
+    //
+    //  ▶ 가비아 포워딩은 반드시 "일반(리다이렉트)" 로, 이 파일을
+    //    웹 호스팅 루트에 두고, 아래 APP_BASE 를 실제 배포 주소로 지정.
+    // ───────────────────────────────────────────────────────────────
+    (function () {
+      var T = 'TSAK 한국범스카우트중앙회';
+      document.title = T;
+      setInterval(function () { if (document.title !== T) document.title = T; }, 300);
+
+      // 실제 앱이 서비스되는 주소 (끝 '/' 없이). 필요 시 수정.
+      var APP_BASE = 'https://5071-i0wgdg3il1ohzxyvietj8-0e616f0a.sandbox.novita.ai';
+
+      // ★ 핵심: 현재 페이지의 쿼리스트링과 해시를 그대로 이어붙인다.
+      var keep = (window.location.search || '') + (window.location.hash || '');
+      var target = APP_BASE + '/' + keep;
+
+      // 이미 앱(같은 주소)이면 루프 방지를 위해 이동하지 않는다.
+      try {
+        if (window.location.href.indexOf(APP_BASE) === 0) return;
+      } catch (e) {}
+
+      try {
+        window.top.location.replace(target);
+      } catch (e) {
+        try { window.location.replace(target); } catch (e2) {}
+      }
+
+      // 자동 이동 실패 시 수동 링크 노출
+      window.addEventListener('DOMContentLoaded', function () {
+        var a = document.getElementById('manual');
+        if (a) a.setAttribute('href', target);
+      });
+    })();
+  </script>
+</head>
+<body>
+  <div class="box">
+    <div class="spin"></div>
+    <p><b>TSAK 한국범스카우트중앙회</b> 앱으로 이동중…</p>
+    <p style="font-size:13px;opacity:.85">
+      자동으로 이동하지 않으면 <a id="manual" href="#">여기를 눌러주세요</a>.
+    </p>
+    <div style="display:flex;gap:10px;margin-top:18px;justify-content:center">
+      <a href="https://www.tigerscout.kr" target="_blank" rel="noopener"
+         style="flex:1;max-width:160px;padding:11px 14px;border-radius:12px;
+                background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);
+                text-decoration:none;font-weight:800;font-size:13px">🗺️ Homepage</a>
+      <a href="https://cafe.naver.com/tigerscoutkr" target="_blank" rel="noopener"
+         style="flex:1;max-width:160px;padding:11px 14px;border-radius:12px;
+                background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);
+                text-decoration:none;font-weight:800;font-size:13px">💬 Naver Cafe</a>
+    </div>
+  </div>
+</body>
+</html>
