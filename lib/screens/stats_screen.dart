@@ -31,6 +31,12 @@ class StatsScreen extends StatelessWidget {
         children: [
           _summary(state),
           const SizedBox(height: 12),
+          _sectionTitle('회원 유형 분포'),
+          _typeDistribution(state),
+          const SizedBox(height: 12),
+          _sectionTitle('멘토 · 보호자 연결 현황'),
+          _linkStatus(state),
+          const SizedBox(height: 12),
           _sectionTitle('연맹별 인가자 분포'),
           ...leagues.entries.map(
             (e) => _barRow(
@@ -203,6 +209,126 @@ class StatsScreen extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 회원 유형 분포 — 인가자 vs 일반회원(비인가자) 비율
+  Widget _typeDistribution(AppState state) {
+    final cred = state.credentialCount;
+    final regular = state.regularCount;
+    final total = state.total;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _progressLine(
+              '범 인가자',
+              cred,
+              total,
+              AppColors.taegeukBlue,
+              Icons.verified_user,
+            ),
+            const SizedBox(height: 12),
+            _progressLine(
+              '일반회원(비인가자)',
+              regular,
+              total,
+              AppColors.textGray,
+              Icons.person_outline,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 멘토·보호자 연결 현황
+  Widget _linkStatus(AppState state) {
+    final total = state.total;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _progressLine(
+              '멘토 지정',
+              state.mentorLinkedCount,
+              total,
+              AppColors.purple,
+              Icons.supervisor_account,
+            ),
+            const SizedBox(height: 12),
+            _progressLine(
+              '보호자 지정',
+              state.parentLinkedCount,
+              total,
+              AppColors.taegeukRed,
+              Icons.family_restroom,
+            ),
+            const SizedBox(height: 12),
+            _progressLine(
+              '평생회원',
+              state.lifetimeCount,
+              total,
+              AppColors.tigerGold,
+              Icons.star,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 라벨 + 막대 + 수치 한 줄
+  Widget _progressLine(
+    String label,
+    int value,
+    int total,
+    Color color,
+    IconData icon,
+  ) {
+    final ratio = total == 0 ? 0.0 : value / total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ),
+            Text(
+              '$value명 (${(ratio * 100).toStringAsFixed(1)}%)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: ratio,
+            minHeight: 10,
+            backgroundColor: color.withValues(alpha: 0.12),
+            valueColor: AlwaysStoppedAnimation(color),
           ),
         ),
       ],

@@ -20,6 +20,7 @@ import 'import_screen.dart';
 import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
+import 'regular_members_screen.dart';
 import 'settings_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
@@ -749,6 +750,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     AppColors.purple,
                     -1,
                   ),
+                  _regularMembersButton(),
                 ],
                 _eventButton(),
               ],
@@ -1047,13 +1049,49 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
           ),
-          child: Row(
-            children: const [
+          child: const Row(
+            children: [
               Icon(Icons.photo_library, size: 14, color: Colors.white),
               SizedBox(width: 4),
               Text(
                 '행사관리',
                 style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 일반회원(비인가자) 관리 진입 버튼 — 관리자·마스터 전용
+  Widget _regularMembersButton() {
+    final state = context.watch<AppState>();
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const RegularMembersScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.person_outline, size: 14, color: Colors.white),
+              const SizedBox(width: 4),
+              Text(
+                '일반회원 ${state.regularCount}',
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
@@ -1160,6 +1198,57 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               children: [
                 _filterChip(
+                  label: '전체 회원',
+                  selected: state.kindFilter.isEmpty,
+                  color: AppColors.purple,
+                  onTap: () => state.setKind(''),
+                ),
+                const SizedBox(width: 6),
+                _filterChip(
+                  label: '인가자',
+                  selected: state.kindFilter == 'credential',
+                  color: AppColors.taegeukBlue,
+                  onTap: () => state.setKind(
+                    state.kindFilter == 'credential' ? '' : 'credential',
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _filterChip(
+                  label: '일반회원',
+                  selected: state.kindFilter == 'regular',
+                  color: AppColors.textGray,
+                  onTap: () => state.setKind(
+                    state.kindFilter == 'regular' ? '' : 'regular',
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _filterChip(
+                  label: '멘토',
+                  selected: state.kindFilter == 'mentor',
+                  color: AppColors.scoutGreen,
+                  onTap: () => state.setKind(
+                    state.kindFilter == 'mentor' ? '' : 'mentor',
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _filterChip(
+                  label: '보호자',
+                  selected: state.kindFilter == 'parent',
+                  color: AppColors.lifetimeGold,
+                  onTap: () => state.setKind(
+                    state.kindFilter == 'parent' ? '' : 'parent',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _filterChip(
                   label: '평생회원',
                   selected: state.onlyLifetime,
                   color: AppColors.lifetimeGold,
@@ -1180,7 +1269,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.query.isNotEmpty ||
                     state.leagueFilter.isNotEmpty ||
                     state.yearFilter.isNotEmpty ||
-                    state.onlyLifetime)
+                    state.onlyLifetime ||
+                    state.kindFilter.isNotEmpty)
                   ActionChip(
                     avatar: const Icon(Icons.refresh, size: 16),
                     label: const Text('초기화'),

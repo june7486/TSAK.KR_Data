@@ -484,11 +484,16 @@ class AppState extends ChangeNotifier {
   String _yearFilter = '';
   bool _onlyLifetime = false;
 
+  /// 회원 구분 필터: '' (전체) | 'credential' (인가자) | 'regular' (일반회원)
+  ///                    | 'mentor' (멘토 지정) | 'parent' (보호자 지정)
+  String _kindFilter = '';
+
   List<Member> get members => _members;
   String get query => _query;
   String get leagueFilter => _leagueFilter;
   String get yearFilter => _yearFilter;
   bool get onlyLifetime => _onlyLifetime;
+  String get kindFilter => _kindFilter;
 
   Map<String, int> get leagues => repo.leaguesWithCount();
   List<String> get feeYears => repo.feeYearOptions();
@@ -519,6 +524,20 @@ class AppState extends ChangeNotifier {
     }
     if (_onlyLifetime) {
       list = list.where((m) => m.lifetimeMember).toList();
+    }
+    switch (_kindFilter) {
+      case 'credential':
+        list = list.where((m) => !m.isRegular).toList();
+        break;
+      case 'regular':
+        list = list.where((m) => m.isRegular).toList();
+        break;
+      case 'mentor':
+        list = list.where((m) => m.mentors.isNotEmpty).toList();
+        break;
+      case 'parent':
+        list = list.where((m) => m.parents.isNotEmpty).toList();
+        break;
     }
     if (_query.trim().isNotEmpty) {
       list = _applyQuery(list, _query.trim());
@@ -656,11 +675,17 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
+  void setKind(String k) {
+    _kindFilter = k;
+    refresh();
+  }
+
   void clearFilters() {
     _query = '';
     _leagueFilter = '';
     _yearFilter = '';
     _onlyLifetime = false;
+    _kindFilter = '';
     refresh();
   }
 
@@ -762,6 +787,13 @@ class AppState extends ChangeNotifier {
       repo.all().where((m) => m.parents.isNotEmpty).length;
   int get regularCount => repo.all().where((m) => m.isRegular).length;
   int get credentialCount => repo.all().where((m) => !m.isRegular).length;
+
+  /// 일반회원(비인가자) 목록 — 관리 화면용 (이름 가나다순)
+  List<Member> get regularMembers {
+    final list = repo.all().where((m) => m.isRegular).toList();
+    list.sort((a, b) => a.name.compareTo(b.name));
+    return list;
+  }
 
   /// 개인정보 동의 현황
   int get privacyAgreedCount =>
