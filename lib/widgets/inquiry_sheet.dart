@@ -2,9 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 
 /// 문의 시트 (t12).
@@ -45,11 +47,19 @@ class _InquirySheetState extends State<_InquirySheet> {
   bool _sending = false;
   final List<PickedFileData> _files = [];
 
+  /// 서버 접수(기록) 완료 여부 — 작성창 열기 전 중복 접수 방지.
+  bool _recorded = false;
+
+  /// 받는 사람(중앙회) 이메일 — config의 adminEmail 사용.
+  late final String _toEmail;
+
   @override
   void initState() {
     super.initState();
+    final app = context.read<AppState>();
+    _toEmail = app.adminEmail;
     // 로그인 정보로 폼 프리필(가능한 경우).
-    final s = context.read<AppState>();
+    final s = app;
     if (s.isSelfAccess && s.who.isNotEmpty) {
       final m = s.repo.byNumber(s.who);
       if (m != null) {
@@ -92,6 +102,169 @@ class _InquirySheetState extends State<_InquirySheet> {
     }
   }
 
+  /// 작성창으로 전달할 본문 (발송자 정보 + 동의 + 내용).
+  String get _mailBody {
+    final b = StringBuffer();
+    b.writeln('[TSAK 문의]');
+    b.writeln('이름(실명): ${_name.text.trim()}');
+    b.writeln('인가번호: ${_number.text.trim().isEmpty ? '(미입력)' : _number.text.trim()}');
+    b.writeln('휴대폰: ${_phone.text.trim().isEmpty ? '(미입력)' : _phone.text.trim()}');
+    b.writeln('개인정보 활용(사진 포함) 동의: 동의함');
+    b.writeln('첨부파일: ${_files.map((f) => f.name).join(', ')}');
+    b.writeln('----------');
+    b.writeln(_message.text.trim());
+    return b.toString();
+  }
+
+  /// 1번 방식: 문의자 **본인 메일(작성창)** 을 열어 보낸다.
+  ///
+  /// - 보낸사람 = 문의자 개인 메일 (로그인은 각 메일 서비스가 처리)
+  /// - 받는사람·제목·본문 자동 입력
+  /// - 파일은 작성창에서 직접 첨부 (웹 지메일/네이버 메일에서 첨부 가능)
+  ///
+  /// 초안 유실 방지를 위해 **서버 접수(기록)** 를 먼저 하고 작성창을 연다.
+  Future<void> _sendViaMyMail() async {
+    final email = _email.text.trim();
+    final emailOk = email.contains('@') && email.split('@').last.contains('.');
+    if (!emailOk) {
+      _toast('보낸사람 이메일을 정확히 입력하세요. (메일이 없으면 발송이 불가합니다)');
+      return;
+    }
+    if (_name.text.trim().isEmpty) {
+      _toast('이름(실명)을 입력하세요.');
+      return;
+    }
+    if (_message.text.trim().isEmpty) {
+      _toast('문의 내용을 입력하세요.');
+      return;
+    }
+    if (!_agreed) {
+      _toast('개인정보 활용(사진 포함) 동의가 필요합니다.');
+      return;
+    }
+
+    // 서버 접수(기록) 먼저 — 작성창 취소해도 문의가 남도록.
+    if (!_recorded) _record();
+    final to = _toEmail;
+    final subject = '[TSAK 문의] ${_subject.text.trim().isEmpty ? '문의' : _subject.text.trim()} — ${_name.text.trim()}';
+
+    // 네이버/지메일 선택 (아이디 있는 서비스로 보낸사람 고정).
+    final provider = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.outgoing_mail, size: 18, color: AppColors.purple),
+                  SizedBox(width: 6),
+                  Text('내 메일로 보내기',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('평소 쓰는 메일을 골라 작성창을 여세요 (보낸사람=본인)',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.mail_outline, color: Color(0xFF34A853)),
+              title: const Text('Gmail (지메일)로 작성'),
+              subtitle: const Text('받는사람·제목·본문 자동 입력 · 지메일 로그인'),
+              onTap: () => Navigator.pop(ctx, 'gmail'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.mail_outline, color: Color(0xFF03C75A)),
+              title: const Text('네이버 메일로 작성'),
+              subtitle: const Text('받는사람·제목·본문 자동 입력 · 네이버 로그인'),
+              onTap: () => Navigator.pop(ctx, 'naver'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.apps, color: AppColors.textGray),
+              title: const Text('기본 메일 앱으로 작성 (mailto)'),
+              subtitle: const Text('PC/모바일 기본 메일 프로그램 사용'),
+              onTap: () => Navigator.pop(ctx, 'mailto'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (provider == null) return;
+
+    final enc = Uri.encodeComponent;
+    final Uri uri;
+    if (provider == 'gmail') {
+      uri = Uri.parse(
+          'https://mail.google.com/mail/?view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(_mailBody)}');
+    } else if (provider == 'naver') {
+      uri = Uri.parse(
+          'https://mail.naver.com/write/popup?to=${enc(to)}&subject=${enc(subject)}&body=${enc(_mailBody)}');
+    } else {
+      uri = Uri(
+        scheme: 'mailto',
+        path: to,
+        query: 'subject=${enc(subject)}&body=${enc(_mailBody)}',
+      );
+    }
+
+    // 웹: 새 창으로 작성창 열기 (모바일 브라우저에서도 동작).
+    if (isWebRuntime) {
+      try {
+        openUrlInNewTab(uri.toString());
+        _toast('메일 작성창이 열렸습니다. 파일은 거기서 직접 첨부해 주세요.');
+      } catch (_) {
+        _toast('메일 앱을 열 수 없습니다.');
+      }
+      return;
+    }
+    // 모바일/데스크톱 앱: 외부 앱으로 열기.
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        _toast('메일 앱으로 이동했습니다. 파일은 거기서 첨부해 주세요.');
+        return;
+      }
+    } catch (_) {}
+    _toast('메일 앱을 열 수 없습니다.');
+  }
+
+  /// 서버(NAS)에 문의를 접수·기록한다 (첨부 포함). 성공 시 true.
+  Future<bool> _record() async {
+    try {
+      final files = <Map<String, String>>[];
+      for (final f in _files) {
+        files.add({'name': f.name, 'data': base64Encode(f.bytes)});
+      }
+      final res = await context.read<AppState>().nas.submitInquiry(
+            name: _name.text.trim(),
+            email: _email.text.trim(),
+            phone: _phone.text.trim(),
+            number: _number.text.trim(),
+            subject: _subject.text.trim(),
+            message: _message.text.trim(),
+            agreed: _agreed,
+            files: files,
+          );
+      if (res['ok'] == true) {
+        _recorded = true;
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _send() async {
     final email = _email.text.trim();
     final emailOk = email.contains('@') && email.split('@').last.contains('.');
@@ -117,29 +290,13 @@ class _InquirySheetState extends State<_InquirySheet> {
 
     setState(() => _sending = true);
     try {
-      final files = <Map<String, String>>[];
-      for (final f in _files) {
-        files.add({'name': f.name, 'data': base64Encode(f.bytes)});
-      }
-      final res = await context.read<AppState>().nas.submitInquiry(
-            name: _name.text.trim(),
-            email: email,
-            phone: _phone.text.trim(),
-            number: _number.text.trim(),
-            subject: _subject.text.trim(),
-            message: _message.text.trim(),
-            agreed: _agreed,
-            files: files,
-          );
+      final ok = await _record();
       if (!mounted) return;
-      if (res['ok'] == true) {
-        final mailed = res['mailed'] == true;
-        _toast(mailed
-            ? '문의가 접수되어 이메일로 발송되었습니다. 감사합니다!'
-            : '문의가 접수되었습니다. (서버 접수 완료)');
+      if (ok) {
+        _toast('문의가 접수되었습니다. (서버 접수 완료)');
         Navigator.pop(context);
       } else {
-        _toast('${res['error'] ?? '문의 전송에 실패했습니다. 잠시 후 다시 시도해 주세요.'}');
+        _toast('문의 전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
       }
     } catch (e) {
       _toast('문의 전송에 실패했습니다: $e');
@@ -215,10 +372,29 @@ class _InquirySheetState extends State<_InquirySheet> {
                   const SizedBox(height: 14),
                   _consentBox(),
                   const SizedBox(height: 16),
+                  // 1) 내 메일(작성창) 열기 — 보낸사람=본인 개인 메일
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.purple,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      backgroundColor: AppColors.scoutGreen,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: _sending ? null : _sendViaMyMail,
+                    icon: const Icon(Icons.outgoing_mail, size: 19),
+                    label: const Text(
+                      '내 메일로 보내기 (작성창 열기)',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w900, fontSize: 15),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // 2) 서버 접수만 (메일 앱 없이 기록)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -229,20 +405,23 @@ class _InquirySheetState extends State<_InquirySheet> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                                strokeWidth: 2, color: AppColors.purple),
                           )
-                        : const Icon(Icons.send_rounded, size: 18),
+                        : const Icon(Icons.save_alt, size: 18),
                     label: Text(
-                      _sending ? '전송 중…' : '문의 보내기',
+                      _sending ? '전송 중…' : '서버에만 접수 (기록)',
                       style: const TextStyle(
-                          fontWeight: FontWeight.w900, fontSize: 15),
+                          fontWeight: FontWeight.w800, fontSize: 14),
                     ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '※ 보낸사람 이메일이 없거나 개인정보 활용에 동의하지 않으면 발송할 수 없습니다.',
+                    '「내 메일로 보내기」는 평소 쓰는 메일(지메일·네이버)로 로그인해 '
+                    '보낸사람=본인으로 발송합니다. 파일은 작성창에서 직접 첨부해 주세요.\n'
+                    '보낸사람 이메일이 없거나 개인정보 활용에 동의하지 않으면 발송할 수 없습니다.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                    style: TextStyle(
+                        fontSize: 11, color: AppColors.textGray, height: 1.4),
                   ),
                 ],
               ),
