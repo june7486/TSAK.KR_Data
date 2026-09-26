@@ -20,18 +20,14 @@ class NasApi {
       );
 
   String _base;
-  String _sid = ''; // 서버 발급 세션토큰 (로그인 시 설정)
+  /// 서버 발급 세션토큰 (로그인 시 설정, 로그아웃/만료 시 비움).
+  String sessionId = '';
 
   String get baseUrl => _base;
 
-  /// 현재 세션토큰 (로그아웃/만료 시 비움)
-  String get sessionId => _sid;
-  // ignore: unnecessary_getters_setters
-  set sessionId(String v) => _sid = v;
-
   /// 모든 요청에 공통으로 붙는 인증 헤더.
   Map<String, String> get _authHeaders =>
-      _sid.isEmpty ? const {} : {'X-TSAK-Session': _sid};
+      sessionId.isEmpty ? const {} : {'X-TSAK-Session': sessionId};
 
   set baseUrl(String v) => _base = v.replaceAll(RegExp(r'/+$'), '');
 
@@ -83,7 +79,7 @@ class NasApi {
         .timeout(const Duration(seconds: 15));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     final sid = '${j['sid'] ?? ''}';
-    if (j['ok'] == true && sid.isNotEmpty) _sid = sid;
+    if (j['ok'] == true && sid.isNotEmpty) sessionId = sid;
     return j;
   }
 
@@ -111,7 +107,7 @@ class NasApi {
       final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
       final sid = '${j['sid'] ?? ''}';
       if (j['ok'] == true && sid.isNotEmpty) {
-        _sid = sid;
+        sessionId = sid;
         return true;
       }
     } catch (_) {}
@@ -120,8 +116,8 @@ class NasApi {
 
   /// 세션 종료(서버측 세션 폐기)
   Future<void> logout() async {
-    final old = _sid;
-    _sid = '';
+    final old = sessionId;
+    sessionId = '';
     if (old.isEmpty) return;
     try {
       await http

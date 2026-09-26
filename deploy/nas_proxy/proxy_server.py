@@ -101,6 +101,98 @@ def _is_master_val(v):
     return False
 
 
+# ============================================================================
+#  서버측 세션 인증 (보안 감사 F01/F02 대응)
+#  - 로그인 성공 시 서버가 1회용 세션토큰을 발급한다.
+#  - 세션토큰 없이는 민감 API(members/finance/backups/files/... )가 응답하지 않는다.
+#  - 웹 앱은 동일 출처라 쿠키(tsak_sid)로 자동 전송, 비웹 클라이언트는
+#    X-TSAK-Session 헤더 또는 ?sid= 쿼리로 전달한다.
+# ============================================================================
+_SESS = {}                      # sid -> {tier, who, exp}
+_SESS_TTL = 60 * 60 * 8         # 8시간
+_SESS_LOCK = threading.Lock()
+# 암호학적 난수 (토큰 추측 방지)
+import secrets as _secrets
+
+# CORS 허용 출처 (보안 감사 F02)
+#  · 동일 출처는 자동 허용. 여기에는 앱 배포 도메인만 명시한다.
+CORS_ALLOW_ORIGINS = [
+    "https://tsak.kr",
+    "https://www.tsak.kr",
+    ".sandbox.novita.ai",   # 앱 배포(샌드박스) 출처
+]
+
+
+def _sess_new(tier, who=""):
+    sid = _secrets.token_urlsafe(32)
+    with _SESS_LOCK:
+        # 오래된 세션 정리
+        now = time.time()
+        for k in [k for k, v in _SESS.items() if v.get("exp", 0) < now]:
+            _SESS.pop(k, None)
+        _SESS[sid] = {"tier": tier, "who": who, "exp": now + _SESS_TTL}
+    return sid
+
+
+def _sess_get(sid):
+    if not sid:
+        return None
+    with _SESS_LOCK:
+        v = _SESS.get(sid)
+    if not v:
+        return None
+    if v.get("exp", 0) < time.time():
+        with _SESS_LOCK:
+            _SESS.pop(sid, None)
+        return None
+    return v
+
+
+def _sess_del(sid):
+    with _SESS_LOCK:
+        _SESS.pop(sid, None)
+
+
+def _scope_members(tier, who, members):
+    """역할별 최소 항목 제공(대량 명단 열람 최소화).
+
+    - 관리자(app)·마스터: 전체
+    - 개인(personal): 본인 1건만 + 민감 필드 제거
+    - 비인가자(guest): 본인 1건만 + 민감 필드 제거
+    """
+    who = re.sub(r"[^0-9]", "", str(who or ""))
+    if tier in ("app", "master"):
+        return members
+    out = []
+    for m in members:
+        num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        lid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
+        ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
+        if who and who in (num, lid, ph):
+            out.append(_redact_member(m))
+    return out
+
+
+def _redact_member(m):
+    """일반 열람 응답에서 제외해야 하는 민감 필드 제거(F01)."""
+    m = dict(m)
+    for k in ("personalPassword", "password", "pw", "memo", "photoPath", "address"):
+        m.pop(k, None)
+    return m
+
+
+def _scope_finance(tier, who, fin):
+    """재무는 관리자·마스터만 전체. 개인·비인가자에게는 빈 구조(F02)."""
+    if tier in ("app", "master"):
+        return fin
+    return {"transactions": [], "restricted": True}
+
+
+def _apply_scope_finance_full(tier, who, fin):
+    """행사 참가비 등 부가 재무도 동일 스코프 적용."""
+    return _scope_finance(tier, who, fin)
+
+
 STATIC_DIR = "/home/user/flutter_app/build/web"
 MIME = {
     ".html": "text/html; charset=utf-8", ".js": "application/javascript",
@@ -2191,16 +2283,99 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # 보안 감사 F02 대응 — 임의 출처 읽기 차단.
+        #  허용목록에 있는 Origin 에만 ACAO 를 반환한다(전역 '*' 제거).
+        #  · 동일 출처(Origin == Host) 는 허용.
+        #  · 그 외는 CORS_ALLOW_ORIGINS 에 명시된 것만 허용.
+        origin = self.headers.get("Origin")
+        self.send_header("Vary", "Origin")
+        if origin:
+            host = self.headers.get("Host", "")
+            ok = False
+            try:
+                o = urllib.parse.urlparse(origin)
+                if o.netloc and host and o.netloc == host:
+                    ok = True
+            except Exception:
+                pass
+            if not ok:
+                for a in CORS_ALLOW_ORIGINS:
+                    if a == "*":
+                        ok = True
+                        break
+                    if origin == a or origin.endswith(a):
+                        ok = True
+                        break
+            if ok:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Credentials", "true")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-TSAK-Session, Authorization")
+        # 방어 헤더 (F05/F06)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline' "
+            "'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' "
+            "data: blob:; font-src 'self' data:; connect-src 'self' "
+            "https:; object-src 'none'; base-uri 'self'")
         self.send_header("Cache-Control", "no-store")
+
+    # ---- 세션 인증 (F01/F02) ----
+    def _sid(self):
+        """요청에서 세션토큰 추출: 쿠키 tsak_sid → 헤더 → 쿼리."""
+        ck = self.headers.get("Cookie") or ""
+        m = re.search(r"(?:^|;\s*)tsak_sid=([^;]+)", ck)
+        if m:
+            return urllib.parse.unquote(m.group(1)).strip()
+        sid = (self.headers.get("X-TSAK-Session") or "").strip()
+        if sid:
+            return sid
+        try:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            return (q.get("sid", [""])[0] or "").strip()
+        except Exception:
+            return ""
+
+    def _sess(self):
+        return _sess_get(self._sid())
+
+    def _auth_ok(self, need=None):
+        """세션 또는 마스터 비번으로 인증 통과 여부."""
+        s = self._sess()
+        if not s:
+            return False
+        if need == "master":
+            return s.get("tier") == "master"
+        if need == "admin":
+            return s.get("tier") in ("app", "master")
+        return True
+
+    def _require(self, need=None):
+        """인증 실패 시 401 JSON 을 보내고 False 반환."""
+        if not self._auth_ok(need):
+            self._json({"ok": False, "error": "unauthorized"}, 401)
+            return False
+        return True
+
+    def _set_sid_cookie(self, sid):
+        self._pending_sid = sid
 
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        if getattr(self, "_pending_sid", None):
+            self.send_header(
+                "Set-Cookie",
+                "tsak_sid=%s; Path=/; Max-Age=%d; SameSite=Strict"
+                % (urllib.parse.quote(self._pending_sid), _SESS_TTL))
+            self._pending_sid = None
         self._cors()
         self.end_headers()
         self.wfile.write(body)
@@ -2326,6 +2501,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._html(_pay_landing_page(
                     urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)))
             if p == "/api/admin/state":
+                if not self._require("admin"):
+                    return
                 cfg = _load_json(CFG_FILE, _default_config())
                 return self._json({
                     "ok": True,
@@ -2334,26 +2511,46 @@ class Handler(BaseHTTPRequestHandler):
                     "serverPaused": bool(cfg.get("serverPaused", False)),
                 })
             if p == "/api/members":
-                return self._json({"ok": True, "members": _load_json(DB_FILE, [])})
+                # F01: 무인증 차단 + 역할별 최소 항목
+                if not self._require():
+                    return
+                s = self._sess() or {}
+                members = _load_json(DB_FILE, [])
+                members = _scope_members(s.get("tier"), s.get("who"), members)
+                return self._json({"ok": True, "members": members})
             if p == "/api/meta":
+                if not self._require():
+                    return
                 return self._json({"ok": True, "meta": _load_json(META_FILE, {})})
             if p == "/api/config":
+                if not self._require():
+                    return
                 cfg = _load_json(CFG_FILE, _default_config())
                 cfg.pop("personalPasswords", None)   # 개인비번은 공개 config에서 제외
                 return self._json({"ok": True, "config": cfg})
-            # ---- 재무 ----
+            # ---- 재무 (F02: 관리자·마스터 전용) ----
             if p == "/api/finance":
+                if not self._require("admin"):
+                    return
                 return self._json({"ok": True, "finance": _load_json(FIN_FILE, _default_finance())})
             if p == "/api/finance/rules":
+                if not self._require("admin"):
+                    return
                 return self._json({"ok": True, "rules": _load_json(MAT_FILE, _default_mat())})
             if p == "/api/finance/history":
+                if not self._require("admin"):
+                    return
                 return self._json({"ok": True, "history": _load_json(HIST_FILE, {"years": {}})})
             if p == "/api/finance/stats":
+                if not self._require("admin"):
+                    return
                 members = _load_json(DB_FILE, [])
                 fin = _load_json(FIN_FILE, _default_finance())
                 return self._json({"ok": True, "stats": _compute_stats(fin, members)})
-            # ---- 기본자료 파일 목록 ----
+            # ---- 기본자료 파일 목록 (관리자·마스터 전용) ----
             if p == "/api/files":
+                if not self._require("admin"):
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 folder = (q.get("folder", [""])[0] or "").strip()
                 sub = SUB_FOLDERS.get(folder, folder)
@@ -2380,6 +2577,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._bytes(NAS.read_bytes(fp), ct)
             # ---- 엑셀 다운로드: 통합 재무 엑셀 ----
             if p == "/api/finance/excel":
+                if not self._require("admin"):
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 kind = q.get("kind", ["finance"])[0]
                 b = _build_excel(kind)
@@ -2393,6 +2592,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b)
                 return
             if p == "/api/backups":
+                # F04: 백업 목록은 관리자·마스터 전용
+                if not self._require("admin"):
+                    return
                 r = NAS.list(BASE + "/backups")
                 files = []
                 if r.get("ok"):
@@ -2411,9 +2613,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "not found"}, 404)
             # ---- 행사관리: 미디어 목록 ----
             if p == "/api/event/list":
+                if not self._require():
+                    return
                 return self._json({"ok": True, "files": _event_list()})
             # ---- 행사관리: 썸네일 ----
             if p == "/api/event/thumb":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 name = _safe_name(q.get("name", [""])[0])
                 fp = _thumb_path(name)
@@ -2433,8 +2639,12 @@ class Handler(BaseHTTPRequestHandler):
                     fp, ct, download_name=name if dl else None)
             # ============ 행사관리 v2 (연도/행사/항목 폴더) ============
             if p == "/api/event/list2":
+                if not self._require():
+                    return
                 return self._json({"ok": True, "events": _ev_list()})
             if p == "/api/event/get":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2447,6 +2657,8 @@ class Handler(BaseHTTPRequestHandler):
                 e["id"] = eid
                 return self._json({"ok": True, "event": e})
             if p == "/api/event/files":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2454,6 +2666,8 @@ class Handler(BaseHTTPRequestHandler):
                 sub = q.get("sub", [""])[0]
                 return self._json({"ok": True, "files": _ev_files(year, title, key, sub)})
             if p == "/api/event/thumb2":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2507,6 +2721,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "no thumb"}, 404)
             if p == "/api/event/f2":
                 # 항목 폴더 내 파일 서빙 (Range 지원, 원본/다운로드)
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2528,6 +2744,8 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 return self._serve_nas_file(fp, ct, download_name=safe if dl else None)
             if p == "/api/event/zip":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2579,6 +2797,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b)
                 return
             if p == "/api/event/roster":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2592,11 +2812,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
             if p == "/api/event/access":
+                if not self._require():
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
                 return self._json({"ok": True, "access": _ev_access_map(_ev_id(year, title))})
             if p == "/api/event/finance":
+                if not self._require("admin"):
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
@@ -2612,6 +2836,14 @@ class Handler(BaseHTTPRequestHandler):
                 p = "/index.html"
             import os as _os
             fp = _os.path.join(STATIC_DIR, p.lstrip("/"))
+            # F03: 정적 배포물의 회원 초기자료(seed)는 무인증 제공 금지.
+            #  운영 회원자료가 정적 JSON 으로 남아 있으면 즉시 차단(404) 한다.
+            _base_l = _os.path.basename(fp).lower()
+            if _base_l in ("members_seed.json", "members.json",
+                           "members_backup.json") or \
+                    _base_l.endswith("_seed.json"):
+                self._json({"ok": False, "error": "not found"}, 404)
+                return
             if _os.path.isfile(fp):
                 # 서버 일시정지: index.html 은 정지 안내 페이지로 대체
                 if _server_paused() and p == "/index.html":
@@ -2721,9 +2953,85 @@ class Handler(BaseHTTPRequestHandler):
                     if ok:
                         m = _ev_member_by_ident(ident) or _ev_member_by_ident(ident)
                         no = re.sub(r"[^0-9]", "", str(m.get("number", ""))) if m else ""
-                    return self._json({"ok": ok, "role": role, "number": no})
+                    sid = _sess_new("guest", no) if ok else ""
+                    if sid:
+                        self._set_sid_cookie(sid)
+                    return self._json(
+                        {"ok": ok, "role": role, "number": no, "sid": sid})
                 ok, role = _verify(tier, value)
-                return self._json({"ok": ok, "role": role})
+                # 세션에 기록할 신원: 개인은 인가번호, 그 외는 role
+                who = ""
+                if ok and tier == "personal":
+                    who = re.sub(r"[^0-9]", "", str(ident))
+                sid = _sess_new(tier, who) if ok else ""
+                if sid:
+                    self._set_sid_cookie(sid)
+                return self._json(
+                    {"ok": ok, "role": role, "silent": (tier == "master"),
+                     "sid": sid})
+            # ---- 세션 종료 ----
+            if p == "/api/logout":
+                _sess_del(self._sid())
+                self._pending_sid = ""
+                return self._json({"ok": True})
+            # ---- QR/세션복원용 세션 발급 ----
+            #  개인 QR(?access=personal&no=..)로 열린 경우처럼 비번 입력 없이
+            #  세션을 발급해야 하는 경로. 안전을 위해 다음을 강제한다:
+            #   · master 등급은 마스터 비번 확인값 없이는 발급 불가(권한 상승 차단)
+            #   · 개인(personal): 인가번호 유효성 확인
+            #   · 비인가자(guest): 전화번호 형식만 확인(본인 1건만 조회됨)
+            if p == "/api/session/grant":
+                d = json.loads(self._body() or b"{}")
+                tier = str(d.get("tier", "")).strip()
+                ident = re.sub(r"[^0-9]", "", str(d.get("id", "")))
+                if tier == "master":
+                    if not _is_master_val(d.get("master")):
+                        return self._json(
+                            {"ok": False, "error": "master required"}, 401)
+                    sid = _sess_new("master", ident)
+                elif tier == "app":
+                    if not _is_master_val(d.get("master")) and \
+                            str(d.get("app")) != APP_PW:
+                        return self._json(
+                            {"ok": False, "error": "app required"}, 401)
+                    sid = _sess_new("app", ident)
+                elif tier == "personal":
+                    if not ident:
+                        return self._json({"ok": False, "error": "id"}, 400)
+                    try:
+                        _mems = _load_json(DB_FILE, [])
+                    except Exception:
+                        _mems = []
+                    _ok = any(
+                        re.sub(r"[^0-9]", "", str(m.get("number", ""))) == ident
+                        for m in _mems
+                    )
+                    if not _ok:
+                        m = _ev_member_by_ident(ident)
+                        _ok = bool(m)
+                    if not _ok:
+                        return self._json({"ok": False, "error": "unknown"}, 404)
+                    sid = _sess_new("personal", ident)
+                elif tier == "guest":
+                    if len(ident) < 4:
+                        return self._json({"ok": False, "error": "id"}, 400)
+                    sid = _sess_new("guest", ident)
+                else:
+                    return self._json({"ok": False, "error": "tier"}, 400)
+                self._set_sid_cookie(sid)
+                return self._json({"ok": True, "sid": sid, "tier": tier})
+            # ============ 전역 인증 게이트 (F01/F02) ============
+            #  로그인/로그아웃을 제외한 모든 변경(쓰기) 요청은 유효한 세션 필요.
+            #  관리자 전용 경로는 추가로 tier 검사.
+            if p.startswith("/api/"):
+                need = None
+                if (p.startswith("/api/admin/") or p.startswith("/api/backup")
+                        or p.startswith("/api/restore")
+                        or p.startswith("/api/finance")
+                        or p.startswith("/api/files")):
+                    need = "admin"
+                if not self._require(need):
+                    return
             # ---- 마스터 앱관리 ----
             if p == "/api/admin/app-password":
                 d = json.loads(self._body() or b"{}")

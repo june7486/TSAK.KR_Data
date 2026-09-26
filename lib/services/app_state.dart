@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async' show unawaited;
 
 import '../models/member.dart';
 import 'ai_query.dart';
@@ -208,6 +209,23 @@ class AppState extends ChangeNotifier {
           AppConfig.isPermanentMaster(personalNo)) {
         finalTier = 'master';
       }
+      // [보안] 서버측 세션이 없으면 반드시 확보한다.
+      //  앱은 일부 자격(예: 개인 415!@@)을 로컬에서 검증하므로 서버 세션이
+      //  비어 있을 수 있다. 세션 없으면 이후 민감 API 가 전부 401 이 된다.
+      if (repo.isNasMode && nas.sessionId.isEmpty) {
+        try {
+          if (finalTier == 'master') {
+            await nas.grantSession('master', id: personalNo,
+                master: AppConfig.masterPassword);
+          } else if (finalTier == 'app') {
+            await nas.grantSession('app'
+                , master: AppConfig.masterPassword);
+          } else if (tier == 'personal' || tier == 'guest') {
+            await nas.grantSession(
+                tier, id: personalNo.isNotEmpty ? personalNo : id);
+          }
+        } catch (_) {}
+      }
       _unlocked = true;
       _tier = finalTier;
       // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
@@ -216,8 +234,31 @@ class AppState extends ChangeNotifier {
       _applyAccessScope();
       _persistSession();
       notifyListeners();
+      // [보안] 로그인 전에는 서버가 데이터를 주지 않는다(401). 로그인 직후
+      //  세션이 붙은 상태에서 서버 데이터를 다시 불러온다.
+      if (repo.isNasMode) {
+        unawaited(_reloadAfterLogin());
+      }
     }
     return ok;
+  }
+
+  /// 로그인 직후 서버에서 (권한 범위의) 데이터를 재조회한다.
+  Future<void> _reloadAfterLogin() async {
+    try {
+      await repo.syncFromNas();
+    } catch (_) {}
+    try {
+      await loadConfig();
+    } catch (_) {}
+    // 재무는 관리자·마스터만 서버 응답을 받는다(그 외 401).
+    if (isApp || isMaster) {
+      try {
+        await finance?.load();
+      } catch (_) {}
+    }
+    refresh();
+    notifyListeners();
   }
 
   Future<void> lock() async {
