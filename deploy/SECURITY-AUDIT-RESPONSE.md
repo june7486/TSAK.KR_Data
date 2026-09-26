@@ -8,7 +8,7 @@
 | 항목 | 감사 지적 | 조치 | 검증 결과 |
 |------|-----------|------|-----------|
 | **F01** 회원 API 무인증 응답 | Cookie/Authorization 없이 회원 JSON 반환 | 서버측 세션토큰 인증 도입. 세션 없으면 `401` | `GET /api/members` → **401** |
-| **F02** 재무 API 무인증 + 다른 출처 읽기 | 무인증 재무 JSON + `ACAO:*` | 재무는 **관리자·마스터 전용**, CORS 허용목록화 | `GET /api/finance` → **401**, evil Origin → ACAO 없음 |
+| **F02** 재무 API 무인증 + 다른 출처 읽기 | 무인증 재무 JSON + `ACAO:*` | 재무는 **관리자·마스터 전용**, CORS 허용목록화(**정적 서빙 경로 포함** `*` 전량 제거) | `GET /api/finance` → **401**, evil Origin → ACAO 없음(정적 index.html 도 동일) |
 | **F03** 정적 배포 회원자료 | `assets/.../members_seed.json` 공개 | 정적 경로 **차단(404)** + 시드 데이터 **가상데이터로 교체** | `GET .../members_seed.json` → **404** |
 | **F04** 백업 목록 무인증 | 백업 이름·크기 반환 | 관리자·마스터 전용 | `GET /api/backups` → **401** |
 | **F05/F06** 방어 헤더 부재 | CSP/HSTS/XCTO 등 없음 | CSP·X-Frame-Options·nosniff·Referrer-Policy 추가 | 응답 헤더 확인 |
@@ -61,3 +61,21 @@
 
 > ⚠️ 이 문서는 조치 내역 기록이며, 보안 인증이나 법률 의견이 아닙니다.
 > 민감 응답 원문·증거는 내부 담당자만 취급하십시오.
+
+## 5. 최종 검증 로그 (2026-09-26, 배포본 기준)
+
+| 시험 | 명령 | 결과 |
+|------|------|------|
+| 무인증 회원/재무/백업/관리/파일 | `GET /api/{members,finance,backups,admin/state,files}` | 전부 **401** |
+| 정적 시드 차단(파일은 존재) | `GET /assets/assets/data/members_seed.json` (250KB 실존) | **404** |
+| 정상 정적자산 대조군 | `/assets/AssetManifest.bin`, `/main.dart.js` | **200** |
+| 정적 CORS 허용목록 | `index.html` + `Origin: https://evil.example.com` | ACAO **없음** |
+| 정적 CORS 동일출처 | `index.html` + `Origin: http://localhost:5071` | ACAO **자기 Host만** |
+| 정적 CORS 허용목록 | `index.html` + `Origin: https://tsak.kr` | ACAO **허용** |
+| 마스터 세션 범위 | `X-TSAK-Session` → `/api/members` | **2,186건** / finance 200 |
+| 개인 세션 범위 | 인가번호 개인 세션 → `/api/members` | **본인 1건** / finance **401** |
+| 권한 상승 차단 | `POST /api/session/grant {tier:master}` (무비번) | **401** |
+| 브라우저 전 구간 | Playwright 로그인→회원조회 | 로드 정상 · **JS 에러 0** · 실패요청 0 |
+
+커밋: `01e5b17`(본조치) → `8e75814`(정적 CORS 와일드카드 제거·F02 완결)
+
