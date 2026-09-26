@@ -2325,6 +2325,34 @@ class Handler(BaseHTTPRequestHandler):
             "https:; object-src 'none'; base-uri 'self'")
         self.send_header("Cache-Control", "no-store")
 
+    def _cors_static(self):
+        # 보안 감사 F02 — 정적 자산 서빙용 경량 CORS.
+        #  캐시 정책(no-store)을 건드리지 않고 ACAO 만 허용목록 기준으로 붙인다.
+        origin = self.headers.get("Origin")
+        self.send_header("Vary", "Origin")
+        if not origin:
+            return
+        ok = False
+        try:
+            o = urllib.parse.urlparse(origin)
+            host = self.headers.get("Host", "")
+            if o.netloc and host and o.netloc == host:
+                ok = True
+        except Exception:
+            pass
+        if not ok:
+            for a in CORS_ALLOW_ORIGINS:
+                if a == "*" or origin == a or origin.endswith(a):
+                    ok = True
+                    break
+        if ok:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-TSAK-Session, Authorization")
+
     # ---- 세션 인증 (F01/F02) ----
     def _sid(self):
         """요청에서 세션토큰 추출: 쿠키 tsak_sid → 헤더 → 쿼리."""
@@ -2882,7 +2910,7 @@ class Handler(BaseHTTPRequestHandler):
                                       "manifest.json")
                     self.send_header("Cache-Control",
                                      "no-cache" if _reval else "public, max-age=604800")
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self._cors_static()
                     self.end_headers()
                     return
                 # ---- 압축 전송: brotli(우선) → gzip 폴백 ----
@@ -2931,7 +2959,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Encoding", enc)
                     self.send_header("Vary", "Accept-Encoding")
                 self.send_header("Cache-Control", cache)
-                self.send_header("Access-Control-Allow-Origin", "*")
+                self._cors_static()
                 self.end_headers()
                 self.wfile.write(body)
                 return
