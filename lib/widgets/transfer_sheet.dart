@@ -248,7 +248,7 @@ class _TransferSheetState extends State<_TransferSheet> {
   /// scheme: 앱 실행용 URL 스킴. code: 은행 표준코드(딥링크 파라미터용).
   /// short: 아이콘용 약칭. color: 브랜드 색.
   static const List<Map<String, String>> _banks = [
-    {'name': '토스', 'scheme': 'supertoss://', 'code': '092', 'short': '토스', 'color': '0064FF'},
+    {'name': '토스', 'scheme': 'supertoss://send', 'code': '092', 'short': '토스', 'color': '0064FF'},
     {'name': '카카오뱅크', 'scheme': 'kakaobank://', 'code': '090', 'short': '카뱅', 'color': 'FFCD00'},
     {'name': '케이뱅크', 'scheme': 'kbank://', 'code': '089', 'short': '케이', 'color': '00B4B0'},
     {'name': 'KB국민은행', 'scheme': 'kbbank://', 'code': '004', 'short': 'KB', 'color': 'FFB800'},
