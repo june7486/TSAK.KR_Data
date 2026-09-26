@@ -212,14 +212,20 @@ class _TransferSheetState extends State<_TransferSheet> {
   }
 
   /// 선택한 금융사로 바로 송금 (딥링크 → 앱 스토어 폴백).
+  ///
+  /// 딥링크의 `bank` 파라미터는 **받는 계좌의 은행명**이다
+  /// (토스 규격: `supertoss://send?bank=우리은행&accountNo=...&amount=...`).
+  /// 앱 자체의 은행코드(예: 092=토스뱅크)를 넣으면 받는 은행과 불일치해
+  /// 송금 화면이 제대로 채워지지 않는다.
   Future<void> _payWith(Map<String, String> b) async {
-    final bank = b['code'] ?? _bankName;
+    final recipientBank = '${_acct['bank'] ?? _bankName}';
     final scheme = b['scheme']!;
     final name = b['name']!;
     final urls = <String>[
       if (_amount > 0 && _accountDigits.isNotEmpty)
-        '$scheme?bank=$bank&accountNo=$_accountDigits&amount=$_amount',
-      '$scheme?bank=$bank&accountNo=$_accountDigits',
+        '$scheme?bank=$recipientBank&accountNo=$_accountDigits&amount=$_amount',
+      if (_accountDigits.isNotEmpty)
+        '$scheme?bank=$recipientBank&accountNo=$_accountDigits',
       scheme,
     ];
     await _tryOpen(urls, [_storeUrl(name)]);
