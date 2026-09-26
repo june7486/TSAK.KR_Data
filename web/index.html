@@ -85,6 +85,35 @@
       // 엔진 준비 완료(_flutter.loader) 후 안전장치
       setTimeout(hide, 15000);
     })();
+
+    // 새 버전 배포 감지 — version.json 이 바뀌면 이전 캐시를 정리하고 1회 자동 새로고침.
+    // (사용자가 "업데이트가 반영 안 된다"고 느끼는 문제 완화)
+    (function () {
+      try {
+        var KEY = 'tsak_app_version';
+        var ss = window.sessionStorage;
+        fetch('version.json?_=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (v) {
+            var cur = v && (v.version || v.build_number);
+            if (!cur) return;
+            var prev = null;
+            try { prev = localStorage.getItem(KEY); } catch (e) {}
+            try { localStorage.setItem(KEY, String(cur)); } catch (e) {}
+            if (prev && prev !== String(cur) && !ss.getItem('tsak_reloaded')) {
+              try { ss.setItem('tsak_reloaded', '1'); } catch (e) {}
+              if ('caches' in window) {
+                caches.keys().then(function (ks) {
+                  return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+                }).catch(function () {}).finally(function () { location.reload(); });
+              } else {
+                location.reload();
+              }
+            }
+          })
+          .catch(function () {});
+      } catch (e) {}
+    })();
   </script>
 </body>
 </html>

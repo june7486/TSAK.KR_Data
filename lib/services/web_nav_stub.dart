@@ -3,3 +3,9 @@ bool get isWebRuntime => false;
 
 /// 웹이 아닌 환경에서는 아무 것도 하지 않는다.
 void openUrlInTab(String url) {}
+
+/// 웹이 아닌 환경에서는 브라우저 캐시가 없으므로 정리할 것도 없다.
+Future<String> clearAppCache() async => '모바일 앱에서는 캐시 정리가 필요하지 않습니다';
+
+/// 웹이 아닌 환경에서는 페이지 새로고침 개념이 없다.
+void reloadPage() {}

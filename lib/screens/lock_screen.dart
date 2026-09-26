@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/privacy_consent.dart';
 
@@ -37,6 +38,7 @@ class _LockScreenState extends State<LockScreen> {
       TextEditingController(text: widget.initialId);
   bool _obscure = true;
   bool _busy = false;
+  bool _cacheBusy = false;
   String? _error;
 
   @override
@@ -180,6 +182,31 @@ class _LockScreenState extends State<LockScreen> {
       default:
         return 'ID 또는 앱 비밀번호가 올바르지 않습니다';
     }
+  }
+
+  /// 브라우저 캐시·서비스워커를 정리하고 페이지를 새로 고침한다.
+  /// (업데이트가 반영되지 않을 때 사용)
+  Future<void> _clearCache() async {
+    if (_cacheBusy) return;
+    setState(() => _cacheBusy = true);
+    String msg;
+    try {
+      msg = await clearAppCache();
+    } catch (_) {
+      msg = '캐시 정리를 완료했습니다';
+    }
+    if (!mounted) return;
+    setState(() => _cacheBusy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$msg · 새로 고침합니다'),
+        backgroundColor: AppColors.purple,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    // 정리 후 최신 자산으로 페이지 재로드
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    reloadPage();
   }
 
   void _switchTier(String t) {
@@ -345,6 +372,34 @@ class _LockScreenState extends State<LockScreen> {
                   const Text(
                     '한국 범스카우트중앙회 통합 앱 v1.0.0 · 업데이트 2025.09.24',
                     style: TextStyle(color: Colors.white60, fontSize: 10.5),
+                  ),
+                  const SizedBox(height: 12),
+                  // 업데이트가 반영되지 않을 때: 브라우저 캐시·서비스워커 정리
+                  TextButton.icon(
+                    onPressed: _cacheBusy ? null : _clearCache,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white.withValues(alpha: 0.85),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: _cacheBusy
+                        ? const SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.6,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.refresh, size: 14),
+                    label: const Text(
+                      '캐시 삭제 (업데이트 반영)',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),
