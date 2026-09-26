@@ -279,6 +279,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   case 'inquiry':
                     showInquirySheet(context);
                     break;
+                  case 'lock':
+                    context.read<AppState>().lock();
+                    break;
                   case 'home':
                     _searchCtrl.clear();
                     context.read<AppState>().clearFilters();
@@ -291,13 +294,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('첫 화면으로 이동했습니다'),
+                        content: Text('초기 화면으로 이동했습니다'),
                         duration: Duration(milliseconds: 900),
                       ),
                     );
-                    break;
-                  case 'lock':
-                    context.read<AppState>().lock();
                     break;
                 }
               },

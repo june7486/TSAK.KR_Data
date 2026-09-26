@@ -43,7 +43,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Map<String, dynamic> _access = {};
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
-  int _cols = 3;
+  int _cols = 5;
   int _pinchBaseCols = 3;
 
   /// 사진+동영상 하위폴더 탐색 스택 (예: ['봄행사','1팀'])
@@ -1087,6 +1087,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 onPressed: _createMediaFolder,
                 icon: const Icon(Icons.create_new_folder_outlined),
               ),
+              // 열 수 조절 (−/열수/+): 핀치 줌이 안 되는 PC·마우스 환경 지원
+              IconButton(
+                tooltip: '열 줄이기 (사진 확대)',
+                visualDensity: VisualDensity.compact,
+                onPressed: _cols > 1
+                    ? () => setState(() => _cols = (_cols - 1).clamp(1, 10))
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              Text('$_cols열',
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w800)),
+              IconButton(
+                tooltip: '열 늘리기 (사진 축소)',
+                visualDensity: VisualDensity.compact,
+                onPressed: _cols < 10
+                    ? () => setState(() => _cols = (_cols + 1).clamp(1, 10))
+                    : null,
+                icon: const Icon(Icons.add_circle_outline),
+              ),
               // 선택 모드 토글 (항목 있을 때만)
               if (files.isNotEmpty || folders.isNotEmpty)
                 IconButton(
@@ -1290,10 +1310,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final name = '${m['name']}';
     final isDir = m['isdir'] == true;
     final kind = '${m['kind'] ?? 'image'}';
-    final uploader = '${m['uploader'] ?? ''}';
+    final uploader = _uploaderLabel('${m['uploader'] ?? ''}');
     final selected = _mediaSel.contains(name);
     final thumbUrl =
         _nas.eventThumb2Url(widget.year, widget.title, name, sub: _mediaSub);
+    // 화면 폭/열 수에 맞춰 디코딩 크기를 제한 → 메모리·디코딩 비용 절감(로딩 가속).
+    final cacheW = ((MediaQuery.of(context).size.width / _cols) *
+            MediaQuery.of(context).devicePixelRatio)
+        .round()
+        .clamp(60, 2048);
 
     if (isDir) {
       final cnt = m['count'] ?? 0;
@@ -1330,6 +1355,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textGray,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _uploaderLabel('${m['uploader'] ?? ''}'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGray,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -1373,6 +1410,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       Image.network(
                         thumbUrl,
                         fit: BoxFit.cover,
+                        cacheWidth: cacheW,
                         errorBuilder: (_, __, ___) => Container(
                           color: Colors.black87,
                           child: const Icon(
@@ -1386,6 +1424,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       Image.network(
                         thumbUrl,
                         fit: BoxFit.cover,
+                        cacheWidth: cacheW,
                         loadingBuilder: (_, child, prog) => prog == null
                             ? child
                             : Container(
@@ -1440,7 +1479,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             // 업로더 이름 (사진 아래, 구글포토식)
             const SizedBox(height: 2),
             Text(
-              uploader.isEmpty ? '415호' : uploader,
+              uploader,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -1519,7 +1558,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final s = context.read<AppState>();
     if (s.isMaster) return '마스터';
     if (s.isApp) return '관리자';
-    return s.who.isNotEmpty ? s.who : '참가자';
+    if (s.who.isNotEmpty) {
+      // 인가번호가 아닌 '이름'으로 기록 (사진 올린 사람 이름 표시)
+      final m = s.repo.byNumber(s.who);
+      if (m != null && m.name.isNotEmpty) return m.name;
+      return s.who;
+    }
+    return '참가자';
+  }
+
+  /// 사진/폴더에 표시할 업로더 라벨.
+  ///
+  /// - 개별 파일 메타에 업로더가 있으면 → 이름으로 변환(인가번호면 회원명)
+  /// - 업로더 정보가 없으면(예: 폴더째 올린 사진) → '415호' 로 일괄 표시
+  String _uploaderLabel(String raw) {
+    final v = raw.trim();
+    if (v.isEmpty) return '415호';
+    if (v == '마스터' || v == '관리자' || v == '참가자') return v;
+    final m = context.read<AppState>().repo.byNumber(v);
+    if (m != null && m.name.isNotEmpty) return m.name;
+    return v;
   }
 
   // ============================ 재무(참가비/후원금·지출) ============================
@@ -1979,11 +2037,13 @@ class _MediaViewerState extends State<_MediaViewer> {
                       download: true,
                       sub: widget.sub,
                     )
-                  : _nas.eventThumb2Url(
+                  // 이미지: 원본 화질로 다운로드 (크롭/축소 없음)
+                  : _nas.eventFile2Url(
                       widget.year,
                       widget.title,
+                      'media',
                       name,
-                      size: _original ? 'orig' : 'view',
+                      download: true,
                       sub: widget.sub,
                     );
               await launchUrl(
@@ -2026,21 +2086,21 @@ class _MediaViewerState extends State<_MediaViewer> {
                   );
                 }
                 final isOrig = i == _index && _original;
-                // 로딩 속도를 위해 항상 최적화본(1600px, 캐시됨)을 사용.
-                // '원본 보기'는 최적화본 화면을 더 크게(완전 확대) 볼 수 있게 한다.
+                // 최적화 보기: 지연 생성 1600px 캐시본 (빠름).
+                // 원본 보기: 실제 원본 파일 (크롭 없이 전체가 보이고 확대 가능).
                 final url = _nas.eventThumb2Url(
                   widget.year,
                   widget.title,
                   n,
-                  size: 'view',
+                  size: isOrig ? 'orig' : 'view',
                   sub: widget.sub,
                 );
-                // 최적화 보기·원본 보기 모두 확대(핀치/더블탭) 가능.
+                // 최적화·원본 모두 확대(핀치/더블탭) 가능.
                 // 원본은 화면을 가득 채우되 잘리지 않게(contain) 전체가 보인다.
                 return SizedBox.expand(
                   child: InteractiveViewer(
                     minScale: 1.0,
-                    maxScale: isOrig ? 10 : 6,
+                    maxScale: isOrig ? 12 : 6,
                     panEnabled: true,
                     scaleEnabled: true,
                     clipBehavior: Clip.none,
@@ -2070,7 +2130,7 @@ class _MediaViewerState extends State<_MediaViewer> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
-              '$name${uploader.isNotEmpty ? '  ·  업로드: $uploader' : ''}',
+              '$name  ·  업로드: ${uploader.trim().isEmpty ? '415호' : uploader.trim()}',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
               textAlign: TextAlign.center,
             ),
