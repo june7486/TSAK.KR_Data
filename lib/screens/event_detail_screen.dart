@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
 import 'roster_screen.dart';
 
@@ -167,6 +168,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 tabs: tabs,
               ),
         actions: [
+          const AppHomeEmblem(size: 22),
           IconButton(
             tooltip: '새로고침',
             onPressed: _load,

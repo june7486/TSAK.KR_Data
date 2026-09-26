@@ -59,6 +59,13 @@ extension type _ServiceWorkerRegistration(JSObject _) implements JSObject {
   external JSPromise<JSBoolean> unregister();
 }
 
+@JS('localStorage')
+external _Storage get _localStorage;
+
+extension type _Storage(JSObject _) implements JSObject {
+  external void removeItem(JSString key);
+}
+
 bool get isWebRuntime => true;
 
 /// 현재 탭에서 URL(커스텀 스킴 포함)로 이동을 시도한다.
@@ -111,6 +118,11 @@ Future<String> clearAppCache() async {
         clearedWorkers++;
       } catch (_) {}
     }
+  } catch (_) {}
+
+  // 3) 버전 표식 초기화 — 페이지 로드 시 최신 버전을 다시 기록하게 함
+  try {
+    _localStorage.removeItem('tsak_app_version'.toJS);
   } catch (_) {}
 
   if (clearedCaches == 0 && clearedWorkers == 0) {

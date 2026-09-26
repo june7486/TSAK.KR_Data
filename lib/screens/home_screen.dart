@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_config.dart';
 import '../services/app_state.dart';
+import '../services/build_info.g.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
@@ -131,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           Text(
-                            '통합 앱 · v${AppConfig.appVersion}',
+                            '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
                             style: TextStyle(
                               fontSize: 9,
                               color: Colors.white.withValues(alpha: 0.8),

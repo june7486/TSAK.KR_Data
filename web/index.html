@@ -95,12 +95,13 @@
         fetch('version.json?_=' + Date.now(), { cache: 'no-store' })
           .then(function (r) { return r.json(); })
           .then(function (v) {
-            var cur = v && (v.version || v.build_number);
+            var cur = v && (v.version || v.build_id);
             if (!cur) return;
+            var curS = String(cur).replace(/[^0-9]/g, '');
             var prev = null;
             try { prev = localStorage.getItem(KEY); } catch (e) {}
-            try { localStorage.setItem(KEY, String(cur)); } catch (e) {}
-            if (prev && prev !== String(cur) && !ss.getItem('tsak_reloaded')) {
+            try { localStorage.setItem(KEY, String(curS)); } catch (e) {}
+            if (prev && prev !== curS && !ss.getItem('tsak_reloaded')) {
               try { ss.setItem('tsak_reloaded', '1'); } catch (e) {}
               if ('caches' in window) {
                 caches.keys().then(function (ks) {
@@ -112,6 +113,27 @@
             }
           })
           .catch(function () {});
+      } catch (e) {}
+    })();
+
+    // (1회성) 옛 서비스워커 해제 — 서비스워커가 낡은 main.dart.js 를 캐시에서
+    // 서빙하던 문제를 제거한다. '--pwa-strategy none' 으로 새 서비스워커는 등록하지 않는다.
+    (function () {
+      try {
+        if (!('serviceWorker' in navigator)) return;
+        if (localStorage.getItem('tsak_sw_off') === '1') return;
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.map(function (r) { return r.unregister(); }));
+        }).then(function () {
+          try { localStorage.setItem('tsak_sw_off', '1'); } catch (e) {}
+          try {
+            if ('caches' in window) {
+              caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+              }).catch(function () {});
+            }
+          } catch (e) {}
+        }).catch(function () {});
       } catch (e) {}
     })();
   </script>

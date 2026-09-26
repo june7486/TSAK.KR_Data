@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/build_info.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/privacy_consent.dart';
@@ -39,6 +40,7 @@ class _LockScreenState extends State<LockScreen> {
   bool _obscure = true;
   bool _busy = false;
   bool _cacheBusy = false;
+  bool _verBusy = false;
   String? _error;
 
   @override
@@ -209,6 +211,45 @@ class _LockScreenState extends State<LockScreen> {
     reloadPage();
   }
 
+  /// 서버(프록시)의 최신 빌드 버전과 현재 앱 버전을 비교해 안내한다.
+  Future<void> _checkVersion() async {
+    if (_verBusy) return;
+    setState(() => _verBusy = true);
+    VersionStatus st;
+    try {
+      st = await checkVersion();
+    } catch (_) {
+      st = VersionStatus.unknown;
+    }
+    if (!mounted) return;
+    setState(() => _verBusy = false);
+    String msg;
+    Color bg = AppColors.purple;
+    switch (st) {
+      case VersionStatus.upToDate:
+        msg = '최신 버전입니다 ($kBuildShort)';
+        bg = AppColors.scoutGreen;
+        break;
+      case VersionStatus.serverNewer:
+        msg = '새 버전이 있습니다. [캐시 삭제]를 눌러 주세요';
+        bg = AppColors.taegeukRed;
+        break;
+      case VersionStatus.serverOlder:
+        msg = '현재 버전이 서버보다 앞서 있습니다 ($kBuildShort)';
+        break;
+      case VersionStatus.unknown:
+        msg = '버전을 확인할 수 없습니다 (오프라인?)';
+        break;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: bg,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   void _switchTier(String t) {
     setState(() {
       _tier = t;
@@ -369,37 +410,54 @@ class _LockScreenState extends State<LockScreen> {
                     style: TextStyle(color: Colors.white70, fontSize: 11),
                   ),
                   const SizedBox(height: 3),
-                  const Text(
-                    '한국 범스카우트중앙회 통합 앱 v1.0.0 · 업데이트 2025.09.24',
-                    style: TextStyle(color: Colors.white60, fontSize: 10.5),
+                  Text(
+                    '한국 범스카우트중앙회 통합 앱 $versionShortLabel',
+                    style: const TextStyle(color: Colors.white60, fontSize: 10.5),
                   ),
-                  const SizedBox(height: 12),
-                  // 업데이트가 반영되지 않을 때: 브라우저 캐시·서비스워커 정리
-                  TextButton.icon(
-                    onPressed: _cacheBusy ? null : _clearCache,
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white.withValues(alpha: 0.85),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
+                  const SizedBox(height: 6),
+                  // 업데이트 반영: 캐시 정리 / 버전 확인 (작게)
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 4,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _cacheBusy ? null : _clearCache,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white.withValues(alpha: 0.8),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 28),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: _cacheBusy
+                            ? const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.6,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.refresh, size: 13),
+                        label: const Text(
+                          '캐시 삭제',
+                          style: TextStyle(fontSize: 10.5),
+                        ),
                       ),
-                      minimumSize: const Size(0, 30),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: _cacheBusy
-                        ? const SizedBox(
-                            width: 13,
-                            height: 13,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.6,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.refresh, size: 14),
-                    label: const Text(
-                      '캐시 삭제 (업데이트 반영)',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                    ),
+                      TextButton.icon(
+                        onPressed: _checkVersion,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white.withValues(alpha: 0.8),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 28),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.verified_outlined, size: 13),
+                        label: const Text(
+                          '버전 확인',
+                          style: TextStyle(fontSize: 10.5),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

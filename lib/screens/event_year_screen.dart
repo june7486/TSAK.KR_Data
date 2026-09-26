@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
 import 'event_detail_screen.dart';
 
 /// 행사관리 — 연도별 탭 + 행사 목록/생성
@@ -91,6 +92,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
       appBar: AppBar(
         title: const Text('행사관리'),
         actions: [
+          const AppHomeEmblem(size: 22),
           IconButton(
             tooltip: '새로고침',
             onPressed: _load,
