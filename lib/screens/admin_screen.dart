@@ -160,6 +160,8 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _changeAppPassword(AppState state) async {
     final newCtrl = TextEditingController();
     final masterCtrl = TextEditingController();
+    final isPM = state.isPermanentMaster;
+    if (isPM) masterCtrl.text = state.masterToken();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -171,12 +173,18 @@ class _AdminScreenState extends State<AdminScreen> {
               controller: newCtrl,
               decoration: const InputDecoration(labelText: '새 앱 비밀번호'),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: masterCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: '마스터 비밀번호 확인'),
-            ),
+            if (!isPM) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: masterCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '마스터 비밀번호 확인'),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              const Text('영구 마스터는 별도 확인 없이 변경됩니다.',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            ],
           ],
         ),
         actions: [
@@ -366,6 +374,8 @@ class _AdminScreenState extends State<AdminScreen> {
   }) async {
     final valCtrl = TextEditingController();
     final masterCtrl = TextEditingController();
+    final isPM = context.read<AppState>().isPermanentMaster;
+    if (isPM) masterCtrl.text = context.read<AppState>().masterToken();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -388,11 +398,12 @@ class _AdminScreenState extends State<AdminScreen> {
                 decoration: const InputDecoration(labelText: '새 개인 비밀번호'),
               ),
             if (!reset) const SizedBox(height: 8),
-            TextField(
-              controller: masterCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: '마스터 비밀번호 확인'),
-            ),
+            if (!isPM)
+              TextField(
+                controller: masterCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '마스터 비밀번호 확인'),
+              ),
             const SizedBox(height: 8),
             Text(
               reset
@@ -564,6 +575,9 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<String?> _askMaster(String action) async {
+    // 영구 마스터(예: 415)는 비번 확인 없이 진행.
+    final s = context.read<AppState>();
+    if (s.isPermanentMaster) return s.masterToken();
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,

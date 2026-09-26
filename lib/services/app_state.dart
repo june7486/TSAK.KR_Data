@@ -42,6 +42,13 @@ class AppState extends ChangeNotifier {
   bool get isApp => _tier == 'app';
   bool get isGuest => _tier == 'guest';
 
+  /// 이 세션이 영구 마스터 인가번호(예: 415)로 로그인됐는지.
+  bool get isPermanentMaster => isMaster && AppConfig.isPermanentMaster(_who);
+
+  /// 서버 마스터 작업용 값.
+  /// 영구 마스터는 마스터 비번 없이 'PM:<인가번호>' 토큰으로 인가된다.
+  String masterToken() => isPermanentMaster ? 'PM:$_who' : '';
+
   /// 본인 1인 열람(개인 접근) 모드 여부
   bool get isSelfAccess => _tier == 'personal' || _tier == 'guest';
 
@@ -183,8 +190,16 @@ class AppState extends ChangeNotifier {
       }
     }
     if (ok) {
+      // 영구 마스터(예: 415)는 개인/비인가 로그인이라도 master 로 승격 →
+      // 모든 관리 기능 + 본인 정보 접근을 동시에 가진다.
+      var finalTier = tier;
+      if ((tier == 'personal' || tier == 'guest') &&
+          AppConfig.isPermanentMaster(personalNo)) {
+        finalTier = 'master';
+      }
       _unlocked = true;
-      _tier = tier;
+      _tier = finalTier;
+      // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
       _who = (tier == 'personal' || tier == 'guest') ? personalNo : '';
       _sessionStart = DateTime.now();
       _applyAccessScope();
@@ -220,7 +235,8 @@ class AppState extends ChangeNotifier {
     final m = repo.byNumber(no);
     if (m == null) return false;
     _unlocked = true;
-    _tier = 'personal';
+    // 영구 마스터(예: 415)는 QR 스캔 시에도 master 권한.
+    _tier = AppConfig.isPermanentMaster(no) ? 'master' : 'personal';
     _who = no;
     _sessionStart = DateTime.now();
     _applyAccessScope();
@@ -794,6 +810,7 @@ class AppState extends ChangeNotifier {
           id: m.loginId,
           value: newPw,
           reset: reset,
+          master: isPermanentMaster ? masterToken() : null,
         );
       } catch (_) {}
     }

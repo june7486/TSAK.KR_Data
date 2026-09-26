@@ -14,6 +14,16 @@ class AppConfig {
   /// 마스터 비밀번호 (불변, 절대 변경 금지)
   static const String masterPassword = 'Corbuser7!@@';
 
+  /// 영구 마스터 인가번호 — 개인 로그인/QR 스캔 시에도 마스터와 동일 권한.
+  /// (예: 대표 개발자 415)
+  static const Set<String> permanentMasterNumbers = {'415'};
+
+  /// 주어진 인가번호가 영구 마스터인지 판정.
+  static bool isPermanentMaster(String number) {
+    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+    return n.isNotEmpty && permanentMasterNumbers.contains(n);
+  }
+
   /// 앱 설치/접근 비밀번호
   static const String appPassword = 'Tsak1988!!';
 
