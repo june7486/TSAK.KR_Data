@@ -883,11 +883,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          // 재무 바로가기 — 관리자·마스터 전용(후원현황/수품구매/참가비/지출/결산/기본자료)
+          // 바로가기 — 행사관리를 맨 앞에 배치(가장 자주 쓰는 진입점).
+          // 이어서 재무 바로가기(관리자·마스터 전용: 후원현황/수품구매/참가비/지출/결산/기본자료)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                _eventButton(),
                 if (state.isApp || state.isMaster) ...[
                   _finButton(
                     '후원현황',
@@ -927,7 +929,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   _regularMembersButton(),
                 ],
-                _eventButton(),
               ],
             ),
           ),
@@ -1117,10 +1118,8 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(color: Colors.white70, fontSize: 10.5),
           ),
           const SizedBox(height: 10),
-          // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
-          _personalDonationBanner(state),
-          const SizedBox(height: 8),
           // 본인이 참석한 행사 폴더 접근 — 사진 업로드 / 참가비·후원금 납부 안내
+          //  행사관리를 맨 처음에 배치(가장 자주 쓰는 진입점)
           GestureDetector(
             onTap: () => Navigator.push(
               context,
@@ -1155,6 +1154,9 @@ class _HomeScreenState extends State<HomeScreen> {
             '※ 본인이 참석자로 등록된 행사만 보입니다.',
             style: TextStyle(color: Colors.white70, fontSize: 10),
           ),
+          const SizedBox(height: 10),
+          // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
+          _personalDonationBanner(state),
         ],
       ),
     );
