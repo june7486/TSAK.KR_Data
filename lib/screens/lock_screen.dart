@@ -463,11 +463,25 @@ class _LockScreenState extends State<LockScreen> {
                           ),
                         ),
                         if (_tier == 'guest') ...[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            onPressed: _busy ? null : _createRegular,
-                            icon: const Icon(Icons.person_add_alt, size: 18),
-                            label: const Text('신규회원 생성 (ID=전화번호, PW=뒤 4자리)'),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.scoutGreen,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: _busy ? null : _createRegular,
+                              icon: const Icon(Icons.person_add_alt_1, size: 20),
+                              label: const Text(
+                                '신규회원 가입 (ID=전화번호 · PW=뒤 4자리)',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
                           ),
                         ],
                       ],

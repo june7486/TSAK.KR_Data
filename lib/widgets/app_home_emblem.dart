@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
-import '../services/build_info.g.dart';
 
 /// 상단 엠블럼 버튼 — 누르면 초기(홈) 화면으로 이동.
 ///
 /// [onHome] 이 주어지면 그 동작을 수행하고, 없으면 첫 라우트까지 pop 한다.
 /// [adminHomeOnly] 가 true 이면 관리자/마스터만 동작(그 외에는 아무 반응 없음).
-/// 엠블럼 옆에 빌드 버전 라벨을 함께 표시한다 (모든 페이지 버전 확인용).
 class AppHomeEmblem extends StatelessWidget {
   const AppHomeEmblem({
     super.key,
@@ -51,16 +49,6 @@ class AppHomeEmblem extends StatelessWidget {
       ),
     );
 
-    final verText = Text(
-      kBuildShort,
-      style: TextStyle(
-        color: Colors.white.withValues(alpha: 0.82),
-        fontSize: 8.5,
-        fontWeight: FontWeight.w600,
-        height: 1.0,
-      ),
-    );
-
     return InkWell(
       onTap: () => _goHome(context),
       borderRadius: BorderRadius.circular(8),
@@ -72,24 +60,17 @@ class AppHomeEmblem extends StatelessWidget {
                 children: [
                   emblem,
                   const SizedBox(width: 6),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('한국 범스카우트중앙회 통합 앱'),
-                      verText,
-                    ],
+                  const Text(
+                    'TSAK 한국범스카우트중앙회',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ],
               )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  emblem,
-                  const SizedBox(height: 1),
-                  verText,
-                ],
-              ),
+            : emblem,
       ),
     );
   }

@@ -927,4 +927,41 @@ class NasApi {
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
+
+  /// 문의 접수 — 이메일 발송 + 첨부 저장 (개인정보 동의 필수).
+  ///
+  /// [files] 는 `[{'name': 파일명, 'data': base64문자열}]` 형태.
+  /// 보낸사람 이메일 또는 동의가 없으면 서버가 400 을 반환한다.
+  Future<Map<String, dynamic>> submitInquiry({
+    required String name,
+    required String email,
+    String phone = '',
+    String number = '',
+    String subject = '',
+    required String message,
+    required bool agreed,
+    List<Map<String, String>> files = const [],
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/inquiry/submit'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'name': name,
+            'email': email,
+            'phone': phone,
+            'number': number,
+            'subject': subject,
+            'message': message,
+            'agreed': agreed,
+            'files': files,
+          }),
+        )
+        .timeout(const Duration(seconds: 90));
+    try {
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': r.statusCode == 200, 'status': r.statusCode};
+    }
+  }
 }

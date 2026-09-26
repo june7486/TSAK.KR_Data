@@ -6,10 +6,13 @@ import '../models/member.dart';
 import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../services/build_info.g.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/member_card.dart';
+import '../widgets/donate_sheet.dart';
+import '../widgets/inquiry_sheet.dart';
 import 'app_access_screen.dart';
 import 'admin_screen.dart';
 import 'bulk_screen.dart';
@@ -193,8 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
               }),
             ),
           ] else ...[
-            // 개인 접근: 본인 정보만 → 단체/통계/재무 메뉴 숨김
-            if (!state.isPersonal) ...[
+            // 개인/비인가자(본인) 접근: 본인 정보만 → 단체문자/통계/재무 메뉴 숨김
+            if (!state.isSelfAccess) ...[
               IconButton(
                 tooltip: '단체 소식/문자',
                 icon: const Icon(Icons.campaign),
@@ -212,7 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
-            if (state.isPersonal)
+            if (state.isSelfAccess)
               IconButton(
                 tooltip: '내 QR',
                 icon: const Icon(Icons.qr_code_2),
@@ -270,6 +273,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   case 'refresh':
                     context.read<AppState>().refreshFromNas();
                     break;
+                  case 'donate':
+                    showDonateSheet(context);
+                    break;
+                  case 'inquiry':
+                    showInquirySheet(context);
+                    break;
                   case 'lock':
                     context.read<AppState>().lock();
                     break;
@@ -281,7 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     value: 'admin',
                     child: Text('앱 관리 — 앱접근 비번 변경/정지/복구'),
                   ),
-                if (!state.isPersonal) ...[
+                if (!state.isSelfAccess) ...[
                   const PopupMenuItem(
                     value: 'finance',
                     child: Text('재무 관리 (후원·수품·참가비)'),
@@ -299,7 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   value: 'settings',
                   child: Text('설정 · 백업/복원'),
                 ),
-                if (!state.isPersonal) ...[
+                if (!state.isSelfAccess) ...[
                   const PopupMenuItem(
                     value: 'refresh',
                     child: Text('NAS 최신 데이터 불러오기'),
@@ -309,6 +318,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text('명단 선택 (일괄작업)'),
                   ),
                 ],
+                // 개발자 후원 (모든 접근 등급)
+                const PopupMenuItem(
+                  value: 'donate',
+                  child: Text('개발자 후원 ❤'),
+                ),
+                // 문의 (모든 접근 등급)
+                const PopupMenuItem(
+                  value: 'inquiry',
+                  child: Text('문의하기 ✉'),
+                ),
                 const PopupMenuItem(value: 'lock', child: Text('잠금')),
               ],
             ),
@@ -390,48 +409,102 @@ class _HomeScreenState extends State<HomeScreen> {
     return Material(
       color: Colors.white,
       elevation: 6,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.purple,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: me == null
+                        ? null
+                        : () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => MemberEditScreen(memberId: me.id),
+                              ),
+                            );
+                            if (mounted) context.read<AppState>().refresh();
+                          },
+                    icon: const Icon(Icons.edit_note, size: 19),
+                    label: const Text(
+                      '개인정보 수정',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
                 ),
-                onPressed: me == null
-                    ? null
-                    : () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MemberEditScreen(memberId: me.id),
-                          ),
-                        );
-                        if (mounted) context.read<AppState>().refresh();
-                      },
-                icon: const Icon(Icons.edit_note, size: 19),
-                label: const Text(
-                  '개인정보 수정',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.taegeukBlue,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: me == null
+                      ? null
+                      : () => _openPasswordMenuItem(state, me),
+                  icon: const Icon(Icons.password, size: 18),
+                  label: const Text('비밀번호'),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.taegeukBlue,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: me == null
-                  ? null
-                  : () => _openPasswordMenuItem(state, me),
-              icon: const Icon(Icons.password, size: 18),
-              label: const Text('비밀번호'),
+          ),
+          // 개인 접근 하단 바로가기 — 홈페이지 / 네이버 카페 (새창)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _homeShortcutButton(
+                    icon: Icons.public,
+                    label: 'Homepage',
+                    url: 'https://www.tigerscout.kr',
+                    color: AppColors.taegeukBlue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _homeShortcutButton(
+                    icon: Icons.forum_outlined,
+                    label: 'Naver Cafe',
+                    url: 'https://cafe.naver.com/tigerscoutkr',
+                    color: AppColors.scoutGreen,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 홈 화면 하단 바로가기 버튼 (새창으로 외부 링크)
+  Widget _homeShortcutButton({
+    required IconData icon,
+    required String label,
+    required String url,
+    required Color color,
+  }) {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.5)),
+        backgroundColor: color.withValues(alpha: 0.08),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+      ),
+      onPressed: () => openUrlInNewTab(url),
+      icon: Icon(icon, size: 16),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -592,8 +665,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _header(AppState state) {
-    // 개인 접근: 본인 정보만 표시하는 간소 헤더
-    if (state.isPersonal) return _personalHeader(state);
+    // 개인/비인가자(본인) 접근: 본인 정보만 표시하는 간소 헤더
+    if (state.isSelfAccess) return _personalHeader(state);
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
@@ -1364,8 +1437,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openDetail(Member m) async {
     final state = context.read<AppState>();
-    // 개인 접근: 본인 외 인가자 클릭 시 경고 후 차단 (개인정보 보호)
-    if (state.isPersonal && !state.isSelfNumber(m.number)) {
+    // 개인/비인가자 접근: 본인 외 인가자 클릭 시 경고 후 차단 (개인정보 보호)
+    if (state.isSelfAccess && !state.isSelfNumber(m.number)) {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
