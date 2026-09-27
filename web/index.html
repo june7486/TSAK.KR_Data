@@ -32,6 +32,26 @@
   <title>TSAK 인가자 관리</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- 성능: 첫 프레임을 앞당기는 리소스 힌트 -->
+  <!-- (1) 엔진/스크립트 조기 발견 -->
+  <link rel="preload" href="flutter_bootstrap.js" as="script">
+  <!-- (2) 스플래시 로고 즉시 표시(경량본) -->
+  <link rel="preload" href="tsak_emblem_splash.png" as="image">
+  <!-- (3) 폰트(한글 + 아이콘)를 최우선 프리로드 —
+         Flutter 는 첫 프레임 직전에야 폰트를 요청하므로, 여기서 미리 받아
+         main.dart.js 와 병렬로 다운로드하면 첫 프레임이 크게 단축된다. -->
+  <link rel="preload" href="assets/assets/fonts/NanumGothic-Regular-s.ttf"
+        as="fetch" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/NanumGothic-Bold-s.ttf"
+        as="fetch" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/fonts/MaterialIcons-Regular.otf"
+        as="fetch" type="font/otf" crossorigin>
+  <!-- (4) 캔버스킷 wasm 은 gstatic CDN(초경량 br 압축)에서 받는다.
+         DNS/TLS 핸드셰이크를 미리 시작해 병렬 다운로드를 앞당긴다. -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://www.gstatic.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
   <style>
     /* 앱 초기 로딩 중 브랜드 스플래시 (Flutter 첫 프레임 전까지 표시) */
     html, body { margin: 0; height: 100%; }
@@ -69,7 +89,7 @@
 </head>
 <body>
   <div id="tsak-splash">
-    <img src="assets/assets/images/tsak_emblem.png" alt="TSAK">
+    <img src="tsak_emblem_splash.png" alt="TSAK" width="108" height="108">
     <div class="t">TSAK 한국범스카우트중앙회</div>
     <div class="bar"><i></i></div>
     <div class="s">안전하게 불러오는 중…</div>

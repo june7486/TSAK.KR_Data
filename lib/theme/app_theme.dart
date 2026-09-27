@@ -26,13 +26,23 @@ class AppColors {
 
 class AppTheme {
   static ThemeData light() {
-    // 한글 폰트: Roboto 고정 시 한글 글리프가 없어 일부 기기에서 깨짐.
-    // fontFamily를 지정하지 않아 플랫폼 기본 한글 폰트를 사용한다.
-    //  - iOS : Apple SD Gothic Neo (시스템 기본)
-    //  - Android : Noto Sans CJK / Roboto(한글 폴백, 시스템 기본)
-    //  - Web/기타 : 브라우저가 지정한 sans-serif 폰트
+    // 한글 폰트: 번들된 NanumGothic 을 기본으로 지정한다.
+    //  - 이전에는 fontFamily 미지정 → 웹에서 기본 Roboto 사용 → 한글 글리프
+    //    부재로 Flutter 가 런타임에 Google Fonts(Noto Sans KR)를 9회 추가
+    //    다운로드(=첫 로딩 지연 + 외부 의존)했다. 번들 폰트를 쓰면 이 요청이
+    //    완전히 사라지고, 이미 임계경로에 있는 폰트를 재사용한다.
+    //  - fontFamilyFallback: 혹시 모를 미수록 글리프는 플랫폼 시스템 폰트로.
+    const kFontFallback = <String>[
+      'NanumGothic',              // 번들 기본
+      'Apple SD Gothic Neo',      // iOS/macOS
+      'Noto Sans CJK KR',         // Android/리눅스
+      'Malgun Gothic',            // Windows
+      'sans-serif',
+    ];
     final base = ThemeData(
       useMaterial3: true,
+      fontFamily: 'NanumGothic',
+      fontFamilyFallback: kFontFallback,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.purple,
         primary: AppColors.purple,

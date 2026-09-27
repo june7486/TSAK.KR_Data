@@ -125,3 +125,38 @@
 **무결성**: Playwright 스모크 `hasCanvas=true, loggedIn=true, jsErrors=0, failedReq=0`. `flutter analyze lib/main.dart` 무이슈. `build/web` 재빌드 성공(70.6s).
 
 > ⚠️ keep-alive 는 연결 풀 **TTL 100초** 후 자동 교체되며, 프록시는 스레드 기반이라 공유 커넥션 접근을 락(`_CONN_LOCK`)으로 보호합니다. 실패 시 기존 경로로 자연 폴백합니다.
+
+## 8. 성능 개선 로그 — 2차 "최대한 더 줄여줘" (2026-09-27)
+
+정밀 진단(리소스 워터폴 + 서버 지연 분해)으로 2차 최적화를 수행했다.
+
+**발견한 병목**
+1. **앱 테마가 폰트패밀리를 미지정** → 웹에서 기본 Roboto 사용 → 한글 글리프 부재로 Flutter 가 런타임에 **Google Fonts(Noto Sans KR) 9회 추가 다운로드**(~130KB, 외부 왕복) ← 최대 병목
+2. 스플래시 CSS 가 `'Noto Sans KR'` 참조 → 불필요 외부 요청 유발 가능성
+3. 폰트(685KB)·main.dart.js(1.27MB) 가 **첫 프레임 직전에야 요청**되어 임계경로에 직렬로 놓임
+4. 스플래시 로고가 원본 124KB PNG 를 사용
+5. 프록시가 요청마다 5MB JS 를 **실시간 압축**(CPU 경쟁)
+
+**조치**
+| 위치 | 변경 |
+|------|------|
+| `lib/theme/app_theme.dart` | 기본 `fontFamily: 'NanumGothic'` + 폴백 지정 → **외부 폰트 요청 0회** |
+| `web/index.html` | NanumGothic×2·MaterialIcons **폰트 프리로드**, 스플래시 CSS 시스템폰트화, gstatic preconnect, 경량 스플래시 로고 |
+| `web/tsak_emblem_splash.png` | 신규(216px, 41KB) — 원본 124KB 대체 |
+| `nas_proxy/proxy_server.py` | **압축 결과 디스크/메모리 캐시**(`_get_compressed`) + **부팅 시 사전압축**(`_precompress_static`, 18파일) + `TCP_NODELAY` |
+| `nas_proxy/nas_lib.py` | `warm()` — 부팅 시 NAS 연결/로그인 프리워밍 |
+
+> ⚠️ `--no-web-resources-cdn`(canvaskit 로컬 서빙)은 **시도 후 되돌림**: 로컬은 시간당제한이던 CDN 대비 실측 더 느렸음(전송량 3.7→6.5MB, 콜드 6.1→7.6s). CDN 유지가 정답.
+
+**측정 (헤드리스 크로미움 430×932)**
+| 지표 | 1차 후 | 2차 후 |
+|------|--------|--------|
+| 콜드 첫 프레임 | 6.21s | **5.96s** |
+| 웜 첫 프레임 | 2.35s | **2.24s** |
+| 총 요청 수 | 28 | **21 (−25%)** |
+| 외부 Google 폰트 요청 | 9 | **0** |
+| 폰트 완료 시각 | ~5.6s | **~2.9s** |
+
+**무결성**: 스모크 `hasCanvas/ loggedIn=true / jsErrors=0 / failedReq=0`. analyze 무이슈.
+
+**미해결(잔여)**: 프록시 요청당 **~0.47s TTFB** 가 존재(최소 HTTP 서버는 8ms). 환경 문제가 아니라 프록시 고유 현상이며 `TCP_NODELAY` 로 해소되지 않음(드문 `Connection: close` 요청에 한함). 추가 규명 필요 — 단, 실제 앱은 HTTP/1.1 keep-alive 로 여러 요청을 묶어 보내므로 실사용 영향은 제한적.

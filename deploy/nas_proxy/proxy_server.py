@@ -212,6 +212,97 @@ _COMPRESSIBLE_EXT = {".js", ".mjs", ".css", ".html", ".htm", ".json",
                      ".map", ".svg", ".wasm", ".txt", ".xml", ".manifest",
                      ".ttf", ".otf", ".woff", ".woff2"}
 
+# ---- 정적파일 압축 결과 디스크 캐시 ----------------------------------------
+# 매 요청마다 5MB JS 를 실시간 압축하면 CPU 를 잡아먹어 첫 로딩이 느려진다.
+# 압축 결과를 (원본크기, mtime) 키로 디스크에 저장해 재사용한다.
+_COMPRESS_CACHE_DIR = "/home/user/nas_proxy/.static_compress_cache"
+_COMPRESS_CACHE_LOCK = threading.Lock()
+_COMPRESS_MEM = {}          # key -> bytes (프로세스 메모리 캐시, 가장 빠름)
+
+
+def _comp_cache_path(fp, enc, data):
+    key = hashlib.md5(
+        ("%s|%s|%d|%d" % (fp, enc, len(data),
+                          int(os.path.getmtime(fp)))).encode()).hexdigest()
+    return key
+
+
+def _get_compressed(fp, data, ext, accept_enc):
+    """압축 캐시 조회/생성. (bytes, encoding) 반환. 캐시 불가 시 (None, None)."""
+    if ext not in _COMPRESSIBLE_EXT or len(data) < 1024:
+        return None, None
+    acc = accept_enc.lower()
+    # 우선순위: brotli > gzip
+    enc = None
+    if "br" in acc and _brotli is not None:
+        enc = "br"
+    elif "gzip" in acc:
+        enc = "gzip"
+    if not enc:
+        return None, None
+    key = _comp_cache_path(fp, enc, data)
+    mkey = "%s:%s" % (enc, key)
+    # 1) 메모리 캐시
+    hit = _COMPRESS_MEM.get(mkey)
+    if hit is not None:
+        return hit, enc
+    # 2) 디스크 캐시
+    cpath = os.path.join(_COMPRESS_CACHE_DIR, "%s.%s" % (key, enc))
+    try:
+        if os.path.isfile(cpath):
+            with open(cpath, "rb") as f:
+                blob = f.read()
+            _COMPRESS_MEM[mkey] = blob
+            return blob, enc
+    except Exception:
+        pass
+    # 3) 생성 후 저장
+    try:
+        if enc == "br":
+            blob = _brotli.compress(data, quality=6)
+        else:
+            blob = gzip.compress(data, 6)
+    except Exception:
+        return None, None
+    try:
+        with _COMPRESS_CACHE_LOCK:
+            os.makedirs(_COMPRESS_CACHE_DIR, exist_ok=True)
+            tmp = cpath + ".tmp%d" % os.getpid()
+            with open(tmp, "wb") as f:
+                f.write(blob)
+            os.replace(tmp, cpath)
+    except Exception:
+        pass
+    _COMPRESS_MEM[mkey] = blob
+    return blob, enc
+
+
+def _precompress_static():
+    """부팅 시 정적 자산을 미리 압축해 캐시에 적재(첫 사용자 지연 제거)."""
+    try:
+        acc = "br" if _brotli is not None else "gzip"
+        n = 0
+        for root, _dirs, files in os.walk(STATIC_DIR):
+            for fn in files:
+                fp = os.path.join(root, fn)
+                ext = os.path.splitext(fn)[1].lower()
+                if ext not in _COMPRESSIBLE_EXT:
+                    continue
+                try:
+                    sz = os.path.getsize(fp)
+                    if sz < 1024 or sz > 30 * 1024 * 1024:
+                        continue
+                    with open(fp, "rb") as f:
+                        data = f.read()
+                    blob, enc = _get_compressed(fp, data, ext, acc)
+                    if blob:
+                        n += 1
+                except Exception:
+                    continue
+        print("static pre-compressed:", n, "files (", acc, ")")
+    except Exception as e:
+        print("pre-compress skipped:", e)
+
 
 def _ensure_structure():
     for sub in ["db", "backups", "photos", "exports", "data", "data/excel", "data/지출"]:
@@ -2391,6 +2482,17 @@ def _pay_landing_page(q):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # TCP_NODELAY: 소켓 버퍼링(Nagle)으로 인한 ~0.5초 응답 지연 제거.
+    #  (작은 응답이 ACK 를 기다리며 멈추는 지연-ACK/Nagle 상호작용 방지)
+    disable_nagle_algorithm = True
+
+    def setup(self):
+        super().setup()
+        try:
+            import socket as _sock
+            self.connection.setsockopt(_sock.IPPROTO_TCP, _sock.TCP_NODELAY, 1)
+        except Exception:
+            pass
 
     def log_message(self, *a):
         pass
@@ -3033,31 +3135,11 @@ class Handler(BaseHTTPRequestHandler):
                     self._cors_static()
                     self.end_headers()
                     return
-                # ---- 압축 전송: brotli(우선) → gzip 폴백 ----
-                enc = "identity"
-                compressed = None
-                if ext in _COMPRESSIBLE_EXT and len(data) > 1024:
-                    acc = self.headers.get("Accept-Encoding", "").lower()
-                    # 1) brotli (gzip보다 약 15~20% 더 작음)
-                    if "br" in acc and _brotli is not None:
-                        try:
-                            compressed = _brotli.compress(data, quality=6)
-                            enc = "br"
-                        except Exception:
-                            compressed = None
-                    # 2) gzip 폴백
-                    if compressed is None and "gzip" in acc:
-                        allok = getattr(self, "_gzip_ok", None)
-                        if allok is None:
-                            try:
-                                gzip.decompress(gzip.compress(b"x"))
-                                allok = True
-                            except Exception:
-                                allok = False
-                            self._gzip_ok = allok
-                        if allok:
-                            compressed = gzip.compress(data, 6)
-                            enc = "gzip"
+                # ---- 압축 전송: 캐시된 압축(brotli>gzip) → 없으면 원본 ----
+                acc = self.headers.get("Accept-Encoding", "")
+                compressed, enc = _get_compressed(fp, data, ext, acc)
+                if compressed is None:
+                    enc = "identity"
                 body = compressed if compressed is not None else data
                 # ---- 캐시 정책: 진입점/앱코드는 매번 재검증(즉시 반영), 정적 자산은 장기 ----
                 if name in ("index.html", "flutter_bootstrap.js", "main.dart.js",
@@ -4008,6 +4090,17 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     _boot()
     port = CONF.get("port", 5071)
+    # 성능: NAS 연결/TLS/로그인을 백그라운드로 미리 데운다.
+    #  첫 사용자 요청의 콜드 스타트 지연을 제거(실패해도 무해).
+    def _warm_bg():
+        try:
+            NAS.warm()
+            print("NAS connection warmed")
+        except Exception as e:
+            print("NAS warm skipped:", e)
+        # 정적 자산 사전 압축(첫 사용자 지연 제거)
+        _precompress_static()
+    threading.Thread(target=_warm_bg, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"TSAK NAS proxy on 0.0.0.0:{port}")
     srv.serve_forever()

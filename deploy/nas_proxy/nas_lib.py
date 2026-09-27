@@ -119,6 +119,22 @@ class NasClient:
                 return self.call(params, retry=False)
             raise
 
+    def warm(self):
+        """기동 워밍: TLS 연결 + 로그인 + 경량 조회를 미리 수행.
+
+        첫 사용자 요청 시 콜드 TLS 핸드셰이크·인증 지연이 발생하지 않도록
+        프록시 부팅 직후 백그라운드 스레드에서 호출한다. 실패해도 치명적이지
+        않다(다음 실제 요청에서 정상 재시도됨).
+        """
+        try:
+            if not self.cookie:
+                self._login()
+            # 경량 API 1회로 연결/세션 유효성까지 확인
+            return self.call({"api": "SYNO.API.Info", "version": "1",
+                              "method": "query", "query": "SYNO.FileStation.List"})
+        except Exception:
+            return None
+
     # --- high level ---
     def list(self, path):
         r = self.call({"api":"SYNO.FileStation.List","version":"2","method":"list",
