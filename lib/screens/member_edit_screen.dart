@@ -9,6 +9,7 @@ import '../services/app_state.dart';
 import '../services/phone_format.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/privacy_consent.dart';
@@ -295,12 +296,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.email,
                 keyboard: TextInputType.emailAddress,
               ),
-              _field(
-                '주소',
-                _address,
-                hint: '주소 입력',
-                icon: Icons.home,
-                maxLines: 2,
+              AddressField(
+                controller: _address,
+                label: '주소',
+                hint: '주소검색 버튼으로 검색하세요',
               ),
               _field(
                 '활동',
@@ -397,7 +396,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   /// 개인정보 동의 상태 안내 배너 (상단)
   Widget _privacyStatusBanner(AppState state) {
     final agreed = _privacyAgreed;
-    final c = agreed ? AppColors.scoutGreen : AppColors.taegeukRed;
+    final privileged = state.isApp || state.isMaster;
+    final exempt = privileged; // 관리자·마스터는 동의 없이도 저장 가능
+    final c = (agreed || exempt)
+        ? AppColors.scoutGreen
+        : AppColors.taegeukRed;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -407,15 +410,21 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       ),
       child: Row(
         children: [
-          Icon(agreed ? Icons.verified : Icons.warning_amber_rounded,
-              color: c, size: 20),
+          Icon(
+              (agreed || exempt) ? Icons.verified : Icons.warning_amber_rounded,
+              color: c,
+              size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  agreed ? '개인정보 동의 완료' : '개인정보 동의 필요 (필수)',
+                  agreed
+                      ? '개인정보 동의 완료'
+                      : (exempt
+                          ? '관리자 모드 — 동의 없이 저장 가능'
+                          : '개인정보 동의 필요 (필수)'),
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
@@ -426,6 +435,14 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                   Text(
                     '동의일시: $_privacyAgreedAt',
                     style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
+                  )
+                else if (!agreed && exempt)
+                  const Text(
+                    '관리자·마스터는 개인정보 동의를 받지 않고도 입력·수정할 수 있습니다',
+                    style: TextStyle(
                       fontSize: 10.5,
                       color: AppColors.textGray,
                     ),
@@ -811,8 +828,12 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   /// 공용 저장 로직 — 저장만 수행 (pop 없음)
   Future<bool> _saveInternal() async {
     if (!(_formKey.currentState?.validate() ?? false)) return false;
-    // 개인정보 수집·이용 동의(필수) 없이는 저장/가입 불가
-    if (!_privacyAgreed) {
+    final state = context.read<AppState>();
+    // 관리자(app)·마스터는 개인정보 동의 없이도 입력·수정 가능.
+    // (일반 개인/비인가자 본인 접근은 동의가 필수)
+    final privileged = state.isApp || state.isMaster;
+    // 개인정보 수집·이용 동의(필수) 없이는 저장/가입 불가 (일반 사용자)
+    if (!privileged && !_privacyAgreed) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -823,7 +844,6 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       }
       return false;
     }
-    final state = context.read<AppState>();
     final id = _existing?.id ?? 'u${DateTime.now().millisecondsSinceEpoch}';
     // 최초 동의 시각 기록
     if (_privacyAgreedAt.isEmpty) {

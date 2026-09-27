@@ -18,6 +18,7 @@ Endpoints:
   POST /api/config
 """
 import json, os, re, ssl, sys, threading, time, datetime, base64, gzip, hashlib, urllib.parse
+import urllib.request
 
 # brotli(선택) — 있으면 gzip 대신 더 작은 압축 전송
 try:
@@ -1650,6 +1651,65 @@ def _now_ymd(o):
     c = str((o or {}).get("created", ""))
     m = re.match(r"(\d{4})", c)
     return m.group(1) if m else str((o or {}).get("year", ""))
+
+
+# ===================== 도로명주소 검색 (행정안전부 JUSO 오픈API) =====================
+# 승인키가 설정되면 사용, 없으면 공공 테스트키(TESTJUSOGOKR)로 동작.
+def _addr_confm_key():
+    try:
+        cfg = _load_json(CFG_FILE, {})
+        k = str(cfg.get("jusoKey", "") or "").strip()
+        return k or "TESTJUSOGOKR"
+    except Exception:
+        return "TESTJUSOGOKR"
+
+
+def _addr_search(keyword, page="1", per="10"):
+    """도로명/지번 주소 검색 결과 반환."""
+    kw = str(keyword or "").strip()
+    if not kw:
+        return {"ok": True, "items": [], "total": 0}
+    try:
+        per = str(int(per))
+    except Exception:
+        per = "10"
+    url = (
+        "https://business.juso.go.kr/addrlink/addrLinkApi.do"
+        "?confmKey=" + urllib.parse.quote(_addr_confm_key())
+        + "&currentPage=" + urllib.parse.quote(str(page))
+        + "&countPerPage=" + urllib.parse.quote(per)
+        + "&keyword=" + urllib.parse.quote(kw)
+        + "&resultType=json"
+    )
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (TSAK App)",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+        j = json.loads(raw)
+        res = j.get("results", {})
+        common = res.get("common", {})
+        code = str(common.get("errorCode", "0"))
+        if code != "0":
+            return {"ok": False, "items": [], "total": 0,
+                    "error": common.get("errorMessage", "주소검색 오류")}
+        items = []
+        for it in (res.get("juso") or []):
+            items.append({
+                "road": (str(it.get("roadAddr", "")) or "").strip(),
+                "roadPart2": (str(it.get("roadAddrPart2", "")) or "").strip(),
+                "jibun": (str(it.get("jibunAddr", "")) or "").strip(),
+                "zip": (str(it.get("zipNo", "")) or "").strip(),
+                "bdNm": (str(it.get("bdNm", "")) or "").strip(),
+                "siNm": (str(it.get("siNm", "")) or "").strip(),
+                "sggNm": (str(it.get("sggNm", "")) or "").strip(),
+            })
+        return {"ok": True, "items": items,
+                "total": int(common.get("totalCount", len(items)) or 0)}
+    except Exception as e:
+        return {"ok": False, "items": [], "total": 0, "error": str(e)}
 
 
 # ============================ 수품구매 (굿즈/상품 주문) ============================
@@ -3957,6 +4017,12 @@ class Handler(BaseHTTPRequestHandler):
                     "paused": _server_paused(),
                     "ts": datetime.datetime.now().isoformat(),
                 })
+            # ---- 도로명주소 검색 (행정안전부 JUSO 오픈API, 공개·무인증) ----
+            if p == "/api/address/search":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                kw = (q.get("q", [""])[0] or "").strip()
+                page = (q.get("page", ["1"])[0] or "1").strip()
+                return self._json(_addr_search(kw, page))
             # ---- 버전 감지(업데이트 반영) ----
             # 빌드 산출물(main.dart.js)의 수정시각을 버전으로 노출한다.
             # 재빌드(재배포) 시 값이 바뀌므로 클라이언트가 자동 감지/새로고침한다.
@@ -5224,6 +5290,7 @@ class Handler(BaseHTTPRequestHandler):
                     "buyerName": str(d.get("buyerName", "") or "")[:40],
                     "buyerNumber": ident,
                     "phone": str(d.get("phone", "") or "")[:20],
+                    "email": str(d.get("email", "") or "")[:80],
                     "address": str(d.get("address", "") or "")[:200],
                     "shipMethod": ship,
                     "shipNote": str(d.get("shipNote", "") or "")[:200],

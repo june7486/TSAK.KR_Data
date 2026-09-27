@@ -33,6 +33,27 @@ class NasApi {
 
   Uri _uri(String path) => Uri.parse('$_base$path');
 
+  /// 도로명주소 검색 (행정안전부 JUSO, 프록시 경유·무인증).
+  Future<List<Map<String, dynamic>>> addrSearch(String q,
+      {int page = 1}) async {
+    if (q.trim().isEmpty) return [];
+    try {
+      final r = await http
+          .get(
+            _uri('/api/address/search?q=${Uri.encodeComponent(q)}'
+                '&page=$page'),
+            headers: _authHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return ((j['items'] as List?) ?? [])
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ---- Health ----
   Future<bool> health() async {
     try {
@@ -1351,6 +1372,7 @@ class NasApi {
     int qty = 1,
     String option = '',
     String phone = '',
+    String email = '',
     String address = '',
     String shipMethod = '현장구매',
     String shipNote = '',
@@ -1369,6 +1391,7 @@ class NasApi {
             'qty': qty,
             'option': option,
             'phone': phone,
+            'email': email,
             'address': address,
             'shipMethod': shipMethod,
             'shipNote': shipNote,

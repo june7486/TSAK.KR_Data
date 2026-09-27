@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
 
 /// 수품구매(굿즈) 판매창 — 로그인 없이 열람·주문 가능.
@@ -420,11 +421,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final name = TextEditingController();
     final number = TextEditingController();
     final phone = TextEditingController();
+    final email = TextEditingController();
     final address = TextEditingController();
     final qty = TextEditingController(text: '1');
     final otherShip = TextEditingController();
+    final formKey = GlobalKey<FormState>();
     String option = options.isNotEmpty ? options.first : '';
     String ship = '현장구매';
+    String errMsg = '';
 
     final price = (p['price'] as num?)?.toInt() ?? 0;
 
@@ -437,104 +441,145 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
           return AlertDialog(
             title: Text('${p['name']} 구매'),
             content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: number,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: '인가번호 (연회비 확인용)', isDense: true),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: name,
-                    decoration: const InputDecoration(
-                        labelText: '입금자명 (인가자 이름)', isDense: true),
-                  ),
-                  const SizedBox(height: 8),
-                  if (options.isNotEmpty) ...[
-                    DropdownButtonFormField<String>(
-                      initialValue: option,
-                      isDense: true,
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: number,
+                      keyboardType: TextInputType.number,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? '인가번호를 입력하세요'
+                          : null,
                       decoration: const InputDecoration(
-                          labelText: '옵션 (사이즈 등)', isDense: true),
-                      items: options
-                          .map((o) => DropdownMenuItem(value: o, child: Text(o)))
-                          .toList(),
-                      onChanged: (v) => setDlg(() => option = v ?? ''),
+                          labelText: '인가번호 * (연회비 확인용)', isDense: true),
                     ),
                     const SizedBox(height: 8),
-                  ],
-                  TextField(
-                    controller: qty,
-                    keyboardType: TextInputType.number,
-                    onChanged: (_) => setDlg(() {}),
-                    decoration: const InputDecoration(
-                        labelText: '수량', isDense: true),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: phone,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                        labelText: '연락처 (선택)', isDense: true),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text('배송 방법',
-                      style: TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    children: [
-                      for (final m in ['현장구매', '택배발송', '기타'])
-                        ChoiceChip(
-                          label: Text(m),
-                          selected: ship == m,
-                          onSelected: (_) => setDlg(() => ship = m),
-                        ),
+                    TextFormField(
+                      controller: name,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? '입금자명을 입력하세요'
+                          : null,
+                      decoration: const InputDecoration(
+                          labelText: '입금자명 * (인가자 이름)', isDense: true),
+                    ),
+                    const SizedBox(height: 8),
+                    if (options.isNotEmpty) ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: option,
+                        isDense: true,
+                        decoration: const InputDecoration(
+                            labelText: '옵션 (사이즈 등)', isDense: true),
+                        items: options
+                            .map((o) =>
+                                DropdownMenuItem(value: o, child: Text(o)))
+                            .toList(),
+                        onChanged: (v) => setDlg(() => option = v ?? ''),
+                      ),
+                      const SizedBox(height: 8),
                     ],
-                  ),
-                  if (ship == '택배발송') ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: address,
-                      maxLines: 2,
+                    TextFormField(
+                      controller: qty,
+                      keyboardType: TextInputType.number,
+                      validator: (v) {
+                        final n = int.tryParse((v ?? '').trim()) ?? 0;
+                        return n < 1 ? '수량을 1 이상 입력하세요' : null;
+                      },
+                      onChanged: (_) => setDlg(() {}),
                       decoration: const InputDecoration(
-                          labelText: '배송 주소', isDense: true),
+                          labelText: '수량 *', isDense: true),
                     ),
-                  ],
-                  if (ship == '기타') ...[
                     const SizedBox(height: 8),
-                    TextField(
-                      controller: otherShip,
+                    TextFormField(
+                      controller: phone,
+                      keyboardType: TextInputType.phone,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? '연락처를 입력하세요'
+                          : null,
                       decoration: const InputDecoration(
-                          labelText: '배송 방법 직접입력', isDense: true),
+                          labelText: '연락처 *', isDense: true),
                     ),
-                  ],
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.taegeukBlue.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: email,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) {
+                        final s = (v ?? '').trim();
+                        if (s.isEmpty) return null;
+                        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                .hasMatch(s)
+                            ? null
+                            : '이메일 형식이 올바르지 않습니다';
+                      },
+                      decoration: const InputDecoration(
+                          labelText: '이메일 (선택)', isDense: true),
                     ),
-                    child: Row(
+                    const SizedBox(height: 10),
+                    const Text('배송 방법',
+                        style: TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
                       children: [
-                        const Text('합계:',
-                            style: TextStyle(fontWeight: FontWeight.w700)),
-                        const Spacer(),
-                        Text(_won(total),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.taegeukBlue)),
+                        for (final m in ['현장구매', '택배발송', '기타'])
+                          ChoiceChip(
+                            label: Text(m),
+                            selected: ship == m,
+                            onSelected: (_) => setDlg(() => ship = m),
+                          ),
                       ],
                     ),
-                  ),
-                ],
+                    if (ship == '택배발송') ...[
+                      const SizedBox(height: 8),
+                      AddressField(
+                        controller: address,
+                        label: '배송 주소',
+                        hint: '주소검색 버튼으로 검색하세요',
+                        required: true,
+                      ),
+                    ],
+                    if (ship == '기타') ...[
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: otherShip,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? '배송 방법을 입력하세요'
+                            : null,
+                        decoration: const InputDecoration(
+                            labelText: '배송 방법 직접입력 *', isDense: true),
+                      ),
+                    ],
+                    if (errMsg.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(errMsg,
+                          style: const TextStyle(
+                              color: AppColors.taegeukRed, fontSize: 12)),
+                    ],
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.taegeukBlue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Text('합계:',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                          Text(_won(total),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.taegeukBlue)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -542,7 +587,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   onPressed: () => Navigator.pop(ctx, false),
                   child: const Text('취소')),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
+                onPressed: () {
+                  if (formKey.currentState?.validate() != true) {
+                    setDlg(() => errMsg = '');
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
                 child: const Text('주문하기'),
               ),
             ],
@@ -561,6 +612,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         qty: int.tryParse(qty.text.trim()) ?? 1,
         option: option,
         phone: phone.text.trim(),
+        email: email.text.trim(),
         address: address.text.trim(),
         shipMethod: ship == '기타' ? otherShip.text.trim() : ship,
         shipNote: ship == '기타' ? otherShip.text.trim() : '',

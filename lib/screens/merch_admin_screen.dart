@@ -437,6 +437,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           const SizedBox(height: 6),
           _row('구매자', '${o['buyerName'] ?? ''}'
               '${'${o['buyerNumber'] ?? ''}'.isNotEmpty ? ' (${o['buyerNumber']})' : ''}'),
+          if ('${o['phone'] ?? ''}'.isNotEmpty) _row('연락처', '${o['phone']}'),
+          if ('${o['email'] ?? ''}'.isNotEmpty) _row('이메일', '${o['email']}'),
           _row('수량·합계',
               '${o['qty'] ?? 1}개${'${o['option'] ?? ''}'.isNotEmpty ? ' / ${o['option']}' : ''} · ${_won((o['total'] as num?)?.toInt() ?? 0)}'),
           _row('배송', '${o['shipMethod'] ?? ''}'
