@@ -1764,6 +1764,152 @@ def _ev_member_set_event(ident, event_name, value=True):
     return hit
 
 
+def _ev_member_set_event_batch(idents, event_name, value=True, members=None,
+                               backup=True, meta=True):
+    """여러 회원의 eventAttend 를 한 번의 로드/저장으로 갱신 (성능).
+
+    members 를 넘기면 재조회 없이 그 리스트를 갱신한다(호출측이 저장 책임).
+    반환: 갱신된 회원 수.
+    """
+    ds = {re.sub(r"[^0-9]", "", str(i or "")) for i in idents}
+    ds.discard("")
+    if not ds:
+        return 0
+    own = members is None
+    if own:
+        members = _ev_members()
+    hit = 0
+    for i, m in enumerate(members):
+        mid = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        mp = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
+        mlid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
+        if mid in ds or mp in ds or mlid in ds:
+            ev = m.get("eventAttend")
+            if not isinstance(ev, dict):
+                ev = {}
+            ev[event_name] = bool(value)
+            m["eventAttend"] = ev
+            members[i] = m
+            hit += 1
+    if hit and own:
+        if backup:
+            _ev_backup_members()
+        _save_json(DB_FILE, members)
+        if meta:
+            _touch_meta({"count": len(members), "updatedBy": "event"})
+    return hit
+
+
+def _ev_backup_members():
+    """members.json 백업 1회(쓰기 전 원본 보존)."""
+    try:
+        if NAS.exists(DB_FILE):
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            NAS.write(f"{BASE}/backups/members_{stamp}.json",
+                      NAS.read(DB_FILE).encode("utf-8"))
+    except Exception:
+        pass
+
+
+# 회원파일 백그라운드 쓰기 직렬화(동시 스캔 시 서로 덮어쓰기 방지)
+_MEMBER_WRITE_LOCK = threading.Lock()
+
+
+def _ev_guest_ensure_account_async(phone, name, event_name):
+    """비인가자 계정 보장 + eventAttend 를 백그라운드에서 처리.
+
+    · 전화번호 일치 계정이 있으면 재사용(프로필 보완), 없으면 신규 생성.
+    · 생성/갱신 후 members.json 1회 저장.
+    응답을 지연시키지 않기 위해 별도 스레드에서 실행.
+    """
+    d = re.sub(r"[^0-9]", "", str(phone or ""))
+    nm = str(name or "").strip()
+    if not d:
+        return
+
+    def _job():
+        try:
+            with _MEMBER_WRITE_LOCK:
+                members = _ev_members()
+                found = None
+                for m in members:
+                    if re.sub(r"[^0-9]", "", str(
+                            m.get("accessPhone") or m.get("phone") or "")) == d:
+                        found = m
+                        break
+                if not found:
+                    existing = {re.sub(r"[^0-9]", "", str(x.get("number", "")))
+                                for x in members}
+                    newno = ""
+                    for cand in range(900001, 900001 + max(1, len(members) + 10)):
+                        if str(cand) not in existing:
+                            newno = str(cand)
+                            break
+                    if not newno:
+                        newno = str(900001 + len(members))
+                    found = {
+                        "id": "guest_" + newno,
+                        "number": newno,
+                        "name": nm,
+                        "unit": "", "league": "",
+                        "phone": d, "accessPhone": d, "loginId": d,
+                        "isRegular": True,
+                        "personalPassword": _ev_phone_last4(d),
+                    }
+                    members.append(found)
+                else:
+                    if not found.get("isRegular"):
+                        found["isRegular"] = True
+                    if not found.get("loginId"):
+                        found["loginId"] = d
+                    if not found.get("accessPhone"):
+                        found["accessPhone"] = d
+                if event_name:
+                    ev = found.get("eventAttend")
+                    if not isinstance(ev, dict):
+                        ev = {}
+                    ev[event_name] = True
+                    found["eventAttend"] = ev
+                _save_json(DB_FILE, members)
+                _touch_meta({"count": len(members), "updatedBy": "qr_join"})
+        except Exception:
+            pass
+
+    threading.Thread(target=_job, daemon=True).start()
+
+
+def _ev_member_event_async(ident, event_name, value=True):
+    """응답을 지연시키지 않도록 회원 eventAttend 갱신을 백그라운드로 처리.
+
+    직렬화 락 하에 members.json 을 다시 읽어 안전하게 반영한다(가산적).
+    """
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return
+
+    def _job():
+        try:
+            with _MEMBER_WRITE_LOCK:
+                members = _ev_members()
+                for i, m in enumerate(members):
+                    if (re.sub(r"[^0-9]", "", str(m.get("number", ""))) == d
+                            or re.sub(r"[^0-9]", "", str(m.get("phone", ""))) == d
+                            or re.sub(r"[^0-9]", "", str(m.get("loginId", ""))) == d):
+                        ev = m.get("eventAttend")
+                        if not isinstance(ev, dict):
+                            ev = {}
+                        ev[event_name] = bool(value)
+                        m["eventAttend"] = ev
+                        members[i] = m
+                        _save_json(DB_FILE, members)
+                        _touch_meta({"updatedBy": "event"})
+                        break
+        except Exception:
+            pass
+
+    threading.Thread(target=_job, daemon=True).start()
+
+
 def _ev_log_access(eid, entry):
     """행사 접근 이력 1건 기록."""
     doc = _ev_doc()
@@ -1836,11 +1982,28 @@ def _ev_qr_join_credentialed(year, title, number):
     d = re.sub(r"[^0-9]", "", str(number or ""))
     if not d:
         return {"ok": False, "error": "number", "message": "인가번호를 입력해 주세요."}, 400
-    m = _ev_member_by_ident(d)
+    # 회원 목록 1회 로드 후 재사용(조회/저장 중복 제거)
+    _members = _ev_members()
+    m = None
+    for _x in _members:
+        if (re.sub(r"[^0-9]", "", str(_x.get("number", ""))) == d
+                or re.sub(r"[^0-9]", "", str(_x.get("phone", ""))) == d
+                or re.sub(r"[^0-9]", "", str(_x.get("loginId", ""))) == d):
+            m = _x
+            break
     if not m:
         return {"ok": False, "error": "not_member",
                 "message": "등록되지 않은 인가번호입니다. 번호를 확인해 주세요."}, 404
+    entry = {
+        "number": str(m.get("number", d)),
+        "name": str(m.get("name", "")),
+        "unit": str(m.get("unit", "")),
+        "league": str(m.get("league", "")),
+        "phone": str(m.get("phone", "")),
+        "roles": [],
+    }
     eid = _ev_id(year, title)
+    # 이벤트 문서 1회 저장
     with LOCK:
         doc = _ev_doc()
         e = doc.get("events", {}).get(eid)
@@ -1848,26 +2011,22 @@ def _ev_qr_join_credentialed(year, title, number):
             return {"ok": False, "error": "no_event",
                     "message": "행사를 찾을 수 없습니다."}, 404
         if _ev_is_attendee(e, d):
-            return {"ok": True, "already": True, "name": m.get("name", ""),
-                    "kind": "credentialed",
-                    "message": "이미 참가자로 등록되어 있습니다."}, 200
-        entry = {
-            "number": str(m.get("number", d)),
-            "name": str(m.get("name", "")),
-            "unit": str(m.get("unit", "")),
-            "league": str(m.get("league", "")),
-            "phone": str(m.get("phone", "")),
-            "roles": [],
-        }
-        _ev_add_attendee_entry(e, entry)
-        _ev_log_access(eid, {"id": d, "name": entry["name"], "at":
-                             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                             "via": "qr"})
-        _ev_save(doc)
-    try:
-        _ev_member_set_event(d, title, True)
-    except Exception:
-        pass
+            already = True
+        else:
+            already = False
+            _ev_add_attendee_entry(e, entry)
+            e.setdefault("accessLog", []).insert(0, {
+                "id": d, "name": entry["name"], "via": "qr",
+                "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+            e["accessLog"] = e["accessLog"][:500]
+            _ev_save(doc)
+    # 회원 eventAttend 연동 — 응답 지연을 피하기 위해 백그라운드 처리
+    if not already:
+        _ev_member_event_async(d, title, True)
+    if already:
+        return {"ok": True, "already": True, "name": m.get("name", ""),
+                "kind": "credentialed",
+                "message": "이미 참가자로 등록되어 있습니다."}, 200
     return {"ok": True, "name": entry["name"], "kind": "credentialed",
             "message": "행사 참가자로 등록되었습니다."}, 200
 
@@ -1887,86 +2046,37 @@ def _ev_qr_join_guest(year, title, name, phone):
         return {"ok": False, "error": "phone",
                 "message": "전화번호를 정확히 입력해 주세요."}, 400
     eid = _ev_id(year, title)
+    # 이벤트 문서만 동기 처리(회원 파일 읽기/쓰기는 백그라운드 → 응답 즉시)
     with LOCK:
         doc = _ev_doc()
         e = doc.get("events", {}).get(eid)
         if not e:
             return {"ok": False, "error": "no_event",
                     "message": "행사를 찾을 수 없습니다."}, 404
-        # 기존 회원(전화번호) 조회
-        members = _ev_members()
-        found = None
-        for m in members:
-            if re.sub(r"[^0-9]", "", str(
-                    m.get("accessPhone") or m.get("phone") or "")) == d:
-                found = m
-                break
-        created = False
-        if not found:
-            # 신규 아이디 자동 생성
-            newno = ""
-            existing = {re.sub(r"[^0-9]", "", str(x.get("number", "")))
-                        for x in members}
-            for cand in range(900001, 900001 + max(1, len(members) + 10)):
-                if str(cand) not in existing:
-                    newno = str(cand)
-                    break
-            if not newno:
-                newno = str(900001 + len(members))
-            found = {
-                "id": "guest_" + newno,
-                "number": newno,
+        already = _ev_is_attendee(e, d)
+        if not already:
+            entry = {
+                "loginId": d,
                 "name": name,
                 "unit": "",
-                "league": "",
                 "phone": d,
-                "accessPhone": d,
-                "loginId": d,
-                "isRegular": True,          # 비인가자(일반회원)
-                "personalPassword": _ev_phone_last4(d),
+                "roles": [],
             }
-            members.append(found)
-            try:
-                if NAS.exists(DB_FILE):
-                    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                    NAS.write(f"{BASE}/backups/members_{stamp}.json",
-                              NAS.read(DB_FILE).encode("utf-8"))
-            except Exception:
-                pass
-            _save_json(DB_FILE, members)
-            _touch_meta({"count": len(members), "updatedBy": "qr_join"})
-            created = True
-        else:
-            if not found.get("isRegular"):
-                found["isRegular"] = True
-            if not found.get("loginId"):
-                found["loginId"] = d
-            if not found.get("accessPhone"):
-                found["accessPhone"] = d
-        ident = _ev_attendee_ident({"number": found.get("number"),
-                                    "loginId": d, "phone": d})
-        if _ev_is_attendee(e, ident):
-            return {"ok": True, "already": True, "name": found.get("name", name),
-                    "loginId": d, "kind": "guest", "created": created,
-                    "message": "이미 참가자로 등록되어 있습니다."}, 200
-        entry = {
-            "loginId": d,
-            "name": str(found.get("name") or name),
-            "unit": str(found.get("unit", "")),
-            "phone": d,
-            "roles": [],
-        }
-        _ev_add_attendee_entry(e, entry)
-        _ev_log_access(eid, {"id": d, "name": entry["name"], "at":
-                             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                             "via": "qr"})
-        _ev_save(doc)
-    try:
-        _ev_member_set_event(d, title, True)
-    except Exception:
-        pass
-    return {"ok": True, "name": entry["name"], "loginId": d,
-            "kind": "guest", "created": created, "pw_hint": _ev_phone_last4(d),
+            _ev_add_attendee_entry(e, entry)
+            e.setdefault("accessLog", []).insert(0, {
+                "id": d, "name": name, "via": "qr",
+                "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+            e["accessLog"] = e["accessLog"][:500]
+            _ev_save(doc)
+    # 회원 계정 보장(신규 생성/재사용) + eventAttend 를 백그라운드에서 처리
+    if not already:
+        _ev_guest_ensure_account_async(d, name, title)
+    if already:
+        return {"ok": True, "already": True, "name": name,
+                "loginId": d, "kind": "guest",
+                "message": "이미 참가자로 등록되어 있습니다."}, 200
+    return {"ok": True, "name": name, "loginId": d, "kind": "guest",
+            "created": True, "pw_hint": _ev_phone_last4(d),
             "message": "참가자로 등록되었습니다. 아이디는 전화번호, "
                        "비밀번호는 전화번호 뒤 4자리입니다."}, 200
 
@@ -3964,14 +4074,17 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json({"ok": False, "error": "not found"}, 404)
                     e["attendees"] = d.get("attendees", [])
                     _ev_save(doc)
-                # 회원 프로필(eventAttend) 연동 + 해제
+                # 회원 프로필(eventAttend) 연동 — 1회 로드/저장으로 일괄 처리
+                idents = []
                 for a in d.get("attendees", []):
-                    ident = a.get("number") or a.get("phone")
+                    ident = a.get("number") or a.get("loginId") or a.get("phone")
                     if ident:
-                        try:
-                            _ev_member_set_event(ident, title, True)
-                        except Exception:
-                            pass
+                        idents.append(re.sub(r"[^0-9]", "", str(ident)))
+                if idents:
+                    try:
+                        _ev_member_set_event_batch(idents, title, True)
+                    except Exception:
+                        pass
                 return self._json({"ok": True})
             if p == "/api/event/search-member":
                 d = json.loads(self._body() or b"{}")
@@ -4030,10 +4143,10 @@ class Handler(BaseHTTPRequestHandler):
                         added_idents.append(ident)
                     if added_ok:
                         _ev_save(doc)
-                # 회원 프로필(eventAttend) 연동
-                for ident in added_idents:
+                # 회원 프로필(eventAttend) 연동 — 1회 로드/저장으로 일괄 처리
+                if added_idents:
                     try:
-                        _ev_member_set_event(ident, title, True)
+                        _ev_member_set_event_batch(added_idents, title, True)
                     except Exception:
                         pass
                 return self._json({"ok": True, "added": added_ok,

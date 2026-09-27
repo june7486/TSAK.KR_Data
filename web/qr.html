@@ -170,6 +170,10 @@
         <button class="btn btn-red" id="btnSubmit" style="margin-top:18px;">등록하기</button>
         <button class="btn btn-no" id="btnBack">돌아가기</button>
         <div id="askErr" class="err hide"></div>
+        <div id="subBusy" class="hide" style="margin-top:14px;text-align:center;">
+          <div class="spinner" style="margin:6px auto 4px;"></div>
+          <div class="hint">등록 중입니다… 잠시만 기다려 주세요.</div>
+        </div>
       </div>
 
       <!-- 3) 결과 -->
@@ -279,13 +283,16 @@
       body.name = nm; body.phone = ph;
     }
     $('btnSubmit').disabled = true;
+    $('subBusy').classList.remove('hide');
     api('/api/event/qr/join', body).then(function(r){
       $('btnSubmit').disabled = false;
+      $('subBusy').classList.add('hide');
       var j = r.j || {};
       if (!j.ok){ return fail(j.message || '등록에 실패했습니다. 잠시 후 다시 시도해 주세요.'); }
       done(j);
     }).catch(function(){
       $('btnSubmit').disabled = false;
+      $('subBusy').classList.add('hide');
       fail('네트워크 오류입니다. 잠시 후 다시 시도해 주세요.');
     });
   };
