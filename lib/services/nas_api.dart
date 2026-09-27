@@ -1093,6 +1093,25 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 은행거래 종합분석 (캐시) — 관리자·마스터.
+  Future<Map<String, dynamic>> financeAnalysis({bool force = false}) async {
+    final r = await http
+        .get(_uri('/api/finance/analysis?force=${force ? 1 : 0}'),
+            headers: _authHeaders)
+        .timeout(const Duration(seconds: 90));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return (j['analysis'] as Map?)?.cast<String, dynamic>() ?? j;
+  }
+
+  /// 은행거래 종합분석 — 항상 최신 폴더 기준 재분석(작업중 화면용).
+  Future<Map<String, dynamic>> financeAnalysisFresh() async {
+    final r = await http
+        .get(_uri('/api/finance/analysis/fresh'), headers: _authHeaders)
+        .timeout(const Duration(minutes: 5));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return (j['analysis'] as Map?)?.cast<String, dynamic>() ?? j;
+  }
+
   /// 개인 셀프 비밀번호 변경 (본인) — 현재 비번 검증 후 새 비번 저장
   Future<Map<String, dynamic>> changePersonalPassword(
     String number,

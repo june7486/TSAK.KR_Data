@@ -64,6 +64,76 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (widget.openEventTitle.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkEvent());
     }
+    // 로그인 직후 미승인 일반회원이 있으면 관리자·마스터에게 알림 팝업.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkPendingApprovals());
+  }
+
+  bool _pendingChecked = false;
+
+  /// 미승인 일반회원 알림 — 관리자·마스터 로그인 시 1회.
+  /// "다음에 할께요" 옵션으로 놓치지 않고 언제든 처리할 수 있게 한다.
+  Future<void> _checkPendingApprovals() async {
+    if (_pendingChecked) return;
+    _pendingChecked = true;
+    final state = context.read<AppState>();
+    if (!(state.isApp || state.isMaster)) return;
+    // 서버 승인 대기 목록 갱신
+    await state.fetchApprovalPending();
+    if (!mounted) return;
+    final n = state.pendingApprovalCount;
+    if (n <= 0) return;
+    await _showPendingApprovalDialog(state, n);
+  }
+
+  Future<void> _showPendingApprovalDialog(AppState state, int n) async {
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.how_to_reg,
+            color: AppColors.tigerGold, size: 40),
+        title: const Text('미승인 회원 안내',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '승인 대기 중인 일반회원이 $n명 있습니다.',
+              style: const TextStyle(
+                  fontSize: 14.5, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '미승인 회원들에 대한 안내 : 관리자에게 승인 요청을 해주십시요.\n'
+              '지금 바로 승인/보류를 처리할 수 있습니다.',
+              style: TextStyle(
+                  fontSize: 12.5, color: AppColors.textGray, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('다음에 할께요'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.taegeukBlue),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.arrow_forward, size: 16),
+            label: const Text('지금 승인하기'),
+          ),
+        ],
+      ),
+    );
+    if (go == true && mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ApprovalScreen()),
+      );
+      if (mounted) setState(() {});
+    }
   }
 
   /// 행사 QR 딥링크 — 로그인 후 해당 행사 상세 화면을 바로 연다.

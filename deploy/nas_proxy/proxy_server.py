@@ -49,6 +49,7 @@ REGULAR_FILE = BASE + "/db/regular_passwords.json"  # 일반회원(비인가자)
 INQUIRY_FILE = BASE + "/db/inquiries.json"   # 문의 접수 로그 (동의·개인정보)
 INQUIRY_DIR = BASE + "/문의첨부"             # 문의 첨부파일 저장 폴더
 ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인 이력)
+FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거래 종합분석 캐시
 LOCK = threading.Lock()
 
 # 행사별 하위 폴더(항목) — 번호+한글명, 업로드 가능 폴더엔 "_(업로드가능)" 꼬리말
@@ -2795,6 +2796,189 @@ def _analyze_file(folder, name, content):
     return detail
 
 
+# ==========================================================================
+#  Phase 4 — 은행거래내역 종합 분석 (2013~ , 연도/월/행사별)
+# ==========================================================================
+def _finance_year_of(date_str, fallback_year=""):
+    """문자열에서 4자리 연도 추출. (2013~2029)"""
+    m = re.findall(r"(20\d{2})", str(date_str or ""))
+    if m:
+        y = m[0]
+        if 2013 <= int(y) <= 2029:
+            return y
+    if fallback_year:
+        return str(fallback_year)
+    return ""
+
+
+def _finance_month_of(date_str):
+    """문자열에서 월(1~12) 추출. 실패 시 0."""
+    s = str(date_str or "")
+    # 2024-03-05 / 2024.3.5 / 2024/03/05 / 20240305
+    m = re.search(r"(20\d{2})[-./]?\s*(\d{1,2})[-./]?\s*(\d{1,2})", s)
+    if m:
+        mo = int(m.group(2))
+        if 1 <= mo <= 12:
+            return mo
+    m = re.search(r"(20\d{2})(\d{2})(\d{2})", s)
+    if m:
+        mo = int(m.group(2))
+        if 1 <= mo <= 12:
+            return mo
+    return 0
+
+
+def _bank_files_sorted():
+    """은행거래내역 폴더의 파일 목록 — 최신 우선(항상 최신 파일부터 반영)."""
+    target = f"{DATA_DIR}/{SUB_FOLDERS['bank']}"
+    if not NAS.exists(target):
+        return []
+    r = NAS.list(target)
+    if not r.get("ok"):
+        return []
+    files = [f for f in r["files"] if not f["isdir"]]
+    # 파일명 역순 정렬 → 최신(연도/날짜 큰) 우선
+    files.sort(key=lambda x: x["name"], reverse=True)
+    return files
+
+
+def _finance_analyze_all(force=False):
+    """은행거래내역 폴더 전체를 2013년부터 분석.
+
+    반환 구조:
+      {
+        ok, generatedAt, files:[{name,size}], years:{ "2024": {...} },
+        events:{ "행사명": {...} }, totals:{...}
+      }
+    각 연도: { income, expense, net, count, byCategory:{}, byMonth:{1..12},
+               byEvent:{}, rows:[...] }
+    """
+    members = _load_json(DB_FILE, [])
+    rules = _load_json(MAT_FILE, _default_mat())
+    files = _bank_files_sorted()
+
+    years = {}
+    events = {}
+    all_rows = 0
+    grand_income = 0
+    grand_expense = 0
+    proc_files = []
+
+    def _bucket(y):
+        if y not in years:
+            years[y] = {
+                "year": y, "income": 0, "expense": 0, "net": 0, "count": 0,
+                "byCategory": {}, "byMonth": {str(i): {"income": 0, "expense": 0} for i in range(1, 13)},
+                "byEvent": {}, "rows": [],
+            }
+        return years[y]
+
+    for f in files:
+        name = f["name"]
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in (".xlsx", ".xls", ".csv", ".tsv", ".txt"):
+            continue
+        if name.startswith("~$") or name.startswith("."):
+            continue
+        fp = f"{DATA_DIR}/{SUB_FOLDERS['bank']}/{name}"
+        try:
+            content = NAS.read_bytes(fp)
+        except Exception:
+            continue
+        try:
+            sheets = _read_excel_sheets(content, name)
+        except Exception:
+            continue
+        acct = _account_kind(name)
+        n_file_rows = 0
+        for sname, srows in sheets:
+            if not srows:
+                continue
+            objs = _rows_to_objects(srows)
+            if not objs:
+                continue
+            for o in objs:
+                c = _classify(o, members, rules, account_kind=acct)
+                dt = c.get("date", "")
+                y = _finance_year_of(dt, (re.findall(r"(20\d{2})", name) or [""])[0])
+                if not y:
+                    continue
+                # 2013년 이후만
+                if int(y) < 2013:
+                    continue
+                amt = int(c.get("amount", 0) or 0)
+                typ = c.get("type", "income")
+                if amt <= 0:
+                    continue
+                b = _bucket(y)
+                mo = _finance_month_of(dt)
+                cat = c.get("category", "기타")
+                ev = c.get("event", "") or "미분류"
+                is_exp = (typ == "expense")
+                if is_exp:
+                    b["expense"] += amt
+                    grand_expense += amt
+                else:
+                    b["income"] += amt
+                    grand_income += amt
+                b["count"] += 1
+                all_rows += 1
+                n_file_rows += 1
+                ck = ("지출:" if is_exp else "수입:") + cat
+                bc = b["byCategory"]
+                bc[ck] = bc.get(ck, 0) + amt
+                if mo:
+                    b["byMonth"][str(mo)]["expense" if is_exp else "income"] += amt
+                be = b["byEvent"]
+                if ev not in be:
+                    be[ev] = {"income": 0, "expense": 0}
+                be[ev]["expense" if is_exp else "income"] += amt
+                # 행사별 전역 집계(연도 무관)
+                ge = events.setdefault(ev, {"event": ev, "income": 0, "expense": 0, "count": 0, "years": {}})
+                ge["expense" if is_exp else "income"] += amt
+                ge["count"] += 1
+                ge["years"][y] = ge["years"].get(y, 0) + amt
+                # 연도 rows(최근 200건 유지)
+                if len(b["rows"]) < 400:
+                    b["rows"].append({
+                        "date": dt, "type": typ, "amount": amt,
+                        "name": c.get("name", ""), "number": c.get("number", ""),
+                        "category": cat, "event": c.get("event", ""),
+                        "memo": c.get("memo", ""), "context": c.get("context", ""),
+                        "file": name,
+                    })
+        if n_file_rows:
+            proc_files.append({"name": name, "size": f.get("size", 0), "rows": n_file_rows})
+
+    for y, b in years.items():
+        b["net"] = b["income"] - b["expense"]
+        b["rows"].sort(key=lambda r: str(r.get("date", "")), reverse=True)
+        # byEvent 상위 정렬
+        b["byEvent"] = dict(sorted(b["byEvent"].items(),
+                                   key=lambda kv: -(kv[1]["income"] + kv[1]["expense"])))
+    # byCategory 합계 정렬
+    for y, b in years.items():
+        b["byCategory"] = dict(sorted(b["byCategory"].items(),
+                                      key=lambda kv: -kv[1]))
+
+    out_years = dict(sorted(years.items(), reverse=True))
+    return {
+        "ok": True,
+        "generatedAt": datetime.datetime.now().isoformat(),
+        "files": proc_files,
+        "fileCount": len(proc_files),
+        "years": out_years,
+        "events": dict(sorted(events.items(), key=lambda kv: -(kv[1]["income"] + kv[1]["expense"]))),
+        "totals": {
+            "income": grand_income, "expense": grand_expense,
+            "net": grand_income - grand_expense, "rows": all_rows,
+            "yearCount": len(out_years),
+            "from": min(out_years.keys()) if out_years else "",
+            "to": max(out_years.keys()) if out_years else "",
+        },
+    }
+
+
 def _build_excel(kind="finance"):
     """통합 재무 엑셀 생성 (거래·연도별집계·인가자별 요약)."""
     import io
@@ -3603,6 +3787,33 @@ class Handler(BaseHTTPRequestHandler):
                 pending = _pending_members()
                 return self._json({"ok": True, "pending": pending,
                                    "count": len(pending)})
+            # ---- Phase4: 은행거래 종합분석 (캐시 우선, 관리자·마스터) ----
+            if p == "/api/finance/analysis":
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                force = (q.get("force", ["0"])[0] or "0") in ("1", "true", "yes")
+                cached = _load_json(FINANCE_ANALYSIS_FILE, None)
+                if cached and not force and cached.get("ok"):
+                    return self._json({"ok": True, "cached": True, "analysis": cached})
+                data = _finance_analyze_all(force=force)
+                try:
+                    with LOCK:
+                        _save_json(FINANCE_ANALYSIS_FILE, data)
+                except Exception:
+                    pass
+                return self._json({"ok": True, "cached": False, "analysis": data})
+            if p == "/api/finance/analysis/fresh":
+                # 항상 최신 폴더 기준으로 재분석(작업중 화면용 - 동기 실행)
+                if not self._require("admin"):
+                    return
+                data = _finance_analyze_all(force=True)
+                try:
+                    with LOCK:
+                        _save_json(FINANCE_ANALYSIS_FILE, data)
+                except Exception:
+                    pass
+                return self._json({"ok": True, "analysis": data})
             if p == "/api/meta":
                 if not self._require():
                     return

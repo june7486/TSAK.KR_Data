@@ -638,6 +638,38 @@ class AppState extends ChangeNotifier {
     return 0;
   }
 
+  /// 은행거래 종합분석 — 캐시 우선(force=재분석).
+  Map<String, dynamic> _financeAnalysis = {};
+
+  Map<String, dynamic> get financeAnalysis => _financeAnalysis;
+  bool get hasFinanceAnalysis => _financeAnalysis.isNotEmpty;
+
+  /// 은행거래 종합분석 로드(캐시). 성공 시 데이터 반환.
+  Future<Map<String, dynamic>> loadFinanceAnalysis({bool force = false}) async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return {};
+    try {
+      final a = await nas.financeAnalysis(force: force);
+      _financeAnalysis = a;
+      notifyListeners();
+      return a;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 은행거래 종합분석 — 항상 최신 폴더 기준 재분석(작업중 화면용).
+  Future<Map<String, dynamic>> analyzeFinanceFresh() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return {};
+    try {
+      final a = await nas.financeAnalysisFresh();
+      _financeAnalysis = a;
+      notifyListeners();
+      return a;
+    } catch (_) {
+      return {};
+    }
+  }
+
   /// 개인비번 초기화(reset=true) 또는 지정 변경
   Future<String?> setPersonalPassword(
     String master,

@@ -5,6 +5,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import 'finance_analysis_screen.dart';
 
 /// 기본자료 폴더 — 명단/인가자명단/은행거래내역/후원현황/지출내역/행사자료 파일 첨부
 /// 첨부 시 NAS에 저장하고 자동 분석하여 요약을 보여준다.
@@ -60,6 +61,16 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
         titleSpacing: 0,
         actions: [
           const AppHomeEmblem(size: 24),
+          if (_selected == 'bank')
+            IconButton(
+              tooltip: '은행거래 종합분석 보고서',
+              icon: const Icon(Icons.insights, color: AppColors.scoutGreen),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const FinanceAnalysisScreen()),
+              ),
+            ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
