@@ -16,6 +16,7 @@ import '../widgets/donate_sheet.dart';
 import '../widgets/inquiry_sheet.dart';
 import 'app_access_screen.dart';
 import 'admin_screen.dart';
+import 'merch_admin_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'event_year_screen.dart';
@@ -974,7 +975,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     '수품구매',
                     Icons.shopping_bag,
                     AppColors.taegeukBlue,
-                    2,
+                    -2,
                   ),
                   _finButton(
                     '참가비',
@@ -1413,7 +1414,12 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.only(right: 6),
       child: GestureDetector(
         onTap: () {
-          if (tab < 0) {
+          if (tab == -2) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MerchAdminScreen()),
+            );
+          } else if (tab < 0) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const SourceFolderScreen()),

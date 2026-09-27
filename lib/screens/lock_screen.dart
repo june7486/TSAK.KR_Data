@@ -7,6 +7,7 @@ import '../services/build_info.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/privacy_consent.dart';
+import 'merch_shop_screen.dart';
 
 /// 앱 잠금(인증) 화면
 ///  - 관리자 접근: ID "TSAK"(대문자) + 앱 비밀번호 (Tsak1988!!)
@@ -485,6 +486,32 @@ class _LockScreenState extends State<LockScreen> {
                           ),
                         ],
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  // 로그인 없이 수품구매(굿즈) 열람·주문
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.6)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const MerchShopScreen()),
+                      ),
+                      icon: const Icon(Icons.shopping_bag_outlined, size: 19),
+                      label: const Text(
+                        '수품구매 (로그인 없이 주문)',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 18),
