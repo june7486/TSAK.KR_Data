@@ -1544,6 +1544,64 @@ def _ev_files(year, title, key, sub=""):
     return out
 
 
+def _ev_media_images_recursive(year, title, sub=""):
+    """media 폴더(하위폴더 포함)의 이미지 파일 목록을 재귀 수집."""
+    fp = _ev_sub_dir(year, title, "media", sub)
+    if not fp or not NAS.exists(fp):
+        return []
+    try:
+        r = NAS.list(fp)
+    except Exception:
+        return []
+    if not r.get("ok"):
+        return []
+    out = []
+    for f in sorted(r.get("files") or [], key=lambda x: str(x.get("name", ""))):
+        nm = str(f.get("name", ""))
+        if nm.startswith("."):
+            continue
+        child = f"{sub}/{nm}" if sub else nm
+        if f.get("isdir"):
+            out.extend(_ev_media_images_recursive(year, title, child))
+        elif _kind_of(nm) == "image":
+            out.append({"name": nm, "sub": sub})
+    return out
+
+
+def _ev_all_photos():
+    """모든 행사의 사진을 행사 순서대로 모아 반환(행사별 구분용 그룹).
+
+    반환: {ok, events:[{id,year,title,period,place,count,photos:[{name,sub}]}], total}
+    - 행사 순서: 최신 연도 우선, 연도 내 최신(제목 내림차순) 우선.
+    """
+    doc = _ev_doc()
+    items = []
+    for eid, e in doc.get("events", {}).items():
+        year = str(e.get("year", "") or "")
+        title = str(e.get("title", "") or "")
+        if not year or not title:
+            continue
+        imgs = _ev_media_images_recursive(year, title)
+        if not imgs:
+            continue
+        items.append({
+            "id": eid,
+            "year": year,
+            "title": title,
+            "period": str(e.get("period", "") or ""),
+            "place": str(e.get("place", "") or ""),
+            "count": len(imgs),
+            "photos": imgs,
+        })
+    items.sort(key=lambda x: (x["year"] or "0000", x["title"]), reverse=True)
+    return {
+        "ok": True,
+        "events": items,
+        "total": sum(int(x["count"]) for x in items),
+        "eventCount": len(items),
+    }
+
+
 def _make_image_thumb2(src_bytes, year, title, name, sub="", max_side=480):
     """행사 항목 이미지 → JPEG 썸네일."""
     try:
@@ -3973,6 +4031,10 @@ class Handler(BaseHTTPRequestHandler):
                 e = dict(e)
                 e["id"] = eid
                 return self._json({"ok": True, "event": e})
+            if p == "/api/event/photos/all":
+                if not self._require():
+                    return
+                return self._json(_ev_all_photos())
             if p == "/api/event/files":
                 if not self._require():
                     return

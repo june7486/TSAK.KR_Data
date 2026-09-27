@@ -602,9 +602,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _eventSection(Member m) {
-    final events = m.eventAttend.keys.toList();
+    // 참가한 모든 행사를 최신순(연도 내림차순)으로 아래로 나열한다.
+    final events = m.eventAttend.keys.toList()
+      ..sort((a, b) {
+        final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
+        final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
+        if (ya != yb) return yb.compareTo(ya);
+        return b.compareTo(a);
+      });
+    final attendedCount = events.where((e) => m.eventAttend[e] == true).length;
     return _section(
-      title: '행사 참가 여부',
+      title: '행사참가',
       icon: Icons.event,
       child: events.isEmpty
           ? Row(
@@ -622,7 +630,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ],
             )
           : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(
+                  '참가 $attendedCount건 · 전체 ${events.length}건',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
                 ...events.map((e) {
                   final attend = m.eventAttend[e] == true;
                   final missing = _knownLoaded && !_knownEvents.contains(e);
@@ -645,7 +663,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               ),
                               subtitle: Text(
                                 attend ? '참가' : '불참',
-                                style: const TextStyle(fontSize: 11),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: attend
+                                      ? AppColors.taegeukBlue
+                                      : AppColors.textGray,
+                                  fontWeight: attend
+                                      ? FontWeight.w700
+                                      : FontWeight.w400,
+                                ),
                               ),
                               onChanged: (v) {
                                 final map = Map<String, bool>.from(
@@ -655,6 +681,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                 context.read<AppState>().save(
                                   m.copyWith(eventAttend: map),
                                 );
+                                setState(() {});
                               },
                             ),
                           ),
@@ -721,7 +748,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         title: const Text('행사명 삭제'),
         content: Text(
           '“$name” 은(는) 행사관리 목록에 없는 행사입니다.\n'
-          '내 프로필(행사 참가 여부)에서 이 행사명을 삭제할까요?',
+          '내 프로필(행사참가)에서 이 행사명을 삭제할까요?',
         ),
         actions: [
           TextButton(

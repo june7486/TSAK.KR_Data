@@ -6,6 +6,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/scroll_arrows.dart';
+import 'all_photos_screen.dart';
 import 'event_detail_screen.dart';
 
 /// 행사관리 — 연도별 탭 + 행사 목록/생성
@@ -180,6 +181,14 @@ class _EventYearScreenState extends State<EventYearScreen> {
         title: const Text('행사관리'),
         actions: [
           const AppHomeEmblem(size: 22),
+          IconButton(
+            tooltip: '모든 사진 보기 (행사 순서)',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AllPhotosScreen()),
+            ),
+            icon: const Icon(Icons.photo_library_outlined),
+          ),
           if (_canManage(state))
             IconButton(
               tooltip: '사진/동영상 썸네일 일괄 생성',
@@ -761,10 +770,10 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final title = '${e['title']}';
     final msg = defined
         ? '“$title” 행사와 모든 파일을 삭제할까요?\n'
-          '개인 프로필(행사 참가 여부)에 등록된 같은 행사명도 함께 삭제됩니다.\n'
+          '개인 프로필(행사참가)에 등록된 같은 행사명도 함께 삭제됩니다.\n'
           '이 작업은 되돌릴 수 없습니다.'
         : '“$title” 은(는) 행사관리 목록에 없는 행사입니다.\n'
-          '개인 프로필(행사 참가 여부)에서 이 행사명을 삭제할까요?';
+          '개인 프로필(행사참가)에서 이 행사명을 삭제할까요?';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

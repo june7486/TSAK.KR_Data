@@ -508,6 +508,14 @@ class NasApi {
     return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
   }
 
+  /// 모든 행사의 사진을 행사 순서대로 모아 반환(행사별 구분용 그룹).
+  Future<Map<String, dynamic>> eventAllPhotos() async {
+    final r = await http
+        .get(_uri('/api/event/photos/all'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 행사 폴더(항목) 파일 목록 (+하위폴더: isdir=true 항목 포함)
   Future<List<Map<String, dynamic>>> eventFiles(
     String year,
