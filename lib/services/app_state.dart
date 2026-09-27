@@ -980,6 +980,7 @@ class AppState extends ChangeNotifier {
 
   Member? byId(String id) => repo.byId(id);
   Member? byNumber(String number) => repo.byNumber(number);
+  Member? byName(String name) => repo.byName(name);
 
   /// 개인/비인가자 접근에서 특정 회원이 본인인지 여부
   bool isSelfNumber(String number) {

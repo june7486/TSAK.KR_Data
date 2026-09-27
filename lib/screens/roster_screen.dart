@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/roster_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/scroll_arrows.dart';
 
 /// 행사 참가자 명단 — 앱 내부에서 열리는 MUJI풍 미리보기 + 출력/공유.
 /// (외부 브라우저로 튕기지 않아 뒤로가기가 정상 동작한다)
@@ -29,12 +30,20 @@ class RosterScreen extends StatefulWidget {
   final String desc;
   final List<Map<String, dynamic>> attendees;
 
+  /// 파일명 규칙: {행사명}_참가자명부
+  String get fileNameBase => '${title}_참가자명부';
+
   @override
   State<RosterScreen> createState() => _RosterScreenState();
 }
 
 class _RosterScreenState extends State<RosterScreen> {
   bool _busy = false;
+
+  // ---- 인쇄 항목 선택(항상: 인가번호·이름·연락처) ----
+  bool _showEventFee = false; // 참가비 납부 여부
+  bool _showLifetime = false; // 평생회원 여부
+  bool _showYearFee = false; // 행사년도 연회비 납부 여부
 
   String get _period =>
       widget.period.isNotEmpty ? widget.period : widget.year;
@@ -45,6 +54,10 @@ class _RosterScreenState extends State<RosterScreen> {
         place: widget.place,
         desc: widget.desc,
         attendees: widget.attendees,
+        year: widget.year,
+        showEventFee: _showEventFee,
+        showLifetime: _showLifetime,
+        showYearFee: _showYearFee,
       );
 
   void _snack(String m) {
@@ -77,7 +90,7 @@ class _RosterScreenState extends State<RosterScreen> {
           XFile.fromData(
             bytes,
             mimeType: 'application/pdf',
-            name: '${widget.title}_참가자명단.pdf',
+            name: '${widget.fileNameBase}.pdf',
           ),
         ],
         subject: '${widget.title} 참가자 명단',
@@ -133,7 +146,7 @@ class _RosterScreenState extends State<RosterScreen> {
   Future<void> _doSave(String fmt) async {
     setState(() => _busy = true);
     try {
-      final name = '${widget.title}_참가자명단';
+      final name = widget.fileNameBase; // {행사명}_참가자명부
       Uint8List bytes;
       String ext;
       MimeType mime;
@@ -149,6 +162,10 @@ class _RosterScreenState extends State<RosterScreen> {
               place: widget.place,
               desc: widget.desc,
               attendees: widget.attendees,
+              year: widget.year,
+              showEventFee: _showEventFee,
+              showLifetime: _showLifetime,
+              showYearFee: _showYearFee,
             ).codeUnits);
         ext = 'txt';
         mime = MimeType.text;
@@ -159,6 +176,10 @@ class _RosterScreenState extends State<RosterScreen> {
           place: widget.place,
           desc: widget.desc,
           attendees: widget.attendees,
+          year: widget.year,
+          showEventFee: _showEventFee,
+          showLifetime: _showLifetime,
+          showYearFee: _showYearFee,
         );
         bytes = Uint8List.fromList(content.codeUnits);
         ext = fmt == 'excel' ? 'xls' : 'doc';
@@ -170,7 +191,7 @@ class _RosterScreenState extends State<RosterScreen> {
         ext: ext,
         mimeType: mime,
       );
-      _snack('저장했습니다 ($ext)');
+      _snack('저장했습니다 ($name.$ext)');
     } catch (e) {
       _snack('저장 실패: $e');
     } finally {
@@ -191,6 +212,11 @@ class _RosterScreenState extends State<RosterScreen> {
         title: const Text('참가자 명단'),
         actions: [
           IconButton(
+            tooltip: '인쇄 항목 선택',
+            icon: const Icon(Icons.checklist),
+            onPressed: _busy ? null : _optionsSheet,
+          ),
+          IconButton(
             tooltip: '인쇄',
             icon: const Icon(Icons.print),
             onPressed: _busy ? null : _print,
@@ -210,7 +236,9 @@ class _RosterScreenState extends State<RosterScreen> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
             children: [
               _header(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+              _optionSummary(),
+              const SizedBox(height: 12),
               _table(),
               const SizedBox(height: 16),
               const Center(
@@ -275,6 +303,7 @@ class _RosterScreenState extends State<RosterScreen> {
           _metaRow('기간', _period),
           if (widget.place.isNotEmpty) _metaRow('장소', widget.place),
           _metaRow('참가', '${widget.attendees.length}명'),
+          _metaRow('파일', '${widget.fileNameBase}.pdf'),
           if (widget.desc.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -314,6 +343,119 @@ class _RosterScreenState extends State<RosterScreen> {
     );
   }
 
+  /// 인쇄 항목 요약 — 어떤 항목이 함께 인쇄되는지 한 줄로 표시.
+  Widget _optionSummary() {
+    final extras = <String>[
+      if (_showEventFee) '참가비',
+      if (_showLifetime) '평생회원',
+      if (_showYearFee) '${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: AppColors.purple),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '인가번호·이름·연락처는 항상 인쇄'
+              '${extras.isEmpty ? ' (선택 항목 없음)' : ' · 추가: ${extras.join(', ')}'}',
+              style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 30),
+            ),
+            onPressed: _optionsSheet,
+            child: const Text('항목', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 항목 체크 패널(작게) — 열리는 바텀시트.
+  void _optionsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 2, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('인쇄 항목 선택',
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w800)),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '인가번호 · 이름 · 연락처는 항상 인쇄됩니다.',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                  ),
+                ),
+              ),
+              _optTile(
+                '참가비 납부 여부',
+                _showEventFee,
+                (v) {
+                  setD(() => _showEventFee = v);
+                  setState(() => _showEventFee = v);
+                },
+              ),
+              _optTile(
+                '평생회원 여부',
+                _showLifetime,
+                (v) {
+                  setD(() => _showLifetime = v);
+                  setState(() => _showLifetime = v);
+                },
+              ),
+              _optTile(
+                '${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비 납부 여부',
+                _showYearFee,
+                (v) {
+                  setD(() => _showYearFee = v);
+                  setState(() => _showYearFee = v);
+                },
+              ),
+              const SizedBox(height: 6),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _optTile(String label, bool val, ValueChanged<bool> onChanged) {
+    return CheckboxListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      controlAffinity: ListTileControlAffinity.leading,
+      value: val,
+      onChanged: (v) => onChanged(v == true),
+      title: Text(label, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
   Widget _table() {
     if (widget.attendees.isEmpty) {
       return Container(
@@ -323,6 +465,24 @@ class _RosterScreenState extends State<RosterScreen> {
             style: TextStyle(color: AppColors.textGray)),
       );
     }
+    // 항상: 인가번호·이름·연락처 + 선택 컬럼
+    final columns = <DataColumn>[
+      const DataColumn(label: Text('#')),
+      const DataColumn(label: Text('접속')),
+      const DataColumn(label: Text('인가번호')),
+      const DataColumn(label: Text('이름')),
+      const DataColumn(label: Text('소속')),
+      const DataColumn(label: Text('성별')),
+      const DataColumn(label: Text('연락처')),
+      const DataColumn(label: Text('메일')),
+      const DataColumn(label: Text('항목')),
+      if (_showEventFee) const DataColumn(label: Text('참가비')),
+      if (_showLifetime) const DataColumn(label: Text('평생')),
+      if (_showYearFee)
+        DataColumn(
+            label: Text('${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비')),
+    ];
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -330,8 +490,9 @@ class _RosterScreenState extends State<RosterScreen> {
         border: Border.all(color: const Color(0xFFEDEAE6)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      // PC 사용자를 위한 좌우 스크롤 화살표
+      child: ScrollArrows(
+        step: 220,
         child: DataTable(
           headingRowColor:
               WidgetStateProperty.all(const Color(0xFFF6F4F1)),
@@ -342,23 +503,16 @@ class _RosterScreenState extends State<RosterScreen> {
           ),
           dataTextStyle: const TextStyle(fontSize: 12, color: AppColors.textDark),
           horizontalMargin: 12,
-          columnSpacing: 18,
-          columns: const [
-            DataColumn(label: Text('#')),
-            DataColumn(label: Text('접속')),
-            DataColumn(label: Text('이름')),
-            DataColumn(label: Text('소속')),
-            DataColumn(label: Text('성별')),
-            DataColumn(label: Text('연락처')),
-            DataColumn(label: Text('메일')),
-            DataColumn(label: Text('항목')),
-          ],
+          columnSpacing: 14,
+          columns: columns,
           rows: [
             for (var i = 0; i < widget.attendees.length; i++)
               DataRow(cells: [
                 DataCell(Text('${i + 1}',
                     style: const TextStyle(color: AppColors.textGray))),
                 DataCell(_accessCell(widget.attendees[i])),
+                DataCell(Text(_num(widget.attendees[i]),
+                    style: const TextStyle(fontWeight: FontWeight.w700))),
                 DataCell(Text('${widget.attendees[i]['name'] ?? ''}',
                     style: const TextStyle(fontWeight: FontWeight.w800))),
                 DataCell(Text('${widget.attendees[i]['unit'] ?? ''}',
@@ -368,9 +522,30 @@ class _RosterScreenState extends State<RosterScreen> {
                 DataCell(Text('${widget.attendees[i]['email'] ?? ''}',
                     style: const TextStyle(color: AppColors.textGray))),
                 DataCell(Text(_rolesText(widget.attendees[i]))),
+                if (_showEventFee)
+                  DataCell(_ynCell(widget.attendees[i]['eventFee'] == true)),
+                if (_showLifetime)
+                  DataCell(_ynCell(widget.attendees[i]['lifetime'] == true)),
+                if (_showYearFee)
+                  DataCell(_ynCell(widget.attendees[i]['yearFee'] == true)),
               ]),
           ],
         ),
+      ),
+    );
+  }
+
+  String _num(Map<String, dynamic> a) {
+    final n = '${a['number'] ?? ''}'.trim();
+    return n;
+  }
+
+  Widget _ynCell(bool v) {
+    return Text(
+      v ? 'O' : '',
+      style: TextStyle(
+        fontWeight: FontWeight.w800,
+        color: v ? AppColors.purple : AppColors.textGray,
       ),
     );
   }

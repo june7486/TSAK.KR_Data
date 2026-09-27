@@ -5,13 +5,13 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
-import '../widgets/privacy_consent.dart';
 import 'roster_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
@@ -2283,11 +2283,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Future<void> _openRoster() async {
     // 외부 브라우저 대신 앱 내부 화면으로 열어 뒤로가기·출력·공유가 정상 동작
     final e = _event;
+    final s = context.read<AppState>();
+
+    // 참가비 납부자 이름/인가번호 집합 (선택 항목: 참가비 납부 여부)
+    final feeKeys = <String>{};
+    for (final r in _fees) {
+      final k1 = '${r['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+      final k2 = '${r['name'] ?? ''}'.trim();
+      if (k1.isNotEmpty) feeKeys.add(k1);
+      if (k2.isNotEmpty) feeKeys.add(k2);
+    }
+
     final attendees = [
       for (final a in _attendees)
         {
           ...a,
           'visited': _isVisited(a),
+          ..._rosterExtraFlags(a, feeKeys, s),
         },
     ];
     await Navigator.push(
@@ -2309,6 +2321,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final ident =
         '${a['number'] ?? a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
     return ident.isNotEmpty && _access.containsKey(ident);
+  }
+
+  /// 명단 선택항목용 플래그: 참가비 납부(eventFee) · 평생회원(lifetime) ·
+  /// 행사년도 연회비 납부(yearFee).
+  Map<String, dynamic> _rosterExtraFlags(
+    Map<String, dynamic> a,
+    Set<String> feeKeys,
+    AppState s,
+  ) {
+    final num = '${a['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final name = '${a['name'] ?? ''}'.trim();
+    final eventFee = (num.isNotEmpty && feeKeys.contains(num)) ||
+        (name.isNotEmpty && feeKeys.contains(name));
+
+    // 회원 원본 조회 → 평생회원 여부 + 해당 행사년도 연회비 납부 여부
+    Member? m;
+    if (num.isNotEmpty) m = s.byNumber(num);
+    m ??= (name.isNotEmpty ? s.byName(name) : null);
+
+    final lifetime = a['lifetime'] == true || (m?.lifetimeMember ?? false);
+    var yearFee = a['yearFee'] == true;
+    if (!yearFee && m != null && widget.year.isNotEmpty) {
+      final y = widget.year.replaceAll(RegExp(r'[^0-9]'), '');
+      yearFee = m.feeYears[y] == true ||
+          m.feeYears['$y년'] == true ||
+          m.paidYears.any((p) => p.replaceAll(RegExp(r'[^0-9]'), '') == y);
+    }
+    return {'eventFee': eventFee, 'lifetime': lifetime, 'yearFee': yearFee};
   }
 
   Future<void> _sendSms() async {

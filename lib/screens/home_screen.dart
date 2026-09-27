@@ -962,6 +962,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 _eventButton(),
                 if (state.isApp || state.isMaster) ...[
+                  _approvalButton(),
                   _finButton(
                     '후원현황',
                     Icons.volunteer_activism,
@@ -999,7 +1000,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     -1,
                   ),
                   _regularMembersButton(),
-                  _approvalButton(),
                 ],
               ],
             ),
@@ -1334,9 +1334,10 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.20),
             borderRadius: BorderRadius.circular(20),
-            border: n > 0
-                ? Border.all(color: AppColors.tigerGold, width: 1.5)
-                : null,
+            border: Border.all(
+              color: n > 0 ? AppColors.tigerGold : Colors.white.withValues(alpha: 0.5),
+              width: n > 0 ? 1.8 : 1.2,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1626,10 +1627,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
         decoration: BoxDecoration(
           color: selected ? color : Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Text(
@@ -1637,7 +1638,7 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(
             color: selected ? Colors.white : color,
             fontWeight: FontWeight.w600,
-            fontSize: 12.5,
+            fontSize: 11.5,
           ),
         ),
       ),

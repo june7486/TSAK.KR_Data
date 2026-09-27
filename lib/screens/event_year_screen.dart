@@ -25,6 +25,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
   String _year = '';
   bool _backfillBusy = false;
 
+  /// true = 최신순 전체 리스트(연도 무관), false = 연도별 탭 보기
+  bool _recentMode = true;
+
   @override
   void initState() {
     super.initState();
@@ -160,6 +163,16 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final years = _yearsOf(_events);
     final inYear =
         _events.where((e) => '${e['year']}' == _year).toList();
+    // 최신순 정렬(연도 → 기간/생성일 역순) — 연도 무관 전체 리스트
+    final recent = List<Map<String, dynamic>>.from(_events)
+      ..sort((a, b) {
+        final ya = '${a['year'] ?? ''}';
+        final yb = '${b['year'] ?? ''}';
+        if (ya != yb) return yb.compareTo(ya);
+        final pa = '${a['period'] ?? ''}';
+        final pb = '${b['period'] ?? ''}';
+        return pb.compareTo(pa);
+      });
 
     return Scaffold(
       appBar: AppBar(
@@ -200,21 +213,73 @@ class _EventYearScreenState extends State<EventYearScreen> {
           ? _errorView()
           : Column(
               children: [
-                _yearTabs(years),
+                _viewToggle(),
+                if (!_recentMode) _yearTabs(years),
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: _load,
-                    child: inYear.isEmpty
-                        ? _emptyView()
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
-                            itemCount: inYear.length,
-                            itemBuilder: (_, i) => _eventCard(state, inYear[i]),
-                          ),
+                    child: _recentMode
+                        ? (recent.isEmpty
+                            ? _emptyView()
+                            : ListView.builder(
+                                padding:
+                                    const EdgeInsets.fromLTRB(14, 10, 14, 90),
+                                itemCount: recent.length,
+                                itemBuilder: (_, i) =>
+                                    _eventCard(state, recent[i]),
+                              ))
+                        : (inYear.isEmpty
+                            ? _emptyView()
+                            : ListView.builder(
+                                padding:
+                                    const EdgeInsets.fromLTRB(14, 10, 14, 90),
+                                itemCount: inYear.length,
+                                itemBuilder: (_, i) =>
+                                    _eventCard(state, inYear[i]),
+                              )),
                   ),
                 ),
               ],
             ),
+    );
+  }
+
+  /// 보기 전환 — [최신순 전체] / [연도별]
+  Widget _viewToggle() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: true,
+                  label: Text('최신순 전체', style: TextStyle(fontSize: 12.5)),
+                  icon: Icon(Icons.sort, size: 16),
+                ),
+                ButtonSegment(
+                  value: false,
+                  label: Text('연도별', style: TextStyle(fontSize: 12.5)),
+                  icon: Icon(Icons.calendar_today, size: 15),
+                ),
+              ],
+              selected: {_recentMode},
+              onSelectionChanged: (s) => setState(() => _recentMode = s.first),
+              showSelectedIcon: false,
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('${_events.length}개',
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textGray)),
+        ],
+      ),
     );
   }
 

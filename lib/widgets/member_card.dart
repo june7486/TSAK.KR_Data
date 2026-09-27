@@ -120,7 +120,8 @@ class MemberCard extends StatelessWidget {
                 name: member.name,
                 photoPath: member.photoPath,
                 league: member.league,
-                size: 25 * s,
+                // 편집 박스 높이에 맞춰 원형 사진을 확대해 균형·식별성 향상
+                size: 52 * s,
                 number: member.number,
                 showNumber: false,
               ),
@@ -136,7 +137,6 @@ class MemberCard extends StatelessWidget {
                             member.name.isEmpty ? '(이름없음)' : member.name,
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
-                              // 인가번호(원형)와 비슷한 크기로 확대
                               fontSize: 19 * s,
                               color: AppColors.textDark,
                             ),
@@ -158,7 +158,7 @@ class MemberCard extends StatelessWidget {
                           child: Text(
                             member.number.trim().isEmpty
                                 ? '일반 ${member.loginId}'
-                                : '#${member.number}',
+                                : member.number,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 12 * s,
@@ -166,6 +166,33 @@ class MemberCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        // 아타스 인가번호 — 범 인가번호 뒤에 표시
+                        if (member.atasNo.isNotEmpty) ...[
+                          SizedBox(width: 4 * s),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 7 * s,
+                              vertical: 2 * s,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.scoutGreen
+                                  .withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: AppColors.scoutGreen
+                                    .withValues(alpha: 0.35),
+                              ),
+                            ),
+                            child: Text(
+                              'ATAS ${member.atasNo}',
+                              style: TextStyle(
+                                color: AppColors.scoutGreen,
+                                fontSize: 11 * s,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                         if (member.lifetimeMember) ...[
                           SizedBox(width: 4 * s),
                           Icon(
@@ -176,7 +203,8 @@ class MemberCard extends StatelessWidget {
                         ],
                       ],
                     ),
-                    SizedBox(height: 4 * s),
+                    SizedBox(height: 5 * s),
+                    // 2번째 줄 — 연맹/단위대 + (인가일/아타스 보조) 한 줄로 압축
                     Row(
                       children: [
                         if (member.isRegular)
@@ -198,56 +226,22 @@ class MemberCard extends StatelessWidget {
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                    if (member.date.isNotEmpty ||
-                        member.atasNo.isNotEmpty) ...[
-                      SizedBox(height: 3 * s),
-                      Row(
-                        children: [
-                          if (member.date.isNotEmpty)
-                            Text(
+                        if (member.date.isNotEmpty) ...[
+                          SizedBox(width: 8 * s),
+                          Flexible(
+                            child: Text(
                               '인가 ${member.date}',
                               style: TextStyle(
-                                color:
-                                    AppColors.textGray.withValues(alpha: 0.85),
-                                fontSize: 11.5 * s,
+                                color: AppColors.textGray
+                                    .withValues(alpha: 0.85),
+                                fontSize: 11 * s,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          if (member.date.isNotEmpty &&
-                              member.atasNo.isNotEmpty)
-                            Text(
-                              '   ·   ',
-                              style: TextStyle(
-                                color:
-                                    AppColors.textGray.withValues(alpha: 0.85),
-                                fontSize: 11.5 * s,
-                              ),
-                            ),
-                          // ATAS 번호가 있으면 인가번호를 초록색으로 함께 표시
-                          if (member.atasNo.isNotEmpty)
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 6 * s,
-                                vertical: 1 * s,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.scoutGreen
-                                    .withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                'ATAS ${member.atasNo} · #${member.number}',
-                                style: TextStyle(
-                                  color: AppColors.scoutGreen,
-                                  fontSize: 11.5 * s,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
+                          ),
                         ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ],
                 ),
               ),

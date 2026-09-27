@@ -304,6 +304,16 @@ class MemberRepository {
     return null;
   }
 
+  /// 이름으로 회원 조회 (동명이인은 첫 번째 반환).
+  Member? byName(String name) {
+    final q = name.trim();
+    if (q.isEmpty) return null;
+    for (final m in all()) {
+      if (m.name.trim() == q) return m;
+    }
+    return null;
+  }
+
   List<Member> search(String query, {String? league, String? year}) {
     final q = query.trim().toLowerCase();
     var list = all();
