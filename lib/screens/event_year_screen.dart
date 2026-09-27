@@ -5,6 +5,7 @@ import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/scroll_arrows.dart';
 import 'event_detail_screen.dart';
 
 /// 행사관리 — 연도별 탭 + 행사 목록/생성
@@ -329,8 +330,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: ScrollArrows(
+        step: 180,
+        color: AppColors.purple,
         child: Row(
           children: [
             for (final y in list)

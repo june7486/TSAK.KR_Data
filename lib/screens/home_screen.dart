@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/member_card.dart';
+import '../widgets/scroll_arrows.dart';
 import '../widgets/donate_sheet.dart';
 import '../widgets/inquiry_sheet.dart';
 import 'app_access_screen.dart';
@@ -1495,8 +1496,9 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          ScrollArrows(
+            step: 200,
+            color: AppColors.purple,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -1546,8 +1548,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          ScrollArrows(
+            step: 200,
+            color: AppColors.purple,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -1586,8 +1589,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          ScrollArrows(
+            step: 200,
+            color: AppColors.purple,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [

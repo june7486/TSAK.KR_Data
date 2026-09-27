@@ -30,6 +30,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _name,
       _league,
       _unit,
+      _regLeague,
+      _regUnit,
       _address,
       _phone,
       _email,
@@ -78,6 +80,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _name = TextEditingController(text: m?.name ?? '');
     _league = TextEditingController(text: m?.league ?? '');
     _unit = TextEditingController(text: m?.unit ?? '');
+    _regLeague = TextEditingController(text: m?.regLeague ?? '');
+    _regUnit = TextEditingController(text: m?.regUnit ?? '');
     _address = TextEditingController(text: m?.address ?? '');
     _phone = TextEditingController(text: m?.phone ?? '');
     _email = TextEditingController(text: m?.email ?? '');
@@ -104,6 +108,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _name,
       _league,
       _unit,
+      _regLeague,
+      _regUnit,
       _address,
       _phone,
       _email,
@@ -196,6 +202,18 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.groups,
               ),
               _field('소속 단위대', _unit, hint: '예: 제405단 샘물지역대', icon: Icons.flag),
+              _field(
+                '등록 연맹 (현재)',
+                _regLeague,
+                hint: '현재 등록된 연맹 (부여 연맹과 다를 수 있음)',
+                icon: Icons.groups_2,
+              ),
+              _field(
+                '등록 단위대 (현재)',
+                _regUnit,
+                hint: '현재 등록된 단위대',
+                icon: Icons.flag_circle,
+              ),
               _field(
                 '인가일',
                 _date,
@@ -325,6 +343,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _name.text.trim() != m.name ||
         _league.text.trim() != m.league ||
         _unit.text.trim() != m.unit ||
+        _regLeague.text.trim() != m.regLeague ||
+        _regUnit.text.trim() != m.regUnit ||
         _address.text.trim() != m.address ||
         _phone.text.trim() != m.phone ||
         _email.text.trim() != m.email ||
@@ -784,6 +804,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       name: _name.text.trim(),
       league: _league.text.trim(),
       unit: _unit.text.trim(),
+      regLeague: _regLeague.text.trim(),
+      regUnit: _regUnit.text.trim(),
       address: _address.text.trim(),
       phone: _phone.text.trim(),
       email: _email.text.trim(),

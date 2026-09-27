@@ -10,11 +10,13 @@ class ScrollArrows extends StatefulWidget {
     required this.child,
     this.step = 260,
     this.color = const Color(0xFF5B2C8D),
+    this.padding,
   });
 
   final Widget child;
   final double step;
   final Color color;
+  final EdgeInsetsGeometry? padding;
 
   @override
   State<ScrollArrows> createState() => _ScrollArrowsState();
@@ -74,6 +76,7 @@ class _ScrollArrowsState extends State<ScrollArrows> {
           SingleChildScrollView(
             controller: _ctrl,
             scrollDirection: Axis.horizontal,
+            padding: widget.padding,
             child: widget.child,
           ),
           if (_showLeft)

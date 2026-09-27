@@ -8,6 +8,8 @@ class Member {
     required this.name,
     this.league = '',
     this.unit = '',
+    this.regLeague = '',
+    this.regUnit = '',
     this.address = '',
     this.phone = '',
     this.email = '',
@@ -50,6 +52,12 @@ class Member {
 
   /// 소속 단위대 (예: "제405단 샘물지역대")
   String unit;
+
+  /// 현재 등록된(재적) 연맹 — 범(TSAK) 인가 시 부여된 연맹과 다를 수 있다.
+  String regLeague;
+
+  /// 현재 등록된(재적) 단위대.
+  String regUnit;
 
   /// 주소
   String address;
@@ -129,7 +137,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
 
   /// 로그인 아이디 (일반회원은 전화번호, 인가자는 인가번호)
@@ -161,9 +169,11 @@ class Member {
     'id': id,
     'number': number,
     'name': name,
-    'league': league,
-    'unit': unit,
-    'address': address,
+      'league': league,
+      'unit': unit,
+      'regLeague': regLeague,
+      'regUnit': regUnit,
+      'address': address,
     'phone': phone,
     'email': email,
     'date': date,
@@ -211,6 +221,8 @@ class Member {
       name: '${map['name'] ?? ''}',
       league: '${map['league'] ?? ''}',
       unit: '${map['unit'] ?? ''}',
+      regLeague: '${map['regLeague'] ?? ''}',
+      regUnit: '${map['regUnit'] ?? ''}',
       address: '${map['address'] ?? ''}',
       phone: '${map['phone'] ?? ''}',
       email: '${map['email'] ?? ''}',
@@ -244,6 +256,8 @@ class Member {
     String? name,
     String? league,
     String? unit,
+    String? regLeague,
+    String? regUnit,
     String? address,
     String? phone,
     String? email,
@@ -274,6 +288,8 @@ class Member {
       name: name ?? this.name,
       league: league ?? this.league,
       unit: unit ?? this.unit,
+      regLeague: regLeague ?? this.regLeague,
+      regUnit: regUnit ?? this.regUnit,
       address: address ?? this.address,
       phone: phone ?? this.phone,
       email: email ?? this.email,

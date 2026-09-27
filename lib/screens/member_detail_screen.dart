@@ -197,6 +197,20 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
+                if ((m.regLeague.isNotEmpty && m.regLeague != m.league) ||
+                    (m.regUnit.isNotEmpty && m.regUnit != m.unit))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '재적: ${[m.regLeague, m.regUnit].where((e) => e.isNotEmpty).join(' · ')}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -881,7 +895,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Widget _infoCard(Member m) {
     final rows = <List<String>>[
-      ['소속대', m.unit],
+      ['소속 연맹', m.league],
+      ['등록 연맹', m.regLeague],
+      ['소속 단위대', m.unit],
+      ['등록 단위대', m.regUnit],
       ['인가일', m.date],
       ['생일', m.birthday],
       ['기념일', m.anniversary],

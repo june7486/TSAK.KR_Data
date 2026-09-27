@@ -226,6 +226,27 @@ class MemberCard extends StatelessWidget {
                             ),
                           ),
                         ],
+                        // 현재 등록 연맹/단위대가 부여값과 다르면 함께 표시
+                        if (member.regLeague.isNotEmpty &&
+                            member.regLeague != member.league) ...[
+                          SizedBox(width: 6 * s),
+                          _badge('재적 ${member.regLeague}', AppColors.taegeukBlue, s),
+                        ],
+                        if (member.regUnit.isNotEmpty &&
+                            member.regUnit != member.unit) ...[
+                          SizedBox(width: 5 * s),
+                          Flexible(
+                            child: Text(
+                              member.regUnit,
+                              style: TextStyle(
+                                color: AppColors.taegeukBlue,
+                                fontSize: 12 * s,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                         if (member.date.isNotEmpty) ...[
                           SizedBox(width: 8 * s),
                           Flexible(
