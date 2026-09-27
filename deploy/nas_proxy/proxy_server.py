@@ -50,6 +50,8 @@ INQUIRY_FILE = BASE + "/db/inquiries.json"   # 문의 접수 로그 (동의·개
 INQUIRY_DIR = BASE + "/문의첨부"             # 문의 첨부파일 저장 폴더
 ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인 이력)
 FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거래 종합분석 캐시
+REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
+MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
 LOCK = threading.Lock()
 
 # 행사별 하위 폴더(항목) — 번호+한글명, 업로드 가능 폴더엔 "_(업로드가능)" 꼬리말
@@ -59,6 +61,7 @@ EVENT_SUBFOLDERS = [
     ("03_사진+동영상_(업로드가능)", "media", True),
     ("04_참가비·후원금", "fee", False),
     ("05_행사비지출내역", "expense", False),
+    ("06_후기첨부_(업로드가능)", "review", True),
 ]
 # 항목 key → 폴더명
 EVENT_SUB_BY_KEY = {k: n for (n, k, _) in EVENT_SUBFOLDERS}
@@ -1600,6 +1603,42 @@ def _ev_all_photos():
         "total": sum(int(x["count"]) for x in items),
         "eventCount": len(items),
     }
+
+
+# ============================ 행사 후기 게시판 ============================
+def _review_doc():
+    return _load_json(REVIEW_FILE, {"events": {}})
+
+
+def _review_save(doc):
+    _save_json(REVIEW_FILE, doc)
+
+
+def _review_list(year, title):
+    """행사 후기 목록(게시글=댓글트리) 반환. attachment는 참고용.
+    각 글: {id, author, number, body, created, updated, password(해시), pwdHint,
+            draft(bool), likes(int), comments:[{id,author,body,created,device,ip}]}
+    """
+    doc = _review_doc()
+    eid = _ev_id(year, title)
+    posts = doc.get("events", {}).get(eid, {}).get("posts", [])
+    # 공개 글(비번 없음 + draft 아님) + (요청자가 관리자면 전부)
+    return posts
+
+
+def _review_save_posts(year, title, posts):
+    doc = _review_doc()
+    doc.setdefault("events", {}).setdefault(_ev_id(year, title), {})["posts"] = posts
+    _review_save(doc)
+
+
+def _pwd_hash(pw):
+    import hashlib
+    return hashlib.sha256(("tsak$" + str(pw)).encode("utf-8")).hexdigest()
+
+
+def _now_stamp():
+    return datetime.datetime.now().strftime("%Y.%m.%d %H:%M")
 
 
 def _make_image_thumb2(src_bytes, year, title, name, sub="", max_side=480):
@@ -4035,6 +4074,42 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require():
                     return
                 return self._json(_ev_all_photos())
+            if p == "/api/event/review/list":
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = q.get("year", [""])[0]
+                title = q.get("title", [""])[0]
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                posts = _review_list(year, title)
+                out = []
+                for pst in posts:
+                    if pst.get("draft") and not is_admin:
+                        continue
+                    o = {k: pst.get(k) for k in
+                         ("id", "author", "number", "body", "created", "updated",
+                          "draft", "likes", "attachments")}
+                    o["likes"] = int(pst.get("likes", 0) or 0)
+                    o["locked"] = bool(pst.get("password"))
+                    o["pwdHint"] = pst.get("pwdHint", "")
+                    cms = []
+                    for cm in (pst.get("comments") or []):
+                        c = {k: cm.get(k) for k in
+                             ("id", "author", "body", "created")}
+                        if is_admin:
+                            c["device"] = cm.get("device", "")
+                            c["ip"] = cm.get("ip", "")
+                            c["number"] = cm.get("number", "")
+                        cms.append(c)
+                    o["comments"] = cms
+                    if is_admin:
+                        o["device"] = pst.get("device", "")
+                        o["ip"] = pst.get("ip", "")
+                    out.append(o)
+                out.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                return self._json({"ok": True, "posts": out,
+                                   "isAdmin": is_admin})
             if p == "/api/event/files":
                 if not self._require():
                     return
@@ -4758,6 +4833,111 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True, "name": name, "size": size, "kind": kind,
                     "thumb": bool(rec.get("thumb") or rec.get("vthumb")),
                 })
+            # ============ 행사 후기 게시판 (POST) ============
+            if p == "/api/event/review/post":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = d.get("year", ""); title = d.get("title", "")
+                s = self._sess() or {}
+                posts = _review_list(year, title)
+                pid = str(d.get("id", "") or ("p" + _secrets.token_urlsafe(6)))
+                existing = next((x for x in posts if str(x.get("id")) == pid), None)
+                new_post = {
+                    "id": pid,
+                    "author": str(d.get("author", "") or "")[:40],
+                    "number": str(d.get("number", "") or "")[:20],
+                    "body": str(d.get("body", "") or ""),
+                    "created": existing.get("created") if existing else _now_stamp(),
+                    "updated": _now_stamp(),
+                    "draft": bool(d.get("draft")),
+                    "likes": int(existing.get("likes", 0) or 0) if existing else 0,
+                    "comments": existing.get("comments", []) if existing else [],
+                    "attachments": d.get("attachments", (existing or {}).get("attachments", [])),
+                    "device": str(d.get("device", "") or "")[:120],
+                    "ip": self.client_address[0] if self.client_address else "",
+                }
+                pw = str(d.get("password", "") or "")
+                if pw:
+                    new_post["password"] = _pwd_hash(pw)
+                    new_post["pwdHint"] = str(d.get("pwdHint", "") or "")[:40]
+                elif existing:
+                    new_post["password"] = existing.get("password")
+                    new_post["pwdHint"] = existing.get("pwdHint", "")
+                if existing:
+                    posts[posts.index(existing)] = new_post
+                else:
+                    posts.append(new_post)
+                _review_save_posts(year, title, posts)
+                return self._json({"ok": True, "id": pid})
+            if p == "/api/event/review/comment":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = d.get("year", ""); title = d.get("title", "")
+                pid = str(d.get("postId", "") or "")
+                posts = _review_list(year, title)
+                post = next((x for x in posts if str(x.get("id")) == pid), None)
+                if not post:
+                    return self._json({"ok": False, "error": "post not found"}, 404)
+                # 비밀번호 보호 글에는 비번 확인 후 댓글 허용 (작성자/관리자 예외)
+                sself = self._sess() or {}
+                is_admin = sself.get("tier") in ("app", "master")
+                if post.get("password") and not is_admin:
+                    if _pwd_hash(str(d.get("password", ""))) != post.get("password"):
+                        return self._json({"ok": False, "error": "password"}, 403)
+                cm = {
+                    "id": "c" + _secrets.token_urlsafe(6),
+                    "author": str(d.get("author", "") or "")[:40],
+                    "number": str(d.get("number", "") or "")[:20],
+                    "body": str(d.get("body", "") or ""),
+                    "created": _now_stamp(),
+                    "device": str(d.get("device", "") or "")[:120],
+                    "ip": self.client_address[0] if self.client_address else "",
+                }
+                post.setdefault("comments", []).append(cm)
+                _review_save_posts(year, title, posts)
+                return self._json({"ok": True, "id": cm["id"]})
+            if p == "/api/event/review/like":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = d.get("year", ""); title = d.get("title", "")
+                pid = str(d.get("postId", "") or "")
+                on = bool(d.get("on", True))
+                posts = _review_list(year, title)
+                post = next((x for x in posts if str(x.get("id")) == pid), None)
+                if not post:
+                    return self._json({"ok": False, "error": "post not found"}, 404)
+                cur = int(post.get("likes", 0) or 0)
+                post["likes"] = max(0, cur + (1 if on else -1))
+                _review_save_posts(year, title, posts)
+                return self._json({"ok": True, "likes": post["likes"]})
+            if p == "/api/event/review/delete":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = d.get("year", ""); title = d.get("title", "")
+                pid = str(d.get("postId", "") or "")
+                cid = str(d.get("commentId", "") or "")
+                posts = _review_list(year, title)
+                if cid:
+                    post = next((x for x in posts if str(x.get("id")) == pid), None)
+                    if post:
+                        post["comments"] = [c for c in post.get("comments", [])
+                                            if str(c.get("id")) != cid]
+                        _review_save_posts(year, title, posts)
+                        return self._json({"ok": True})
+                post = next((x for x in posts if str(x.get("id")) == pid), None)
+                if post:
+                    sself = self._sess() or {}
+                    is_admin = sself.get("tier") in ("app", "master")
+                    if post.get("password") and not is_admin:
+                        if _pwd_hash(str(d.get("password", ""))) != post.get("password"):
+                            return self._json({"ok": False, "error": "password"}, 403)
+                    posts.remove(post)
+                    _review_save_posts(year, title, posts)
+                return self._json({"ok": True})
             # ============ 행사관리 v2 (POST) ============
             if p == "/api/admin/set-password":
                 d = json.loads(self._body() or b"{}")
