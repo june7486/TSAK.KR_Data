@@ -23,6 +23,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
   bool _loading = true;
   String? _error;
   String _year = '';
+  bool _backfillBusy = false;
 
   @override
   void initState() {
@@ -59,6 +60,72 @@ class _EventYearScreenState extends State<EventYearScreen> {
   }
 
   bool _canManage(AppState s) => s.isApp || s.isMaster;
+
+  /// 사진/동영상 썸네일 일괄 생성(백필) — 기존 업로드분의 로딩 속도를 대폭 개선.
+  Future<void> _startThumbBackfill(AppState state) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.auto_awesome_mosaic,
+            color: AppColors.purple, size: 32),
+        title: const Text('썸네일 일괄 생성'),
+        content: const Text(
+          '모든 행사의 사진·동영상 썸네일을 미리 만들어 둡니다.\n\n'
+          '처음 한 번만 실행하면 이후 사진 로딩이 크게 빨라집니다.\n'
+          '자료가 많으면 수 분이 걸릴 수 있으며, 백그라운드에서 진행됩니다.',
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('생성 시작'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _backfillBusy = true);
+    try {
+      final r = await context.read<NasApi>().eventThumbsBackfill();
+      if (!mounted) return;
+      final started = r['started'] == true;
+      _snack(started ? '썸네일 생성을 시작했습니다 (백그라운드)' : '이미 생성 작업이 진행 중입니다');
+      _watchThumbBackfill();
+    } catch (e) {
+      if (mounted) _snack('시작 실패: $e');
+      if (mounted) setState(() => _backfillBusy = false);
+    }
+  }
+
+  void _watchThumbBackfill() {
+    context.read<NasApi>().eventThumbsStatus().then((r) {
+      if (!mounted) return;
+      final job = (r['job'] as Map?) ?? {};
+      final running = job['running'] == true;
+      final total = (job['total'] as num?)?.toInt() ?? 0;
+      final done = (job['done'] as num?)?.toInt() ?? 0;
+      _snack('썸네일 진행: $done / $total');
+      if (running) {
+        Future.delayed(const Duration(seconds: 3), _watchThumbBackfill);
+      } else {
+        setState(() => _backfillBusy = false);
+        _snack('썸네일 생성 완료 ($done건)');
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => _backfillBusy = false);
+    });
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+    );
+  }
 
   bool _isMyEvent(AppState s, Map<String, dynamic> e) {
     final who = s.who.replaceAll(RegExp(r'[^0-9]'), '');
@@ -99,6 +166,19 @@ class _EventYearScreenState extends State<EventYearScreen> {
         title: const Text('행사관리'),
         actions: [
           const AppHomeEmblem(size: 22),
+          if (_canManage(state))
+            IconButton(
+              tooltip: '사진/동영상 썸네일 일괄 생성',
+              onPressed: _backfillBusy ? null : () => _startThumbBackfill(state),
+              icon: _backfillBusy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.auto_awesome_mosaic),
+            ),
           IconButton(
             tooltip: '새로고침',
             onPressed: _load,

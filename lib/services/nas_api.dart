@@ -565,6 +565,29 @@ class NasApi {
       '&title=${Uri.encodeComponent(title)}&name=${Uri.encodeComponent(name)}'
       '&sub=${Uri.encodeComponent(sub)}&size=$size';
 
+  /// 행사 썸네일 일괄 생성(백필) 시작 — 관리자·마스터 전용.
+  Future<Map<String, dynamic>> eventThumbsBackfill({
+    bool force = false,
+    int maxSide = 480,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/thumbs/backfill'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'force': force, 'maxSide': maxSide}),
+        )
+        .timeout(const Duration(seconds: 30));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 행사 썸네일 백필 진행상황 조회.
+  Future<Map<String, dynamic>> eventThumbsStatus() async {
+    final r = await http
+        .get(_uri('/api/event/thumbs/status'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 15));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 행사 항목 파일 URL (원본 보기 / 다운로드)
   String eventFile2Url(
     String year,
@@ -993,6 +1016,17 @@ class NasApi {
           }),
         )
         .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 현재 접속 비밀번호 조회 (마스터 전용) — 실제 지정 비번값 반환
+  Future<Map<String, dynamic>> memberPassword(String number) async {
+    final r = await http
+        .get(
+          _uri('/api/member/password?number=${Uri.encodeComponent(number)}'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 

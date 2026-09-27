@@ -32,6 +32,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Set<String> _knownEvents = <String>{};
   bool _knownLoaded = false;
 
+  /// 마스터 전용 "현재 비밀번호" 조회 future 캐시 (리빌드 시 재조회 방지).
+  Future<Map<String, dynamic>?>? _pwFuture;
+  String? _pwFutureKey;
+
   @override
   void initState() {
     super.initState();
@@ -976,12 +980,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   /// 비밀번호 관리 — 관리자·마스터 전용 (강제 변경/초기화)
+  ///  · 현재 비밀번호 "실제값" 노출은 마스터만 가능 (요구사항)
+  ///  · 관리자는 일반회원 비번 초기화만, 인가자 비번 변경·초기화는 마스터 전용
   Widget _passwordSection(Member m) {
     final state = context.watch<AppState>();
     if (!(state.isApp || state.isMaster)) return const SizedBox.shrink();
     final isRegular = m.isRegular;
+    final isMaster = state.isMaster;
     // 서버 정책: 관리자(비마스터)는 일반회원 비번만 변경 가능, 인가자는 마스터 전용
-    final canEditThis = state.isMaster || isRegular;
+    final canEditThis = isMaster || isRegular;
     return _section(
       title: '접속 비밀번호 관리',
       icon: Icons.password,
@@ -1009,6 +1016,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
             ],
           ),
+          // ---- 마스터 전용: 현재 접속 비밀번호 실제값 노출 ----
+          if (isMaster) ...[
+            const SizedBox(height: 10),
+            _currentPasswordReveal(m),
+          ],
           const SizedBox(height: 10),
           if (!canEditThis)
             Container(
@@ -1027,18 +1039,33 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '인가자 비밀번호 변경·초기화는 마스터만 가능합니다',
+                      '인가자 비밀번호 분실로 인한 비밀번호 변경 및 초기화는\n마스터만 가능합니다.',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         color: AppColors.lifetimeGold,
+                        height: 1.35,
                       ),
                     ),
                   ),
                 ],
               ),
             )
-          else
+          else ...[
+            // 인가자(마스터 대상) 안내 — 요구 문구
+            if (!isRegular)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '인가자 비밀번호 분실로 인한 비밀번호 변경 및 초기화는 마스터만 가능합니다.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textGray,
+                    height: 1.35,
+                  ),
+                ),
+              ),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1055,8 +1082,87 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
               ],
             ),
+          ],
         ],
       ),
+    );
+  }
+
+  /// 마스터 전용 — 현재 접속 비밀번호 실제값 표시(가림/보기 토글 + 복사)
+  Widget _currentPasswordReveal(Member m) {
+    final state = context.read<AppState>();
+    final key = m.loginId;
+    if (_pwFutureKey != key) {
+      _pwFutureKey = key;
+      _pwFuture = state.fetchMemberPassword(key);
+    }
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _pwFuture,
+      builder: (ctx, snap) {
+        final loading = snap.connectionState == ConnectionState.waiting;
+        final d = snap.data;
+        final pw = d == null ? null : '${d['password'] ?? ''}';
+        final isDefault = d?['isDefault'] == true;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.purple.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.purple.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.key, size: 17, color: AppColors.purple),
+              const SizedBox(width: 8),
+              const Text(
+                '현재 비밀번호',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  loading
+                      ? '조회 중…'
+                      : (pw == null || pw.isEmpty
+                          ? '조회 실패'
+                          : '$pw${isDefault ? '  (기본값)' : ''}'),
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: pw == null ? 0 : 1.0,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              if (pw != null && pw.isNotEmpty) ...[
+                IconButton(
+                  tooltip: '복사',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.copy, size: 17),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: pw));
+                    _snack('비밀번호를 복사했습니다');
+                  },
+                ),
+                IconButton(
+                  tooltip: '다시 조회',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  onPressed: () {
+                    setState(() {
+                      _pwFuture = state.fetchMemberPassword(key);
+                    });
+                  },
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 

@@ -552,6 +552,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 접속 비밀번호 현재값 조회 (마스터 전용).
+  /// 반환: {'password','defaultPassword','isDefault','isRegular'} 또는 null.
+  Future<Map<String, dynamic>?> fetchMemberPassword(String number) async {
+    if (!repo.isNasMode) return null;
+    try {
+      final r = await nas.memberPassword(number);
+      if (r['ok'] == true) return r;
+    } catch (_) {}
+    return null;
+  }
+
   /// 개인비번 초기화(reset=true) 또는 지정 변경
   Future<String?> setPersonalPassword(
     String master,

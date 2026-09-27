@@ -754,7 +754,15 @@ def _set_password(tier, ident, value, reset):
     if tier == "app" and not is_regular:
         return False, "권한 없음: 일반회원만 변경 가능", ""
     if reset:
-        new_pw = _ev_phone_last4(m.get("phone") or d) if is_regular else f"{re.sub(r'[^0-9]', '', str(m.get('number', '')))}!@@"
+        if is_regular:
+            new_pw = _ev_phone_last4(m.get("phone") or d)
+        else:
+            # 인가자 기본비번은 "{인가번호}!@@" — number 필드가 비어 있어도
+            # 식별자(로그인 ID) 기준으로 일관되게 생성한다.
+            base = re.sub(r"[^0-9]", "", str(m.get("number") or d))
+            new_pw = f"{base}!@@" if base else ""
+        if not new_pw:
+            return False, "reset", ""
     else:
         new_pw = str(value or "").strip()
         if not new_pw:
@@ -1440,7 +1448,184 @@ def _make_image_view2(src_bytes, year, title, name, sub="", max_side=1600):
         return None
 
 
-def _ev_find_file(year, title, key, name, sub=""):
+# ============ 행사 썸네일 일괄 백필(backfill) ============
+# 기존 업로드분은 썸네일이 없어 첫 조회 시 서빙 경로에서 "지연 생성"된다.
+# 그 비용(원격 NAS 원본 다운로드+PIL 리사이즈)이 목록 로딩을 매우 느리게
+# 만들므로, 백그라운드 작업으로 미리 모든 썸네일을 만들어 둔다.
+#  - 스레드 1개로 순차 처리(NAS 호출은 Lock 직렬화되므로 과도한 병렬은 무의미)
+#  - 진행상황을 메모리에 기록하여 관리자가 진행률을 확인할 수 있다.
+_THUMB_JOB = {
+    "running": False,
+    "total": 0,
+    "done": 0,
+    "images": 0,
+    "videos": 0,
+    "skipped": 0,
+    "failed": 0,
+    "started": "",
+    "finished": "",
+    "last": "",
+}
+_THUMB_JOB_LOCK = threading.Lock()
+_THUMB_INDEX_FILE = BASE + "/db/thumb_index.json"
+
+
+def _ev_thumb_job_reset(total):
+    with _THUMB_JOB_LOCK:
+        _THUMB_JOB.update({
+            "running": True, "total": total, "done": 0,
+            "images": 0, "videos": 0, "skipped": 0, "failed": 0,
+            "started": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "finished": "", "last": "",
+        })
+
+
+def _ev_thumb_job_inc(field, last=None):
+    with _THUMB_JOB_LOCK:
+        _THUMB_JOB["done"] = int(_THUMB_JOB.get("done", 0)) + 1
+        _THUMB_JOB[field] = int(_THUMB_JOB.get(field, 0)) + 1
+        if last:
+            _THUMB_JOB["last"] = last
+
+
+def _ev_thumb_job_finish():
+    with _THUMB_JOB_LOCK:
+        _THUMB_JOB["running"] = False
+        _THUMB_JOB["finished"] = datetime.datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S")
+
+
+def _ev_thumb_job_state():
+    with _THUMB_JOB_LOCK:
+        return dict(_THUMB_JOB)
+
+
+def _ev_media_files_with_meta(year, title, key, sub=""):
+    """(파일명, sub경로) 목록 — 하위폴더까지 재귀 수집."""
+    out = []
+    fp = _ev_sub_dir(year, title, key, sub)
+    if not fp or not NAS.exists(fp):
+        return out
+    try:
+        r = NAS.list(fp)
+    except Exception:
+        return out
+    for f in (r.get("files") or []):
+        nm = f.get("name", "")
+        if nm.startswith("."):
+            continue
+        if f.get("isdir"):
+            child = f"{sub}/{nm}" if sub else nm
+            out.extend(_ev_media_files_with_meta(year, title, key, child))
+        else:
+            out.append((nm, sub))
+    return out
+
+
+def _ev_spot_thumb(year, title, name, sub, kind, k):
+    """단일 파일 썸네일 생성. 반환: 'image' | 'video' | 'skip' | 'fail'."""
+    try:
+        if NAS.exists(_ev_thumb_path(year, title, name, sub)):
+            return "skip"
+        orig = _ev_find_file(year, title, "media", name, sub)
+        if not orig:
+            return "skip"
+        if kind == "image":
+            ok = _make_image_thumb2(
+                NAS.read_bytes(orig), year, title, name, sub, max_side=k)
+            return "image" if ok else "fail"
+        if kind == "video":
+            # 동영상은 NAS 원본을 임시로 받아 첫 프레임 추출
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=_ext_of(name), delete=False).name
+            try:
+                with open(tmp, "wb") as w:
+                    w.write(NAS.read_bytes(orig))
+                ok = _make_video_thumb2(tmp, year, title, name, sub, max_side=k)
+                del ok
+                return "video"
+            finally:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+        return "skip"
+    except Exception as e:
+        print("spot thumb fail", name, e)
+        return "fail"
+
+
+def _ev_ensure_thumb_dir(year, title):
+    """썸네일 저장 폴더 보장(누락 시 생성)."""
+    tdir = _ev_thumb_dir(year, title)
+    if NAS.exists(tdir):
+        return True
+    try:
+        _ev_mkdir_deep(tdir)
+    except Exception as e:
+        print("thumb dir fail", tdir, e)
+    return NAS.exists(tdir)
+
+
+def _ev_backfill_thumbs_worker(max_side=480, force=False):
+    """전체 행사 사진/동영상 썸네일 백필(백그라운드)."""
+    try:
+        doc = _ev_doc()
+        jobs = []          # (year, title, name, sub, kind)
+        for eid, e in doc.get("events", {}).items():
+            year = e.get("year", "")
+            title = e.get("title", "")
+            if not year or not title:
+                continue
+            files = _ev_media_files_with_meta(year, title, "media")
+            if not files:
+                continue
+            _ev_ensure_thumb_dir(year, title)
+            for nm, sub in files:
+                kind = _kind_of(nm)
+                if kind in ("image", "video"):
+                    jobs.append((year, title, nm, sub, kind))
+        _ev_thumb_job_reset(len(jobs))
+        for (year, title, nm, sub, kind) in jobs:
+            try:
+                if force:
+                    try:
+                        NAS.delete(_ev_thumb_path(year, title, nm, sub))
+                    except Exception:
+                        pass
+                res = _ev_spot_thumb(year, title, nm, sub, kind, max_side)
+                if res == "image":
+                    _ev_thumb_job_inc("images", f"{title}/{nm}")
+                elif res == "video":
+                    _ev_thumb_job_inc("videos", f"{title}/{nm}")
+                elif res == "skip":
+                    _ev_thumb_job_inc("skipped")
+                else:
+                    _ev_thumb_job_inc("failed", f"{title}/{nm}")
+            except Exception as e:
+                print("backfill item fail", nm, e)
+                _ev_thumb_job_inc("failed")
+        print("thumb backfill done", _ev_thumb_job_state())
+    except Exception as e:
+        print("thumb backfill worker fail", e)
+    finally:
+        _ev_thumb_job_finish()
+
+
+def _ev_start_thumb_backfill(max_side=480, force=False):
+    """이미 진행 중이면 시작하지 않는다."""
+    with _THUMB_JOB_LOCK:
+        if _THUMB_JOB.get("running"):
+            return False
+    t = threading.Thread(
+        target=_ev_backfill_thumbs_worker,
+        args=(max_side, force),
+        daemon=True,
+    )
+    t.start()
+    return True
+
     fp_dir = _ev_sub_dir(year, title, key, sub)
     if not fp_dir:
         return None
@@ -3097,12 +3282,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require("admin"):
                     return
                 cfg = _load_json(CFG_FILE, _default_config())
-                return self._json({
+                s = self._sess() or {}
+                # 앱 접근 비번은 마스터에게만 노출(관리자에게는 관리 UI 무의미).
+                out = {
                     "ok": True,
-                    "appPassword": cfg.get("appPassword", APP_PW),
                     "personalPasswords": cfg.get("personalPasswords", {}),
                     "serverPaused": bool(cfg.get("serverPaused", False)),
-                })
+                }
+                if s.get("tier") == "master":
+                    out["appPassword"] = cfg.get("appPassword", APP_PW)
+                return self._json(out)
             if p == "/api/members":
                 # F01: 무인증 차단 + 역할별 최소 항목
                 if not self._require():
@@ -3111,6 +3300,36 @@ class Handler(BaseHTTPRequestHandler):
                 members = _load_json(DB_FILE, [])
                 members = _scope_members(s.get("tier"), s.get("who"), members)
                 return self._json({"ok": True, "members": members})
+            # ---- 접속 비밀번호 "현재값" 조회 (요구: 마스터 로그인 시에만 노출) ----
+            if p == "/api/member/password":
+                if not self._require("master"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                no = re.sub(r"[^0-9]", "", str(q.get("number", [""])[0]))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                m = _ev_member_by_ident(no)
+                if not m:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                is_regular = bool(m.get("isRegular"))
+                if is_regular:
+                    key = re.sub(r"[^0-9]", "",
+                                 str(m.get("accessPhone") or m.get("phone") or no))
+                    pws = _ev_load_regular_pw()
+                    pw = str(pws.get(key) or m.get("personalPassword")
+                             or _ev_phone_last4(m.get("phone") or key))
+                    default_pw = _ev_phone_last4(m.get("phone") or key)
+                else:
+                    pw = _personal_pw_of(re.sub(r"[^0-9]", "",
+                                                str(m.get("number", ""))))
+                    default_pw = f"{re.sub(r'[^0-9]', '', str(m.get('number', '')))}!@@"
+                return self._json({
+                    "ok": True,
+                    "password": pw,
+                    "defaultPassword": default_pw,
+                    "isDefault": pw == default_pw,
+                    "isRegular": is_regular,
+                })
             if p == "/api/meta":
                 if not self._require():
                     return
@@ -3209,6 +3428,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require():
                     return
                 return self._json({"ok": True, "files": _event_list()})
+            # ---- 행사 썸네일 백필 진행상황 (관리자·마스터) ----
+            if p == "/api/event/thumbs/status":
+                if not self._require("admin"):
+                    return
+                return self._json({"ok": True, "job": _ev_thumb_job_state()})
             # ---- 행사관리: 썸네일 ----
             if p == "/api/event/thumb":
                 if not self._require():
@@ -3935,6 +4159,23 @@ class Handler(BaseHTTPRequestHandler):
                 if ok:
                     return self._json({"ok": True, "newPassword": new_pw})
                 return self._json({"ok": False, "error": err}, 400)
+            # ---- 행사 썸네일 일괄 백필 시작 (관리자·마스터) ----
+            if p == "/api/event/thumbs/backfill":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                force = bool(d.get("force"))
+                try:
+                    k = int(d.get("maxSide", 480) or 480)
+                except Exception:
+                    k = 480
+                k = max(64, min(1600, k))
+                started = _ev_start_thumb_backfill(max_side=k, force=force)
+                return self._json({
+                    "ok": True,
+                    "started": started,
+                    "job": _ev_thumb_job_state(),
+                })
             if p == "/api/event/create":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))

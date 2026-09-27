@@ -244,9 +244,19 @@ class MemberRepository {
     return num == r || login == r || phone == r;
   }
 
+  /// 인가자 정렬 규칙: 인가자(비일반회원)를 먼저, 일반회원(isRegular)을 항상
+  /// 목록의 가장 뒤에 배치한다. 같은 그룹 내에서는 인가번호 오름차순.
+  static int compareMembers(Member a, Member b) {
+    if (a.isRegular != b.isRegular) {
+      // 일반회원이면 +1, 인가자면 -1 → 일반회원이 뒤로.
+      return a.isRegular ? 1 : -1;
+    }
+    return a.numberInt.compareTo(b.numberInt);
+  }
+
   List<Member> all() {
     final list = _values.map((v) => Member.fromMap(v)).toList()
-      ..sort((a, b) => a.numberInt.compareTo(b.numberInt));
+      ..sort(compareMembers);
     if (isRestricted) {
       return list.where(_matchesRestricted).toList();
     }
@@ -255,7 +265,7 @@ class MemberRepository {
 
   /// 제한 없이 전체 목록(관리자/마스터 전용)
   List<Member> allUnscoped() => _values.map((v) => Member.fromMap(v)).toList()
-    ..sort((a, b) => a.numberInt.compareTo(b.numberInt));
+    ..sort(compareMembers);
 
   Member? byId(String id) {
     if (isRestricted) {

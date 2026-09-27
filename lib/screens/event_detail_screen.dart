@@ -118,7 +118,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _expenses = exps;
         _loading = false;
         final len = widget.canManage ? 5 : 1; // 참가자는 사진탭만
-        _tab = TabController(length: len, vsync: this);
+        // ⚠️ 버그 수정: _load() 마다 TabController 를 새로 만들면 index 가 0
+        // (참가자 탭)으로 되돌아가, 사진+동영상 하위폴더에 진입해도 다시
+        // 사진 탭으로 돌아가 버렸다. 현재 탭 인덱스를 보존한다.
+        final prevIndex = _tab?.index ?? 0;
+        if (_tab == null || _tab!.length != len) {
+          _tab?.dispose();
+          _tab = TabController(
+            length: len,
+            vsync: this,
+            initialIndex: prevIndex.clamp(0, len - 1),
+          );
+        }
         if (!widget.canManage) _tab!.index = 0;
       });
     } catch (err) {
