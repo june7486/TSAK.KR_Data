@@ -1641,6 +1641,81 @@ def _now_stamp():
     return datetime.datetime.now().strftime("%Y.%m.%d %H:%M")
 
 
+def _now_date():
+    return datetime.datetime.now().strftime("%Y.%m.%d")
+
+
+def _now_ymd(o):
+    """주문 dict 에서 연도 문자열 추출(created 예: '2025.03.14 10:22')."""
+    c = str((o or {}).get("created", ""))
+    m = re.match(r"(\d{4})", c)
+    return m.group(1) if m else str((o or {}).get("year", ""))
+
+
+# ============================ 수품구매 (굿즈/상품 주문) ============================
+def _merch_doc():
+    """수품구매 문서 구조:
+    {
+      "products": [ {id, name, kind, price, stock, options:[..], image, desc,
+                     active, created} ],
+      "orders":   [ {id, productId, product, kind, unitPrice, qty, option,
+                     total, buyerName, buyerNumber, phone, address,
+                     shipMethod('현장구매'|'택배발송'|'기타'), shipNote,
+                     paid(bool), memo, created} ],
+      "config":   { "annualFee": 10000, "salesOpen": true,
+                    "account": {bank,no,holder}, "updated" }
+    }
+    """
+    d = _load_json(MERCH_FILE, {})
+    if not isinstance(d, dict):
+        d = {}
+    d.setdefault("products", [])
+    d.setdefault("orders", [])
+    cfg = d.get("config")
+    if not isinstance(cfg, dict):
+        cfg = {}
+    cfg.setdefault("annualFee", 10000)
+    cfg.setdefault("salesOpen", True)
+    acc = cfg.get("account")
+    if not isinstance(acc, dict):
+        acc = {}
+    acc.setdefault("bank", "농협")
+    acc.setdefault("no", "")
+    acc.setdefault("holder", "한국범스카우트중앙회")
+    cfg["account"] = acc
+    d["config"] = cfg
+    return d
+
+
+def _merch_save(doc):
+    _save_json(MERCH_FILE, doc)
+
+
+def _merch_member(ident):
+    return _ev_member_by_ident(ident)
+
+
+def _merch_fee_paid(ident, year=None):
+    """연회비 납부 여부(평생회원은 항상 납부 처리)."""
+    m = _merch_member(ident)
+    if not m:
+        return False, None
+    if m.get("lifetimeMember") is True:
+        return True, m
+    fy = m.get("feeYears")
+    if not isinstance(fy, dict):
+        fy = {}
+    yr = year or str(datetime.datetime.now().year)
+    paid = fy.get(yr) is True or fy.get(yr + "년") is True
+    if not paid:
+        # paidYears 호환: 값 true 인 키에서 숫자 추출
+        for k, v in fy.items():
+            if v is True and re.sub(r"[^0-9]", "", str(k)) == re.sub(r"[^0-9]", "", yr):
+                paid = True
+                break
+    return bool(paid), m
+
+
 def _make_image_thumb2(src_bytes, year, title, name, sub="", max_side=480):
     """행사 항목 이미지 → JPEG 썸네일."""
     try:
@@ -4110,6 +4185,65 @@ class Handler(BaseHTTPRequestHandler):
                 out.sort(key=lambda x: str(x.get("created", "")), reverse=True)
                 return self._json({"ok": True, "posts": out,
                                    "isAdmin": is_admin})
+            # ---------- 수품구매 (굿즈) ----------
+            if p == "/api/merch":
+                # 로그인 없이도 공개 조회 가능 (무인증 구매 버튼용)
+                doc = _merch_doc()
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                ident = q.get("ident", [""])[0]
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                cfg = doc.get("config", {})
+                prods = []
+                for pr in doc.get("products", []):
+                    if pr.get("active") is False and not is_admin:
+                        continue
+                    prods.append({k: pr.get(k) for k in
+                                  ("id", "name", "kind", "price", "stock",
+                                   "options", "image", "desc", "active")})
+                # 연회비 납부 여부(연도별). ident 없으면 판단 보류
+                year = q.get("year", [""])[0] or str(datetime.datetime.now().year)
+                fee_paid = False
+                buyer = None
+                if ident:
+                    fee_paid, m = _merch_fee_paid(ident, year)
+                    if m:
+                        buyer = {"name": m.get("name", ""),
+                                 "number": re.sub(r"[^0-9]", "", str(m.get("number", ""))),
+                                 "phone": m.get("phone", ""),
+                                 "lifetime": m.get("lifetimeMember") is True}
+                return self._json({
+                    "ok": True,
+                    "products": prods,
+                    "config": {
+                        "annualFee": int(cfg.get("annualFee", 10000) or 0),
+                        "salesOpen": cfg.get("salesOpen", True) is not False,
+                        "account": cfg.get("account", {}),
+                    },
+                    "feePaid": bool(fee_paid),
+                    "buyer": buyer,
+                    "isAdmin": is_admin,
+                    "year": year,
+                })
+            if p == "/api/merch/admin":
+                if not self._require("admin"):
+                    return
+                doc = _merch_doc()
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                # 주문 필터(선택): year, productId, paid
+                orders = list(doc.get("orders", []))
+                yr = q.get("year", [""])[0]
+                if yr:
+                    orders = [o for o in orders
+                              if _now_ymd(o).startswith(yr)
+                              or str(o.get("year", "")) == yr]
+                orders.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                return self._json({
+                    "ok": True,
+                    "products": doc.get("products", []),
+                    "orders": orders,
+                    "config": doc.get("config", {}),
+                })
             if p == "/api/event/files":
                 if not self._require():
                     return
@@ -4456,8 +4590,8 @@ class Handler(BaseHTTPRequestHandler):
             #  로그인/로그아웃을 제외한 모든 변경(쓰기) 요청은 유효한 세션 필요.
             #  관리자 전용 경로는 추가로 tier 검사.
             if p.startswith("/api/"):
-                # QR 행사참여(스캔) 경로는 공개 — QR 자체가 접근 매개.
-                if p.startswith("/api/event/qr/"):
+                # QR 행사참여(스캔) 경로·수품구매 주문은 공개.
+                if p.startswith("/api/event/qr/") or p == "/api/merch/order":
                     pass
                 else:
                     need = None
@@ -4938,6 +5072,162 @@ class Handler(BaseHTTPRequestHandler):
                     posts.remove(post)
                     _review_save_posts(year, title, posts)
                 return self._json({"ok": True})
+            # ---------- 수품구매 (굿즈) POST ----------
+            if p == "/api/merch/order":
+                # 무인증(비로그인) 구매 가능. 단 연회비 미납이면 서버에서도 차단.
+                d = json.loads(self._body() or b"{}")
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                doc = _merch_doc()
+                cfg = doc.get("config", {})
+                if cfg.get("salesOpen", True) is False and not is_admin:
+                    return self._json(
+                        {"ok": False, "error": "sales_closed"}, 403)
+                pid = str(d.get("productId", "") or "")
+                prod = next((x for x in doc.get("products", [])
+                             if str(x.get("id")) == pid), None)
+                if not prod:
+                    return self._json(
+                        {"ok": False, "error": "product_not_found"}, 404)
+                ident = re.sub(r"[^0-9]", "", str(d.get("buyerNumber", "") or ""))
+                # 연회비 게이트(관리자 예외)
+                if not is_admin:
+                    paid, _m = _merch_fee_paid(ident, d.get("year"))
+                    if not paid:
+                        return self._json(
+                            {"ok": False, "error": "annual_fee_required"}, 403)
+                try:
+                    unit = int(d.get("unitPrice", prod.get("price", 0)) or 0)
+                    qty = int(d.get("qty", 1) or 1)
+                except Exception:
+                    unit, qty = 0, 1
+                qty = max(1, qty)
+                total = unit * qty
+                ship = str(d.get("shipMethod", "") or "현장구매")
+                oid = "o" + _secrets.token_urlsafe(6)
+                order = {
+                    "id": oid,
+                    "year": str(datetime.datetime.now().year),
+                    "productId": pid,
+                    "product": str(prod.get("name", "")),
+                    "kind": str(prod.get("kind", "")),
+                    "unitPrice": unit,
+                    "qty": qty,
+                    "option": str(d.get("option", "") or ""),
+                    "total": total,
+                    "buyerName": str(d.get("buyerName", "") or "")[:40],
+                    "buyerNumber": ident,
+                    "phone": str(d.get("phone", "") or "")[:20],
+                    "address": str(d.get("address", "") or "")[:200],
+                    "shipMethod": ship,
+                    "shipNote": str(d.get("shipNote", "") or "")[:200],
+                    "paid": False,
+                    "memo": str(d.get("memo", "") or "")[:200],
+                    "created": _now_stamp(),
+                }
+                doc.setdefault("orders", []).append(order)
+                _merch_save(doc)
+                return self._json({"ok": True, "order": order,
+                                   "account": cfg.get("account", {})})
+            if p == "/api/merch/product":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("id", "") or ("pr" + _secrets.token_urlsafe(5)))
+                prods = doc.get("products", [])
+                existing = next((x for x in prods if str(x.get("id")) == pid), None)
+                item = {
+                    "id": pid,
+                    "name": str(d.get("name", "") or "")[:80],
+                    "kind": str(d.get("kind", "") or "")[:40],
+                    "price": int(d.get("price", 0) or 0),
+                    "stock": int(d.get("stock", 0) or 0),
+                    "options": d.get("options", (existing or {}).get("options", [])),
+                    "image": str(d.get("image", "") or "")[:300],
+                    "desc": str(d.get("desc", "") or "")[:400],
+                    "active": d.get("active", True) is not False,
+                    "created": (existing or {}).get("created", _now_stamp()),
+                }
+                if existing:
+                    prods[prods.index(existing)] = item
+                else:
+                    prods.append(item)
+                doc["products"] = prods
+                _merch_save(doc)
+                return self._json({"ok": True, "product": item})
+            if p == "/api/merch/product/delete":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("id", "") or "")
+                before = len(doc.get("products", []))
+                doc["products"] = [x for x in doc.get("products", [])
+                                   if str(x.get("id")) != pid]
+                _merch_save(doc)
+                return self._json({"ok": True, "removed": before - len(doc["products"])})
+            if p == "/api/merch/order/update":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                oid = str(d.get("id", "") or "")
+                order = next((x for x in doc.get("orders", [])
+                              if str(x.get("id")) == oid), None)
+                if not order:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                if "paid" in d:
+                    order["paid"] = bool(d.get("paid"))
+                if "memo" in d:
+                    order["memo"] = str(d.get("memo", "") or "")[:200]
+                if "shipMethod" in d:
+                    order["shipMethod"] = str(d.get("shipMethod", "") or "")
+                if "shipNote" in d:
+                    order["shipNote"] = str(d.get("shipNote", "") or "")[:200]
+                if "qty" in d:
+                    try:
+                        order["qty"] = max(1, int(d.get("qty", 1) or 1))
+                    except Exception:
+                        pass
+                order["total"] = int(order.get("unitPrice", 0) or 0) * int(order.get("qty", 1) or 1)
+                order["updated"] = _now_stamp()
+                _merch_save(doc)
+                return self._json({"ok": True, "order": order})
+            if p == "/api/merch/order/delete":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                oid = str(d.get("id", "") or "")
+                before = len(doc.get("orders", []))
+                doc["orders"] = [x for x in doc.get("orders", [])
+                                 if str(x.get("id")) != oid]
+                _merch_save(doc)
+                return self._json({"ok": True, "removed": before - len(doc["orders"])})
+            if p == "/api/merch/config":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                cfg = doc.get("config", {})
+                if "annualFee" in d:
+                    try:
+                        cfg["annualFee"] = int(d.get("annualFee", 0) or 0)
+                    except Exception:
+                        pass
+                if "salesOpen" in d:
+                    cfg["salesOpen"] = bool(d.get("salesOpen"))
+                if "account" in d and isinstance(d.get("account"), dict):
+                    a = cfg.get("account", {})
+                    for k in ("bank", "no", "holder"):
+                        if k in d["account"]:
+                            a[k] = str(d["account"][k] or "")
+                    cfg["account"] = a
+                cfg["updated"] = _now_stamp()
+                doc["config"] = cfg
+                _merch_save(doc)
+                return self._json({"ok": True, "config": cfg})
             # ============ 행사관리 v2 (POST) ============
             if p == "/api/admin/set-password":
                 d = json.loads(self._body() or b"{}")

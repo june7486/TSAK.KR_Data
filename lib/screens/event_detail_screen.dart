@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
 import 'roster_screen.dart';
+import 'event_review_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
 ///
@@ -781,6 +782,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               _rosterButton(Icons.sms, '문자', _sendSms),
               const SizedBox(width: 6),
               _rosterButton(Icons.mail, '메일', _sendMail),
+              const SizedBox(width: 6),
+              _rosterButton(Icons.forum_outlined, '후기', _openReview),
               const Spacer(),
               Text(
                 '${_attendees.length}명',
@@ -2312,6 +2315,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           place: '${e['place'] ?? ''}',
           desc: '${e['desc'] ?? ''}',
           attendees: attendees,
+        ),
+      ),
+    );
+  }
+
+  /// 행사 후기 게시판 화면으로 이동
+  void _openReview() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventReviewScreen(
+          year: widget.year,
+          title: widget.title,
         ),
       ),
     );

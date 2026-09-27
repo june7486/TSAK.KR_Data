@@ -1158,8 +1158,7 @@ class NasApi {
   ///
   /// [files] 는 `[{'name': 파일명, 'data': base64문자열}]` 형태.
   /// 보낸사람 이메일 또는 동의가 없으면 서버가 400 을 반환한다.
-  Future<Map<String, dynamic>> submitInquiry({
-    required String name,
+  Future<Map<String, dynamic>> submitInquiry({    required String name,
     required String email,
     String phone = '',
     String number = '',
@@ -1189,5 +1188,298 @@ class NasApi {
     } catch (_) {
       return {'ok': r.statusCode == 200, 'status': r.statusCode};
     }
+  }
+
+  // ============================ 행사 후기 게시판 ============================
+
+  /// 행사 후기 목록 조회.
+  Future<Map<String, dynamic>> reviewList(String year, String title) async {
+    final r = await http
+        .get(
+          _uri('/api/event/review/list?year=${Uri.encodeComponent(year)}'
+              '&title=${Uri.encodeComponent(title)}'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 후기 글 작성/수정(임시저장 draft 지원). 반환: {ok, id}
+  Future<Map<String, dynamic>> reviewSave({
+    required String year,
+    required String title,
+    String id = '',
+    String author = '',
+    String number = '',
+    required String body,
+    bool draft = false,
+    String password = '',
+    String pwdHint = '',
+    String device = '',
+    List<String> attachments = const [],
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/review/post'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'id': id,
+            'author': author,
+            'number': number,
+            'body': body,
+            'draft': draft,
+            'password': password,
+            'pwdHint': pwdHint,
+            'device': device,
+            'attachments': attachments,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 후기 댓글 추가.
+  Future<Map<String, dynamic>> reviewComment({
+    required String year,
+    required String title,
+    required String postId,
+    String author = '',
+    String number = '',
+    required String body,
+    String password = '',
+    String device = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/review/comment'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'postId': postId,
+            'author': author,
+            'number': number,
+            'body': body,
+            'password': password,
+            'device': device,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 좋아요/공감 토글. 반환: {ok, likes}
+  Future<Map<String, dynamic>> reviewLike({
+    required String year,
+    required String title,
+    required String postId,
+    required bool on,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/review/like'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'postId': postId,
+            'on': on,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 후기 글/댓글 삭제 (글은 비밀번호 보호 시 password 필요).
+  Future<bool> reviewDelete({
+    required String year,
+    required String title,
+    String postId = '',
+    String commentId = '',
+    String password = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/review/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'postId': postId,
+            'commentId': commentId,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  // ==================== 수품구매 (굿즈) ====================
+  /// 공개 상품목록/설정/연회비 납부여부 조회. 로그인 불필요.
+  /// [ident] = 인가번호 또는 전화번호(연회비 판단용, 선택)
+  Future<Map<String, dynamic>> merch({
+    String ident = '',
+    String year = '',
+  }) async {
+    final q = <String>[];
+    if (ident.isNotEmpty) q.add('ident=${Uri.encodeComponent(ident)}');
+    if (year.isNotEmpty) q.add('year=${Uri.encodeComponent(year)}');
+    final qs = q.isEmpty ? '' : '?${q.join('&')}';
+    final r = await http
+        .get(_uri('/api/merch$qs'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자용: 상품/주문/설정 전체 조회.
+  Future<Map<String, dynamic>> merchAdmin({String year = ''}) async {
+    final qs = year.isEmpty ? '' : '?year=${Uri.encodeComponent(year)}';
+    final r = await http
+        .get(_uri('/api/merch/admin$qs'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 주문 생성 (무인증 가능). 반환: {ok, order, account} 또는 {ok:false,error}
+  Future<Map<String, dynamic>> merchOrder({
+    required String productId,
+    required String buyerName,
+    required String buyerNumber,
+    int qty = 1,
+    String option = '',
+    String phone = '',
+    String address = '',
+    String shipMethod = '현장구매',
+    String shipNote = '',
+    String memo = '',
+    int? unitPrice,
+    String year = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'productId': productId,
+            'buyerName': buyerName,
+            'buyerNumber': buyerNumber,
+            'qty': qty,
+            'option': option,
+            'phone': phone,
+            'address': address,
+            'shipMethod': shipMethod,
+            'shipNote': shipNote,
+            'memo': memo,
+            if (unitPrice != null) 'unitPrice': unitPrice,
+            if (year.isNotEmpty) 'year': year,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 상품 등록/수정 (id 비우면 신규).
+  Future<Map<String, dynamic>> merchSaveProduct({
+    String id = '',
+    required String name,
+    String kind = '',
+    int price = 0,
+    int stock = 0,
+    List<String> options = const [],
+    String image = '',
+    String desc = '',
+    bool active = true,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/product'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            'name': name,
+            'kind': kind,
+            'price': price,
+            'stock': stock,
+            'options': options,
+            'image': image,
+            'desc': desc,
+            'active': active,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<bool> merchDeleteProduct(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/product/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 주문 상태/메모/수량 수정.
+  Future<Map<String, dynamic>> merchUpdateOrder({
+    required String id,
+    bool? paid,
+    String? memo,
+    String? shipMethod,
+    String? shipNote,
+    int? qty,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order/update'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            if (paid != null) 'paid': paid,
+            if (memo != null) 'memo': memo,
+            if (shipMethod != null) 'shipMethod': shipMethod,
+            if (shipNote != null) 'shipNote': shipNote,
+            if (qty != null) 'qty': qty,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<bool> merchDeleteOrder(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 연회비 금액 / 판매창 오픈 / 수품계좌 설정.
+  Future<Map<String, dynamic>> merchSaveConfig({
+    int? annualFee,
+    bool? salesOpen,
+    Map<String, String>? account,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/config'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            if (annualFee != null) 'annualFee': annualFee,
+            if (salesOpen != null) 'salesOpen': salesOpen,
+            if (account != null) 'account': account,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 }
