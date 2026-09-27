@@ -160,3 +160,33 @@
 **무결성**: 스모크 `hasCanvas/ loggedIn=true / jsErrors=0 / failedReq=0`. analyze 무이슈.
 
 **미해결(잔여)**: 프록시 요청당 **~0.47s TTFB** 가 존재(최소 HTTP 서버는 8ms). 환경 문제가 아니라 프록시 고유 현상이며 `TCP_NODELAY` 로 해소되지 않음(드문 `Connection: close` 요청에 한함). 추가 규명 필요 — 단, 실제 앱은 HTTP/1.1 keep-alive 로 여러 요청을 묶어 보내므로 실사용 영향은 제한적.
+
+---
+
+## 9. 성능 개선 로그 — QR 참여등록 지연 해소 (2026-09-27)
+
+행사 QR 스캔 참여 등록이 **체감상 멈춘 것처럼** 보이던 문제를 규명·해결했다. 최초 E2E 에서 `done:false`(응답 대기 초과)로 보였으나, 정밀 계측 결과 **버그가 아니라 성능 문제**였다.
+
+**진단**
+- QR **게스트** 등록 **18.6초**, QR **인가자** 등록 **11.8초**
+- 근본 원인: 참여 1건마다 **`members.json`(약 250KB, 2,186명) 를 5~6회 반복 read/write**
+  - 참가자 중복확인 → 회원 로드 → 회원 가입/갱신 → eventAttend 갱신 → 백업 …
+  - NAS 원격 I/O 로 read ~0.5s / write ~2–3s 가 **직렬 누적**
+
+**조치**
+| 위치 | 변경 |
+|------|------|
+| `proxy_server.py` | `_ev_member_set_event_batch()` — 다수 회원 `eventAttend` 를 **1회 load/save** 로 일괄 갱신 |
+| `proxy_server.py` | `_ev_guest_ensure_account_async()` / `_ev_member_event_async()` — 회원 계정 생성·eventAttend 갱신을 **백그라운드 스레드**로 분리 → 사용자 응답은 이벤트 문서 처리(1회)만 대기 |
+| `proxy_server.py` | `_MEMBER_WRITE_LOCK` + `_ev_backup_members()` — members.json **1회 백업**, 동시쓰기 보호 |
+| `proxy_server.py` | `/api/event/attendees/add`(다중 일괄등록) · `/api/event/attendee/set`(배치화) |
+| `web/qr.html` | 중복감지(`already`) 결과 정합 + **등록중 스피너**로 진행 피드백 |
+
+**측정 (프록시 직결 HTTP)**
+| 시나리오 | 최초 | 최적화 후 | 개선 |
+|----------|------|-----------|------|
+| QR 인가자 참여 | 11.8s | **1.95s** | **83%↓** |
+| QR 비인가자 신규 | 18.6s | **1.98s** | **89%↓** |
+| QR 비인가자 중복 | 2.14s | **0.51s** | **76%↓** |
+
+**무결성**: 응답 즉시 참가자 등록 완료, 백그라운드로 회원 계정(loginId=전화번호) 생성 확인. 테스트 후 행사/계정 정리 완료 — **members 2,186명 보존, 잔여 테스트데이터 0**.
