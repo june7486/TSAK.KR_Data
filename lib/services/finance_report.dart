@@ -156,7 +156,7 @@ class FinanceReportService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(42, 44, 42, 42),
-        header: (ctx) => _pageHeader('Ⅰ. 연도별 재무 추이', emblem),
+        header: (ctx) => _pageHeader('I. 연도별 재무 추이', emblem),
         footer: _pageFooter,
         build: (ctx) => [
           pw.SizedBox(height: 6),
@@ -183,7 +183,7 @@ class FinanceReportService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(42, 44, 42, 42),
-        header: (ctx) => _pageHeader('Ⅱ. 항목별 분석 (후원·수품·지출·행사)', emblem),
+        header: (ctx) => _pageHeader('II. 항목별 분석 (후원·수품·지출·행사)', emblem),
         footer: _pageFooter,
         build: (ctx) {
           final out = <pw.Widget>[];
@@ -212,7 +212,7 @@ class FinanceReportService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(42, 44, 42, 42),
-        header: (ctx) => _pageHeader('Ⅲ. 행사별 수입·지출', emblem),
+        header: (ctx) => _pageHeader('III. 행사별 수입·지출', emblem),
         footer: _pageFooter,
         build: (ctx) {
           final out = <pw.Widget>[
@@ -256,7 +256,7 @@ class FinanceReportService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(42, 44, 42, 42),
-        header: (ctx) => _pageHeader('Ⅳ. 최근 거래 상세', emblem),
+        header: (ctx) => _pageHeader('IV. 최근 거래 상세', emblem),
         footer: _pageFooter,
         build: (ctx) {
           final out = <pw.Widget>[];
