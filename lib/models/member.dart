@@ -20,6 +20,9 @@ class Member {
     this.birthday = '',
     this.anniversary = '',
     this.trainingStatus = '',
+    this.awards = '',
+    this.specialtyCourses = '',
+    this.purchases = '',
     this.photoPath = '',
     this.lifetimeMember = false,
     this.isRegular = false,
@@ -89,6 +92,15 @@ class Member {
   /// 훈련현황 (중급 / 상급 / 커미셔너과정 / 부교수 / 교수)
   String trainingStatus;
 
+  /// 포상 내역 (자가 입력, 예: "2024 우수지도자 표창")
+  String awards;
+
+  /// 종별 전문과정 이수과정 (자가 입력, 예: "목공지도자 1급, 응급처치 강사")
+  String specialtyCourses;
+
+  /// 수품구매현황 (자가/관리자 입력, 예: "2025.03 반팔티 1 / 2025.05 모자 1")
+  String purchases;
+
   /// 사진 경로 (로컬 파일 경로 또는 base64), 사진을 선택/촬영하여 저장
   String photoPath;
 
@@ -137,7 +149,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
 
   /// 로그인 아이디 (일반회원은 전화번호, 인가자는 인가번호)
@@ -182,8 +194,11 @@ class Member {
     'memo': memo,
     'birthday': birthday,
     'anniversary': anniversary,
-    'trainingStatus': trainingStatus,
-    'photoPath': photoPath,
+      'trainingStatus': trainingStatus,
+      'awards': awards,
+      'specialtyCourses': specialtyCourses,
+      'purchases': purchases,
+      'photoPath': photoPath,
     'lifetimeMember': lifetimeMember,
     'isRegular': isRegular,
     'approvalStatus': approvalStatus,
@@ -233,6 +248,9 @@ class Member {
       birthday: '${map['birthday'] ?? ''}',
       anniversary: '${map['anniversary'] ?? ''}',
       trainingStatus: '${map['trainingStatus'] ?? ''}',
+      awards: '${map['awards'] ?? ''}',
+      specialtyCourses: '${map['specialtyCourses'] ?? ''}',
+      purchases: '${map['purchases'] ?? ''}',
       photoPath: '${map['photoPath'] ?? ''}',
       lifetimeMember: map['lifetimeMember'] == true,
       isRegular: map['isRegular'] == true,
@@ -268,6 +286,9 @@ class Member {
     String? birthday,
     String? anniversary,
     String? trainingStatus,
+    String? awards,
+    String? specialtyCourses,
+    String? purchases,
     String? photoPath,
     bool? lifetimeMember,
     bool? isRegular,
@@ -300,6 +321,9 @@ class Member {
       birthday: birthday ?? this.birthday,
       anniversary: anniversary ?? this.anniversary,
       trainingStatus: trainingStatus ?? this.trainingStatus,
+      awards: awards ?? this.awards,
+      specialtyCourses: specialtyCourses ?? this.specialtyCourses,
+      purchases: purchases ?? this.purchases,
       photoPath: photoPath ?? this.photoPath,
       lifetimeMember: lifetimeMember ?? this.lifetimeMember,
       isRegular: isRegular ?? this.isRegular,

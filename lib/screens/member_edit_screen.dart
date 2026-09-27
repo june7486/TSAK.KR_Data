@@ -41,9 +41,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _memo,
       _birthday,
       _anniversary;
-
   String _photoPath = '';
   String _trainingStatus = '';
+  late TextEditingController _awards;
+  late TextEditingController _specialty;
+  late TextEditingController _purchases;
   bool _lifetime = false;
   Map<String, bool> _fees = {};
   Member? _existing;
@@ -91,6 +93,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _memo = TextEditingController(text: m?.memo ?? '');
     _birthday = TextEditingController(text: m?.birthday ?? '');
     _anniversary = TextEditingController(text: m?.anniversary ?? '');
+    _awards = TextEditingController(text: m?.awards ?? '');
+    _specialty = TextEditingController(text: m?.specialtyCourses ?? '');
+    _purchases = TextEditingController(text: m?.purchases ?? '');
     _photoPath = m?.photoPath ?? '';
     _trainingStatus = m?.trainingStatus ?? '';
     _lifetime = m?.lifetimeMember ?? false;
@@ -119,6 +124,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _memo,
       _birthday,
       _anniversary,
+      _awards,
+      _specialty,
+      _purchases,
     ]) {
       c.dispose();
     }
@@ -247,6 +255,27 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.celebration,
               ),
               _trainingStatusField(),
+              _field(
+                '포상',
+                _awards,
+                hint: '예: 2024 우수지도자 표창 (자가 입력)',
+                icon: Icons.emoji_events,
+                maxLines: 2,
+              ),
+              _field(
+                '종별 전문과정 이수과정',
+                _specialty,
+                hint: '예: 목공지도자 1급, 응급처치 강사 (자가 입력)',
+                icon: Icons.workspace_premium,
+                maxLines: 2,
+              ),
+              _field(
+                '수품구매현황',
+                _purchases,
+                hint: '예: 2025.03 반팔티 1 / 2025.05 모자 1 (자가 입력)',
+                icon: Icons.shopping_bag,
+                maxLines: 2,
+              ),
               _codeListField(
                 label: '멘토',
                 icon: Icons.supervisor_account,
@@ -355,6 +384,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _birthday.text.trim() != m.birthday ||
         _anniversary.text.trim() != m.anniversary ||
         _trainingStatus != m.trainingStatus ||
+        _awards.text.trim() != m.awards ||
+        _specialty.text.trim() != m.specialtyCourses ||
+        _purchases.text.trim() != m.purchases ||
         _photoPath != m.photoPath ||
         _lifetime != m.lifetimeMember ||
         _mentors.join(',') != m.mentors.join(',') ||
@@ -816,6 +848,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       birthday: _birthday.text.trim(),
       anniversary: _anniversary.text.trim(),
       trainingStatus: _trainingStatus,
+      awards: _awards.text.trim(),
+      specialtyCourses: _specialty.text.trim(),
+      purchases: _purchases.text.trim(),
       photoPath: _photoPath,
       lifetimeMember: _lifetime,
       feeYears: Map<String, bool>.from(_fees)

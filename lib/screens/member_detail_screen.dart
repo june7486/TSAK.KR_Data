@@ -113,6 +113,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _depositSection(m),
                 _feeTracker(m),
                 _eventSection(m),
+                _purchaseSection(m),
                 _infoCard(m),
                 _membershipSection(m),
                 _passwordSection(m),
@@ -601,6 +602,93 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 수품구매현황 — 자가/관리자 입력 메모 표시 + 빠른 편집.
+  Widget _purchaseSection(Member m) {
+    final text = m.purchases.trim();
+    return _section(
+      title: '수품구매현황',
+      icon: Icons.shopping_bag,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (text.isEmpty)
+            Text(
+              '구매 내역이 없습니다.',
+              style: TextStyle(color: AppColors.textGray, fontSize: 13),
+            )
+          else
+            ...text.split(RegExp(r'[\n/]')).where((e) => e.trim().isNotEmpty).map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 3, right: 8),
+                          child: Icon(Icons.check_circle,
+                              size: 14, color: AppColors.scoutGreen),
+                        ),
+                        Expanded(
+                          child: Text(
+                            line.trim(),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textDark,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _editPurchases(m),
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('수품구매현황 편집'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editPurchases(Member m) async {
+    final ctrl = TextEditingController(text: m.purchases);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('수품구매현황'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 3,
+          decoration: const InputDecoration(
+            labelText: '구매 내역',
+            hintText: '한 줄에 하나씩 입력\n예: 2025.03 반팔티 1개',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await context.read<AppState>().save(m.copyWith(purchases: ctrl.text.trim()));
+    if (mounted) setState(() {});
+  }
+
   Widget _eventSection(Member m) {
     // 참가한 모든 행사를 최신순(연도 내림차순)으로 아래로 나열한다.
     final events = m.eventAttend.keys.toList()
@@ -930,6 +1018,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ['생일', m.birthday],
       ['기념일', m.anniversary],
       ['훈련현황', m.trainingStatus],
+      ['포상', m.awards],
+      ['전문과정 이수', m.specialtyCourses],
       ['멘토', m.mentors.map((e) => '#$e').join(', ')],
       ['페런츠', m.parents.map((e) => '#$e').join(', ')],
       ['ATAS 인가번호', m.atasNo],
