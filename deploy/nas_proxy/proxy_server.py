@@ -1526,6 +1526,13 @@ def _ev_spot_thumb(year, title, name, sub, kind, k):
     """단일 파일 썸네일 생성. 반환: 'image' | 'video' | 'skip' | 'fail'."""
     try:
         if NAS.exists(_ev_thumb_path(year, title, name, sub)):
+            # 이미 있음 → 로컬 디스크 캐시만 보강(예열)하고 skip.
+            try:
+                if _thumb_disk_get(year, title, name, sub) is None:
+                    data = NAS.read_bytes(_ev_thumb_path(year, title, name, sub))
+                    _thumb_disk_put(year, title, name, sub, data)
+            except Exception:
+                pass
             return "skip"
         orig = _ev_find_file(year, title, "media", name, sub)
         if not orig:
@@ -1626,12 +1633,92 @@ def _ev_start_thumb_backfill(max_side=480, force=False):
     t.start()
     return True
 
+
+def _ev_find_file(year, title, key, name, sub=""):
     fp_dir = _ev_sub_dir(year, title, key, sub)
     if not fp_dir:
         return None
     safe = _safe_name(name)
     fp = f"{fp_dir}/{safe}"
     return fp if NAS.exists(fp) else None
+
+
+# ---- 썸네일 로컬 디스크 캐시 -----------------------------------------------
+# NAS 는 원격(HTTPS)이라 썸네일을 매 요청마다 NAS 에서 읽으면 왕복 ~0.9s 가
+# 걸린다. 백필 후 로컬 디스크에 캐시해 두면 브라우저가 이미 가진 캐시까지
+# 고려해 첫 로딩이 ~0.02s 로 단축된다.
+_THUMB_DISK_DIR = "/home/user/nas_proxy/.thumb_cache"
+_THUMB_DISK_LOCK = threading.Lock()
+
+
+def _thumb_disk_path(year, title, name, sub=""):
+    key = _ev_thumb_key(name, sub)
+    safe = re.sub(r"[^0-9A-Za-z_.\-가-힣]", "_", f"{_ev_safe(year)}__{_ev_safe(title)}__{key}")
+    return f"{_THUMB_DISK_DIR}/{safe}.jpg"
+
+
+def _thumb_disk_get(year, title, name, sub=""):
+    """로컬 캐시에서 썸네일 바이트 반환. 없으면 None."""
+    p = _thumb_disk_path(year, title, name, sub)
+    try:
+        if os.path.exists(p):
+            with open(p, "rb") as f:
+                return f.read()
+    except Exception:
+        pass
+    return None
+
+
+def _thumb_disk_put(year, title, name, sub, data):
+    try:
+        os.makedirs(_THUMB_DISK_DIR, exist_ok=True)
+        p = _thumb_disk_path(year, title, name, sub)
+        tmp = p + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, p)
+    except Exception:
+        pass
+
+
+def _thumb_get(year, title, name, sub="", build_missing=True):
+    """썸네일 바이트 반환 (로컬캐시 → NAS → 즉석생성 순). 없으면 None."""
+    data = _thumb_disk_get(year, title, name, sub)
+    if data is not None:
+        return data
+    if not NAS.exists(_ev_thumb_path(year, title, name, sub)):
+        if build_missing:
+            try:
+                orig = _ev_find_file(year, title, "media", name, sub)
+                if orig:
+                    kind = _kind_of(name)
+                    if kind == "image":
+                        _ev_ensure_thumb_dir(year, title)
+                        _make_image_thumb2(NAS.read_bytes(orig), year, title, name, sub)
+                    elif kind == "video":
+                        import tempfile
+                        tmp = tempfile.NamedTemporaryFile(
+                            suffix=_ext_of(name), delete=False).name
+                        try:
+                            with open(tmp, "wb") as w:
+                                w.write(NAS.read_bytes(orig))
+                            _ev_ensure_thumb_dir(year, title)
+                            _make_video_thumb2(tmp, year, title, name, sub)
+                        finally:
+                            try:
+                                os.unlink(tmp)
+                            except Exception:
+                                pass
+            except Exception as e:
+                print("thumb build(get) fail", name, e)
+    if not NAS.exists(_ev_thumb_path(year, title, name, sub)):
+        return None
+    try:
+        data = NAS.read_bytes(_ev_thumb_path(year, title, name, sub))
+    except Exception:
+        return None
+    _thumb_disk_put(year, title, name, sub, data)
+    return data
 
 
 def _ev_collect_under(base, rel_prefix="", recursive=True):
@@ -3527,20 +3614,10 @@ class Handler(BaseHTTPRequestHandler):
                     if NAS.exists(vp):
                         return _serve_served_image(self, NAS.read_bytes(vp), name, "image/jpeg")
                 fp = _ev_thumb_path(year, title, name, sub)
-                if not NAS.exists(fp):
-                    # 썸네일이 없으면 **즉석 생성**한다 (원본 전체 전송은 느림).
-                    #  · 이미지: 480px JPEG 로 만들어 저장 후 서빙
-                    #  · 그 외: 썸네일 불가 → 원본으로 폴백
-                    try:
-                        orig = _ev_find_file(year, title, "media", name, sub)
-                        if orig and _kind_of(name) == "image":
-                            _make_image_thumb2(
-                                NAS.read_bytes(orig), year, title, name, sub
-                            )
-                    except Exception as e:
-                        print("thumb build(serve) fail", name, e)
-                if NAS.exists(fp):
-                    return _serve_served_image(self, NAS.read_bytes(fp), name, "image/jpeg")
+                # 로컬 디스크 캐시 우선 → NAS 왕복 없이 즉시 응답 (~0.02s).
+                data = _thumb_get(year, title, name, sub)
+                if data is not None:
+                    return _serve_served_image(self, data, name, "image/jpeg")
                 # 그래도 없으면 이미지 원본/동영상 원본으로 최종 폴백
                 try:
                     orig = _ev_find_file(year, title, "media", name, sub)
