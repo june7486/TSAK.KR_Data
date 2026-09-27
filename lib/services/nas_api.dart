@@ -683,18 +683,42 @@ class NasApi {
   }
 
   /// 인가자/회원 검색 (참석자 선택용)
-  Future<List<Map<String, dynamic>>> eventSearchMember(String q) async {
+  Future<List<Map<String, dynamic>>> eventSearchMember(
+    String q, {
+    int limit = 30,
+  }) async {
     final r = await http
         .post(
           _uri('/api/event/search-member'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({'q': q}),
+          body: json.encode({'q': q, 'limit': limit}),
         )
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['results'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
+  }
+
+  /// 행사 참가자 일괄 추가(다중 선택) — 서버가 중복 제거 후 병합한다.
+  Future<Map<String, dynamic>> eventAttendeesAdd(
+    String year,
+    String title,
+    List<Map<String, dynamic>> attendees,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/attendees/add'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'attendees': attendees,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j.cast<String, dynamic>();
   }
 
   /// 행사 항목 파일 업로드 (스트리밍)

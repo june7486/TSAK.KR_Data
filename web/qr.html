@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B4F9C">
+<title>행사 참여 등록 · TSAK</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<style>
+  :root{
+    /* 범스카우트 색채 — 프랑스 국기 컬러(블루·화이트·레드) */
+    --fr-blue:#1B4F9C; --fr-white:#FFFFFF; --fr-red:#D62828;
+    --ink:#17203A; --line:#E6E6EE; --muted:#7A8194; --bg:#F7F7F3;
+    --ok:#1E7A46; --warn:#B7791F;
+    --radius:22px;
+    --shadow:0 10px 34px rgba(23,32,58,.12);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:
+      radial-gradient(1200px 500px at 50% -10%, #ffffff 0%, var(--bg) 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',
+      'Noto Sans KR','Malgun Gothic',sans-serif;
+    min-height:100%;
+    display:flex;flex-direction:column;align-items:center;
+    padding:22px 16px 40px;
+  }
+  .fr-bar{width:100%;max-width:460px;height:6px;border-radius:99px;overflow:hidden;
+    display:flex;box-shadow:0 2px 8px rgba(27,79,156,.18);margin-bottom:18px;}
+  .fr-bar i{flex:1;}
+  .fr-bar i:nth-child(1){background:var(--fr-blue);}
+  .fr-bar i:nth-child(2){background:var(--fr-white);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .fr-bar i:nth-child(3){background:var(--fr-red);}
+
+  .card{
+    width:100%;max-width:460px;background:#fff;border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--line);
+  }
+  .head{
+    padding:26px 22px 20px;text-align:center;position:relative;
+    background:linear-gradient(180deg,#fbfcff 0%,#fff 100%);
+    border-bottom:1px solid var(--line);
+  }
+  .head img{width:74px;height:74px;object-fit:contain;margin-bottom:10px;
+    filter:drop-shadow(0 6px 14px rgba(27,79,156,.18));}
+  .brand{font-size:12.5px;letter-spacing:1.5px;font-weight:800;
+    color:var(--fr-blue);text-transform:uppercase;}
+  .brand .red{color:var(--fr-red);}
+  .event-title{font-size:22px;font-weight:900;margin-top:7px;letter-spacing:-.4px;}
+  .event-meta{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.7;}
+  .event-meta b{color:var(--ink);}
+  .chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11.5px;
+    font-weight:800;background:rgba(27,79,156,.08);color:var(--fr-blue);margin:2px 3px 0;}
+
+  .body{padding:20px 20px 24px;}
+  .q{font-size:17px;font-weight:800;text-align:center;line-height:1.5;margin:4px 0 2px;}
+  .qsub{font-size:12.5px;color:var(--muted);text-align:center;margin-bottom:18px;}
+
+  .btn{
+    width:100%;border:0;border-radius:15px;padding:16px;font-size:16px;font-weight:800;
+    cursor:pointer;transition:transform .08s ease, box-shadow .15s ease;
+    font-family:inherit;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn-yes{background:var(--fr-blue);color:#fff;box-shadow:0 8px 20px rgba(27,79,156,.28);}
+  .btn-no{background:#fff;color:var(--muted);border:1.5px solid var(--line);margin-top:10px;font-weight:700;}
+  .btn-red{background:var(--fr-red);color:#fff;box-shadow:0 8px 20px rgba(214,40,40,.26);}
+  .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
+
+  .seg{display:flex;gap:10px;margin:6px 0 16px;}
+  .seg button{flex:1;padding:15px 10px;border-radius:15px;border:1.5px solid var(--line);
+    background:#fff;font-family:inherit;font-size:14.5px;font-weight:800;color:var(--muted);
+    cursor:pointer;line-height:1.35;}
+  .seg button.on{border-color:var(--fr-blue);color:var(--fr-blue);background:rgba(27,79,156,.06);}
+  .seg button small{display:block;font-weight:600;font-size:11px;opacity:.75;margin-top:3px;}
+
+  label{display:block;font-size:12.5px;font-weight:800;color:var(--ink);margin:14px 2px 6px;}
+  input{width:100%;padding:15px 16px;border-radius:14px;border:1.5px solid var(--line);
+    background:#fbfbfd;font-size:16px;font-family:inherit;color:var(--ink);}
+  input:focus{outline:none;border-color:var(--fr-blue);background:#fff;
+    box-shadow:0 0 0 4px rgba(27,79,156,.10);}
+  .hint{font-size:11.5px;color:var(--muted);margin:7px 2px 0;line-height:1.5;}
+
+  .result{text-align:center;padding:8px 4px;}
+  .result .ico{font-size:52px;line-height:1;}
+  .result h2{font-size:19px;font-weight:900;margin:14px 0 8px;}
+  .result p{font-size:13.5px;color:#43506B;line-height:1.7;margin:6px 0;}
+  .login-box{background:#f6f8fd;border:1px solid #e3e9f7;border-radius:16px;
+    padding:14px;margin-top:14px;text-align:left;}
+  .login-box .row{display:flex;justify-content:space-between;font-size:13.5px;padding:5px 0;}
+  .login-box .row b{font-weight:800;color:var(--fr-blue);}
+  .note{background:#fff8ef;border:1px solid #f3e2c7;color:#8a5a12;border-radius:14px;
+    padding:12px 14px;font-size:12.5px;line-height:1.6;margin-top:14px;}
+
+  .spinner{width:34px;height:34px;border:3.5px solid rgba(27,79,156,.18);
+    border-top-color:var(--fr-blue);border-radius:50%;margin:26px auto;
+    animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .err{background:#fdeceb;border:1px solid #f6c9c5;color:#a1231b;border-radius:14px;
+    padding:13px 15px;font-size:13px;line-height:1.6;margin-top:14px;}
+  .hide{display:none!important;}
+  .foot{margin-top:16px;font-size:11.5px;color:#9aa1b2;text-align:center;
+    max-width:460px;line-height:1.6;}
+</style>
+</head>
+<body>
+  <div class="fr-bar"><i></i><i></i><i></i></div>
+
+  <div class="card">
+    <div class="head">
+      <img src="tsak_emblem_splash.png" alt="TSAK" onerror="this.src='assets/assets/images/tsak_emblem.png'">
+      <div class="brand">Tiger <span class="red">Scout</span> Association of Korea</div>
+      <div class="event-title" id="evTitle">행사</div>
+      <div class="event-meta" id="evMeta"></div>
+    </div>
+
+    <div class="body">
+      <!-- 로딩 -->
+      <div id="vw-load"><div class="spinner"></div>
+        <div class="qsub">행사 정보를 불러오는 중…</div></div>
+
+      <!-- 오류 -->
+      <div id="vw-error" class="hide">
+        <div class="result">
+          <div class="ico">⚠️</div>
+          <h2>행사 정보를 찾을 수 없습니다</h2>
+          <p id="errMsg" class="hint">QR 코드를 다시 확인해 주세요.</p>
+        </div>
+      </div>
+
+      <!-- 1) 참여 의사 -->
+      <div id="vw-ask" class="hide">
+        <div class="q">이 행사에 참여하시겠습니까?</div>
+        <div class="qsub">등록 후 행사 관리 명단에 참가자로 올라갑니다.</div>
+        <button class="btn btn-yes" id="btnYes">예, 참여하겠습니다</button>
+        <button class="btn btn-no" id="btnNo">아니오</button>
+      </div>
+
+      <!-- 2) 유형 선택 -->
+      <div id="vw-kind" class="hide">
+        <div class="q" style="font-size:15px;">참여 유형을 선택해 주세요</div>
+        <div class="qsub">범스카우트 인가자 여부에 따라 등록 방법이 다릅니다.</div>
+        <div class="seg">
+          <button id="segReg" class="on">범스카우트 인가자<small>인가번호로 등록</small></button>
+          <button id="segGuest">비인가자<small>이름·전화번호로 등록</small></button>
+        </div>
+
+        <!-- 인가자 입력 -->
+        <div id="formReg">
+          <label>인가번호(회원번호)</label>
+          <input id="inNo" inputmode="numeric" autocomplete="off" placeholder="예: 415">
+          <div class="hint">로그인 없이 인가번호만 입력하면 자동 등록됩니다.</div>
+        </div>
+
+        <!-- 비인가자 입력 -->
+        <div id="formGuest" class="hide">
+          <label>이름</label>
+          <input id="inName" autocomplete="name" placeholder="홍길동">
+          <label>전화번호</label>
+          <input id="inPhone" inputmode="numeric" autocomplete="tel" placeholder="010-0000-0000">
+          <div class="hint">
+            입력한 전화번호로 로그인 아이디가 만들어집니다.<br>
+            비밀번호는 전화번호 <b>뒤 4자리</b>이며, 이후 앱에서 전화번호로 로그인할 수 있습니다.
+          </div>
+        </div>
+
+        <button class="btn btn-red" id="btnSubmit" style="margin-top:18px;">등록하기</button>
+        <button class="btn btn-no" id="btnBack">돌아가기</button>
+        <div id="askErr" class="err hide"></div>
+      </div>
+
+      <!-- 3) 결과 -->
+      <div id="vw-done" class="hide">
+        <div class="result">
+          <div class="ico" id="doneIco">✅</div>
+          <h2 id="doneTitle">참여 등록 완료</h2>
+          <p id="doneMsg"></p>
+          <div id="doneLogin" class="login-box hide">
+            <div class="row"><span>로그인 아이디</span><b id="lgId">-</b></div>
+            <div class="row"><span>비밀번호</span><b id="lgPw">-</b></div>
+          </div>
+          <div id="doneNote" class="note hide"></div>
+        </div>
+        <button class="btn btn-yes" id="btnClose" style="margin-top:18px;">확인</button>
+      </div>
+
+      <!-- 아니오 -->
+      <div id="vw-thanks" class="hide">
+        <div class="result">
+          <div class="ico">🏷️</div>
+          <h2>참여하지 않았습니다</h2>
+          <p>언제든 다시 QR을 스캔해 참여할 수 있습니다.</p>
+        </div>
+        <button class="btn btn-no" id="btnClose2" style="margin-top:8px;">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    한국범스카우트중앙회 (TSAK) · 본 페이지는 행사 참여 등록 전용입니다.<br>
+    개인정보는 참여 등록 목적으로만 사용됩니다.
+  </div>
+
+<script>
+(function(){
+  var qs = new URLSearchParams(location.search);
+  var year = qs.get('year') || '';
+  var title = qs.get('title') || '';
+  var kind = 'credentialed';
+  var ev = null;
+
+  function $(id){ return document.getElementById(id); }
+  function show(v){ ['vw-load','vw-error','vw-ask','vw-kind','vw-done','vw-thanks']
+    .forEach(function(x){ $(x).classList.add('hide'); }); $(v).classList.remove('hide'); }
+  function api(path, body){
+    return fetch(path, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      credentials:'same-origin',
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function(r){ return r.json().then(function(j){ return {status:r.status, j:j}; }); });
+  }
+
+  // 헤더
+  function renderHead(){
+    $('evTitle').textContent = (ev && ev.title) ? ev.title : (title || '행사');
+    var bits = [];
+    if (ev && ev.year) bits.push('<b>'+ev.year+'</b>년');
+    if (ev && ev.period) bits.push('기간 <b>'+esc(ev.period)+'</b>');
+    if (ev && ev.place) bits.push('장소 <b>'+esc(ev.place)+'</b>');
+    if (ev) bits.push('<span class="chip">현재 참가자 '+ev.count+'명</span>');
+    $('evMeta').innerHTML = bits.join(' · ');
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+
+  if (!year || !title){ show('vw-error'); $('errMsg').textContent='QR 링크에 행사 정보가 없습니다.'; return; }
+
+  api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
+    .then(function(r){
+      if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
+      ev = r.j.event; renderHead(); show('vw-ask');
+    })
+    .catch(function(){ renderHead(); show('vw-error'); });
+
+  // 1) 참여 의사
+  $('btnYes').onclick = function(){ show('vw-kind'); };
+  $('btnNo').onclick = function(){ show('vw-thanks'); };
+
+  // 2) 유형 토글
+  $('segReg').onclick = function(){
+    kind='credentialed';
+    $('segReg').classList.add('on'); $('segGuest').classList.remove('on');
+    $('formReg').classList.remove('hide'); $('formGuest').classList.add('hide');
+  };
+  $('segGuest').onclick = function(){
+    kind='guest';
+    $('segGuest').classList.add('on'); $('segReg').classList.remove('on');
+    $('formGuest').classList.remove('hide'); $('formReg').classList.add('hide');
+  };
+  $('btnBack').onclick = function(){ $('askErr').classList.add('hide'); show('vw-ask'); };
+
+  // 3) 제출
+  $('btnSubmit').onclick = function(){
+    var err = $('askErr'); err.classList.add('hide');
+    var body = {year:year, title:title, kind:kind};
+    if (kind==='credentialed'){
+      var no = ($('inNo').value||'').replace(/[^0-9]/g,'');
+      if (!no){ return fail('인가번호를 입력해 주세요.'); }
+      body.number = no;
+    } else {
+      var nm = ($('inName').value||'').trim();
+      var ph = ($('inPhone').value||'').replace(/[^0-9]/g,'');
+      if (!nm){ return fail('이름을 입력해 주세요.'); }
+      if (ph.length < 9){ return fail('전화번호를 정확히 입력해 주세요.'); }
+      body.name = nm; body.phone = ph;
+    }
+    $('btnSubmit').disabled = true;
+    api('/api/event/qr/join', body).then(function(r){
+      $('btnSubmit').disabled = false;
+      var j = r.j || {};
+      if (!j.ok){ return fail(j.message || '등록에 실패했습니다. 잠시 후 다시 시도해 주세요.'); }
+      done(j);
+    }).catch(function(){
+      $('btnSubmit').disabled = false;
+      fail('네트워크 오류입니다. 잠시 후 다시 시도해 주세요.');
+    });
+  };
+  function fail(m){ var e=$('askErr'); e.textContent=m; e.classList.remove('hide'); }
+
+  function done(j){
+    if (j.already){
+      $('doneIco').textContent='👌';
+      $('doneTitle').textContent='이미 등록되어 있습니다';
+      $('doneMsg').textContent = (j.name||'') + '님은 이미 이 행사 참가자입니다.';
+    } else {
+      $('doneIco').textContent='✅';
+      $('doneTitle').textContent='참여 등록 완료';
+      $('doneMsg').textContent = (j.name||'') + '님이 행사 참가자로 등록되었습니다.';
+    }
+    if (j.kind==='guest' && j.loginId){
+      $('lgId').textContent = j.loginId;
+      $('lgPw').textContent = j.pw_hint || '(전화 뒤 4자리)';
+      $('doneLogin').classList.remove('hide');
+      $('doneNote').innerHTML = j.created
+        ? '전화번호로 로그인 아이디가 새로 만들어졌습니다. 앱 첫 화면에서 <b>전화번호</b>로 로그인하면 됩니다.'
+        : '기존 아이디로 로그인할 수 있습니다.';
+      $('doneNote').classList.remove('hide');
+    }
+    show('vw-done');
+    // 헤더 참가자 수 갱신
+    if (ev){ ev.count = (ev.count||0)+1; renderHead(); }
+  }
+
+  $('btnClose').onclick = function(){ try{ window.close(); }catch(e){} show('vw-thanks'); };
+  $('btnClose2').onclick = function(){ try{ window.close(); }catch(e){} };
+})();
+</script>
+</body>
+</html>

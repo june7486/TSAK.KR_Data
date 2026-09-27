@@ -1533,8 +1533,9 @@ def _ev_roster_html(year, title):
     desc = e.get("desc", "")
     access = _ev_access_map(_ev_id(year, title))
 
-    palette = ["#5B2C8D", "#1B4F9C", "#D62828", "#2E7D32", "#B8860B",
-               "#00838F", "#6D4C41", "#AD1457", "#283593"]
+    # 범스카우트 색채(프랑스 국기: 블루·화이트·레드) 중심 팔레트
+    palette = ["#1B4F9C", "#D62828", "#2E7D32", "#B7791F", "#00838F",
+               "#6D4C41", "#AD1457", "#283593", "#5B2C8D", "#37474F"]
 
     def esc(s):
         return (str(s or "")
@@ -1576,40 +1577,82 @@ def _ev_roster_html(year, title):
 <title>{esc(title)} 참가자 명단</title>
 <style>
   * {{ box-sizing:border-box; }}
-  body {{ margin:0; background:#faf9f7; color:#1F1A2E;
-    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif; }}
-  .wrap {{ max-width:900px; margin:0 auto; padding:28px 20px 48px; }}
-  .head {{ background:linear-gradient(135deg,#5B2C8D,#D62828); color:#fff;
-    border-radius:20px; padding:26px 24px; }}
-  .head h1 {{ margin:0 0 6px; font-size:26px; letter-spacing:-0.5px; }}
-  .meta {{ display:flex; flex-wrap:wrap; gap:10px 22px; margin-top:12px; font-size:13px; opacity:.95; }}
-  .meta b {{ font-weight:800; }}
-  .emblem {{ float:right; width:56px; height:56px; opacity:.9; }}
-  table {{ width:100%; border-collapse:collapse; margin-top:22px; background:#fff;
-    border-radius:14px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); }}
-  th {{ background:#f2eef8; color:#5B2C8D; text-align:left; padding:10px 6px; font-size:12px; }}
-  .foot {{ margin-top:20px; font-size:12px; color:#999; text-align:center; }}
+  :root {{ --blue:#1B4F9C; --red:#D62828; --white:#fff; --ink:#171E33; --bg:#F5F4F0; }}
+  body {{ margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
+  .wrap {{ max-width:960px; margin:0 auto; padding:34px 22px 60px; }}
+  /* 프랑스 국기 트리컬러 바 */
+  .fr {{ display:flex; height:7px; border-radius:99px; overflow:hidden; margin-bottom:24px;
+    box-shadow:0 2px 8px rgba(27,79,156,.18); }}
+  .fr i {{ flex:1; }} .fr i:nth-child(1){{background:var(--blue);}}
+  .fr i:nth-child(2){{background:#fff;border-top:1px solid #e6e6ee;border-bottom:1px solid #e6e6ee;}}
+  .fr i:nth-child(3){{background:var(--red);}}
+  .head {{ background:#fff; border:1px solid #e8e8e2; border-radius:22px;
+    padding:30px 30px 26px; position:relative; box-shadow:0 2px 14px rgba(23,30,51,.05); }}
+  .kicker {{ font-size:12px; letter-spacing:2.5px; font-weight:800; color:var(--blue);
+    text-transform:uppercase; }}
+  .kicker .r {{ color:var(--red); }}
+  .head h1 {{ margin:9px 0 0; font-size:30px; letter-spacing:-.6px; font-weight:900; }}
+  .emblem {{ position:absolute; right:26px; top:26px; width:64px; height:64px; object-fit:contain; }}
+  .meta {{ display:flex; flex-wrap:wrap; gap:9px 24px; margin-top:16px; font-size:13.5px; }}
+  .meta b {{ font-weight:800; color:var(--blue); }}
+  .rule {{ height:1px; background:#edede8; margin:18px 0 4px; }}
+  .lead {{ margin-top:14px; font-size:13.5px; color:#4a5570; line-height:1.7; }}
+  .counts {{ display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; }}
+  .stat {{ flex:1; min-width:110px; background:#fbfbf8; border:1px solid #ececE6;
+    border-radius:14px; padding:13px 16px; }}
+  .stat .n {{ font-size:22px; font-weight:900; color:var(--blue); }}
+  .stat .l {{ font-size:11.5px; color:#7a8194; margin-top:2px; }}
+  table {{ width:100%; border-collapse:separate; border-spacing:0; margin-top:22px; background:#fff;
+    border:1px solid #e8e8e2; border-radius:16px; overflow:hidden;
+    box-shadow:0 2px 14px rgba(23,30,51,.05); }}
+  th {{ background:#f2f5fb; color:var(--blue); text-align:left; padding:12px 10px;
+    font-size:11.5px; letter-spacing:.3px; font-weight:800; border-bottom:1px solid #e8e8e2; }}
+  th:nth-child(3) {{ color:var(--red); }}
+  td {{ border-bottom:1px solid #f1f1ec; }}
+  tbody tr:nth-child(even) td {{ background:#fcfcfa; }}
+  tbody tr:last-child td {{ border-bottom:0; }}
+  .foot {{ margin-top:26px; font-size:12px; color:#98a0b2; text-align:center; line-height:1.7; }}
+  @media print {{
+    body {{ background:#fff; }} .wrap {{ padding:0; }}
+    table, .head {{ box-shadow:none; }}
+    .no-print {{ display:none !important; }}
+  }}
+  .printbtn {{ position:fixed; right:20px; bottom:20px; background:var(--blue); color:#fff;
+    border:0; border-radius:14px; padding:14px 20px; font-size:14px; font-weight:800;
+    font-family:inherit; cursor:pointer; box-shadow:0 10px 26px rgba(27,79,156,.32); }}
 </style></head>
 <body><div class="wrap">
+  <div class="fr"><i></i><i></i><i></i></div>
   <div class="head">
-    <img class="emblem" src="/assets/assets/images/tsak_emblem.png" alt="">
+    <img class="emblem" src="/assets/assets/images/tsak_emblem.png" alt="TSAK"
+         onerror="this.style.display='none'">
+    <div class="kicker">Tiger <span class="r">Scout</span> Association of Korea</div>
     <h1>{esc(title)}</h1>
     <div class="meta">
+      {'<span><b>연도</b> ' + esc(year) + '</span>' if year else ''}
       {'<span><b>기간</b> ' + esc(period) + '</span>' if period else ''}
       {'<span><b>장소</b> ' + esc(place) + '</span>' if place else ''}
-      <span><b>참가자</b> {len(attendees)}명</span>
     </div>
-    {'<div style="margin-top:10px;font-size:13px;opacity:.9">' + esc(desc) + '</div>' if desc else ''}
+    <div class="counts">
+      <div class="stat"><div class="n">{len(attendees)}</div><div class="l">총 참가자(명)</div></div>
+      <div class="stat"><div class="n">{len(access)}</div><div class="l">사진폴더 접속(명)</div></div>
+    </div>
+    {'<div class="rule"></div><div class="lead">' + esc(desc) + '</div>' if desc else ''}
   </div>
   <table>
     <thead><tr>
       <th>#</th><th>접속</th><th>이름</th><th>소속</th><th>성별</th>
       <th>연락처</th><th>메일</th><th>항목</th>
     </tr></thead>
-    <tbody>{''.join(rows) or '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">참가자가 없습니다</td></tr>'}</tbody>
+    <tbody>{''.join(rows) or '<tr><td colspan="8" style="padding:26px;text-align:center;color:#98a0b2">참가자가 없습니다</td></tr>'}</tbody>
   </table>
-  <div class="foot">한국범스카우트 중앙회 (TSAK) · 접속 V = 사진폴더 접근 이력</div>
-</div></body></html>"""
+  <div class="foot">한국범스카우트 중앙회 (TSAK) · 접속 V = 사진폴더 접근 이력<br>
+    출력일시 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+</div>
+<button class="printbtn no-print" onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+</body></html>"""
 
 
 
@@ -1744,6 +1787,203 @@ def _ev_access_map(eid):
         if key:
             out[key] = it
     return out
+
+
+# ============ QR 행사 참여 (스캔 → 참가 등록) ============
+def _ev_public_event(year, title):
+    """QR 착지용 공개 행사 요약(민감정보 제외). 없으면 None."""
+    doc = _ev_doc()
+    e = doc.get("events", {}).get(_ev_id(year, title))
+    if not e:
+        return None
+    return {
+        "year": e.get("year", year),
+        "title": e.get("title", title),
+        "period": e.get("period", "") or e.get("date", ""),
+        "place": e.get("place", ""),
+        "count": len(e.get("attendees", [])),
+    }
+
+
+def _ev_attendee_ident(a):
+    """참가자 항목의 식별자(인가번호 우선, 없으면 전화/로그인ID)."""
+    return re.sub(r"[^0-9]", "", str(
+        a.get("number") or a.get("loginId") or a.get("phone") or ""))
+
+
+def _ev_is_attendee(e, ident):
+    """해당 식별자가 이미 참가자 명단에 있는지."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return False
+    return any(_ev_attendee_ident(a) == d for a in e.get("attendees", []))
+
+
+def _ev_add_attendee_entry(e, entry):
+    """행사 참가자 명단에 1명 추가(중복 식별자면 스킵). 추가 여부 반환."""
+    e.setdefault("attendees", [])
+    if _ev_is_attendee(e, _ev_attendee_ident(entry)):
+        return False
+    e["attendees"].append(entry)
+    return True
+
+
+def _ev_qr_join_credentialed(year, title, number):
+    """[QR] 범스카우트 인가자: 인가번호로 행사 참여 등록.
+
+    로그인 과정 없이 인가번호만으로 등록한다(QR 자체가 접근 매개).
+    """
+    d = re.sub(r"[^0-9]", "", str(number or ""))
+    if not d:
+        return {"ok": False, "error": "number", "message": "인가번호를 입력해 주세요."}, 400
+    m = _ev_member_by_ident(d)
+    if not m:
+        return {"ok": False, "error": "not_member",
+                "message": "등록되지 않은 인가번호입니다. 번호를 확인해 주세요."}, 404
+    eid = _ev_id(year, title)
+    with LOCK:
+        doc = _ev_doc()
+        e = doc.get("events", {}).get(eid)
+        if not e:
+            return {"ok": False, "error": "no_event",
+                    "message": "행사를 찾을 수 없습니다."}, 404
+        if _ev_is_attendee(e, d):
+            return {"ok": True, "already": True, "name": m.get("name", ""),
+                    "kind": "credentialed",
+                    "message": "이미 참가자로 등록되어 있습니다."}, 200
+        entry = {
+            "number": str(m.get("number", d)),
+            "name": str(m.get("name", "")),
+            "unit": str(m.get("unit", "")),
+            "league": str(m.get("league", "")),
+            "phone": str(m.get("phone", "")),
+            "roles": [],
+        }
+        _ev_add_attendee_entry(e, entry)
+        _ev_log_access(eid, {"id": d, "name": entry["name"], "at":
+                             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                             "via": "qr"})
+        _ev_save(doc)
+    try:
+        _ev_member_set_event(d, title, True)
+    except Exception:
+        pass
+    return {"ok": True, "name": entry["name"], "kind": "credentialed",
+            "message": "행사 참가자로 등록되었습니다."}, 200
+
+
+def _ev_qr_join_guest(year, title, name, phone):
+    """[QR] 비인가자: 전화번호+이름으로 아이디 자동 생성 후 참여 등록.
+
+    · 신규: members.json 에 isRegular=true 회원 생성(loginId=전화번호)
+      → 추후 전화번호로 로그인 가능(비번: 전화 뒤 4자리)
+    · 기존(전화번호 일치): 기존 회원 사용
+    """
+    name = str(name or "").strip()
+    d = re.sub(r"[^0-9]", "", str(phone or ""))
+    if not name:
+        return {"ok": False, "error": "name", "message": "이름을 입력해 주세요."}, 400
+    if len(d) < 9:
+        return {"ok": False, "error": "phone",
+                "message": "전화번호를 정확히 입력해 주세요."}, 400
+    eid = _ev_id(year, title)
+    with LOCK:
+        doc = _ev_doc()
+        e = doc.get("events", {}).get(eid)
+        if not e:
+            return {"ok": False, "error": "no_event",
+                    "message": "행사를 찾을 수 없습니다."}, 404
+        # 기존 회원(전화번호) 조회
+        members = _ev_members()
+        found = None
+        for m in members:
+            if re.sub(r"[^0-9]", "", str(
+                    m.get("accessPhone") or m.get("phone") or "")) == d:
+                found = m
+                break
+        created = False
+        if not found:
+            # 신규 아이디 자동 생성
+            newno = ""
+            existing = {re.sub(r"[^0-9]", "", str(x.get("number", "")))
+                        for x in members}
+            for cand in range(900001, 900001 + max(1, len(members) + 10)):
+                if str(cand) not in existing:
+                    newno = str(cand)
+                    break
+            if not newno:
+                newno = str(900001 + len(members))
+            found = {
+                "id": "guest_" + newno,
+                "number": newno,
+                "name": name,
+                "unit": "",
+                "league": "",
+                "phone": d,
+                "accessPhone": d,
+                "loginId": d,
+                "isRegular": True,          # 비인가자(일반회원)
+                "personalPassword": _ev_phone_last4(d),
+            }
+            members.append(found)
+            try:
+                if NAS.exists(DB_FILE):
+                    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    NAS.write(f"{BASE}/backups/members_{stamp}.json",
+                              NAS.read(DB_FILE).encode("utf-8"))
+            except Exception:
+                pass
+            _save_json(DB_FILE, members)
+            _touch_meta({"count": len(members), "updatedBy": "qr_join"})
+            created = True
+        else:
+            if not found.get("isRegular"):
+                found["isRegular"] = True
+            if not found.get("loginId"):
+                found["loginId"] = d
+            if not found.get("accessPhone"):
+                found["accessPhone"] = d
+        ident = _ev_attendee_ident({"number": found.get("number"),
+                                    "loginId": d, "phone": d})
+        if _ev_is_attendee(e, ident):
+            return {"ok": True, "already": True, "name": found.get("name", name),
+                    "loginId": d, "kind": "guest", "created": created,
+                    "message": "이미 참가자로 등록되어 있습니다."}, 200
+        entry = {
+            "loginId": d,
+            "name": str(found.get("name") or name),
+            "unit": str(found.get("unit", "")),
+            "phone": d,
+            "roles": [],
+        }
+        _ev_add_attendee_entry(e, entry)
+        _ev_log_access(eid, {"id": d, "name": entry["name"], "at":
+                             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                             "via": "qr"})
+        _ev_save(doc)
+    try:
+        _ev_member_set_event(d, title, True)
+    except Exception:
+        pass
+    return {"ok": True, "name": entry["name"], "loginId": d,
+            "kind": "guest", "created": created, "pw_hint": _ev_phone_last4(d),
+            "message": "참가자로 등록되었습니다. 아이디는 전화번호, "
+                       "비밀번호는 전화번호 뒤 4자리입니다."}, 200
+
+
+def _ev_member_add_attendee(year, title, entry):
+    """관리자가 참가자 명단에 직접 1명 추가(수동/검색 공용)."""
+    eid = _ev_id(year, title)
+    with LOCK:
+        doc = _ev_doc()
+        e = doc.get("events", {}).get(eid)
+        if not e:
+            return False
+        added = _ev_add_attendee_entry(e, entry)
+        if added:
+            _ev_save(doc)
+        return added
+    return False
 
 
 
@@ -2892,6 +3132,15 @@ class Handler(BaseHTTPRequestHandler):
                     print("list2 fail", e)
                     events = _ev_list()
                 return self._json({"ok": True, "events": events})
+            # ---- QR 착지용 공개 행사 정보 (인증 불필요) ----
+            if p == "/api/event/qr/info":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = q.get("year", [""])[0]
+                title = q.get("title", [""])[0]
+                ev = _ev_public_event(year, title)
+                if not ev:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                return self._json({"ok": True, "event": ev})
             if p == "/api/event/get":
                 if not self._require():
                     return
@@ -3254,14 +3503,18 @@ class Handler(BaseHTTPRequestHandler):
             #  로그인/로그아웃을 제외한 모든 변경(쓰기) 요청은 유효한 세션 필요.
             #  관리자 전용 경로는 추가로 tier 검사.
             if p.startswith("/api/"):
-                need = None
-                if (p.startswith("/api/admin/") or p.startswith("/api/backup")
-                        or p.startswith("/api/restore")
-                        or p.startswith("/api/finance")
-                        or p.startswith("/api/files")):
-                    need = "admin"
-                if not self._require(need):
-                    return
+                # QR 행사참여(스캔) 경로는 공개 — QR 자체가 접근 매개.
+                if p.startswith("/api/event/qr/"):
+                    pass
+                else:
+                    need = None
+                    if (p.startswith("/api/admin/") or p.startswith("/api/backup")
+                            or p.startswith("/api/restore")
+                            or p.startswith("/api/finance")
+                            or p.startswith("/api/files")):
+                        need = "admin"
+                    if not self._require(need):
+                        return
             # ---- 마스터 앱관리 ----
             if p == "/api/admin/app-password":
                 d = json.loads(self._body() or b"{}")
@@ -3723,10 +3976,15 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/event/search-member":
                 d = json.loads(self._body() or b"{}")
                 q = re.sub(r"[^0-9가-힣A-Za-z]", "", str(d.get("q", ""))).lower()
+                try:
+                    limit = int(d.get("limit", 30))
+                except Exception:
+                    limit = 30
+                limit = max(1, min(200, limit))
                 results = []
                 for m in _ev_members():
                     hay = f"{m.get('number','')} {m.get('name','')} {m.get('unit','')}".lower()
-                    if q and q in hay:
+                    if (not q) or (q in hay):   # 빈 검색어 = 최근/전체 목록
                         results.append({
                             "number": m.get("number", ""),
                             "name": m.get("name", ""),
@@ -3735,9 +3993,71 @@ class Handler(BaseHTTPRequestHandler):
                             "phone": m.get("phone", ""),
                             "isRegular": bool(m.get("isRegular")),
                         })
-                    if len(results) >= 30:
+                    if len(results) >= limit:
                         break
-                return self._json({"ok": True, "results": results})
+                return self._json({"ok": True, "results": results,
+                                   "count": len(results)})
+            # ---- 참가자 일괄 추가 (다중 선택) ----
+            if p == "/api/event/attendees/add":
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                entries = d.get("attendees", []) or []
+                eid = _ev_id(year, title)
+                added_ok = 0
+                added_skip = 0
+                added_idents = []
+                with LOCK:
+                    doc = _ev_doc()
+                    e = doc.get("events", {}).get(eid)
+                    if not e:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    for a in entries:
+                        ident = _ev_attendee_ident(a)
+                        if not ident or _ev_is_attendee(e, ident):
+                            added_skip += 1
+                            continue
+                        e.setdefault("attendees", []).append({
+                            "number": str(a.get("number", "")),
+                            "loginId": str(a.get("loginId", "")),
+                            "name": str(a.get("name", "")),
+                            "unit": str(a.get("unit", "")),
+                            "league": str(a.get("league", "")),
+                            "phone": str(a.get("phone", "")),
+                            "roles": a.get("roles", []),
+                        })
+                        added_ok += 1
+                        added_idents.append(ident)
+                    if added_ok:
+                        _ev_save(doc)
+                # 회원 프로필(eventAttend) 연동
+                for ident in added_idents:
+                    try:
+                        _ev_member_set_event(ident, title, True)
+                    except Exception:
+                        pass
+                return self._json({"ok": True, "added": added_ok,
+                                   "skipped": added_skip})
+            # ---- QR 행사 참여 (스캔 → 자동 등록), 인증 불필요 ----
+            if p == "/api/event/qr/join":
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not year or not title:
+                    return self._json({"ok": False, "error": "event",
+                                       "message": "행사 정보가 없습니다."}, 400)
+                kind = str(d.get("kind", "")).strip()
+                if kind == "credentialed":
+                    res, code = _ev_qr_join_credentialed(
+                        year, title, d.get("number", ""))
+                elif kind == "guest":
+                    res, code = _ev_qr_join_guest(
+                        year, title, d.get("name", ""), d.get("phone", ""))
+                else:
+                    res, code = ({"ok": False, "error": "kind",
+                                  "message": "참여 유형이 올바르지 않습니다."}, 400)
+                return self._json(res, code)
+            # ---- QR 착지 페이지 (스캔 시 표시) ----
             if p == "/api/event/upload2":
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = _ev_safe(q.get("year", [""])[0])

@@ -467,10 +467,11 @@ class AppState extends ChangeNotifier {
   }
 
   /// 행사 QR 딥링크 (절대 URL).
+  /// 전용 경량 착지 페이지(/qr.html)로 연결한다 — 앱(5MB) 로딩 없이 즉시 뜬다.
   String eventQrLink(String year, String title) {
     final base = qrBaseUrl;
-    final q = '/?access=event'
-        '&year=${Uri.encodeComponent(year)}'
+    final q = '/qr.html'
+        '?year=${Uri.encodeComponent(year)}'
         '&title=${Uri.encodeComponent(title)}';
     return base.isEmpty ? q : '$base$q';
   }

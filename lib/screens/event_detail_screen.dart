@@ -140,9 +140,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Widget build(BuildContext context) {
     final tabs = widget.canManage
         ? const [
-            Tab(text: '계획서'),
-            Tab(text: '참석자'),
+            Tab(text: '참가자'),
             Tab(text: '사진+동영상'),
+            Tab(text: '기획서'),
             Tab(text: '참가비·후원금'),
             Tab(text: '행사비지출'),
           ]
@@ -222,9 +222,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     controller: _tab,
                     children: widget.canManage
                         ? [
-                            _planTab(),
                             _attendeeTab(),
                             _mediaTab(),
+                            _planTab(),
                             _financeTab('fee'),
                             _financeTab('expense'),
                           ]
@@ -956,82 +956,209 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     await _load();
   }
 
+  /// 인가자 다중 검색 & 일괄 추가.
+  /// - 한 번에 여러 명을 체크해 추가(반복 입력 불필요).
+  /// - 검색어가 비어 있으면 최근/전체 목록을 보여주고, 항목 선택 시 일괄 적용.
   Future<void> _searchAndAddAttendee() async {
     final ctrl = TextEditingController();
     List<Map<String, dynamic>> results = [];
-    await showDialog(
+    final checked = <String, Map<String, dynamic>>{}; // number -> member
+    bool loading = false;
+    String errMsg = '';
+
+    Future<void> doSearch(StateSetter setD) async {
+      loading = true;
+      errMsg = '';
+      setD(() {});
+      try {
+        final q = ctrl.text.trim();
+        results = await _nas.eventSearchMember(q.isEmpty ? '' : q, limit: 60);
+        // 이미 명단에 있는 사람 표시용 집합
+      } catch (e) {
+        errMsg = '검색 실패: $e';
+      }
+      loading = false;
+      setD(() {});
+    }
+
+    final existing = <String>{
+      for (final a in _attendees)
+        '${a['number'] ?? ''}${a['phone'] ?? ''}${a['loginId'] ?? ''}'
+            .replaceAll(RegExp(r'[^0-9]'), ''),
+    };
+
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('인가자 검색'),
+          title: Row(
+            children: [
+              const Text('인가자 검색 · 일괄추가'),
+              const Spacer(),
+              Text(
+                '${checked.length}명 선택',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.purple,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
           content: SizedBox(
-            width: 340,
-            height: 420,
+            width: 380,
+            height: 480,
             child: Column(
               children: [
-                TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: '인가번호 / 이름 / 소속',
-                    suffixIcon: IconButton(
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: ctrl,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: '인가번호 / 이름 / 소속 (비우면 전체)',
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => doSearch(setD),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton.filled(
+                      onPressed: () => doSearch(setD),
                       icon: const Icon(Icons.search),
-                      onPressed: () async {
-                        results = await _nas.eventSearchMember(ctrl.text.trim());
-                        setD(() {});
-                      },
+                    ),
+                  ],
+                ),
+                if (errMsg.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      errMsg,
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
                     ),
                   ),
-                  onSubmitted: (_) async {
-                    results = await _nas.eventSearchMember(ctrl.text.trim());
-                    setD(() {});
-                  },
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Expanded(
-                  child: ListView(
-                    children: [
-                      for (final r in results)
-                        ListTile(
-                          dense: true,
-                          title: Text('${r['name']} · #${r['number']}'),
-                          subtitle: Text('${r['unit']}'),
-                          trailing: const Icon(Icons.add, color: AppColors.purple),
-                          onTap: () {
-                            Navigator.pop(ctx, r);
-                          },
-                        ),
-                    ],
-                  ),
+                  child: loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : results.isEmpty
+                          ? const Center(
+                              child: Text(
+                                '검색어를 입력하고 검색하세요',
+                                style: TextStyle(color: AppColors.textGray),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: results.length,
+                              itemBuilder: (_, i) {
+                                final r = results[i];
+                                final num =
+                                    '${r['number'] ?? ''}'.replaceAll(
+                                  RegExp(r'[^0-9]'),
+                                  '',
+                                );
+                                final already =
+                                    existing.contains(num) ||
+                                        checked.containsKey(num);
+                                return CheckboxListTile(
+                                  dense: true,
+                                  value: checked.containsKey(num),
+                                  onChanged: already && !checked.containsKey(num)
+                                      ? null
+                                      : (v) {
+                                          setD(() {
+                                            if (v == true) {
+                                              checked[num] = r;
+                                            } else {
+                                              checked.remove(num);
+                                            }
+                                          });
+                                        },
+                                  title: Text('${r['name']} · #${r['number']}'),
+                                  subtitle: Text(
+                                    '${already ? '이미 등록됨 · ' : ''}${r['unit'] ?? ''}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: already
+                                          ? AppColors.textGray
+                                          : null,
+                                    ),
+                                  ),
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                );
+                              },
+                            ),
                 ),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('닫기'),
+              onPressed: () async {
+                checked.clear();
+                await doSearch(setD);
+              },
+              child: const Text('전체 보기'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton.icon(
+              onPressed: checked.isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.playlist_add_check),
+              label: Text('선택 ${checked.length}명 추가'),
             ),
           ],
         ),
       ),
-    ).then((r) async {
-      if (r is! Map) return;
-      // 검색으로 선택 → 항목 선택 후 추가
-      final roles = await _pickRoles();
-      if (roles == null) return;
-      setState(() {
-        _attendees.add({
-          'number': '${r['number']}',
-          'name': '${r['name']}',
-          'unit': '${r['unit']}',
-          'league': '${r['league']}',
-          'phone': '${r['phone']}',
-          'roles': roles,
-        });
-      });
-      await _saveAttendees();
-    });
+    );
+    if (confirmed != true || checked.isEmpty) return;
+
+    // 일괄 항목(roles) 선택
+    final roles = await _pickRoles();
+    if (roles == null) return;
+
+    final picks = checked.values.map((r) {
+      return {
+        'number': '${r['number']}',
+        'name': '${r['name']}',
+        'unit': '${r['unit']}',
+        'league': '${r['league']}',
+        'phone': '${r['phone']}',
+        'roles': roles,
+      };
+    }).toList();
+
+    try {
+      final res = await _nas.eventAttendeesAdd(
+        widget.year,
+        widget.title,
+        picks,
+      );
+      final added = res['added'] ?? 0;
+      final skipped = res['skipped'] ?? 0;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            skipped > 0
+                ? '$added명 추가 완료 (중복 $skipped명 건너뜀)'
+                : '$added명 추가 완료',
+          ),
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('추가 실패: $e')),
+      );
+    }
   }
 
   Future<List<String>?> _pickRoles() async {
