@@ -48,6 +48,7 @@ EVENTS_FILE = BASE + "/db/events.json"       # 행사 정의(연도/행사명/�
 REGULAR_FILE = BASE + "/db/regular_passwords.json"  # 일반회원(비인가자) 접속 비번
 INQUIRY_FILE = BASE + "/db/inquiries.json"   # 문의 접수 로그 (동의·개인정보)
 INQUIRY_DIR = BASE + "/문의첨부"             # 문의 첨부파일 저장 폴더
+ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인 이력)
 LOCK = threading.Lock()
 
 # 행사별 하위 폴더(항목) — 번호+한글명, 업로드 가능 폴더엔 "_(업로드가능)" 꼬리말
@@ -153,6 +154,110 @@ def _sess_del(sid):
         _SESS.pop(sid, None)
 
 
+# ============================================================================
+#  회원 접속 로그 (요구: 마스터만 열람, 개인 페이지 하단 최근 100건, 기기명 등)
+# ============================================================================
+_ACCESS_LOG_MAX = 2000            # 파일에 보관하는 최대 로그 수(최신 우선)
+_ACCESS_LOG_LOCK = threading.Lock()
+
+
+def _ua_device_name(ua):
+    """User-Agent 문자열 → 사람이 읽는 기기명."""
+    ua = str(ua or "")
+    low = ua.lower()
+    os_name = "기타"
+    if "windows" in low:
+        os_name = "Windows"
+    elif "android" in low:
+        os_name = "Android"
+    elif "iphone" in low or "ipad" in low or "ios" in low:
+        os_name = "iOS"
+    elif "mac os" in low or "macintosh" in low:
+        os_name = "macOS"
+    elif "linux" in low:
+        os_name = "Linux"
+    browser = "브라우저"
+    if "edg" in low:
+        browser = "Edge"
+    elif "whale" in low:
+        browser = "Whale"
+    elif "chrome" in low:
+        browser = "Chrome"
+    elif "safari" in low:
+        browser = "Safari"
+    elif "firefox" in low:
+        browser = "Firefox"
+    elif "kakao" in low:
+        browser = "카카오"
+    return f"{os_name} · {browser}"
+
+
+def _access_log_all():
+    return _load_json(ACCESS_LOG_FILE, {"logs": []})
+
+
+def _access_log_append(entry):
+    """접속 로그 1건 추가 (최신 우선, 최대 _ACCESS_LOG_MAX 유지)."""
+    try:
+        with _ACCESS_LOG_LOCK:
+            doc = _load_json(ACCESS_LOG_FILE, {"logs": []})
+            logs = doc.get("logs", [])
+            logs.insert(0, entry)
+            doc["logs"] = logs[:_ACCESS_LOG_MAX]
+            doc["updated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            _save_json(ACCESS_LOG_FILE, doc)
+    except Exception as e:
+        print("access log append fail", e)
+
+
+def _access_log_for(ident):
+    """특정 회원(인가번호/전화)의 로그 — 최신 100건."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return []
+    out = []
+    for it in _access_log_all().get("logs", []):
+        if str(it.get("ident", "")) == d:
+            out.append(it)
+            if len(out) >= 100:
+                break
+    return out
+
+
+def _log_access_login(tier, role, ident, who, ua, ip, extra=None):
+    """로그인 성공 시 접속 로그 1건 기록.
+
+    ident: 조회 키(개인=인가번호, 손님=전화숫자) — 비어도 기록은 남긴다.
+    who:   표시용 신원(인가번호/전화).
+    """
+    ident = re.sub(r"[^0-9]", "", str(ident or ""))
+    who = str(who or "")
+    name = ""
+    try:
+        m = _ev_member_by_ident(ident) if ident else None
+        if m:
+            name = str(m.get("name", ""))
+            if not ident:
+                ident = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+    except Exception:
+        pass
+    entry = {
+        "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "tier": str(tier or ""),
+        "role": str(role or ""),
+        "ident": ident,
+        "who": who,
+        "name": name,
+        "device": _ua_device_name(ua),
+        "ua": str(ua or "")[:300],
+        "ip": str(ip or ""),
+    }
+    if extra:
+        entry.update(extra)
+    _access_log_append(entry)
+    return entry
+
+
 def _scope_members(tier, who, members):
     """역할별 최소 항목 제공(대량 명단 열람 최소화).
 
@@ -179,6 +284,57 @@ def _redact_member(m):
     for k in ("personalPassword", "password", "pw", "memo", "photoPath", "address"):
         m.pop(k, None)
     return m
+
+
+# ---- 일반회원 승인 시스템 --------------------------------------------------
+#  approvalStatus: 'pending'(미승인) | 'approved'(승인) | 'held'(보류)
+#  · 기존 회원(필드 없음)은 approved 로 간주(하위 호환).
+#  · 승인 여부와 무관하게 로그인/권한은 제약하지 않는다(요구). 단지 표시/알림용.
+def _approval_of(m):
+    s = str(m.get("approvalStatus") or "").strip()
+    if s in ("pending", "approved", "held"):
+        return s
+    return "approved"
+
+
+def _set_member_approval(ident, status):
+    """회원 승인 상태 변경(단일). 반환: (ok, name)"""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d or status not in ("pending", "approved", "held"):
+        return False, ""
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            if (re.sub(r"[^0-9]", "", str(m.get("number", ""))) == d
+                    or re.sub(r"[^0-9]", "", str(m.get("accessPhone")
+                                                 or m.get("phone") or "")) == d
+                    or str(m.get("id", "")) == str(ident)):
+                m["approvalStatus"] = status
+                members[i] = m
+                _save_json(DB_FILE, members)
+                _touch_meta({"count": len(members), "updatedBy": "approval"})
+                return True, str(m.get("name", ""))
+    return False, ""
+
+
+def _pending_members():
+    """미승인(pending) 일반회원 목록."""
+    out = []
+    for m in _ev_members():
+        if m.get("isRegular") and _approval_of(m) == "pending":
+            out.append({
+                "id": str(m.get("id", "")),
+                "number": str(m.get("number", "")),
+                "name": str(m.get("name", "")),
+                "phone": str(m.get("phone", "")),
+                "loginId": str(m.get("loginId", "")),
+                "unit": str(m.get("unit", "")),
+                "league": str(m.get("league", "")),
+                "created": str(m.get("created", "")),
+                "approvalStatus": "pending",
+            })
+    return out
+
 
 
 def _scope_finance(tier, who, fin):
@@ -2127,6 +2283,8 @@ def _ev_guest_ensure_account_async(phone, name, event_name):
                         "phone": d, "accessPhone": d, "loginId": d,
                         "isRegular": True,
                         "personalPassword": _ev_phone_last4(d),
+                        # 신규 일반회원은 관리자·마스터 승인 대기(pending) 상태로 생성.
+                        "approvalStatus": "pending",
                     }
                     members.append(found)
                 else:
@@ -3417,6 +3575,34 @@ class Handler(BaseHTTPRequestHandler):
                     "isDefault": pw == default_pw,
                     "isRegular": is_regular,
                 })
+            # ---- 회원 접속 로그 조회 (마스터 전용) ----
+            if p == "/api/member/access-log":
+                if not self._require("master"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                no = re.sub(r"[^0-9]", "", str(q.get("number", [""])[0]))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                return self._json({"ok": True, "logs": _access_log_for(no)})
+            # ---- 전체 회원 접속 로그 (마스터 전용, 대시보드용) ----
+            if p == "/api/access/logs":
+                if not self._require("master"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    limit = int(q.get("limit", ["200"])[0])
+                except Exception:
+                    limit = 200
+                limit = max(1, min(_ACCESS_LOG_MAX, limit))
+                logs = _access_log_all().get("logs", [])[:limit]
+                return self._json({"ok": True, "logs": logs})
+            # ---- 일반회원 승인 대기 목록 (관리자·마스터) ----
+            if p == "/api/approval/pending":
+                if not self._require("admin"):
+                    return
+                pending = _pending_members()
+                return self._json({"ok": True, "pending": pending,
+                                   "count": len(pending)})
             if p == "/api/meta":
                 if not self._require():
                     return
@@ -3837,12 +4023,16 @@ class Handler(BaseHTTPRequestHandler):
                 tier = d.get("tier", "")
                 value = d.get("value", "")
                 ident = d.get("id", "")
+                _ua = self.headers.get("User-Agent", "")
+                _ip = self.client_address[0] if self.client_address else ""
                 if tier == "guest":
                     ok, role = _guest_verify(ident, value)
                     no = ""
                     if ok:
                         m = _ev_member_by_ident(ident) or _ev_member_by_ident(ident)
                         no = re.sub(r"[^0-9]", "", str(m.get("number", ""))) if m else ""
+                        _log_access_login("guest", "일반회원",
+                                          ident or no, ident or no, _ua, _ip)
                     sid = _sess_new("guest", no) if ok else ""
                     if sid:
                         self._set_sid_cookie(sid)
@@ -3853,6 +4043,10 @@ class Handler(BaseHTTPRequestHandler):
                 who = ""
                 if ok and tier == "personal":
                     who = re.sub(r"[^0-9]", "", str(ident))
+                if ok:
+                    _log_access_login(tier, role,
+                                      who or re.sub(r"[^0-9]", "", str(ident)),
+                                      who, _ua, _ip)
                 sid = _sess_new(tier, who) if ok else ""
                 if sid:
                     self._set_sid_cookie(sid)
@@ -3958,6 +4152,72 @@ class Handler(BaseHTTPRequestHandler):
                         pws[no] = val
                     _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "personalPassword": _personal_pw_of(no)})
+            # ---- 접속 로그 삭제 (마스터 전용) ----
+            #  mode: 'one'(ts 1건) | 'member'(해당 회원 전체) | 'all'(전체)
+            if p == "/api/member/access-log/delete":
+                d = json.loads(self._body() or b"{}")
+                mode = str(d.get("mode", "one"))
+                with _ACCESS_LOG_LOCK:
+                    doc = _load_json(ACCESS_LOG_FILE, {"logs": []})
+                    logs = doc.get("logs", [])
+                    if mode == "all":
+                        logs = []
+                    elif mode == "member":
+                        no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                        logs = [x for x in logs if str(x.get("ident", "")) != no]
+                    else:
+                        ts = str(d.get("ts", ""))
+                        ident = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                        logs = [
+                            x for x in logs
+                            if not (str(x.get("ts", "")) == ts
+                                    and (not ident
+                                         or str(x.get("ident", "")) == ident))
+                        ]
+                    doc["logs"] = logs
+                    doc["updated"] = datetime.datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S")
+                    _save_json(ACCESS_LOG_FILE, doc)
+                return self._json({"ok": True, "count": len(logs)})
+            # ---- 일반회원 승인 처리 (관리자·마스터) ----
+            #  action: 'approve' | 'hold' | 'pending' | 'delete' | 'bulk'
+            if p == "/api/approval/set":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                action = str(d.get("action", "approve"))
+                idents = d.get("idents")
+                if not isinstance(idents, list):
+                    idents = [d.get("ident", "")]
+                idents = [str(x) for x in idents if str(x).strip()]
+                if not idents:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                done = 0
+                if action == "delete":
+                    with _MEMBER_WRITE_LOCK:
+                        members = _ev_members()
+                        keys = {re.sub(r"[^0-9]", "", x) for x in idents}
+                        keep = []
+                        for m in members:
+                            mk = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                            lk = re.sub(r"[^0-9]", "", str(
+                                m.get("accessPhone") or m.get("phone") or ""))
+                            if mk in keys or lk in keys or str(m.get("id", "")) in idents:
+                                done += 1
+                                continue
+                            keep.append(m)
+                        _save_json(DB_FILE, keep)
+                        _touch_meta({"count": len(keep), "updatedBy": "approval-del"})
+                else:
+                    status = {
+                        "approve": "approved", "hold": "held",
+                        "pending": "pending", "bulk": "approved",
+                    }.get(action, "approved")
+                    for x in idents:
+                        ok, _ = _set_member_approval(x, status)
+                        if ok:
+                            done += 1
+                return self._json({"ok": True, "done": done})
             # ---- 개인 셀프 비밀번호 변경 (본인) ----
             if p == "/api/personal/password":
                 d = json.loads(self._body() or b"{}")

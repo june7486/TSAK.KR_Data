@@ -563,6 +563,81 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// 회원 접속 로그 조회 (마스터 전용, 최신 100건).
+  Future<List<Map<String, dynamic>>> fetchMemberAccessLog(String number) async {
+    if (!repo.isNasMode || !isMaster) return [];
+    try {
+      return await nas.memberAccessLog(number);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 접속 로그 삭제 (마스터 전용).
+  Future<bool> deleteMemberAccessLog({
+    String mode = 'one',
+    String? ts,
+    String? number,
+  }) async {
+    if (!repo.isNasMode || !isMaster) return false;
+    try {
+      return await nas.deleteAccessLog(mode: mode, ts: ts, number: number);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ---------- 일반회원 승인 시스템 ----------
+  /// 미승인(승인 대기) 일반회원 목록.
+  List<Member> get pendingMembers =>
+      repo.all().where((m) => m.isPendingOnly).toList();
+
+  /// 전체 일반회원 중 미승인 수.
+  int get pendingApprovalCount => pendingMembers.length;
+
+  /// 서버 승인 대기 목록 조회(관리자·마스터).
+  Future<List<Map<String, dynamic>>> fetchApprovalPending() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return [];
+    try {
+      return await nas.approvalPending();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 승인/보류/미승인/삭제 일괄 처리 후 로컬 캐시 갱신.
+  Future<int> setApproval(String action, List<String> idents) async {
+    if (!repo.isNasMode || !(isApp || isMaster) || idents.isEmpty) return 0;
+    try {
+      final r = await nas.approvalSet(action: action, idents: idents);
+      if (r['ok'] == true) {
+        if (action == 'delete') {
+          for (final id in idents) {
+            final m = repo.byId(id);
+            if (m != null) await repo.delete(m.id);
+          }
+        } else {
+          final status = {
+            'approve': 'approved',
+            'hold': 'held',
+            'pending': 'pending',
+          }[action];
+          if (status != null) {
+            for (final id in idents) {
+              final m = repo.byId(id);
+              if (m != null) {
+                await repo.save(m.copyWith(approvalStatus: status));
+              }
+            }
+          }
+        }
+        await repo.syncFromNas();
+        return (r['done'] as num?)?.toInt() ?? 0;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
   /// 개인비번 초기화(reset=true) 또는 지정 변경
   Future<String?> setPersonalPassword(
     String master,

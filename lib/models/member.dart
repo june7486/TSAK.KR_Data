@@ -21,6 +21,7 @@ class Member {
     this.photoPath = '',
     this.lifetimeMember = false,
     this.isRegular = false,
+    this.approvalStatus = '',
     this.personalPassword = '',
     this.accessPhone = '',
     this.privacyAgreed = false,
@@ -88,6 +89,16 @@ class Member {
 
   /// 일반회원(비인가자) 여부 — true면 인가자가 아닌 일반 참가자/신규회원
   bool isRegular;
+
+  /// 승인 상태: 'pending'(미승인) | 'approved'(승인) | 'held'(보류) | ''(레거시=승인)
+  String approvalStatus;
+
+  /// 미승인(승인 대기) 여부
+  bool get isPendingApproval =>
+      isRegular && (approvalStatus == 'pending' || approvalStatus == 'held');
+
+  /// 승인 대기 중(pending) 여부 (보류 제외)
+  bool get isPendingOnly => isRegular && approvalStatus == 'pending';
 
   /// 개인 접속용 비밀번호 (일반회원: 전화번호 뒤 4자리 자동, 이후 변경 가능)
   String personalPassword;
@@ -165,6 +176,7 @@ class Member {
     'photoPath': photoPath,
     'lifetimeMember': lifetimeMember,
     'isRegular': isRegular,
+    'approvalStatus': approvalStatus,
     'personalPassword': personalPassword,
     'accessPhone': accessPhone,
     'privacyAgreed': privacyAgreed,
@@ -212,6 +224,7 @@ class Member {
       photoPath: '${map['photoPath'] ?? ''}',
       lifetimeMember: map['lifetimeMember'] == true,
       isRegular: map['isRegular'] == true,
+      approvalStatus: '${map['approvalStatus'] ?? ''}',
       personalPassword: '${map['personalPassword'] ?? ''}',
       accessPhone: '${map['accessPhone'] ?? ''}',
       privacyAgreed: map['privacyAgreed'] == true,
@@ -244,6 +257,7 @@ class Member {
     String? photoPath,
     bool? lifetimeMember,
     bool? isRegular,
+    String? approvalStatus,
     String? personalPassword,
     String? accessPhone,
     bool? privacyAgreed,
@@ -273,6 +287,7 @@ class Member {
       photoPath: photoPath ?? this.photoPath,
       lifetimeMember: lifetimeMember ?? this.lifetimeMember,
       isRegular: isRegular ?? this.isRegular,
+      approvalStatus: approvalStatus ?? this.approvalStatus,
       personalPassword: personalPassword ?? this.personalPassword,
       accessPhone: accessPhone ?? this.accessPhone,
       privacyAgreed: privacyAgreed ?? this.privacyAgreed,

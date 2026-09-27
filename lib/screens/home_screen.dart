@@ -25,6 +25,7 @@ import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 import 'regular_members_screen.dart';
+import 'approval_screen.dart';
 import 'settings_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
@@ -928,6 +929,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     -1,
                   ),
                   _regularMembersButton(),
+                  _approvalButton(),
                 ],
               ],
             ),
@@ -1246,6 +1248,59 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 일반회원(비인가자) 관리 진입 버튼 — 관리자·마스터 전용
+  /// 일반회원 승인 관리 진입 버튼 — 관리자·마스터 전용, 미승인 건수 배지 표시
+  Widget _approvalButton() {
+    final state = context.watch<AppState>();
+    final n = state.pendingApprovalCount;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ApprovalScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: n > 0
+                ? Border.all(color: AppColors.tigerGold, width: 1.5)
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.how_to_reg, size: 16, color: Colors.white),
+              const SizedBox(width: 5),
+              const Text('승인관리',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white)),
+              if (n > 0) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.tigerGold,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('$n',
+                      style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _regularMembersButton() {
     final state = context.watch<AppState>();
     return Padding(

@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/member_access_log.dart';
 import '../widgets/photo_pip.dart';
 import 'finance_transaction_edit_screen.dart';
 import 'export_screen.dart';
@@ -108,12 +109,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _quickActions(m),
+                _approvalBanner(m),
                 _depositSection(m),
                 _feeTracker(m),
                 _eventSection(m),
                 _infoCard(m),
                 _membershipSection(m),
                 _passwordSection(m),
+                MemberAccessLogSection(member: m),
                 const SizedBox(height: 30),
               ],
             ),
@@ -789,6 +792,91 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       await context.read<AppState>().save(m.copyWith(eventAttend: map));
       if (mounted) setState(() {});
     }
+  }
+
+  /// 미승인(승인 대기/보류) 일반회원 안내 배너. 관리자·마스터는 즉시 처리 가능.
+  Widget _approvalBanner(Member m) {
+    if (!m.isRegular) return const SizedBox.shrink();
+    final st = m.approvalStatus;
+    if (st != 'pending' && st != 'held') return const SizedBox.shrink();
+    final state = context.watch<AppState>();
+    final isPending = st == 'pending';
+    final color = isPending ? AppColors.tigerGold : AppColors.taegeukRed;
+    final label = isPending ? '미승인 회원 (승인 요청됨)' : '보류된 회원';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(isPending ? Icons.hourglass_top : Icons.pause_circle_outline,
+                  color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                      color: color)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '미승인 회원들에 대한 안내 : 관리자에게 승인 요청을 해주십시요.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.textDark, height: 1.35),
+          ),
+          if (state.isApp || state.isMaster) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.scoutGreen,
+                      minimumSize: const Size(0, 38)),
+                  onPressed: () => _approvalSet(state, m, 'approve'),
+                  icon: const Icon(Icons.check_circle_outline, size: 16),
+                  label: const Text('승인', style: TextStyle(fontSize: 12.5)),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 38),
+                      foregroundColor: AppColors.taegeukRed),
+                  onPressed: () => _approvalSet(state, m, 'hold'),
+                  icon: const Icon(Icons.pause_circle_outline, size: 16),
+                  label: const Text('보류', style: TextStyle(fontSize: 12.5)),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 6),
+            const Text(
+              '권한에는 제한이 없으나, 관리자 승인 후 정상 회원으로 인정됩니다.',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approvalSet(AppState state, Member m, String action) async {
+    final n = await state.setApproval(action, [m.id]);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(n > 0
+            ? (action == 'approve' ? '승인했습니다' : '보류로 변경했습니다')
+            : '처리 실패 — 잠시 후 다시 시도하세요'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Widget _infoCard(Member m) {

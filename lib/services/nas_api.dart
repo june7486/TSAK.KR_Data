@@ -1030,6 +1030,69 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 회원 접속 로그 조회 (마스터 전용) — 최신 100건.
+  Future<List<Map<String, dynamic>>> memberAccessLog(String number) async {
+    final r = await http
+        .get(
+          _uri('/api/member/access-log?number=${Uri.encodeComponent(number)}'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return ((j['logs'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 접속 로그 삭제 (마스터 전용).
+  ///  mode: 'one'(ts+number 1건) | 'member'(해당 회원 전체) | 'all'(전체)
+  Future<bool> deleteAccessLog({
+    String mode = 'one',
+    String? ts,
+    String? number,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member/access-log/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'mode': mode,
+            if (ts != null) 'ts': ts,
+            if (number != null) 'number': number,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return j['ok'] == true;
+  }
+
+  /// 일반회원 승인 대기 목록 (관리자·마스터).
+  Future<List<Map<String, dynamic>>> approvalPending() async {
+    final r = await http
+        .get(_uri('/api/approval/pending'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 15));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return ((j['pending'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 일반회원 승인 처리 (관리자·마스터).
+  ///  action: 'approve' | 'hold' | 'pending' | 'delete'
+  Future<Map<String, dynamic>> approvalSet({
+    required String action,
+    required List<String> idents,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/approval/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'action': action, 'idents': idents}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 개인 셀프 비밀번호 변경 (본인) — 현재 비번 검증 후 새 비번 저장
   Future<Map<String, dynamic>> changePersonalPassword(
     String number,
