@@ -167,6 +167,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final price = (p['price'] as num?)?.toInt() ?? 0;
+    final imgUrl = context.read<NasApi>().merchImageUrl('${p['image'] ?? ''}');
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -178,16 +179,28 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 56,
+              height: 56,
               color: AppColors.purple.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              active ? Icons.shopping_bag : Icons.visibility_off,
-              color: active ? AppColors.purple : AppColors.textGray,
+              child: imgUrl.isEmpty
+                  ? Icon(
+                      active ? Icons.shopping_bag : Icons.visibility_off,
+                      color: active ? AppColors.purple : AppColors.textGray,
+                    )
+                  : Image.network(
+                      imgUrl,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        active ? Icons.shopping_bag : Icons.visibility_off,
+                        color:
+                            active ? AppColors.purple : AppColors.textGray,
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 10),
@@ -255,6 +268,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final price = TextEditingController(text: '${existing?['price'] ?? ''}');
     final stock = TextEditingController(text: '${existing?['stock'] ?? ''}');
     final desc = TextEditingController(text: '${existing?['desc'] ?? ''}');
+    final image = TextEditingController(text: '${existing?['image'] ?? ''}');
     final options = TextEditingController(
         text: (((existing?['options'] as List?) ?? []).map((e) => '$e').join(', ')));
     bool active = existing?['active'] != false;
@@ -273,6 +287,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _dlgField(price, '가격 (원)', number: true),
                 _dlgField(stock, '재고 수량', number: true),
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L)'),
+                _dlgField(image, '이미지 (파일명 또는 URL)'),
                 _dlgField(desc, '설명'),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -309,6 +324,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         price: int.tryParse(price.text.trim()) ?? 0,
         stock: int.tryParse(stock.text.trim()) ?? 0,
         options: optList,
+        image: image.text.trim(),
         desc: desc.text.trim(),
         active: active,
       );

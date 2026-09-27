@@ -319,7 +319,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final price = (p['price'] as num?)?.toInt() ?? 0;
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
-    final image = '${p['image'] ?? ''}';
+    final imgUrl = context.read<NasApi>().merchImageUrl('${p['image'] ?? ''}');
     final kind = '${p['kind'] ?? ''}';
     final soldOut = stock <= 0;
     return Container(
@@ -332,16 +332,30 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (image.startsWith('http'))
+          if (imgUrl.isNotEmpty)
             ClipRRect(
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(14)),
               child: Image.network(
-                image,
-                height: 150,
+                imgUrl,
+                height: 180,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                loadingBuilder: (_, child, prog) => prog == null
+                    ? child
+                    : Container(
+                        height: 180,
+                        alignment: Alignment.center,
+                        color: AppColors.purple.withValues(alpha: 0.05),
+                        child: const CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  color: AppColors.purple.withValues(alpha: 0.06),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.image_not_supported,
+                      color: AppColors.textGray),
+                ),
               ),
             ),
           Padding(
@@ -431,6 +445,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     String errMsg = '';
 
     final price = (p['price'] as num?)?.toInt() ?? 0;
+    final dialogImg = context.read<NasApi>().merchImageUrl('${p['image'] ?? ''}');
 
     final ok = await showDialog<bool>(
       context: context,
@@ -447,6 +462,19 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (dialogImg.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          dialogImg,
+                          height: 130,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     TextFormField(
                       controller: number,
                       keyboardType: TextInputType.number,

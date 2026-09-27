@@ -33,6 +33,16 @@ class NasApi {
 
   Uri _uri(String path) => Uri.parse('$_base$path');
 
+  /// 수품 이미지 URL (로컬 파일명 또는 외부 URL → 프록시 경유, 같은 출처).
+  String merchImageUrl(String image) {
+    final s = image.trim();
+    if (s.isEmpty) return '';
+    if (s.startsWith('http')) {
+      return '$_base/api/merch/img?src=${Uri.encodeComponent(s)}';
+    }
+    return '$_base/api/merch/img?name=${Uri.encodeComponent(s)}';
+  }
+
   /// 도로명주소 검색 (행정안전부 JUSO, 프록시 경유·무인증).
   Future<List<Map<String, dynamic>>> addrSearch(String q,
       {int page = 1}) async {

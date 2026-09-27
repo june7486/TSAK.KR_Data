@@ -1812,46 +1812,92 @@ def _merch_save(doc):
     _save_json(MERCH_FILE, doc)
 
 
-# 구글폼 공식 수품 안내 연계 기본 판매 세트 (최초 1회 시드)
+# 구글폼 공식 수품 안내 연계 기본 판매 목록 (최초 1회 시드)
+#  - 이미지: 프로젝트에 생성한 상품 이미지 URL
+_IMG = "https://www.genspark.ai/api/files/s/"
 DEFAULT_MERCH_PRODUCTS = [
+    # ── 멤버십 세트 ──
     {"name": "신규 인가자 세트", "kind": "멤버십 세트", "price": 60000, "stock": 999,
-     "options": [], "desc": "중앙회 항건1·가죽조임1·멘토메달(각인)1 (연회비 불포함, 2000호 이상 신규 인가자 연간회원 최초 등록 시)"},
+     "options": [], "image": "neckerchief.jpg",
+     "desc": "중앙회 항건1·가죽조임1·멘토메달(각인)1 (연회비 불포함 · 2000호 이상 신규 인가자 연간회원 최초 등록 시 1회, 총 7만원 납부)"},
     {"name": "평생회원 세트", "kind": "멤버십 세트", "price": 90000, "stock": 999,
-     "options": [], "desc": "항건·패치약장·금속약장·패치·가죽조임·버클·멘토/페런츠 금속약장·멘토/페런츠 메달(각인)·평생회원 조임·연간회원 뱃지 (평생회비 불포함)"},
+     "options": [], "image": "lifetime_woggle.jpg",
+     "desc": "항건1·패치약장2·금속약장2·패치2·가죽조임1·버클1·멘토금속약장1·페런츠금속약장1·멘토메달(각인)1·페런츠메달(각인)1·평생회원조임(각인)1·연간회원뱃지1 (평생회비 불포함 · 총 39만원 납부)"},
+    # ── 인가자 전용 수품 ──
     {"name": "범스카우트 중앙회 항건", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "desc": "인가자 전용 수품"},
+     "options": [], "image": "neckerchief.jpg",
+     "desc": "인가자 전용 · 스카우트 항건(넥커치프)"},
     {"name": "평생회원 흉장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "desc": "인가자 전용 수품"},
-    {"name": "중앙회 공식 패치 및 약장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "desc": "인가자 전용 수품"},
-    {"name": "멘토 / 페런츠 메달 및 약장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": ["멘토", "페런츠"], "desc": "각인 필요 시 최소 3주 전 주문 · 국내 각인 시 1만원 추가(각인비·업체 배송료)"},
+     "options": [], "image": "breast_badge.jpg",
+     "desc": "인가자 전용 · 평생회원 흉장(브레스트 뱃지)"},
+    {"name": "중앙회 공식 패치", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "patch.jpg",
+     "desc": "인가자 전용 · 중앙회 공식 자수 패치"},
+    {"name": "중앙회 공식 약장", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "metal_badge.jpg",
+     "desc": "인가자 전용 · 중앙회 공식 금속/패치 약장"},
+    {"name": "멘토 메달 (각인포함)", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": ["멘토", "페런츠"],
+     "image": "medal_mentor.jpg",
+     "desc": "인가자 전용 · 각인 필요 시 최소 3주 전 주문 · 국내 각인 시 1만원 추가(각인비·업체 배송료) · 종류 변경 가능"},
+    {"name": "페런츠 메달 (각인포함)", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": ["페런츠", "멘토"],
+     "image": "medal_parent.jpg",
+     "desc": "인가자 전용 · 각인 필요 시 최소 3주 전 주문 · 국내 각인 시 1만원 추가 · 종류 변경 가능"},
+    {"name": "멘토 금속약장", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "metal_badge.jpg",
+     "desc": "인가자 전용 · 멘토 금속 약장"},
+    {"name": "페런츠 금속약장", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "metal_badge2.jpg",
+     "desc": "인가자 전용 · 페런츠 금속 약장"},
+    {"name": "중앙회 가죽조임", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "woggle.jpg",
+     "desc": "인가자 전용 · 항건용 가죽조임"},
+    {"name": "평생회원 조임 (각인포함)", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "lifetime_woggle.jpg",
+     "desc": "인가자 전용 · 평생회원 조임(각인포함)"},
+    {"name": "중앙회 버클", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "buckle.jpg",
+     "desc": "인가자 전용 · 중앙회 버클"},
+    {"name": "연간회원 뱃지", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "image": "annual_badge.jpg",
+     "desc": "인가자 전용 · 연간회원 뱃지"},
+    # ── 서포터즈 구매 가능 ──
     {"name": "수품 · 굿즈 (서포터즈)", "kind": "서포터즈", "price": 0, "stock": 999,
-     "options": [], "desc": "인가자 전용 품목 이외 수품 및 굿즈 (서포터즈 구매 가능)"},
+     "options": [], "image": "goods.jpg",
+     "desc": "인가자 전용 품목 이외의 수품 및 굿즈 (서포터즈 구매 가능)"},
 ]
 
 
+MERCH_SEED_VERSION = 3  # 기본 수품목록 변경 시 올리면 자동 재시드(관리자 추가분은 보존)
+
+
 def _merch_seed_once(doc):
-    """상품이 비어 있고 아직 시드하지 않았으면 기본 세트/수품을 1회 채운다.
-    실제로 시드했으면 True 반환."""
+    """기본 수품목록을 시드한다.
+    - 시드 전용 상품('seeded':true)은 버전이 바뀌면 새 기본목록으로 교체.
+    - 관리자가 직접 추가한 상품('seeded' 없음)은 그대로 보존.
+    실제로 시드/갱신했으면 True 반환.
+    """
     cfg = doc.get("config", {})
-    if cfg.get("seeded") is True:
-        return False
-    if doc.get("products"):
-        cfg["seeded"] = True
-        doc["config"] = cfg
+    cur = int(cfg.get("seedVersion", 0) or 0)
+    if cur == MERCH_SEED_VERSION:
         return False
     now = _now_stamp()
-    prods = []
+    # 관리자 추가 상품만 남기고 기존 시드분 제거
+    kept = [p for p in doc.get("products", [])
+            if isinstance(p, dict) and p.get("seeded") is not True]
+    prods = list(kept)
     for base in DEFAULT_MERCH_PRODUCTS:
         p = dict(base)
         p["id"] = "pr" + _secrets.token_urlsafe(5)
-        p["image"] = ""
+        p.setdefault("image", "")
         p["active"] = True
         p["created"] = now
+        p["seeded"] = True
         prods.append(p)
     doc["products"] = prods
     cfg["seeded"] = True
+    cfg["seedVersion"] = MERCH_SEED_VERSION
     doc["config"] = cfg
     return True
 
@@ -3932,6 +3978,51 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def _serve_merch_image_named(self, name, src):
+        """수품 이미지 제공.
+        - name(파일명)이 있으면 로컬 merch_img 폴더에서 제공(우선).
+        - 없으면 src(외부 URL)를 받아 캐시 후 제공.
+        """
+        safe = os.path.basename(str(name or ""))
+        if safe:
+            local = os.path.join(HERE, "merch_img", safe)
+            if os.path.exists(local):
+                try:
+                    with open(local, "rb") as f:
+                        body = f.read()
+                    ctype = "image/png" if safe.lower().endswith(".png") \
+                        else "image/jpeg"
+                    return self._bytes_cache(body, ctype, max_age=604800)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 500)
+        return self._serve_merch_image(src)
+
+    def _serve_merch_image(self, src):
+        """외부 상품 이미지를 받아 같은 출처로 전달(캐시). CORS/혼합콘텐츠 회피."""
+        if not src or not (src.startswith("http://") or src.startswith("https://")):
+            return self._json({"ok": False, "error": "src"}, 400)
+        key = hashlib.sha1(src.encode("utf-8")).hexdigest()
+        cache_dir = os.path.join(HERE, ".merch_img_cache")
+        cache_path = os.path.join(cache_dir, key)
+        try:
+            if os.path.exists(cache_path):
+                with open(cache_path, "rb") as f:
+                    body = f.read()
+                return self._bytes_cache(body, "image/jpeg", max_age=86400)
+            req = urllib.request.Request(src, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read()
+                ctype = resp.headers.get("Content-Type", "image/jpeg")
+            try:
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(cache_path, "wb") as f:
+                    f.write(body)
+            except Exception:
+                pass
+            return self._bytes_cache(body, ctype, max_age=86400)
+        except Exception as e:
+            return self._json({"ok": False, "error": str(e)}, 502)
+
     def _bytes_cache(self, b, ctype="application/octet-stream",
                      max_age=604800, immutable=True):
         """브라우저 캐시를 허용하는 바이트 응답 (썸네일 등 불변 리소스).
@@ -4023,6 +4114,12 @@ class Handler(BaseHTTPRequestHandler):
                 kw = (q.get("q", [""])[0] or "").strip()
                 page = (q.get("page", ["1"])[0] or "1").strip()
                 return self._json(_addr_search(kw, page))
+            # ---- 수품상품 이미지 프록시 (로컬 이미지/외부 이미지를 같은 출처로 제공) ----
+            if p == "/api/merch/img":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                nm = (q.get("name", [""])[0] or "").strip()
+                src = (q.get("src", [""])[0] or "").strip()
+                return self._serve_merch_image_named(nm, src)
             # ---- 버전 감지(업데이트 반영) ----
             # 빌드 산출물(main.dart.js)의 수정시각을 버전으로 노출한다.
             # 재빌드(재배포) 시 값이 바뀌므로 클라이언트가 자동 감지/새로고침한다.
