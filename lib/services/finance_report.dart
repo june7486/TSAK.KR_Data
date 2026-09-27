@@ -176,6 +176,37 @@ class FinanceReportService {
     );
 
     // ----------------------------------------------------------------------
+    //  월별 패턴 분석 (최근 5개 연도 × 12개월 히트맵)
+    // ----------------------------------------------------------------------
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(42, 44, 42, 42),
+        header: (ctx) => _pageHeader('I-b. 월별 수입·지출 패턴', emblem),
+        footer: _pageFooter,
+        build: (ctx) {
+          final out = <pw.Widget>[
+            pw.Text('월별 수입·지출 히트맵 (최근 연도)',
+                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _ink)),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              '· 진한 색일수록 해당 월의 거래 규모가 큽니다. 연말·행사 시즌 편중을 파악할 수 있습니다.',
+              style: const pw.TextStyle(fontSize: 7.5, color: _sub, lineSpacing: 1.5),
+            ),
+            pw.SizedBox(height: 12),
+          ];
+          for (final y in yearKeys.take(5)) {
+            final b = (years[y] as Map).cast<String, dynamic>();
+            out.add(_monthHeatmap(y, b));
+            out.add(pw.SizedBox(height: 14));
+          }
+          return out;
+        },
+      ),
+    );
+
+    // ----------------------------------------------------------------------
     //  카테고리 분석 (최근 연도 상세)
     // ----------------------------------------------------------------------
     doc.addPage(
@@ -446,6 +477,84 @@ class FinanceReportService {
       rows,
       aligns: const [pw.Alignment.centerLeft, pw.Alignment.centerRight, pw.Alignment.centerRight, pw.Alignment.centerRight, pw.Alignment.centerRight],
       boldLast: true,
+    );
+  }
+
+  /// 월별 수입·지출 히트맵 (12열 × 2행: 수입/지출)
+  static pw.Widget _monthHeatmap(String y, Map<String, dynamic> b) {
+    final byMonth = (b['byMonth'] as Map?)?.cast<String, dynamic>() ?? {};
+    num maxV = 1;
+    for (int i = 1; i <= 12; i++) {
+      final m = (byMonth['$i'] as Map?)?.cast<String, dynamic>() ?? {};
+      final inc = (m['income'] ?? 0) as num;
+      final exp = (m['expense'] ?? 0) as num;
+      if (inc > maxV) maxV = inc;
+      if (exp > maxV) maxV = exp;
+    }
+    PdfColor heat(num v, PdfColor base) {
+      final r = (v / maxV).clamp(0.0, 1.0);
+      // 흰색 → base 색으로 보간
+      final w = PdfColor.fromInt(0xFFFFFFFF);
+      return PdfColor(
+        w.red + (base.red - w.red) * r,
+        w.green + (base.green - w.green) * r,
+        w.blue + (base.blue - w.blue) * r,
+      );
+    }
+
+    pw.Widget cell(num v, PdfColor base) {
+      return pw.Expanded(
+        child: pw.Container(
+          height: 20,
+          margin: const pw.EdgeInsets.all(0.6),
+          alignment: pw.Alignment.center,
+          decoration: pw.BoxDecoration(color: heat(v, base)),
+          child: pw.Text(_short(v),
+              style: const pw.TextStyle(fontSize: 5.5, color: _ink)),
+        ),
+      );
+    }
+
+    List<pw.Widget> row(num Function(int) pick, PdfColor base) {
+      final cells = <pw.Widget>[
+        pw.SizedBox(width: 20),
+      ];
+      for (int i = 1; i <= 12; i++) {
+        final m = (byMonth['$i'] as Map?)?.cast<String, dynamic>() ?? {};
+        cells.add(cell(pick(i) == 0 ? (m['income'] ?? 0) as num : (m['expense'] ?? 0) as num, base));
+      }
+      return cells;
+    }
+
+    final header = <pw.Widget>[
+      pw.SizedBox(width: 20),
+    ];
+    for (int i = 1; i <= 12; i++) {
+      header.add(pw.Expanded(
+        child: pw.Container(
+          alignment: pw.Alignment.center,
+          child: pw.Text('$i월', style: const pw.TextStyle(fontSize: 5.5, color: _sub)),
+        ),
+      ));
+    }
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(children: [
+          pw.Container(width: 3, height: 12, color: _gold),
+          pw.SizedBox(width: 6),
+          pw.Text('$y년',
+              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: _ink)),
+          pw.SizedBox(width: 8),
+          pw.Text('수입 ${_short((b['income'] ?? 0) as num)} · 지출 ${_short((b['expense'] ?? 0) as num)}',
+              style: const pw.TextStyle(fontSize: 7.5, color: _sub)),
+        ]),
+        pw.SizedBox(height: 4),
+        pw.Row(children: header),
+        pw.Row(children: row((i) => 0, _income)),
+        pw.Row(children: row((i) => 1, _expense)),
+      ],
     );
   }
 

@@ -412,7 +412,8 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
               '수입 ${_shortWon((b['income'] ?? 0) as num)} · 지출 ${_shortWon((b['expense'] ?? 0) as num)} · ${b['count'] ?? 0}건',
               style: const TextStyle(fontSize: 11, color: AppColors.textGray),
             ),
-            children: entries.map((e) {
+            children: [
+              ...entries.map((e) {
               final isExp = e.key.startsWith('지출:');
               final label = e.key.split(':').last;
               return Padding(
@@ -445,10 +446,96 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
+              _monthsChart(b),
+            ],
           ),
         );
       }).toList(),
+    );
+  }
+
+  /// 연도 월별 수입/지출 막대 (byMonth 활용).
+  Widget _monthsChart(Map<String, dynamic> b) {
+    final byMonth = (b['byMonth'] as Map?)?.cast<String, dynamic>() ?? {};
+    num maxV = 1;
+    for (int i = 1; i <= 12; i++) {
+      final m = (byMonth['$i'] as Map?)?.cast<String, dynamic>() ?? {};
+      final inc = (m['income'] ?? 0) as num;
+      final exp = (m['expense'] ?? 0) as num;
+      if (inc > maxV) maxV = inc;
+      if (exp > maxV) maxV = exp;
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('월별 수입/지출',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark)),
+              const Spacer(),
+              Container(width: 8, height: 8, color: AppColors.scoutGreen),
+              const SizedBox(width: 3),
+              const Text('수입', style: TextStyle(fontSize: 9.5, color: AppColors.textGray)),
+              const SizedBox(width: 8),
+              Container(width: 8, height: 8, color: AppColors.tigerGold),
+              const SizedBox(width: 3),
+              const Text('지출', style: TextStyle(fontSize: 9.5, color: AppColors.textGray)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 70,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (int i = 1; i <= 12; i++)
+                  Expanded(child: _monthBar(byMonth, i, maxV)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monthBar(Map<String, dynamic> byMonth, int month, num maxV) {
+    final m = (byMonth['$month'] as Map?)?.cast<String, dynamic>() ?? {};
+    final inc = (m['income'] ?? 0) as num;
+    final exp = (m['expense'] ?? 0) as num;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Container(
+              width: 4,
+              height: (inc / maxV * 48).clamp(0, 48).toDouble(),
+              color: AppColors.scoutGreen,
+            ),
+            const SizedBox(width: 1),
+            Container(
+              width: 4,
+              height: (exp / maxV * 48).clamp(0, 48).toDouble(),
+              color: AppColors.tigerGold,
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text('$month', style: const TextStyle(fontSize: 7.5, color: AppColors.textGray)),
+      ],
     );
   }
 
@@ -468,21 +555,51 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
           children: list.take(15).map((e) {
             final inc = (e['income'] as num?) ?? 0;
             final exp = (e['expense'] as num?) ?? 0;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.celebration, size: 15, color: AppColors.purple),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text('${e['event'] ?? '미분류'}',
-                        style: const TextStyle(fontSize: 12.5, color: AppColors.textDark),
-                        overflow: TextOverflow.ellipsis),
+            final yrs = (e['years'] as Map?)?.cast<String, dynamic>() ?? {};
+            final yrKeys = yrs.keys.toList()..sort((x, y) => y.compareTo(x));
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.celebration, size: 15, color: AppColors.purple),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text('${e['event'] ?? '미분류'}',
+                            style: const TextStyle(fontSize: 12.5, color: AppColors.textDark),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      Text('+${_shortWon(inc)} / -${_shortWon(exp)}',
+                          style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+                    ],
                   ),
-                  Text('+${_shortWon(inc)} / -${_shortWon(exp)}',
-                      style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
-                ],
-              ),
+                ),
+                if (yrKeys.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 21, bottom: 4),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 2,
+                      children: yrKeys.map((yy) {
+                        final amt = (yrs[yy] ?? 0) as num;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.bg,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: AppColors.purple.withValues(alpha: 0.12)),
+                          ),
+                          child: Text('$yy ${_shortWon(amt)}',
+                              style: const TextStyle(
+                                  fontSize: 9.5, color: AppColors.textGray)),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+              ],
             );
           }).toList(),
         ),
