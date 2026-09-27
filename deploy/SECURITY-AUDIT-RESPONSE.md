@@ -99,3 +99,29 @@
 > events.json 왕복 테스트도 회원 데이터 무손상(net-zero)을 해시로 확인했습니다.
 
 
+## 7. 성능 개선 로그 (2026-09-27, 초기 로딩 속도)
+
+요청: "초기 로딩 속도 좀 올려줘"
+
+**진단된 병목 2가지**
+1. `main()` 이 첫 프레임 이전에 `repo.init()`(NAS 네트워크) 과 `finance.load()` 를 **동기 대기** → 흰 화면 지연
+2. 프록시(`nas_lib`)가 요청마다 **새 TLS 연결**을 열어 요청당 ~1.25–2.0s 고정 오버헤드
+
+**조치**
+| 위치 | 변경 | 효과 |
+|------|------|------|
+| `lib/main.dart` | `unawaited(repo.init())`, `unawaited(finance.load())` — UI 먼저 렌더 | 첫 프레임 조기 표시 |
+| `nas_proxy/nas_lib.py` | 전역 keep-alive `HTTPSConnection` 풀(`_CONN`, `_CONN_TTL=100s`, `_conn_post`) 도입. `call`/`read_bytes`/`_login`/`_post` 가 연결 재사용, 끊김 시 1회 재시도. **업로드(`write`/`write_stream`)는 대용량 안정성 위해 기존 urllib 유지** | 요청 지연 2.05s→0.43s |
+
+**측정 (헤드리스 크로미움, viewport 430×932)**
+| 지표 | 이전 | 이후 |
+|------|------|------|
+| 콜드 첫 프레임 | 8.2s | **6.2s** (−24%) |
+| 웜 첫 프레임 | 4.6s | **2.66s** (−42%) |
+| `/api/health` | 1.29s | **0.49s** |
+| `/api/members` | 2.85s | **0.81–1.98s** |
+| members.json read (bench) | 2.05s | **0.43s** |
+
+**무결성**: Playwright 스모크 `hasCanvas=true, loggedIn=true, jsErrors=0, failedReq=0`. `flutter analyze lib/main.dart` 무이슈. `build/web` 재빌드 성공(70.6s).
+
+> ⚠️ keep-alive 는 연결 풀 **TTL 100초** 후 자동 교체되며, 프록시는 스레드 기반이라 공유 커넥션 접근을 락(`_CONN_LOCK`)으로 보호합니다. 실패 시 기존 경로로 자연 폴백합니다.

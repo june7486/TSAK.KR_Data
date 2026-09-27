@@ -16,17 +16,20 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1) 저장소 초기화 — NAS 프록시 연결 시도, 실패하면 로컬 시드로 폴백
+  // 1) 저장소 초기화 — NAS 연결 시도, 실패하면 로컬 시드로 폴백.
+  //  [로딩 가속] 첫 프레임(화면)을 NAS 통신으로 막지 않도록, 초기화를
+  //  백그라운드로 시작하고 즉시 UI 를 띄운다. 데이터는 준비되는 대로
+  //  repo.revision → AppState.refresh 로 화면에 반영된다(빈 목록은 곧 채워짐).
   final nas = NasApi();
   final repo = MemberRepository(nas: nas);
-  await repo.init();
+  unawaited(repo.init());
 
   final appState = AppState(repo, nas: nas);
   final finance = FinanceService(nas);
   // AI 자연어 검색(후원자 명단 등)에서 재무 데이터를 참조할 수 있도록 연결
   appState.finance = finance;
-  // 재무 데이터 로드 (AI 후원 검색 대비)
-  finance.load();
+  // 재무 데이터 로드 — 첫 프레임을 막지 않도록 백그라운드로.
+  unawaited(finance.load());
 
   runApp(
     MultiProvider(
