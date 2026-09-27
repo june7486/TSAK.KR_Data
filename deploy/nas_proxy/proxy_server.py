@@ -1653,6 +1653,58 @@ def _now_ymd(o):
 
 
 # ============================ 수품구매 (굿즈/상품 주문) ============================
+# 구글폼(공식 수품 안내)에서 연계된 기본 안내문 — 관리자 화면에서 항시 수정 가능.
+DEFAULT_MERCH_GUIDE = {
+    "title": "범스카우트 중앙회 수품 구매 안내",
+    "membership": (
+        "■ 범스카우트 인가자\n"
+        "  - 연간회원: 10,000원\n"
+        "  - 평생회원: 300,000원\n\n"
+        "■ 서포터즈 (일반 대원·대장)\n"
+        "  - 서포터즈 연간회원: 10,000원\n\n"
+        "참고) 수품구매 시 납부"
+    ),
+    "rules": (
+        "범스카우트 중앙회 공식 수품은 「범스카우트 인가자」만 구매 가능합니다.\n\n"
+        "■ 인가자 전용 수품\n"
+        "  - 범스카우트 중앙회 항건\n"
+        "  - 평생회원 흉장\n"
+        "  - 중앙회 공식 패치 및 약장\n"
+        "  - 멘토 / 페런츠 메달 및 약장\n\n"
+        "■ 서포터즈 구매 가능 수품\n"
+        "  - 인가자 전용 품목 이외의 수품 및 굿즈"
+    ),
+    "sets": (
+        "① 신규 인가자 세트 — 60,000원 (연회비 불포함)\n"
+        "  · 조건: 2000호 이상 신규 인가자 중 중앙회 연간회원 최초 등록 시 1회 / 총 70,000원 납부\n"
+        "  · 구성: 중앙회 항건 1 · 중앙회 가죽조임 1 · 멘토 메달(각인포함) 1 (페런츠 메달 변경 가능)\n\n"
+        "② 평생회원 세트 — 90,000원 (평생회비 불포함)\n"
+        "  · 조건: 2000호 이상 신규 인가자 중 중앙회 평생회원 등록 시 1회 / 총 390,000원 납부\n"
+        "  · 구성: 중앙회 항건 1 · 공식 패치약장 2 · 금속 약장 2 · 중앙회 패치 2 · 가죽조임 1 · "
+        "버클 1 · 멘토 금속약장 1 · 페런츠 금속약장 1 · 멘토 메달(각인) 1 · 페런츠 메달(각인) 1 · "
+        "평생회원 조임(각인) 1 · 연간회원 뱃지 1\n"
+        "  (멘토·페런츠 메달, 약장은 종류 변경 가능)"
+    ),
+    "notes": (
+        "※ 각인이 필요한 메달 수품(멘토/페런츠)은 각인 작업을 위해 최소 3주 전 주문이 필요합니다.\n"
+        "   국내 각인 업체 요청 시 1만원 추가 비용 발생(각인비·업체 배송료).\n"
+        "※ 필요한 수품에만 필요 수량을 적어주세요.\n"
+        "※ 자세한 문의: 한국범스카우트중앙회 사무처장 (010-9218-8514)"
+    ),
+    "updated": "",
+}
+
+
+def _merch_guide(cfg):
+    """cfg.guide 를 기본값과 병합해 반환(누락 키 자동 보충)."""
+    g = cfg.get("guide")
+    if not isinstance(g, dict):
+        g = {}
+    for k, v in DEFAULT_MERCH_GUIDE.items():
+        g.setdefault(k, v)
+    return g
+
+
 def _merch_doc():
     """수품구매 문서 구조:
     {
@@ -1663,7 +1715,8 @@ def _merch_doc():
                      shipMethod('현장구매'|'택배발송'|'기타'), shipNote,
                      paid(bool), memo, created} ],
       "config":   { "annualFee": 10000, "salesOpen": true,
-                    "account": {bank,no,holder}, "updated" }
+                    "account": {bank,no,holder},
+                    "guide": {title,membership,rules,sets,notes,updated}, "updated" }
     }
     """
     d = _load_json(MERCH_FILE, {})
@@ -1679,16 +1732,68 @@ def _merch_doc():
     acc = cfg.get("account")
     if not isinstance(acc, dict):
         acc = {}
-    acc.setdefault("bank", "농협")
-    acc.setdefault("no", "")
+    acc.setdefault("bank", "우리은행")
+    acc.setdefault("no", "1005 102 281143")
     acc.setdefault("holder", "한국범스카우트중앙회")
+    acc.setdefault("shipFee", 5000)
     cfg["account"] = acc
+    cfg["guide"] = _merch_guide(cfg)
     d["config"] = cfg
+    if _merch_seed_once(d):
+        # 최초 시드 결과를 파일에 영구 저장 (다음 조회부터 유지)
+        try:
+            _save_json(MERCH_FILE, d)
+        except Exception as e:
+            print("merch seed save fail", e)
     return d
 
 
 def _merch_save(doc):
     _save_json(MERCH_FILE, doc)
+
+
+# 구글폼 공식 수품 안내 연계 기본 판매 세트 (최초 1회 시드)
+DEFAULT_MERCH_PRODUCTS = [
+    {"name": "신규 인가자 세트", "kind": "멤버십 세트", "price": 60000, "stock": 999,
+     "options": [], "desc": "중앙회 항건1·가죽조임1·멘토메달(각인)1 (연회비 불포함, 2000호 이상 신규 인가자 연간회원 최초 등록 시)"},
+    {"name": "평생회원 세트", "kind": "멤버십 세트", "price": 90000, "stock": 999,
+     "options": [], "desc": "항건·패치약장·금속약장·패치·가죽조임·버클·멘토/페런츠 금속약장·멘토/페런츠 메달(각인)·평생회원 조임·연간회원 뱃지 (평생회비 불포함)"},
+    {"name": "범스카우트 중앙회 항건", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "desc": "인가자 전용 수품"},
+    {"name": "평생회원 흉장", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "desc": "인가자 전용 수품"},
+    {"name": "중앙회 공식 패치 및 약장", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": [], "desc": "인가자 전용 수품"},
+    {"name": "멘토 / 페런츠 메달 및 약장", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "options": ["멘토", "페런츠"], "desc": "각인 필요 시 최소 3주 전 주문 · 국내 각인 시 1만원 추가(각인비·업체 배송료)"},
+    {"name": "수품 · 굿즈 (서포터즈)", "kind": "서포터즈", "price": 0, "stock": 999,
+     "options": [], "desc": "인가자 전용 품목 이외 수품 및 굿즈 (서포터즈 구매 가능)"},
+]
+
+
+def _merch_seed_once(doc):
+    """상품이 비어 있고 아직 시드하지 않았으면 기본 세트/수품을 1회 채운다.
+    실제로 시드했으면 True 반환."""
+    cfg = doc.get("config", {})
+    if cfg.get("seeded") is True:
+        return False
+    if doc.get("products"):
+        cfg["seeded"] = True
+        doc["config"] = cfg
+        return False
+    now = _now_stamp()
+    prods = []
+    for base in DEFAULT_MERCH_PRODUCTS:
+        p = dict(base)
+        p["id"] = "pr" + _secrets.token_urlsafe(5)
+        p["image"] = ""
+        p["active"] = True
+        p["created"] = now
+        prods.append(p)
+    doc["products"] = prods
+    cfg["seeded"] = True
+    doc["config"] = cfg
+    return True
 
 
 def _merch_member(ident):
@@ -4219,6 +4324,7 @@ class Handler(BaseHTTPRequestHandler):
                         "annualFee": int(cfg.get("annualFee", 10000) or 0),
                         "salesOpen": cfg.get("salesOpen", True) is not False,
                         "account": cfg.get("account", {}),
+                        "guide": _merch_guide(cfg),
                     },
                     "feePaid": bool(fee_paid),
                     "buyer": buyer,
@@ -5223,7 +5329,19 @@ class Handler(BaseHTTPRequestHandler):
                     for k in ("bank", "no", "holder"):
                         if k in d["account"]:
                             a[k] = str(d["account"][k] or "")
+                    if "shipFee" in d["account"]:
+                        try:
+                            a["shipFee"] = int(d["account"]["shipFee"] or 0)
+                        except Exception:
+                            pass
                     cfg["account"] = a
+                if "guide" in d and isinstance(d.get("guide"), dict):
+                    g = _merch_guide(cfg)
+                    for k in ("title", "membership", "rules", "sets", "notes"):
+                        if k in d["guide"]:
+                            g[k] = str(d["guide"][k] or "")
+                    g["updated"] = _now_stamp()
+                    cfg["guide"] = g
                 cfg["updated"] = _now_stamp()
                 doc["config"] = cfg
                 _merch_save(doc)

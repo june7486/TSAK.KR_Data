@@ -1467,7 +1467,8 @@ class NasApi {
   Future<Map<String, dynamic>> merchSaveConfig({
     int? annualFee,
     bool? salesOpen,
-    Map<String, String>? account,
+    Map<String, dynamic>? account,
+    Map<String, dynamic>? guide,
   }) async {
     final r = await http
         .post(
@@ -1477,6 +1478,7 @@ class NasApi {
             if (annualFee != null) 'annualFee': annualFee,
             if (salesOpen != null) 'salesOpen': salesOpen,
             if (account != null) 'account': account,
+            if (guide != null) 'guide': guide,
           }),
         )
         .timeout(const Duration(seconds: 40));

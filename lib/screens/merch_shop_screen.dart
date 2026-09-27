@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
@@ -58,6 +59,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   bool get _salesOpen => _config['salesOpen'] != false;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
+  Map<String, dynamic> get _guide =>
+      ((_config['guide'] as Map?) ?? {}).cast<String, dynamic>();
+  int get _shipFee => (_account['shipFee'] as num?)?.toInt() ?? 0;
 
   String _won(int v) {
     final s = v.toString();
@@ -153,11 +157,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '· 로그인 없이 주문할 수 있습니다.\n'
             '· 연회비(회원)를 납부하신 분만 구매 가능합니다.\n'
-            '· 교환·반품 시 배송비는 구매자 부담입니다.',
-            style: TextStyle(fontSize: 12.5, color: AppColors.textDark, height: 1.5),
+            '· 교환·반품 시 배송비는 구매자 부담입니다.'
+            '${_shipFee > 0 ? '\n· 택배 배송료 ${_won(_shipFee)} 별도(우체국 택배).' : ''}',
+            style: const TextStyle(
+                fontSize: 12.5, color: AppColors.textDark, height: 1.5),
           ),
           if (_annualFee > 0) ...[
             const SizedBox(height: 6),
@@ -166,6 +172,24 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     fontSize: 12.5,
                     color: AppColors.taegeukBlue,
                     fontWeight: FontWeight.w700)),
+          ],
+          if ('${_guide['membership'] ?? ''}'.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppColors.purple.withValues(alpha: 0.15)),
+              ),
+              child: Text('${_guide['membership']}',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textDark,
+                      height: 1.5)),
+            ),
           ],
           if (!_salesOpen) ...[
             const SizedBox(height: 8),
@@ -182,6 +206,109 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       fontWeight: FontWeight.w700)),
             ),
           ],
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.purple,
+                side: BorderSide(color: AppColors.purple.withValues(alpha: 0.4)),
+                padding: const EdgeInsets.symmetric(vertical: 11),
+              ),
+              onPressed: _showGuide,
+              icon: const Icon(Icons.menu_book_outlined, size: 18),
+              label: const Text('수품 안내 · 세트구성 자세히 보기',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 구글폼(공식 수품 안내) 연계 — 서버 저장형 안내문 표시.
+  Future<void> _showGuide() async {
+    final g = _guide;
+    final acc = _account;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${g['title'] ?? '수품 구매 안내'}'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _guideBlock('멤버십 안내', '${g['membership'] ?? ''}'),
+                _guideBlock('구매 자격', '${g['rules'] ?? ''}'),
+                _guideBlock('멤버십 세트 구성', '${g['sets'] ?? ''}'),
+                _guideBlock('유의사항 · 문의', '${g['notes'] ?? ''}'),
+                const Divider(height: 22),
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance,
+                        size: 16, color: AppColors.taegeukBlue),
+                    const SizedBox(width: 6),
+                    Text('납부계좌: ${acc['bank'] ?? ''} ${acc['no'] ?? ''}'
+                        '${_shipFee > 0 ? '  (배송료 ${_won(_shipFee)} 별도)' : ''}',
+                        style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.taegeukBlue)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('예금주: ${acc['holder'] ?? ''}',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textGray)),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: () => _openForm(),
+                  icon: const Icon(Icons.open_in_new, size: 15),
+                  label: const Text('공식 수품 구매 구글폼 열기',
+                      style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  static const _formUrl =
+      'https://docs.google.com/forms/d/e/1FAIpQLSeW24jatei6gRJGFYTCvqYfFipKImbQdT6gVKSFs9WxCKQY4A/viewform';
+
+  Future<void> _openForm() async {
+    final uri = Uri.parse(_formUrl);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Widget _guideBlock(String title, String body) {
+    if (body.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: AppColors.purpleDark)),
+          const SizedBox(height: 4),
+          Text(body,
+              style: const TextStyle(
+                  fontSize: 12.5, color: AppColors.textDark, height: 1.5)),
         ],
       ),
     );
@@ -473,6 +600,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             Text('합계: ${_won((order['total'] as num?)?.toInt() ?? 0)}',
                 style: const TextStyle(
                     fontWeight: FontWeight.w800, color: AppColors.taegeukBlue)),
+            if (_shipFee > 0 && '${order['shipMethod'] ?? ''}' == '택배발송')
+              Text('(택배 배송료 ${_won(_shipFee)} 별도)',
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.textGray)),
             const Divider(height: 20),
             const Text('입금 계좌 (수품계좌)',
                 style: TextStyle(

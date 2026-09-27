@@ -70,6 +70,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   bool get _salesOpen => _config['salesOpen'] != false;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
+  Map<String, dynamic> get _guide =>
+      ((_config['guide'] as Map?) ?? {}).cast<String, dynamic>();
 
   int get _paidCount => _orders.where((o) => o['paid'] == true).length;
   int get _unpaidCount => _orders.where((o) => o['paid'] != true).length;
@@ -566,6 +568,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final bank = TextEditingController(text: '${_account['bank'] ?? ''}');
     final no = TextEditingController(text: '${_account['no'] ?? ''}');
     final holder = TextEditingController(text: '${_account['holder'] ?? ''}');
+    final shipFee =
+        TextEditingController(text: '${(_account['shipFee'] as num?)?.toInt() ?? 0}');
+    final gTitle = TextEditingController(text: '${_guide['title'] ?? ''}');
+    final gMembership =
+        TextEditingController(text: '${_guide['membership'] ?? ''}');
+    final gRules = TextEditingController(text: '${_guide['rules'] ?? ''}');
+    final gSets = TextEditingController(text: '${_guide['sets'] ?? ''}');
+    final gNotes = TextEditingController(text: '${_guide['notes'] ?? ''}');
     bool open = _salesOpen;
 
     return StatefulBuilder(
@@ -618,12 +628,47 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _dlgField(bank, '은행'),
                 _dlgField(no, '계좌번호'),
                 _dlgField(holder, '예금주'),
+                _dlgField(shipFee, '택배 배송료 (원)', number: true),
                 const SizedBox(height: 6),
                 const Text(
                   '입금자명은 "인가자이름+수품구매" 로 안내됩니다.\n'
                   '교환·반품 배송비는 구매자 부담입니다.',
                   style: TextStyle(fontSize: 12, color: AppColors.textGray),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Icon(Icons.menu_book_outlined,
+                  size: 18, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Text('수품 안내문 (구매창에 표시)',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: AppColors.purpleDark)),
+            ],
+          ),
+          const SizedBox(height: 2),
+          const Text('구글폼 공식 안내와 연계 — 여기 수정하면 구매창에 바로 반영됩니다.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.purple.withValues(alpha: 0.12)),
+            ),
+            child: Column(
+              children: [
+                _dlgField(gTitle, '안내 제목'),
+                _multiField(gMembership, '멤버십 안내'),
+                _multiField(gRules, '구매 자격'),
+                _multiField(gSets, '멤버십 세트 구성'),
+                _multiField(gNotes, '유의사항 · 문의'),
               ],
             ),
           ),
@@ -640,6 +685,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   'bank': bank.text.trim(),
                   'no': no.text.trim(),
                   'holder': holder.text.trim(),
+                  'shipFee': int.tryParse(shipFee.text.trim()) ?? 0,
+                },
+                guide: {
+                  'title': gTitle.text,
+                  'membership': gMembership.text,
+                  'rules': gRules.text,
+                  'sets': gSets.text,
+                  'notes': gNotes.text,
                 },
               );
               if (!mounted) return;
@@ -680,6 +733,25 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         controller: c,
         keyboardType: number ? TextInputType.number : TextInputType.text,
         decoration: InputDecoration(labelText: label, isDense: true),
+      ),
+    );
+  }
+
+  /// 여러 줄 안내문 입력 필드.
+  Widget _multiField(TextEditingController c, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: c,
+        maxLines: 6,
+        minLines: 3,
+        style: const TextStyle(fontSize: 12.5, height: 1.4),
+        decoration: InputDecoration(
+          labelText: label,
+          alignLabelWithHint: true,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
       ),
     );
   }
