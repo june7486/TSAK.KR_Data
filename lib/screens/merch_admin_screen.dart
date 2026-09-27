@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/nas_api.dart';
+import '../services/file_pick.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 
-/// 수품구매 관리자 화면 — 상품/주문/설정(연회비·수품계좌) 관리.
+/// 수품 판매관리 화면 — 공지/판매상품·누적판매·재고·공여·제작자·설정 관리.
 /// 관리자(app)·마스터 전용.
 class MerchAdminScreen extends StatefulWidget {
   const MerchAdminScreen({super.key});
@@ -16,7 +17,7 @@ class MerchAdminScreen extends StatefulWidget {
 
 class _MerchAdminScreenState extends State<MerchAdminScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 3, vsync: this);
+  late final TabController _tab = TabController(length: 6, vsync: this);
 
   NasApi get _nas => context.read<NasApi>();
 
@@ -25,7 +26,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _reserves = [];
+  List<Map<String, dynamic>> _makers = [];
+  List<Map<String, dynamic>> _donations = [];
+  List<Map<String, dynamic>> _stockLog = [];
   Map<String, dynamic> _config = {};
+  Map<String, dynamic> _stats = {};
 
   @override
   void initState() {
@@ -46,15 +52,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     });
     try {
       final r = await _nas.merchAdmin();
+      Map<String, dynamic> stats = {};
+      try {
+        final rr = await _nas.merchReports();
+        stats = ((rr['stats'] as Map?) ?? {}).cast<String, dynamic>();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
-        _products = ((r['products'] as List?) ?? [])
-            .map((e) => (e as Map).cast<String, dynamic>())
-            .toList();
-        _orders = ((r['orders'] as List?) ?? [])
-            .map((e) => (e as Map).cast<String, dynamic>())
-            .toList();
+        _products = _list(r['products']);
+        _orders = _list(r['orders']);
+        _reserves = _list(r['reservations']);
+        _makers = _list(r['makers']);
+        _donations = _list(r['donations']);
+        _stockLog = _list(r['stockLog']);
         _config = ((r['config'] as Map?) ?? {}).cast<String, dynamic>();
+        _stats = stats;
         _loading = false;
       });
     } catch (e) {
@@ -66,8 +78,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
   }
 
+  List<Map<String, dynamic>> _list(dynamic v) => ((v as List?) ?? [])
+      .map((e) => (e as Map).cast<String, dynamic>())
+      .toList();
+
   int get _annualFee => (_config['annualFee'] as num?)?.toInt() ?? 0;
   bool get _salesOpen => _config['salesOpen'] != false;
+  bool get _feeRequired => _config['annualFeeRequired'] == true;
+  bool get _reserveMode => _config['reserveMode'] == true;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
   Map<String, dynamic> get _guide =>
@@ -77,6 +95,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   int get _unpaidCount => _orders.where((o) => o['paid'] != true).length;
   int get _totalAmount => _orders.fold<int>(
       0, (s, o) => s + ((o['total'] as num?)?.toInt() ?? 0));
+  List<String> get _statuses =>
+      ((_config['statuses'] as List?) ?? const []).map((e) => '$e').toList();
+  List<String> get _reserveStatuses =>
+      ((_config['reserveStatuses'] as List?) ?? const []).map((e) => '$e').toList();
 
   String _won(int v) {
     final s = v.toString();
@@ -93,7 +115,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: const Text('수품구매 관리'),
+        title: const Text('수품 판매관리'),
         actions: [
           const AppHomeEmblem(size: 22),
           IconButton(
@@ -104,9 +126,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ],
         bottom: TabBar(
           controller: _tab,
+          isScrollable: true,
           tabs: const [
-            Tab(text: '상품'),
-            Tab(text: '주문'),
+            Tab(text: '판매관리'),
+            Tab(text: '누적판매'),
+            Tab(text: '재고'),
+            Tab(text: '공여'),
+            Tab(text: '제작자'),
             Tab(text: '설정'),
           ],
         ),
@@ -118,8 +144,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               : TabBarView(
                   controller: _tab,
                   children: [
-                    _productsTab(),
-                    _ordersTab(),
+                    _salesTab(),
+                    _reportsTab(),
+                    _stockTab(),
+                    _donationTab(),
+                    _makerTab(),
                     _configTab(),
                   ],
                 ),

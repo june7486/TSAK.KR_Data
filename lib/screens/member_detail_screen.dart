@@ -13,6 +13,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/member_access_log.dart';
+import '../widgets/merch_activity_section.dart';
 import '../widgets/photo_pip.dart';
 import 'finance_transaction_edit_screen.dart';
 import 'export_screen.dart';
@@ -114,6 +115,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _feeTracker(m),
                 _eventSection(m),
                 _purchaseSection(m),
+                MerchActivitySection(
+                  ident: m.number.isNotEmpty ? m.number : m.phone,
+                ),
                 _infoCard(m),
                 _membershipSection(m),
                 _passwordSection(m),

@@ -4,8 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
-import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
+import 'merch_checkout_screen.dart';
 
 /// 수품구매(굿즈) 쇼핑몰 — 로그인 없이 열람·장바구니·주문 가능.
 /// 연회비 미납 시 서버가 주문을 차단한다(연회비 게이트).
@@ -39,7 +39,12 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   int _annualFee = 0;
 
   final List<_CartLine> _cart = [];
+  /// 상품 카드별 수량(장바구니 담기 전 선택값). 키 = 상품 id.
+  final Map<String, int> _cardQty = {};
   String _sort = '기본'; // 기본 | 낮은가격 | 높은가격 | 이름
+
+  int _qtyOf(Map<String, dynamic> p) =>
+      _cardQty['${p['id']}'] ?? 1;
 
   @override
   void initState() {
@@ -73,6 +78,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   }
 
   bool get _salesOpen => _config['salesOpen'] != false;
+  bool get _reserveMode => _config['reserveMode'] == true;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
   Map<String, dynamic> get _guide =>
@@ -81,7 +87,6 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
 
   int get _cartCount => _cart.fold<int>(0, (s, e) => s + e.qty);
   int get _cartTotal => _cart.fold<int>(0, (s, e) => s + e.total);
-  bool get _hasShipping => _cart.any((e) => e.product['_ship'] == '택배발송');
 
   String _won(int v) {
     final s = v.toString();
@@ -136,42 +141,58 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
           : _error != null
               ? _errorView()
               : _body(),
-      bottomNavigationBar: _loading || _error != null ? null : _cartBar(),
+      // 안전영역 + 키보드 대응: 하단바가 항상 보이도록 SafeArea 로 감싼다.
+      bottomNavigationBar:
+          _loading || _error != null ? null : SafeArea(top: false, child: _cartBar()),
     );
+  }
+
+  /// 화면 폭에 맞춰 카드 높이를 넉넉히 계산 → '장바구니' 버튼이 잘리지 않도록.
+  double _cardAspect(double screenW) {
+    final cardW = (screenW - 14 * 2 - 12) / 2;
+    // 이미지(정사각) + 정보영역(약 172px) 확보
+    return cardW / (cardW + 172);
   }
 
   Widget _body() {
     return RefreshIndicator(
       onRefresh: _load,
-      child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(child: _noticeCard()),
-          SliverToBoxAdapter(child: _sortBar()),
-          if (_products.isEmpty)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Text('판매 중인 상품이 없습니다',
-                    style: TextStyle(color: AppColors.textGray)),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.60,
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final aspect = _cardAspect(c.maxWidth);
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: _noticeCard()),
+              SliverToBoxAdapter(child: _sortBar()),
+              if (_products.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: Text('판매 중인 상품이 없습니다',
+                        style: TextStyle(color: AppColors.textGray)),
+                  ),
+                )
+              else
+                SliverPadding(
+                  // 하단 장바구니 바(약 76px)에 가려지지 않도록 여백 확보
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 96),
+                  sliver: SliverGrid(
+                    gridDelegate:
+                        SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: aspect,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) => _productCard(_sortedProducts[i]),
+                      childCount: _sortedProducts.length,
+                    ),
+                  ),
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) => _productCard(_sortedProducts[i]),
-                  childCount: _sortedProducts.length,
-                ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -282,6 +303,25 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       fontSize: 12, color: AppColors.textDark, height: 1.5)),
             ),
           ],
+          // 안내: 예약(수요조사) 모드 안내
+          if (_reserveMode) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.tigerGold.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '※ 현재 예약(수요조사) 기간입니다.\n'
+                '   구매 의사가 있으시면 "예약"으로 신청해 주세요.\n'
+                '   일정 수량 이상 예약 시 제작이 확정됩니다.',
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700, height: 1.45),
+              ),
+            ),
+          ],
           if (!_salesOpen) ...[
             const SizedBox(height: 8),
             Container(
@@ -324,6 +364,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
     final kind = '${p['kind'] ?? ''}';
     final soldOut = stock <= 0;
+    final qty = _qtyOf(p);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -335,13 +376,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 이미지: 크롭 없이 전체가 보이도록 contain
-          AspectRatio(
-            aspectRatio: 1,
+          Expanded(
             child: Container(
+              width: double.infinity,
               color: const Color(0xFFF7F5FB),
               child: imgUrl.isEmpty
-                  ? const Icon(Icons.image_outlined,
-                      size: 40, color: AppColors.textGray)
+                  ? const Center(
+                      child: Icon(Icons.image_outlined,
+                          size: 40, color: AppColors.textGray))
                   : Image.network(
                       imgUrl,
                       fit: BoxFit.contain,
@@ -350,9 +392,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                           : const Center(
                               child:
                                   CircularProgressIndicator(strokeWidth: 2)),
-                      errorBuilder: (_, __, ___) => const Icon(
-                          Icons.image_not_supported,
-                          color: AppColors.textGray),
+                      errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.image_not_supported,
+                              color: AppColors.textGray)),
                     ),
             ),
           ),
@@ -360,6 +402,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 if (kind.isNotEmpty)
                   Container(
@@ -380,43 +423,80 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 13.5)),
+                        fontWeight: FontWeight.w800, fontSize: 13)),
                 const SizedBox(height: 2),
                 Text('${p['desc'] ?? ''}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.textGray)),
-                const SizedBox(height: 6),
-                Text(price > 0 ? _won(price) : '가격문의',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        color: AppColors.taegeukBlue)),
-                Text(soldOut ? '품절' : '재고 $stock',
-                    style: TextStyle(
-                        fontSize: 10.5,
-                        color: soldOut
-                            ? AppColors.taegeukRed
-                            : AppColors.textGray)),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: soldOut || !_salesOpen
-                          ? AppColors.textGray
-                          : AppColors.purple,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                        fontSize: 10, color: AppColors.textGray)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(price > 0 ? _won(price) : '가격문의',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.5,
+                              color: AppColors.taegeukBlue)),
                     ),
-                    onPressed: (soldOut || !_salesOpen)
-                        ? null
-                        : () => _addToCart(p, options),
-                    icon: const Icon(Icons.add_shopping_cart, size: 15),
-                    label: const Text('장바구니',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
-                  ),
+                    Text(soldOut ? '품절' : '재고 $stock',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: soldOut
+                                ? AppColors.taegeukRed
+                                : AppColors.textGray)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // ── 수량 선택 + 장바구니 (한 줄) ──
+                Row(
+                  children: [
+                    _qtyBtn(Icons.remove, () {
+                      if (qty > 1) setState(() => _cardQty['${p['id']}'] = qty - 1);
+                    }),
+                    Expanded(
+                      child: Center(
+                        child: Text('$qty',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 14)),
+                      ),
+                    ),
+                    _qtyBtn(Icons.add, () {
+                      final max = stock > 0 ? stock : 99;
+                      if (qty < max) setState(() => _cardQty['${p['id']}'] = qty + 1);
+                    }),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 34,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: soldOut || (!_salesOpen && !_reserveMode)
+                                ? AppColors.textGray
+                                : (_reserveMode
+                                    ? AppColors.tigerGold
+                                    : AppColors.purple),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: (soldOut || (!_salesOpen && !_reserveMode))
+                              ? null
+                              : () => _reserveMode
+                                  ? _reserve(p, options, qty)
+                                  : _addToCart(p, options, qty),
+                          child: Text(_reserveMode ? '예약' : '담기',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12.5,
+                                  color: _reserveMode
+                                      ? Colors.black87
+                                      : Colors.white)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -427,9 +507,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   }
 
   // ==================== 장바구니 ====================
-  void _addToCart(Map<String, dynamic> p, List<String> options) {
+  void _addToCart(Map<String, dynamic> p, List<String> options, [int qty = 1]) {
     if (options.isEmpty) {
-      _mergeCart(p, '');
+      _mergeCart(p, '', qty);
       return;
     }
     // 옵션이 있으면 옵션 선택 다이얼로그
@@ -447,7 +527,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 leading: const Icon(Icons.radio_button_unchecked, size: 18),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _mergeCart(p, o);
+                  _mergeCart(p, o, qty);
                 },
               ),
           ],
@@ -460,69 +540,146 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     );
   }
 
-  void _mergeCart(Map<String, dynamic> p, String option) {
+  // 예약(수요조사) — 장바구니 없이 단일 품목 예약 신청 화면으로 이동.
+  Future<void> _reserve(
+      Map<String, dynamic> p, List<String> options, int qty) async {
+    if (options.isNotEmpty) {
+      final chosen = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('${p['name']} 옵션 선택'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final o in options)
+                ListTile(
+                  dense: true,
+                  title: Text(o),
+                  onTap: () => Navigator.pop(ctx, o),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+          ],
+        ),
+      );
+      if (chosen == null) return;
+      _doReserve(p, chosen, qty);
+      return;
+    }
+    _doReserve(p, '', qty);
+  }
+
+  Future<void> _doReserve(
+      Map<String, dynamic> p, String option, int qty) async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => MerchCheckoutScreen(
+          lines: [
+            {
+              'productId': '${p['id']}',
+              'name': '${p['name']}',
+              'image': '${p['image'] ?? ''}',
+              'price': (p['price'] as num?)?.toInt() ?? 0,
+              'option': option,
+              'qty': qty,
+            }
+          ],
+          config: _config,
+          mode: 'reserve',
+        ),
+      ),
+    );
+    if (ok == true) {
+      _snack('예약이 접수되었습니다. (${p['name']}'
+          '${option.isNotEmpty ? ' / $option' : ''} × $qty)');
+    }
+  }
+
+  void _mergeCart(Map<String, dynamic> p, String option, [int qty = 1]) {
     final idx = _cart.indexWhere(
         (e) => e.key == '${p['id']}::${option.trim()}');
     setState(() {
       if (idx >= 0) {
-        _cart[idx].qty += 1;
+        _cart[idx].qty += qty;
       } else {
-        _cart.add(_CartLine(p, option, 1));
+        _cart.add(_CartLine(p, option, qty));
       }
     });
-    _snack('장바구니에 담았습니다 (${p['name']}${option.isNotEmpty ? ' / $option' : ''})');
+    _snack(
+        '장바구니에 담았습니다 (${p['name']}${option.isNotEmpty ? ' / $option' : ''} × $qty)');
   }
 
   Widget _cartBar() {
     final has = _cart.isNotEmpty;
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // 좌측: 개수·합계 (없으면 안내)
+          Expanded(
+            child: has
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.shopping_cart,
+                              size: 15, color: AppColors.purple),
+                          const SizedBox(width: 4),
+                          Text('장바구니 $_cartCount개',
+                              style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.textGray,
+                                  fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                      Text(_won(_cartTotal),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                              color: AppColors.taegeukBlue)),
+                    ],
+                  )
+                : const Text('장바구니가 비어 있습니다\n상품을 골라 담아주세요',
+                    style: TextStyle(
+                        fontSize: 11.5, color: AppColors.textGray, height: 1.3)),
+          ),
+          const SizedBox(width: 6),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: has
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('장바구니 $_cartCount개',
-                            style: const TextStyle(
-                                fontSize: 12, color: AppColors.textGray)),
-                        Text(_won(_cartTotal),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                                color: AppColors.taegeukBlue)),
-                      ],
-                    )
-                  : const Text('장바구니가 비어 있습니다',
-                      style: TextStyle(color: AppColors.textGray)),
+            onPressed: has ? _openCart : null,
+            child: const Text('장바구니', style: TextStyle(fontSize: 12.5)),
+          ),
+          const SizedBox(width: 6),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.purple,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
-            OutlinedButton.icon(
-              onPressed: has ? _openCart : null,
-              icon: const Icon(Icons.shopping_cart_outlined, size: 18),
-              label: const Text('장바구니 보기'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-              onPressed: (has && _salesOpen) ? _checkout : null,
-              icon: const Icon(Icons.payment, size: 18),
-              label: const Text('주문하기'),
-            ),
-          ],
-        ),
+            onPressed: (has && _salesOpen) ? _checkout : null,
+            child: const Text('주문하기',
+                style:
+                    TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+          ),
+        ],
       ),
     );
   }
@@ -747,307 +904,32 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       );
 
   // ==================== 결제(주문) 단계 ====================
-  Future<void> _checkout() async {
+  //  팝업 대신 전용 페이지(MerchCheckoutScreen)로 이동 → 모든 브라우저 오류 없이 동작.
+  Future<void> _checkout({String mode = 'order'}) async {
     if (_cart.isEmpty) return;
-    final number = TextEditingController();
-    final name = TextEditingController();
-    final phone = TextEditingController();
-    final email = TextEditingController();
-    final address = TextEditingController();
-    final otherShip = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    String ship = '현장구매';
-
-    final price = _cartTotal;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) {
-          final extra = ship == '택배발송'
-              ? (_shipFee > 0 && _hasShipping ? 0 : _shipFee)
-              : 0;
-          final total = price + extra;
-          return AlertDialog(
-            title: const Text('주문 정보 입력'),
-            content: SingleChildScrollView(
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.tigerGold.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        '※ 입금자명과 주문자(인가자) 이름이 같아야 합니다.\n'
-                        '※ 인가번호 또는 인가자 이름을 꼭 함께 넣어주세요.\n'
-                        '   → 기록이 남아 구매 이력이 관리됩니다.',
-                        style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            height: 1.45),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: number,
-                      keyboardType: TextInputType.number,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? '인가번호를 입력하세요'
-                          : null,
-                      decoration: const InputDecoration(
-                          labelText: '인가번호 * (연회비 확인·이력관리)',
-                          isDense: true),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: name,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? '입금자명(인가자 이름)을 입력하세요'
-                          : null,
-                      decoration: const InputDecoration(
-                          labelText: '입금자명 * (인가자 이름과 동일)',
-                          isDense: true),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: phone,
-                      keyboardType: TextInputType.phone,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? '연락처를 입력하세요'
-                          : null,
-                      decoration: const InputDecoration(
-                          labelText: '연락처 *', isDense: true),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: email,
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (v) {
-                        final s = (v ?? '').trim();
-                        if (s.isEmpty) return null;
-                        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                .hasMatch(s)
-                            ? null
-                            : '이메일 형식이 올바르지 않습니다';
-                      },
-                      decoration: const InputDecoration(
-                          labelText: '이메일 (선택)', isDense: true),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('배송 방법',
-                        style: TextStyle(
-                            fontSize: 12.5, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 6,
-                      children: [
-                        for (final m in ['현장구매', '택배발송', '기타'])
-                          ChoiceChip(
-                            label: Text(m),
-                            selected: ship == m,
-                            onSelected: (_) => setDlg(() => ship = m),
-                          ),
-                      ],
-                    ),
-                    if (ship == '택배발송') ...[
-                      const SizedBox(height: 8),
-                      AddressField(
-                        controller: address,
-                        label: '배송 주소',
-                        hint: '주소검색 버튼으로 검색하세요',
-                        required: true,
-                      ),
-                    ],
-                    if (ship == '기타') ...[
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: otherShip,
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? '배송 방법을 입력하세요'
-                            : null,
-                        decoration: const InputDecoration(
-                            labelText: '배송 방법 직접입력 *', isDense: true),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.taegeukBlue.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              const Text('상품 합계',
-                                  style: TextStyle(fontSize: 12.5)),
-                              const Spacer(),
-                              Text(_won(price),
-                                  style: const TextStyle(fontSize: 12.5)),
-                            ],
-                          ),
-                          if (extra > 0)
-                            Row(
-                              children: [
-                                const Text('택배 배송료',
-                                    style: TextStyle(fontSize: 12.5)),
-                                const Spacer(),
-                                Text(_won(extra),
-                                    style: const TextStyle(fontSize: 12.5)),
-                              ],
-                            ),
-                          const Divider(height: 12),
-                          Row(
-                            children: [
-                              const Text('합계:',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w800)),
-                              const Spacer(),
-                              Text(_won(total),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15,
-                                      color: AppColors.taegeukBlue)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('취소')),
-              FilledButton(
-                onPressed: () {
-                  if (formKey.currentState?.validate() != true) return;
-                  Navigator.pop(ctx, true);
-                },
-                child: const Text('주문 완료'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    if (ok != true) return;
-
-    // 장바구니를 순차 주문(각 라인 = 주문 1건) + 관리자 메모로 묶음 표기
-    final group = 'JB${DateTime.now().millisecondsSinceEpoch % 100000}';
-    final shipMethod = ship == '기타' ? otherShip.text.trim() : ship;
-    int success = 0;
-    Map<String, dynamic> last = {};
-    try {
-      for (final line in _cart) {
-        final r = await _nas.merchOrder(
-          productId: '${line.product['id']}',
-          buyerName: name.text.trim(),
-          buyerNumber: number.text.trim(),
-          qty: line.qty,
-          option: line.option,
-          phone: phone.text.trim(),
-          email: email.text.trim(),
-          address: address.text.trim(),
-          shipMethod: shipMethod,
-          shipNote: ship == '기타' ? otherShip.text.trim() : '',
-          memo: '장바구니묶음:$group',
-          unitPrice: line.price,
-        );
-        if (r['ok'] == true) {
-          success += 1;
-          last = r;
-        } else if (r['error'] == 'annual_fee_required') {
-          if (!mounted) return;
-          _snack('연회비 납부 후 구매할 수 있습니다. (연회비 ${_won(_annualFee)})',
-              color: AppColors.taegeukRed);
-          return;
-        } else if (r['error'] == 'sales_closed') {
-          if (!mounted) return;
-          _snack('현재 판매가 중지되어 있습니다.', color: AppColors.taegeukRed);
-          return;
-        } else {
-          if (!mounted) return;
-          _snack('주문 실패: ${r['error']}', color: AppColors.taegeukRed);
-          return;
-        }
-      }
-      if (!mounted) return;
-      if (success > 0) {
-        await _showPayment(last, extraShip:
-            ship == '택배발송' && _shipFee > 0 ? _shipFee : 0);
-        setState(() => _cart.clear());
-        _load();
-      }
-    } catch (e) {
-      if (mounted) _snack('오류: $e', color: AppColors.taegeukRed);
-    }
-  }
-
-  Future<void> _showPayment(Map<String, dynamic> r,
-      {int extraShip = 0}) async {
-    final order = ((r['order'] as Map?) ?? {}).cast<String, dynamic>();
-    final acc = ((r['account'] as Map?) ?? _account).cast<String, dynamic>();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('주문이 접수되었습니다'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('주문번호: ${order['id'] ?? ''}'),
-            Text('주문자: ${order['buyerName'] ?? ''}'
-                '${'${order['buyerNumber'] ?? ''}'.isNotEmpty ? ' (${order['buyerNumber']})' : ''}'),
-            Text('합계: ${_won(_cartTotal + extraShip)}'
-                '${extraShip > 0 ? '  (배송료 ${_won(extraShip)} 포함)' : ''}',
-                style: const TextStyle(
-                    fontWeight: FontWeight.w800, color: AppColors.taegeukBlue)),
-            const Divider(height: 20),
-            const Text('입금 계좌 (수품계좌)',
-                style: TextStyle(
-                    fontWeight: FontWeight.w800, color: AppColors.purpleDark)),
-            const SizedBox(height: 4),
-            Text('${acc['bank'] ?? ''} ${acc['no'] ?? ''}'),
-            Text('예금주: ${acc['holder'] ?? ''}'),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.tigerGold.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                '입금자명: 인가자이름 + "수품구매"\n'
-                '(예: 홍길동수품구매)\n'
-                '※ 입금자명과 주문자 이름이 같아야 합니다.',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '입금 확인 후 배송/수령 안내드립니다.\n교환·반품 배송비는 구매자 부담입니다.',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-          ],
+    final lines = _cart
+        .map((l) => <String, dynamic>{
+              'productId': '${l.product['id']}',
+              'name': '${l.product['name']}',
+              'image': '${l.product['image'] ?? ''}',
+              'price': l.price,
+              'option': l.option,
+              'qty': l.qty,
+            })
+        .toList();
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => MerchCheckoutScreen(
+          lines: lines,
+          config: _config,
+          mode: mode,
         ),
-        actions: [
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('확인')),
-        ],
       ),
     );
+    if (ok == true) {
+      setState(() => _cart.clear());
+      _load();
+    }
   }
 
   // ==================== 안내문(구글폼 연계) ====================

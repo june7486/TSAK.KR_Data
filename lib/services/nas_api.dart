@@ -1374,13 +1374,14 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// 주문 생성 (무인증 가능). 반환: {ok, order, account} 또는 {ok:false,error}
+  /// 주문 생성 (무인증 가능). 반환: {ok, order, contactId, contactType, account}
   Future<Map<String, dynamic>> merchOrder({
     required String productId,
     required String buyerName,
     required String buyerNumber,
     int qty = 1,
     String option = '',
+    String size = '',
     String phone = '',
     String email = '',
     String address = '',
@@ -1388,6 +1389,7 @@ class NasApi {
     String shipNote = '',
     String memo = '',
     int? unitPrice,
+    bool addAnnualFee = false,
     String year = '',
   }) async {
     final r = await http
@@ -1400,12 +1402,14 @@ class NasApi {
             'buyerNumber': buyerNumber,
             'qty': qty,
             'option': option,
+            'size': size,
             'phone': phone,
             'email': email,
             'address': address,
             'shipMethod': shipMethod,
             'shipNote': shipNote,
             'memo': memo,
+            if (addAnnualFee) 'addAnnualFee': true,
             if (unitPrice != null) 'unitPrice': unitPrice,
             if (year.isNotEmpty) 'year': year,
           }),
@@ -1414,7 +1418,168 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// 관리자: 상품 등록/수정 (id 비우면 신규).
+  /// 예약/수요조사 접수 (무인증 가능). 구매의사만 기록.
+  Future<Map<String, dynamic>> merchReserve({
+    required String productId,
+    required String buyerName,
+    required String buyerNumber,
+    int qty = 1,
+    String option = '',
+    String size = '',
+    String phone = '',
+    String email = '',
+    String note = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/reserve'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'productId': productId,
+            'buyerName': buyerName,
+            'buyerNumber': buyerNumber,
+            'qty': qty,
+            'option': option,
+            'size': size,
+            'phone': phone,
+            'email': email,
+            'note': note,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 내 수품 주문/예약 내역(상태 파이프라인 포함).
+  Future<Map<String, dynamic>> merchMine({required String ident}) async {
+    final qs = '?ident=${Uri.encodeComponent(ident)}';
+    final r = await http
+        .get(_uri('/api/merch/mine$qs'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 연회비 단독 납부 주문 생성.
+  Future<Map<String, dynamic>> merchEnrollFee({
+    required String ident,
+    String phone = '',
+  }) async {
+    final q = <String>['ident=${Uri.encodeComponent(ident)}'];
+    if (phone.isNotEmpty) q.add('phone=${Uri.encodeComponent(phone)}');
+    final r = await http
+        .get(_uri('/api/merch/enroll-fee?${q.join('&')}'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 누적판매/재고/예약 통계.
+  Future<Map<String, dynamic>> merchReports() async {
+    final r = await http
+        .get(_uri('/api/merch/reports'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 예약 상태/메모/수량 수정.
+  Future<Map<String, dynamic>> merchUpdateReserve({
+    required String id,
+    String? status,
+    String? memo,
+    int? qty,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/reserve/update'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            if (status != null) 'status': status,
+            if (memo != null) 'memo': memo,
+            if (qty != null) 'qty': qty,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<bool> merchDeleteReserve(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/reserve/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 수품 제작자 등록/수정.
+  Future<Map<String, dynamic>> merchSaveMaker(Map<String, dynamic> data) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/maker'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode(data),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<bool> merchDeleteMaker(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/maker/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 제작자 첨부파일 업로드(base64). 반환: {ok, file, url}
+  Future<Map<String, dynamic>> merchMakerUpload(
+      String filename, String dataB64) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/maker/upload'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'filename': filename, 'data': dataB64}),
+        )
+        .timeout(const Duration(seconds: 120));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  String merchFileUrl(String name) =>
+      '$_base/api/merch/file?name=${Uri.encodeComponent(name)}';
+
+  /// 관리자: 수품 공여(행사/홍보) 기록.
+  Future<Map<String, dynamic>> merchSaveDonation(
+      Map<String, dynamic> data) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/donation'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode(data),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 재고 입출고(+/-).
+  Future<Map<String, dynamic>> merchStock(String productId, int delta,
+      {String note = ''}) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/stock'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'productId': productId, 'delta': delta, 'note': note}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> merchSaveProduct({
     String id = '',
     required String name,
@@ -1424,6 +1589,8 @@ class NasApi {
     List<String> options = const [],
     String image = '',
     String desc = '',
+    String size = '',
+    String makerId = '',
     bool active = true,
   }) async {
     final r = await http
@@ -1439,6 +1606,8 @@ class NasApi {
             'options': options,
             'image': image,
             'desc': desc,
+            'size': size,
+            'makerId': makerId,
             'active': active,
           }),
         )
@@ -1462,10 +1631,12 @@ class NasApi {
   Future<Map<String, dynamic>> merchUpdateOrder({
     required String id,
     bool? paid,
+    String? status,
     String? memo,
     String? shipMethod,
     String? shipNote,
     int? qty,
+    int? annualFeeAdded,
   }) async {
     final r = await http
         .post(
@@ -1474,10 +1645,12 @@ class NasApi {
           body: json.encode({
             'id': id,
             if (paid != null) 'paid': paid,
+            if (status != null) 'status': status,
             if (memo != null) 'memo': memo,
             if (shipMethod != null) 'shipMethod': shipMethod,
             if (shipNote != null) 'shipNote': shipNote,
             if (qty != null) 'qty': qty,
+            if (annualFeeAdded != null) 'annualFeeAdded': annualFeeAdded,
           }),
         )
         .timeout(const Duration(seconds: 40));
@@ -1500,6 +1673,11 @@ class NasApi {
   Future<Map<String, dynamic>> merchSaveConfig({
     int? annualFee,
     bool? salesOpen,
+    bool? annualFeeRequired,
+    bool? reserveMode,
+    String? notices,
+    List<String>? statuses,
+    List<String>? reserveStatuses,
     Map<String, dynamic>? account,
     Map<String, dynamic>? guide,
   }) async {
@@ -1510,6 +1688,11 @@ class NasApi {
           body: json.encode({
             if (annualFee != null) 'annualFee': annualFee,
             if (salesOpen != null) 'salesOpen': salesOpen,
+            if (annualFeeRequired != null) 'annualFeeRequired': annualFeeRequired,
+            if (reserveMode != null) 'reserveMode': reserveMode,
+            if (notices != null) 'notices': notices,
+            if (statuses != null) 'statuses': statuses,
+            if (reserveStatuses != null) 'reserveStatuses': reserveStatuses,
             if (account != null) 'account': account,
             if (guide != null) 'guide': guide,
           }),

@@ -53,6 +53,7 @@ ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인
 FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거래 종합분석 캐시
 REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
 MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
+MERCH_MAKER_DIR = BASE + "/수품제작자"           # 수품 제작자 첨부파일 저장 폴더
 LOCK = threading.Lock()
 
 # 행사별 하위 폴더(항목) — 번호+한글명, 업로드 가능 폴더엔 "_(업로드가능)" 꼬리말
@@ -1799,6 +1800,7 @@ def _merch_doc():
     cfg["account"] = acc
     cfg["guide"] = _merch_guide(cfg)
     d["config"] = cfg
+    _merch_doc_defaults(d)
     if _merch_seed_once(d):
         # 최초 시드 결과를 파일에 영구 저장 (다음 조회부터 유지)
         try:
@@ -1869,7 +1871,7 @@ DEFAULT_MERCH_PRODUCTS = [
 ]
 
 
-MERCH_SEED_VERSION = 3  # 기본 수품목록 변경 시 올리면 자동 재시드(관리자 추가분은 보존)
+MERCH_SEED_VERSION = 4  # 기본 수품목록 변경 시 올리면 자동 재시드(관리자 추가분은 보존)
 
 
 def _merch_seed_once(doc):
@@ -1891,6 +1893,8 @@ def _merch_seed_once(doc):
         p = dict(base)
         p["id"] = "pr" + _secrets.token_urlsafe(5)
         p.setdefault("image", "")
+        p.setdefault("size", "")
+        p.setdefault("makerId", "")
         p["active"] = True
         p["created"] = now
         p["seeded"] = True
@@ -1925,6 +1929,252 @@ def _merch_fee_paid(ident, year=None):
                 paid = True
                 break
     return bool(paid), m
+
+
+# ==================== 수품 판매관리 확장 (상태·예약·제작자·공여·재고) ====================
+# 주문 진행 상태(파이프라인) — 개인 프로필 진행 바차트에 사용
+MERCH_ORDER_STATUSES = ["입금확인중", "입금확인", "상품준비중", "택배발송준비중",
+                        "택배발송", "배송완료", "현장수령완료", "주문취소"]
+# 예약(수요조사) 상태 — 제작 여부 판단
+MERCH_RESERVE_STATUSES = ["예약접수", "제작검토", "제작확정", "제작중", "입고완료", "취소"]
+
+
+def _merch_status_idx(status, pipeline=None):
+    pipeline = pipeline or MERCH_ORDER_STATUSES
+    try:
+        return pipeline.index(str(status))
+    except ValueError:
+        return 0
+
+
+def _merch_doc_defaults(doc):
+    """확장 필드 기본값 보장(예약/제작자/공여/재고/공지)."""
+    doc.setdefault("orders", [])
+    doc.setdefault("reservations", [])
+    doc.setdefault("makers", [])
+    doc.setdefault("stockLog", [])
+    doc.setdefault("donations", [])
+    cfg = doc.get("config")
+    if not isinstance(cfg, dict):
+        cfg = {}
+    cfg.setdefault("notices", "수품 구매 시 아래 유의사항을 반드시 확인해 주세요.")
+    cfg.setdefault("annualFeeRequired", False)  # 엄격모드(True): 연회비 미납 시 주문 차단
+    cfg.setdefault("reserveMode", False)        # 예약/수요조사 모드 전체 ON/OFF
+    cfg.setdefault("statuses", list(MERCH_ORDER_STATUSES))
+    cfg.setdefault("reserveStatuses", list(MERCH_RESERVE_STATUSES))
+    doc["config"] = cfg
+    for o in doc.get("orders", []):
+        if isinstance(o, dict):
+            o.setdefault("status", "입금확인중")
+            o.setdefault("statusHistory", [])
+            o.setdefault("annualFeeAdded", 0)
+            o.setdefault("contactId", "")
+            o.setdefault("contactType", "")
+    for r in doc.get("reservations", []):
+        if isinstance(r, dict):
+            r.setdefault("status", "예약접수")
+            r.setdefault("statusHistory", [])
+    return doc
+
+
+def _merch_attach_to_member(ident, oid, kind="order"):
+    """주문/예약 id를 회원 프로필 수품 내역에 부착(중복 방지). 반환: 부착 성공 여부."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d or not oid:
+        return False
+    key = "merchReservations" if kind == "reservation" else "merchOrders"
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            mp = re.sub(r"[^0-9]", "",
+                        str(m.get("accessPhone") or m.get("phone") or ""))
+            if d in (mn, mp):
+                lst = m.get(key)
+                if not isinstance(lst, list):
+                    lst = []
+                if oid not in lst:
+                    lst.append(oid)
+                m[key] = lst
+                members[i] = m
+                _save_json(DB_FILE, members)
+                _touch_meta({"updatedBy": "merch"})
+                return True
+    return False
+
+
+def _merch_detach_from_member(ident, oid, kind="order"):
+    """회원 프로필에서 주문/예약 id 제거(주문 삭제 시)."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d or not oid:
+        return
+    key = "merchReservations" if kind == "reservation" else "merchOrders"
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        hit = False
+        for i, m in enumerate(members):
+            mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            mp = re.sub(r"[^0-9]", "",
+                        str(m.get("accessPhone") or m.get("phone") or ""))
+            if d in (mn, mp):
+                lst = m.get(key)
+                if isinstance(lst, list) and oid in lst:
+                    lst.remove(oid)
+                    m[key] = lst
+                    members[i] = m
+                    hit = True
+        if hit:
+            _save_json(DB_FILE, members)
+            _touch_meta({"updatedBy": "merch-del"})
+
+
+def _merch_ensure_regular(phone, name="", email=""):
+    """전화번호 기준 비인가(일반)회원 자동 생성/조회. 반환: 식별번호(숫자)."""
+    d = re.sub(r"[^0-9]", "", str(phone or ""))
+    if not d:
+        return ""
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for m in members:
+            mp = re.sub(r"[^0-9]", "",
+                        str(m.get("accessPhone") or m.get("phone") or ""))
+            if mp and mp == d:
+                return re.sub(r"[^0-9]", "", str(m.get("number", ""))) or d
+        existing = {re.sub(r"[^0-9]", "", str(x.get("number", "")))
+                    for x in members}
+        newno = ""
+        for cand in range(900001, 900001 + max(1, len(members) + 10)):
+            if str(cand) not in existing:
+                newno = str(cand)
+                break
+        if not newno:
+            newno = str(900001 + len(members))
+        rec = {
+            "id": "guest_" + newno,
+            "number": newno,
+            "name": str(name or "").strip() or "비인가 구매자",
+            "unit": "", "league": "",
+            "phone": d, "accessPhone": d, "loginId": d,
+            "email": str(email or "")[:80],
+            "isRegular": True,
+            "personalPassword": _ev_phone_last4(d),
+            "approvalStatus": "pending",
+            "merchOrders": [],
+        }
+        members.append(rec)
+        _save_json(DB_FILE, members)
+        _touch_meta({"count": len(members), "updatedBy": "merch_guest"})
+        return newno
+
+
+def _merch_resolve_contact(num, phone, name="", email=""):
+    """주문자 식별: 인가번호 우선, 없으면 전화로 비인가 자동생성.
+    반환: (contactId, contactType('member'|'regular'|''))"""
+    n = re.sub(r"[^0-9]", "", str(num or ""))
+    p = re.sub(r"[^0-9]", "", str(phone or ""))
+    if n:
+        m = _ev_member_by_ident(n)
+        if m:
+            return n, ("regular" if m.get("isRegular") else "member")
+    if p:
+        no = _merch_ensure_regular(p, name, email)
+        if no:
+            return no, "regular"
+    return n, ""
+
+
+def _merch_json_product(pr):
+    return {k: pr.get(k) for k in
+            ("id", "name", "kind", "price", "stock", "options", "image",
+             "desc", "active", "makerId", "size")}
+
+
+def _merch_mine(ident):
+    """한 회원(인가번호/전화)의 주문/예약 내역 + 상태 파이프라인."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    doc = _merch_doc()
+    orders, reserves = [], []
+    for o in doc.get("orders", []):
+        if _merch_match_ident(o, d):
+            orders.append(o)
+    for r in doc.get("reservations", []):
+        if _merch_match_ident(r, d):
+            reserves.append(r)
+    orders.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+    reserves.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+    return orders, reserves
+
+
+def _merch_match_ident(rec, d):
+    if not d:
+        return False
+    for k in ("contactId", "buyerNumber"):
+        if re.sub(r"[^0-9]", "", str(rec.get(k, ""))) == d:
+            return True
+    if re.sub(r"[^0-9]", "", str(rec.get("phone", ""))) == d:
+        return True
+    return False
+
+
+def _merch_stats(doc):
+    """누적판매·재고·예약 통계."""
+    cfg = doc.get("config", {})
+    orders = doc.get("orders", [])
+    prods = doc.get("products", [])
+    reserves = doc.get("reservations", [])
+    total_sales = 0
+    total_fee = 0
+    by_status = {}
+    by_product = {}
+    by_month = {}
+    sold_qty = {}
+    for o in orders:
+        if not isinstance(o, dict):
+            continue
+        if str(o.get("status", "")) == "주문취소":
+            continue
+        t = int(o.get("total", 0) or 0)
+        fee = int(o.get("annualFeeAdded", 0) or 0)
+        total_sales += t
+        total_fee += fee
+        st = str(o.get("status", "입금확인중"))
+        by_status[st] = by_status.get(st, 0) + 1
+        nm = str(o.get("product", ""))
+        b = by_product.setdefault(nm, {"qty": 0, "amount": 0})
+        b["qty"] += int(o.get("qty", 0) or 0)
+        b["amount"] += t
+        sold_qty[str(o.get("productId", ""))] = \
+            sold_qty.get(str(o.get("productId", "")), 0) + int(o.get("qty", 0) or 0)
+        ym = str(o.get("created", ""))[:7]
+        if ym:
+            by_month[ym] = by_month.get(ym, 0) + t
+    stock = []
+    for pr in prods:
+        stock.append({
+            "id": pr.get("id"), "name": pr.get("name"),
+            "stock": int(pr.get("stock", 0) or 0),
+            "sold": sold_qty.get(str(pr.get("id")), 0),
+        })
+    reserve_by_product = {}
+    for r in reserves:
+        if str(r.get("status", "")) == "취소":
+            continue
+        nm = str(r.get("product", ""))
+        reserve_by_product[nm] = reserve_by_product.get(nm, 0) + \
+            int(r.get("qty", 0) or 0)
+    return {
+        "orderCount": len([o for o in orders
+                           if str(o.get("status", "")) != "주문취소"]),
+        "totalSales": total_sales,
+        "totalAnnualFee": total_fee,
+        "byStatus": by_status,
+        "byProduct": by_product,
+        "byMonth": dict(sorted(by_month.items())),
+        "stock": stock,
+        "reserveCount": len([r for r in reserves
+                             if str(r.get("status", "")) != "취소"]),
+        "reserveByProduct": reserve_by_product,
+    }
 
 
 def _make_image_thumb2(src_bytes, year, title, name, sub="", max_side=480):
@@ -4120,6 +4370,15 @@ class Handler(BaseHTTPRequestHandler):
                 nm = (q.get("name", [""])[0] or "").strip()
                 src = (q.get("src", [""])[0] or "").strip()
                 return self._serve_merch_image_named(nm, src)
+            # ---- 수품 제작자 첨부파일 서빙 (견적서/사진/기타) ----
+            if p == "/api/merch/file":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                nm = _safe_name(q.get("name", [""])[0] or "")
+                path = MERCH_MAKER_DIR + "/" + nm
+                if nm and NAS.exists(path):
+                    ct = MIME.get(_ext_of(nm), "application/octet-stream")
+                    return self._serve_nas_file(path, ct)
+                return self._json({"ok": False, "error": "not found"}, 404)
             # ---- 버전 감지(업데이트 반영) ----
             # 빌드 산출물(main.dart.js)의 수정시각을 버전으로 노출한다.
             # 재빌드(재배포) 시 값이 바뀌므로 클라이언트가 자동 감지/새로고침한다.
@@ -4486,14 +4745,68 @@ class Handler(BaseHTTPRequestHandler):
                     "config": {
                         "annualFee": int(cfg.get("annualFee", 10000) or 0),
                         "salesOpen": cfg.get("salesOpen", True) is not False,
+                        "annualFeeRequired": cfg.get("annualFeeRequired", False) is True,
+                        "reserveMode": cfg.get("reserveMode", False) is True,
                         "account": cfg.get("account", {}),
                         "guide": _merch_guide(cfg),
+                        "notices": str(cfg.get("notices", "") or ""),
+                        "statuses": cfg.get("statuses", list(MERCH_ORDER_STATUSES)),
+                        "reserveStatuses": cfg.get("reserveStatuses",
+                                                   list(MERCH_RESERVE_STATUSES)),
                     },
                     "feePaid": bool(fee_paid),
                     "buyer": buyer,
                     "isAdmin": is_admin,
                     "year": year,
                 })
+            if p == "/api/merch/mine":
+                # 내 수품 주문/예약 내역(상태 파이프라인 포함). ident=인가번호|전화
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                ident = q.get("ident", [""])[0]
+                s = self._sess() or {}
+                if not ident and s.get("who"):
+                    ident = s.get("who")
+                orders, reserves = _merch_mine(ident)
+                doc = _merch_doc()
+                cfg = doc.get("config", {})
+                return self._json({
+                    "ok": True,
+                    "orders": orders,
+                    "reservations": reserves,
+                    "statuses": cfg.get("statuses", list(MERCH_ORDER_STATUSES)),
+                    "reserveStatuses": cfg.get("reserveStatuses",
+                                               list(MERCH_RESERVE_STATUSES)),
+                })
+            if p == "/api/merch/enroll-fee":
+                # 연회비만 단독 납부(수품 구매 없이). 무인증 가능.
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                ident = q.get("ident", [""])[0]
+                if not ident:
+                    return self._json({"ok": False, "error": "no_ident"}, 400)
+                doc = _merch_doc()
+                cfg = doc.get("config", {})
+                fee = int(cfg.get("annualFee", 10000) or 0)
+                year = q.get("year", [""])[0] or str(datetime.datetime.now().year)
+                oid = "fee" + _secrets.token_urlsafe(6)
+                oc, octype = _merch_resolve_contact(ident, ident)
+                order = {
+                    "id": oid, "year": year, "productId": "__annual_fee__",
+                    "product": "연회비 납부", "kind": "연회비",
+                    "unitPrice": fee, "qty": 1, "option": "", "total": fee,
+                    "annualFeeAdded": fee, "annualFeeOnly": True,
+                    "buyerName": "", "buyerNumber": oc or "",
+                    "contactId": oc, "contactType": octype,
+                    "phone": q.get("phone", [""])[0], "email": "",
+                    "address": "", "shipMethod": "해당없음", "shipNote": "",
+                    "paid": False, "status": "입금확인중", "statusHistory": [],
+                    "memo": "연회비 납부", "created": _now_stamp(),
+                }
+                doc.setdefault("orders", []).append(order)
+                _merch_save(doc)
+                if oc:
+                    _merch_attach_to_member(oc, oid, "order")
+                return self._json({"ok": True, "order": order,
+                                   "account": cfg.get("account", {})})
             if p == "/api/merch/admin":
                 if not self._require("admin"):
                     return
@@ -4507,12 +4820,23 @@ class Handler(BaseHTTPRequestHandler):
                               if _now_ymd(o).startswith(yr)
                               or str(o.get("year", "")) == yr]
                 orders.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                reserves = list(doc.get("reservations", []))
+                reserves.sort(key=lambda x: str(x.get("created", "")), reverse=True)
                 return self._json({
                     "ok": True,
                     "products": doc.get("products", []),
                     "orders": orders,
+                    "reservations": reserves,
+                    "makers": doc.get("makers", []),
+                    "donations": doc.get("donations", []),
+                    "stockLog": doc.get("stockLog", []),
                     "config": doc.get("config", {}),
                 })
+            if p == "/api/merch/reports":
+                if not self._require("admin"):
+                    return
+                doc = _merch_doc()
+                return self._json({"ok": True, "stats": _merch_stats(doc)})
             if p == "/api/event/files":
                 if not self._require():
                     return
@@ -4859,8 +5183,9 @@ class Handler(BaseHTTPRequestHandler):
             #  로그인/로그아웃을 제외한 모든 변경(쓰기) 요청은 유효한 세션 필요.
             #  관리자 전용 경로는 추가로 tier 검사.
             if p.startswith("/api/"):
-                # QR 행사참여(스캔) 경로·수품구매 주문은 공개.
-                if p.startswith("/api/event/qr/") or p == "/api/merch/order":
+                # QR 행사참여(스캔) 경로·수품구매 주문/예약은 공개.
+                if (p.startswith("/api/event/qr/")
+                        or p in ("/api/merch/order", "/api/merch/reserve")):
                     pass
                 else:
                     need = None
@@ -5343,7 +5668,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             # ---------- 수품구매 (굿즈) POST ----------
             if p == "/api/merch/order":
-                # 무인증(비로그인) 구매 가능. 단 연회비 미납이면 서버에서도 차단.
+                # 무인증(비로그인) 구매 가능. 연회비 미납이라도 '엄격모드'일 때만 차단.
                 d = json.loads(self._body() or b"{}")
                 s = self._sess() or {}
                 is_admin = s.get("tier") in ("app", "master")
@@ -5359,12 +5684,24 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(
                         {"ok": False, "error": "product_not_found"}, 404)
                 ident = re.sub(r"[^0-9]", "", str(d.get("buyerNumber", "") or ""))
-                # 연회비 게이트(관리자 예외)
-                if not is_admin:
+                phone = str(d.get("phone", "") or "")
+                bname = str(d.get("buyerName", "") or "")
+                email = str(d.get("email", "") or "")
+                # 연회비 게이트 — '엄격모드(annualFeeRequired)'일 때만 차단.
+                #  엄격모드가 아니면 구매단계에서 '연간회비 납부 여부'를 직접 선택하여
+                #  미납 시 총액에 연회비가 자동 추가된다(간편 프로세스).
+                fee_added = 0
+                if cfg.get("annualFeeRequired", False) is True and not is_admin:
                     paid, _m = _merch_fee_paid(ident, d.get("year"))
                     if not paid:
                         return self._json(
                             {"ok": False, "error": "annual_fee_required"}, 403)
+                # 구매단계에서 '연간회비 납부 안함' 선택 시 연회비를 총액에 가산
+                if d.get("addAnnualFee") is True:
+                    try:
+                        fee_added = int(cfg.get("annualFee", 0) or 0)
+                    except Exception:
+                        fee_added = 0
                 try:
                     unit = int(d.get("unitPrice", prod.get("price", 0)) or 0)
                     qty = int(d.get("qty", 1) or 1)
@@ -5373,6 +5710,8 @@ class Handler(BaseHTTPRequestHandler):
                 qty = max(1, qty)
                 total = unit * qty
                 ship = str(d.get("shipMethod", "") or "현장구매")
+                # 주문자 식별: 인가번호 우선, 없으면 전화로 비인가 자동생성
+                oc, octype = _merch_resolve_contact(ident, phone, bname, email)
                 oid = "o" + _secrets.token_urlsafe(6)
                 order = {
                     "id": oid,
@@ -5383,22 +5722,82 @@ class Handler(BaseHTTPRequestHandler):
                     "unitPrice": unit,
                     "qty": qty,
                     "option": str(d.get("option", "") or ""),
+                    "size": str(d.get("size", "") or ""),
                     "total": total,
-                    "buyerName": str(d.get("buyerName", "") or "")[:40],
+                    "annualFeeAdded": fee_added,
+                    "grandTotal": total + fee_added,
+                    "buyerName": bname[:40],
                     "buyerNumber": ident,
-                    "phone": str(d.get("phone", "") or "")[:20],
-                    "email": str(d.get("email", "") or "")[:80],
+                    "contactId": oc,
+                    "contactType": octype,
+                    "phone": phone[:20],
+                    "email": email[:80],
                     "address": str(d.get("address", "") or "")[:200],
                     "shipMethod": ship,
                     "shipNote": str(d.get("shipNote", "") or "")[:200],
                     "paid": False,
+                    "status": "입금확인중",
+                    "statusHistory": [{"status": "입금확인중",
+                                       "at": _now_stamp(), "by": "system"}],
                     "memo": str(d.get("memo", "") or "")[:200],
                     "created": _now_stamp(),
                 }
                 doc.setdefault("orders", []).append(order)
                 _merch_save(doc)
+                # 인가자/비인가자 프로필에 주문 내역 부착
+                if oc:
+                    _merch_attach_to_member(oc, oid, "order")
                 return self._json({"ok": True, "order": order,
+                                   "contactId": oc, "contactType": octype,
                                    "account": cfg.get("account", {})})
+            if p == "/api/merch/reserve":
+                # 예약/수요조사 — 구매의사 접수(제작 판단용). 무인증 가능.
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                cfg = doc.get("config", {})
+                pid = str(d.get("productId", "") or "")
+                prod = next((x for x in doc.get("products", [])
+                             if str(x.get("id")) == pid), None)
+                if not prod:
+                    return self._json(
+                        {"ok": False, "error": "product_not_found"}, 404)
+                ident = re.sub(r"[^0-9]", "", str(d.get("buyerNumber", "") or ""))
+                phone = str(d.get("phone", "") or "")
+                bname = str(d.get("buyerName", "") or "")
+                email = str(d.get("email", "") or "")
+                try:
+                    qty = max(1, int(d.get("qty", 1) or 1))
+                except Exception:
+                    qty = 1
+                oc, octype = _merch_resolve_contact(ident, phone, bname, email)
+                rid = "r" + _secrets.token_urlsafe(6)
+                rec = {
+                    "id": rid,
+                    "year": str(datetime.datetime.now().year),
+                    "productId": pid,
+                    "product": str(prod.get("name", "")),
+                    "kind": str(prod.get("kind", "")),
+                    "qty": qty,
+                    "option": str(d.get("option", "") or ""),
+                    "size": str(d.get("size", "") or ""),
+                    "buyerName": bname[:40],
+                    "buyerNumber": ident,
+                    "contactId": oc,
+                    "contactType": octype,
+                    "phone": phone[:20],
+                    "email": email[:80],
+                    "note": str(d.get("note", "") or "")[:200],
+                    "status": "예약접수",
+                    "statusHistory": [{"status": "예약접수",
+                                       "at": _now_stamp(), "by": "system"}],
+                    "created": _now_stamp(),
+                }
+                doc.setdefault("reservations", []).append(rec)
+                _merch_save(doc)
+                if oc:
+                    _merch_attach_to_member(oc, rid, "reservation")
+                return self._json({"ok": True, "reservation": rec,
+                                   "contactId": oc, "contactType": octype})
             if p == "/api/merch/product":
                 if not self._require("admin"):
                     return
@@ -5416,10 +5815,16 @@ class Handler(BaseHTTPRequestHandler):
                     "options": d.get("options", (existing or {}).get("options", [])),
                     "image": str(d.get("image", "") or "")[:300],
                     "desc": str(d.get("desc", "") or "")[:400],
+                    "size": str(d.get("size", "") or "")[:80],
+                    "makerId": str(d.get("makerId", "") or "")[:40],
                     "active": d.get("active", True) is not False,
                     "created": (existing or {}).get("created", _now_stamp()),
                 }
                 if existing:
+                    # 시드/기타 플래그 보존
+                    for k in ("seeded",):
+                        if k in existing:
+                            item[k] = existing[k]
                     prods[prods.index(existing)] = item
                 else:
                     prods.append(item)
@@ -5449,31 +5854,228 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "not found"}, 404)
                 if "paid" in d:
                     order["paid"] = bool(d.get("paid"))
+                if "status" in d:
+                    newst = str(d.get("status", "") or "")
+                    if newst and newst != str(order.get("status", "")):
+                        order["status"] = newst
+                        hist = order.get("statusHistory")
+                        if not isinstance(hist, list):
+                            hist = []
+                        hist.append({"status": newst, "at": _now_stamp(),
+                                     "by": (self._sess() or {}).get("tier", "admin")})
+                        order["statusHistory"] = hist
+                        # 입금확인/배송완료 시 paid 자동 갱신
+                        if newst in ("입금확인",):
+                            order["paid"] = True
                 if "memo" in d:
                     order["memo"] = str(d.get("memo", "") or "")[:200]
                 if "shipMethod" in d:
                     order["shipMethod"] = str(d.get("shipMethod", "") or "")
                 if "shipNote" in d:
                     order["shipNote"] = str(d.get("shipNote", "") or "")[:200]
+                if "annualFeeAdded" in d:
+                    try:
+                        order["annualFeeAdded"] = int(d.get("annualFeeAdded", 0) or 0)
+                    except Exception:
+                        pass
                 if "qty" in d:
                     try:
                         order["qty"] = max(1, int(d.get("qty", 1) or 1))
                     except Exception:
                         pass
                 order["total"] = int(order.get("unitPrice", 0) or 0) * int(order.get("qty", 1) or 1)
+                order["grandTotal"] = order["total"] + int(order.get("annualFeeAdded", 0) or 0)
                 order["updated"] = _now_stamp()
                 _merch_save(doc)
                 return self._json({"ok": True, "order": order})
+            if p == "/api/merch/reserve/update":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                rid = str(d.get("id", "") or "")
+                rec = next((x for x in doc.get("reservations", [])
+                            if str(x.get("id")) == rid), None)
+                if not rec:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                if "status" in d:
+                    newst = str(d.get("status", "") or "")
+                    if newst and newst != str(rec.get("status", "")):
+                        rec["status"] = newst
+                        hist = rec.get("statusHistory")
+                        if not isinstance(hist, list):
+                            hist = []
+                        hist.append({"status": newst, "at": _now_stamp(),
+                                     "by": (self._sess() or {}).get("tier", "admin")})
+                        rec["statusHistory"] = hist
+                if "memo" in d:
+                    rec["memo"] = str(d.get("memo", "") or "")[:200]
+                if "qty" in d:
+                    try:
+                        rec["qty"] = max(1, int(d.get("qty", 1) or 1))
+                    except Exception:
+                        pass
+                rec["updated"] = _now_stamp()
+                _merch_save(doc)
+                return self._json({"ok": True, "reservation": rec})
+            if p == "/api/merch/reserve/delete":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                rid = str(d.get("id", "") or "")
+                rec = next((x for x in doc.get("reservations", [])
+                            if str(x.get("id")) == rid), None)
+                doc["reservations"] = [x for x in doc.get("reservations", [])
+                                       if str(x.get("id")) != rid]
+                _merch_save(doc)
+                if rec and rec.get("contactId"):
+                    _merch_detach_from_member(rec.get("contactId"), rid, "reservation")
+                return self._json({"ok": True})
+            if p == "/api/merch/maker/upload":
+                # 제작자 첨부파일 업로드(multipart 아님: {name, data(base64)})
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}") if False else None
+                raw = self._body()
+                d = json.loads(raw or b"{}")
+                fname = _safe_name(str(d.get("filename", "") or ""))
+                b64 = str(d.get("data", "") or "")
+                if not fname or not b64:
+                    return self._json({"ok": False, "error": "bad"}, 400)
+                import base64
+                try:
+                    blob = base64.b64decode(b64.split(",")[-1])
+                except Exception:
+                    return self._json({"ok": False, "error": "decode"}, 400)
+                if len(blob) > 30 * 1024 * 1024:
+                    return self._json({"ok": False, "error": "too_large"}, 400)
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                stored = f"{stamp}_{fname}"
+                try:
+                    NAS.write(MERCH_MAKER_DIR + "/" + stored, blob)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 500)
+                return self._json({"ok": True, "file": stored,
+                                   "url": "/api/merch/file?name=" + urllib.parse.quote(stored)})
+            if p == "/api/merch/maker":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                mid = str(d.get("id", "") or ("mk" + _secrets.token_urlsafe(5)))
+                makers = doc.get("makers", [])
+                existing = next((x for x in makers if str(x.get("id")) == mid), None)
+                fields = ("category", "company", "ceo", "manager", "phone", "email",
+                          "madeDate", "unitPrice", "quoteFile", "amount", "paidDate",
+                          "shipDate", "photo", "memo")
+                item = dict(existing) if existing else {"id": mid,
+                                                        "created": _now_stamp()}
+                item["id"] = mid
+                for k in fields:
+                    if k in d:
+                        if k in ("unitPrice", "amount"):
+                            try:
+                                item[k] = int(d.get(k, 0) or 0)
+                            except Exception:
+                                item[k] = 0
+                        elif k == "extraFiles":
+                            item[k] = d.get(k, [])
+                        else:
+                            item[k] = str(d.get(k, "") or "")[:300]
+                if "progress" in d and isinstance(d.get("progress"), list):
+                    item["progress"] = d.get("progress")
+                if "extraFiles" in d and isinstance(d.get("extraFiles"), list):
+                    item["extraFiles"] = d.get("extraFiles")
+                item["updated"] = _now_stamp()
+                if existing:
+                    makers[makers.index(existing)] = item
+                else:
+                    makers.append(item)
+                doc["makers"] = makers
+                _merch_save(doc)
+                return self._json({"ok": True, "maker": item})
+            if p == "/api/merch/maker/delete":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                mid = str(d.get("id", "") or "")
+                doc["makers"] = [x for x in doc.get("makers", [])
+                                 if str(x.get("id")) != mid]
+                _merch_save(doc)
+                return self._json({"ok": True})
+            if p == "/api/merch/donation":
+                # 수품 공여(행사/홍보) 기록
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                did = str(d.get("id", "") or ("dn" + _secrets.token_urlsafe(5)))
+                don = doc.get("donations", [])
+                existing = next((x for x in don if str(x.get("id")) == did), None)
+                item = dict(existing) if existing else {"id": did,
+                                                        "created": _now_stamp()}
+                item["id"] = did
+                for k in ("item", "qty", "target", "date", "note"):
+                    if k in d:
+                        if k == "qty":
+                            try:
+                                item[k] = int(d.get(k, 0) or 0)
+                            except Exception:
+                                item[k] = 0
+                        else:
+                            item[k] = str(d.get(k, "") or "")[:200]
+                item["updated"] = _now_stamp()
+                if existing:
+                    don[don.index(existing)] = item
+                else:
+                    don.append(item)
+                doc["donations"] = don
+                _merch_save(doc)
+                return self._json({"ok": True, "donation": item})
+            if p == "/api/merch/stock":
+                # 재고 입출고 기록(누적/조정)
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("productId", "") or "")
+                delta = 0
+                try:
+                    delta = int(d.get("delta", 0) or 0)
+                except Exception:
+                    delta = 0
+                prod = next((x for x in doc.get("products", [])
+                             if str(x.get("id")) == pid), None)
+                if not prod:
+                    return self._json({"ok": False, "error": "product_not_found"}, 404)
+                try:
+                    prod["stock"] = max(0, int(prod.get("stock", 0) or 0) + delta)
+                except Exception:
+                    prod["stock"] = 0
+                log = doc.get("stockLog", [])
+                log.insert(0, {"productId": pid, "product": prod.get("name", ""),
+                               "delta": delta, "after": prod["stock"],
+                               "note": str(d.get("note", "") or "")[:120],
+                               "at": _now_stamp()})
+                doc["stockLog"] = log[:500]
+                _merch_save(doc)
+                return self._json({"ok": True, "stock": prod["stock"]})
             if p == "/api/merch/order/delete":
                 if not self._require("admin"):
                     return
                 d = json.loads(self._body() or b"{}")
                 doc = _merch_doc()
                 oid = str(d.get("id", "") or "")
+                rec = next((x for x in doc.get("orders", [])
+                            if str(x.get("id")) == oid), None)
                 before = len(doc.get("orders", []))
                 doc["orders"] = [x for x in doc.get("orders", [])
                                  if str(x.get("id")) != oid]
                 _merch_save(doc)
+                if rec and rec.get("contactId"):
+                    _merch_detach_from_member(rec.get("contactId"), oid, "order")
                 return self._json({"ok": True, "removed": before - len(doc["orders"])})
             if p == "/api/merch/config":
                 if not self._require("admin"):
@@ -5488,6 +6090,20 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 if "salesOpen" in d:
                     cfg["salesOpen"] = bool(d.get("salesOpen"))
+                if "annualFeeRequired" in d:
+                    cfg["annualFeeRequired"] = bool(d.get("annualFeeRequired"))
+                if "reserveMode" in d:
+                    cfg["reserveMode"] = bool(d.get("reserveMode"))
+                if "notices" in d:
+                    cfg["notices"] = str(d.get("notices", "") or "")
+                if "statuses" in d and isinstance(d.get("statuses"), list):
+                    st = [str(x) for x in d.get("statuses") if str(x).strip()]
+                    if st:
+                        cfg["statuses"] = st
+                if "reserveStatuses" in d and isinstance(d.get("reserveStatuses"), list):
+                    st = [str(x) for x in d.get("reserveStatuses") if str(x).strip()]
+                    if st:
+                        cfg["reserveStatuses"] = st
                 if "account" in d and isinstance(d.get("account"), dict):
                     a = cfg.get("account", {})
                     for k in ("bank", "no", "holder"):
