@@ -2018,6 +2018,15 @@ DEFAULT_MERCH_GUIDE = {
         "※ 필요한 수품에만 필요 수량을 적어주세요.\n"
         "※ 자세한 문의: 한국범스카우트중앙회 사무처 (010-8496-8437)"
     ),
+    # 온라인 결제 방법 안내 (PDF page12 최종 결정) — 관리자가 자유롭게 수정.
+    "payment": (
+        "현재 수품 구매는 아래 납부계좌로 입금(인터넷뱅킹/무통장)하는 방식입니다. "
+        "입금자명에 인가자 이름을 기재해 주세요.\n"
+        "· 온라인 카드결제·간편결제(PG) 도입은 별도 계약이 필요하여 준비 중입니다. 도입 시 "
+        "본 안내를 통해 공지드립니다.\n"
+        "· 카드결제 도입 전까지는 계좌 입금 후 개인 프로필의 수품구매 내역에서 진행상태를 "
+        "확인해 주세요."
+    ),
     # 연계 구매 링크(구글폼·네이버폼 등) — 주소가 유동적이므로 관리자가 직접 입력/수정한다.
     "formUrl": (
         "https://docs.google.com/forms/d/e/"
@@ -8391,7 +8400,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "guide" in d and isinstance(d.get("guide"), dict):
                     g = _merch_guide(cfg)
                     for k in ("title", "membership", "rules", "sets", "notes",
-                              "formUrl", "formLabel"):
+                              "formUrl", "formLabel", "payment"):
                         if k in d["guide"]:
                             g[k] = str(d["guide"][k] or "")
                     g["updated"] = _now_stamp()

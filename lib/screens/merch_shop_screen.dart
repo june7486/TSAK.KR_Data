@@ -959,6 +959,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 _guideBlock('구매 자격', '${g['rules'] ?? ''}'),
                 _guideBlock('멤버십 세트 구성', '${g['sets'] ?? ''}'),
                 _guideBlock('유의사항 · 문의', '${g['notes'] ?? ''}'),
+                _guideBlock('온라인 결제 방법 안내', '${g['payment'] ?? ''}'),
                 const Divider(height: 22),
                 Row(
                   children: [

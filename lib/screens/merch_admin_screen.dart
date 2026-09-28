@@ -4316,6 +4316,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final gRules = TextEditingController(text: '${_guide['rules'] ?? ''}');
     final gSets = TextEditingController(text: '${_guide['sets'] ?? ''}');
     final gNotes = TextEditingController(text: '${_guide['notes'] ?? ''}');
+    // [turn9-7] 온라인 결제 방법 안내 (PDF page12 최종 결정).
+    final gPayment = TextEditingController(text: '${_guide['payment'] ?? ''}');
     final gForm = TextEditingController(text: '${_guide['formUrl'] ?? ''}');
     final gFormLabel = TextEditingController(
       text: '${_guide['formLabel'] ?? ''}',
@@ -4515,6 +4517,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _multiField(gRules, '구매 자격'),
                 _multiField(gSets, '멤버십 세트 구성'),
                 _multiField(gNotes, '유의사항 · 문의'),
+                _multiField(gPayment, '온라인 결제 방법 안내'),
               ],
             ),
           ),
@@ -4674,6 +4677,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   'rules': gRules.text,
                   'sets': gSets.text,
                   'notes': gNotes.text,
+                  'payment': gPayment.text,
                   'formUrl': gForm.text.trim(),
                   'formLabel': gFormLabel.text.trim(),
                 },
