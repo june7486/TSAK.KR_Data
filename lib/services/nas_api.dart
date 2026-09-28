@@ -1723,6 +1723,36 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 관리자: 주문 임의 필드 수정(상품명/단가/금액/주문자/연락처/주소/상태 등).
+  Future<Map<String, dynamic>> merchUpdateOrderRaw({
+    required String id,
+    required Map<String, dynamic> fields,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order/update'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id, ...fields}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 예약 임의 필드 수정(상품명/수량/주문자/메모/상태 등).
+  Future<Map<String, dynamic>> merchUpdateReserveRaw({
+    required String id,
+    required Map<String, dynamic> fields,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/reserve/update'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id, ...fields}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 관리자: 연회비 금액 / 판매창 오픈 / 수품계좌 설정.
   Future<Map<String, dynamic>> merchSaveConfig({
     int? annualFee,

@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import 'merch_inquiry_sheet.dart';
 import 'merch_order_detail.dart';
 
-/// 개인 프로필에 표시되는 수품 구매/예약 내역 위젯.
-/// 수품 주문 진행 상황을 가로 진행 바(세그먼트)로 보여준다.
-/// 주문번호를 클릭하면 주문 상세 내역을 조회할 수 있다.
+/// 개인 프로필에 표시되는 수품 구매/예약 내역 위젯(수품구매현황 통합).
+/// - 주문 진행 상황을 가로 진행 바(세그먼트)로 보여준다.
+/// - 주문번호를 클릭하면 주문 상세 내역을 조회한다(관리자·마스터는 수정 가능).
+/// - 자가/관리 입력 메모([memo])를 함께 표시하여 기존 '수품구매현황' 메뉴를 통합한다.
+/// - 하단 문의하기 버튼은 개인(본인) 열람 시에만 노출한다.
 class MerchActivitySection extends StatefulWidget {
   const MerchActivitySection({
     super.key,
     required this.ident,
-    this.title = '수품구매 내역',
+    this.title = '수품구매현황',
     this.memberName = '',
     this.phone = '',
     this.email = '',
+    this.memo = '',
+    this.canEditMemo = false,
+    this.onEditMemo,
   });
 
   final String ident;
@@ -24,6 +30,9 @@ class MerchActivitySection extends StatefulWidget {
   final String memberName;
   final String phone;
   final String email;
+  final String memo;
+  final bool canEditMemo;
+  final VoidCallback? onEditMemo;
 
   @override
   State<MerchActivitySection> createState() => _MerchActivitySectionState();
@@ -59,6 +68,8 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
 
   @override
   Widget build(BuildContext context) {
+    final isSelf = context.read<AppState>().isSelfAccess;
+    final memo = widget.memo.trim();
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
@@ -85,18 +96,54 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
               ),
             ],
           ),
+          // (통합) 자가/관리 입력 메모 — 기존 '수품구매현황' 내용
+          if (memo.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            ...memo.split(RegExp(r'[\n/]')).where((e) => e.trim().isNotEmpty).map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 3, right: 6),
+                          child: Icon(Icons.check_circle,
+                              size: 13, color: AppColors.scoutGreen),
+                        ),
+                        Expanded(
+                          child: Text(line.trim(),
+                              style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.textDark,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            const SizedBox(height: 4),
+          ],
           if (_loading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             )
           else if (_orders.isEmpty && _reserves.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('수품 구매 내역이 없습니다.',
-                  style: TextStyle(fontSize: 12.5, color: AppColors.textGray)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(memo.isEmpty ? '수품 구매 내역이 없습니다.' : '온라인 주문 내역이 없습니다.',
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.textGray)),
             )
           else ...[
+            if (memo.isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 2),
+                child: Text('온라인 주문 내역',
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textGray)),
+              ),
             for (final o in _orders) _orderRow(o),
             for (final r in _reserves) _reserveRow(r),
           ],
@@ -104,26 +151,39 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
             const SizedBox(height: 10),
             const Divider(height: 1),
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.purple,
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+            if (widget.canEditMemo && widget.onEditMemo != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  onPressed: widget.onEditMemo,
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('구매현황 메모 편집',
+                      style: TextStyle(fontSize: 12)),
                 ),
-                onPressed: () => showMerchInquiry(
-                  context: context,
-                  name: widget.memberName,
-                  phone: widget.phone,
-                  email: widget.email,
-                ),
-                icon: const Icon(Icons.mark_email_read_outlined, size: 17),
-                label: const Text('문의하기 (메일로 문의)',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
               ),
-            ),
+            // 문의하기 — 개인(본인) 열람 시에만 노출
+            if (isSelf)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.purple,
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => showMerchInquiry(
+                    context: context,
+                    name: widget.memberName,
+                    phone: widget.phone,
+                    email: widget.email,
+                  ),
+                  icon: const Icon(Icons.mark_email_read_outlined, size: 17),
+                  label: const Text('문의하기 (메일로 문의)',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              ),
           ],
         ],
       ),
@@ -131,11 +191,14 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
   }
 
   void _openDetail(Map<String, dynamic> rec, {required bool isReserve}) {
+    final editable = context.read<AppState>().isApp;
     MerchOrderDetail.show(
       context,
       rec: rec,
       isReserve: isReserve,
       statuses: _statuses.map((e) => '$e').toList(),
+      editable: editable,
+      onChanged: _load,
     );
   }
 

@@ -6115,6 +6115,30 @@ class Handler(BaseHTTPRequestHandler):
                             order["paid"] = True
                 if "memo" in d:
                     order["memo"] = str(d.get("memo", "") or "")[:200]
+                if "product" in d:
+                    nm = str(d.get("product", "") or "").strip()
+                    if nm:
+                        order["product"] = nm[:80]
+                if "size" in d:
+                    order["size"] = str(d.get("size", "") or "")[:80]
+                if "option" in d:
+                    order["option"] = str(d.get("option", "") or "")[:80]
+                if "unitPrice" in d:
+                    try:
+                        order["unitPrice"] = max(0, int(d.get("unitPrice", 0) or 0))
+                    except Exception:
+                        pass
+                if "buyerName" in d:
+                    order["buyerName"] = str(d.get("buyerName", "") or "")[:40]
+                if "buyerNumber" in d:
+                    order["buyerNumber"] = re.sub(
+                        r"[^0-9]", "", str(d.get("buyerNumber", "") or ""))
+                if "phone" in d:
+                    order["phone"] = str(d.get("phone", "") or "")[:20]
+                if "email" in d:
+                    order["email"] = str(d.get("email", "") or "")[:80]
+                if "address" in d:
+                    order["address"] = str(d.get("address", "") or "")[:200]
                 if "shipMethod" in d:
                     order["shipMethod"] = str(d.get("shipMethod", "") or "")
                 if "shipNote" in d:

@@ -651,10 +651,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
+  /// 주문 카드 — 요약 정보만 표시(주문번호·대표상품·구매일·구매자·총금액).
+  /// 주문번호를 누르면 상세내역이 열린다.
   Widget _orderCard(Map<String, dynamic> o) {
     final paid = o['paid'] == true;
-    final status =
-        '${o['status'] ?? (_statuses.isNotEmpty ? _statuses.first : '')}';
+    final orderNo = '${o['orderNo'] ?? ''}';
+    final product = '${o['product'] ?? o['productName'] ?? ''}';
+    final buyer = '${o['buyerName'] ?? ''}';
+    final created = '${o['created'] ?? o['createdAt'] ?? ''}';
+    final amount = _won((o['grandTotal'] ?? o['total']) as num?);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -666,175 +671,98 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               .withValues(alpha: 0.25),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${o['product'] ?? o['productName'] ?? ''}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14.5,
-                  ),
+      child: InkWell(
+        onTap: () => _showOrderDetail(o, isReserve: false),
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.receipt_long_outlined,
+                    size: 15, color: AppColors.purple),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(orderNo.isEmpty ? '(주문번호 없음)' : orderNo,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: AppColors.purpleDark,
+                          letterSpacing: 0.2),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
-              ),
-              _pill(
-                paid ? '입금완료' : '미입금',
-                paid ? AppColors.scoutGreen : AppColors.taegeukRed,
-              ),
-            ],
-          ),
-          if ('${o['orderNo'] ?? ''}'.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            InkWell(
-              onTap: () => _showOrderDetail(o, isReserve: false),
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.receipt_long_outlined,
-                        size: 13, color: AppColors.purple),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text('주문번호 ${o['orderNo']}',
-                          style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.purpleDark,
-                              letterSpacing: 0.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 14, color: AppColors.purple),
-                    const Text('내역 보기',
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            color: AppColors.purple,
-                            fontWeight: FontWeight.w800)),
-                  ],
+                _pill(
+                  paid ? '입금완료' : '미입금',
+                  paid ? AppColors.scoutGreen : AppColors.taegeukRed,
                 ),
-              ),
+              ],
             ),
-          ],
-          const SizedBox(height: 6),
-          _row(
-            '구매자',
-            '${o['buyerName'] ?? ''}'
-                '${'${o['buyerNumber'] ?? ''}'.isNotEmpty ? ' (${o['buyerNumber']})' : ''}',
-          ),
-          if ('${o['phone'] ?? ''}'.isNotEmpty) _row('연락처', '${o['phone']}'),
-          if ('${o['email'] ?? ''}'.isNotEmpty) _row('이메일', '${o['email']}'),
-          _row(
-            '수량·합계',
-            '${o['qty'] ?? 1}개'
-                '${'${o['option'] ?? ''}'.isNotEmpty ? ' / ${o['option']}' : ''}'
-                '${'${o['size'] ?? ''}'.isNotEmpty ? ' / ${o['size']}' : ''}'
-                ' · ${_won((o['grandTotal'] ?? o['total']) as num?)}',
-          ),
-          _row(
-            '배송',
-            '${o['shipMethod'] ?? ''}'
-                '${'${o['address'] ?? ''}'.isNotEmpty ? ' · ${o['address']}' : ''}',
-          ),
-          _row('주문일', '${o['created'] ?? o['createdAt'] ?? ''}'),
-          if ('${o['memo'] ?? ''}'.isNotEmpty) _row('메모', '${o['memo']}'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.timeline, size: 15, color: AppColors.purple),
-              const SizedBox(width: 6),
-              const Text(
-                '진행상태',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          DropdownButtonFormField<String>(
-            initialValue: _statuses.contains(status)
-                ? status
-                : (_statuses.isNotEmpty ? _statuses.first : null),
-            isDense: true,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: [
-              for (final s in _statuses)
-                DropdownMenuItem(
-                  value: s,
-                  child: Text(
-                    s,
-                    style: TextStyle(
-                      color: s.contains('취소')
-                          ? AppColors.taegeukRed
-                          : AppColors.textDark,
-                    ),
-                  ),
+            const SizedBox(height: 5),
+            Text('대표상품: ${product.isEmpty ? '-' : product}',
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                const Icon(Icons.person_outline,
+                    size: 13, color: AppColors.textGray),
+                const SizedBox(width: 3),
+                Flexible(
+                  child: Text(buyer.isEmpty ? '구매자 미상' : buyer,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textDark),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
-            ],
-            onChanged: (v) {
-              if (v != null) _setOrderStatus(o, v);
-            },
-          ),
-          if (o['statusHistory'] is List &&
-              (o['statusHistory'] as List).isNotEmpty) ...[
+                const SizedBox(width: 10),
+                const Icon(Icons.event_outlined,
+                    size: 13, color: AppColors.textGray),
+                const SizedBox(width: 3),
+                Text(created,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textGray)),
+                const Spacer(),
+                Text(amount,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w800)),
+              ],
+            ),
             const SizedBox(height: 6),
-            Text(
-              (o['statusHistory'] as List)
-                  .map(
-                    (h) => h is Map ? '${h['status']}(${h['at'] ?? ''})' : '$h',
-                  )
-                  .join('  ›  '),
-              style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
+            const Row(
+              children: [
+                Text('상세내역 보기',
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.purple,
+                        fontWeight: FontWeight.w800)),
+                SizedBox(width: 3),
+                Icon(Icons.chevron_right, size: 16, color: AppColors.purple),
+                Spacer(),
+                Text('수정',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.lifetimeGold,
+                        fontWeight: FontWeight.w700)),
+                Icon(Icons.edit, size: 12, color: AppColors.lifetimeGold),
+              ],
             ),
           ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () => _togglePaid(o),
-                icon: Icon(
-                  paid ? Icons.undo : Icons.check_circle_outline,
-                  size: 16,
-                ),
-                label: Text(paid ? '입금 취소' : '입금 처리'),
-              ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () => _editOrderMemo(o),
-                icon: const Icon(Icons.edit_note, size: 16),
-                label: const Text('메모'),
-              ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () => _deleteOrder(o),
-                icon: const Icon(Icons.delete_outline, size: 16),
-                label: const Text('삭제'),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  /// 예약 카드 — 요약 정보만 표시(예약번호·대표상품·접수일·예약자·수량).
   Widget _reserveCard(Map<String, dynamic> r) {
     final status = '${r['status'] ?? '예약접수'}';
+    final orderNo = '${r['orderNo'] ?? ''}';
+    final product = '${r['product'] ?? r['productName'] ?? ''}';
+    final buyer = '${r['buyerName'] ?? ''}';
+    final created = '${r['created'] ?? r['createdAt'] ?? ''}';
+    final qty = (r['qty'] as num?)?.toInt() ?? 1;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -843,210 +771,116 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${r['product'] ?? r['productName'] ?? ''}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
+      child: InkWell(
+        onTap: () => _showOrderDetail(r, isReserve: true),
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bookmark_border,
+                    size: 15, color: Colors.orange),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(orderNo.isEmpty ? '(예약번호 없음)' : orderNo,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: AppColors.purpleDark,
+                          letterSpacing: 0.2),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
-              ),
-              _pill(status, Colors.orange),
-            ],
-          ),
-          if ('${r['orderNo'] ?? ''}'.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            InkWell(
-              onTap: () => _showOrderDetail(r, isReserve: true),
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.receipt_long_outlined,
-                        size: 13, color: Colors.orange),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text('예약번호 ${r['orderNo']}',
-                          style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.purpleDark,
-                              letterSpacing: 0.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 14, color: Colors.orange),
-                    const Text('내역 보기',
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w800)),
-                  ],
+                _pill(status, Colors.orange),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Text('대표상품: ${product.isEmpty ? '-' : product}',
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                const Icon(Icons.person_outline,
+                    size: 13, color: AppColors.textGray),
+                const SizedBox(width: 3),
+                Flexible(
+                  child: Text(buyer.isEmpty ? '예약자 미상' : buyer,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textDark),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
-              ),
+                const SizedBox(width: 10),
+                const Icon(Icons.event_outlined,
+                    size: 13, color: AppColors.textGray),
+                const SizedBox(width: 3),
+                Text(created,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textGray)),
+                const Spacer(),
+                Text('$qty개',
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Row(
+              children: [
+                Text('상세내역 보기',
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w800)),
+                SizedBox(width: 3),
+                Icon(Icons.chevron_right, size: 16, color: Colors.orange),
+                Spacer(),
+                Text('수정',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.lifetimeGold,
+                        fontWeight: FontWeight.w700)),
+                Icon(Icons.edit, size: 12, color: AppColors.lifetimeGold),
+              ],
             ),
           ],
-          const SizedBox(height: 6),
-          _row(
-            '예약자',
-            '${r['buyerName'] ?? ''}'
-                '${'${r['buyerNumber'] ?? ''}'.isNotEmpty ? ' (${r['buyerNumber']})' : ''}',
-          ),
-          if ('${r['phone'] ?? ''}'.isNotEmpty) _row('연락처', '${r['phone']}'),
-          _row(
-            '수량',
-            '${r['qty'] ?? 1}개'
-                '${'${r['option'] ?? ''}'.isNotEmpty ? ' / ${r['option']}' : ''}',
-          ),
-          _row('접수일', '${r['created'] ?? r['createdAt'] ?? ''}'),
-          if ('${r['memo'] ?? r['note'] ?? ''}'.isNotEmpty)
-            _row('메모', '${r['memo'] ?? r['note']}'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _reserveStatuses.contains(status)
-                      ? status
-                      : null,
-                  isDense: true,
-                  decoration: const InputDecoration(
-                    labelText: '예약 상태',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    for (final s in _reserveStatuses)
-                      DropdownMenuItem(value: s, child: Text(s)),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) _setReserveStatus(r, v);
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                tooltip: '예약 삭제',
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: AppColors.textGray,
-                ),
-                onPressed: () => _deleteReserve(r),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  /// 주문/예약 상세 내역 다이얼로그(주문번호 클릭).
+  /// 주문/예약 상세 내역 다이얼로그(주문번호 클릭). 관리자·마스터는 수정 가능.
   void _showOrderDetail(Map<String, dynamic> rec, {required bool isReserve}) {
     MerchOrderDetail.show(
       context,
       rec: rec,
       isReserve: isReserve,
       statuses: isReserve ? _reserveStatuses : _statuses,
+      editable: true,
+      onChanged: _load,
+      onDelete: () => _confirmDelete(rec, isReserve: isReserve),
     );
   }
 
-  Future<void> _setOrderStatus(Map<String, dynamic> o, String status) async {
-    final r = await _nas.merchUpdateOrder(id: '${o['id']}', status: status);
-    if (!mounted) return;
-    if (r['ok'] == true) {
-      _snack('진행상태를 "$status"로 변경했습니다');
-      _load();
-    } else {
-      _snack('변경 실패');
-    }
-  }
-
-  Future<void> _setReserveStatus(Map<String, dynamic> r, String status) async {
-    final res = await _nas.merchUpdateReserve(id: '${r['id']}', status: status);
-    if (!mounted) return;
-    if (res['ok'] == true) {
-      _snack('예약 상태를 "$status"로 변경했습니다');
-      _load();
-    } else {
-      _snack('변경 실패');
-    }
-  }
-
-  Future<void> _deleteReserve(Map<String, dynamic> r) async {
-    final yes = await _confirm('예약 삭제', '"${r['buyerName']}"님의 예약을 삭제할까요?');
-    if (yes != true) return;
-    final ok = await _nas.merchDeleteReserve('${r['id']}');
-    if (!mounted) return;
-    _snack(ok ? '삭제했습니다' : '삭제 실패');
-    if (ok) _load();
-  }
-
-  Future<void> _togglePaid(Map<String, dynamic> o) async {
-    final r = await _nas.merchUpdateOrder(
-      id: '${o['id']}',
-      paid: o['paid'] != true,
-    );
-    if (!mounted) return;
-    if (r['ok'] == true) {
-      _load();
-    } else {
-      _snack('변경 실패');
-    }
-  }
-
-  Future<void> _editOrderMemo(Map<String, dynamic> o) async {
-    final memo = TextEditingController(text: '${o['memo'] ?? ''}');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('주문 메모'),
-        content: TextField(
-          controller: memo,
-          maxLines: 3,
-          decoration: const InputDecoration(hintText: '관리 메모'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final r = await _nas.merchUpdateOrder(id: '${o['id']}', memo: memo.text);
-    if (!mounted) return;
-    if (r['ok'] == true) {
-      _load();
-    } else {
-      _snack('저장 실패');
-    }
-  }
-
-  Future<void> _deleteOrder(Map<String, dynamic> o) async {
+  Future<bool> _confirmDelete(Map<String, dynamic> rec,
+      {required bool isReserve}) async {
     final yes = await _confirm(
-      '주문 삭제',
-      '${o['buyerName']}님의 "${o['product'] ?? o['productName']}" 주문을 삭제할까요?',
+      isReserve ? '예약 삭제' : '주문 삭제',
+      isReserve
+          ? '"${rec['buyerName']}"님의 예약을 삭제할까요?'
+          : '${rec['buyerName']}님의 "${rec['product'] ?? rec['productName']}" 주문을 삭제할까요?',
     );
-    if (yes != true) return;
-    final ok = await _nas.merchDeleteOrder('${o['id']}');
-    if (!mounted) return;
+    if (yes != true) return false;
+    final ok = isReserve
+        ? await _nas.merchDeleteReserve('${rec['id']}')
+        : await _nas.merchDeleteOrder('${rec['id']}');
+    if (!mounted) return ok;
     _snack(ok ? '삭제했습니다' : '삭제 실패');
-    if (ok) _load();
+    if (ok) await _load();
+    return ok;
   }
 
   // ==================== 2) 누적판매 탭 ====================

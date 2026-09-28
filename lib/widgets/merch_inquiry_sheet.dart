@@ -98,7 +98,7 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
     return b.toString();
   }
 
-  Future<void> _openMail({required bool gmail}) async {
+  Future<void> _openMail() async {
     if (_name.text.trim().isEmpty) {
       _toast('이름을 입력하세요.');
       return;
@@ -116,14 +116,12 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
         '${_subject.text.trim().isEmpty ? '수품 구매 문의' : _subject.text.trim()}'
         '${_order.text.trim().isNotEmpty ? ' (${_order.text.trim()})' : ''}'
         ' — ${_name.text.trim()}';
-    final Uri uri = gmail
-        ? Uri.parse(
-            'https://mail.google.com/mail/?view=cm&fs=1&to=${enc(kMerchInquiryTo)}&su=${enc(subject)}&body=${enc(_body)}')
-        : Uri(
-            scheme: 'mailto',
-            path: kMerchInquiryTo,
-            query: 'subject=${enc(subject)}&body=${enc(_body)}',
-          );
+    // 기기(스마트폰/PC)에 설정된 기본 메일 앱으로 보낸다(Gmail 버튼 삭제).
+    final uri = Uri(
+      scheme: 'mailto',
+      path: kMerchInquiryTo,
+      query: 'subject=${enc(subject)}&body=${enc(_body)}',
+    );
 
     if (isWebRuntime) {
       try {
@@ -263,26 +261,11 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed: () => _openMail(gmail: true),
-                    icon: const Icon(Icons.outgoing_mail, size: 19),
-                    label: const Text('지메일로 문의 보내기',
+                    onPressed: () => _openMail(),
+                    icon: const Icon(Icons.mail_outline, size: 19),
+                    label: const Text('메일 보내기 (기기 메일 앱)',
                         style: TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 15)),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.purple,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () => _openMail(gmail: false),
-                    icon: const Icon(Icons.mail_outline, size: 18),
-                    label: const Text('기본 메일 앱으로 보내기',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 14)),
                   ),
                   const SizedBox(height: 8),
                   const Text(

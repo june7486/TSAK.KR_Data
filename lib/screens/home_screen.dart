@@ -17,6 +17,7 @@ import '../widgets/inquiry_sheet.dart';
 import 'app_access_screen.dart';
 import 'admin_screen.dart';
 import 'merch_admin_screen.dart';
+import 'merch_stats_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'event_year_screen.dart';
@@ -978,6 +979,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     -2,
                   ),
                   _finButton(
+                    '수품통계',
+                    Icons.insights,
+                    const Color(0xFF6A1B9A),
+                    -3,
+                  ),
+                  _finButton(
                     '참가비',
                     Icons.event_available,
                     AppColors.tigerGold,
@@ -1418,6 +1425,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MerchAdminScreen()),
+            );
+          } else if (tab == -3) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MerchStatsScreen()),
             );
           } else if (tab < 0) {
             Navigator.push(

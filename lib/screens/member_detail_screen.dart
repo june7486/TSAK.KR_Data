@@ -114,12 +114,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _depositSection(m),
                 _feeTracker(m),
                 _eventSection(m),
-                _purchaseSection(m),
                 MerchActivitySection(
                   ident: m.number.isNotEmpty ? m.number : m.phone,
                   memberName: m.name,
                   phone: m.phone,
                   email: m.email,
+                  memo: m.purchases,
+                  canEditMemo: context.read<AppState>().isApp,
+                  onEditMemo: () => _editPurchases(m),
                 ),
                 _infoCard(m),
                 _membershipSection(m),
@@ -689,58 +691,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// 수품구매현황 — 자가/관리자 입력 메모 표시 + 빠른 편집.
-  Widget _purchaseSection(Member m) {
-    final text = m.purchases.trim();
-    return _section(
-      title: '수품구매현황',
-      icon: Icons.shopping_bag,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (text.isEmpty)
-            Text(
-              '구매 내역이 없습니다.',
-              style: TextStyle(color: AppColors.textGray, fontSize: 13),
-            )
-          else
-            ...text.split(RegExp(r'[\n/]')).where((e) => e.trim().isNotEmpty).map(
-                  (line) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.only(top: 3, right: 8),
-                          child: Icon(Icons.check_circle,
-                              size: 14, color: AppColors.scoutGreen),
-                        ),
-                        Expanded(
-                          child: Text(
-                            line.trim(),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textDark,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () => _editPurchases(m),
-              icon: const Icon(Icons.edit, size: 16),
-              label: const Text('수품구매현황 편집'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  /// [삭제됨] 수품구매현황 단독 섹션 — MerchActivitySection으로 통합되어 제거.
+  /// (메모 표시·편집은 MerchActivitySection의 memo/onEditMemo로 이관)
 
   Future<void> _editPurchases(Member m) async {
     final ctrl = TextEditingController(text: m.purchases);
