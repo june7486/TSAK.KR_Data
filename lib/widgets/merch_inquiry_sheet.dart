@@ -33,7 +33,7 @@ Future<void> showMerchInquiry({
 }
 
 /// 고정 수신자 이메일.
-const String kMerchInquiryTo = 'une7558@gmail.com';
+const String kMerchInquiryTo = 'june7558@gmail.com';
 
 class _MerchInquirySheet extends StatefulWidget {
   const _MerchInquirySheet({
