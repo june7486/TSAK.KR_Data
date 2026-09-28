@@ -813,31 +813,33 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _eventSection(Member m) {
-    // 프로필에 등록된 행사 + 행사관리(events.json)에 정의된 모든 행사를 합집합으로
-    // 표시한다 — 누락 없이 모든 행사 리스트를 노출(미등록 행사는 '미등록'으로 표시).
-    final names = <String>{
-      ...m.eventAttend.keys,
-      if (_knownLoaded) ..._knownEvents,
-    };
-    final events = names.toList()
+    // [최종 결정 반영 · turn9-4] 개인정보(개인 프로필/상세)에 노출되는 행사리스트는
+    // '실제 참여한 행사만' 보여준다. (PDF page27 의 "누락없이 모든 행사리스트 노출"과
+    //  충돌하나, 사용자 지시 "가장 마지막 내용이 최종 의사결정"에 따라 참여한 행사만 노출.)
+    //  - 참여(attend == true) 로 등록된 행사만 리스트에 포함한다.
+    //  - '미등록'/'불참' 행사는 목록에서 제외한다(참여한 요약에만 반영됨).
+    final events = m.eventAttend.entries
+        .where((e) => e.value == true)
+        .map((e) => e.key)
+        .toList()
       ..sort((a, b) {
         final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
         final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
         if (ya != yb) return yb.compareTo(ya);
         return b.compareTo(a);
       });
-    final attendedCount = events.where((e) => m.eventAttend[e] == true).length;
-    final missingCount =
-        events.where((e) => !m.eventAttend.containsKey(e)).length;
+    final attendedCount = events.length;
     return _section(
       title: '행사참가',
       icon: Icons.event,
       child: events.isEmpty
           ? Row(
               children: [
-                Text(
-                  '행사 목록을 불러오는 중입니다.',
-                  style: TextStyle(color: AppColors.textGray, fontSize: 13),
+                Flexible(
+                  child: Text(
+                    '아직 참여로 등록된 행사가 없습니다.',
+                    style: TextStyle(color: AppColors.textGray, fontSize: 13),
+                  ),
                 ),
                 const Spacer(),
                 TextButton.icon(
@@ -851,8 +853,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '참가 $attendedCount건 · 전체 ${events.length}건'
-                  '${missingCount > 0 ? ' · 미등록 $missingCount건' : ''}',
+                  '참여 행사 $attendedCount건'
+                  ' · 참여한 행사만 표시',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textGray,
