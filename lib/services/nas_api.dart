@@ -1882,6 +1882,7 @@ class NasApi {
     String phone = '',
     String email = '',
     String memo = '',
+    int quantity = 1,
   }) async {
     final r = await http
         .post(
@@ -1894,6 +1895,7 @@ class NasApi {
             'phone': phone,
             'email': email,
             'memo': memo,
+            'quantity': quantity,
           }),
         )
         .timeout(const Duration(seconds: 40));

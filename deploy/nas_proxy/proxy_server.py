@@ -5410,11 +5410,9 @@ class Handler(BaseHTTPRequestHandler):
                 for pr in _merch_products_sorted(doc):
                     if pr.get("active") is False and not is_admin:
                         continue
-                    # 인가자 전용 상품: 인가번호가 확인된 구매자(또는 관리자)만 노출.
-                    #  비인가(전화만) 사용자에게는 '인가자 전용' 상품을 숨긴다.
-                    if pr.get("credentialOnly") is True and not is_admin \
-                            and not is_credentialed:
-                        continue
+                    # 인가자 전용 상품은 비인가(비로그인·전화) 사용자에게도 노출한다.
+                    #  (요구사항) 상품 구매는 누구나 가능하되, 결제 단계에서 인가번호를
+                    #  입력하면 해당 회원의 수품구매 내역에 자동 연동된다.
                     prods.append({k: pr.get(k) for k in
                                   ("id", "name", "kind", "price", "stock",
                                    "options", "image", "desc", "active",
@@ -7094,8 +7092,15 @@ class Handler(BaseHTTPRequestHandler):
                 phone = str(d.get("phone", "") or "").strip()[:30]
                 email = str(d.get("email", "") or "").strip()[:80]
                 memo = str(d.get("memo", "") or "").strip()[:300]
+                try:
+                    quantity = int(d.get("quantity", 1) or 1)
+                except Exception:
+                    quantity = 1
+                if quantity < 1:
+                    quantity = 1
                 # 인가자/비인가자 구분 — 수품구매와 동일 프로세스.
                 #   인가번호 우선, 없으면 전화번호로 비인가(일반)회원 자동 생성.
+                #   → 인가번호가 있으면 해당 회원의 수품구매 내역에 자동 연동된다.
                 contact_id, contact_type = _merch_resolve_contact(
                     number, phone, name, email)
                 contact_id_n = re.sub(r"[^0-9]", "", str(contact_id or ""))
@@ -7116,6 +7121,7 @@ class Handler(BaseHTTPRequestHandler):
                     "phone": phone,
                     "email": email,
                     "memo": memo,
+                    "quantity": quantity,        # 신청 수량
                     "at": _now_stamp(),
                     "no": len(apps) + 1,         # 신청 순번
                 })

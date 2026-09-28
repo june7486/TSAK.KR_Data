@@ -323,6 +323,7 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
     final name = '${m['name'] ?? ''}';
     final num_ = '${m['number'] ?? ''}';
     final memo = '${m['memo'] ?? ''}';
+    final qty = (m['quantity'] as num?)?.toInt() ?? 0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 5),
       child: Row(
@@ -338,6 +339,7 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
           ),
           Expanded(
             child: Text('$name${num_.isNotEmpty ? ' ($num_)' : ''}'
+                '${qty > 0 ? ' · $qty개' : ''}'
                 '${memo.isNotEmpty ? ' · $memo' : ''}',
                 style: const TextStyle(fontSize: 12.5)),
           ),

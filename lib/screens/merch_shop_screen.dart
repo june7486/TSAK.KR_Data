@@ -1275,9 +1275,11 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final nameCtl = TextEditingController();
     final noCtl = TextEditingController();
     final phoneCtl = TextEditingController();
+    final qtyCtl = TextEditingController(text: '1');
     final emailCtl = TextEditingController();
     final memoCtl = TextEditingController();
     // 로그인(개인) 상태면 인가번호/이름 기본값 채움.
+    final isCredentialed = context.read<AppState>().isPersonal;
     final who = context.read<AppState>().who;
     if (who.isNotEmpty) {
       try {
@@ -1285,6 +1287,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         if (m != null) {
           nameCtl.text = m.name;
           noCtl.text = m.number;
+          if (m.phone.trim().isNotEmpty) phoneCtl.text = m.phone;
         } else {
           noCtl.text = who;
         }
@@ -1301,17 +1304,33 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '누구나 신청 가능합니다. 범스카우트인가자는 인가번호를 남겨주세요(선택).',
+                  '누구나 신청 가능합니다. 범스카우트인가자는 인가번호를 남겨주세요.',
                   style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
                 ),
                 const SizedBox(height: 10),
                 _sf(nameCtl, '이름 *', autofocus: true),
-                _sf(noCtl, '인가번호 (범스카우트인가자 · 선택)'),
-                _sf(phoneCtl, '연락처 (선택)',
-                    keyboard: TextInputType.phone),
-                _sf(emailCtl, '이메일 (선택)',
-                    keyboard: TextInputType.emailAddress),
-                _sf(memoCtl, '메모/수량 (선택)', maxLines: 2),
+                _sf(noCtl, '인가번호 (범스카우트인가자)',
+                    keyboard: TextInputType.number,
+                    helper: '인가자 필수 · 입력 시 수품구매 내역에 자동 연동'),
+                _sf(phoneCtl, '연락처 *', keyboard: TextInputType.phone),
+                _sf(qtyCtl, '수량 *', keyboard: TextInputType.number),
+                _sf(memoCtl, '메모 (선택)', maxLines: 2),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppColors.tigerGold.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '* 제작이 확정되면 개별적으로 연락드립니다.\n'
+                    '* 범스카우트 비인가 회원분들은 전화번호로 로그인 하시면\n'
+                    '   진행상황을 확인하실 수 있습니다.',
+                    style: TextStyle(
+                        fontSize: 11, color: AppColors.textDark, height: 1.5),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1330,16 +1349,51 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       nameCtl.dispose();
       noCtl.dispose();
       phoneCtl.dispose();
+      qtyCtl.dispose();
       emailCtl.dispose();
       memoCtl.dispose();
       return;
     }
     final name = nameCtl.text.trim();
+    final number = noCtl.text.trim();
+    final phone = phoneCtl.text.trim();
+    final qty = int.tryParse(qtyCtl.text.trim()) ?? 0;
     if (name.isEmpty) {
       _snack('이름을 입력해 주세요', color: AppColors.taegeukRed);
       nameCtl.dispose();
       noCtl.dispose();
       phoneCtl.dispose();
+      qtyCtl.dispose();
+      emailCtl.dispose();
+      memoCtl.dispose();
+      return;
+    }
+    if (phone.isEmpty) {
+      _snack('연락처를 입력해 주세요', color: AppColors.taegeukRed);
+      nameCtl.dispose();
+      noCtl.dispose();
+      phoneCtl.dispose();
+      qtyCtl.dispose();
+      emailCtl.dispose();
+      memoCtl.dispose();
+      return;
+    }
+    if (qty <= 0) {
+      _snack('수량을 1 이상 입력해 주세요', color: AppColors.taegeukRed);
+      nameCtl.dispose();
+      noCtl.dispose();
+      phoneCtl.dispose();
+      qtyCtl.dispose();
+      emailCtl.dispose();
+      memoCtl.dispose();
+      return;
+    }
+    if (isCredentialed && number.isEmpty) {
+      _snack('인가번호를 입력해 주세요', color: AppColors.taegeukRed);
+      nameCtl.dispose();
+      noCtl.dispose();
+      phoneCtl.dispose();
+      qtyCtl.dispose();
       emailCtl.dispose();
       memoCtl.dispose();
       return;
@@ -1348,10 +1402,11 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       final r = await _nas.merchSurveyApply(
         planId: planId,
         name: name,
-        number: noCtl.text.trim(),
-        phone: phoneCtl.text.trim(),
+        number: number,
+        phone: phone,
         email: emailCtl.text.trim(),
         memo: memoCtl.text.trim(),
+        quantity: qty,
       );
       if (!mounted) return;
       final no = (r['no'] as num?)?.toInt();
@@ -1391,13 +1446,17 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       nameCtl.dispose();
       noCtl.dispose();
       phoneCtl.dispose();
+      qtyCtl.dispose();
       emailCtl.dispose();
       memoCtl.dispose();
     }
   }
 
   Widget _sf(TextEditingController c, String label,
-      {int maxLines = 1, TextInputType? keyboard, bool autofocus = false}) {
+      {int maxLines = 1,
+      TextInputType? keyboard,
+      bool autofocus = false,
+      String? helper}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextField(
@@ -1407,6 +1466,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         keyboardType: keyboard,
         decoration: InputDecoration(
           labelText: label,
+          helperText: helper,
           isDense: true,
           border: const OutlineInputBorder(),
         ),
