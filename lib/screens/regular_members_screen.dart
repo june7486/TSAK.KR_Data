@@ -35,10 +35,14 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
     final t = _q.trim().toLowerCase();
     if (t.isEmpty) return all;
     return all
-        .where((m) =>
-            m.name.toLowerCase().contains(t) ||
-            m.phone.replaceAll(RegExp(r'[^0-9]'), '').contains(t.replaceAll(RegExp(r'[^0-9]'), '')) ||
-            m.loginId.toLowerCase().contains(t))
+        .where(
+          (m) =>
+              m.name.toLowerCase().contains(t) ||
+              m.phone
+                  .replaceAll(RegExp(r'[^0-9]'), '')
+                  .contains(t.replaceAll(RegExp(r'[^0-9]'), '')) ||
+              m.loginId.toLowerCase().contains(t),
+        )
         .toList();
   }
 
@@ -82,7 +86,8 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
   }
 
   Widget _summary(AppState state) {
-    Widget stat(String label, int value, Color color, IconData icon) => Expanded(
+    Widget stat(String label, int value, Color color, IconData icon) =>
+        Expanded(
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
             decoration: BoxDecoration(
@@ -94,14 +99,21 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
               children: [
                 Icon(icon, size: 18, color: color),
                 const SizedBox(height: 4),
-                Text('$value',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: color)),
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.textGray)),
+                Text(
+                  '$value',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
           ),
@@ -112,11 +124,19 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
         children: [
           stat('전체 회원', state.total, AppColors.purple, Icons.groups),
           const SizedBox(width: 8),
-          stat('인가자', state.credentialCount, AppColors.taegeukBlue,
-              Icons.verified_user),
+          stat(
+            '인가자',
+            state.credentialCount,
+            AppColors.taegeukBlue,
+            Icons.verified_user,
+          ),
           const SizedBox(width: 8),
-          stat('일반회원', state.regularCount, AppColors.textGray,
-              Icons.person_outline),
+          stat(
+            '일반회원',
+            state.regularCount,
+            AppColors.textGray,
+            Icons.person_outline,
+          ),
         ],
       ),
     );
@@ -147,108 +167,125 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
   }
 
   Widget _card(AppState state, Member m) {
+    void openDetail() => Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
+    );
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-        child: Row(
-          children: [
-            MemberAvatar(
-              name: m.name,
-              photoPath: m.photoPath,
-              league: m.league,
-              size: 30,
-              number: '',
-              showNumber: false,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          m.name.isEmpty ? '(이름없음)' : m.name,
+      child: InkWell(
+        onTap: openDetail,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(
+            children: [
+              MemberAvatar(
+                name: m.name,
+                photoPath: m.photoPath,
+                league: m.league,
+                size: 30,
+                number: '',
+                showNumber: false,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            m.name.isEmpty ? '(이름없음)' : m.name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.textGray.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            '일반회원',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                        ),
+                        if (!m.privacyAgreed) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            size: 15,
+                            color: AppColors.tigerGold,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.phone,
+                          size: 13,
+                          color: AppColors.scoutGreen,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          m.phone.isEmpty ? m.loginId : m.phone,
                           style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
                             color: AppColors.textDark,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.textGray.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          '일반회원',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textGray,
+                        if (m.privacyAgreedAt.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '가입 ${m.privacyAgreedAt.split(' ').first}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textGray,
+                            ),
                           ),
-                        ),
-                      ),
-                      if (!m.privacyAgreed) ...[
-                        const SizedBox(width: 4),
-                        const Icon(Icons.warning_amber_rounded,
-                            size: 15, color: AppColors.tigerGold),
+                        ],
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      const Icon(Icons.phone,
-                          size: 13, color: AppColors.scoutGreen),
-                      const SizedBox(width: 3),
-                      Text(
-                        m.phone.isEmpty ? m.loginId : m.phone,
-                        style: const TextStyle(
-                            fontSize: 12.5, color: AppColors.textDark),
-                      ),
-                      if (m.privacyAgreedAt.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          '가입 ${m.privacyAgreedAt.split(' ').first}',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.textGray),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: '상세',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MemberDetailScreen(memberId: m.id),
+                    ),
+                  ],
                 ),
               ),
-              icon: const Icon(Icons.info_outline, color: AppColors.purple),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.taegeukBlue,
-                minimumSize: const Size(0, 34),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              IconButton(
+                tooltip: '상세',
+                onPressed: openDetail,
+                icon: const Icon(Icons.info_outline, color: AppColors.purple),
               ),
-              onPressed: () => _promote(state, m),
-              child: const Text('승격',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
-            ),
-          ],
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.taegeukBlue,
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _promote(state, m),
+                child: const Text(
+                  '승격',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -326,8 +363,9 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style:
-                FilledButton.styleFrom(backgroundColor: AppColors.taegeukBlue),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukBlue,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('승격'),
           ),
@@ -344,9 +382,11 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(updated == null
-            ? '승격 실패: 인가번호가 비었거나 중복됩니다'
-            : '인가자로 승격했습니다 (#${updated.number})'),
+        content: Text(
+          updated == null
+              ? '승격 실패: 인가번호가 비었거나 중복됩니다'
+              : '인가자로 승격했습니다 (#${updated.number})',
+        ),
         duration: const Duration(seconds: 2),
       ),
     );

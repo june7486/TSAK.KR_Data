@@ -57,8 +57,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   String _ledgerMonth = '';
   String _ledgerKind = '';
   bool _ledgerLoading = false;
-  late final TextEditingController _ledgerYearCtl =
-      TextEditingController(text: _ledgerYear);
+  late final TextEditingController _ledgerYearCtl = TextEditingController(
+    text: _ledgerYear,
+  );
 
   @override
   void initState() {
@@ -98,8 +99,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         _orders = allOrders.where((o) => o['deleted'] != true).toList();
         _reserves = allReserves.where((o) => o['deleted'] != true).toList();
         _deletedOrders = allOrders.where((o) => o['deleted'] == true).toList();
-        _deletedReserves = allReserves.where((o) => o['deleted'] == true).toList();
-        _orderOrder = ((r['orderOrder'] as List?) ?? []).map((e) => '$e').toList();
+        _deletedReserves = allReserves
+            .where((o) => o['deleted'] == true)
+            .toList();
+        _orderOrder = ((r['orderOrder'] as List?) ?? [])
+            .map((e) => '$e')
+            .toList();
         _bundles = _list(r['bundles']);
         _makers = _list(r['makers']);
         _donations = _list(r['donations']);
@@ -189,7 +194,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: selected
                               ? Colors.white
@@ -269,8 +276,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       children: [
         _noticeEditor(),
         const SizedBox(height: 14),
-        _subHeader('소품(상품) 관리', '상품 등록·수정·판매중지 · 인가자 전용/일반 구분',
-            Icons.shopping_bag_outlined),
+        _subHeader(
+          '소품(상품) 관리',
+          '상품 등록·수정·판매중지 · 인가자 전용/일반 구분',
+          Icons.shopping_bag_outlined,
+        ),
         const SizedBox(height: 8),
         if (_products.isEmpty)
           const Padding(
@@ -308,7 +318,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         if (groups.isEmpty)
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text('주문이 없습니다', style: TextStyle(color: AppColors.textGray)),
+            child: Text(
+              '주문이 없습니다',
+              style: TextStyle(color: AppColors.textGray),
+            ),
           )
         else
           ReorderableListView.builder(
@@ -323,50 +336,60 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               return Container(
                 key: ValueKey('ord-$k'),
                 margin: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_selMode)
-                      Center(
-                        child: Checkbox(
-                          value: _selKeys.contains(k),
-                          onChanged: (_) => _toggleSel(k),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    Expanded(child: _groupCard(g, isReserve: false)),
-                    // 우측 순서이동 손잡이 — 항상 노출 (일괄편집 모드가 아니어도 표시)
-                    ReorderableDragStartListener(
-                      index: i,
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.grab,
-                        child: Container(
-                          width: 40,
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.purple.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: AppColors.purple.withValues(alpha: 0.22)),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_selMode)
+                        Center(
+                          child: Checkbox(
+                            value: _selKeys.contains(k),
+                            onChanged: (_) => _toggleSel(k),
+                            visualDensity: VisualDensity.compact,
                           ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.drag_indicator,
-                                  size: 22, color: AppColors.purple),
-                              const SizedBox(height: 2),
-                              Text('순서',
+                        ),
+                      Expanded(child: _groupCard(g, isReserve: false)),
+                      // 우측 순서이동 손잡이 — 항상 노출 (일괄편집 모드가 아니어도 표시)
+                      ReorderableDragStartListener(
+                        index: i,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.grab,
+                          child: Container(
+                            width: 40,
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.purple.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: AppColors.purple.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.drag_indicator,
+                                  size: 22,
+                                  color: AppColors.purple,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '순서',
                                   style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.purple
-                                          .withValues(alpha: 0.85))),
-                            ],
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.purple.withValues(
+                                      alpha: 0.85,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
@@ -381,7 +404,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         if (reserveGroups.isEmpty)
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text('예약 접수가 없습니다', style: TextStyle(color: AppColors.textGray)),
+            child: Text(
+              '예약 접수가 없습니다',
+              style: TextStyle(color: AppColors.textGray),
+            ),
           )
         else
           for (final g in reserveGroups) _groupCard(g, isReserve: true),
@@ -409,14 +435,20 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         children: [
           Row(
             children: [
-              Icon(_selMode ? Icons.checklist : Icons.tune,
-                  size: 17, color: AppColors.purple),
+              Icon(
+                _selMode ? Icons.checklist : Icons.tune,
+                size: 17,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 6),
-              Text(_selMode ? '일괄편집 모드' : '주문 일괄편집',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
-                      color: AppColors.purpleDark)),
+              Text(
+                _selMode ? '일괄편집 모드' : '주문 일괄편집',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: AppColors.purpleDark,
+                ),
+              ),
               const Spacer(),
               Switch.adaptive(
                 value: _selMode,
@@ -429,8 +461,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           ),
           if (_selMode) ...[
             const SizedBox(height: 4),
-            Text('선택 ${_selKeys.length}건 · 우측 「순서」 손잡이를 끌어 이동',
-                style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            Text(
+              '선택 ${_selKeys.length}건 · 우측 「순서」 손잡이를 끌어 이동',
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -438,27 +472,36 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               children: [
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.taegeukBlue,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8)),
+                    backgroundColor: AppColors.taegeukBlue,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
                   onPressed: _selKeys.length >= 2 ? _mergeSelected : null,
                   icon: const Icon(Icons.merge_type, size: 16),
                   label: const Text('주문 합치기', style: TextStyle(fontSize: 12.5)),
                 ),
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.taegeukRed,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8)),
+                    backgroundColor: AppColors.taegeukRed,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
                   onPressed: _selKeys.isEmpty ? null : _deleteSelected,
                   icon: const Icon(Icons.delete_outline, size: 16),
                   label: const Text('주문 삭제', style: TextStyle(fontSize: 12.5)),
                 ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.purpleDark,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8)),
+                    foregroundColor: AppColors.purpleDark,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
                   onPressed: _selKeys.isEmpty
                       ? null
                       : () => setState(() => _selKeys.clear()),
@@ -493,32 +536,42 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             children: [
               const Icon(Icons.delete_outline, size: 17, color: Colors.red),
               const SizedBox(width: 6),
-              Text('삭제된 주문 (${deleted.length}건)',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
-                      color: Colors.red)),
+              Text(
+                '삭제된 주문 (${deleted.length}건)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: Colors.red,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          const Text('※ 삭제 후 30일간 보관되며, 30일이 지나면 목록에서 사라집니다. '
-              '(아래 "30일 초과 삭제 내역"에서 계속 확인 가능)',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+          const Text(
+            '※ 삭제 후 30일간 보관되며, 30일이 지나면 목록에서 사라집니다. '
+            '(아래 "30일 초과 삭제 내역"에서 계속 확인 가능)',
+            style: TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
           const SizedBox(height: 8),
           if (deleted.isEmpty)
-            const Text('삭제된 주문이 없습니다.',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray))
+            const Text(
+              '삭제된 주문이 없습니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            )
           else
             for (final g in deleted) _deletedRow(g),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.purpleDark,
-                visualDensity: VisualDensity.compact),
+              foregroundColor: AppColors.purpleDark,
+              visualDensity: VisualDensity.compact,
+            ),
             onPressed: _loadArchive,
             icon: const Icon(Icons.history, size: 16),
-            label: Text(_showArchive ? '30일 초과 삭제 내역 숨기기' : '30일 초과 삭제 주문내역 확인',
-                style: const TextStyle(fontSize: 12.5)),
+            label: Text(
+              _showArchive ? '30일 초과 삭제 내역 숨기기' : '30일 초과 삭제 주문내역 확인',
+              style: const TextStyle(fontSize: 12.5),
+            ),
           ),
         ],
       ),
@@ -546,19 +599,29 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${orderNo.isEmpty ? '(번호없음)' : orderNo} · $buyer',
-                    style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w700)),
-                Text('삭제 ${deletedAt.isEmpty ? '' : deletedAt} · '
-                    '${days > 0 ? 'D-$days ($days일 후 완전삭제)' : '곧 완전삭제'}',
-                    style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+                Text(
+                  '${orderNo.isEmpty ? '(번호없음)' : orderNo} · $buyer',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '삭제 ${deletedAt.isEmpty ? '' : deletedAt} · '
+                  '${days > 0 ? 'D-$days ($days일 후 완전삭제)' : '곧 완전삭제'}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
           ),
           TextButton.icon(
             style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                foregroundColor: AppColors.scoutGreen),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: AppColors.scoutGreen,
+            ),
             onPressed: () => _restoreKeys([k]),
             icon: const Icon(Icons.restore, size: 15),
             label: const Text('복원', style: TextStyle(fontSize: 12)),
@@ -587,23 +650,34 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined,
-                  size: 17, color: AppColors.textGray),
+              const Icon(
+                Icons.inventory_2_outlined,
+                size: 17,
+                color: AppColors.textGray,
+              ),
               const SizedBox(width: 6),
-              Text('30일 초과 삭제 주문내역 보관함 (${_archived.length}건)',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 13)),
+              Text(
+                '30일 초과 삭제 주문내역 보관함 (${_archived.length}건)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          const Text('※ 삭제 후 30일이 지나 목록에서 사라진 내역입니다. 영구 보전되어 확인만 가능합니다.',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+          const Text(
+            '※ 삭제 후 30일이 지나 목록에서 사라진 내역입니다. 영구 보전되어 확인만 가능합니다.',
+            style: TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
           const SizedBox(height: 8),
           if (_archiveLoading)
             const Center(child: CircularProgressIndicator(strokeWidth: 2))
           else if (_archived.isEmpty)
-            const Text('보관된 내역이 없습니다.',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray))
+            const Text(
+              '보관된 내역이 없습니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            )
           else
             for (final a in _archived) _archiveRow(a),
         ],
@@ -616,7 +690,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          const Icon(Icons.archive_outlined, size: 13, color: AppColors.textGray),
+          const Icon(
+            Icons.archive_outlined,
+            size: 13,
+            color: AppColors.textGray,
+          ),
           const SizedBox(width: 5),
           Expanded(
             child: Text(
@@ -626,13 +704,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text('${a['_archivedAt'] ?? ''}',
-              style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+          Text(
+            '${a['_archivedAt'] ?? ''}',
+            style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
         ],
       ),
     );
   }
-
 
   // ---------- 주문번호별 그룹핑 ----------
   static String _groupKeyOf(Map<String, dynamic> o) {
@@ -663,7 +742,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   /// orderOrder(백엔드 표시순서)에 맞춰 그룹을 정렬. 배열에 없는 그룹은 뒤에.
   List<List<Map<String, dynamic>>> _orderedGroups(
-      List<Map<String, dynamic>> src) {
+    List<Map<String, dynamic>> src,
+  ) {
     final groups = _groupBy(src);
     final idx = <String, int>{};
     for (int i = 0; i < _orderOrder.length; i++) {
@@ -690,7 +770,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   // ----- 드래그 재정렬 -----
   Future<void> _onReorderGroups(
-      List<List<Map<String, dynamic>>> groups, int oldI, int newI) async {
+    List<List<Map<String, dynamic>>> groups,
+    int oldI,
+    int newI,
+  ) async {
     if (newI > oldI) newI -= 1;
     final keys = groups.map((g) => _groupKeyOf(g.first)).toList();
     final moved = keys.removeAt(oldI);
@@ -703,8 +786,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   // ----- 삭제 / 복원 / 완전삭제 -----
   Future<void> _deleteSelected() async {
     if (_selKeys.isEmpty) return;
-    final yes = await _confirm('주문 삭제',
-        '선택한 ${_selKeys.length}건을 삭제할까요?\n삭제 후 30일간 보관되며 복원할 수 있습니다.');
+    final yes = await _confirm(
+      '주문 삭제',
+      '선택한 ${_selKeys.length}건을 삭제할까요?\n삭제 후 30일간 보관되며 복원할 수 있습니다.',
+    );
     if (yes != true) return;
     final r = await _nas.merchOrdersDelete(_selKeys.toList());
     if (!mounted) return;
@@ -747,31 +832,39 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('선택한 ${_selKeys.length}건을 하나의 묶음으로 관리합니다.\n'
-                '각 주문번호는 그대로 유지되어 주문서에 개별로 표기됩니다.',
-                style: const TextStyle(fontSize: 13)),
+            Text(
+              '선택한 ${_selKeys.length}건을 하나의 묶음으로 관리합니다.\n'
+              '각 주문번호는 그대로 유지되어 주문서에 개별로 표기됩니다.',
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 10),
             TextField(
               controller: nameCtl,
               decoration: const InputDecoration(
-                  labelText: '묶음 이름 (선택)', isDense: true,
-                  border: OutlineInputBorder()),
+                labelText: '묶음 이름 (선택)',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('합치기')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('합치기'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
-    final r = await _nas.merchOrdersMerge(_selKeys.toList(),
-        name: nameCtl.text.trim());
+    final r = await _nas.merchOrdersMerge(
+      _selKeys.toList(),
+      name: nameCtl.text.trim(),
+    );
     if (!mounted) return;
     _snack(r['ok'] == true ? '주문을 합쳤습니다' : '실패: ${r['error']}');
     if (r['ok'] == true) {
@@ -805,8 +898,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     setState(() {
       _archived
         ..clear()
-        ..addAll(((r['archive'] as List?) ?? [])
-            .map((e) => (e as Map).cast<String, dynamic>()));
+        ..addAll(
+          ((r['archive'] as List?) ?? []).map(
+            (e) => (e as Map).cast<String, dynamic>(),
+          ),
+        );
       _archiveLoading = false;
     });
   }
@@ -826,21 +922,25 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   void _openGroup(List<Map<String, dynamic>> items, {required bool isReserve}) {
     if (items.isEmpty) return;
     Navigator.of(context)
-        .push(MaterialPageRoute(
-          builder: (_) => OrderDetailScreen(
-            groupKey: _groupKeyOf(items.first),
-            initialItems: items,
-            canManage: true,
-            statuses: isReserve ? _reserveStatuses : _statuses,
-            isReserve: isReserve,
+        .push(
+          MaterialPageRoute(
+            builder: (_) => OrderDetailScreen(
+              groupKey: _groupKeyOf(items.first),
+              initialItems: items,
+              canManage: true,
+              statuses: isReserve ? _reserveStatuses : _statuses,
+              isReserve: isReserve,
+            ),
           ),
-        ))
+        )
         .then((_) => _load());
   }
 
   /// 그룹 요약 카드(주문번호 통합). 클릭 → 장바구니형 상세.
-  Widget _groupCard(List<Map<String, dynamic>> items,
-      {required bool isReserve}) {
+  Widget _groupCard(
+    List<Map<String, dynamic>> items, {
+    required bool isReserve,
+  }) {
     final head = items.first;
     final orderNo = '${head['orderNo'] ?? ''}'.trim();
     final buyer = '${head['buyerName'] ?? ''}'.trim();
@@ -848,18 +948,23 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final buyerPhone = '${head['phone'] ?? ''}'.trim();
     final created = '${head['created'] ?? head['createdAt'] ?? ''}'.trim();
     final allPaid = items.every((o) => o['paid'] == true);
-    final anyCancelled =
-        items.any((o) => '${o['status'] ?? ''}'.contains('취소'));
+    final anyCancelled = items.any(
+      (o) => '${o['status'] ?? ''}'.contains('취소'),
+    );
     final received = items.every((o) => o['received'] == true);
     final grand = items.fold<int>(
-        0, (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt());
+      0,
+      (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt(),
+    );
     final sumQty = items.fold<int>(
-        0, (p, o) => p + ((o['qty'] as num?)?.toInt() ?? 1));
+      0,
+      (p, o) => p + ((o['qty'] as num?)?.toInt() ?? 1),
+    );
     final tone = isReserve
         ? Colors.orange
         : (anyCancelled
-            ? Colors.red
-            : (allPaid ? AppColors.scoutGreen : AppColors.taegeukRed));
+              ? Colors.red
+              : (allPaid ? AppColors.scoutGreen : AppColors.taegeukRed));
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -878,28 +983,33 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               Row(
                 children: [
                   Icon(
-                      isReserve
-                          ? Icons.bookmark_border
-                          : Icons.receipt_long_outlined,
-                      size: 15,
-                      color: isReserve ? Colors.orange : AppColors.purple),
+                    isReserve
+                        ? Icons.bookmark_border
+                        : Icons.receipt_long_outlined,
+                    size: 15,
+                    color: isReserve ? Colors.orange : AppColors.purple,
+                  ),
                   const SizedBox(width: 5),
                   Expanded(
                     child: Text(
-                        orderNo.isEmpty
-                            ? (isReserve ? '(예약번호 없음)' : '(주문번호 없음)')
-                            : '${isReserve ? '예약' : '주문'} $orderNo',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
-                            color: AppColors.purpleDark,
-                            letterSpacing: 0.2),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
+                      orderNo.isEmpty
+                          ? (isReserve ? '(예약번호 없음)' : '(주문번호 없음)')
+                          : '${isReserve ? '예약' : '주문'} $orderNo',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: AppColors.purpleDark,
+                        letterSpacing: 0.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   if (!isReserve)
-                    _pill(allPaid ? '입금완료' : '미입금',
-                        allPaid ? AppColors.scoutGreen : AppColors.taegeukRed),
+                    _pill(
+                      allPaid ? '입금완료' : '미입금',
+                      allPaid ? AppColors.scoutGreen : AppColors.taegeukRed,
+                    ),
                   if (received)
                     Padding(
                       padding: const EdgeInsets.only(left: 4),
@@ -915,8 +1025,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     const SizedBox(width: 6),
                     TextButton(
                       style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4)),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
                       onPressed: () =>
                           _unmerge('${items.first['bundleId'] ?? ''}'),
                       child: const Text('해제', style: TextStyle(fontSize: 11)),
@@ -931,15 +1042,19 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Row(
                     children: [
-                      const Text('· ',
-                          style: TextStyle(color: AppColors.textGray)),
+                      const Text(
+                        '· ',
+                        style: TextStyle(color: AppColors.textGray),
+                      ),
                       Expanded(
                         child: Text(
                           '${o['product'] ?? o['productName'] ?? '수품'} '
                           '×${(o['qty'] as num?)?.toInt() ?? 1}'
                           '${('${o['option'] ?? ''}'.trim()).isEmpty ? '' : ' / ${o['option']}'}',
                           style: const TextStyle(
-                              fontSize: 11, color: AppColors.textDark),
+                            fontSize: 11,
+                            color: AppColors.textDark,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -957,14 +1072,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                 ),
               if (items.length > 6)
-                Text('외 ${items.length - 6}개 품목…',
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textGray)),
+                Text(
+                  '외 ${items.length - 6}개 품목…',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                  ),
+                ),
               const SizedBox(height: 6),
               Row(
                 children: [
-                  const Icon(Icons.person_outline,
-                      size: 13, color: AppColors.textGray),
+                  const Icon(
+                    Icons.person_outline,
+                    size: 13,
+                    color: AppColors.textGray,
+                  ),
                   const SizedBox(width: 3),
                   Expanded(
                     child: Text(
@@ -972,45 +1094,65 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       '${buyerNo.isEmpty ? '' : ' · $buyerNo'}'
                       '${buyerPhone.isEmpty ? '' : ' · $buyerPhone'}',
                       style: const TextStyle(
-                          fontSize: 11.5, color: AppColors.textDark),
+                        fontSize: 11.5,
+                        color: AppColors.textDark,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Flexible(
-                    child: Text(created,
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      created,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  Text('총 ${items.length}종 $sumQty개',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textGray)),
+                  Text(
+                    '총 ${items.length}종 $sumQty개',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                   const SizedBox(width: 8),
-                  Text(_won(grand),
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w800)),
+                  Text(
+                    _won(grand),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
               const Row(
                 children: [
-                  Text('장바구니형 상세 보기',
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          color: AppColors.purple,
-                          fontWeight: FontWeight.w800)),
+                  Text(
+                    '장바구니형 상세 보기',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.purple,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   SizedBox(width: 3),
                   Icon(Icons.chevron_right, size: 16, color: AppColors.purple),
                   Spacer(),
-                  Text('수량·금액·송장·인쇄',
-                      style: TextStyle(
-                          fontSize: 10.5,
-                          color: AppColors.lifetimeGold,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    '수량·금액·송장·인쇄',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.lifetimeGold,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -1097,15 +1239,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         // 인가자 전용 상품은 바탕색을 다르게(틸/청록 계열) 표시
-        color: credentialOnly
-            ? const Color(0xFFE6F4F1)
-            : Colors.white,
+        color: credentialOnly ? const Color(0xFFE6F4F1) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: (credentialOnly
-                  ? AppColors.scoutGreen
-                  : (active ? AppColors.purple : AppColors.textGray))
-              .withValues(alpha: credentialOnly ? 0.55 : 0.15),
+          color:
+              (credentialOnly
+                      ? AppColors.scoutGreen
+                      : (active ? AppColors.purple : AppColors.textGray))
+                  .withValues(alpha: credentialOnly ? 0.55 : 0.15),
           width: credentialOnly ? 1.6 : 1,
         ),
       ),
@@ -1147,7 +1288,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       Container(
                         margin: const EdgeInsets.only(right: 6),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.scoutGreen,
                           borderRadius: BorderRadius.circular(6),
@@ -1243,7 +1386,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     Future<void> pickImage(StateSetter setDlg) async {
       try {
         final files = await pickDataFiles(
-            dialogTitle: '소품 이미지 선택', allowedExtensions: const ['jpg', 'jpeg', 'png', 'gif', 'webp']);
+          dialogTitle: '소품 이미지 선택',
+          allowedExtensions: const ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+        );
         if (files.isEmpty) return;
         final f = files.first;
         final b64 = base64Encode(f.bytes);
@@ -1278,19 +1423,27 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         height: 64,
                         color: AppColors.bg,
                         child: image.trim().isEmpty
-                            ? const Icon(Icons.image_outlined,
-                                color: AppColors.textGray)
+                            ? const Icon(
+                                Icons.image_outlined,
+                                color: AppColors.textGray,
+                              )
                             : (image.startsWith('http')
-                                ? Image.network(image, fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) => const Icon(
+                                  ? Image.network(
+                                      image,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) => const Icon(
                                         Icons.broken_image_outlined,
-                                        color: AppColors.textGray))
-                                : Image.network(
-                                    _nas.merchImageUrl(image),
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) => const Icon(
+                                        color: AppColors.textGray,
+                                      ),
+                                    )
+                                  : Image.network(
+                                      _nas.merchImageUrl(image),
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) => const Icon(
                                         Icons.broken_image_outlined,
-                                        color: AppColors.textGray))),
+                                        color: AppColors.textGray,
+                                      ),
+                                    )),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1300,7 +1453,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         children: [
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                                visualDensity: VisualDensity.compact),
+                              visualDensity: VisualDensity.compact,
+                            ),
                             onPressed: () => pickImage(setDlg),
                             icon: const Icon(Icons.upload_file, size: 16),
                             label: const Text('이미지 업로드'),
@@ -1308,10 +1462,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                           if (image.trim().isNotEmpty)
                             TextButton(
                               style: TextButton.styleFrom(
-                                  visualDensity: VisualDensity.compact),
+                                visualDensity: VisualDensity.compact,
+                              ),
                               onPressed: () => setDlg(() => image = ''),
-                              child: const Text('이미지 제거',
-                                  style: TextStyle(fontSize: 12)),
+                              child: const Text(
+                                '이미지 제거',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                         ],
                       ),
@@ -1363,11 +1520,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  secondary: const Icon(Icons.badge_outlined,
-                      color: AppColors.tigerGold),
+                  secondary: const Icon(
+                    Icons.badge_outlined,
+                    color: AppColors.tigerGold,
+                  ),
                   title: const Text('인가자 전용 상품'),
-                  subtitle: const Text('인가번호가 확인된 인가자(또는 관리자)에게만 노출',
-                      style: TextStyle(fontSize: 11.5)),
+                  subtitle: const Text(
+                    '인가번호가 확인된 인가자(또는 관리자)에게만 노출',
+                    style: TextStyle(fontSize: 11.5),
+                  ),
                   value: credentialOnly,
                   onChanged: (v) => setDlg(() => credentialOnly = v),
                 ),
@@ -1438,15 +1599,19 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           foregroundColor: AppColors.purple,
           padding: const EdgeInsets.symmetric(vertical: 14),
           side: BorderSide(
-              color: AppColors.purple.withValues(alpha: 0.5),
-              style: BorderStyle.solid),
+            color: AppColors.purple.withValues(alpha: 0.5),
+            style: BorderStyle.solid,
+          ),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         onPressed: () => _editProduct(existing: null),
         icon: const Icon(Icons.add_circle_outline, size: 20),
-        label: const Text('소품 추가 (이미지·가격·사이즈·재고)',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+        label: const Text(
+          '소품 추가 (이미지·가격·사이즈·재고)',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
       ),
     );
   }
@@ -1465,8 +1630,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  Future<bool> _confirmDelete(Map<String, dynamic> rec,
-      {required bool isReserve}) async {
+  Future<bool> _confirmDelete(
+    Map<String, dynamic> rec, {
+    required bool isReserve,
+  }) async {
     final yes = await _confirm(
       isReserve ? '예약 삭제' : '주문 삭제',
       isReserve
@@ -1716,7 +1883,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           children: [
             _statCard('매출합계', _won(amountTotal), AppColors.taegeukBlue),
             const SizedBox(width: 8),
-            _statCard('입금/미입금', '$paidCount / $unpaidCount', AppColors.scoutGreen),
+            _statCard(
+              '입금/미입금',
+              '$paidCount / $unpaidCount',
+              AppColors.scoutGreen,
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -1730,11 +1901,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('기간/구분 필터',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: AppColors.purpleDark)),
+              const Text(
+                '기간/구분 필터',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: AppColors.purpleDark,
+                ),
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -1771,8 +1945,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                             child: Text(m.isEmpty ? '전체' : '$m월'),
                           ),
                       ],
-                      onChanged: (v) =>
-                          setState(() => _ledgerMonth = v ?? ''),
+                      onChanged: (v) => setState(() => _ledgerMonth = v ?? ''),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1789,8 +1962,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         DropdownMenuItem(value: '주문', child: Text('주문')),
                         DropdownMenuItem(value: '예약', child: Text('예약')),
                       ],
-                      onChanged: (v) =>
-                          setState(() => _ledgerKind = v ?? ''),
+                      onChanged: (v) => setState(() => _ledgerKind = v ?? ''),
                     ),
                   ),
                 ],
@@ -1802,21 +1974,24 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 children: [
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact),
+                      visualDensity: VisualDensity.compact,
+                    ),
                     onPressed: _ledgerLoading ? null : _loadLedger,
                     icon: const Icon(Icons.filter_alt_outlined, size: 16),
                     label: const Text('조회'),
                   ),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact),
+                      visualDensity: VisualDensity.compact,
+                    ),
                     onPressed: _downloadLedgerCsv,
                     icon: const Icon(Icons.download_outlined, size: 16),
                     label: const Text('판매대장 CSV'),
                   ),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact),
+                      visualDensity: VisualDensity.compact,
+                    ),
                     onPressed: _ledgerYear.isEmpty && _ledgerMonth.isEmpty
                         ? null
                         : () {
@@ -1844,8 +2019,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           )
         else if (_ledgerRows.isEmpty)
           _sectionBox('판매대장', [
-            const Text('조회된 내역이 없습니다.',
-                style: TextStyle(color: AppColors.textGray)),
+            const Text(
+              '조회된 내역이 없습니다.',
+              style: TextStyle(color: AppColors.textGray),
+            ),
           ])
         else
           _sectionBox('판매대장 (${_ledgerRows.length}건)', [
@@ -1879,26 +2056,35 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         children: [
           Row(
             children: [
-              _pill(kind.isEmpty ? (isOrder ? '주문' : '예약') : kind,
-                  isOrder ? AppColors.purple : Colors.orange),
+              _pill(
+                kind.isEmpty ? (isOrder ? '주문' : '예약') : kind,
+                isOrder ? AppColors.purple : Colors.orange,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: InkWell(
                   onTap: () => _showOrderDetail(row, isReserve: !isOrder),
                   borderRadius: BorderRadius.circular(6),
-                  child: Text(orderNo.isEmpty ? '(번호 없음)' : '$orderNo  ›',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                          color: AppColors.purpleDark,
-                          letterSpacing: 0.2),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    orderNo.isEmpty ? '(번호 없음)' : '$orderNo  ›',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      color: AppColors.purpleDark,
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-              Text(_won((amount as num?)?.toInt() ?? 0),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 12.5)),
+              Text(
+                _won((amount as num?)?.toInt() ?? 0),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 5),
@@ -1912,26 +2098,33 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
-                  const Icon(Icons.person_outline,
-                      size: 13, color: AppColors.taegeukBlue),
+                  const Icon(
+                    Icons.person_outline,
+                    size: 13,
+                    color: AppColors.taegeukBlue,
+                  ),
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
                       '${buyer.isEmpty ? '주문자 미상' : buyer} · '
                       '${product.isEmpty ? '상품' : product}${qty > 1 ? ' ×$qty' : ''}',
                       style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.taegeukBlue),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.taegeukBlue,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const Text('  이력',
-                      style: TextStyle(
-                          fontSize: 10.5,
-                          color: AppColors.taegeukBlue,
-                          fontWeight: FontWeight.w800)),
+                  const Text(
+                    '  이력',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.taegeukBlue,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1939,23 +2132,30 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           const SizedBox(height: 3),
           Row(
             children: [
-              Text(created.isEmpty ? '-' : created,
-                  style:
-                      const TextStyle(fontSize: 11, color: AppColors.textGray)),
+              Text(
+                created.isEmpty ? '-' : created,
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+              ),
               const Spacer(),
               if (status.isNotEmpty)
-                Text(status,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.purpleDark,
-                        fontWeight: FontWeight.w700)),
+                Text(
+                  status,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.purpleDark,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               if (isOrder) ...[
                 const SizedBox(width: 8),
-                Text(paid ? '입금완료' : '미입금',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: paid ? AppColors.scoutGreen : AppColors.taegeukRed)),
+                Text(
+                  paid ? '입금완료' : '미입금',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: paid ? AppColors.scoutGreen : AppColors.taegeukRed,
+                  ),
+                ),
               ],
             ],
           ),
@@ -1983,7 +2183,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final reserves = _reserves.where(match).toList()
       ..sort((a, b) => '${b['created']}'.compareTo('${a['created']}'));
     int sumOf(List<Map<String, dynamic>> xs) => xs.fold(
-        0, (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt());
+      0,
+      (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt(),
+    );
 
     showDialog<void>(
       context: context,
@@ -1996,12 +2198,20 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$buyerName 주문 이력',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w800)),
-                  Text('주문 ${orders.length}건 · 예약 ${reserves.length}건',
-                      style: const TextStyle(
-                          fontSize: 11.5, color: AppColors.textGray)),
+                  Text(
+                    '$buyerName 주문 이력',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    '주문 ${orders.length}건 · 예약 ${reserves.length}건',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2022,17 +2232,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       color: AppColors.scoutGreen.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(9),
                     ),
-                    child: Text('총 주문금액(합계): ${_won(sumOf(orders))}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.scoutGreen)),
+                    child: Text(
+                      '총 주문금액(합계): ${_won(sumOf(orders))}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.scoutGreen,
+                      ),
+                    ),
                   ),
                 const SizedBox(height: 10),
                 if (orders.isEmpty && reserves.isEmpty)
-                  const Text('이 주문자의 내역이 없습니다.',
-                      style: TextStyle(color: AppColors.textGray)),
-                for (final o in orders)
-                  _buyerHistoryTile(o, isReserve: false),
+                  const Text(
+                    '이 주문자의 내역이 없습니다.',
+                    style: TextStyle(color: AppColors.textGray),
+                  ),
+                for (final o in orders) _buyerHistoryTile(o, isReserve: false),
                 for (final r in reserves) _buyerHistoryTile(r, isReserve: true),
               ],
             ),
@@ -2040,7 +2254,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ),
         actions: [
           FilledButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -2059,28 +2275,38 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           color: Colors.white,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: (isReserve ? Colors.orange : AppColors.purple)
-                  .withValues(alpha: 0.2)),
+            color: (isReserve ? Colors.orange : AppColors.purple).withValues(
+              alpha: 0.2,
+            ),
+          ),
         ),
         child: Row(
           children: [
-            Icon(isReserve ? Icons.bookmark_border : Icons.receipt_long,
-                size: 15,
-                color: isReserve ? Colors.orange : AppColors.purple),
+            Icon(
+              isReserve ? Icons.bookmark_border : Icons.receipt_long,
+              size: 15,
+              color: isReserve ? Colors.orange : AppColors.purple,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${r['orderNo'] ?? '(번호 없음)'}',
-                      style: const TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  Text(
+                    '${r['orderNo'] ?? '(번호 없음)'}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   Text(
                     '${r['product'] ?? ''}'
                     '${(r['qty'] as num?)?.toInt() != null ? ' ×${r['qty']}' : ''}'
                     ' · ${r['created'] ?? ''}',
                     style: const TextStyle(
-                        fontSize: 11, color: AppColors.textGray),
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -2090,20 +2316,23 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(_won((amount as num?)?.toInt() ?? 0),
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w800)),
+                Text(
+                  _won((amount as num?)?.toInt() ?? 0),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 Text(
                   isReserve
                       ? '${r['status'] ?? '예약'}'
                       : (paid ? '입금완료' : '미입금'),
                   style: TextStyle(
-                      fontSize: 10,
-                      color: isReserve
-                          ? Colors.orange
-                          : (paid
-                              ? AppColors.scoutGreen
-                              : AppColors.taegeukRed)),
+                    fontSize: 10,
+                    color: isReserve
+                        ? Colors.orange
+                        : (paid ? AppColors.scoutGreen : AppColors.taegeukRed),
+                  ),
                 ),
               ],
             ),
@@ -3193,14 +3422,18 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                               final uri = Uri.tryParse(url);
                               if (uri != null) {
                                 try {
-                                  await launchUrl(uri,
-                                      mode: LaunchMode.externalApplication);
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
                                 } catch (_) {}
                               }
                             },
                       icon: const Icon(Icons.open_in_new, size: 16),
-                      label: const Text('주소 확인',
-                          style: TextStyle(fontSize: 12)),
+                      label: const Text(
+                        '주소 확인',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                   ],
                 ),
