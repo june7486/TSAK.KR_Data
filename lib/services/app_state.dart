@@ -982,6 +982,14 @@ class AppState extends ChangeNotifier {
   Member? byNumber(String number) => repo.byNumber(number);
   Member? byName(String name) => repo.byName(name);
 
+  /// 이름 공개/비공개 로컬 반영 (서버 저장은 호출부에서 완료 후 호출).
+  void setNameVisible(String id, bool visible) {
+    final m = repo.rawById(id) ?? repo.byId(id);
+    if (m == null) return;
+    repo.saveLocalOnly(m.copyWith(nameVisible: visible));
+    notifyListeners();
+  }
+
   /// 개인/비인가자 접근에서 특정 회원이 본인인지 여부
   bool isSelfNumber(String number) {
     if (!isSelfAccess || who.isEmpty) return true;

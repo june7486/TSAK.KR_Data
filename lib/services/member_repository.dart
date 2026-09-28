@@ -391,6 +391,20 @@ class MemberRepository {
     }
   }
 
+  /// 제한 없이 원본 1건 조회(관리자 토글용).
+  Member? rawById(String id) => _rawById(id);
+
+  /// 로컬 캐시만 갱신(서버 반영은 별도). revision 증가로 UI 갱신.
+  void saveLocalOnly(Member member) {
+    final updated = member.copyWith(updatedAt: DateTime.now());
+    if (isMemory) {
+      _mem![updated.id] = updated.toMap();
+    } else {
+      _box!.put(updated.id, updated.toMap());
+    }
+    revision.value++;
+  }
+
   /// 단일 인가자만 NAS에 부분 저장 (전체 DB 덮어쓰기 방지)
   Future<bool> _saveOne(Member member) async {
     final api = nas;

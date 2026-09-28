@@ -265,6 +265,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _quickActions(Member m) {
+    final state = context.watch<AppState>();
     final actions = [
       _QA(
         '전화',
@@ -295,13 +296,92 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       }, true),
       _QA('복사', Icons.copy, AppColors.textGray, () => _copy(m), true),
     ];
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: actions.map((a) => _qaButton(a)).toList(),
+          ),
+        ),
+        // 관리자·마스터 전용 — 이름 공개/비공개 좌우 토글
+        if (state.isApp || state.isMaster) _nameVisibleToggle(m),
+      ],
+    );
+  }
+
+  /// 이름 공개/비공개 좌우 선택 버튼 (관리자·마스터). 다른 회원 혼란 방지.
+  Widget _nameVisibleToggle(Member m) {
+    final visible = m.nameVisible;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: actions.map((a) => _qaButton(a)).toList(),
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: visible
+              ? AppColors.scoutGreen.withValues(alpha: 0.08)
+              : AppColors.taegeukRed.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: (visible ? AppColors.scoutGreen : AppColors.taegeukRed)
+                .withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(visible ? Icons.visibility : Icons.visibility_off,
+                size: 16,
+                color: visible ? AppColors.scoutGreen : AppColors.taegeukRed),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                visible ? '이름 공개 중 (다른 회원에게 표시)' : '이름 비공개 (다른 회원에게 숨김)',
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ),
+            SegmentedButton<bool>(
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              segments: const [
+                ButtonSegment(value: true, label: Text('공개')),
+                ButtonSegment(value: false, label: Text('비공개')),
+              ],
+              selected: {visible},
+              onSelectionChanged: (s) => _setNameVisible(m, s.first),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _setNameVisible(Member m, bool visible) async {
+    final ident = m.number.isNotEmpty ? m.number : m.phone;
+    try {
+      final r = await context
+          .read<NasApi>()
+          .setMemberNameVisible(ident: ident, visible: visible);
+      if (!mounted) return;
+      if (r['ok'] == true) {
+        final state = context.read<AppState>();
+        state.setNameVisible(m.id, visible);
+        _snack(visible ? '이름을 공개로 설정했습니다.' : '이름을 비공개로 설정했습니다.');
+      } else {
+        _snack('변경 실패: ${r['error']}');
+      }
+    } catch (e) {
+      if (mounted) _snack('오류: $e');
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Widget _qaButton(_QA a) {
@@ -1510,10 +1590,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         '[${m.number}] ${m.name} | ${m.league} ${m.unit} | ${m.phone} | ${m.date}';
     Clipboard.setData(ClipboardData(text: text));
     _snack('복사되었습니다');
-  }
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _edit(Member m) async {

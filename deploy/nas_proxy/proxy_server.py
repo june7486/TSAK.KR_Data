@@ -270,6 +270,7 @@ def _scope_members(tier, who, members):
     - 관리자(app)·마스터: 전체
     - 개인(personal): 본인 1건만 + 민감 필드 제거
     - 비인가자(guest): 본인 1건만 + 민감 필드 제거
+    - 단, '샘플' 회원(sample=true)은 모든 회원이 볼 수 있다(안내·예시용).
     """
     who = re.sub(r"[^0-9]", "", str(who or ""))
     if tier in ("app", "master"):
@@ -279,7 +280,7 @@ def _scope_members(tier, who, members):
         num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
         lid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
         ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
-        if who and who in (num, lid, ph):
+        if (who and who in (num, lid, ph)) or m.get("sample") is True:
             out.append(_redact_member(m))
     return out
 
@@ -289,6 +290,10 @@ def _redact_member(m):
     m = dict(m)
     for k in ("personalPassword", "password", "pw", "memo", "photoPath", "address"):
         m.pop(k, None)
+    # 이름 노출 제어 — 관리자가 '이름 비공개'로 설정한 경우 이름을 가린다.
+    if m.get("nameVisible") is False:
+        m["name"] = "(이름 비공개)"
+        m["nameHidden"] = True
     return m
 
 
@@ -5358,6 +5363,33 @@ class Handler(BaseHTTPRequestHandler):
                     _save_json(DB_FILE, members)
                     meta = _touch_meta({"count": len(members), "updatedBy": d.get("by", "app")})
                 return self._json({"ok": True, "meta": meta})
+            if p == "/api/member/name-visible":
+                # 관리자·마스터: 회원 이름 공개/비공개 토글 (개인 프로필 좌우 버튼)
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                ident = re.sub(r"[^0-9]", "", str(d.get("ident", "") or ""))
+                visible = d.get("visible", True) is not False
+                if not ident:
+                    return self._json({"ok": False, "error": "no_ident"}, 400)
+                with _MEMBER_WRITE_LOCK:
+                    members = _ev_members()
+                    hit = None
+                    for i, m in enumerate(members):
+                        num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                        ph = re.sub(r"[^0-9]", "",
+                                    str(m.get("accessPhone") or m.get("phone") or ""))
+                        lid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
+                        if ident in (num, ph, lid):
+                            m["nameVisible"] = visible
+                            members[i] = m
+                            hit = m
+                            break
+                    if hit is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    _save_json(DB_FILE, members)
+                    _touch_meta({"updatedBy": "name-visible"})
+                return self._json({"ok": True, "nameVisible": visible})
             if p == "/api/backup":
                 d = json.loads(self._body() or b"{}")
                 name = d.get("name") or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

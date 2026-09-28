@@ -35,6 +35,8 @@ class Member {
     List<String>? parents,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
+    this.sample = false,
+    this.nameVisible = true,
     this.updatedAt,
   }) : mentors = mentors ?? <String>[],
        parents = parents ?? <String>[],
@@ -144,6 +146,12 @@ class Member {
   /// 행사 참가 여부: {"2024 정기총회": true, ...}
   Map<String, bool> eventAttend;
 
+  /// 샘플(예시) 회원 여부 — 모든 회원에게 노출된다.
+  bool sample;
+
+  /// 이름 공개 여부 — 관리자가 개인 프로필에서 토글. false면 다른 회원에게 "(이름 비공개)".
+  bool nameVisible;
+
   /// 마지막 수정 시각
   DateTime? updatedAt;
 
@@ -210,6 +218,8 @@ class Member {
     'parents': parents,
     'feeYears': feeYears,
     'eventAttend': eventAttend,
+    'sample': sample,
+    'nameVisible': nameVisible,
     'updatedAt': updatedAt?.millisecondsSinceEpoch,
   };
 
@@ -263,6 +273,8 @@ class Member {
       parents: castStrList(map['parents']),
       feeYears: castBoolMap(map['feeYears']),
       eventAttend: castBoolMap(map['eventAttend']),
+      sample: map['sample'] == true,
+      nameVisible: map['nameVisible'] != false,
       updatedAt: map['updatedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int)
           : null,
@@ -301,6 +313,8 @@ class Member {
     List<String>? parents,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
+    bool? sample,
+    bool? nameVisible,
     DateTime? updatedAt,
   }) {
     return Member(
@@ -336,6 +350,8 @@ class Member {
       parents: parents ?? List<String>.from(this.parents),
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),
       eventAttend: eventAttend ?? Map<String, bool>.from(this.eventAttend),
+      sample: sample ?? this.sample,
+      nameVisible: nameVisible ?? this.nameVisible,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

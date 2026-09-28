@@ -1132,6 +1132,21 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 회원 이름 공개/비공개 토글 (관리자·마스터). 개인 프로필 좌우 버튼.
+  Future<Map<String, dynamic>> setMemberNameVisible({
+    required String ident,
+    required bool visible,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member/name-visible'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ident': ident, 'visible': visible}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 은행거래 종합분석 (캐시) — 관리자·마스터.
   Future<Map<String, dynamic>> financeAnalysis({bool force = false}) async {
     final r = await http
