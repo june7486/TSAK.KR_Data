@@ -584,6 +584,7 @@ def _default_config():
         "appPassword": APP_PW,          # 앱 접근 비번 (마스터 변경 가능)
         "personalPasswords": {},        # 인가번호 → 개인비번 (미설정 시 "{no}!@@")
         "serverPaused": False,          # 앱 서버 일시 정지
+        "admins": [],                   # 마스터가 관리자 권한을 부여한 인가번호 목록
     }
 
 
@@ -864,6 +865,25 @@ def _personal_pw_of(no):
     no = re.sub(r"[^0-9]", "", str(no))
     pws = _cfg_value("personalPasswords", {}) or {}
     return str(pws.get(no) or f"{no}!@@")
+
+
+def _granted_admins():
+    """마스터가 관리자 권한을 부여한 인가번호 집합."""
+    cfg = _load_json(CFG_FILE, _default_config())
+    lst = cfg.get("admins", [])
+    if not isinstance(lst, list):
+        return set()
+    out = set()
+    for x in lst:
+        d = re.sub(r"[^0-9]", "", str(x))
+        if d:
+            out.add(d)
+    return out
+
+
+def _is_granted_admin(no):
+    no = re.sub(r"[^0-9]", "", str(no or ""))
+    return bool(no) and no in _granted_admins()
 
 
 def _verify(tier, value):
@@ -4517,6 +4537,69 @@ class Handler(BaseHTTPRequestHandler):
                 if s.get("tier") == "master":
                     out["appPassword"] = cfg.get("appPassword", APP_PW)
                 return self._json(out)
+            # ---- 관리자 지정 (마스터 전용) ----
+            #  마스터가 특정 인가번호(회원)에게 관리자 권한을 부여/회수한다.
+            #  부여된 인가번호는 개인 로그인 시 app(관리자) 세션을 받는다.
+            if p == "/api/admin/admins":
+                if not self._require("master"):
+                    return
+                admins = sorted(_granted_admins())
+                # 후보: 전체 인가자(관리자 후보) 이름/번호 힌트
+                members = _load_json(DB_FILE, [])
+                name_of = {}
+                for m in members:
+                    no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                    if no:
+                        name_of[no] = str(m.get("name", ""))
+                rows = [{"number": n, "name": name_of.get(n, "")}
+                        for n in admins]
+                return self._json({"ok": True, "admins": rows,
+                                   "count": len(rows)})
+            if p == "/api/admin/grant":
+                d = json.loads(self._body() or b"{}")
+                if not _is_master_val(d.get("master")):
+                    return self._json({"ok": False, "error": "master"}, 401)
+                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                # 실제 존재하는 인가자인지 확인
+                m = _ev_member_by_ident(no)
+                if not m or not str(m.get("number", "")).strip():
+                    return self._json(
+                        {"ok": False, "error": "not_found"}, 404)
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    lst = cfg.setdefault("admins", [])
+                    if not isinstance(lst, list):
+                        lst = []
+                    if no not in lst:
+                        lst.append(no)
+                    cfg["admins"] = sorted(
+                        set(re.sub(r"[^0-9]", "", str(x)) for x in lst if x))
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "admins": cfg["admins"],
+                                   "number": no,
+                                   "name": str(m.get("name", ""))})
+            if p == "/api/admin/revoke":
+                d = json.loads(self._body() or b"{}")
+                if not _is_master_val(d.get("master")):
+                    return self._json({"ok": False, "error": "master"}, 401)
+                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    lst = cfg.get("admins", [])
+                    if isinstance(lst, list):
+                        cfg["admins"] = [
+                            re.sub(r"[^0-9]", "", str(x))
+                            for x in lst
+                            if re.sub(r"[^0-9]", "", str(x)) != no]
+                    else:
+                        cfg["admins"] = []
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "admins": cfg["admins"],
+                                   "number": no})
             if p == "/api/members":
                 # F01: 무인증 차단 + 역할별 최소 항목
                 if not self._require():
@@ -5330,16 +5413,23 @@ class Handler(BaseHTTPRequestHandler):
                 who = ""
                 if ok and tier == "personal":
                     who = re.sub(r"[^0-9]", "", str(ident))
+                # 마스터가 관리자 권한을 부여한 인가번호는 개인 로그인이어도
+                #  관리자(app) 세션을 받는다(마스터 권한 부여 기능).
+                granted_admin = False
+                sess_tier = tier
+                if ok and tier == "personal" and _is_granted_admin(who):
+                    granted_admin = True
+                    sess_tier = "app"
                 if ok:
                     _log_access_login(tier, role,
                                       who or re.sub(r"[^0-9]", "", str(ident)),
                                       who, _ua, _ip)
-                sid = _sess_new(tier, who) if ok else ""
+                sid = _sess_new(sess_tier, who) if ok else ""
                 if sid:
                     self._set_sid_cookie(sid)
                 return self._json(
                     {"ok": ok, "role": role, "silent": (tier == "master"),
-                     "sid": sid})
+                     "admin": granted_admin, "sid": sid})
             # ---- 세션 종료 ----
             if p == "/api/logout":
                 _sess_del(self._sid())
@@ -6153,8 +6243,36 @@ class Handler(BaseHTTPRequestHandler):
                         order["qty"] = max(1, int(d.get("qty", 1) or 1))
                     except Exception:
                         pass
+                # ── 주문(그룹) 부가정보: 배송비·송장·배송사진·수령확인 ──
+                if "shipFee" in d:
+                    try:
+                        order["shipFee"] = max(0, int(d.get("shipFee", 0) or 0))
+                    except Exception:
+                        pass
+                if "invoice" in d:
+                    order["invoice"] = str(d.get("invoice", "") or "")[:60]
+                if "invoiceCompany" in d:
+                    order["invoiceCompany"] = str(d.get("invoiceCompany", "") or "")[:40]
+                if "shipPhoto" in d:
+                    order["shipPhoto"] = str(d.get("shipPhoto", "") or "")[:300]
+                if "shipPhoto2" in d:
+                    order["shipPhoto2"] = str(d.get("shipPhoto2", "") or "")[:300]
+                if "shipDate" in d:
+                    order["shipDate"] = str(d.get("shipDate", "") or "")[:40]
+                if "paidDate" in d:
+                    order["paidDate"] = str(d.get("paidDate", "") or "")[:40]
+                # 구매자 수령확인 (관리자 대행/본인)
+                if "received" in d:
+                    order["received"] = bool(d.get("received"))
+                    if order["received"]:
+                        order["receivedAt"] = str(
+                            d.get("receivedAt", "") or _now_stamp())[:40]
+                    else:
+                        order["receivedAt"] = ""
                 order["total"] = int(order.get("unitPrice", 0) or 0) * int(order.get("qty", 1) or 1)
-                order["grandTotal"] = order["total"] + int(order.get("annualFeeAdded", 0) or 0)
+                order["grandTotal"] = (order["total"]
+                                       + int(order.get("annualFeeAdded", 0) or 0)
+                                       + int(order.get("shipFee", 0) or 0))
                 order["updated"] = _now_stamp()
                 _merch_save(doc)
                 return self._json({"ok": True, "order": order})
@@ -6402,6 +6520,66 @@ class Handler(BaseHTTPRequestHandler):
                 if rec and rec.get("contactId"):
                     _merch_detach_from_member(rec.get("contactId"), oid, "order")
                 return self._json({"ok": True, "removed": before - len(doc["orders"])})
+            if p == "/api/merch/order/delete-group":
+                # 같은 주문번호(orderNo)의 모든 품목을 한 번에 삭제(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                orderno = str(d.get("orderNo", "") or "").strip()
+                if not orderno:
+                    return self._json({"ok": False, "error": "orderNo"}, 400)
+                victims = [x for x in doc.get("orders", [])
+                           if str(x.get("orderNo", "")) == orderno]
+                doc["orders"] = [x for x in doc.get("orders", [])
+                                 if str(x.get("orderNo", "")) != orderno]
+                _merch_save(doc)
+                for rec in victims:
+                    if rec.get("contactId"):
+                        _merch_detach_from_member(rec.get("contactId"),
+                                                  rec.get("id"), "order")
+                return self._json({"ok": True, "removed": len(victims)})
+            if p == "/api/merch/order/receive":
+                # 구매자 수령확인 — 본인(세션) 또는 관리자가 지정 주문번호를
+                #  '수령완료' 처리한다. ident로 본인 여부 확인.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                doc = _merch_doc()
+                orderno = str(d.get("orderNo", "") or "").strip()
+                oid = str(d.get("id", "") or "").strip()
+                targets = [x for x in doc.get("orders", [])
+                           if (orderno and str(x.get("orderNo", "")) == orderno)
+                           or (oid and str(x.get("id", "")) == oid)]
+                if not targets:
+                    return self._json({"ok": False, "error": "not_found"}, 404)
+                # 권한: 관리자이거나, 세션 신원이 주문자와 일치해야 함
+                if not is_admin:
+                    sess_who = re.sub(r"[^0-9]", "", str(s.get("who", "")))
+                    ok_any = any(_merch_match_ident(x, sess_who) for x in targets)
+                    if not sess_who or not ok_any:
+                        return self._json(
+                            {"ok": False, "error": "unauthorized"}, 403)
+                receive = bool(d.get("received", True))
+                stamp = _now_stamp()
+                for x in targets:
+                    x["received"] = receive
+                    x["receivedAt"] = stamp if receive else ""
+                    # 수령 시 배송완료 상태로 승격(진행중인 경우만)
+                    if receive and '취소' not in str(x.get("status", "")):
+                        x["status"] = "배송완료"
+                        hist = x.get("statusHistory")
+                        if not isinstance(hist, list):
+                            hist = []
+                        hist.append({"status": "배송완료", "at": stamp,
+                                     "by": "구매자" if not is_admin else "admin"})
+                        x["statusHistory"] = hist
+                    x["updated"] = stamp
+                _merch_save(doc)
+                return self._json({"ok": True, "count": len(targets),
+                                   "orders": targets})
             if p == "/api/merch/config":
                 if not self._require("admin"):
                     return

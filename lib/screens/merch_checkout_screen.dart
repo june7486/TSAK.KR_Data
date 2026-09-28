@@ -94,6 +94,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
           children: [
+            if (_busy) ...[
+              _waitingNotice(),
+              const SizedBox(height: 12),
+            ],
             _orderSummary(),
             const SizedBox(height: 12),
             _noticeSection(),
@@ -417,6 +421,46 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
             Text(label, style: const TextStyle(fontSize: 12.5)),
             const Spacer(),
             Text(_won(v), style: const TextStyle(fontSize: 12.5)),
+          ],
+        ),
+      );
+
+  Widget _waitingNotice() => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.tigerGold.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('현재 주문이 진행 중입니다',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
+                          color: AppColors.purpleDark)),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Text(
+              '시간이 다소 소요되더라도 기다려 주십시오.\n'
+              '뒤로 가기나 창을 닫지 말아 주십시오.\n'
+              '창을 닫을 경우 개인 페이지에 들어가서 주문 내역을 확인할 수 있습니다.\n'
+              '만일 주문 내역이 없을 경우 다시 주문을 넣어 주십시오.',
+              style: TextStyle(
+                  fontSize: 12.5, height: 1.5, color: AppColors.textDark),
+            ),
           ],
         ),
       );

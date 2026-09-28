@@ -83,6 +83,33 @@ extension type _Window(JSObject _) implements JSObject {
   external double get innerWidth;
 }
 
+// Blob / URL (인쇄용 문서 생성)
+extension type _Blob._(JSObject _) implements JSObject {
+  external factory _Blob(JSArray<JSAny> parts, JSObject options);
+}
+
+extension type _URL._(JSObject _) implements JSObject {
+  external static String createObjectURL(JSObject blob);
+}
+
+/// 인쇄용 HTML 문서를 새 탭/창에서 열어 사용자가 인쇄 또는 PDF 저장할 수
+/// 있게 한다. (Blob URL + window.open)
+void openPrintableHtml(String html) {
+  try {
+    final parts = <JSAny>[html.toJS].toJS;
+    final opts = <String, String>{'type': 'text/html;charset=utf-8'}.jsify()!;
+    final blob = _Blob(parts, opts as JSObject);
+    final url = _URL.createObjectURL(blob);
+    _window.open(url, '_blank');
+  } catch (_) {
+    try {
+      _window.open(
+          'data:text/html;charset=utf-8,${Uri.encodeComponent(html)}',
+          '_blank');
+    } catch (_) {}
+  }
+}
+
 /// 자동 재로드를 세션당 1회로 제한한다. (허용되면 true)
 ///
 /// 구버전 감지 → 캐시삭제 → 재로드가 반복(루프)되지 않도록 막는다.

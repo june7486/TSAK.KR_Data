@@ -42,8 +42,14 @@ class AppState extends ChangeNotifier {
   bool get isMaster => _tier == 'master';
   bool get isPersonal => _tier == 'personal';
   /// 관리자(app) 등급 — 마스터는 관리자의 모든 권한을 상속한다.
-  bool get isApp => _tier == 'app' || _tier == 'master';
+  /// 또한 마스터가 '관리자 지정'을 부여한 인가번호도 app 세션을 받으므로
+  /// 서버가 내려준 admin 플래그와 함께 관리자로 취급한다.
+  bool get isApp => _tier == 'app' || _tier == 'master' || _grantedAdmin;
   bool get isGuest => _tier == 'guest';
+
+  /// 마스터가 부여한 관리자 권한(개인 로그인 시 서버가 알려줌).
+  bool _grantedAdmin = false;
+  bool get isGrantedAdmin => _grantedAdmin;
 
   /// 이 세션이 영구 마스터 인가번호(예: 415)로 로그인됐는지.
   bool get isPermanentMaster => isMaster && AppConfig.isPermanentMaster(_who);
@@ -201,6 +207,11 @@ class AppState extends ChangeNotifier {
           } catch (_) {}
         }
       }
+      // 서버 검증으로 성공한 경우엔 이미 세션이 발급됐고(관리자 부여 플래그),
+      //  로컬 검증만 성공한 경우 세션을 별도로 확보한다(아래에서 처리).
+      if (ok && repo.isNasMode && nas.sessionId.isNotEmpty) {
+        _grantedAdmin = nas.lastLoginAdmin;
+      }
     }
     if (ok) {
       // 영구 마스터(예: 415)는 개인/비인가 로그인이라도 master 로 승격 →
@@ -267,6 +278,7 @@ class AppState extends ChangeNotifier {
     _tier = '';
     _who = '';
     _sessionStart = null;
+    _grantedAdmin = false;
     repo.restrictedNumber = null;
     // [보안] 서버측 세션도 폐기 (세션토큰 탈취 재사용 방지)
     try {

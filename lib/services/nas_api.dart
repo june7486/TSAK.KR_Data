@@ -23,6 +23,9 @@ class NasApi {
   /// 서버 발급 세션토큰 (로그인 시 설정, 로그아웃/만료 시 비움).
   String sessionId = '';
 
+  /// 마지막 로그인이 '마스터가 지정한 관리자'였는지 여부(서버 응답).
+  bool lastLoginAdmin = false;
+
   String get baseUrl => _base;
 
   /// 모든 요청에 공통으로 붙는 인증 헤더.
@@ -110,6 +113,7 @@ class NasApi {
         .timeout(const Duration(seconds: 15));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     final sid = '${j['sid'] ?? ''}';
+    lastLoginAdmin = j['admin'] == true;
     if (j['ok'] == true && sid.isNotEmpty) sessionId = sid;
     return j;
   }
@@ -1750,6 +1754,75 @@ class NasApi {
           body: json.encode({'id': id, ...fields}),
         )
         .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 같은 주문번호(orderNo)의 모든 품목을 한 번에 삭제(관리자·마스터).
+  Future<Map<String, dynamic>> merchDeleteOrderGroup(String orderNo) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order/delete-group'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'orderNo': orderNo}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 구매자 수령확인 — 본인(세션) 또는 관리자가 주문번호를 '수령완료' 처리.
+  Future<Map<String, dynamic>> merchReceiveOrder({
+    String orderNo = '',
+    String id = '',
+    bool received = true,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order/receive'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            if (orderNo.isNotEmpty) 'orderNo': orderNo,
+            if (id.isNotEmpty) 'id': id,
+            'received': received,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 마스터: 지정된 관리자(권한 부여 인가번호) 목록.
+  Future<Map<String, dynamic>> merchantAdmins() async {
+    try {
+      final r = await http
+          .get(_uri('/api/admin/admins'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j.cast<String, dynamic>();
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
+  /// 마스터: 특정 인가번호에 관리자 권한 부여.
+  Future<Map<String, dynamic>> grantAdmin(String master, String number) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/grant'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'master': master, 'number': number}),
+        )
+        .timeout(const Duration(seconds: 30));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 마스터: 특정 인가번호의 관리자 권한 회수.
+  Future<Map<String, dynamic>> revokeAdmin(String master, String number) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/revoke'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'master': master, 'number': number}),
+        )
+        .timeout(const Duration(seconds: 30));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
