@@ -2560,13 +2560,24 @@ def _merch_ensure_regular(phone, name="", email=""):
                 return re.sub(r"[^0-9]", "", str(m.get("number", ""))) or d
         existing = {re.sub(r"[^0-9]", "", str(x.get("number", "")))
                     for x in members}
+        # 번호 재사용 금지: 기존 9000xx 최대값 + 1 부터 부여한다.
+        #  (중간 번호가 비어도 재사용하지 않음 → 과거 주문/예약의 contactId 가
+        #   다른 신규 회원에게 승계되어 타인 내역이 노출되는 보안 사고 방지)
+        mx = 900000
+        for x in members:
+            n = re.sub(r"[^0-9]", "", str(x.get("number", "")))
+            if n.startswith("9000") and len(n) >= 6:
+                try:
+                    mx = max(mx, int(n))
+                except Exception:
+                    pass
         newno = ""
-        for cand in range(900001, 900001 + max(1, len(members) + 10)):
+        for cand in range(mx + 1, mx + 1 + max(1, len(members) + 10)):
             if str(cand) not in existing:
                 newno = str(cand)
                 break
         if not newno:
-            newno = str(900001 + len(members))
+            newno = str(mx + 1)
         rec = {
             "id": "guest_" + newno,
             "number": newno,
@@ -2642,9 +2653,10 @@ def _merch_mine_surveys(ident):
             continue
         mine = None
         for a in apps:
-            ci = re.sub(r"[^0-9]", "", str(a.get("contactId", "") or ""))
-            ph = re.sub(r"[^0-9]", "", str(a.get("phone", "") or ""))
-            if d in (ci, ph):
+            if _merch_match_ident(
+                    {"contactId": a.get("contactId", ""),
+                     "buyerNumber": a.get("number", ""),
+                     "phone": a.get("phone", "")}, d):
                 mine = a
                 break
         if mine is None:
@@ -2713,14 +2725,51 @@ def _merch_purge_deleted(doc):
     return doc
 
 
+_PH2NO_CACHE = {"n": -1, "map": {}}
+
+
+def _phone_owner_map():
+    """전화번호 → 회원번호 맵(회원 수 기준 캐시)."""
+    members = _ev_members()
+    n = len(members)
+    if _PH2NO_CACHE.get("n") == n:
+        return _PH2NO_CACHE["map"]
+    m = {}
+    for mem in members:
+        no = re.sub(r"[^0-9]", "", str(mem.get("number", "")))
+        for f in ("phone", "accessPhone", "loginId"):
+            p = re.sub(r"[^0-9]", "", str(mem.get(f, "") or ""))
+            if p and p not in m:
+                m[p] = no
+    _PH2NO_CACHE["n"] = n
+    _PH2NO_CACHE["map"] = m
+    return m
+
+
 def _merch_match_ident(rec, d):
+    """주문/예약 레코드가 식별자 d(숫자)의 소유인지 판정.
+
+    보안 강화: 비인가(일반)회원 자동생성 번호(900001~)가 재사용되면 과거
+    주문의 contactId 가 다른 신규 회원에게 승계되어 타인 내역이 노출된다.
+    따라서 contactId 단독 일치만으로는 매칭하지 않고, 레코드의 전화번호로
+    조회한 실제 소유자 번호가 contactId 와 일치할 때만 인정한다.
+    (전화번호 직접 일치는 재사용과 무관하게 항상 신뢰한다.)
+    """
     if not d:
         return False
-    for k in ("contactId", "buyerNumber"):
-        if re.sub(r"[^0-9]", "", str(rec.get(k, ""))) == d:
-            return True
-    if re.sub(r"[^0-9]", "", str(rec.get("phone", ""))) == d:
+    ci = re.sub(r"[^0-9]", "", str(rec.get("contactId", "")))
+    bn = re.sub(r"[^0-9]", "", str(rec.get("buyerNumber", "")))
+    ph = re.sub(r"[^0-9]", "", str(rec.get("phone", "")))
+    # ① 전화번호 직접 일치 — 재사용 충돌과 무관하게 항상 신뢰.
+    if d in (bn, ph):
         return True
+    # ② contactId 일치 — 레코드 전화의 실제 소유자가 contactId 와 같을 때만.
+    if ci and ci == d:
+        order_ph = ph or bn
+        if not order_ph:
+            return True  # 전화정보 없음 → contactId 신뢰
+        owner = _phone_owner_map().get(order_ph, order_ph)
+        return owner == ci
     return False
 
 
