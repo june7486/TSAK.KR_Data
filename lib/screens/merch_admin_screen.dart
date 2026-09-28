@@ -6,12 +6,16 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/file_pick.dart';
+import '../services/app_state.dart';
 import '../services/nas_api.dart';
+import '../services/print_doc.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
+import 'supplies_screen.dart';
 
 /// 수품 판매관리 화면 (관리자·마스터 전용).
 /// 탭: 판매관리 / 누적판매 / 재고 / 공여 / 제작자 / 설정
@@ -237,6 +241,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _reportsTab(),
                 _ledgerTab(),
                 _stockTab(),
+                const SuppliesScreen(embedded: true),
                 _donationTab(),
                 _makerTab(),
                 _configTab(),
@@ -251,6 +256,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     '누적판매',
     '판매대장',
     '재고',
+    '비품재고',
     '공여',
     '제작자',
     '설정',
@@ -1851,7 +1857,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       return;
     }
     if (type == 'print') {
-      if (mounted) _snack('브라우저 인쇄(Ctrl+P)로 저장하세요');
+      // MUJI 규칙 문서(A4 세로)로 인쇄/PDF 저장
+      final html = _reportDocHtml();
+      if (isWebRuntime) {
+        openPrintableHtml(html);
+      } else {
+        await Clipboard.setData(ClipboardData(text: _reportText()));
+        if (mounted) _snack('리포트를 복사했습니다');
+      }
       return;
     }
     final buf = StringBuffer();
@@ -1871,18 +1884,84 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         buf.writeln('상품별,${e.key},${m['qty'] ?? 0}개/${m['amount'] ?? 0}원');
       }
     } else {
-      buf.writeln('수품 판매 리포트');
-      buf.writeln('총 주문: ${_stats['orderCount'] ?? _orders.length}건');
-      buf.writeln(
-        '총 매출: ${_won((_stats['totalSales'] as num?)?.toInt() ?? 0)}',
-      );
-      buf.writeln(
-        '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}',
-      );
-      buf.writeln('예약접수: ${_stats['reserveCount'] ?? _reserves.length}건');
+      buf.write(_reportText());
     }
     await Clipboard.setData(ClipboardData(text: buf.toString()));
-    if (mounted) _snack(type == 'csv' ? 'CSV를 복사했습니다(엑셀에 붙여넣기)' : '표를 복사했습니다');
+    if (mounted) {
+      _snack(type == 'csv' ? 'CSV를 복사했습니다(엑셀에 붙여넣기)' : '표를 복사했습니다');
+    }
+  }
+
+  String _reportText() {
+    final buf = StringBuffer();
+    buf.writeln('수품 판매 리포트');
+    buf.writeln('총 주문: ${_stats['orderCount'] ?? _orders.length}건');
+    buf.writeln(
+        '총 매출: ${_won((_stats['totalSales'] as num?)?.toInt() ?? 0)}');
+    buf.writeln(
+        '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}');
+    buf.writeln('예약접수: ${_stats['reserveCount'] ?? _reserves.length}건');
+    final byStatus = ((_stats['byStatus'] as Map?) ?? {});
+    for (final e in byStatus.entries) {
+      buf.writeln('  · ${e.key}: ${e.value}건');
+    }
+    return buf.toString();
+  }
+
+  /// 누적판매 리포트를 MUJI 규칙 문서로 생성.
+  String _reportDocHtml() {
+    final totalSales = (_stats['totalSales'] as num?)?.toInt() ?? 0;
+    final totalFee = (_stats['totalAnnualFee'] as num?)?.toInt() ?? 0;
+    final orderCount =
+        (_stats['orderCount'] as num?)?.toInt() ?? _orders.length;
+    final reserveCount =
+        (_stats['reserveCount'] as num?)?.toInt() ?? _reserves.length;
+    final byStatus = ((_stats['byStatus'] as Map?) ?? {}).cast<String, dynamic>();
+    final byMonth = ((_stats['byMonth'] as Map?) ?? {}).cast<String, dynamic>();
+    final byProduct =
+        ((_stats['byProduct'] as Map?) ?? {}).cast<String, dynamic>();
+    final rows = <List<DocCell>>[];
+    var i = 0;
+    for (final e in byProduct.entries) {
+      final m = (e.value as Map?)?.cast<String, dynamic>() ?? {};
+      rows.add([
+        DocCell('${++i}', align: 'center'),
+        DocCell(e.key, accent: kMujiAccents[i % kMujiAccents.length], bold: true),
+        DocCell('${m['qty'] ?? 0}개', align: 'center'),
+        DocCell(_won((m['amount'] as num?)?.toInt() ?? 0), align: 'right'),
+      ]);
+    }
+    final extraRows = <List<DocCell>>[];
+    for (final e in byStatus.entries) {
+      extraRows.add([
+        DocCell(e.key, accent: kMujiAccents[0]),
+        DocCell('${e.value}건', align: 'right'),
+      ]);
+    }
+    for (final e in byMonth.entries) {
+      extraRows.add([
+        DocCell(e.key, accent: kMujiAccents[1]),
+        DocCell(_won((e.value as num?)?.toInt() ?? 0), align: 'right'),
+      ]);
+    }
+    return buildMujiDoc(
+      meta: DocMeta(
+        title: '수품 누적판매 리포트',
+        subtitle: '한국범스카우트중앙회 · 매출/상태 분석',
+        description: '총 주문·매출·연회비·예약 현황과 상품별/상태별/월별 분석입니다.',
+        author: _whoName(),
+        extra: {
+          '총 주문': '$orderCount건',
+          '총 매출': _won(totalSales),
+          '연회비': _won(totalFee),
+          '예약접수': '$reserveCount건',
+        },
+      ),
+      columns: const ['번호', '상품', '판매수량', '금액'],
+      rows: rows,
+      summary: '총 <b>${byProduct.length}</b>종 상품 · 총 매출 '
+          '<span class="g">${_won(totalSales)}</span>',
+    );
   }
 
   // ---------- 수품판매대장 로드 ----------
@@ -1923,6 +2002,97 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         if (mounted) _snack('CSV 다운로드 링크: $url');
       }
     }
+  }
+
+  /// 판매대장을 MUJI 규칙 문서로 인쇄/PDF 저장.
+  void _printLedger() {
+    final html = _ledgerDocHtml();
+    if (isWebRuntime) {
+      openPrintableHtml(html);
+    } else {
+      Clipboard.setData(ClipboardData(text: _ledgerText()));
+      _snack('판매대장을 복사했습니다');
+    }
+  }
+
+  /// 판매대장을 메일로 발송.
+  void _emailLedger() {
+    final subject = '수품 판매대장 (${_ledgerLabel()})';
+    final uri =
+        'mailto:?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(_ledgerText())}';
+    if (isWebRuntime) {
+      openExternalUrl(uri);
+    } else {
+      _snack('메일 앱에서 전송하세요');
+    }
+  }
+
+  String _ledgerLabel() {
+    final y = _ledgerYear.isEmpty ? '전체연도' : '$_ledgerYear년';
+    final m = _ledgerMonth.isEmpty ? '전체' : '$_ledgerMonth월';
+    return '$y $m';
+  }
+
+  String _ledgerText() {
+    final b = StringBuffer();
+    b.writeln('수품 판매대장 (${_ledgerLabel()})');
+    final amountTotal = (_ledgerSummary['amountTotal'] as num?)?.toInt() ?? 0;
+    b.writeln('합계 ${_won(amountTotal)} · ${_ledgerRows.length}건');
+    b.writeln('────────────────────────────');
+    b.writeln('구분 | 주문번호 | 주문자 | 상품 | 수량 | 금액 | 상태');
+    for (final row in _ledgerRows) {
+      final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
+      final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
+      b.writeln('$kind | ${row['orderNo'] ?? ''} | ${row['buyerName'] ?? ''} | '
+          '${row['product'] ?? ''} | ${row['qty'] ?? 1} | ${_won((amount as num?)?.toInt() ?? 0)} | ${row['status'] ?? ''}');
+    }
+    return b.toString();
+  }
+
+  String _ledgerDocHtml() {
+    final amountTotal = (_ledgerSummary['amountTotal'] as num?)?.toInt() ?? 0;
+    final orderCount = (_ledgerSummary['orderCount'] as num?)?.toInt() ?? 0;
+    final reserveCount = (_ledgerSummary['reserveCount'] as num?)?.toInt() ?? 0;
+    final paidCount = (_ledgerSummary['paidCount'] as num?)?.toInt() ?? 0;
+    final unpaidCount = (_ledgerSummary['unpaidCount'] as num?)?.toInt() ?? 0;
+    final rows = <List<DocCell>>[];
+    for (var i = 0; i < _ledgerRows.length; i++) {
+      final row = _ledgerRows[i];
+      final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
+      final isOrder = kind == '주문';
+      final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
+      final paid = row['paid'] == true;
+      rows.add([
+        DocCell('${i + 1}', align: 'center'),
+        DocCell(kind.isEmpty ? (isOrder ? '주문' : '예약') : kind,
+            accent: kMujiAccents[isOrder ? 0 : 2], align: 'center'),
+        DocCell('${row['orderNo'] ?? ''}'),
+        DocCell('${row['buyerName'] ?? row['name'] ?? ''}'),
+        DocCell('${row['product'] ?? ''}',
+            sub: '${row['qty'] ?? 1}개'),
+        DocCell(_won((amount as num?)?.toInt() ?? 0), align: 'right', bold: true),
+        DocCell('${row['status'] ?? ''}', align: 'center',
+            sub: isOrder ? (paid ? '입금완료' : '미입금') : null),
+      ]);
+    }
+    return buildMujiDoc(
+      meta: DocMeta(
+        title: '수품 판매대장',
+        subtitle: '한국범스카우트중앙회 · ${_ledgerLabel()}',
+        description: '주문·예약 통합 장부입니다. 상태와 입금 여부를 함께 표기합니다.',
+        author: _whoName(),
+        extra: {
+          '조회기간': _ledgerLabel(),
+          '합계': _won(amountTotal),
+          '주문/예약': '$orderCount / $reserveCount',
+          '입금/미입금': '$paidCount / $unpaidCount',
+        },
+      ),
+      columns: const ['번호', '구분', '주문번호', '주문자', '상품', '금액', '상태'],
+      rows: rows,
+      summary: '총 <b>${_ledgerRows.length}</b>건 · 합계 '
+          '<span class="g">${_won(amountTotal)}</span>',
+    );
   }
 
   // ==================== 3) 판매대장 탭 ====================
@@ -2066,6 +2236,22 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     onPressed: _downloadLedgerCsv,
                     icon: const Icon(Icons.download_outlined, size: 16),
                     label: const Text('판매대장 CSV'),
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: _ledgerRows.isEmpty ? null : _printLedger,
+                    icon: const Icon(Icons.print_outlined, size: 16),
+                    label: const Text('인쇄/PDF'),
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: _ledgerRows.isEmpty ? null : _emailLedger,
+                    icon: const Icon(Icons.email_outlined, size: 16),
+                    label: const Text('메일'),
                   ),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
@@ -2429,7 +2615,26 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
       children: [
-        _subHeader('재고 현황', '상품별 재고 및 입출고 조정', Icons.inventory_2_outlined),
+        Row(
+          children: [
+            Expanded(
+              child: _subHeader(
+                  '재고 현황', '상품별 재고 및 입출고 조정', Icons.inventory_2_outlined),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '재고 현황표 인쇄 / PDF',
+              onPressed: () => _printStock(stock),
+              icon: const Icon(Icons.print_outlined, size: 20),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '재고 현황표 메일',
+              onPressed: () => _emailStock(stock),
+              icon: const Icon(Icons.email_outlined, size: 20),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         if (stock.isEmpty)
           const Padding(
@@ -2458,6 +2663,107 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ]),
       ],
     );
+  }
+
+  /// 재고 현황표를 MUJI 규칙 문서로 인쇄/PDF 저장.
+  void _printStock(List<Map<String, dynamic>> stock) {
+    if (stock.isEmpty) {
+      _snack('인쇄할 재고가 없습니다');
+      return;
+    }
+    final html = _stockDocHtml(stock);
+    if (isWebRuntime) {
+      openPrintableHtml(html);
+    } else {
+      Clipboard.setData(ClipboardData(text: _stockText(stock)));
+      _snack('재고 내역을 복사했습니다');
+    }
+  }
+
+  /// 재고 현황표를 메일로 발송.
+  void _emailStock(List<Map<String, dynamic>> stock) {
+    if (stock.isEmpty) {
+      _snack('메일로 보낼 재고가 없습니다');
+      return;
+    }
+    final subject = '수품 재고 현황표 (${_todayYmd()})';
+    final uri =
+        'mailto:?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(_stockText(stock))}';
+    if (isWebRuntime) {
+      openExternalUrl(uri);
+    } else {
+      _snack('메일 앱에서 전송하세요');
+    }
+  }
+
+  String _todayYmd() {
+    final d = DateTime.now();
+    String p(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}.${p(d.month)}.${p(d.day)}';
+  }
+
+  String _stockText(List<Map<String, dynamic>> stock) {
+    final b = StringBuffer();
+    b.writeln('수품 재고 현황표');
+    b.writeln('기준일 ${_todayYmd()}');
+    b.writeln('────────────────────────────');
+    b.writeln('No | 품명 | 재고 | 누적판매');
+    var i = 1;
+    for (final s in stock) {
+      b.writeln(
+          '${i++}. ${s['name']} | ${s['stock'] ?? 0} | ${s['sold'] ?? 0}');
+    }
+    final total = stock.fold<int>(
+        0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+    b.writeln('────────────────────────────');
+    b.writeln('총 ${stock.length}개 상품 · 총 재고 $total');
+    return b.toString();
+  }
+
+  String _stockDocHtml(List<Map<String, dynamic>> stock) {
+    final total = stock.fold<int>(
+        0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+    final rows = <List<DocCell>>[];
+    for (var i = 0; i < stock.length; i++) {
+      final s = stock[i];
+      final qty = (s['stock'] as num?)?.toInt() ?? 0;
+      final low = qty <= 5;
+      rows.add([
+        DocCell('${i + 1}', align: 'center'),
+        DocCell('${s['name'] ?? ''}',
+            accent: kMujiAccents[i % kMujiAccents.length], bold: true),
+        DocCell('$qty',
+            align: 'center',
+            bold: low,
+            sub: low ? '재고 부족' : null),
+        DocCell('${s['sold'] ?? 0}', align: 'center'),
+      ]);
+    }
+    return buildMujiDoc(
+      meta: DocMeta(
+        title: '수품 재고 현황표',
+        subtitle: '한국범스카우트중앙회 · 수품 재고 및 누적판매',
+        description: '상품별 현재 재고와 누적판매 수량입니다. 재고 5개 이하는 "재고 부족"으로 표시됩니다.',
+        author: _whoName(),
+        extra: {'총 상품': '${stock.length}종', '총 재고': '$total'},
+      ),
+      columns: const ['번호', '품명', '재고', '누적판매'],
+      rows: rows,
+      summary: '총 <b>${stock.length}</b>종 · 총 재고 '
+          '<span class="g">$total</span>',
+    );
+  }
+
+  String _whoName() {
+    final s = context.read<AppState>();
+    if (s.isMaster) return '마스터';
+    if (s.isApp) return '관리자';
+    if (s.who.isNotEmpty) {
+      final m = s.repo.byNumber(s.who);
+      if (m != null && m.name.isNotEmpty) return m.name;
+      return s.who;
+    }
+    return '';
   }
 
   Widget _stockRow(Map<String, dynamic> s) {
@@ -2519,11 +2825,43 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 icon: const Icon(Icons.edit, size: 15),
                 label: const Text('직접입력'),
               ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () {
+                  final p = _productOf(s);
+                  if (p != null) _editProduct(existing: p);
+                },
+                icon: const Icon(Icons.tune, size: 15),
+                label: const Text('상품수정'),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: AppColors.taegeukRed,
+                ),
+                onPressed: () {
+                  final p = _productOf(s);
+                  if (p != null) _deleteProduct(p);
+                },
+                icon: const Icon(Icons.delete_outline, size: 15),
+                label: const Text('상품삭제'),
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  /// 재고 항목에 대응하는 상품(products) 원본을 찾는다.
+  Map<String, dynamic>? _productOf(Map<String, dynamic> s) {
+    final id = '${s['id']}';
+    for (final p in _products) {
+      if ('${p['id']}' == id) return p;
+    }
+    return null;
   }
 
   Widget _miniStockBtn(Map<String, dynamic> s, int delta, String label) =>
@@ -2922,8 +3260,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: _exportMaker,
-                icon: const Icon(Icons.table_chart_outlined, size: 15),
-                label: const Text('내보내기'),
+                icon: const Icon(Icons.print_outlined, size: 15),
+                label: const Text('인쇄/저장'),
               ),
             ],
           ),
@@ -3262,18 +3600,68 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     if (ok) _load();
   }
 
+  /// 제작자 목록을 MUJI 규칙 문서(A4 세로)로 인쇄/저장/복사한다.
   Future<void> _exportMaker() async {
-    final buf = StringBuffer();
-    buf.writeln('수품 제작자 목록');
-    for (final m in _makers) {
-      buf.writeln(
-        '${m['company'] ?? ''},${m['ceo'] ?? ''},${m['manager'] ?? ''},'
-        '${m['phone'] ?? ''},${m['email'] ?? ''},${m['madeDate'] ?? ''},'
-        '${m['unitPrice'] ?? 0},${m['amount'] ?? 0},${m['paidDate'] ?? ''},${m['shipDate'] ?? ''}',
-      );
+    if (_makers.isEmpty) {
+      _snack('제작자 목록이 없습니다');
+      return;
     }
-    await Clipboard.setData(ClipboardData(text: buf.toString()));
-    if (mounted) _snack('제작자 목록을 복사했습니다(엑셀 붙여넣기)');
+    final total = _makers.fold<int>(
+        0, (a, m) => a + ((m['amount'] as num?)?.toInt() ?? 0));
+    final rows = <List<DocCell>>[];
+    for (var i = 0; i < _makers.length; i++) {
+      final m = _makers[i];
+      final company = '${m['company'] ?? m['name'] ?? ''}';
+      final contact = [
+        if ('${m['ceo'] ?? ''}'.isNotEmpty) '대표 ${m['ceo']}',
+        if ('${m['manager'] ?? ''}'.isNotEmpty) '담당 ${m['manager']}',
+        if ('${m['phone'] ?? ''}'.isNotEmpty) '${m['phone']}',
+      ].join(' · ');
+      rows.add([
+        DocCell('${i + 1}', align: 'center'),
+        DocCell(company,
+            accent: kMujiAccents[i % kMujiAccents.length],
+            bold: true,
+            sub: contact.isEmpty ? null : contact),
+        DocCell('${m['category'] ?? ''}'),
+        DocCell('${m['madeDate'] ?? '-'}', align: 'center'),
+        DocCell(_won((m['unitPrice'] as num?)?.toInt() ?? 0), align: 'right'),
+        DocCell(_won((m['amount'] as num?)?.toInt() ?? 0), align: 'right'),
+        DocCell('${m['paidDate'] ?? '-'}', align: 'center'),
+        DocCell('${m['shipDate'] ?? '-'}', align: 'center'),
+      ]);
+    }
+    final html = buildMujiDoc(
+      meta: DocMeta(
+        title: '수품 제작자 목록',
+        subtitle: '한국범스카우트중앙회 · 협조자 인적사항',
+        description: '수품 제작 협조자(업체)의 인적사항과 제작·입금·출고 내역입니다.',
+        author: _whoName(),
+        extra: {'총 업체': '${_makers.length}곳', '총 금액': _won(total)},
+      ),
+      columns: const [
+        '번호', '업체/담당', '분류', '제작일', '단가', '금액', '입금일', '출고일',
+      ],
+      rows: rows,
+      summary: '총 <b>${_makers.length}</b>곳 · 총 금액 '
+          '<span class="g">${_won(total)}</span>',
+    );
+    if (isWebRuntime) {
+      openPrintableHtml(html);
+    } else {
+      // 네이티브: CSV 텍스트를 클립보드로 (엑셀 붙여넣기)
+      final buf = StringBuffer();
+      buf.writeln('수품 제작자 목록');
+      for (final m in _makers) {
+        buf.writeln(
+          '${m['company'] ?? ''},${m['ceo'] ?? ''},${m['manager'] ?? ''},'
+          '${m['phone'] ?? ''},${m['email'] ?? ''},${m['madeDate'] ?? ''},'
+          '${m['unitPrice'] ?? 0},${m['amount'] ?? 0},${m['paidDate'] ?? ''},${m['shipDate'] ?? ''}',
+        );
+      }
+      await Clipboard.setData(ClipboardData(text: buf.toString()));
+      if (mounted) _snack('제작자 목록을 복사했습니다(엑셀 붙여넣기)');
+    }
   }
 
   // ==================== 6) 설정 탭 ====================

@@ -1849,7 +1849,20 @@ def _merch_doc():
             _save_json(MERCH_FILE, d)
         except Exception as e:
             print("merch seed save fail", e)
+    if _merch_seed_supplies_once(d):
+        try:
+            _save_json(MERCH_FILE, d)
+        except Exception as e:
+            print("supplies seed save fail", e)
     return d
+
+
+def _merch_supplies_sorted(doc):
+    """suppliesOrder(비품 id 배열) 기준으로 비품을 정렬해 반환."""
+    items = list(doc.get("supplies", []))
+    order = doc.get("suppliesOrder", [])
+    pos = {str(k): i for i, k in enumerate(order)}
+    return sorted(items, key=lambda p: pos.get(str(p.get("id")), 10 ** 9))
 
 
 def _merch_save(doc):
@@ -1933,6 +1946,70 @@ DEFAULT_MERCH_PRODUCTS = [
 
 
 MERCH_SEED_VERSION = 5  # 기본 수품목록 변경 시 올리면 자동 재시드(관리자 추가분은 보존)
+SUPPLIES_SEED_VERSION = 1  # 중앙회 비품 목록 변경 시 올리면 자동 재시드
+
+# 중앙회 비품 재고 리스트 (2026.08.31 양대슬 기준 시드 — 최초 1회)
+#  각 항목: 품명/수량/비고. 이후 앱에서 추가·수정·삭제 가능.
+DEFAULT_SUPPLIES = [
+    ("3구 멀티탭", 3, "2026 정벌리 과정활동"),
+    ("안전고글", 20, "2026 정벌리 과정활동"),
+    ("망치", 15, "2026 정벌리 과정활동"),
+    ("등산스틱", 10, "2026 정벌리 과정활동"),
+    ("롤맨텐트", 3, "1동 불량 - 고으로 표기 / 사유 메모지에 기입"),
+    ("롤맨 타프", 1, "1불량 고으로 표기 / 사유 메모지에 기입"),
+    ("스크린타프", 2, "1불량 고으로 표기 / 사유 메모지에 기입"),
+    ("롤맨 2구 버너", 1, "정상작동"),
+    ("팩", 139, "새제품 : 97 / 사용중 : 10 / 불량 : 32"),
+    ("비상담요", 15, ""),
+    ("의사봉", 1, ""),
+    ("경품추첨함", 1, ""),
+    ("쟁반 대형", 2, ""),
+    ("쟁반 소형", 1, ""),
+    ("아이스박스", 1, "311호 이종학(?)님 中"),
+    ("사무용품", 1, "불펜, 메직, 가위, 칼, 각종"),
+    ("감사장 액자 SAMPLE", 1, ""),
+    ("다용도 액자", 1, ""),
+    ("충회 장식용 3색 현수막", 6, "파랑 2 / 흰색 2 / 빨강 2"),
+    ("배너거치대", 1, ""),
+    ("재회횟사 배너 거치대 SET", 1, ""),
+    ("ATAS 가입안내 배너 거치대 SET", 1, ""),
+    ("부고기", 1, ""),
+    ("중앙회 헹사 기", 1, ""),
+    ("접이식 돌탑 박스", 6, "수품 정리용"),
+]
+
+
+def _merch_seed_supplies_once(doc):
+    """중앙회 비품 기본 목록을 최초 1회 시드한다.
+    - 시드 전용 비품('seeded':true)은 버전이 바뀌면 새 기본목록으로 교체.
+    - 관리자가 직접 추가한 비품('seeded' 없음)은 보존.
+    실제로 시드/갱신했으면 True 반환."""
+    cfg = doc.get("config", {})
+    cur = int(cfg.get("suppliesSeedVersion", 0) or 0)
+    if cur == SUPPLIES_SEED_VERSION:
+        return False
+    kept = [s for s in doc.get("supplies", [])
+            if isinstance(s, dict) and s.get("seeded") is not True]
+    items = list(kept)
+    for name, qty, note in DEFAULT_SUPPLIES:
+        items.append({
+            "id": "sp" + _secrets.token_urlsafe(5),
+            "name": name,
+            "qty": int(qty),
+            "note": note,
+            "updatedAt": _now_stamp(),   # 업데이트(수정) 날짜
+            "checkedAt": "",             # 재고 확인한 날짜
+            "checkedBy": "",             # 확인자 인가번호
+            "checkedByName": "",         # 확인자 이름
+            "updatedBy": "",             # 마지막 수정자 인가번호
+            "updatedByName": "",         # 마지막 수정자 이름
+            "created": _now_stamp(),
+            "seeded": True,
+        })
+    doc["supplies"] = items
+    cfg["suppliesSeedVersion"] = SUPPLIES_SEED_VERSION
+    doc["config"] = cfg
+    return True
 
 
 def _merch_seed_once(doc):
@@ -2074,6 +2151,8 @@ def _merch_doc_defaults(doc):
     doc.setdefault("donations", [])
     doc.setdefault("orderOrder", [])   # 표시 순서(주문번호/번들키 배열, 앞=최신)
     doc.setdefault("productOrder", [])  # 상품 표시 순서(상품 id 배열, 앞=먼저)
+    doc.setdefault("supplies", [])      # 중앙회 비품 재고 리스트(품명/수량/비고/갱신·확인 이력)
+    doc.setdefault("suppliesOrder", [])  # 비품 표시 순서(비품 id 배열, 앞=먼저)
     doc.setdefault("bundles", [])      # 합친 주문 묶음 [{id,name,keys:[],created}]
     doc.setdefault("archive", [])      # 30일 경과 삭제분 영구 보전
     cfg = doc.get("config")
@@ -5148,6 +5227,7 @@ class Handler(BaseHTTPRequestHandler):
                     "makers": doc.get("makers", []),
                     "donations": doc.get("donations", []),
                     "stockLog": doc.get("stockLog", []),
+                    "supplies": _merch_supplies_sorted(doc),
                     "config": doc.get("config", {}),
                     "orderOrder": doc.get("orderOrder", []),
                     "bundles": doc.get("bundles", []),
@@ -6480,6 +6560,107 @@ class Handler(BaseHTTPRequestHandler):
                 doc = _merch_doc()
                 ids = [str(x) for x in (d.get("ids") or [])]
                 doc["productOrder"] = ids
+                _merch_save(doc)
+                return self._json({"ok": True, "count": len(ids)})
+            if p == "/api/merch/supplies":
+                # 비품 등록/수정(관리자).
+                #  - id 없으면 신규. id 있으면 수정.
+                #  - 확인자(인가번호/이름)는 세션에서 자동 기록. 별도 override 가능.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                sid = str(d.get("id", "") or "")
+                s = self._sess() or {}
+                who = str(s.get("who", "") or "")
+                who_name = str(d.get("whoName", "") or s.get("name", "") or "")
+                items = doc.get("supplies", [])
+                existing = next((x for x in items
+                                 if str(x.get("id")) == sid), None) if sid else None
+                now = _now_stamp()
+
+                def _sint(v, dv=0):
+                    try:
+                        return int(v)
+                    except Exception:
+                        return dv
+
+                if existing is None:
+                    item = {
+                        "id": sid or ("sp" + _secrets.token_urlsafe(5)),
+                        "name": str(d.get("name", "") or "")[:80],
+                        "qty": _sint(d.get("qty", 0)),
+                        "note": str(d.get("note", "") or "")[:400],
+                        "updatedAt": now,
+                        "updatedBy": who,
+                        "updatedByName": who_name,
+                        "checkedAt": str(d.get("checkedAt", "") or ""),
+                        "checkedBy": str(d.get("checkedBy", "") or who),
+                        "checkedByName": str(d.get("checkedByName", "") or who_name),
+                        "created": now,
+                    }
+                    items.append(item)
+                else:
+                    for k in ("name", "note"):
+                        if k in d:
+                            item_len = 80 if k == "name" else 400
+                            existing[k] = str(d.get(k, "") or "")[:item_len]
+                    if "qty" in d:
+                        existing["qty"] = _sint(d.get("qty", 0))
+                    if "checkedAt" in d:
+                        existing["checkedAt"] = str(d.get("checkedAt", "") or "")
+                        existing["checkedBy"] = str(
+                            d.get("checkedBy", "") or who)
+                        existing["checkedByName"] = str(
+                            d.get("checkedByName", "") or who_name)
+                    existing["updatedAt"] = now
+                    existing["updatedBy"] = who
+                    existing["updatedByName"] = who_name
+                    item = existing
+                doc["supplies"] = items
+                # suppliesOrder 정합화(누락분 뒤에 추가)
+                order = [str(x) for x in doc.get("suppliesOrder", [])]
+                for it in items:
+                    if str(it.get("id")) not in order:
+                        order.append(str(it.get("id")))
+                order = [k for k in order
+                         if any(str(it.get("id")) == k for it in items)]
+                doc["suppliesOrder"] = order
+                cfg = doc.get("config")
+                if not isinstance(cfg, dict):
+                    cfg = {}
+                cfg["suppliesUpdatedAt"] = now
+                doc["config"] = cfg
+                _merch_save(doc)
+                return self._json({"ok": True, "item": item})
+            if p == "/api/merch/supplies/delete":
+                # 비품 삭제(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                sid = str(d.get("id", "") or "")
+                before = len(doc.get("supplies", []))
+                doc["supplies"] = [x for x in doc.get("supplies", [])
+                                   if str(x.get("id")) != sid]
+                doc["suppliesOrder"] = [
+                    k for k in doc.get("suppliesOrder", []) if str(k) != sid]
+                cfg = doc.get("config")
+                if not isinstance(cfg, dict):
+                    cfg = {}
+                cfg["suppliesUpdatedAt"] = _now_stamp()
+                doc["config"] = cfg
+                _merch_save(doc)
+                return self._json({"ok": True,
+                                   "removed": before - len(doc["supplies"])})
+            if p == "/api/merch/supplies/order":
+                # 비품 표시 순서 저장(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                ids = [str(x) for x in (d.get("ids") or [])]
+                doc["suppliesOrder"] = ids
                 _merch_save(doc)
                 return self._json({"ok": True, "count": len(ids)})
             if p == "/api/merch/order/update":

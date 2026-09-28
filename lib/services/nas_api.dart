@@ -1739,6 +1739,60 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 관리자: 중앙회 비품(재고 리스트) 등록/수정.
+  ///
+  /// [id] 가 비면 신규, 있으면 수정. [whoName] 은 확인자 이름 표기용.
+  Future<Map<String, dynamic>> merchSaveSupply({
+    String id = '',
+    required String name,
+    int qty = 0,
+    String note = '',
+    String checkedAt = '',
+    String whoName = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/supplies'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            'name': name,
+            'qty': qty,
+            'note': note,
+            if (checkedAt.isNotEmpty) 'checkedAt': checkedAt,
+            if (whoName.isNotEmpty) 'whoName': whoName,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 비품 삭제.
+  Future<bool> merchDeleteSupply(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/supplies/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 비품 표시 순서 저장(좌측 드래그 정렬).
+  Future<bool> merchSuppliesOrder(List<String> ids) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/supplies/order'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ids': ids}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
   /// 관리자: 주문 상태/메모/수량 수정.
   Future<Map<String, dynamic>> merchUpdateOrder({
     required String id,
