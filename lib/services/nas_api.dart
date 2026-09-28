@@ -1650,6 +1650,7 @@ class NasApi {
     String size = '',
     String makerId = '',
     bool active = true,
+    bool credentialOnly = false,
   }) async {
     final r = await http
         .post(
@@ -1667,6 +1668,7 @@ class NasApi {
             'size': size,
             'makerId': makerId,
             'active': active,
+            'credentialOnly': credentialOnly,
           }),
         )
         .timeout(const Duration(seconds: 40));
@@ -1787,6 +1789,55 @@ class NasApi {
         )
         .timeout(const Duration(seconds: 40));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  // ---------- 주문 일괄편집 (소프트삭제/복원/순서/합치기/보관) ----------
+  Future<Map<String, dynamic>> _merchPost(String path,
+      Map<String, dynamic> body) async {
+    final r = await http
+        .post(_uri(path),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode(body))
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 선택한 그룹키들(주문번호/번들키)을 소프트 삭제.
+  Future<Map<String, dynamic>> merchOrdersDelete(List<String> keys) =>
+      _merchPost('/api/merch/orders/delete', {'keys': keys});
+
+  /// 삭제된 주문 복원(30일 이내).
+  Future<Map<String, dynamic>> merchOrdersRestore(List<String> keys) =>
+      _merchPost('/api/merch/orders/restore', {'keys': keys});
+
+  /// 삭제된 주문 즉시 영구 삭제.
+  Future<Map<String, dynamic>> merchOrdersHardDelete(List<String> keys) =>
+      _merchPost('/api/merch/orders/hard-delete', {'keys': keys});
+
+  /// 표시 순서 저장(드래그 재정렬).
+  Future<Map<String, dynamic>> merchOrdersOrder(List<String> keys) =>
+      _merchPost('/api/merch/orders/order', {'keys': keys});
+
+  /// 선택한 주문들을 하나로 합치기(주문번호는 개별 유지).
+  Future<Map<String, dynamic>> merchOrdersMerge(List<String> keys,
+      {String name = ''}) =>
+      _merchPost('/api/merch/orders/merge',
+          {'keys': keys, if (name.isNotEmpty) 'name': name});
+
+  /// 합친 묶음 해제.
+  Future<Map<String, dynamic>> merchOrdersUnmerge(String bundleId) =>
+      _merchPost('/api/merch/orders/unmerge', {'bundleId': bundleId});
+
+  /// 30일 초과로 아카이브된(보관) 주문 내역 조회.
+  Future<Map<String, dynamic>> merchArchive() async {
+    try {
+      final r = await http
+          .get(_uri('/api/merch/orders/archive'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 30));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false};
+    }
   }
 
   /// 마스터: 지정된 관리자(권한 부여 인가번호) 목록.

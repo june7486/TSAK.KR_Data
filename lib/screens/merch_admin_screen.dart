@@ -23,7 +23,7 @@ class MerchAdminScreen extends StatefulWidget {
 
 class _MerchAdminScreenState extends State<MerchAdminScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 7, vsync: this);
+  late final TabController _tab = TabController(length: 8, vsync: this);
 
   NasApi get _nas => context.read<NasApi>();
 
@@ -33,11 +33,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _reserves = [];
+  List<Map<String, dynamic>> _deletedOrders = [];
+  List<Map<String, dynamic>> _deletedReserves = [];
   List<Map<String, dynamic>> _makers = [];
   List<Map<String, dynamic>> _donations = [];
   List<Map<String, dynamic>> _stockLog = [];
   Map<String, dynamic> _config = {};
   Map<String, dynamic> _stats = {};
+  // 주문 일괄편집/순서/보관
+  List<String> _orderOrder = [];
+  List<Map<String, dynamic>> _bundles = [];
+  bool _selMode = false;
+  final Set<String> _selKeys = {};
+  bool _showArchive = false;
+  bool _archiveLoading = false;
+  final List<Map<String, dynamic>> _archived = [];
 
   // 수품판매대장(ledger)
   List<Map<String, dynamic>> _ledgerRows = [];
@@ -79,10 +89,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         stats = ((s['stats'] as Map?) ?? {}).cast<String, dynamic>();
       } catch (_) {}
       if (!mounted) return;
+      final allOrders = _list(r['orders']);
+      final allReserves = _list(r['reservations']);
       setState(() {
         _products = _list(r['products']);
-        _orders = _list(r['orders']);
-        _reserves = _list(r['reservations']);
+        // 삭제(소프트)된 것은 주문관리 본문이 아닌 '삭제됨' 영역에서 관리.
+        _orders = allOrders.where((o) => o['deleted'] != true).toList();
+        _reserves = allReserves.where((o) => o['deleted'] != true).toList();
+        _deletedOrders = allOrders.where((o) => o['deleted'] == true).toList();
+        _deletedReserves = allReserves.where((o) => o['deleted'] == true).toList();
+        _orderOrder = ((r['orderOrder'] as List?) ?? []).map((e) => '$e').toList();
+        _bundles = _list(r['bundles']);
         _makers = _list(r['makers']);
         _donations = _list(r['donations']);
         _stockLog = _list(r['stockLog']);
@@ -156,7 +173,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           controller: _tab,
           isScrollable: true,
           tabs: const [
-            Tab(text: '판매관리'),
+            Tab(text: '상품관리'),
+            Tab(text: '주문관리'),
             Tab(text: '누적판매'),
             Tab(text: '판매대장'),
             Tab(text: '재고'),
@@ -173,7 +191,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           : TabBarView(
               controller: _tab,
               children: [
-                _salesTab(),
+                _productsTab(),
+                _ordersTab(),
                 _reportsTab(),
                 _ledgerTab(),
                 _stockTab(),
@@ -198,14 +217,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     ),
   );
 
-  // ==================== 1) 판매관리 탭 ====================
-  Widget _salesTab() {
+  // ==================== 1) 상품(소품) 관리 탭 ====================
+  Widget _productsTab() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
       children: [
         _noticeEditor(),
         const SizedBox(height: 14),
-        _subHeader('소품(상품) 관리', '상품 등록·수정·판매중지 · 이미지/가격/사이즈/재고',
+        _subHeader('소품(상품) 관리', '상품 등록·수정·판매중지 · 인가자 전용/일반 구분',
             Icons.shopping_bag_outlined),
         const SizedBox(height: 8),
         if (_products.isEmpty)
@@ -221,43 +240,330 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           for (final p in _products) _productCard(p),
         const SizedBox(height: 8),
         _addProductButton(),
-        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  // ==================== 2) 주문 관리 탭 ====================
+  Widget _ordersTab() {
+    // 표시 순서(orderOrder)에 따라 그룹 정렬
+    final groups = _orderedGroups(_orders);
+    final reserveGroups = _orderedGroups(_reserves);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+      children: [
+        _bulkToolbar(),
+        const SizedBox(height: 8),
         _subHeader(
-          '주문 내역 (${_groupCount(_orders)}건 / ${_orders.length}항목)',
-          '주문번호별 통합 · 클릭하면 장바구니형 상세',
+          '주문 내역 (${groups.length}건 / ${_orders.length}항목)',
+          '주문번호별 통합 · 체크박스로 일괄편집 · 주문번호 클릭 시 상세',
           Icons.receipt_long_outlined,
         ),
         const SizedBox(height: 8),
-        if (_orders.isEmpty)
+        if (groups.isEmpty)
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text(
-              '주문이 없습니다',
-              style: TextStyle(color: AppColors.textGray),
-            ),
+            child: Text('주문이 없습니다', style: TextStyle(color: AppColors.textGray)),
           )
         else
-          for (final g in _groupBy(_orders)) _groupCard(g, isReserve: false),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: groups.length,
+            onReorder: (a, b) => _onReorderGroups(groups, a, b),
+            itemBuilder: (ctx, i) {
+              final g = groups[i];
+              final k = _groupKeyOf(g.first);
+              return Container(
+                key: ValueKey('ord-$k'),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    if (_selMode)
+                      Checkbox(
+                        value: _selKeys.contains(k),
+                        onChanged: (_) => _toggleSel(k),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    Expanded(child: _groupCard(g, isReserve: false)),
+                    if (_selMode)
+                      ReorderableDragStartListener(
+                        index: i,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 20),
+                          child: const Icon(Icons.drag_indicator,
+                              color: AppColors.purple),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
         const SizedBox(height: 16),
         _subHeader(
-          '예약·수요조사 (${_groupCount(_reserves)}건 / ${_reserves.length}항목)',
+          '예약·수요조사 (${reserveGroups.length}건 / ${_reserves.length}항목)',
           '제작 판단용 접수 · 주문번호별 통합',
           Icons.bookmark_border,
         ),
         const SizedBox(height: 8),
-        if (_reserves.isEmpty)
+        if (reserveGroups.isEmpty)
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text(
-              '예약 접수가 없습니다',
-              style: TextStyle(color: AppColors.textGray),
-            ),
+            child: Text('예약 접수가 없습니다', style: TextStyle(color: AppColors.textGray)),
           )
         else
-          for (final g in _groupBy(_reserves)) _groupCard(g, isReserve: true),
+          for (final g in reserveGroups) _groupCard(g, isReserve: true),
+        const SizedBox(height: 20),
+        _deletedSection(),
+        const SizedBox(height: 10),
+        if (_showArchive) _archiveSection(),
       ],
     );
   }
+
+  // ---------- 일괄편집 툴바 ----------
+  Widget _bulkToolbar() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _selMode
+            ? AppColors.purple.withValues(alpha: 0.08)
+            : AppColors.purple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_selMode ? Icons.checklist : Icons.tune,
+                  size: 17, color: AppColors.purple),
+              const SizedBox(width: 6),
+              Text(_selMode ? '일괄편집 모드' : '주문 일괄편집',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: AppColors.purpleDark)),
+              const Spacer(),
+              Switch.adaptive(
+                value: _selMode,
+                onChanged: (v) => setState(() {
+                  _selMode = v;
+                  if (!v) _selKeys.clear();
+                }),
+              ),
+            ],
+          ),
+          if (_selMode) ...[
+            const SizedBox(height: 4),
+            Text('선택 ${_selKeys.length}건 · 우측 손잡이(≡)를 끌어 순서 이동',
+                style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.taegeukBlue,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8)),
+                  onPressed: _selKeys.length >= 2 ? _mergeSelected : null,
+                  icon: const Icon(Icons.merge_type, size: 16),
+                  label: const Text('주문 합치기', style: TextStyle(fontSize: 12.5)),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.taegeukRed,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8)),
+                  onPressed: _selKeys.isEmpty ? null : _deleteSelected,
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('주문 삭제', style: TextStyle(fontSize: 12.5)),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.purpleDark,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8)),
+                  onPressed: _selKeys.isEmpty
+                      ? null
+                      : () => setState(() => _selKeys.clear()),
+                  icon: const Icon(Icons.deselect, size: 16),
+                  label: const Text('선택 해제', style: TextStyle(fontSize: 12.5)),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ---------- 삭제된 주문(30일 보관) ----------
+  Widget _deletedSection() {
+    final deleted = <List<Map<String, dynamic>>>[
+      ..._orderedGroups(_deletedOrders),
+      ..._orderedGroups(_deletedReserves),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.delete_outline, size: 17, color: Colors.red),
+              const SizedBox(width: 6),
+              Text('삭제된 주문 (${deleted.length}건)',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: Colors.red)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('※ 삭제 후 30일간 보관되며, 30일이 지나면 목록에서 사라집니다. '
+              '(아래 "30일 초과 삭제 내역"에서 계속 확인 가능)',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+          const SizedBox(height: 8),
+          if (deleted.isEmpty)
+            const Text('삭제된 주문이 없습니다.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray))
+          else
+            for (final g in deleted) _deletedRow(g),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.purpleDark,
+                visualDensity: VisualDensity.compact),
+            onPressed: _loadArchive,
+            icon: const Icon(Icons.history, size: 16),
+            label: Text(_showArchive ? '30일 초과 삭제 내역 숨기기' : '30일 초과 삭제 주문내역 확인',
+                style: const TextStyle(fontSize: 12.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deletedRow(List<Map<String, dynamic>> items) {
+    final head = items.first;
+    final k = _groupKeyOf(head);
+    final orderNo = '${head['orderNo'] ?? ''}'.trim();
+    final buyer = '${head['buyerName'] ?? ''}'.trim();
+    final deletedAt = '${head['deletedAt'] ?? ''}';
+    final days = _daysLeft(deletedAt);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${orderNo.isEmpty ? '(번호없음)' : orderNo} · $buyer',
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w700)),
+                Text('삭제 ${deletedAt.isEmpty ? '' : deletedAt} · '
+                    '${days > 0 ? 'D-$days ($days일 후 완전삭제)' : '곧 완전삭제'}',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: AppColors.scoutGreen),
+            onPressed: () => _restoreKeys([k]),
+            icon: const Icon(Icons.restore, size: 15),
+            label: const Text('복원', style: TextStyle(fontSize: 12)),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '완전 삭제',
+            icon: const Icon(Icons.delete_forever, size: 17, color: Colors.red),
+            onPressed: () => _hardDeleteKeys([k]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _archiveSection() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.textGray.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_outlined,
+                  size: 17, color: AppColors.textGray),
+              const SizedBox(width: 6),
+              Text('30일 초과 삭제 주문내역 보관함 (${_archived.length}건)',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('※ 삭제 후 30일이 지나 목록에서 사라진 내역입니다. 영구 보전되어 확인만 가능합니다.',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+          const SizedBox(height: 8),
+          if (_archiveLoading)
+            const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          else if (_archived.isEmpty)
+            const Text('보관된 내역이 없습니다.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray))
+          else
+            for (final a in _archived) _archiveRow(a),
+        ],
+      ),
+    );
+  }
+
+  Widget _archiveRow(Map<String, dynamic> a) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          const Icon(Icons.archive_outlined, size: 13, color: AppColors.textGray),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              '${a['orderNo'] ?? ''} · ${a['buyerName'] ?? ''} · ${a['product'] ?? ''}',
+              style: const TextStyle(fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text('${a['_archivedAt'] ?? ''}',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+        ],
+      ),
+    );
+  }
+
 
   // ---------- 주문번호별 그룹핑 ----------
   static String _groupKeyOf(Map<String, dynamic> o) {
@@ -276,7 +582,176 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     return map.values.toList();
   }
 
-  int _groupCount(List<Map<String, dynamic>> src) => _groupBy(src).length;
+  /// 그룹의 묶음 이름(합쳐진 주문이면 이름, 아니면 null).
+  String? _bundleNameOf(List<Map<String, dynamic>> items) {
+    final bid = '${items.first['bundleId'] ?? ''}'.trim();
+    if (bid.isEmpty) return null;
+    for (final b in _bundles) {
+      if ('${b['id']}' == bid) return '${b['name'] ?? bid}';
+    }
+    return bid;
+  }
+
+  /// orderOrder(백엔드 표시순서)에 맞춰 그룹을 정렬. 배열에 없는 그룹은 뒤에.
+  List<List<Map<String, dynamic>>> _orderedGroups(
+      List<Map<String, dynamic>> src) {
+    final groups = _groupBy(src);
+    final idx = <String, int>{};
+    for (int i = 0; i < _orderOrder.length; i++) {
+      idx[_orderOrder[i]] = i;
+    }
+    groups.sort((a, b) {
+      final ia = idx[_groupKeyOf(a.first)] ?? 9999;
+      final ib = idx[_groupKeyOf(b.first)] ?? 9999;
+      return ia.compareTo(ib);
+    });
+    return groups;
+  }
+
+  // ----- 선택 -----
+  void _toggleSel(String k) {
+    setState(() {
+      if (_selKeys.contains(k)) {
+        _selKeys.remove(k);
+      } else {
+        _selKeys.add(k);
+      }
+    });
+  }
+
+  // ----- 드래그 재정렬 -----
+  Future<void> _onReorderGroups(
+      List<List<Map<String, dynamic>>> groups, int oldI, int newI) async {
+    if (newI > oldI) newI -= 1;
+    final keys = groups.map((g) => _groupKeyOf(g.first)).toList();
+    final moved = keys.removeAt(oldI);
+    keys.insert(newI, moved);
+    setState(() => _orderOrder = List<String>.from(keys));
+    final r = await _nas.merchOrdersOrder(keys);
+    if (r['ok'] != true && mounted) _snack('순서 저장 실패');
+  }
+
+  // ----- 삭제 / 복원 / 완전삭제 -----
+  Future<void> _deleteSelected() async {
+    if (_selKeys.isEmpty) return;
+    final yes = await _confirm('주문 삭제',
+        '선택한 ${_selKeys.length}건을 삭제할까요?\n삭제 후 30일간 보관되며 복원할 수 있습니다.');
+    if (yes != true) return;
+    final r = await _nas.merchOrdersDelete(_selKeys.toList());
+    if (!mounted) return;
+    if (r['ok'] == true) {
+      _snack('${r['count']}항목을 삭제했습니다 (30일 보관)');
+      setState(() {
+        _selKeys.clear();
+        _selMode = false;
+      });
+      _load();
+    } else {
+      _snack('삭제 실패: ${r['error']}');
+    }
+  }
+
+  Future<void> _restoreKeys(List<String> keys) async {
+    final r = await _nas.merchOrdersRestore(keys);
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '복원했습니다' : '복원 실패');
+    if (r['ok'] == true) _load();
+  }
+
+  Future<void> _hardDeleteKeys(List<String> keys) async {
+    final yes = await _confirm('완전 삭제', '복원할 수 없습니다. 정말 완전 삭제할까요?');
+    if (yes != true) return;
+    final r = await _nas.merchOrdersHardDelete(keys);
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '완전 삭제했습니다' : '실패');
+    if (r['ok'] == true) _load();
+  }
+
+  // ----- 합치기 -----
+  Future<void> _mergeSelected() async {
+    if (_selKeys.length < 2) return;
+    final nameCtl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('주문 합치기 (묶음)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('선택한 ${_selKeys.length}건을 하나의 묶음으로 관리합니다.\n'
+                '각 주문번호는 그대로 유지되어 주문서에 개별로 표기됩니다.',
+                style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: nameCtl,
+              decoration: const InputDecoration(
+                  labelText: '묶음 이름 (선택)', isDense: true,
+                  border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('합치기')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final r = await _nas.merchOrdersMerge(_selKeys.toList(),
+        name: nameCtl.text.trim());
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '주문을 합쳤습니다' : '실패: ${r['error']}');
+    if (r['ok'] == true) {
+      setState(() {
+        _selKeys.clear();
+        _selMode = false;
+      });
+      _load();
+    }
+  }
+
+  Future<void> _unmerge(String bundleId) async {
+    final r = await _nas.merchOrdersUnmerge(bundleId);
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '묶음을 해제했습니다' : '실패');
+    if (r['ok'] == true) _load();
+  }
+
+  // ----- 30일 초과 보관함 -----
+  Future<void> _loadArchive() async {
+    if (_showArchive) {
+      setState(() => _showArchive = false);
+      return;
+    }
+    setState(() {
+      _showArchive = true;
+      _archiveLoading = true;
+    });
+    final r = await _nas.merchArchive();
+    if (!mounted) return;
+    setState(() {
+      _archived
+        ..clear()
+        ..addAll(((r['archive'] as List?) ?? [])
+            .map((e) => (e as Map).cast<String, dynamic>()));
+      _archiveLoading = false;
+    });
+  }
+
+  /// 삭제 후 남은 보관일(D-n) 계산.
+  int _daysLeft(String deletedAt) {
+    try {
+      final dt = DateTime.parse(deletedAt);
+      final passed = DateTime.now().difference(dt).inDays;
+      return (30 - passed).clamp(0, 30);
+    } catch (_) {
+      return 30;
+    }
+  }
 
   /// 그룹 내 대표 항목(첫 품목).
   void _openGroup(List<Map<String, dynamic>> items, {required bool isReserve}) {
@@ -361,6 +836,23 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     ),
                 ],
               ),
+              if (_bundleNameOf(items) != null) ...[
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    _pill('묶음: ${_bundleNameOf(items)}', AppColors.taegeukBlue),
+                    const SizedBox(width: 6),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 4)),
+                      onPressed: () =>
+                          _unmerge('${items.first['bundleId'] ?? ''}'),
+                      child: const Text('해제', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 6),
               // 품목 미리보기 (장바구니처럼 나열)
               for (final o in items.take(4))
@@ -635,6 +1127,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           .join(', ')),
     );
     bool active = existing?['active'] != false;
+    bool credentialOnly = existing?['credentialOnly'] == true;
 
     Future<void> pickImage(StateSetter setDlg) async {
       try {
@@ -757,6 +1250,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   value: active,
                   onChanged: (v) => setDlg(() => active = v),
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.badge_outlined,
+                      color: AppColors.tigerGold),
+                  title: const Text('인가자 전용 상품'),
+                  subtitle: const Text('인가번호가 확인된 인가자(또는 관리자)에게만 노출',
+                      style: TextStyle(fontSize: 11.5)),
+                  value: credentialOnly,
+                  onChanged: (v) => setDlg(() => credentialOnly = v),
+                ),
               ],
             ),
           ),
@@ -792,6 +1295,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         image: image.trim(),
         desc: desc.text.trim(),
         active: active,
+        credentialOnly: credentialOnly,
       );
       if (!mounted) return;
       if (r['ok'] == true) {

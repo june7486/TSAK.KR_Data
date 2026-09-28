@@ -563,41 +563,135 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   String _orderHtml() {
     final h = _head;
-    final rows = _items.map((o) => '''
+    // 무인양품(MUJI) 스타일: 여백·정렬·얇은 구분선·저채도 다색 악센트.
+    final accents = [
+      '#7C6A9C', '#3D6E70', '#A6763C', '#4C6A92', '#8A5A75', '#5E7A4B'
+    ];
+    final rows = _items.asMap().entries.map((e) {
+      final o = e.value;
+      final ac = accents[e.key % accents.length];
+      return '''
       <tr>
-        <td>${_s(o, 'product')}${_s(o, 'size').isNotEmpty ? ' / ${_s(o, 'size')}' : ''}</td>
+        <td style="border-left:4px solid $ac">${_s(o, 'product')}${_s(o, 'size').isNotEmpty ? '<div class="sub">사이즈 ${_s(o, 'size')}</div>' : ''}${_s(o, 'option').isNotEmpty ? '<div class="sub">옵션 ${_s(o, 'option')}</div>' : ''}</td>
         <td style="text-align:center">${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')}</td>
         <td style="text-align:right">${_won(_i(o, 'unitPrice'))}</td>
-        <td style="text-align:right">${_won(_i(o, 'total'))}</td>
-      </tr>''').join();
+        <td style="text-align:right;font-weight:600">${_won(_i(o, 'total'))}</td>
+      </tr>''';
+    }).join();
     return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>주문내역 ${widget.groupKey}</title>
 <style>
- body{font-family:'Malgun Gothic',sans-serif;color:#1F1A2E;padding:24px}
- h1{font-size:20px;color:#5B2C8D;border-bottom:2px solid #5B2C8D;padding-bottom:6px}
- .meta{font-size:13px;line-height:1.7;margin:10px 0}
- table{width:100%;border-collapse:collapse;margin-top:12px}
- th,td{border:1px solid #ccc;padding:8px;font-size:13px}
- th{background:#F6F4FB;color:#3D1B63}
- .sum{margin-top:14px;font-size:15px;font-weight:bold;text-align:right}
- .foot{margin-top:24px;font-size:12px;color:#6E6A7C}
+ *{box-sizing:border-box}
+ body{font-family:'Malgun Gothic','NanumGothic',sans-serif;color:#3A3A3A;
+   padding:32px;max-width:760px;margin:0 auto;background:#fff;font-size:13px}
+ .brand{font-size:11px;letter-spacing:3px;color:#9A9388}
+ h1{font-size:21px;color:#4A4A48;font-weight:600;margin:4px 0 2px}
+ .ordno{font-size:12px;color:#8C877E;margin-bottom:18px;letter-spacing:.5px}
+ .meta{display:flex;flex-wrap:wrap;gap:0 28px;padding:14px 0;border-top:1px solid #E4E0D8;
+   border-bottom:1px solid #E4E0D8;font-size:12.5px;line-height:1.9}
+ .meta div{min-width:200px}
+ .meta b{color:#4A4A48;font-weight:600;display:inline-block;min-width:64px}
+ table{width:100%;border-collapse:collapse;margin-top:18px}
+ th{font-weight:600;color:#6E6960;text-align:left;font-size:12px;letter-spacing:.5px;
+   border-bottom:1px solid #4A4A48;padding:8px 10px}
+ td{border-bottom:1px solid #EDEAE3;padding:10px;vertical-align:top}
+ .sub{font-size:11px;color:#9A9388;margin-top:2px}
+ .sum{margin-top:20px;padding-top:14px;border-top:2px solid #4A4A48;text-align:right;font-size:13px;line-height:2}
+ .sum .g{font-size:18px;font-weight:700;color:#7C6A9C}
+ .foot{margin-top:28px;padding-top:12px;border-top:1px solid #E4E0D8;font-size:11px;color:#9A9388;
+   display:flex;justify-content:space-between}
+ @media print{body{padding:0}}
 </style></head><body>
+<div class="brand">한국범스카우트중앙회 · TSAK</div>
 <h1>수품 주문 내역서</h1>
+<div class="ordno">주문번호 ${widget.groupKey}</div>
 <div class="meta">
- <b>주문번호:</b> ${widget.groupKey}<br>
- <b>주문일:</b> ${_s(h, 'created')} &nbsp; <b>진행상태:</b> ${_s(h, 'status')} (${_allPaid ? '입금완료' : '미입금'}${_anyReceived ? ' · 수령완료' : ''})<br>
- <b>주문자:</b> ${_s(h, 'buyerName')} (${_s(h, 'buyerNumber')}) &nbsp; <b>연락처:</b> ${_s(h, 'phone')}<br>
- <b>배송:</b> ${_s(h, 'shipMethod')} ${_s(h, 'address')}
+ <div><b>주문일</b> ${_s(h, 'created')}</div>
+ <div><b>진행상태</b> ${_s(h, 'status')} (${_allPaid ? '입금완료' : '미입금'}${_anyReceived ? ' · 수령완료' : ''})</div>
+ <div><b>주문자</b> ${_s(h, 'buyerName')} (${_s(h, 'buyerNumber')})</div>
+ <div><b>연락처</b> ${_s(h, 'phone')}</div>
+ <div><b>이메일</b> ${_s(h, 'email')}</div>
+ <div><b>배송</b> ${_s(h, 'shipMethod')}</div>
+ <div><b>주소</b> ${_s(h, 'address')}</div>
+ <div><b>운송장</b> ${_s(h, 'invoice')}${_s(h, 'invoiceCompany').isNotEmpty ? ' (${_s(h, 'invoiceCompany')})' : ''}</div>
 </div>
 <table>
- <tr><th>상품</th><th>수량</th><th>단가</th><th>금액</th></tr>
+ <tr><th>상품</th><th style="text-align:center">수량</th><th style="text-align:right">단가</th><th style="text-align:right">금액</th></tr>
  $rows
 </table>
 <div class="sum">
- 상품합계 ${_won(_sumTotal)}${_sumFee > 0 ? ' · 연회비 ${_won(_sumFee)}' : ''}${_sumShip > 0 ? ' · 배송비 ${_won(_sumShip)}' : ''}
- <br>총 결제금액 ${_won(_grand)}
+ 상품합계 ${_won(_sumTotal)}${_sumFee > 0 ? '<br>연회비 ${_won(_sumFee)}' : ''}${_sumShip > 0 ? '<br>배송비 ${_won(_sumShip)}' : ''}
+ <br>총 결제금액 <span class="g">${_won(_grand)}</span>
 </div>
-<div class="foot">한국범스카우트중앙회 · TSAK 수품 판매</div>
+<div class="foot"><span>한국범스카우트중앙회 수품 판매</span><span>${_s(h, 'created')}</span></div>
+</body></html>''';
+  }
+
+  /// 엑셀(CSV) — UTF-8 BOM 포함(Excel 한글 호환).
+  String _orderCsv() {
+    String q(String v) => '"${v.replaceAll('"', '""')}"';
+    final rows = <List<String>>[
+      ['주문번호', '주문일', '상태', '입금', '수령', '주문자', '연락처', '이메일', '배송', '주소'],
+      [
+        widget.groupKey, _s(_head, 'created'), _s(_head, 'status'),
+        _allPaid ? '입금완료' : '미입금', _anyReceived ? '수령완료' : '',
+        _s(_head, 'buyerName'), _s(_head, 'phone'), _s(_head, 'email'),
+        _s(_head, 'shipMethod'), _s(_head, 'address'),
+      ],
+      [],
+      ['상품', '사이즈', '옵션', '수량', '단가', '금액'],
+      for (final o in _items)
+        [
+          _s(o, 'product'), _s(o, 'size'), _s(o, 'option'),
+          '${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')}',
+          '${_i(o, 'unitPrice')}', '${_i(o, 'total')}'
+        ],
+      [],
+      ['상품합계', '$_sumTotal'],
+      ['연회비', '$_sumFee'],
+      ['배송비', '$_sumShip'],
+      ['총 결제금액', '$_grand'],
+    ];
+    return '\uFEFF${rows.map((r) => r.map(q).join(',')).join('\r\n')}';
+  }
+
+  /// 워드(HTML .doc) — Word에서 바로 열림.
+  String _orderWord() => _orderHtml();
+
+  /// PPT(HTML 슬라이드) — 브라우저/PPT에서 열리는 간이 프레젠테이션.
+  String _orderPpt() {
+    final h = _head;
+    final items = _items.map((o) =>
+        '<li>${_s(o, 'product')} × ${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')} = ${_won(_i(o, 'total'))}</li>').join();
+    return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<style>
+ body{font-family:'Malgun Gothic',sans-serif;margin:0}
+ .slide{width:960px;height:540px;margin:12px auto;padding:48px;box-sizing:border-box;
+   background:#fff;border:1px solid #E4E0D8;display:flex;flex-direction:column}
+ .s1{border-left:14px solid #7C6A9C}
+ .s2{border-left:14px solid #3D6E70}
+ .s3{border-left:14px solid #A6763C}
+ h2{color:#4A4A48;font-weight:600;margin:0 0 6px}
+ .no{color:#8C877E;letter-spacing:.5px;margin-bottom:16px}
+ ul{line-height:2;font-size:16px;color:#3A3A3A}
+ .big{font-size:34px;color:#7C6A9C;font-weight:700;margin-top:auto}
+ .brand{font-size:11px;letter-spacing:3px;color:#9A9388}
+</style></head><body>
+<div class="slide s1">
+ <div class="brand">한국범스카우트중앙회 · TSAK</div>
+ <h2>수품 주문 내역서</h2>
+ <div class="no">주문번호 ${widget.groupKey}</div>
+ <div>주문자 ${_s(h, 'buyerName')} · ${_s(h, 'created')}</div>
+</div>
+<div class="slide s2">
+ <h2>주문 품목</h2>
+ <ul>$items</ul>
+</div>
+<div class="slide s3">
+ <h2>합계</h2>
+ <div>상품합계 ${_won(_sumTotal)}${_sumFee > 0 ? ' · 연회비 ${_won(_sumFee)}' : ''}${_sumShip > 0 ? ' · 배송비 ${_won(_sumShip)}' : ''}</div>
+ <div class="big">총 ${_won(_grand)}</div>
+</div>
 </body></html>''';
   }
 
@@ -607,6 +701,112 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     } else {
       await Clipboard.setData(ClipboardData(text: _orderText()));
       _snack('내역을 복사했습니다(문서에 붙여넣기)');
+    }
+  }
+
+  /// 저장 — 기본(JPG: 기기에 저장) + 추천 포맷 옵션.
+  Future<void> _save() async {
+    // 1) 기본값: 기기에 저장(JPG) 확인
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('기기에 저장'),
+        content: const Text('기기에 저장하시겠습니까?\n(기본: JPG 이미지)',
+            style: TextStyle(fontSize: 13.5)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.download, size: 18),
+            label: const Text('기기에 저장 (JPG)'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return;
+    if (mounted) await _pickFormat();
+  }
+
+  /// 다양한 포맷으로 저장(추천 옵션).
+  Future<void> _pickFormat() async {
+    final fmt = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 4, 18, 8),
+              child: Text('저장 형식 선택 (추천)',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image, color: AppColors.purple),
+              title: const Text('JPG (이미지)'),
+              subtitle: const Text('추천 · 인쇄화면에서 "이미지로 저장" · 스마트폰 저장에 적합'),
+              onTap: () => Navigator.pop(ctx, 'jpg'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: AppColors.taegeukRed),
+              title: const Text('PDF'),
+              subtitle: const Text('추천 · 인쇄화면에서 "PDF로 저장" · 보관/전송용'),
+              onTap: () => Navigator.pop(ctx, 'pdf'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.grid_on, color: AppColors.scoutGreen),
+              title: const Text('엑셀 (CSV)'),
+              subtitle: const Text('표 데이터 · 회계/정산용'),
+              onTap: () => Navigator.pop(ctx, 'excel'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description, color: AppColors.taegeukBlue),
+              title: const Text('워드 (Word)'),
+              subtitle: const Text('문서 편집용 (.doc)'),
+              onTap: () => Navigator.pop(ctx, 'word'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.slideshow, color: AppColors.lifetimeGold),
+              title: const Text('PPT (파워포인트)'),
+              subtitle: const Text('슬라이드 · 회의 보고용 (.ppt)'),
+              onTap: () => Navigator.pop(ctx, 'ppt'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (fmt == null || !mounted) return;
+    switch (fmt) {
+      case 'jpg':
+      case 'pdf':
+        _print();
+        break;
+      case 'excel':
+        await _downloadFile(_orderCsv(), '${widget.groupKey}.csv',
+            'text/csv;charset=utf-8');
+        break;
+      case 'word':
+        await _downloadFile(_orderWord(), '${widget.groupKey}.doc',
+            'application/msword');
+        break;
+      case 'ppt':
+        await _downloadFile(_orderPpt(), '${widget.groupKey}.ppt',
+            'application/vnd.ms-powerpoint');
+        break;
+    }
+  }
+
+  /// 웹에서 파일 다운로드 트리거(Blob). 비웹은 클립보드 폴백.
+  Future<void> _downloadFile(String content, String filename, String mime) async {
+    if (isWebRuntime) {
+      downloadTextFile(content, filename, mime);
+      _snack('$filename 저장을 시작했습니다');
+    } else {
+      await Clipboard.setData(ClipboardData(text: content));
+      _snack('내용을 복사했습니다($filename 대신 붙여넣기)');
     }
   }
 
@@ -1084,8 +1284,34 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _title('출력 · 전송', Icons.ios_share, AppColors.purple),
+          _title('출력 · 저장 · 전송', Icons.ios_share, AppColors.purple),
           const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(vertical: 12)),
+                  onPressed: _save,
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: const Text('저장 (JPG 기본)',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.scoutGreen,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12)),
+                onPressed: _mail,
+                icon: const Icon(Icons.mail_outline, size: 18),
+                label: const Text('메일'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -1095,21 +1321,41 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     visualDensity: VisualDensity.compact),
                 onPressed: _print,
                 icon: const Icon(Icons.print_outlined, size: 16),
-                label: const Text('인쇄 · PDF'),
+                label: const Text('출력 · 인쇄'),
               ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact),
-                onPressed: _mail,
-                icon: const Icon(Icons.mail_outline, size: 16),
-                label: const Text('메일로 보내기'),
+                onPressed:
+                    () => _downloadFile(_orderCsv(), '${widget.groupKey}.csv',
+                        'text/csv;charset=utf-8'),
+                icon: const Icon(Icons.grid_on, size: 16),
+                label: const Text('엑셀'),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact),
+                onPressed:
+                    () => _downloadFile(_orderWord(), '${widget.groupKey}.doc',
+                        'application/msword'),
+                icon: const Icon(Icons.description_outlined, size: 16),
+                label: const Text('워드'),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact),
+                onPressed:
+                    () => _downloadFile(_orderPpt(), '${widget.groupKey}.ppt',
+                        'application/vnd.ms-powerpoint'),
+                icon: const Icon(Icons.slideshow_outlined, size: 16),
+                label: const Text('PPT'),
               ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact),
                 onPressed: _share,
                 icon: const Icon(Icons.share_outlined, size: 16),
-                label: const Text('내역 공유(복사)'),
+                label: const Text('공유(복사)'),
               ),
             ],
           ),

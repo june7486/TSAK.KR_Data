@@ -29,5 +29,8 @@ void reloadPage() {}
 /// 인쇄용 HTML 열기 — 네이티브에서는 no-op(호출부에서 별도 처리).
 void openPrintableHtml(String html) {}
 
+/// 파일 다운로드 — 네이티브에서는 no-op(호출부에서 클립보드 폴백).
+void downloadTextFile(String content, String filename, String mime) {}
+
 /// 네이티브에는 자동 재로드가 없으므로 항상 허용(사실상 미사용).
 bool guardAutoReloadOnce() => true;

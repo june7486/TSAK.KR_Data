@@ -92,6 +92,26 @@ extension type _URL._(JSObject _) implements JSObject {
   external static String createObjectURL(JSObject blob);
 }
 
+extension type _Anchor(JSObject _) implements JSObject {
+  external set href(String v);
+  external set download(String v);
+  external void click();
+}
+
+/// 텍스트(HTML/CSV 등)를 파일로 다운로드한다. (Blob + <a download>)
+void downloadTextFile(String content, String filename, String mime) {
+  try {
+    final parts = <JSAny>[content.toJS].toJS;
+    final optMap = <String, String>{'type': mime};
+    final blob = _Blob(parts, optMap.jsify()! as JSObject);
+    final url = _URL.createObjectURL(blob);
+    final a = _document.createElement('a') as _Anchor;
+    a.href = url;
+    a.download = filename;
+    a.click();
+  } catch (_) {}
+}
+
 /// 인쇄용 HTML 문서를 새 탭/창에서 열어 사용자가 인쇄 또는 PDF 저장할 수
 /// 있게 한다. (Blob URL + window.open)
 void openPrintableHtml(String html) {

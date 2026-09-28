@@ -2047,6 +2047,9 @@ def _merch_doc_defaults(doc):
     doc.setdefault("makers", [])
     doc.setdefault("stockLog", [])
     doc.setdefault("donations", [])
+    doc.setdefault("orderOrder", [])   # 표시 순서(주문번호/번들키 배열, 앞=최신)
+    doc.setdefault("bundles", [])      # 합친 주문 묶음 [{id,name,keys:[],created}]
+    doc.setdefault("archive", [])      # 30일 경과 삭제분 영구 보전
     cfg = doc.get("config")
     if not isinstance(cfg, dict):
         cfg = {}
@@ -2064,11 +2067,19 @@ def _merch_doc_defaults(doc):
             o.setdefault("contactId", "")
             o.setdefault("contactType", "")
             o.setdefault("orderNo", "")
+            o.setdefault("deleted", False)     # 소프트 삭제 여부
+            o.setdefault("deletedAt", "")      # 삭제 시각(30일 후 완전삭제)
+            o.setdefault("bundleId", "")       # 합쳐진 묶음 id(없으면 빈값)
     for r in doc.get("reservations", []):
         if isinstance(r, dict):
             r.setdefault("status", "예약접수")
             r.setdefault("statusHistory", [])
             r.setdefault("orderNo", "")
+            r.setdefault("deleted", False)
+            r.setdefault("deletedAt", "")
+    for pr in doc.get("products", []):
+        if isinstance(pr, dict):
+            pr.setdefault("credentialOnly", False)  # 인가자 전용 여부
     # 주문번호 일괄 부여(기존 데이터 마이그레이션)
     for o in doc.get("orders", []):
         if isinstance(o, dict) and not o.get("orderNo"):
@@ -2076,7 +2087,38 @@ def _merch_doc_defaults(doc):
     for r in doc.get("reservations", []):
         if isinstance(r, dict) and not r.get("orderNo"):
             _merch_assign_no(doc, r)
+    # 표시 순서 배열에 누락분 보충(최신순)
+    _merch_rebuild_order(doc)
     return doc
+
+
+def _merch_group_key(rec):
+    """표시 그룹 키 — 합쳐진 주문은 bundleId, 아니면 orderNo."""
+    b = str(rec.get("bundleId", "") or "").strip()
+    if b:
+        return "B:" + b
+    no = str(rec.get("orderNo", "") or "").strip()
+    return no if no else "#" + str(rec.get("id", ""))
+
+
+def _merch_rebuild_order(doc):
+    """orderOrder 배열을 문서의 그룹키들과 정합화(누락분 앞에 추가, 유효분 유지)."""
+    order = [k for k in doc.get("orderOrder", []) if isinstance(k, str)]
+    seen = set(order)
+    # 새로 생긴 그룹키(아직 배열에 없는 것)를 최신순으로 앞에 추가
+    fresh = []
+    all_recs = list(doc.get("orders", [])) + list(doc.get("reservations", []))
+    all_recs.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+    for rec in all_recs:
+        if not isinstance(rec, dict):
+            continue
+        k = _merch_group_key(rec)
+        if k not in seen:
+            fresh.append(k)
+            seen.add(k)
+    doc["orderOrder"] = fresh + order
+    return doc
+
 
 
 def _merch_attach_to_member(ident, oid, kind="order"):
@@ -2192,19 +2234,71 @@ def _merch_json_product(pr):
 
 
 def _merch_mine(ident):
-    """한 회원(인가번호/전화)의 주문/예약 내역 + 상태 파이프라인."""
+    """한 회원(인가번호/전화)의 주문/예약 내역 + 상태 파이프라인.
+    삭제(소프트)된 주문은 구매자에게 노출하지 않는다."""
     d = re.sub(r"[^0-9]", "", str(ident or ""))
     doc = _merch_doc()
     orders, reserves = [], []
     for o in doc.get("orders", []):
+        if o.get("deleted") is True:
+            continue
         if _merch_match_ident(o, d):
             orders.append(o)
     for r in doc.get("reservations", []):
+        if r.get("deleted") is True:
+            continue
         if _merch_match_ident(r, d):
             reserves.append(r)
     orders.sort(key=lambda x: str(x.get("created", "")), reverse=True)
     reserves.sort(key=lambda x: str(x.get("created", "")), reverse=True)
     return orders, reserves
+
+
+DELETED_KEEP_DAYS = 30
+
+
+def _merch_purge_deleted(doc):
+    """삭제 후 30일이 지난 주문/예약을 archive로 이동(영구 보전, 화면 비노출)."""
+    now = datetime.datetime.now()
+    keep_orders, archive = [], doc.get("archive", [])
+    if not isinstance(archive, list):
+        archive = []
+    changed = False
+    for o in doc.get("orders", []):
+        if isinstance(o, dict) and o.get("deleted") is True and o.get("deletedAt"):
+            try:
+                dt = datetime.datetime.fromisoformat(str(o["deletedAt"]))
+            except Exception:
+                dt = now
+            if (now - dt).days >= DELETED_KEEP_DAYS:
+                o["_archivedAt"] = _now_stamp()
+                archive.append(o)
+                changed = True
+                continue
+        keep_orders.append(o)
+    keep_res, forders = [], doc.get("orders", [])
+    for r in doc.get("reservations", []):
+        if isinstance(r, dict) and r.get("deleted") is True and r.get("deletedAt"):
+            try:
+                dt = datetime.datetime.fromisoformat(str(r["deletedAt"]))
+            except Exception:
+                dt = now
+            if (now - dt).days >= DELETED_KEEP_DAYS:
+                r["_archivedAt"] = _now_stamp()
+                archive.append(r)
+                changed = True
+                continue
+        keep_res.append(r)
+    if changed:
+        doc["orders"] = keep_orders
+        doc["reservations"] = keep_res
+        doc["archive"] = archive
+        # 표시순서에서 아카이브된 그룹키 제거
+        valid = set()
+        for rec in keep_orders + keep_res:
+            valid.add(_merch_group_key(rec))
+        doc["orderOrder"] = [k for k in doc.get("orderOrder", []) if k in valid]
+    return doc
 
 
 def _merch_match_ident(rec, d):
@@ -2232,6 +2326,8 @@ def _merch_stats(doc):
     sold_qty = {}
     for o in orders:
         if not isinstance(o, dict):
+            continue
+        if o.get("deleted") is True:
             continue
         if str(o.get("status", "")) == "주문취소":
             continue
@@ -2266,7 +2362,8 @@ def _merch_stats(doc):
             int(r.get("qty", 0) or 0)
     return {
         "orderCount": len([o for o in orders
-                           if str(o.get("status", "")) != "주문취소"]),
+                           if str(o.get("status", "")) != "주문취소"
+                           and o.get("deleted") is not True]),
         "totalSales": total_sales,
         "totalAnnualFee": total_fee,
         "byStatus": by_status,
@@ -2274,7 +2371,8 @@ def _merch_stats(doc):
         "byMonth": dict(sorted(by_month.items())),
         "stock": stock,
         "reserveCount": len([r for r in reserves
-                             if str(r.get("status", "")) != "취소"]),
+                             if str(r.get("status", "")) != "취소"
+                             and r.get("deleted") is not True]),
         "reserveByProduct": reserve_by_product,
     }
 
@@ -4856,13 +4954,6 @@ class Handler(BaseHTTPRequestHandler):
                 s = self._sess() or {}
                 is_admin = s.get("tier") in ("app", "master")
                 cfg = doc.get("config", {})
-                prods = []
-                for pr in doc.get("products", []):
-                    if pr.get("active") is False and not is_admin:
-                        continue
-                    prods.append({k: pr.get(k) for k in
-                                  ("id", "name", "kind", "price", "stock",
-                                   "options", "image", "desc", "active")})
                 # 연회비 납부 여부(연도별). ident 없으면 판단 보류
                 year = q.get("year", [""])[0] or str(datetime.datetime.now().year)
                 fee_paid = False
@@ -4874,6 +4965,23 @@ class Handler(BaseHTTPRequestHandler):
                                  "number": re.sub(r"[^0-9]", "", str(m.get("number", ""))),
                                  "phone": m.get("phone", ""),
                                  "lifetime": m.get("lifetimeMember") is True}
+                # 세션 신원(개인 로그인)도 인가자로 간주
+                sess_who = re.sub(r"[^0-9]", "", str(s.get("who", "")))
+                is_credentialed = bool(
+                    (buyer and buyer.get("number")) or sess_who)
+                prods = []
+                for pr in doc.get("products", []):
+                    if pr.get("active") is False and not is_admin:
+                        continue
+                    # 인가자 전용 상품: 인가번호가 확인된 구매자(또는 관리자)만 노출.
+                    #  비인가(전화만) 사용자에게는 '인가자 전용' 상품을 숨긴다.
+                    if pr.get("credentialOnly") is True and not is_admin \
+                            and not is_credentialed:
+                        continue
+                    prods.append({k: pr.get(k) for k in
+                                  ("id", "name", "kind", "price", "stock",
+                                   "options", "image", "desc", "active",
+                                   "credentialOnly")})
                 return self._json({
                     "ok": True,
                     "products": prods,
@@ -4947,6 +5055,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require("admin"):
                     return
                 doc = _merch_doc()
+                # 삭제 후 30일 경과분을 archive로 이동(화면 비노출·영구보전)
+                _merch_purge_deleted(doc)
+                _merch_save(doc)
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 # 주문 필터(선택): year, productId, paid
                 orders = list(doc.get("orders", []))
@@ -4967,6 +5078,9 @@ class Handler(BaseHTTPRequestHandler):
                     "donations": doc.get("donations", []),
                     "stockLog": doc.get("stockLog", []),
                     "config": doc.get("config", {}),
+                    "orderOrder": doc.get("orderOrder", []),
+                    "bundles": doc.get("bundles", []),
+                    "archived": doc.get("archive", []),
                 })
             if p == "/api/merch/reports":
                 if not self._require("admin"):
@@ -6154,6 +6268,7 @@ class Handler(BaseHTTPRequestHandler):
                     "size": str(d.get("size", "") or "")[:80],
                     "makerId": str(d.get("makerId", "") or "")[:40],
                     "active": d.get("active", True) is not False,
+                    "credentialOnly": d.get("credentialOnly", False) is True,
                     "created": (existing or {}).get("created", _now_stamp()),
                 }
                 if existing:
@@ -6580,6 +6695,173 @@ class Handler(BaseHTTPRequestHandler):
                 _merch_save(doc)
                 return self._json({"ok": True, "count": len(targets),
                                    "orders": targets})
+            # ---- 주문 일괄편집: 소프트 삭제 / 복원 / 순서변경 / 합치기 ----
+            if p == "/api/merch/orders/delete":
+                # 선택한 그룹키들(주문번호 또는 B:bundleId)을 소프트 삭제.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                keys = [str(x) for x in (d.get("keys") or []) if str(x).strip()]
+                stamp = _now_stamp()
+                n = 0
+                victims = []
+                for o in doc.get("orders", []):
+                    if _merch_group_key(o) in keys:
+                        o["deleted"] = True
+                        o["deletedAt"] = stamp
+                        n += 1
+                        victims.append(o)
+                for r in doc.get("reservations", []):
+                    if _merch_group_key(r) in keys:
+                        r["deleted"] = True
+                        r["deletedAt"] = stamp
+                        n += 1
+                        victims.append(r)
+                # 삭제 그룹은 순서 배열에서 제거(맨 아래 '삭제됨' 영역에 별도 표시)
+                doc["orderOrder"] = [k for k in doc.get("orderOrder", [])
+                                     if k not in keys]
+                _merch_save(doc)
+                return self._json({"ok": True, "count": n})
+            if p == "/api/merch/orders/restore":
+                # 삭제된 주문 복원(30일 이내).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                keys = [str(x) for x in (d.get("keys") or []) if str(x).strip()]
+                n = 0
+                for o in doc.get("orders", []):
+                    if _merch_group_key(o) in keys and o.get("deleted") is True:
+                        o["deleted"] = False
+                        o["deletedAt"] = ""
+                        n += 1
+                for r in doc.get("reservations", []):
+                    if _merch_group_key(r) in keys and r.get("deleted") is True:
+                        r["deleted"] = False
+                        r["deletedAt"] = ""
+                        n += 1
+                _merch_rebuild_order(doc)
+                _merch_save(doc)
+                return self._json({"ok": True, "count": n})
+            if p == "/api/merch/orders/hard-delete":
+                # 삭제된 주문 즉시 영구 삭제(회원 프로필에서도 분리).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                keys = [str(x) for x in (d.get("keys") or []) if str(x).strip()]
+                removed = [x for x in doc.get("orders", [])
+                           if _merch_group_key(x) in keys]
+                doc["orders"] = [x for x in doc.get("orders", [])
+                                 if _merch_group_key(x) not in keys]
+                doc["orderOrder"] = [k for k in doc.get("orderOrder", [])
+                                     if k not in keys]
+                _merch_save(doc)
+                for rec in removed:
+                    if rec.get("contactId"):
+                        _merch_detach_from_member(
+                            rec.get("contactId"), rec.get("id"), "order")
+                return self._json({"ok": True, "removed": len(removed)})
+            if p == "/api/merch/orders/order":
+                # 표시 순서 저장(드래그 재정렬 결과). keys=최종 순서 배열.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                keys = [str(x) for x in (d.get("keys") or []) if str(x).strip()]
+                if keys:
+                    # 누락 그룹은 뒤에 보충
+                    allk = []
+                    seen = set()
+                    for rec in list(doc.get("orders", [])) + \
+                            list(doc.get("reservations", [])):
+                        if rec.get("deleted") is True:
+                            continue
+                        k = _merch_group_key(rec)
+                        if k not in seen:
+                            seen.add(k)
+                            allk.append(k)
+                    final = [k for k in keys if k in seen]
+                    final += [k for k in allk if k not in final]
+                    doc["orderOrder"] = final
+                _merch_save(doc)
+                return self._json({"ok": True, "orderOrder": doc["orderOrder"]})
+            if p == "/api/merch/orders/merge":
+                # 선택한 주문들을 하나로 '합치기'(묶음배송/추가주문 통합용).
+                #  단, 합치더라도 각 주문번호는 그대로 유지 → 주문서에 개별 표기.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                keys = [str(x) for x in (d.get("keys") or []) if str(x).strip()]
+                if len(keys) < 2:
+                    return self._json(
+                        {"ok": False, "error": "need_2_or_more"}, 400)
+                bid = "b" + _secrets.token_urlsafe(5)
+                name = str(d.get("name", "") or "").strip()
+                hit = 0
+                nos = []
+                for rec in list(doc.get("orders", [])) + \
+                        list(doc.get("reservations", [])):
+                    if _merch_group_key(rec) in keys:
+                        rec["bundleId"] = bid
+                        hit += 1
+                        if rec.get("orderNo"):
+                            nos.append(str(rec.get("orderNo")))
+                if hit == 0:
+                    return self._json({"ok": False, "error": "not_found"}, 404)
+                if not name:
+                    name = "묶음 " + (nos[0] if nos else bid)
+                bundle = {"id": bid, "name": name[:60], "orderNos": nos,
+                          "created": _now_stamp(),
+                          "by": (self._sess() or {}).get("tier", "admin")}
+                bundles = doc.get("bundles", [])
+                if not isinstance(bundles, list):
+                    bundles = []
+                bundles.append(bundle)
+                doc["bundles"] = bundles
+                # 순서 배열에서 개별 키 제거 후 묶음키(B:bid)를 맨 앞에 추가
+                bkey = "B:" + bid
+                doc["orderOrder"] = [bkey] + [
+                    k for k in doc.get("orderOrder", []) if k not in keys]
+                _merch_save(doc)
+                return self._json({"ok": True, "bundle": bundle,
+                                   "count": hit})
+            if p == "/api/merch/orders/unmerge":
+                # 합친 묶음 해제.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                bid = str(d.get("bundleId", "") or "").strip()
+                if not bid:
+                    return self._json({"ok": False, "error": "bundleId"}, 400)
+                n = 0
+                for rec in list(doc.get("orders", [])) + \
+                        list(doc.get("reservations", [])):
+                    if str(rec.get("bundleId", "")) == bid:
+                        rec["bundleId"] = ""
+                        n += 1
+                doc["bundles"] = [b for b in doc.get("bundles", [])
+                                  if str(b.get("id")) != bid]
+                _merch_rebuild_order(doc)
+                _merch_save(doc)
+                return self._json({"ok": True, "count": n})
+            if p == "/api/merch/orders/archive":
+                # 30일 초과로 아카이브된(보관) 주문 내역 조회.
+                if not self._require("admin"):
+                    return
+                doc = _merch_doc()
+                _merch_purge_deleted(doc)
+                _merch_save(doc)
+                arch = doc.get("archive", [])
+                arch = [a for a in arch if isinstance(a, dict)]
+                arch.sort(key=lambda x: str(x.get("_archivedAt", "")),
+                          reverse=True)
+                return self._json({"ok": True, "archive": arch,
+                                   "count": len(arch),
+                                   "keepDays": DELETED_KEEP_DAYS})
             if p == "/api/merch/config":
                 if not self._require("admin"):
                     return
