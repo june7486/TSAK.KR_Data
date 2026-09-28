@@ -1858,6 +1858,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final gRules = TextEditingController(text: '${_guide['rules'] ?? ''}');
     final gSets = TextEditingController(text: '${_guide['sets'] ?? ''}');
     final gNotes = TextEditingController(text: '${_guide['notes'] ?? ''}');
+    final statusesCtl = TextEditingController(text: _statuses.join(', '));
+    final rStatusesCtl = TextEditingController(
+      text: _reserveStatuses.join(', '),
+    );
     bool open = _salesOpen;
     bool strict = _feeRequired;
     bool reserve = _reserveMode;
@@ -1994,6 +1998,43 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Icon(Icons.timeline, size: 18, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Text(
+                '진행 상태 목록 관리',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: AppColors.purpleDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            '쉼표로 구분 · 순서가 진행 단계 순서입니다(개인 프로필 진행바에 반영).',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.purple.withValues(alpha: 0.12),
+              ),
+            ),
+            child: Column(
+              children: [
+                _dlgField(statusesCtl, '주문 진행 상태 (순서대로)'),
+                _dlgField(rStatusesCtl, '예약 진행 상태 (순서대로)'),
+              ],
+            ),
+          ),
           const SizedBox(height: 18),
           FilledButton.icon(
             style: FilledButton.styleFrom(
@@ -2006,6 +2047,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 salesOpen: open,
                 annualFeeRequired: strict,
                 reserveMode: reserve,
+                statuses: statusesCtl.text
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList(),
+                reserveStatuses: rStatusesCtl.text
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList(),
                 account: {
                   'bank': bank.text.trim(),
                   'no': no.text.trim(),
