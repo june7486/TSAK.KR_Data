@@ -1808,6 +1808,8 @@ class NasApi {
     int amount = 0,
     String note = '',
     String photo = '',
+    String date = '',
+    String makerId = '',
     String whoName = '',
   }) async {
     final r = await http
@@ -1824,6 +1826,8 @@ class NasApi {
             'amount': amount,
             'note': note,
             'photo': photo,
+            'date': date,
+            'makerId': makerId,
             if (whoName.isNotEmpty) 'whoName': whoName,
           }),
         )

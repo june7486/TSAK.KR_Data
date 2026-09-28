@@ -28,6 +28,7 @@ class PurchaseScreen extends StatefulWidget {
 
 class _PurchaseScreenState extends State<PurchaseScreen> {
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _makers = [];
   bool _loading = true;
   String? _error;
   String _updated = '';
@@ -51,10 +52,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     try {
       final r = await _nas.merchAdmin();
       final items = _list(r['purchases']);
+      final makers = _list(r['makers']);
       final cfg = ((r['config'] as Map?) ?? {}).cast<String, dynamic>();
       if (!mounted) return;
       setState(() {
         _items = items;
+        _makers = makers;
         _updated = '${cfg['purchasesUpdatedAt'] ?? ''}';
         _loading = false;
       });
@@ -92,6 +95,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   int _wonInt(dynamic v) => (v as num?)?.toInt() ?? 0;
   String _won(dynamic v) => _wonInt(v).toString().replaceAllMapped(
       RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
+
+  /// 제작자 id → 표시명(업체명). 배당 없으면 '미배당'.
+  String _makerLabel(String mid) {
+    if (mid.trim().isEmpty) return '미배당';
+    for (final m in _makers) {
+      if ('${m['id']}' == mid) {
+        return '${m['company'] ?? m['name'] ?? mid}';
+      }
+    }
+    return '미배당';
+  }
 
   int get _total =>
       _items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
@@ -131,7 +145,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         TextEditingController(text: '${existing?['unitPrice'] ?? ''}');
     final amount = TextEditingController(text: '${existing?['amount'] ?? ''}');
     final note = TextEditingController(text: '${existing?['note'] ?? ''}');
+    final date = TextEditingController(text: '${existing?['date'] ?? ''}');
     String photo = '${existing?['photo'] ?? ''}';
+    String makerId = '${existing?['makerId'] ?? ''}';
 
     final ok = await showDialog<bool>(
       context: context,
@@ -243,6 +259,32 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   decoration: const InputDecoration(
                       labelText: '비고', isDense: true),
                 ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: makerId.isEmpty ? '' : makerId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                      labelText: '제작자 배당 (제작자 페이지에 노출)',
+                      isDense: true),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('미배당')),
+                    for (final m in _makers)
+                      DropdownMenuItem(
+                        value: '${m['id']}',
+                        child: Text(
+                          '${m['company'] ?? m['name'] ?? m['id']}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) => setDlg(() => makerId = v ?? ''),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: date,
+                  decoration: const InputDecoration(
+                      labelText: '날짜 (예: 2026.09.23)', isDense: true),
+                ),
               ],
             ),
           ),
@@ -279,6 +321,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       amount: am,
       note: note.text.trim(),
       photo: photo.trim(),
+      date: date.text.trim(),
+      makerId: makerId,
       whoName: _whoName,
     );
     if (!mounted) return;
@@ -578,6 +622,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                       if ('${p['size'] ?? ''}'.trim().isNotEmpty)
                         '${p['size']}',
                       '단가 ${_won(p['unitPrice'])}',
+                      '제작 ${_makerLabel('${p['makerId'] ?? ''}')}',
+                      if ('${p['date'] ?? ''}'.trim().isNotEmpty)
+                        '${p['date']}',
                     ].join('  ·  '),
                     style: const TextStyle(
                         fontSize: 10.5, color: AppColors.textGray),

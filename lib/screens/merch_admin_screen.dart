@@ -45,6 +45,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   List<Map<String, dynamic>> _makers = [];
   List<Map<String, dynamic>> _donations = [];
   List<Map<String, dynamic>> _stockLog = [];
+  List<Map<String, dynamic>> _purchases = [];
   Map<String, dynamic> _config = {};
   Map<String, dynamic> _stats = {};
   // 주문 일괄편집/순서/보관
@@ -117,6 +118,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         _makers = _list(r['makers']);
         _donations = _list(r['donations']);
         _stockLog = _list(r['stockLog']);
+        _purchases = _list(r['purchases']);
         _config = ((r['config'] as Map?) ?? {}).cast<String, dynamic>();
         _stats = stats;
         _loading = false;
@@ -1608,17 +1610,32 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     Expanded(
                       child: Text(
                         '${p['name'] ?? ''}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14.5,
                         ),
                       ),
                     ),
-                    if (!active) _chip('판매중지'),
-                    if (p['kind'] != null && '${p['kind']}'.isNotEmpty)
-                      _chip('${p['kind']}'),
                   ],
                 ),
+                // 상태·종류 칩은 별도 줄로 분리(상품명 폭을 잠식해
+                //  이름이 세로로 깨지던 문제 방지)
+                if (!active ||
+                    (p['kind'] != null && '${p['kind']}'.isNotEmpty))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        if (!active) _chip('판매중지'),
+                        if (p['kind'] != null && '${p['kind']}'.isNotEmpty)
+                          _chip('${p['kind']}'),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -3379,51 +3396,58 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
   }
 
-  // ==================== 5) 제작자 탭 ====================
+  // ==================== 5) 제작자 탭 (제작 내역 중심) ====================
   Widget _makerTab() {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editMaker(),
-        icon: const Icon(Icons.add),
-        label: const Text('제작자 등록'),
-        backgroundColor: AppColors.purple,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-        children: [
-          _subHeader(
-            '수품 제작자 관리',
-            '제작자 정보·견적·입금·배송·진행상황',
-            Icons.factory_outlined,
+    return Stack(
+      children: [
+        ListView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+          children: [
+            _subHeader(
+              '수품 제작자 관리',
+              '제작자별 수품 제작 내역 (결제·입금 정보 제외)',
+              Icons.factory_outlined,
+            ),
+            const SizedBox(height: 8),
+            if (_makers.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '등록된 제작자가 없습니다',
+                  style: TextStyle(color: AppColors.textGray),
+                ),
+              )
+            else
+              for (final m in _makers) _makerCard(m),
+          ],
+        ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton.extended(
+            heroTag: 'makerAdd',
+            onPressed: () => _editMaker(),
+            icon: const Icon(Icons.add),
+            label: const Text('제작자 등록'),
+            backgroundColor: AppColors.purple,
           ),
-          const SizedBox(height: 8),
-          if (_makers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                '등록된 제작자가 없습니다',
-                style: TextStyle(color: AppColors.textGray),
-              ),
-            )
-          else
-            for (final m in _makers) _makerCard(m),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _makerCard(Map<String, dynamic> m) {
-    final files = ((m['extraFiles'] as List?) ?? []).map((e) => '$e').toList();
-    final progress = ((m['progress'] as List?) ?? [])
-        .map((e) => (e as Map).cast<String, dynamic>())
-        .toList();
     final photo = '${m['photo'] ?? ''}';
     final photoUrl = photo.isEmpty
         ? ''
         : (photo.startsWith('http') ? photo : _nas.merchFileUrl(photo));
-    final quote = '${m['quoteFile'] ?? ''}';
-    final bizLicense = '${m['bizLicenseFile'] ?? ''}';
+    // 이 제작자에게 배당된 제작 내역(물건 결제 항목) — 결제/입금 정보는 제외.
+    final mid = '${m['id']}';
+    final made = _purchases
+        .where((p) => '${p['makerId'] ?? ''}' == mid)
+        .toList();
+    final madeAmount =
+        made.fold<int>(0, (a, p) => a + ((p['amount'] as num?)?.toInt() ?? 0));
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -3454,19 +3478,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Text(
+                      '${m['company'] ?? m['name'] ?? ''}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '${m['company'] ?? m['name'] ?? ''}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14.5,
-                            ),
-                          ),
-                        ),
                         if ('${m['category'] ?? ''}'.isNotEmpty)
                           _chip('${m['category']}'),
+                        _chip('제작 ${made.length}건'),
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -3484,47 +3510,35 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ],
           ),
           const Divider(height: 16),
-          _row('제작일', '${m['madeDate'] ?? '-'}'),
-          _row('제작단가', _won((m['unitPrice'] as num?)?.toInt() ?? 0)),
-          _row('금액', _won((m['amount'] as num?)?.toInt() ?? 0)),
-          // ── 입금현황 ──
-          _makerPaymentRow(m),
-          _row('입금일', '${m['paidDate'] ?? '-'}'),
-          _row('배송일', '${m['shipDate'] ?? '-'}'),
-          if ('${m['account'] ?? ''}'.isNotEmpty)
-            _row('계좌번호', '${m['account']}'),
-          if ('${m['bizNumber'] ?? ''}'.isNotEmpty)
-            _row('사업자등록번호', '${m['bizNumber']}'),
-          if (quote.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            _securedFileChip(quote, '견적서',
-                context.read<AppState>(), _config),
-          ],
-          if (bizLicense.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            _securedFileChip(bizLicense, '사업자등록증',
-                context.read<AppState>(), _config),
-          ],
-          if (files.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [for (final f in files) _fileChip(f, null)],
-            ),
-          ],
-          if (progress.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text(
-              '주문 진행상황',
-              style: TextStyle(fontSize: 12, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 4),
-            for (final p in progress)
-              _kv('${p['date'] ?? ''}', '${p['note'] ?? p['content'] ?? ''}'),
-          ],
+          // ── 제작 수품 내역 (엑셀 이미지·단가·수량·합계·날짜·메모 포함) ──
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_outlined,
+                  size: 15, color: AppColors.purple),
+              const SizedBox(width: 4),
+              const Expanded(
+                child: Text('제작 수품 내역',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purpleDark)),
+              ),
+              Text('${made.length}건 · ${_won(madeAmount)}원',
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.textGray)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (made.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text('배당된 제작 내역이 없습니다 (물건결제 탭에서 배당)',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            )
+          else
+            for (final p in made) _makerMadeRow(p),
           if ('${m['memo'] ?? ''}'.isNotEmpty) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             _row('메모', '${m['memo']}'),
           ],
           const SizedBox(height: 8),
@@ -3563,163 +3577,114 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
+  /// 제작자별 제작 수품 1건 — 엑셀 이미지 + 분류/사이즈/수량/단가/금액/날짜/메모.
+  Widget _makerMadeRow(Map<String, dynamic> p) {
+    final photo = '${p['photo'] ?? ''}'.trim();
+    final note = '${p['note'] ?? ''}'.trim();
+    final date = '${p['date'] ?? ''}'.trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (photo.isNotEmpty)
+            GestureDetector(
+              onTap: () => _showMadePhoto(p),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  _nas.merchImageUrl(photo),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(
+                      width: 40, height: 40,
+                      child: Icon(Icons.broken_image_outlined,
+                          size: 18, color: AppColors.textGray)),
+                ),
+              ),
+            )
+          else
+            const SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(Icons.image_not_supported_outlined,
+                    size: 18, color: AppColors.textGray)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${p['category'] ?? p['group'] ?? ''}',
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w700)),
+                Text(
+                  [
+                    if ('${p['group'] ?? ''}'.trim().isNotEmpty)
+                      '${p['group']}',
+                    if ('${p['size'] ?? ''}'.trim().isNotEmpty)
+                      '${p['size']}',
+                    '${p['qty'] ?? 0}개',
+                    '단가 ${_won(p['unitPrice'])}',
+                    if (date.isNotEmpty) date,
+                  ].join('  ·  '),
+                  style: const TextStyle(
+                      fontSize: 10.5, color: AppColors.textGray),
+                ),
+                if (note.isNotEmpty)
+                  Text(note,
+                      style: const TextStyle(
+                          fontSize: 10.5, color: AppColors.scoutGreen)),
+              ],
+            ),
+          ),
+          Text(_won(p['amount']),
+              style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.taegeukBlue)),
+        ],
+      ),
+    );
+  }
+
+  void _showMadePhoto(Map<String, dynamic> p) {
+    final photo = '${p['photo'] ?? ''}'.trim();
+    if (photo.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child:
+                  Image.network(_nas.merchImageUrl(photo), fit: BoxFit.contain),
+            ),
+            const SizedBox(height: 8),
+            Text('${p['category'] ?? p['group'] ?? ''}',
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.close, color: Colors.white),
+              label: const Text('닫기', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _chipBox() => Container(
     width: 52,
     height: 52,
     color: AppColors.purple.withValues(alpha: 0.08),
     child: const Icon(Icons.image, color: AppColors.purple),
   );
-
-  /// 제작자 입금현황 행 — 금액 대비 입금액/잔액/상태를 색으로 표시.
-  Widget _makerPaymentRow(Map<String, dynamic> m) {
-    final amount = (m['amount'] as num?)?.toInt() ?? 0;
-    final paidAmt = (m['paidAmount'] as num?)?.toInt() ?? 0;
-    final done = m['paid'] == true || '${m['paidDate'] ?? ''}'.trim().isNotEmpty;
-    final isPartial = !done && paidAmt > 0;
-    final remain = (amount - paidAmt).clamp(0, amount);
-    final label = done
-        ? '입금완료'
-        : isPartial
-            ? '일부입금 (잔액 ${_won(remain)})'
-            : '미입금';
-    final color = done
-        ? AppColors.scoutGreen
-        : isPartial
-            ? AppColors.tigerGold
-            : AppColors.taegeukRed;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 66,
-            child: Text('입금현황',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray)),
-          ),
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.13),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: color.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(label,
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          color: color)),
-                ),
-                if (paidAmt > 0) ...[
-                  const SizedBox(width: 6),
-                  Text('입금액 ${_won(paidAmt)}',
-                      style: const TextStyle(
-                          fontSize: 11.5, color: AppColors.textDark)),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _fileChip(String name, String? label) => InkWell(
-    onTap: () {
-      final url = name.startsWith('http') ? name : _nas.merchFileUrl(name);
-      Clipboard.setData(ClipboardData(text: url));
-      _snack('파일 링크를 복사했습니다: $url');
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.purple.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.attach_file, size: 13, color: AppColors.purple),
-          const SizedBox(width: 3),
-          Text(
-            '${label ?? ''}${label != null ? ': ' : ''}$name',
-            style: const TextStyle(fontSize: 11, color: AppColors.purple),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  /// 견적서/사업자등록증 등 민감파일 칩 — 마스터만 열람·다운로드 가능.
-  /// 관리자 접근은 설정(makerFileAdminAllowed)이 on 일 때만 허용된다.
-  Widget _securedFileChip(
-      String name, String label, AppState app, Map<String, dynamic> cfg) {
-    final master = app.isMaster;
-    final adminAllowed = cfg['makerFileAdminAllowed'] == true;
-    final canView = master || (app.isApp && adminAllowed);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: canView ? () => _openSecuredFile(name, label) : null,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: canView
-                  ? AppColors.scoutGreen.withValues(alpha: 0.12)
-                  : AppColors.textGray.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: canView
-                      ? AppColors.scoutGreen.withValues(alpha: 0.4)
-                      : AppColors.textGray.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(canView ? Icons.description_outlined : Icons.lock_outline,
-                    size: 13,
-                    color:
-                        canView ? AppColors.scoutGreen : AppColors.textGray),
-                const SizedBox(width: 3),
-                Text(
-                  '$label: $name',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color:
-                          canView ? AppColors.scoutGreen : AppColors.textGray),
-                ),
-                if (canView) ...[
-                  const SizedBox(width: 3),
-                  const Icon(Icons.open_in_new,
-                      size: 11, color: AppColors.scoutGreen),
-                ],
-              ],
-            ),
-          ),
-        ),
-        if (!canView) ...[
-          const SizedBox(width: 5),
-          const Text('(마스터 전용)',
-              style: TextStyle(fontSize: 10.5, color: AppColors.taegeukRed)),
-        ],
-      ],
-    );
-  }
-
-  /// 민감파일 열기 — 새 탭에서 열어 보기/다운로드 가능(브라우저 다운로드 UI 사용).
-  void _openSecuredFile(String name, String label) {
-    final url = name.startsWith('http') ? name : _nas.merchFileUrl(name);
-    if (isWebRuntime) {
-      openUrlInNewTab(url);
-    } else {
-      Clipboard.setData(ClipboardData(text: url));
-    }
-    _snack('$label 열기: $url');
-  }
 
   Future<void> _editMaker({Map<String, dynamic>? existing}) async {
     final category = TextEditingController(
@@ -3734,30 +3699,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
     final phone = TextEditingController(text: '${existing?['phone'] ?? ''}');
     final email = TextEditingController(text: '${existing?['email'] ?? ''}');
-    final madeDate = TextEditingController(
-      text: '${existing?['madeDate'] ?? ''}',
-    );
-    final unitPrice = TextEditingController(
-      text: '${existing?['unitPrice'] ?? ''}',
-    );
-    final amount = TextEditingController(text: '${existing?['amount'] ?? ''}');
-    final paidDate = TextEditingController(
-      text: '${existing?['paidDate'] ?? ''}',
-    );
-    final shipDate = TextEditingController(
-      text: '${existing?['shipDate'] ?? ''}',
-    );
     final memo = TextEditingController(text: '${existing?['memo'] ?? ''}');
-    final account = TextEditingController(text: '${existing?['account'] ?? ''}');
-    final bizNumber =
-        TextEditingController(text: '${existing?['bizNumber'] ?? ''}');
-    final paidAmount = TextEditingController(
-        text: '${(existing?['paidAmount'] as num?)?.toInt() ?? 0}');
-    bool paidDone = existing?['paid'] == true ||
-        '${existing?['paidDate'] ?? ''}'.trim().isNotEmpty;
-    String quoteFile = '${existing?['quoteFile'] ?? ''}';
     String photo = '${existing?['photo'] ?? ''}';
-    String bizLicenseFile = '${existing?['bizLicenseFile'] ?? ''}';
     final List<String> extraFiles = ((existing?['extraFiles'] as List?) ?? [])
         .map((e) => '$e')
         .toList();
@@ -3783,48 +3726,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   _dlgField(manager, '담당자'),
                   _dlgField(phone, '연락처'),
                   _dlgField(email, '이메일'),
-                  _dlgField(madeDate, '제작일'),
-                  _dlgField(unitPrice, '제작단가 (원)', number: true),
-                  _dlgField(amount, '금액 (원)', number: true),
-                  _dlgField(paidAmount, '입금액 (원)', number: true),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: const Text('입금완료',
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w700)),
-                    value: paidDone,
-                    onChanged: (v) => setDlg(() {
-                      paidDone = v;
-                      if (v) {
-                        paidAmount.text = amount.text.trim();
-                      }
-                    }),
-                  ),
-                  _dlgField(paidDate, '입금일'),
-                  _dlgField(shipDate, '배송일'),
                   const Divider(),
-                  // 정산·세금계산서용 계좌 및 사업자 정보
-                  _dlgField(account, '계좌번호 (예: 기업은행 010-8753-9798 안승휘)'),
-                  _dlgField(bizNumber, '사업자등록번호'),
-                  const Divider(),
+                  // 결제·입금 관련 항목은 제작자 페이지에서 제외(제작 내역 중심).
                   _fileRow(
-                    '견적서 파일',
-                    quoteFile,
-                    () => _pickFile((n) => setDlg(() => quoteFile = n)),
-                    () => setDlg(() => quoteFile = ''),
-                  ),
-                  _fileRow(
-                    '사진 파일',
+                    '대표 사진',
                     photo,
                     () => _pickFile((n) => setDlg(() => photo = n)),
                     () => setDlg(() => photo = ''),
-                  ),
-                  _fileRow(
-                    '사업자등록증',
-                    bizLicenseFile,
-                    () => _pickFile((n) => setDlg(() => bizLicenseFile = n)),
-                    () => setDlg(() => bizLicenseFile = ''),
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -3922,6 +3830,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ),
     );
     if (ok != true) return;
+    // 제작자 페이지는 '만든 수품 내역' 중심 — 결제/입금 필드는 저장하지 않는다.
     final r = await _nas.merchSaveMaker({
       'id': '${existing?['id'] ?? ''}',
       'category': category.text.trim(),
@@ -3930,18 +3839,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       'manager': manager.text.trim(),
       'phone': phone.text.trim(),
       'email': email.text.trim(),
-      'madeDate': madeDate.text.trim(),
-      'unitPrice': int.tryParse(unitPrice.text.trim()) ?? 0,
-      'amount': int.tryParse(amount.text.trim()) ?? 0,
-      'paidAmount': int.tryParse(paidAmount.text.trim()) ?? 0,
-      'paid': paidDone,
-      'paidDate': paidDate.text.trim(),
-      'shipDate': shipDate.text.trim(),
-      'account': account.text.trim(),
-      'bizNumber': bizNumber.text.trim(),
-      'quoteFile': quoteFile,
       'photo': photo,
-      'bizLicenseFile': bizLicenseFile,
       'extraFiles': extraFiles,
       'progress': progress,
       'memo': memo.text.trim(),
@@ -4056,69 +3954,117 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     if (ok) _load();
   }
 
-  /// 제작자 목록을 MUJI 규칙 문서(A4 세로)로 인쇄/저장/복사한다.
+  /// 제작자별 '만든 수품 내역'을 MUJI 규칙 문서(A4 세로)로 인쇄/저장/복사한다.
+  /// 결제·입금 관련 항목은 포함하지 않는다(제작 내역 중심).
   Future<void> _exportMaker() async {
     if (_makers.isEmpty) {
       _snack('제작자 목록이 없습니다');
       return;
     }
-    final total = _makers.fold<int>(
-        0, (a, m) => a + ((m['amount'] as num?)?.toInt() ?? 0));
     final rows = <List<DocCell>>[];
+    var totalQty = 0;
+    var totalAmt = 0;
+    var madeCount = 0;
     for (var i = 0; i < _makers.length; i++) {
       final m = _makers[i];
+      final mid = '${m['id'] ?? ''}';
       final company = '${m['company'] ?? m['name'] ?? ''}';
       final contact = [
         if ('${m['ceo'] ?? ''}'.isNotEmpty) '대표 ${m['ceo']}',
         if ('${m['manager'] ?? ''}'.isNotEmpty) '담당 ${m['manager']}',
         if ('${m['phone'] ?? ''}'.isNotEmpty) '${m['phone']}',
-        if ('${m['account'] ?? ''}'.isNotEmpty) '계좌 ${m['account']}',
-        if ('${m['bizNumber'] ?? ''}'.isNotEmpty) '사업자 ${m['bizNumber']}',
       ].join(' · ');
-      rows.add([
-        DocCell('${i + 1}', align: 'center'),
-        DocCell(company,
-            accent: kMujiAccents[i % kMujiAccents.length],
-            bold: true,
-            sub: contact.isEmpty ? null : contact),
-        DocCell('${m['category'] ?? ''}'),
-        DocCell('${m['madeDate'] ?? '-'}', align: 'center'),
-        DocCell(_won((m['unitPrice'] as num?)?.toInt() ?? 0), align: 'right'),
-        DocCell(_won((m['amount'] as num?)?.toInt() ?? 0), align: 'right'),
-        DocCell('${m['paidDate'] ?? '-'}', align: 'center'),
-        DocCell('${m['shipDate'] ?? '-'}', align: 'center'),
-      ]);
+      final made = _purchases
+          .where((p) => '${p['makerId'] ?? ''}' == mid)
+          .toList();
+      if (made.isEmpty) {
+        rows.add([
+          DocCell('${i + 1}', align: 'center'),
+          DocCell(company,
+              accent: kMujiAccents[i % kMujiAccents.length],
+              bold: true,
+              sub: contact.isEmpty ? null : contact),
+          DocCell('${m['category'] ?? ''}'),
+          DocCell('—', align: 'center'),
+          DocCell('', align: 'center'),
+          DocCell('', align: 'right'),
+          DocCell('', align: 'right'),
+          DocCell('', align: 'center'),
+          DocCell('제작 내역 없음', sub: null),
+        ]);
+        continue;
+      }
+      for (var k = 0; k < made.length; k++) {
+        final p = made[k];
+        totalQty += (p['qty'] as num?)?.toInt() ?? 0;
+        totalAmt += (p['amount'] as num?)?.toInt() ?? 0;
+        madeCount++;
+        final spec = [
+          if ('${p['group'] ?? ''}'.isNotEmpty) '${p['group']}',
+          if ('${p['category'] ?? ''}'.isNotEmpty) '${p['category']}',
+          if ('${p['size'] ?? ''}'.isNotEmpty) '${p['size']}',
+        ].join(' · ');
+        rows.add([
+          DocCell('${i + 1}', align: 'center'),
+          if (k == 0)
+            DocCell(company,
+                accent: kMujiAccents[i % kMujiAccents.length],
+                bold: true,
+                sub: contact.isEmpty ? null : contact)
+          else
+            DocCell('↳', align: 'center'),
+          DocCell(spec),
+          DocCell('${(p['qty'] as num?)?.toInt() ?? 0}', align: 'center'),
+          DocCell(_won((p['unitPrice'] as num?)?.toInt() ?? 0),
+              align: 'right'),
+          DocCell(_won((p['amount'] as num?)?.toInt() ?? 0), align: 'right'),
+          DocCell('${p['date'] ?? '-'}', align: 'center'),
+          DocCell('${p['note'] ?? ''}'),
+        ]);
+      }
     }
     final html = buildMujiDoc(
       meta: DocMeta(
-        title: '수품 제작자 목록',
-        subtitle: '한국범스카우트중앙회 · 협조자 인적사항',
-        description: '수품 제작 협조자(업체)의 인적사항과 제작·입금·출고 내역입니다.',
+        title: '수품 제작 내역서',
+        subtitle: '한국범스카우트중앙회 · 제작자별 제작 수품',
+        description: '제작자(업체)별로 제작한 수품의 규격·수량·단가·합계·제작일 내역입니다. '
+            '(결제·입금 정보 제외)',
         author: _whoName(),
-        extra: {'총 업체': '${_makers.length}곳', '총 금액': _won(total)},
+        extra: {
+          '제작자': '${_makers.length}곳',
+          '제작 항목': '$madeCount건',
+          '총 수량': '$totalQty개',
+          '총 합계': _won(totalAmt),
+        },
       ),
       columns: const [
-        '번호', '업체/담당', '분류', '제작일', '단가', '금액', '입금일', '출고일',
+        '번호', '제작자/담당', '그룹·분류·규격', '수량', '단가', '합계', '제작일', '메모',
       ],
       rows: rows,
-      summary: '총 <b>${_makers.length}</b>곳 · 총 금액 '
-          '<span class="g">${_won(total)}</span>',
+      summary: '총 <b>${_makers.length}</b>곳 · <b>$madeCount</b>건 · '
+          '합계 <span class="g">${_won(totalAmt)}</span>',
     );
     if (isWebRuntime) {
       openPrintableHtml(html);
     } else {
       // 네이티브: CSV 텍스트를 클립보드로 (엑셀 붙여넣기)
       final buf = StringBuffer();
-      buf.writeln('수품 제작자 목록');
+      buf.writeln('수품 제작 내역서');
       for (final m in _makers) {
-        buf.writeln(
-          '${m['company'] ?? ''},${m['ceo'] ?? ''},${m['manager'] ?? ''},'
-          '${m['phone'] ?? ''},${m['email'] ?? ''},${m['madeDate'] ?? ''},'
-          '${m['unitPrice'] ?? 0},${m['amount'] ?? 0},${m['paidDate'] ?? ''},${m['shipDate'] ?? ''}',
-        );
+        final mid = '${m['id'] ?? ''}';
+        final made = _purchases
+            .where((p) => '${p['makerId'] ?? ''}' == mid)
+            .toList();
+        for (final p in made) {
+          buf.writeln(
+            '${m['company'] ?? ''},${p['group'] ?? ''},${p['category'] ?? ''},'
+            '${p['size'] ?? ''},${p['qty'] ?? 0},${p['unitPrice'] ?? 0},'
+            '${p['amount'] ?? 0},${p['date'] ?? ''},${p['note'] ?? ''}',
+          );
+        }
       }
       await Clipboard.setData(ClipboardData(text: buf.toString()));
-      if (mounted) _snack('제작자 목록을 복사했습니다(엑셀 붙여넣기)');
+      if (mounted) _snack('제작 내역을 복사했습니다(엑셀 붙여넣기)');
     }
   }
 

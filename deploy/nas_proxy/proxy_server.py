@@ -2031,6 +2031,11 @@ def _merch_doc():
             _save_json(MERCH_FILE, d)
         except Exception as e:
             print("supplies seed save fail", e)
+    if _seed_makers_once(d):
+        try:
+            _save_json(MERCH_FILE, d)
+        except Exception as e:
+            print("makers seed save fail", e)
     if _seed_purchases_once(d):
         try:
             _save_json(MERCH_FILE, d)
@@ -2224,8 +2229,83 @@ def _merch_seed_supplies_once(doc):
 # ==================== 물건 결제 (범중앙회 물건 구매/결제 내역) ====================
 # xlsx(범중앙회 물건 결제 …app 전송용)를 앱 데이터로 정리한 구조.
 #  doc["purchases"] = [ {id, group, category, size, qty, unitPrice, amount,
-#                        note, created, updatedAt, updatedByName} ]
-PURCHASES_SEED_VERSION = 1
+#                        note, photo, date, makerId, created, updatedAt} ]
+#  엑셀에 박힌 실제 이미지(13종)를 merch_img_upload/xls_*.png 로 저장해 연결.
+PURCHASES_SEED_VERSION = 4
+MAKERS_SEED_VERSION = 1
+
+# 물건 결제 시드 (그룹, 분류, 사이즈, 수량, 단가, 금액, 비고, 이미지파일, 제작자id)
+_PURCHASE_SEED = [
+    # ── 열전사 (합계 230,000) ──
+    ("열전사", "열전사", "40mm", 100, 100, 10000, "", "xls_heat_transfer.png"),
+    ("열전사", "열전사", "40mm", 100, 100, 10000, "", "xls_heat_transfer.png"),
+    ("열전사", "열전사", "40mm", 100, 400, 40000, "", "xls_heat_transfer.png"),
+    ("열전사", "열전사", "200mm", 100, 500, 50000, "", "xls_heat_transfer.png"),
+    ("열전사", "열전사", "200mm", 100, 1200, 120000, "", "xls_heat_transfer.png"),
+    # ── 뱃지 (합계 2,295,000) ──
+    ("뱃지", "연간회원뱃지", "", 50, 2300, 115000, "연간회원뱃지",
+     "xls_annual_badge.png"),
+    ("뱃지", "공식 패치", "", 100, 3300, 330000, "범중앙회 공식 패치",
+     "xls_patch_tiger.png"),
+    ("뱃지", "중앙회 뱃지", "", 250, 2000, 500000, "", "xls_tsak_emblem.png"),
+    ("뱃지", "약장(적)", "", 100, 2000, 200000, "",
+     "xls_medal_ribbon_red.png"),
+    ("뱃지", "약장(남)", "", 100, 2000, 200000, "",
+     "xls_medal_ribbon_navy.png"),
+    ("뱃지", "준비 뱃지", "", 100, 2300, 230000,
+     "준비 뱃지 (연간회원뱃지 아님)", "xls_medal_ribbon_white.png"),
+    ("뱃지", "뱃지", "", 50, 2000, 100000, "", "xls_2026_membership.png"),
+    ("뱃지", "검정케이스", "", 200, 700, 140000, "", "xls_black_case.png"),
+    ("뱃지", "금속스티커", "", 200, 700, 140000, "", "xls_badge_strip.png"),
+    ("뱃지", "EVA", "", 200, 1700, 340000, "", "xls_badge_set.png"),
+    # ── 굿즈 (합계 1,890,000) ──
+    ("굿즈", "BP hat", "56cm", 1, 60000, 60000, "", "xls_bp_hat.png"),
+    ("굿즈", "상의(카고팬츠)", "", 21, 30000, 630000,
+     "s-4 / m-4 / l-6 / xl-3 / xxl-3 / xxxl-1", "xls_cargo_pants.png"),
+    ("굿즈", "모자", "60cm", 50, 15000, 750000, "", "xls_bp_hat.png"),
+    ("굿즈", "후드티", "", 15, 30000, 450000, "", "xls_heat_transfer.png"),
+]
+
+# 제작자 기본 시드 (제작자별 수품 제작 내역 — 결제/입금 정보 제외)
+MAKERS_SEED = [
+    {
+        "category": "패치·뱃지·메달",
+        "company": "안승희 제작",
+        "ceo": "안승희",
+        "manager": "안승희",
+        "phone": "",
+        "email": "",
+        "memo": "범중앙회 물건(열전사·뱃지·굿즈) 제작 담당",
+    },
+]
+
+
+def _seed_makers_once(doc):
+    """기본 제작자(안승희)를 최초 1회 시드한다. 관리자 추가분은 보존."""
+    cfg = doc.get("config", {})
+    cur = int(cfg.get("makersSeedVersion", 0) or 0)
+    if cur == MAKERS_SEED_VERSION:
+        return False
+    makers = [m for m in doc.get("makers", [])
+              if isinstance(m, dict) and m.get("seeded") is not True]
+    for base in MAKERS_SEED:
+        m = dict(base)
+        m["id"] = "mk" + _secrets.token_urlsafe(5)
+        m["created"] = _now_stamp()
+        m["seeded"] = True
+        makers.append(m)
+    doc["makers"] = makers
+    cfg["makersSeedVersion"] = MAKERS_SEED_VERSION
+    doc["config"] = cfg
+    return True
+
+
+def _seed_maker_id(doc):
+    """시드된 제작자(안승희)의 id 반환 — 물건 결제 항목 배당용."""
+    for m in doc.get("makers", []):
+        if isinstance(m, dict) and m.get("seeded") is True:
+            return str(m.get("id"))
+    return ""
 
 
 def _merch_purchases_sorted(doc):
@@ -2247,8 +2327,10 @@ def _seed_purchases_once(doc):
     items = list(kept)
     order = [str(k) for k in doc.get("purchasesOrder", [])
              if any(str(x.get("id")) == str(k) for x in kept)]
+    maker_id = _seed_maker_id(doc)
+    stamp = "2026.09.23"
 
-    def _add(group, category, size, qty, unit_price, amount, note):
+    for group, category, size, qty, unit_price, amount, note, photo in _PURCHASE_SEED:
         iid = "pu" + _secrets.token_urlsafe(5)
         items.append({
             "id": iid,
@@ -2259,37 +2341,14 @@ def _seed_purchases_once(doc):
             "unitPrice": int(unit_price),
             "amount": int(amount),
             "note": note,
-            "photo": "",
+            "photo": photo,
+            "date": stamp,
+            "makerId": maker_id,
             "created": _now_stamp(),
             "updatedAt": _now_stamp(),
             "seeded": True,
         })
         order.append(iid)
-
-    # ── 열전사 (합계 230,000) ──
-    _add("열전사", "제작", "40mm", 100, 100, 10000, "")
-    _add("열전사", "제작", "40mm", 100, 100, 10000, "")
-    _add("열전사", "제작", "40mm", 100, 400, 40000, "")
-    _add("열전사", "제작", "200mm", 100, 500, 50000, "")
-    _add("열전사", "제작", "200mm", 100, 1200, 120000, "")
-    # ── 뱃지 (합계 2,295,000) ──
-    _add("뱃지", "뱃지", "", 50, 2300, 115000, "연간회원뱃지")
-    _add("뱃지", "뱃지", "", 100, 3300, 330000, "범중앙회 공식 패치")
-    _add("뱃지", "뱃지", "", 250, 2000, 500000, "")
-    _add("뱃지", "뱃지", "", 100, 2000, 200000, "")
-    _add("뱃지", "뱃지", "", 100, 2000, 200000, "")
-    _add("뱃지", "뱃지", "", 100, 2300, 230000,
-         "준비 뱃지 (연간회원뱃지 아님)")
-    _add("뱃지", "뱃지", "", 50, 2000, 100000, "")
-    _add("뱃지", "검정케이스", "", 200, 700, 140000, "")
-    _add("뱃지", "금속스티커", "", 200, 700, 140000, "")
-    _add("뱃지", "EVA", "", 200, 1700, 340000, "")
-    # ── 굿즈 (합계 1,890,000) ──
-    _add("굿즈", "BP hat", "56cm", 1, 60000, 60000, "")
-    _add("굿즈", "상의", "", 21, 30000, 630000,
-         "s-4 / m-4 / l-6 / xl-3 / xxl-3 / xxxl-1")
-    _add("굿즈", "굿즈", "60cm", 50, 15000, 750000, "")
-    _add("굿즈", "후드티", "", 15, 30000, 450000, "")
 
     doc["purchases"] = items
     doc["purchasesOrder"] = order
@@ -7131,6 +7190,8 @@ class Handler(BaseHTTPRequestHandler):
                         "amount": _pint(d.get("amount", 0)),
                         "note": str(d.get("note", "") or "")[:400],
                         "photo": str(d.get("photo", "") or "")[:300],
+                        "date": str(d.get("date", "") or "")[:40],
+                        "makerId": str(d.get("makerId", "") or "")[:40],
                         "created": now,
                         "updatedAt": now,
                         "updatedBy": who,
@@ -7139,7 +7200,8 @@ class Handler(BaseHTTPRequestHandler):
                     items.append(item)
                 else:
                     for k, ln in (("group", 40), ("category", 60), ("size", 40),
-                                  ("note", 400), ("photo", 300)):
+                                  ("note", 400), ("photo", 300), ("date", 40),
+                                  ("makerId", 40)):
                         if k in d:
                             existing[k] = str(d.get(k, "") or "")[:ln]
                     for k in ("qty", "unitPrice", "amount"):
