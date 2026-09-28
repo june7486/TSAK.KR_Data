@@ -5804,9 +5804,10 @@ class Handler(BaseHTTPRequestHandler):
             #  로그인/로그아웃을 제외한 모든 변경(쓰기) 요청은 유효한 세션 필요.
             #  관리자 전용 경로는 추가로 tier 검사.
             if p.startswith("/api/"):
-                # QR 행사참여(스캔) 경로·수품구매 주문/예약은 공개.
+                # QR 행사참여(스캔) 경로·수품구매 주문/예약·수요조사 사전신청은 공개.
                 if (p.startswith("/api/event/qr/")
-                        or p in ("/api/merch/order", "/api/merch/reserve")):
+                        or p in ("/api/merch/order", "/api/merch/reserve",
+                                 "/api/merch/survey/apply")):
                     pass
                 else:
                     need = None
