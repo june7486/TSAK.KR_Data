@@ -2056,6 +2056,15 @@ def _merch_assign_no(doc, rec):
     return no
 
 
+def _merch_products_sorted(doc):
+    """productOrder(상품 id 배열) 기준으로 상품을 정렬해 반환한다.
+    목록에 없는 상품은 뒤에 원래 순서대로 붙인다."""
+    prods = list(doc.get("products", []))
+    order = doc.get("productOrder", [])
+    pos = {str(k): i for i, k in enumerate(order)}
+    return sorted(prods, key=lambda p: pos.get(str(p.get("id")), 10 ** 9))
+
+
 def _merch_doc_defaults(doc):
     """확장 필드 기본값 보장(예약/제작자/공여/재고/공지)."""
     doc.setdefault("orders", [])
@@ -2064,6 +2073,7 @@ def _merch_doc_defaults(doc):
     doc.setdefault("stockLog", [])
     doc.setdefault("donations", [])
     doc.setdefault("orderOrder", [])   # 표시 순서(주문번호/번들키 배열, 앞=최신)
+    doc.setdefault("productOrder", [])  # 상품 표시 순서(상품 id 배열, 앞=먼저)
     doc.setdefault("bundles", [])      # 합친 주문 묶음 [{id,name,keys:[],created}]
     doc.setdefault("archive", [])      # 30일 경과 삭제분 영구 보전
     cfg = doc.get("config")
@@ -5132,7 +5142,7 @@ class Handler(BaseHTTPRequestHandler):
                 reserves.sort(key=lambda x: str(x.get("created", "")), reverse=True)
                 return self._json({
                     "ok": True,
-                    "products": doc.get("products", []),
+                    "products": _merch_products_sorted(doc),
                     "orders": orders,
                     "reservations": reserves,
                     "makers": doc.get("makers", []),
@@ -6462,6 +6472,16 @@ class Handler(BaseHTTPRequestHandler):
                                    if str(x.get("id")) != pid]
                 _merch_save(doc)
                 return self._json({"ok": True, "removed": before - len(doc["products"])})
+            if p == "/api/merch/products/order":
+                # 상품 표시 순서 저장(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                ids = [str(x) for x in (d.get("ids") or [])]
+                doc["productOrder"] = ids
+                _merch_save(doc)
+                return self._json({"ok": True, "count": len(ids)})
             if p == "/api/merch/order/update":
                 if not self._require("admin"):
                     return

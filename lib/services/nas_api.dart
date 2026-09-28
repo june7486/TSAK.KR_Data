@@ -1726,6 +1726,19 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 관리자: 상품 표시 순서 저장(좌측 드래그 정렬).
+  Future<bool> merchProductsOrder(List<String> ids) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/products/order'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ids': ids}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
   /// 관리자: 주문 상태/메모/수량 수정.
   Future<Map<String, dynamic>> merchUpdateOrder({
     required String id,

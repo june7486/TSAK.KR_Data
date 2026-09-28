@@ -278,7 +278,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         const SizedBox(height: 14),
         _subHeader(
           '소품(상품) 관리',
-          '상품 등록·수정·판매중지 · 인가자 전용/일반 구분',
+          '좌측 손잡이를 끌어 순서 변경 · 등록·수정·판매중지 · 인가자 전용/일반 구분',
           Icons.shopping_bag_outlined,
         ),
         const SizedBox(height: 8),
@@ -292,11 +292,83 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
           )
         else
-          for (final p in _products) _productCard(p),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: _products.length,
+            onReorder: _onReorderProducts,
+            itemBuilder: (ctx, i) {
+              final p = _products[i];
+              return Container(
+                key: ValueKey('prod-${p['id']}'),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 좌측 순서변경 손잡이 (마우스/손가락으로 끌어 이동, 항상 노출)
+                      ReorderableDragStartListener(
+                        index: i,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.grab,
+                          child: Container(
+                            width: 40,
+                            margin: const EdgeInsets.only(right: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.purple.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: AppColors.purple.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.drag_indicator,
+                                  size: 20,
+                                  color: AppColors.purple,
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  '순서변경',
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.purple.withValues(
+                                      alpha: 0.85,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(child: _productCard(p, inList: true)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         const SizedBox(height: 8),
         _addProductButton(),
       ],
     );
+  }
+
+  /// 상품 순서 변경 — 즉시 UI 반영 후 저장(실패 시 스낵바).
+  Future<void> _onReorderProducts(int oldI, int newI) async {
+    if (newI > oldI) newI -= 1;
+    setState(() {
+      final moved = _products.removeAt(oldI);
+      _products.insert(newI, moved);
+    });
+    final ids = _products.map((p) => '${p['id']}').toList();
+    final ok = await _nas.merchProductsOrder(ids);
+    if (!ok && mounted) _snack('순서 저장 실패');
   }
 
   // ==================== 2) 주문 관리 탭 ====================
@@ -1234,7 +1306,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  Widget _productCard(Map<String, dynamic> p) {
+  Widget _productCard(Map<String, dynamic> p, {bool inList = false}) {
     final active = p['active'] != false;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
@@ -1242,7 +1314,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
     final credentialOnly = p['credentialOnly'] == true;
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: EdgeInsets.only(bottom: inList ? 0 : 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         // 인가자 전용 상품은 바탕색을 다르게(틸/청록 계열) 표시
