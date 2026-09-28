@@ -16,6 +16,7 @@ import '../widgets/hscroll_menu.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
 import 'supplies_screen.dart';
+import 'purchase_screen.dart';
 import 'plans_tab.dart';
 
 /// 수품 판매관리 화면 (관리자·마스터 전용).
@@ -251,6 +252,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _ledgerTab(),
                 _stockTab(),
                 const SuppliesScreen(embedded: true),
+                const PurchaseScreen(embedded: true),
                 const PlansTab(),
                 _donationTab(),
                 _makerTab(),
@@ -267,6 +269,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     '판매대장',
     '재고',
     '비품재고',
+    '물건결제',
     '기획실',
     '공여',
     '제작자',
@@ -2819,19 +2822,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  // ==================== 4) 재고 탭 ====================
+  // ==================== 4) 재고 탭 (심플) ====================
   Widget _stockTab() {
     final stock = ((_stats['stock'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
+    final total = stock.fold<int>(
+        0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
       children: [
         Row(
           children: [
             Expanded(
-              child: _subHeader(
-                  '재고 현황', '상품별 재고 및 입출고 조정', Icons.inventory_2_outlined),
+              child: _subHeader('재고 현황', '${stock.length}종 · 총 재고 $total',
+                  Icons.inventory_2_outlined),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
@@ -2847,7 +2852,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         if (stock.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
@@ -2856,24 +2861,66 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               style: TextStyle(color: AppColors.textGray),
             ),
           )
-        else
+        else ...[
+          _stockTableHead(),
           for (final s in stock) _stockRow(s),
-        const SizedBox(height: 16),
-        _subHeader('재고 입출고 기록 (${_stockLog.length})', '변동 이력', Icons.history),
-        const SizedBox(height: 8),
-        _sectionBox('최근 기록', [
-          if (_stockLog.isEmpty)
-            const Text('기록 없음', style: TextStyle(color: AppColors.textGray))
-          else
-            for (final l in _stockLog.take(30))
-              _kv(
-                '${l['product'] ?? l['name'] ?? ''} '
-                    '${((l['delta'] as num?)?.toInt() ?? 0) > 0 ? '+' : ''}${l['delta'] ?? 0}',
-                '${l['at'] ?? l['created'] ?? ''}'
-                    '${'${l['note'] ?? ''}'.isNotEmpty ? ' · ${l['note']}' : ''}',
-              ),
-        ]),
+          const SizedBox(height: 8),
+          Text('총 ${stock.length}종 · 총 재고 $total',
+              style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.purpleDark)),
+        ],
+        if (_stockLog.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              title: Text('입출고 이력 (${_stockLog.length})',
+                  style: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w800)),
+              children: [
+                for (final l in _stockLog.take(30))
+                  _kv(
+                    '${l['product'] ?? l['name'] ?? ''} '
+                        '${((l['delta'] as num?)?.toInt() ?? 0) > 0 ? '+' : ''}${l['delta'] ?? 0}',
+                    '${l['at'] ?? l['created'] ?? ''}'
+                        '${'${l['note'] ?? ''}'.isNotEmpty ? ' · ${l['note']}' : ''}',
+                  ),
+              ],
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _stockTableHead() {
+    const style = TextStyle(
+        fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.textDark);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2)),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+              width: 44,
+              child: Text('사진', style: style, textAlign: TextAlign.center)),
+          Expanded(flex: 5, child: Text('품명', style: style)),
+          SizedBox(
+              width: 62,
+              child: Text('재고', style: style, textAlign: TextAlign.center)),
+          SizedBox(width: 14),
+          SizedBox(
+              width: 54,
+              child: Text('판매', style: style, textAlign: TextAlign.center)),
+          SizedBox(width: 36),
+        ],
+      ),
     );
   }
 
@@ -2983,86 +3030,114 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final stock = (s['stock'] as num?)?.toInt() ?? 0;
     final sold = (s['sold'] as num?)?.toInt() ?? 0;
     final low = stock <= 5;
+    final product = _productOf(s);
+    final image = product == null ? '' : '${product['image'] ?? ''}'.trim();
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: (low ? AppColors.taegeukRed : AppColors.purple).withValues(
-            alpha: 0.18,
-          ),
-        ),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFEDEAE3))),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
-                ),
+          SizedBox(width: 44, child: _stockThumb(image)),
+          Expanded(
+            flex: 5,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: product == null
+                  ? null
+                  : () => _editProduct(existing: product),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  if (low)
+                    const Text('재고 부족',
+                        style: TextStyle(
+                            fontSize: 10.5, color: AppColors.taegeukRed)),
+                ],
               ),
-              _pill(
-                '재고 $stock',
-                low ? AppColors.taegeukRed : AppColors.scoutGreen,
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '누적판매 $sold개',
-            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          SizedBox(
+            width: 62,
+            child: _StockQty(
+              value: stock,
+              onChanged: (v) async {
+                final delta = v - stock;
+                if (delta == 0) return;
+                final r = await _nas.merchStock('${s['id']}', delta);
+                if (!mounted) return;
+                if (r['ok'] == true) {
+                  _snack('재고를 $v개로 조정했습니다');
+                  _load();
+                } else {
+                  _snack('조정 실패');
+                }
+              },
+            ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _miniStockBtn(s, -1, '−1'),
-              _miniStockBtn(s, 1, '+1'),
-              _miniStockBtn(s, 10, '+10'),
-              _miniStockBtn(s, -10, '−10'),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () => _adjustStock(s, null),
-                icon: const Icon(Icons.edit, size: 15),
-                label: const Text('직접입력'),
-              ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () {
-                  final p = _productOf(s);
-                  if (p != null) _editProduct(existing: p);
-                },
-                icon: const Icon(Icons.tune, size: 15),
-                label: const Text('상품수정'),
-              ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: AppColors.taegeukRed,
-                ),
-                onPressed: () {
-                  final p = _productOf(s);
-                  if (p != null) _deleteProduct(p);
-                },
-                icon: const Icon(Icons.delete_outline, size: 15),
-                label: const Text('상품삭제'),
-              ),
-            ],
+          const SizedBox(width: 14),
+          SizedBox(
+            width: 54,
+            child: Text('$sold',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textGray)),
+          ),
+          SizedBox(
+            width: 36,
+            child: PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.more_vert, size: 18),
+              onSelected: (v) {
+                if (v == 'p1') _adjustStock(s, 1);
+                if (v == 'm1') _adjustStock(s, -1);
+                if (v == 'set') _adjustStock(s, null);
+                if (v == 'edit') {
+                  if (product != null) _editProduct(existing: product);
+                }
+                if (v == 'del') {
+                  if (product != null) _deleteProduct(product);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'p1', child: Text('+1 입고')),
+                PopupMenuItem(value: 'm1', child: Text('−1 출고')),
+                PopupMenuItem(value: 'set', child: Text('수량 직접입력')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'edit', child: Text('상품 수정 (사진·정보)')),
+                PopupMenuItem(value: 'del', child: Text('상품 삭제')),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 재고 표 사진 썸네일 — 상품 이미지가 있으면 표시.
+  Widget _stockThumb(String image) {
+    if (image.isEmpty) {
+      return Center(
+        child: Icon(Icons.image_not_supported_outlined,
+            size: 20, color: AppColors.textGray.withValues(alpha: 0.4)),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        _nas.merchImageUrl(image),
+        width: 38,
+        height: 38,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined,
+            size: 20, color: AppColors.textGray),
       ),
     );
   }
@@ -3075,13 +3150,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
     return null;
   }
-
-  Widget _miniStockBtn(Map<String, dynamic> s, int delta, String label) =>
-      OutlinedButton(
-        style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
-        onPressed: () => _adjustStock(s, delta),
-        child: Text(label),
-      );
 
   Future<void> _adjustStock(Map<String, dynamic> s, int? delta) async {
     final id = '${s['id']}';
@@ -4657,5 +4725,98 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+}
+
+/// 재고 수량 인라인 편집 위젯 — 숫자를 누르면 바로 입력/저장.
+class _StockQty extends StatefulWidget {
+  const _StockQty({required this.value, required this.onChanged});
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_StockQty> createState() => _StockQtyState();
+}
+
+class _StockQtyState extends State<_StockQty> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: '${widget.value}');
+  final _focus = FocusNode();
+  bool _editing = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    setState(() {
+      _editing = true;
+      _ctrl.text = '${widget.value}';
+      _ctrl.selection =
+          TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    });
+    _focus.requestFocus();
+  }
+
+  void _commit() {
+    if (!_editing) return;
+    final v = int.tryParse(_ctrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+    setState(() => _editing = false);
+    if (v != null && v != widget.value) {
+      widget.onChanged(v);
+    } else {
+      _ctrl.text = '${widget.value}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_editing) {
+      return InkWell(
+        onTap: _start,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.taegeukBlue.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: AppColors.taegeukBlue.withValues(alpha: 0.35)),
+          ),
+          child: Center(
+            child: Text('${widget.value}',
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.taegeukBlue)),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: 56,
+      child: TextField(
+        controller: _ctrl,
+        focusNode: _focus,
+        autofocus: true,
+        textAlign: TextAlign.center,
+        keyboardType: TextInputType.number,
+        style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: AppColors.taegeukBlue),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _commit(),
+        onTapOutside: (_) => _commit(),
+      ),
+    );
   }
 }

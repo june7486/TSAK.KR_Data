@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/file_pick.dart';
 import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
@@ -90,6 +93,28 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     return '${d.year}.${p(d.month)}.${p(d.day)}';
   }
 
+  // ---------- 사진 업로드 ----------
+  Future<String?> _pickPhoto() async {
+    try {
+      final files = await pickDataFiles(
+        dialogTitle: '사진 선택',
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+      );
+      if (files.isEmpty) return null;
+      final f = files.first;
+      final r = await _nas.merchImageUpload(f.name, base64Encode(f.bytes));
+      if (r['ok'] == true && r['file'] != null) {
+        _snack('사진을 업로드했습니다');
+        return '${r['file']}';
+      }
+      _snack('사진 업로드 실패: ${r['error'] ?? ''}');
+      return null;
+    } catch (e) {
+      _snack('사진 오류: $e');
+      return null;
+    }
+  }
+
   // ---------- 추가 / 수정 ----------
   Future<void> _edit({Map<String, dynamic>? existing}) async {
     final name = TextEditingController(text: '${existing?['name'] ?? ''}');
@@ -101,62 +126,115 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           ? '${existing?['checkedAt']}'
           : _today(),
     );
+    String photo = '${existing?['photo'] ?? ''}';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? '비품 추가' : '비품 수정'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: name,
-                decoration: const InputDecoration(
-                    labelText: '품명 *', isDense: true),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: qty,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: '수량', isDense: true),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: note,
-                maxLines: 2,
-                minLines: 1,
-                decoration: const InputDecoration(
-                    labelText: '비고', isDense: true),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: checked,
-                decoration: const InputDecoration(
-                    labelText: '재고 확인 날짜', isDense: true),
-              ),
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '확인자: #$_whoNumber $_whoName',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textGray),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: Text(existing == null ? '비품 추가' : '비품 수정'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 사진 미리보기 + 업로드
+                Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 64,
+                        height: 64,
+                        color: AppColors.bg,
+                        child: photo.trim().isEmpty
+                            ? const Icon(Icons.image_outlined,
+                                color: AppColors.textGray)
+                            : Image.network(
+                                _nas.merchImageUrl(photo),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.broken_image_outlined,
+                                    color: AppColors.textGray),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact),
+                            onPressed: () async {
+                              final f = await _pickPhoto();
+                              if (f != null) setDlg(() => photo = f);
+                            },
+                            icon: const Icon(Icons.upload_file, size: 16),
+                            label: const Text('사진 업로드'),
+                          ),
+                          if (photo.trim().isNotEmpty)
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact),
+                              onPressed: () => setDlg(() => photo = ''),
+                              child: const Text('사진 제거',
+                                  style: TextStyle(fontSize: 12)),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(
+                      labelText: '품명 *', isDense: true),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: qty,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: '수량', isDense: true),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: note,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: const InputDecoration(
+                      labelText: '비고', isDense: true),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: checked,
+                  decoration: const InputDecoration(
+                      labelText: '재고 확인 날짜', isDense: true),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '확인자: #$_whoNumber $_whoName',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textGray),
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('저장'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('저장'),
-          ),
-        ],
       ),
     );
     if (ok != true) return;
@@ -171,6 +249,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       note: note.text.trim(),
       checkedAt: checked.text.trim(),
       whoName: _whoName,
+      photo: photo.trim(),
     );
     if (!mounted) return;
     _snack(r['ok'] == true ? '저장했습니다' : '저장 실패');
@@ -530,10 +609,14 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         children: [
           SizedBox(width: 34),
           SizedBox(width: 30, child: Text('No', style: style)),
+          SizedBox(
+              width: 46,
+              child: Text('사진', style: style, textAlign: TextAlign.center)),
           Expanded(flex: 4, child: Text('품명', style: style)),
           SizedBox(
-              width: 62,
+              width: 60,
               child: Text('수량', style: style, textAlign: TextAlign.center)),
+          SizedBox(width: 14),
           Expanded(flex: 3, child: Text('비고', style: style)),
           SizedBox(width: 44),
         ],
@@ -558,6 +641,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       note: '${s['note'] ?? ''}',
       checkedAt: '${s['checkedAt'] ?? ''}',
       whoName: _whoName,
+      photo: '${s['photo'] ?? ''}',
     );
     if (!mounted) return;
     if (r['ok'] != true) {
@@ -591,6 +675,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                     fontWeight: FontWeight.w700,
                     color: AppColors.textGray)),
           ),
+          SizedBox(width: 46, child: _photoThumb(s)),
           Expanded(
             flex: 4,
             child: GestureDetector(
@@ -617,7 +702,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
               ),
             ),
           ),
-          SizedBox(width: 62, child: _qtyCell(s)),
+          SizedBox(width: 60, child: _qtyCell(s)),
+          const SizedBox(width: 14),
           Expanded(
             flex: 3,
             child: Text('${s['note'] ?? ''}',
@@ -644,9 +730,63 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-  Color _hex(String h) {
-    final v = h.replaceAll('#', '');
-    return Color(int.parse('FF$v', radix: 16));
+  /// 비품 사진 썸네일 — 없으면 흐린 아이콘, 있으면 탭하여 확대.
+  Widget _photoThumb(Map<String, dynamic> s) {
+    final photo = '${s['photo'] ?? ''}'.trim();
+    if (photo.isEmpty) {
+      return Center(
+        child: Icon(Icons.image_not_supported_outlined,
+            size: 20, color: AppColors.textGray.withValues(alpha: 0.4)),
+      );
+    }
+    return GestureDetector(
+      onTap: () => _showPhoto(s),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          _nas.merchImageUrl(photo),
+          width: 38,
+          height: 38,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Icon(
+              Icons.broken_image_outlined,
+              size: 20,
+              color: AppColors.textGray),
+        ),
+      ),
+    );
+  }
+
+  void _showPhoto(Map<String, dynamic> s) {
+    final photo = '${s['photo'] ?? ''}'.trim();
+    if (photo.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(_nas.merchImageUrl(photo),
+                  fit: BoxFit.contain),
+            ),
+            const SizedBox(height: 8),
+            Text('${s['name'] ?? ''}',
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.close, color: Colors.white),
+              label:
+                  const Text('닫기', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -712,19 +852,12 @@ class _InlineQtyState extends State<_InlineQty> {
             border: Border.all(
                 color: AppColors.taegeukBlue.withValues(alpha: 0.35)),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('${widget.value}',
-                  style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.taegeukBlue)),
-              const SizedBox(width: 3),
-              Icon(Icons.edit,
-                  size: 12,
-                  color: AppColors.taegeukBlue.withValues(alpha: 0.7)),
-            ],
+          child: Center(
+            child: Text('${widget.value}',
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.taegeukBlue)),
           ),
         ),
       );

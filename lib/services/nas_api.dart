@@ -1764,6 +1764,7 @@ class NasApi {
     String note = '',
     String checkedAt = '',
     String whoName = '',
+    String photo = '',
   }) async {
     final r = await http
         .post(
@@ -1776,6 +1777,7 @@ class NasApi {
             'note': note,
             if (checkedAt.isNotEmpty) 'checkedAt': checkedAt,
             if (whoName.isNotEmpty) 'whoName': whoName,
+            'photo': photo,
           }),
         )
         .timeout(const Duration(seconds: 40));
@@ -1787,6 +1789,53 @@ class NasApi {
     final r = await http
         .post(
           _uri('/api/merch/supplies/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 물건 결제 항목 등록/수정.
+  Future<Map<String, dynamic>> merchSavePurchase({
+    String id = '',
+    String group = '',
+    String category = '',
+    String size = '',
+    int qty = 0,
+    int unitPrice = 0,
+    int amount = 0,
+    String note = '',
+    String photo = '',
+    String whoName = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/purchase'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            'group': group,
+            'category': category,
+            'size': size,
+            'qty': qty,
+            'unitPrice': unitPrice,
+            'amount': amount,
+            'note': note,
+            'photo': photo,
+            if (whoName.isNotEmpty) 'whoName': whoName,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 물건 결제 항목 삭제.
+  Future<bool> merchDeletePurchase(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/purchase/delete'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'id': id}),
         )
