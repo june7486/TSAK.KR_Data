@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
@@ -20,7 +21,7 @@ class MerchAdminScreen extends StatefulWidget {
 
 class _MerchAdminScreenState extends State<MerchAdminScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 6, vsync: this);
+  late final TabController _tab = TabController(length: 7, vsync: this);
 
   NasApi get _nas => context.read<NasApi>();
 
@@ -36,6 +37,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Map<String, dynamic> _config = {};
   Map<String, dynamic> _stats = {};
 
+  // 수품판매대장(ledger)
+  List<Map<String, dynamic>> _ledgerRows = [];
+  Map<String, dynamic> _ledgerSummary = {};
+  String _ledgerYear = '';
+  String _ledgerMonth = '';
+  String _ledgerKind = '';
+  bool _ledgerLoading = false;
+  late final TextEditingController _ledgerYearCtl =
+      TextEditingController(text: _ledgerYear);
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +56,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   @override
   void dispose() {
     _tab.dispose();
+    _ledgerYearCtl.dispose();
     super.dispose();
   }
 
@@ -144,6 +156,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           tabs: const [
             Tab(text: '판매관리'),
             Tab(text: '누적판매'),
+            Tab(text: '판매대장'),
             Tab(text: '재고'),
             Tab(text: '공여'),
             Tab(text: '제작자'),
@@ -160,6 +173,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               children: [
                 _salesTab(),
                 _reportsTab(),
+                _ledgerTab(),
                 _stockTab(),
                 _donationTab(),
                 _makerTab(),
@@ -987,7 +1001,301 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     if (mounted) _snack(type == 'csv' ? 'CSV를 복사했습니다(엑셀에 붙여넣기)' : '표를 복사했습니다');
   }
 
-  // ==================== 3) 재고 탭 ====================
+  // ---------- 수품판매대장 로드 ----------
+  Future<void> _loadLedger() async {
+    setState(() => _ledgerLoading = true);
+    try {
+      final r = await _nas.merchLedger(
+        year: _ledgerYear,
+        month: _ledgerMonth,
+        kind: _ledgerKind,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ledgerRows = _list(r['rows']);
+        _ledgerSummary = ((r['summary'] as Map?) ?? {}).cast<String, dynamic>();
+        _ledgerLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _ledgerLoading = false);
+      _snack('판매대장을 불러오지 못했습니다: $e');
+    }
+  }
+
+  Future<void> _downloadLedgerCsv() async {
+    final url = _nas.merchLedgerCsvUrl(year: _ledgerYear, month: _ledgerMonth);
+    try {
+      final ok = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!ok && mounted) _snack('다운로드를 열 수 없습니다');
+    } catch (_) {
+      // 일부 브라우저/플랫폼에서 실패 시 현재 창에서 시도
+      try {
+        await launchUrl(Uri.parse(url));
+      } catch (_) {
+        if (mounted) _snack('CSV 다운로드 링크: $url');
+      }
+    }
+  }
+
+  // ==================== 3) 판매대장 탭 ====================
+  Widget _ledgerTab() {
+    if (_ledgerRows.isEmpty &&
+        _ledgerSummary.isEmpty &&
+        !_ledgerLoading &&
+        _ledgerYear.isEmpty &&
+        _ledgerMonth.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadLedger());
+    }
+    final amountTotal = (_ledgerSummary['amountTotal'] as num?)?.toInt() ?? 0;
+    final orderCount = (_ledgerSummary['orderCount'] as num?)?.toInt() ?? 0;
+    final reserveCount = (_ledgerSummary['reserveCount'] as num?)?.toInt() ?? 0;
+    final paidCount = (_ledgerSummary['paidCount'] as num?)?.toInt() ?? 0;
+    final unpaidCount = (_ledgerSummary['unpaidCount'] as num?)?.toInt() ?? 0;
+
+    final months = <String>[''];
+    for (int m = 1; m <= 12; m++) {
+      months.add(m.toString().padLeft(2, '0'));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        _subHeader('수품판매대장', '주문·예약 통합 장부 · CSV 출력', Icons.receipt_long),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _statCard('주문', '$orderCount건', AppColors.purple),
+            const SizedBox(width: 8),
+            _statCard('예약', '$reserveCount건', Colors.orange),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _statCard('매출합계', _won(amountTotal), AppColors.taegeukBlue),
+            const SizedBox(width: 8),
+            _statCard('입금/미입금', '$paidCount / $unpaidCount', AppColors.scoutGreen),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // 필터 + 다운로드
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.purple.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('기간/구분 필터',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: AppColors.purpleDark)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _ledgerYearCtl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(4),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: '연도',
+                        hintText: '예: 2026',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => _ledgerYear = v.trim(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _ledgerMonth,
+                      decoration: const InputDecoration(
+                        labelText: '월',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final m in months)
+                          DropdownMenuItem(
+                            value: m,
+                            child: Text(m.isEmpty ? '전체' : '$m월'),
+                          ),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _ledgerMonth = v ?? ''),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _ledgerKind,
+                      decoration: const InputDecoration(
+                        labelText: '구분',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: '', child: Text('전체')),
+                        DropdownMenuItem(value: '주문', child: Text('주문')),
+                        DropdownMenuItem(value: '예약', child: Text('예약')),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _ledgerKind = v ?? ''),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    onPressed: _ledgerLoading ? null : _loadLedger,
+                    icon: const Icon(Icons.filter_alt_outlined, size: 16),
+                    label: const Text('조회'),
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    onPressed: _downloadLedgerCsv,
+                    icon: const Icon(Icons.download_outlined, size: 16),
+                    label: const Text('판매대장 CSV'),
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    onPressed: _ledgerYear.isEmpty && _ledgerMonth.isEmpty
+                        ? null
+                        : () {
+                            _ledgerYearCtl.clear();
+                            setState(() {
+                              _ledgerYear = '';
+                              _ledgerMonth = '';
+                              _ledgerKind = '';
+                            });
+                            _loadLedger();
+                          },
+                    icon: const Icon(Icons.restart_alt, size: 16),
+                    label: const Text('초기화'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_ledgerLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (_ledgerRows.isEmpty)
+          _sectionBox('판매대장', [
+            const Text('조회된 내역이 없습니다.',
+                style: TextStyle(color: AppColors.textGray)),
+          ])
+        else
+          _sectionBox('판매대장 (${_ledgerRows.length}건)', [
+            for (final row in _ledgerRows) _ledgerRow(row),
+          ]),
+      ],
+    );
+  }
+
+  Widget _ledgerRow(Map<String, dynamic> row) {
+    final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
+    final orderNo = (row['orderNo'] ?? '').toString();
+    final buyer = (row['buyerName'] ?? row['name'] ?? '').toString();
+    final created = (row['created'] ?? '').toString();
+    final product = (row['product'] ?? '').toString();
+    final qty = (row['qty'] as num?)?.toInt() ?? 1;
+    final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
+    final status = (row['status'] ?? '').toString();
+    final paid = row['paid'] == true;
+    final isOrder = kind == '주문';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _pill(kind.isEmpty ? (isOrder ? '주문' : '예약') : kind,
+                  isOrder ? AppColors.purple : Colors.orange),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(orderNo.isEmpty ? '(번호 없음)' : orderNo,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                        color: AppColors.purpleDark,
+                        letterSpacing: 0.2),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              Text(_won((amount as num?)?.toInt() ?? 0),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 12.5)),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${buyer.isEmpty ? '주문자 미상' : buyer} · '
+            '${product.isEmpty ? '상품' : product}${qty > 1 ? ' ×$qty' : ''}',
+            style: const TextStyle(fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 3),
+          Row(
+            children: [
+              Text(created.isEmpty ? '-' : created,
+                  style:
+                      const TextStyle(fontSize: 11, color: AppColors.textGray)),
+              const Spacer(),
+              if (status.isNotEmpty)
+                Text(status,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.purpleDark,
+                        fontWeight: FontWeight.w700)),
+              if (isOrder) ...[
+                const SizedBox(width: 8),
+                Text(paid ? '입금완료' : '미입금',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: paid ? AppColors.scoutGreen : AppColors.taegeukRed)),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== 4) 재고 탭 ====================
   Widget _stockTab() {
     final stock = ((_stats['stock'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())

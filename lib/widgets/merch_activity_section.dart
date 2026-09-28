@@ -21,7 +21,6 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _reserves = [];
   List<dynamic> _statuses = const [];
-  List<dynamic> _reserveStatuses = const [];
 
   @override
   void initState() {
@@ -38,7 +37,6 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
         _orders = (r['orders'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         _reserves = (r['reservations'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         _statuses = (r['statuses'] as List?) ?? const [];
-        _reserveStatuses = (r['reserveStatuses'] as List?) ?? const [];
         _loading = false;
       });
     } catch (_) {
@@ -99,13 +97,11 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
     final statuses = _statuses.map((e) => e.toString()).toList();
     final current = statuses.indexOf(status);
     final cancelled = status.contains('취소');
-    final items = (o['items'] as List?) ?? const [];
-    final itemNames = items
-        .map((it) => (it is Map ? it['name'] : it).toString())
-        .where((s) => s.isNotEmpty)
-        .take(3)
-        .join(', ');
+    final product = (o['product'] ?? '').toString().trim();
+    final orderNo = (o['orderNo'] ?? '').toString().trim();
+    final qty = (o['qty'] as num?)?.toInt() ?? 1;
     final total = (o['grandTotal'] ?? o['total']) ?? 0;
+    final created = (o['created'] ?? o['createdAt'] ?? '').toString();
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
@@ -115,7 +111,7 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
             children: [
               Expanded(
                 child: Text(
-                  itemNames.isEmpty ? '수품 주문' : itemNames,
+                  product.isEmpty ? '수품 주문' : (qty > 1 ? '$product ×$qty' : product),
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -125,13 +121,34 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
             ],
           ),
+          if (orderNo.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                const Icon(Icons.receipt_long_outlined, size: 12, color: AppColors.textGray),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    '주문번호 $orderNo',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.purpleDark,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 6),
           if (statuses.isNotEmpty && !cancelled)
             _ProgressBar(steps: statuses, current: current)
           else
             _pill(status.isEmpty ? '접수' : status, cancelled ? Colors.red : AppColors.purple),
           const SizedBox(height: 3),
-          Text('주문일 ${o['createdAt'] ?? '-'}',
+          Text('주문일 ${created.isEmpty ? '-' : created}',
               style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
         ],
       ),
@@ -140,12 +157,10 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
 
   Widget _reserveRow(Map<String, dynamic> r) {
     final status = (r['status'] ?? '예약접수').toString();
-    final items = (r['items'] as List?) ?? const [];
-    final itemNames = items
-        .map((it) => (it is Map ? it['name'] : it).toString())
-        .where((s) => s.isNotEmpty)
-        .take(3)
-        .join(', ');
+    final product = (r['product'] ?? '').toString().trim();
+    final orderNo = (r['orderNo'] ?? '').toString().trim();
+    final qty = (r['qty'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 1;
+    final created = (r['created'] ?? r['createdAt'] ?? '').toString();
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
@@ -154,17 +169,37 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
           Row(
             children: [
               Expanded(
-                child: Text(itemNames.isEmpty ? '수품 예약' : itemNames,
+                child: Text(
+                    product.isEmpty ? '수품 예약' : (qty > 1 ? '$product ×$qty' : product),
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis),
               ),
-              _pill('예약 ${status}', Colors.orange),
+              _pill('예약 $status', Colors.orange),
             ],
           ),
+          if (orderNo.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                const Icon(Icons.receipt_long_outlined, size: 12, color: AppColors.textGray),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text('예약번호 $orderNo',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.purpleDark,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 4),
-          const Text('예약(수요조사) 접수됨 — 제작 판단 후 안내됩니다.',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+          Text(created.isEmpty ? '예약(수요조사) 접수됨 — 제작 판단 후 안내됩니다.' : '$created · 수요조사 접수됨',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
         ],
       ),
     );

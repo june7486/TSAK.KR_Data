@@ -1495,6 +1495,32 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 관리자: 수품판매대장(주문+예약 통합). {ok, rows, summary}
+  Future<Map<String, dynamic>> merchLedger({
+    String year = '',
+    String month = '',
+    String kind = '',
+  }) async {
+    final q = <String>[];
+    if (year.isNotEmpty) q.add('year=${Uri.encodeComponent(year)}');
+    if (month.isNotEmpty) q.add('month=${Uri.encodeComponent(month)}');
+    if (kind.isNotEmpty) q.add('kind=${Uri.encodeComponent(kind)}');
+    final qs = q.isEmpty ? '' : '?${q.join('&')}';
+    final r = await http
+        .get(_uri('/api/merch/ledger$qs'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 수품판매대장 CSV 다운로드 URL.
+  String merchLedgerCsvUrl({String year = '', String month = ''}) {
+    final q = <String>[];
+    if (year.isNotEmpty) q.add('year=${Uri.encodeComponent(year)}');
+    if (month.isNotEmpty) q.add('month=${Uri.encodeComponent(month)}');
+    final qs = q.isEmpty ? '' : '?${q.join('&')}';
+    return '$_base/api/merch/ledger/csv$qs';
+  }
+
   /// 관리자: 예약 상태/메모/수량 수정.
   Future<Map<String, dynamic>> merchUpdateReserve({
     required String id,

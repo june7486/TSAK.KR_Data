@@ -1971,6 +1971,54 @@ def _merch_status_idx(status, pipeline=None):
         return 0
 
 
+def _merch_name_short(name):
+    """주문번호용 주문자 약자(성 제외 이름 2자, 짧으면 그대로)."""
+    n = re.sub(r"\s+", "", str(name or ""))
+    if not n:
+        return "미상"
+    if len(n) >= 3:
+        return n[-2:]
+    return n
+
+
+def _merch_make_order_no(name, created, amount):
+    """주문번호 생성: {약자}-{YYMMDD}-{HHMM}-{금액}
+    예) 승준-260928-0130-45000  → 주문자·구매일·구매시간·금액을 모두 유추 가능."""
+    try:
+        dt = datetime.datetime.strptime(str(created or ""), "%Y.%m.%d %H:%M")
+    except Exception:
+        dt = datetime.datetime.now()
+    ymd = dt.strftime("%y%m%d")
+    hm = dt.strftime("%H%M")
+    try:
+        amt = int(amount or 0)
+    except Exception:
+        amt = 0
+    return "%s-%s-%s-%d" % (_merch_name_short(name), ymd, hm, amt)
+
+
+def _merch_assign_no(doc, rec):
+    """레코드에 중복 없는 주문번호(orderNo)를 부여하고 반환."""
+    if rec.get("orderNo"):
+        return rec["orderNo"]
+    amount = rec.get("grandTotal", rec.get("total", rec.get("amount", 0)))
+    base = _merch_make_order_no(rec.get("buyerName"), rec.get("created"), amount)
+    used = set()
+    for o in doc.get("orders", []):
+        if isinstance(o, dict) and o.get("orderNo"):
+            used.add(str(o["orderNo"]))
+    for r in doc.get("reservations", []):
+        if isinstance(r, dict) and r.get("orderNo"):
+            used.add(str(r["orderNo"]))
+    no = base
+    i = 2
+    while no in used:
+        no = "%s(%d)" % (base, i)
+        i += 1
+    rec["orderNo"] = no
+    return no
+
+
 def _merch_doc_defaults(doc):
     """확장 필드 기본값 보장(예약/제작자/공여/재고/공지)."""
     doc.setdefault("orders", [])
@@ -1994,10 +2042,19 @@ def _merch_doc_defaults(doc):
             o.setdefault("annualFeeAdded", 0)
             o.setdefault("contactId", "")
             o.setdefault("contactType", "")
+            o.setdefault("orderNo", "")
     for r in doc.get("reservations", []):
         if isinstance(r, dict):
             r.setdefault("status", "예약접수")
             r.setdefault("statusHistory", [])
+            r.setdefault("orderNo", "")
+    # 주문번호 일괄 부여(기존 데이터 마이그레이션)
+    for o in doc.get("orders", []):
+        if isinstance(o, dict) and not o.get("orderNo"):
+            _merch_assign_no(doc, o)
+    for r in doc.get("reservations", []):
+        if isinstance(r, dict) and not r.get("orderNo"):
+            _merch_assign_no(doc, r)
     return doc
 
 
@@ -4825,6 +4882,7 @@ class Handler(BaseHTTPRequestHandler):
                     "paid": False, "status": "입금확인중", "statusHistory": [],
                     "memo": "연회비 납부", "created": _now_stamp(),
                 }
+                _merch_assign_no(doc, order)
                 doc.setdefault("orders", []).append(order)
                 _merch_save(doc)
                 if oc:
@@ -4861,6 +4919,120 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 doc = _merch_doc()
                 return self._json({"ok": True, "stats": _merch_stats(doc)})
+            if p == "/api/merch/ledger":
+                # 수품판매대장 — 주문+예약 통합 대장(관리자 출력용).
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                y = q.get("year", [""])[0]
+                m = q.get("month", [""])[0]
+                kind = q.get("kind", [""])[0]  # order | reserve | '' (전체)
+                doc = _merch_doc()
+                rows = []
+
+                def _match(rec):
+                    if y and str(rec.get("year", "")) != str(y):
+                        return False
+                    c = str(rec.get("created", ""))
+                    if m and ("." + m.zfill(2) + ".") not in c:
+                        return False
+                    return True
+
+                for o in doc.get("orders", []):
+                    if isinstance(o, dict) and _match(o):
+                        rows.append(dict(o, _kind="주문"))
+                for r in doc.get("reservations", []):
+                    if isinstance(r, dict) and _match(r):
+                        rows.append(dict(r, _kind="예약"))
+                if kind == "order":
+                    rows = [x for x in rows if x.get("_kind") == "주문"]
+                elif kind == "reserve":
+                    rows = [x for x in rows if x.get("_kind") == "예약"]
+                rows.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                # 집계
+                def _amt(x):
+                    return int(x.get("grandTotal", x.get("total", x.get("_amount", 0)))
+                               or 0)
+                summary = {
+                    "rows": len(rows),
+                    "orderCount": sum(1 for x in rows if x.get("_kind") == "주문"),
+                    "reserveCount": sum(1 for x in rows if x.get("_kind") == "예약"),
+                    "amountTotal": sum(_amt(x) for x in rows
+                                       if x.get("_kind") == "주문"),
+                    "paidCount": sum(1 for x in rows if x.get("paid") is True),
+                    "unpaidCount": sum(1 for x in rows
+                                       if x.get("_kind") == "주문"
+                                       and x.get("paid") is not True),
+                }
+                return self._json({"ok": True, "rows": rows, "summary": summary})
+            if p == "/api/merch/ledger/csv":
+                # 수품판매대장 CSV 다운로드.
+                if not self._require("admin"):
+                    return
+                import io as _io
+                import csv as _csv
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                y = q.get("year", [""])[0]
+                m = q.get("month", [""])[0]
+                doc = _merch_doc()
+                buf = _io.StringIO()
+                w = _csv.writer(buf)
+                w.writerow(["주문번호", "구분", "구매일시", "주문자", "인가번호",
+                            "상품", "종류", "수량", "옵션", "사이즈", "금액",
+                            "연회비", "합계", "입금", "진행상태", "배송", "주소",
+                            "연락처", "이메일", "메모"])
+                for o in doc.get("orders", []):
+                    if not isinstance(o, dict):
+                        continue
+                    c = str(o.get("created", ""))
+                    if y and not c.startswith(y):
+                        continue
+                    if m and ("." + m.zfill(2) + ".") not in c:
+                        continue
+                    w.writerow([
+                        o.get("orderNo", ""), "주문", c, o.get("buyerName", ""),
+                        o.get("buyerNumber", ""), o.get("product", ""),
+                        o.get("kind", ""), o.get("qty", 1), o.get("option", ""),
+                        o.get("size", ""), o.get("total", 0),
+                        o.get("annualFeeAdded", 0),
+                        o.get("grandTotal", o.get("total", 0)),
+                        "완료" if o.get("paid") is True else "미납",
+                        o.get("status", ""), o.get("shipMethod", ""),
+                        o.get("address", ""), o.get("phone", ""),
+                        o.get("email", ""), o.get("memo", ""),
+                    ])
+                for r in doc.get("reservations", []):
+                    if not isinstance(r, dict):
+                        continue
+                    c = str(r.get("created", ""))
+                    if y and not c.startswith(y):
+                        continue
+                    if m and ("." + m.zfill(2) + ".") not in c:
+                        continue
+                    w.writerow([
+                        r.get("orderNo", ""), "예약", c, r.get("buyerName", ""),
+                        r.get("buyerNumber", ""), r.get("product", ""),
+                        r.get("kind", ""), r.get("qty", 1), r.get("option", ""),
+                        r.get("size", ""), "", "", "", "", r.get("status", ""),
+                        "", "", r.get("phone", ""), r.get("email", ""),
+                        r.get("note", ""),
+                    ])
+                data = buf.getvalue()
+                body = ("\ufeff" + data).encode("utf-8")  # BOM(엑셀 한글)
+                self.send_response(200)
+                self.send_header("Content-Type",
+                                 "text/csv; charset=utf-8")
+                self.send_header(
+                    "Content-Disposition",
+                    "attachment; filename=tsak_merch_ledger.csv")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    self.wfile.write(body)
+                except Exception:
+                    pass
+                return
             if p == "/api/event/files":
                 if not self._require():
                     return
@@ -5793,6 +5965,7 @@ class Handler(BaseHTTPRequestHandler):
                     "memo": str(d.get("memo", "") or "")[:200],
                     "created": _now_stamp(),
                 }
+                _merch_assign_no(doc, order)
                 doc.setdefault("orders", []).append(order)
                 _merch_save(doc)
                 # 인가자/비인가자 프로필에 주문 내역 부착
@@ -5843,6 +6016,12 @@ class Handler(BaseHTTPRequestHandler):
                                        "at": _now_stamp(), "by": "system"}],
                     "created": _now_stamp(),
                 }
+                try:
+                    _est = int(prod.get("price", 0) or 0) * qty
+                except Exception:
+                    _est = 0
+                rec["_amount"] = _est
+                _merch_assign_no(doc, rec)
                 doc.setdefault("reservations", []).append(rec)
                 _merch_save(doc)
                 if oc:
