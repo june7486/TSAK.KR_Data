@@ -558,7 +558,7 @@ class _PlansTabState extends State<PlansTab> {
 
   Widget _planCard(Map<String, dynamic> p) {
     final photo = '${p['photo'] ?? ''}';
-    final photoUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo, crop: true);
+    final photoUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
     final apps = (p['applicants'] as List?) ?? [];
     final count = apps.length;
     final minQty = (p['minQty'] as num?)?.toInt() ?? 0;

@@ -51,7 +51,7 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
     final applicants = (it['applicants'] as List?) ?? const [];
     final options = ((it['options'] as List?) ?? []).map((e) => '$e').toList();
     final credentialOnly = it['credentialOnly'] == true;
-    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo, crop: true);
+    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
 
     // 상세 모든 항목(라벨→값) — 누락 없이 노출.
     final facts = <MapEntry<String, String>>[

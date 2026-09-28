@@ -371,7 +371,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final price = (p['price'] as num?)?.toInt() ?? 0;
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
-    final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}', crop: true);
+    final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
     final kind = '${p['kind'] ?? ''}';
     final soldOut = stock <= 0;
     final qty = _qtyOf(p);
@@ -1095,7 +1095,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   Widget _surveyCard(Map<String, dynamic> s) {
     final name = '${s['name'] ?? ''}';
     final photo = '${s['photo'] ?? ''}';
-    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo, crop: true);
+    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
     final price = (s['price'] as num?)?.toInt() ?? 0;
     final minQty = (s['minQty'] as num?)?.toInt() ?? 0;
     final count = (s['count'] as num?)?.toInt() ?? (s['applicants'] as List?)?.length ?? 0;

@@ -549,6 +549,133 @@ def _ensure_structure():
             NAS.mkdir(f"{BASE}/연회비", str(y))
 
 
+def _crop_merch_image(body, src_path=None):
+    """수품 이미지의 상·하단 텍스트(설명/'내답변' 입력란)와 테두리선을 자동 제거.
+
+    구글폼/설문 캡처처럼 이미지 안에 (a) 상단 설명 텍스트, (b) 하단 '내 답변'
+    입력란, (c) 사각 테두리 박스가 섞여 있어도, 순수 수품 사진 영역만 잘라
+    반환한다. 실패 시 원본을 그대로 반환.
+
+    구현: 축소 이미지에서 순수 numpy 연결요소 라벨링 → 테두리 루프/얇은
+    텍스트줄/세로선/점잡음 제거 → 남은(수품) 요소들의 합집합 bbox 로 크롭.
+    """
+    try:
+        import io
+        import numpy as np
+        from PIL import Image
+        im = Image.open(io.BytesIO(body)).convert("RGB")
+        W, H = im.size
+        if W < 40 or H < 40:
+            return body
+        # 분석용 축소(속도/노이즈) — 최대 200px
+        scale = min(1.0, 200.0 / max(W, H))
+        sw, sh = max(8, int(W * scale)), max(8, int(H * scale))
+        small = im.resize((sw, sh))
+        arr = np.asarray(small).astype("int16")
+        bg = arr[2, 2]
+        ink = (np.abs(arr - bg).sum(axis=2) > 60)
+        if ink.mean() < 0.004:
+            return body
+        lbl = _numpy_cc_label(ink)
+        if lbl is None:
+            return body
+        keep = np.zeros((sh, sw), dtype=bool)
+        uniq = np.unique(lbl)
+        # 수품은 이미지 중앙에 있고, 설명 텍스트는 최상단, '내답변'은 최하단에
+        # 위치한다는 전제로 상·하단 12% 영역에만 존재하는 요소는 제거한다.
+        top_zone = 0.12 * sh
+        bot_zone = 0.88 * sh
+        for lid in uniq:
+            if lid == 0:
+                continue
+            ys, xs = np.where(lbl == lid)
+            x0, x1 = int(xs.min()), int(xs.max()) + 1
+            y0, y1 = int(ys.min()), int(ys.max()) + 1
+            cw, ch = x1 - x0, y1 - y0
+            area = len(xs)
+            fill = area / float(cw * ch)
+            # (a) 테두리 루프 제거
+            if cw > 0.85 * sw and ch > 0.85 * sh and fill < 0.22:
+                continue
+            # (b) 가로 텍스트줄/구분선 제거
+            if ch < 0.07 * sh and cw > 0.30 * sw:
+                continue
+            # (c) 세로 구분선 제거
+            if cw < 0.07 * sw and ch > 0.30 * sh:
+                continue
+            # (d) 상·하단 텍스트 영역에만 있는 요소 제거(설명/'내답변')
+            if y1 <= top_zone or y0 >= bot_zone:
+                continue
+            # (e) 작은 점/글자 잡음 제거
+            if area < 0.0008 * sw * sh:
+                continue
+            keep[y0:y1, x0:x1] |= (lbl[y0:y1, x0:x1] == lid)
+        ys, xs = np.where(keep)
+        if len(xs) < 20:
+            ys, xs = np.where(ink)
+        if len(xs) == 0:
+            return body
+        # 축소 좌표 → 원본 좌표
+        def to_full(v):
+            return int(round(v / scale))
+        pad = max(2, int(min(W, H) * 0.012))
+        box = (max(0, to_full(xs.min()) - pad),
+               max(0, to_full(ys.min()) - pad),
+               min(W, to_full(xs.max() + 1) + pad),
+               min(H, to_full(ys.max() + 1) + pad))
+        if (box[2] - box[0]) < W * 0.12 or (box[3] - box[1]) < H * 0.12:
+            return body
+        return _crop_and_encode(im, box, W, H, src_path) or body
+    except Exception as e:
+        print("crop fail", e)
+        return body
+
+
+def _numpy_cc_label(mask):
+    """순수 numpy 연결요소 라벨링(8-연결, 벡터화 min 전파).
+
+    scipy/cv2/skimage 의존 없이 동작하도록 축소 이미지에서 수행한다.
+    반환: 라벨 int32 배열(배경=0). 과도하게 크면 None.
+    """
+    try:
+        import numpy as np
+        h, w = mask.shape
+        BIG = np.int32(1 << 29)
+        idx = np.arange(1, h * w + 1, dtype="int32").reshape(h, w)
+        # 배경은 전파를 막기 위해 큰 값으로 두고, 마지막에만 0으로 되돌린다.
+        lbl = np.where(mask, idx, BIG).astype("int32")
+        if int(lbl.min()) == int(BIG):
+            return None
+        # 가장자리에서 배경으로 전파되지 않도록 BIG으로 패딩한다.
+        pad = np.full((h + 2, w + 2), BIG, dtype="int32")
+        shifts = [(-1, 0), (1, 0), (0, -1), (0, 1),
+                  (-1, -1), (-1, 1), (1, -1), (1, 1)]
+        for it in range(400):
+            pad[1:h + 1, 1:w + 1] = lbl
+            mn = lbl.copy()
+            for dy, dx in shifts:
+                nb = pad[1 + dy:1 + dy + h, 1 + dx:1 + dx + w]
+                np.minimum(mn, nb, out=mn)
+            if np.array_equal(mn, lbl):
+                break
+            lbl = mn
+        lbl[~mask] = 0
+        return lbl
+    except Exception as e:
+        print("ccl fail", e)
+        return None
+
+
+def _crop_and_encode(im, box, w, h, src_path=None):
+    """박스로 크롭 후 JPEG 바이트 반환."""
+    import io
+    im2 = im.crop(box)
+    out = io.BytesIO()
+    im2.save(out, format="JPEG", quality=88)
+    print(f"merch crop {src_path}: {w}x{h} -> {box} = {im2.size[0]}x{im2.size[1]}")
+    return out.getvalue()
+
+
 def _load_json(path, default):
     try:
         if NAS.exists(path):
@@ -4719,10 +4846,20 @@ class Handler(BaseHTTPRequestHandler):
         - name(파일명)이 있으면 로컬 merch_img 폴더에서 제공(우선).
         - 없으면 <업로드 이미지 폴더>에서 제공(관리자가 업로드한 상품 이미지).
         - 없으면 src(외부 URL)를 받아 캐시 후 제공.
+        - crop=1 이면 상·하단 텍스트(설명/내답변 입력란)를 자동 크롭해 순수 수품
+          이미지만 전달한다(요구사항: 수품 이미지 크롭).
         """
         safe = os.path.basename(str(name or ""))
+        want_crop = False
+        try:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            want_crop = q.get("crop", ["0"])[0] in ("1", "true", "yes")
+        except Exception:
+            want_crop = False
         if safe:
             local = os.path.join(HERE, "merch_img", safe)
+            if not os.path.exists(local):
+                local = os.path.join(MERCH_IMG_UPLOAD_DIR, safe)
             if os.path.exists(local):
                 try:
                     with open(local, "rb") as f:
@@ -4731,19 +4868,10 @@ class Handler(BaseHTTPRequestHandler):
                              else "image/gif" if safe.lower().endswith(".gif")
                              else "image/webp" if safe.lower().endswith(".webp")
                              else "image/jpeg")
-                    return self._bytes_cache(body, ctype, max_age=604800)
-                except Exception as e:
-                    return self._json({"ok": False, "error": str(e)}, 500)
-            up = os.path.join(MERCH_IMG_UPLOAD_DIR, safe)
-            if os.path.exists(up):
-                try:
-                    with open(up, "rb") as f:
-                        body = f.read()
-                    ctype = ("image/png" if safe.lower().endswith(".png")
-                             else "image/gif" if safe.lower().endswith(".gif")
-                             else "image/webp" if safe.lower().endswith(".webp")
-                             else "image/jpeg")
-                    return self._bytes_cache(body, ctype, max_age=604800)
+                    if want_crop:
+                        body = _crop_merch_image(body, local)
+                    return self._bytes_cache(body, ctype, max_age=604800,
+                                             immutable=not want_crop)
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)}, 500)
         return self._serve_merch_image(src)
