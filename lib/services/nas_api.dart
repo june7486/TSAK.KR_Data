@@ -2115,6 +2115,8 @@ class NasApi {
     List<String>? reserveStatuses,
     Map<String, dynamic>? account,
     Map<String, dynamic>? guide,
+    bool? makerFileAdminAllowed,
+    bool? quoteSpecAdminAllowed,
   }) async {
     final r = await http
         .post(
@@ -2130,6 +2132,10 @@ class NasApi {
             if (reserveStatuses != null) 'reserveStatuses': reserveStatuses,
             if (account != null) 'account': account,
             if (guide != null) 'guide': guide,
+            if (makerFileAdminAllowed != null)
+              'makerFileAdminAllowed': makerFileAdminAllowed,
+            if (quoteSpecAdminAllowed != null)
+              'quoteSpecAdminAllowed': quoteSpecAdminAllowed,
           }),
         )
         .timeout(const Duration(seconds: 40));

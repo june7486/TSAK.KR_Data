@@ -134,6 +134,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   bool get _salesOpen => _config['salesOpen'] != false;
   bool get _feeRequired => _config['annualFeeRequired'] == true;
   bool get _reserveMode => _config['reserveMode'] == true;
+  /// 견적서/사업자등록증 파일 열람권한 관리자 허용 여부(마스터 전용 설정).
+  bool get _makerFileAdminAllowed =>
+      _config['makerFileAdminAllowed'] == true;
+  /// 견적서 기반 판매상품 세부항목 관리자 노출 허용 여부(마스터 전용 설정).
+  bool get _quoteSpecAdminAllowed =>
+      _config['quoteSpecAdminAllowed'] == true;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
   Map<String, dynamic> get _guide =>
@@ -3413,6 +3419,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           _row('제작일', '${m['madeDate'] ?? '-'}'),
           _row('제작단가', _won((m['unitPrice'] as num?)?.toInt() ?? 0)),
           _row('금액', _won((m['amount'] as num?)?.toInt() ?? 0)),
+          // ── 입금현황 ──
+          _makerPaymentRow(m),
           _row('입금일', '${m['paidDate'] ?? '-'}'),
           _row('배송일', '${m['shipDate'] ?? '-'}'),
           if ('${m['account'] ?? ''}'.isNotEmpty)
@@ -3421,11 +3429,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             _row('사업자등록번호', '${m['bizNumber']}'),
           if (quote.isNotEmpty) ...[
             const SizedBox(height: 4),
-            _fileChip(quote, '견적서'),
+            _securedFileChip(quote, '견적서',
+                context.read<AppState>(), _config),
           ],
           if (bizLicense.isNotEmpty) ...[
             const SizedBox(height: 4),
-            _fileChip(bizLicense, '사업자등록증'),
+            _securedFileChip(bizLicense, '사업자등록증',
+                context.read<AppState>(), _config),
           ],
           if (files.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -3492,6 +3502,63 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     child: const Icon(Icons.image, color: AppColors.purple),
   );
 
+  /// 제작자 입금현황 행 — 금액 대비 입금액/잔액/상태를 색으로 표시.
+  Widget _makerPaymentRow(Map<String, dynamic> m) {
+    final amount = (m['amount'] as num?)?.toInt() ?? 0;
+    final paidAmt = (m['paidAmount'] as num?)?.toInt() ?? 0;
+    final done = m['paid'] == true || '${m['paidDate'] ?? ''}'.trim().isNotEmpty;
+    final isPartial = !done && paidAmt > 0;
+    final remain = (amount - paidAmt).clamp(0, amount);
+    final label = done
+        ? '입금완료'
+        : isPartial
+            ? '일부입금 (잔액 ${_won(remain)})'
+            : '미입금';
+    final color = done
+        ? AppColors.scoutGreen
+        : isPartial
+            ? AppColors.tigerGold
+            : AppColors.taegeukRed;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 66,
+            child: Text('입금현황',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: color.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(label,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: color)),
+                ),
+                if (paidAmt > 0) ...[
+                  const SizedBox(width: 6),
+                  Text('입금액 ${_won(paidAmt)}',
+                      style: const TextStyle(
+                          fontSize: 11.5, color: AppColors.textDark)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _fileChip(String name, String? label) => InkWell(
     onTap: () {
       final url = name.startsWith('http') ? name : _nas.merchFileUrl(name);
@@ -3517,6 +3584,74 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ),
     ),
   );
+
+  /// 견적서/사업자등록증 등 민감파일 칩 — 마스터만 열람·다운로드 가능.
+  /// 관리자 접근은 설정(makerFileAdminAllowed)이 on 일 때만 허용된다.
+  Widget _securedFileChip(
+      String name, String label, AppState app, Map<String, dynamic> cfg) {
+    final master = app.isMaster;
+    final adminAllowed = cfg['makerFileAdminAllowed'] == true;
+    final canView = master || (app.isApp && adminAllowed);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: canView ? () => _openSecuredFile(name, label) : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: canView
+                  ? AppColors.scoutGreen.withValues(alpha: 0.12)
+                  : AppColors.textGray.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: canView
+                      ? AppColors.scoutGreen.withValues(alpha: 0.4)
+                      : AppColors.textGray.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(canView ? Icons.description_outlined : Icons.lock_outline,
+                    size: 13,
+                    color:
+                        canView ? AppColors.scoutGreen : AppColors.textGray),
+                const SizedBox(width: 3),
+                Text(
+                  '$label: $name',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color:
+                          canView ? AppColors.scoutGreen : AppColors.textGray),
+                ),
+                if (canView) ...[
+                  const SizedBox(width: 3),
+                  const Icon(Icons.open_in_new,
+                      size: 11, color: AppColors.scoutGreen),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (!canView) ...[
+          const SizedBox(width: 5),
+          const Text('(마스터 전용)',
+              style: TextStyle(fontSize: 10.5, color: AppColors.taegeukRed)),
+        ],
+      ],
+    );
+  }
+
+  /// 민감파일 열기 — 새 탭에서 열어 보기/다운로드 가능(브라우저 다운로드 UI 사용).
+  void _openSecuredFile(String name, String label) {
+    final url = name.startsWith('http') ? name : _nas.merchFileUrl(name);
+    if (isWebRuntime) {
+      openUrlInNewTab(url);
+    } else {
+      Clipboard.setData(ClipboardData(text: url));
+    }
+    _snack('$label 열기: $url');
+  }
 
   Future<void> _editMaker({Map<String, dynamic>? existing}) async {
     final category = TextEditingController(
@@ -3548,6 +3683,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final account = TextEditingController(text: '${existing?['account'] ?? ''}');
     final bizNumber =
         TextEditingController(text: '${existing?['bizNumber'] ?? ''}');
+    final paidAmount = TextEditingController(
+        text: '${(existing?['paidAmount'] as num?)?.toInt() ?? 0}');
+    bool paidDone = existing?['paid'] == true ||
+        '${existing?['paidDate'] ?? ''}'.trim().isNotEmpty;
     String quoteFile = '${existing?['quoteFile'] ?? ''}';
     String photo = '${existing?['photo'] ?? ''}';
     String bizLicenseFile = '${existing?['bizLicenseFile'] ?? ''}';
@@ -3579,6 +3718,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   _dlgField(madeDate, '제작일'),
                   _dlgField(unitPrice, '제작단가 (원)', number: true),
                   _dlgField(amount, '금액 (원)', number: true),
+                  _dlgField(paidAmount, '입금액 (원)', number: true),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('입금완료',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    value: paidDone,
+                    onChanged: (v) => setDlg(() {
+                      paidDone = v;
+                      if (v) {
+                        paidAmount.text = amount.text.trim();
+                      }
+                    }),
+                  ),
                   _dlgField(paidDate, '입금일'),
                   _dlgField(shipDate, '배송일'),
                   const Divider(),
@@ -3711,6 +3865,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       'madeDate': madeDate.text.trim(),
       'unitPrice': int.tryParse(unitPrice.text.trim()) ?? 0,
       'amount': int.tryParse(amount.text.trim()) ?? 0,
+      'paidAmount': int.tryParse(paidAmount.text.trim()) ?? 0,
+      'paid': paidDone,
       'paidDate': paidDate.text.trim(),
       'shipDate': shipDate.text.trim(),
       'account': account.text.trim(),
@@ -3925,6 +4081,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     bool open = _salesOpen;
     bool strict = _feeRequired;
     bool reserve = _reserveMode;
+    bool makerFileAdmin = _makerFileAdminAllowed;
+    bool quoteSpecAdmin = _quoteSpecAdminAllowed;
+    final isMaster = context.read<AppState>().isMaster;
 
     return StatefulBuilder(
       builder: (ctx, setSt) => ListView(
@@ -3976,6 +4135,61 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                   value: reserve,
                   onChanged: (v) => setSt(() => reserve = v),
+                ),
+                const Divider(),
+                // ── 마스터 전용 권한 제어 ──
+                //  견적서/사업자등록증·견적기반 세부항목은 기본적으로 마스터만
+                //  열람 가능하며, 아래 토글로 관리자(app) 접근을 허용/차단한다.
+                //  (마스터만 조작 가능 — 관리자에게는 read-only 표시)
+                Row(
+                  children: [
+                    const Icon(Icons.key, size: 15, color: AppColors.tigerGold),
+                    const SizedBox(width: 5),
+                    Text(
+                      '마스터 전용 권한',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                        color: isMaster
+                            ? AppColors.purpleDark
+                            : AppColors.textGray,
+                      ),
+                    ),
+                    if (!isMaster) ...[
+                      const SizedBox(width: 6),
+                      const Text('(마스터만 변경 가능)',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textGray)),
+                    ],
+                  ],
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('견적서·사업자등록증 관리자 열람 허용'),
+                  subtitle: Text(
+                    makerFileAdmin
+                        ? '관리자도 견적서/사업자등록증 파일 열람·다운로드 가능'
+                        : '마스터만 열람·다운로드 가능 (기본)',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  value: makerFileAdmin,
+                  onChanged: isMaster
+                      ? (v) => setSt(() => makerFileAdmin = v)
+                      : null,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('견적서 기반 상품 세부항목 관리자 노출 허용'),
+                  subtitle: Text(
+                    quoteSpecAdmin
+                        ? '관리자도 견적서 기반 세부항목(사양/옵션) 열람 가능'
+                        : '마스터만 열람 가능 (기본)',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  value: quoteSpecAdmin,
+                  onChanged: isMaster
+                      ? (v) => setSt(() => quoteSpecAdmin = v)
+                      : null,
                 ),
               ],
             ),
@@ -4190,6 +4404,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 salesOpen: open,
                 annualFeeRequired: strict,
                 reserveMode: reserve,
+                makerFileAdminAllowed: makerFileAdmin,
+                quoteSpecAdminAllowed: quoteSpecAdmin,
                 statuses: statusesCtl.text
                     .split(',')
                     .map((e) => e.trim())

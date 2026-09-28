@@ -135,12 +135,19 @@ class _EventYearScreenState extends State<EventYearScreen> {
   bool _isMyEvent(AppState s, Map<String, dynamic> e) {
     final who = s.who.replaceAll(RegExp(r'[^0-9]'), '');
     if (who.isEmpty) return false;
+    // ① 행사 참가자 명단에서 본인(인가번호/전화) 매칭
     for (final a in (e['attendees'] as List?) ?? []) {
-      final id = '${a['number'] ?? a['phone'] ?? ''}'
+      final id = '${a['number'] ?? a['loginId'] ?? a['phone'] ?? ''}'
           .replaceAll(RegExp(r'[^0-9]'), '');
-      if (id == who) return true;
+      if (id.isNotEmpty && id == who) return true;
     }
-    // 개인 프로필(eventAttend)에 본인 행사명이 있으면 참가 이력으로 간주
+    // ② 개인 프로필(eventAttend) 연동 매칭 — 행사관리에서 참가자로 추가하면
+    //    인가자/비인가자 모두 프로필에 자동 기록되므로 이를 참가 이력으로 인정한다.
+    final title = '${e['title'] ?? ''}'.trim();
+    final me = s.who.isNotEmpty ? s.byNumber(s.who) : null;
+    if (me != null && title.isNotEmpty && me.eventAttend[title] == true) {
+      return true;
+    }
     return false;
   }
 

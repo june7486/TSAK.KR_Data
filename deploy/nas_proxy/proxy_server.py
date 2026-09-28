@@ -2383,6 +2383,12 @@ def _merch_doc_defaults(doc):
     cfg.setdefault("notices", "수품 구매 시 아래 유의사항을 반드시 확인해 주세요.")
     cfg.setdefault("annualFeeRequired", False)  # 엄격모드(True): 연회비 미납 시 주문 차단
     cfg.setdefault("reserveMode", False)        # 예약/수요조사 모드 전체 ON/OFF
+    # 제작자 견적서/사업자등록증 파일 열람·다운로드 권한(마스터 전용이 기본).
+    #  관리자(app) 접근 허용 여부를 마스터가 on/off 한다(테스트 후 개방용).
+    cfg.setdefault("makerFileAdminAllowed", False)
+    # 견적서 기반 판매상품 세부항목(제작 견적→상품 옵션/사양) 마스터 전용.
+    #  관리자 접근 허용 여부를 마스터가 on/off 한다.
+    cfg.setdefault("quoteSpecAdminAllowed", False)
     cfg.setdefault("statuses", list(MERCH_ORDER_STATUSES))
     cfg.setdefault("reserveStatuses", list(MERCH_RESERVE_STATUSES))
     doc["config"] = cfg
@@ -3503,10 +3509,49 @@ def _ev_member_set_event(ident, event_name, value=True):
     return hit
 
 
+def _ev_link_attendees_to_profiles(entries, event_name):
+    """참가자 목록을 회원 프로필(eventAttend)에 강제 연동한다.
+
+    인가자·비인가자 모두 대상:
+      · 인가번호/전화 일치 회원이 있으면 eventAttend[event_name]=True 로 기록.
+      · 비인가자(전화만 있고 프로필이 없는 경우)는 일반회원(서포터즈) 계정을
+        보장한 뒤 기록한다(_ev_guest_ensure_account_async 재사용).
+    개인 프로필의 "내 행사" 및 참가 이력에 자동 반영된다.
+    반환: 연동된 식별자 수.
+    """
+    title = str(event_name or "").strip()
+    if not title:
+        return 0
+    idents = []
+    guests = []
+    for a in entries or []:
+        if not isinstance(a, dict):
+            continue
+        ident = _ev_attendee_ident(a)
+        if not ident:
+            continue
+        idents.append(ident)
+        # 인가번호(number)가 비어 있으면 비인가(전화만)로 판단 → 계정 보장.
+        if not re.sub(r"[^0-9]", "", str(a.get("number", "") or "")):
+            guests.append((ident, str(a.get("name", "") or "")))
+    hit = 0
+    if idents:
+        try:
+            hit = _ev_member_set_event_batch(idents, title, True)
+        except Exception:
+            hit = 0
+    # 전화만 있는 비인가자는 계정이 없으면 생성 후 연동(백그라운드).
+    for phone, name in guests:
+        try:
+            _ev_guest_ensure_account_async(phone, name, title)
+        except Exception:
+            pass
+    return hit
+
+
 def _ev_member_set_event_batch(idents, event_name, value=True, members=None,
                                backup=True, meta=True):
     """여러 회원의 eventAttend 를 한 번의 로드/저장으로 갱신 (성능).
-
     members 를 넘기면 재조회 없이 그 리스트를 갱신한다(호출측이 저장 책임).
     반환: 갱신된 회원 수.
     """
@@ -5068,8 +5113,36 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/merch/file":
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 nm = _safe_name(q.get("name", [""])[0] or "")
+                if not nm:
+                    return self._json({"ok": False, "error": "no_name"}, 400)
+                # 제작자 첨부파일 접근제어.
+                #  · 견적서(quoteFile)/사업자등록증(bizLicenseFile)은 민감파일 →
+                #    마스터 전용. 관리자(app)는 config.makerFileAdminAllowed=on 일 때만 허용.
+                #  · 그 외(사진/기타)는 관리자 이상 허용.
+                s = self._sess() or {}
+                tier = str(s.get("tier") or "")
+                doc = _merch_doc()
+                sensitive = False
+                for mk in doc.get("makers", []):
+                    if not isinstance(mk, dict):
+                        continue
+                    if nm == str(mk.get("quoteFile", "") or "") or \
+                       nm == str(mk.get("bizLicenseFile", "") or ""):
+                        sensitive = True
+                        break
+                if sensitive:
+                    cfg = doc.get("config", {}) or {}
+                    allow_admin = cfg.get("makerFileAdminAllowed") is True
+                    if tier != "master" and not (tier == "app" and allow_admin):
+                        return self._json(
+                            {"ok": False, "error": "forbidden_master_only",
+                             "message": "견적서/사업자등록증은 마스터만 열람할 수 있습니다."},
+                            403)
+                elif tier not in ("app", "master"):
+                    return self._json(
+                        {"ok": False, "error": "unauthorized"}, 401)
                 path = MERCH_MAKER_DIR + "/" + nm
-                if nm and NAS.exists(path):
+                if NAS.exists(path):
                     ct = MIME.get(_ext_of(nm), "application/octet-stream")
                     return self._serve_nas_file(path, ct)
                 return self._json({"ok": False, "error": "not found"}, 404)
@@ -7422,13 +7495,13 @@ class Handler(BaseHTTPRequestHandler):
                 fields = ("category", "company", "ceo", "manager", "phone", "email",
                           "madeDate", "unitPrice", "quoteFile", "amount", "paidDate",
                           "shipDate", "photo", "memo", "account", "bizLicenseFile",
-                          "bizNumber")
+                          "bizNumber", "paidAmount")
                 item = dict(existing) if existing else {"id": mid,
                                                         "created": _now_stamp()}
                 item["id"] = mid
                 for k in fields:
                     if k in d:
-                        if k in ("unitPrice", "amount"):
+                        if k in ("unitPrice", "amount", "paidAmount"):
                             try:
                                 item[k] = int(d.get(k, 0) or 0)
                             except Exception:
@@ -7437,6 +7510,9 @@ class Handler(BaseHTTPRequestHandler):
                             item[k] = d.get(k, [])
                         else:
                             item[k] = str(d.get(k, "") or "")[:300]
+                # 입금완료 여부(명시적 플래그) — paidDate 만으로도 완료 판정 가능.
+                if "paid" in d:
+                    item["paid"] = bool(d.get("paid"))
                 if "progress" in d and isinstance(d.get("progress"), list):
                     item["progress"] = d.get("progress")
                 if "extraFiles" in d and isinstance(d.get("extraFiles"), list):
@@ -7797,6 +7873,14 @@ class Handler(BaseHTTPRequestHandler):
                     cfg["annualFeeRequired"] = bool(d.get("annualFeeRequired"))
                 if "reserveMode" in d:
                     cfg["reserveMode"] = bool(d.get("reserveMode"))
+                # 견적서/사업자등록증 파일 열람권한 관리자 허용 여부(마스터만 설정)
+                if "makerFileAdminAllowed" in d:
+                    cfg["makerFileAdminAllowed"] = bool(
+                        d.get("makerFileAdminAllowed"))
+                # 견적서 기반 판매상품 세부항목 관리자 노출 허용 여부(마스터만 설정)
+                if "quoteSpecAdminAllowed" in d:
+                    cfg["quoteSpecAdminAllowed"] = bool(
+                        d.get("quoteSpecAdminAllowed"))
                 if "notices" in d:
                     cfg["notices"] = str(d.get("notices", "") or "")
                 if "statuses" in d and isinstance(d.get("statuses"), list):
@@ -7997,17 +8081,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json({"ok": False, "error": "not found"}, 404)
                     e["attendees"] = d.get("attendees", [])
                     _ev_save(doc)
-                # 회원 프로필(eventAttend) 연동 — 1회 로드/저장으로 일괄 처리
-                idents = []
-                for a in d.get("attendees", []):
-                    ident = a.get("number") or a.get("loginId") or a.get("phone")
-                    if ident:
-                        idents.append(re.sub(r"[^0-9]", "", str(ident)))
-                if idents:
-                    try:
-                        _ev_member_set_event_batch(idents, title, True)
-                    except Exception:
-                        pass
+                # 회원 프로필(eventAttend) 연동 — 인가자·비인가자 모두 자동 반영.
+                try:
+                    _ev_link_attendees_to_profiles(
+                        d.get("attendees", []), title)
+                except Exception:
+                    pass
                 return self._json({"ok": True})
             if p == "/api/event/search-member":
                 d = json.loads(self._body() or b"{}")
@@ -8066,10 +8145,10 @@ class Handler(BaseHTTPRequestHandler):
                         added_idents.append(ident)
                     if added_ok:
                         _ev_save(doc)
-                # 회원 프로필(eventAttend) 연동 — 1회 로드/저장으로 일괄 처리
-                if added_idents:
+                # 회원 프로필(eventAttend) 연동 — 인가자·비인가자 모두 자동 반영.
+                if entries:
                     try:
-                        _ev_member_set_event_batch(added_idents, title, True)
+                        _ev_link_attendees_to_profiles(entries, title)
                     except Exception:
                         pass
                 return self._json({"ok": True, "added": added_ok,

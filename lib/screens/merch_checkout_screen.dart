@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
@@ -45,6 +46,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
   String _ship = '현장구매';
   bool _busy = false;
 
+  /// 주문 진행 단계 문구 — 로딩 중 현재 진행 상황을 사용자에게 보여준다.
+  String _step = '';
+  double _stepProgress = 0;
+
   Map<String, dynamic> get _account =>
       ((widget.config['account'] as Map?) ?? {}).cast<String, dynamic>();
   Map<String, dynamic> get _guide =>
@@ -83,39 +88,48 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        title: Text(_isReserve ? '수품 예약 (수요조사)' : '수품 주문 / 결제'),
-        actions: const [AppHomeEmblem(size: 22)],
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
-          children: [
-            if (_busy) ...[
-              _waitingNotice(),
+    return PopScope(
+      canPop: !_busy,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _busy) {
+          _snack('주문을 저장하는 중입니다. 잠시만 기다려 주세요.',
+              color: AppColors.tigerGold);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          title: Text(_isReserve ? '수품 예약 (수요조사)' : '수품 주문 / 결제'),
+          actions: const [AppHomeEmblem(size: 22)],
+        ),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+            children: [
+              if (_busy) ...[
+                _waitingNotice(),
+                const SizedBox(height: 12),
+              ],
+              _orderSummary(),
               const SizedBox(height: 12),
-            ],
-            _orderSummary(),
-            const SizedBox(height: 12),
-            _noticeSection(),
-            const SizedBox(height: 12),
-            if (!_isReserve) ...[
-              _feeSection(),
+              _noticeSection(),
               const SizedBox(height: 12),
-            ],
-            _buyerSection(),
-            const SizedBox(height: 12),
-            if (!_isReserve) ...[
-              _shippingSection(),
+              if (!_isReserve) ...[
+                _feeSection(),
+                const SizedBox(height: 12),
+              ],
+              _buyerSection(),
               const SizedBox(height: 12),
+              if (!_isReserve) ...[
+                _shippingSection(),
+                const SizedBox(height: 12),
+              ],
+              _totalSection(),
+              const SizedBox(height: 16),
+              _submitButton(),
             ],
-            _totalSection(),
-            const SizedBox(height: 16),
-            _submitButton(),
-          ],
+          ),
         ),
       ),
     );
@@ -425,45 +439,66 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         ),
       );
 
-  Widget _waitingNotice() => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.tigerGold.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.5)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Row(
-              children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+  Widget _waitingNotice() {
+    final pct = (_stepProgress * 100).round();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.tigerGold.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _step.isEmpty ? '주문을 처리하고 있습니다' : _step,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: AppColors.purpleDark),
                 ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text('현재 주문이 진행 중입니다',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13.5,
-                          color: AppColors.purpleDark)),
-                ),
-              ],
+              ),
+              if (_stepProgress > 0)
+                Text('$pct%',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                        color: AppColors.purple)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: _stepProgress > 0 ? _stepProgress : null,
+              minHeight: 7,
+              backgroundColor: AppColors.purpleLight.withValues(alpha: 0.2),
+              valueColor: const AlwaysStoppedAnimation(AppColors.purple),
             ),
-            SizedBox(height: 8),
-            Text(
-              '시간이 다소 소요되더라도 기다려 주십시오.\n'
-              '뒤로 가기나 창을 닫지 말아 주십시오.\n'
-              '창을 닫을 경우 개인 페이지에 들어가서 주문 내역을 확인할 수 있습니다.\n'
-              '만일 주문 내역이 없을 경우 다시 주문을 넣어 주십시오.',
-              style: TextStyle(
-                  fontSize: 12.5, height: 1.5, color: AppColors.textDark),
-            ),
-          ],
-        ),
-      );
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '⏳ 서버 저장 중입니다. 창을 닫지 말고 잠시만 기다려 주세요.\n'
+            '· 진행률이 멈춘 듯 보여도 정상 처리 중일 수 있습니다.\n'
+            '· 부득이 창을 닫았다면 개인 프로필의 "수품구매"에서 주문 내역을 확인하세요.\n'
+            '· 주문 내역이 없을 경우에만 다시 주문해 주세요.',
+            style: TextStyle(
+                fontSize: 12.5, height: 1.5, color: AppColors.textDark),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _submitButton() => SizedBox(
         width: double.infinity,
@@ -514,11 +549,25 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
       _snack('구매 안내 공지를 확인해 주세요.', color: AppColors.taegeukRed);
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _step = _isReserve ? '예약을 접수하는 중…' : '주문을 접수하는 중…';
+      _stepProgress = 0.15;
+    });
+    // 실제 처리 시간이 길어도 진행률이 멈춘 듯 보이지 않도록 90%까지 서서히 올린다.
+    final ticker = Timer.periodic(const Duration(milliseconds: 800), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_stepProgress < 0.9) {
+          _stepProgress = (_stepProgress + 0.04).clamp(0.0, 0.9);
+        }
+      });
+    });
     try {
       if (_isReserve) {
         int ok = 0;
         for (final l in widget.lines) {
+          _setStep('예약 항목을 저장하는 중…', 0.4);
           final r = await _nas.merchReserve(
             productId: '${l['productId']}',
             buyerName: _name.text.trim(),
@@ -531,6 +580,7 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
           );
           if (r['ok'] == true) ok++;
         }
+        _setStep('접수 결과를 확인하는 중…', 0.95);
         if (!mounted) return;
         if (ok > 0) {
           await _resultDialog(reserve: true);
@@ -551,6 +601,7 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
             if (l['price'] != null) 'unitPrice': (l['price'] as num).toInt(),
           });
         }
+        _setStep('서버에 주문을 저장하는 중… (가장 오래 걸리는 단계)', 0.45);
         final r = await _nas.merchOrderBatch(
           lines: lines,
           buyerName: _name.text.trim(),
@@ -564,6 +615,7 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         );
         if (!mounted) return;
         if (r['ok'] == true) {
+          _setStep('주문 내역을 개인 프로필에 연동하는 중…', 0.9);
           await _resultDialog(reserve: false, last: r);
           if (mounted) Navigator.pop(context, true);
         } else if (r['error'] == 'annual_fee_required') {
@@ -583,8 +635,23 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
     } catch (e) {
       if (mounted) _snack('오류: $e', color: AppColors.taegeukRed);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      ticker.cancel();
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _step = '';
+          _stepProgress = 0;
+        });
+      }
     }
+  }
+
+  void _setStep(String text, double progress) {
+    if (!mounted) return;
+    setState(() {
+      _step = text;
+      if (progress > _stepProgress) _stepProgress = progress;
+    });
   }
 
   Future<void> _resultDialog(
