@@ -2873,6 +2873,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final gRules = TextEditingController(text: '${_guide['rules'] ?? ''}');
     final gSets = TextEditingController(text: '${_guide['sets'] ?? ''}');
     final gNotes = TextEditingController(text: '${_guide['notes'] ?? ''}');
+    final gForm = TextEditingController(text: '${_guide['formUrl'] ?? ''}');
+    final gFormLabel = TextEditingController(
+      text: '${_guide['formLabel'] ?? ''}',
+    );
     final statusesCtl = TextEditingController(text: _statuses.join(', '));
     final rStatusesCtl = TextEditingController(
       text: _reserveStatuses.join(', '),
@@ -3016,6 +3020,85 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           const SizedBox(height: 16),
           Row(
             children: [
+              const Icon(Icons.link, size: 18, color: AppColors.taegeukBlue),
+              const SizedBox(width: 6),
+              const Text(
+                '연계 구매 링크 (구글폼·네이버폼 등)',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: AppColors.purpleDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            '주소가 유동적이므로 여기서 언제든 바꿀 수 있습니다. '
+            '비워 두면 구매창의 링크 버튼이 숨겨집니다.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.taegeukBlue.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Column(
+              children: [
+                _dlgField(gForm, '연계 주소 (URL)'),
+                _dlgField(gFormLabel, '버튼 문구'),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        gForm.text.trim().isEmpty
+                            ? '현재 주소 없음 — 구매창에 링크 버튼이 표시되지 않습니다.'
+                            : '구매창에 위 주소로 이동하는 버튼이 표시됩니다.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: gForm.text.trim().isEmpty
+                              ? AppColors.textGray
+                              : AppColors.scoutGreen,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: gForm.text.trim().isEmpty
+                          ? null
+                          : () async {
+                              var url = gForm.text.trim();
+                              if (!url.startsWith('http://') &&
+                                  !url.startsWith('https://')) {
+                                url = 'https://$url';
+                              }
+                              final uri = Uri.tryParse(url);
+                              if (uri != null) {
+                                try {
+                                  await launchUrl(uri,
+                                      mode: LaunchMode.externalApplication);
+                                } catch (_) {}
+                              }
+                            },
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('주소 확인',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
               const Icon(Icons.timeline, size: 18, color: AppColors.purple),
               const SizedBox(width: 6),
               const Text(
@@ -3084,6 +3167,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   'rules': gRules.text,
                   'sets': gSets.text,
                   'notes': gNotes.text,
+                  'formUrl': gForm.text.trim(),
+                  'formLabel': gFormLabel.text.trim(),
                 },
               );
               if (!mounted) return;

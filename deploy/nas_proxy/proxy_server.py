@@ -1778,6 +1778,12 @@ DEFAULT_MERCH_GUIDE = {
         "※ 필요한 수품에만 필요 수량을 적어주세요.\n"
         "※ 자세한 문의: 한국범스카우트중앙회 사무처 (010-8496-8437)"
     ),
+    # 연계 구매 링크(구글폼·네이버폼 등) — 주소가 유동적이므로 관리자가 직접 입력/수정한다.
+    "formUrl": (
+        "https://docs.google.com/forms/d/e/"
+        "1FAIpQLSeW24jatei6gRJGFYTCvqYfFipKImbQdT6gVKSFs9WxCKQY4A/viewform"
+    ),
+    "formLabel": "공식 수품 구매 링크 열기",
     "updated": "",
 }
 
@@ -6902,7 +6908,8 @@ class Handler(BaseHTTPRequestHandler):
                     cfg["account"] = a
                 if "guide" in d and isinstance(d.get("guide"), dict):
                     g = _merch_guide(cfg)
-                    for k in ("title", "membership", "rules", "sets", "notes"):
+                    for k in ("title", "membership", "rules", "sets", "notes",
+                              "formUrl", "formLabel"):
                         if k in d["guide"]:
                             g[k] = str(d["guide"][k] or "")
                     g["updated"] = _now_stamp()

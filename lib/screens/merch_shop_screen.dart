@@ -353,6 +353,28 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ),
+          // 연계 구매 링크(구글폼·네이버폼 등) — 주소가 설정돼 있을 때만 노출
+          if (_formUrl.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.taegeukBlue,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                ),
+                onPressed: _openForm,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: Text(_formLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '※ 공식 주문폼이 열립니다(기존 방식으로 주문하실 수 있습니다).',
+              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+            ),
+          ],
         ],
       ),
     );
@@ -970,12 +992,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     style: const TextStyle(
                         fontSize: 12, color: AppColors.textGray)),
                 const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: () => _openForm(),
-                  icon: const Icon(Icons.open_in_new, size: 15),
-                  label: const Text('공식 수품 구매 구글폼 열기',
-                      style: TextStyle(fontSize: 12)),
-                ),
+                if (_formUrl.trim().isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _openForm(),
+                    icon: const Icon(Icons.open_in_new, size: 15),
+                    label: Text(_formLabel,
+                        style: const TextStyle(fontSize: 12)),
+                  ),
               ],
             ),
           ),
@@ -988,11 +1011,32 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     );
   }
 
-  static const _formUrl =
+  // 연계 구매 링크(구글폼·네이버폼 등) — 관리자 설정(guide.formUrl)에서 읽어온다.
+  // 주소가 유동적이므로 하드코딩하지 않고, 비어 있으면 버튼을 숨긴다.
+  static const _fallbackFormUrl =
       'https://docs.google.com/forms/d/e/1FAIpQLSeW24jatei6gRJGFYTCvqYfFipKImbQdT6gVKSFs9WxCKQY4A/viewform';
 
+  String get _formUrl {
+    final u = '${_guide['formUrl'] ?? ''}'.trim();
+    return u.isEmpty ? _fallbackFormUrl : u;
+  }
+
+  String get _formLabel {
+    final l = '${_guide['formLabel'] ?? ''}'.trim();
+    return l.isEmpty ? '공식 수품 구매 링크 열기' : l;
+  }
+
   Future<void> _openForm() async {
-    final uri = Uri.parse(_formUrl);
+    final raw = _formUrl;
+    var url = raw;
+    // 사용자가 'naver.me/xxx' 처럼 스킴 없이 입력한 경우 https:// 를 붙여준다.
+    if (!url.startsWith('http://') &&
+        !url.startsWith('https://') &&
+        !url.startsWith('mailto:')) {
+      url = 'https://$url';
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
