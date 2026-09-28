@@ -717,7 +717,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   }
 
   // ---------- 주문번호별 그룹핑 ----------
+  /// 그룹 키 — 백엔드 `_merch_group_key`와 동일 규칙.
+  /// 합쳐진 주문은 bundleId('B:...')로, 아니면 주문번호로 묶는다.
   static String _groupKeyOf(Map<String, dynamic> o) {
+    final b = '${o['bundleId'] ?? ''}'.trim();
+    if (b.isNotEmpty) return 'B:$b';
     final no = '${o['orderNo'] ?? ''}'.trim();
     if (no.isNotEmpty) return no;
     return '#${o['id'] ?? ''}';

@@ -1832,7 +1832,17 @@ def _merch_doc():
     cfg["account"] = acc
     cfg["guide"] = _merch_guide(cfg)
     d["config"] = cfg
+    before_oo = list(d.get("orderOrder", []))
     _merch_doc_defaults(d)
+    # 같은 배치(구매자·시각 동일) 기존 주문 자동 통합 — 파편화된 주문번호 정리
+    _merch_unify_same_batch(d)
+    # orderOrder 정합화(누락분 보충 + 통합/삭제로 사라진 stale 키 제거)
+    _merch_rebuild_order(d)
+    if d.get("orderOrder") != before_oo:
+        try:
+            _save_json(MERCH_FILE, d)
+        except Exception as e:
+            print("merch orderOrder save fail", e)
     if _merch_seed_once(d):
         # 최초 시드 결과를 파일에 영구 저장 (다음 조회부터 유지)
         try:
@@ -2107,16 +2117,61 @@ def _merch_group_key(rec):
     return no if no else "#" + str(rec.get("id", ""))
 
 
+def _merch_unify_same_batch(doc):
+    """같은 구매자·같은 시각(생성 분)에 흩어진 기존 주문들을 하나의 주문번호로 통합.
+
+    장바구니 일괄 주문 기능 도입 이전, 품목마다 별도 주문번호로 생성된 과거
+    데이터를 자동 정리한다. (bundleId 로 이미 묶였거나 삭제분은 건드리지 않음.)
+    """
+    orders = doc.get("orders", [])
+    groups = {}
+    for o in orders:
+        if not isinstance(o, dict):
+            continue
+        if o.get("deleted") is True or str(o.get("bundleId", "")).strip():
+            continue
+        buyer = re.sub(r"[^0-9]", "", str(o.get("buyerNumber", "") or ""))
+        if not buyer:
+            buyer = str(o.get("phone", "") or "")
+        created = str(o.get("created", "") or "").strip()
+        if not buyer or not created:
+            continue
+        groups.setdefault((buyer, created), []).append(o)
+    changed = False
+    for (buyer, created), arr in groups.items():
+        if len(arr) < 2:
+            continue
+        # 대표 주문번호: 이미 번호가 있는 첫 항목 것을 공유(없으면 신규 부여)
+        rep = next((x for x in arr if str(x.get("orderNo", "")).strip()), None)
+        if rep is None:
+            rep = arr[0]
+            _merch_assign_no(doc, rep)
+        shared = str(rep.get("orderNo", "")).strip()
+        for x in arr:
+            if str(x.get("orderNo", "")).strip() != shared:
+                x["orderNo"] = shared
+                changed = True
+    return changed
+
+
 def _merch_rebuild_order(doc):
     """orderOrder 배열을 문서의 그룹키들과 정합화(누락분 앞에 추가, 유효분 유지)."""
-    order = [k for k in doc.get("orderOrder", []) if isinstance(k, str)]
+    all_recs = list(doc.get("orders", [])) + list(doc.get("reservations", []))
+    # 현재 문서에 실제 존재하는 그룹키 집합 (통합/삭제로 사라진 stale 키 제거용)
+    valid = set()
+    for rec in all_recs:
+        if isinstance(rec, dict) and rec.get("deleted") is not True:
+            valid.add(_merch_group_key(rec))
+    order = [
+        k for k in doc.get("orderOrder", [])
+        if isinstance(k, str) and k in valid
+    ]
     seen = set(order)
     # 새로 생긴 그룹키(아직 배열에 없는 것)를 최신순으로 앞에 추가
     fresh = []
-    all_recs = list(doc.get("orders", [])) + list(doc.get("reservations", []))
     all_recs.sort(key=lambda x: str(x.get("created", "")), reverse=True)
     for rec in all_recs:
-        if not isinstance(rec, dict):
+        if not isinstance(rec, dict) or rec.get("deleted") is True:
             continue
         k = _merch_group_key(rec)
         if k not in seen:
