@@ -1755,7 +1755,7 @@ DEFAULT_MERCH_GUIDE = {
         "※ 각인이 필요한 메달 수품(멘토/페런츠)은 각인 작업을 위해 최소 3주 전 주문이 필요합니다.\n"
         "   국내 각인 업체 요청 시 1만원 추가 비용 발생(각인비·업체 배송료).\n"
         "※ 필요한 수품에만 필요 수량을 적어주세요.\n"
-        "※ 자세한 문의: 한국범스카우트중앙회 사무처장 (010-9218-8514)"
+        "※ 자세한 문의: 한국범스카우트중앙회 사무처 (010-8496-8437)"
     ),
     "updated": "",
 }
@@ -1822,61 +1822,80 @@ def _merch_save(doc):
 # 구글폼 공식 수품 안내 연계 기본 판매 목록 (최초 1회 시드)
 #  - 이미지: 프로젝트에 생성한 상품 이미지 URL
 _IMG = "https://www.genspark.ai/api/files/s/"
+_SIZE_PANTS = ["S (28)", "M (30)", "L (32)", "XL (34)", "XXL (36)"]
 DEFAULT_MERCH_PRODUCTS = [
-    # ── 멤버십 세트 ──
+    # ── 멤버십 세트 (가격 포함) ──
     {"name": "신규 인가자 세트", "kind": "멤버십 세트", "price": 60000, "stock": 999,
      "options": [], "image": "neckerchief.jpg",
      "desc": "중앙회 항건1·가죽조임1·멘토메달(각인)1 (연회비 불포함 · 2000호 이상 신규 인가자 연간회원 최초 등록 시 1회, 총 7만원 납부)"},
     {"name": "평생회원 세트", "kind": "멤버십 세트", "price": 90000, "stock": 999,
      "options": [], "image": "lifetime_woggle.jpg",
      "desc": "항건1·패치약장2·금속약장2·패치2·가죽조임1·버클1·멘토금속약장1·페런츠금속약장1·멘토메달(각인)1·페런츠메달(각인)1·평생회원조임(각인)1·연간회원뱃지1 (평생회비 불포함 · 총 39만원 납부)"},
-    # ── 인가자 전용 수품 ──
-    {"name": "범스카우트 중앙회 항건", "kind": "인가자 전용", "price": 0, "stock": 999,
+    # ── 인가자 전용 수품 (구글폼 공식 가격표) ──
+    {"name": "중앙회 항건 (넥커치프)", "kind": "인가자 전용", "price": 30000, "stock": 999,
      "options": [], "image": "neckerchief.jpg",
-     "desc": "인가자 전용 · 스카우트 항건(넥커치프)"},
-    {"name": "평생회원 흉장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "image": "breast_badge.jpg",
-     "desc": "인가자 전용 · 평생회원 흉장(브레스트 뱃지)"},
-    {"name": "중앙회 공식 패치", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "image": "patch.jpg",
-     "desc": "인가자 전용 · 중앙회 공식 자수 패치"},
-    {"name": "중앙회 공식 약장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "image": "metal_badge.jpg",
-     "desc": "인가자 전용 · 중앙회 공식 금속/패치 약장"},
-    {"name": "멘토 메달 (각인포함)", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": ["멘토", "페런츠"],
-     "image": "medal_mentor.jpg",
-     "desc": "인가자 전용 · 각인 필요 시 최소 3주 전 주문 · 국내 각인 시 1만원 추가(각인비·업체 배송료) · 종류 변경 가능"},
-    {"name": "페런츠 메달 (각인포함)", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": ["페런츠", "멘토"],
-     "image": "medal_parent.jpg",
-     "desc": "인가자 전용 · 각인 필요 시 최소 3주 전 주문 · 국내 각인 시 1만원 추가 · 종류 변경 가능"},
-    {"name": "멘토 금속약장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "image": "metal_badge.jpg",
-     "desc": "인가자 전용 · 멘토 금속 약장"},
-    {"name": "페런츠 금속약장", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "image": "metal_badge2.jpg",
-     "desc": "인가자 전용 · 페런츠 금속 약장"},
-    {"name": "중앙회 가죽조임", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "desc": "인가자(범스카우트) 전용 · 중앙회 항건 30,000원 · 수량을 적어주세요."},
+    {"name": "중앙회 가죽조임", "kind": "인가자 전용", "price": 15000, "stock": 999,
      "options": [], "image": "woggle.jpg",
-     "desc": "인가자 전용 · 항건용 가죽조임"},
-    {"name": "평생회원 조임 (각인포함)", "kind": "인가자 전용", "price": 0, "stock": 999,
-     "options": [], "image": "lifetime_woggle.jpg",
-     "desc": "인가자 전용 · 평생회원 조임(각인포함)"},
-    {"name": "중앙회 버클", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "desc": "인가자 전용 · 가죽조임 15,000원 · 수량을 적어주세요."},
+    {"name": "칠보조임", "kind": "인가자 전용", "price": 25000, "stock": 999,
+     "options": [], "image": "chilbo_woggle.jpg",
+     "desc": "인가자 전용 · 칠보조임 25,000원 · 수량을 적어주세요."},
+    {"name": "가죽벨트", "kind": "인가자 전용", "price": 20000, "stock": 999,
+     "options": ["26인치", "28인치"], "image": "leather_belt.jpg",
+     "desc": "인가자 전용 · 가죽벨트 20,000원 · 사이즈 26, 28인치 · 수량을 적어주세요. (사이즈 없으면 한국스카우트 지원재단 홈페이지 참고)"},
+    {"name": "중앙회 버클", "kind": "인가자 전용", "price": 10000, "stock": 999,
      "options": [], "image": "buckle.jpg",
-     "desc": "인가자 전용 · 중앙회 버클"},
-    {"name": "연간회원 뱃지", "kind": "인가자 전용", "price": 0, "stock": 999,
+     "desc": "인가자 전용 · 버클 10,000원 · 수량을 적어주세요."},
+    {"name": "멘토 메달 (각인포함)", "kind": "인가자 전용", "price": 35000, "stock": 999,
+     "options": [], "image": "medal_mentor.jpg",
+     "desc": "인가자 전용 · 멘토메달 35,000원 · 각인할 인가번호와 수량을 적어주세요. · 최소 3주 전 주문 · 국내 각인 시 1만원 추가"},
+    {"name": "페런츠 메달 (각인포함)", "kind": "인가자 전용", "price": 35000, "stock": 999,
+     "options": [], "image": "medal_parent.jpg",
+     "desc": "인가자 전용 · 페런츠메달 35,000원 · 각인할 인가번호와 수량을 적어주세요. · 최소 3주 전 주문 · 국내 각인 시 1만원 추가"},
+    {"name": "범 공식 패치 약장", "kind": "인가자 전용", "price": 3000, "stock": 999,
+     "options": [], "image": "patch_badge.jpg",
+     "desc": "인가자 전용 · 범 공식 패치 약장 3,000원 · 수량을 적어주세요."},
+    {"name": "범중앙회 패치", "kind": "인가자 전용", "price": 7000, "stock": 999,
+     "options": [], "image": "patch.jpg",
+     "desc": "인가자 전용 · 범중앙회 패치 7,000원 · 수량을 적어주세요."},
+    {"name": "범 파우치", "kind": "인가자 전용", "price": 3000, "stock": 999,
+     "options": [], "image": "pouch.jpg",
+     "desc": "인가자 전용 · 범 파우치 3,000원 · 수량을 적어주세요."},
+    {"name": "범 모자", "kind": "인가자 전용", "price": 28000, "stock": 999,
+     "options": ["58", "60"], "image": "cap.jpg",
+     "desc": "인가자 전용 · 범 모자 28,000원 · 사이즈 58, 60 · 수량과 사이즈를 적어주세요."},
+    {"name": "활동바지", "kind": "인가자 전용", "price": 45000, "stock": 999,
+     "options": _SIZE_PANTS, "image": "activity_pants.jpg",
+     "desc": "인가자 전용 · 활동바지 45,000원 · 사이즈 S(28)/M(30)/L(32)/XL(34)/XXL(36) · 수량과 사이즈를 적어주세요."},
+    {"name": "평생회원 흉장", "kind": "인가자 전용", "price": 20000, "stock": 999,
+     "options": [], "image": "breast_badge.jpg",
+     "desc": "인가자 전용 · 평생회원 흉장 20,000원 (평생회원 가입자만 구매가능) · 인가번호와 수량을 적어주세요."},
+    {"name": "범슬링", "kind": "인가자 전용", "price": 10000, "stock": 999,
+     "options": [], "image": "bungslim.jpg",
+     "desc": "인가자 전용 · 범슬링 10,000원 · 수량을 적어주세요."},
+    {"name": "멘토약장", "kind": "인가자 전용", "price": 3000, "stock": 999,
+     "options": [], "image": "metal_badge.jpg",
+     "desc": "인가자 전용 · 멘토약장 3,000원 · 수량을 적어주세요."},
+    {"name": "페런츠약장", "kind": "인가자 전용", "price": 3000, "stock": 999,
+     "options": [], "image": "metal_badge2.jpg",
+     "desc": "인가자 전용 · 페런츠약장 3,000원 · 수량을 적어주세요."},
+    {"name": "멘토 금속 약장", "kind": "인가자 전용", "price": 5000, "stock": 999,
+     "options": [], "image": "metal_badge3.jpg",
+     "desc": "인가자 전용 · 멘토 금속 약장 5,000원 · 수량을 적어주세요."},
+    {"name": "페런츠 금속 약장", "kind": "인가자 전용", "price": 5000, "stock": 999,
+     "options": [], "image": "metal_badge4.jpg",
+     "desc": "인가자 전용 · 페런츠 금속 약장 5,000원 · 수량을 적어주세요."},
+    {"name": "범 금속 약장", "kind": "인가자 전용", "price": 5000, "stock": 999,
+     "options": [], "image": "metal_badge5.jpg",
+     "desc": "인가자 전용 · 범 금속 약장 5,000원 · 수량을 적어주세요."},
+    {"name": "연간회원 뱃지", "kind": "인가자 전용", "price": 5500, "stock": 999,
      "options": [], "image": "annual_badge.jpg",
-     "desc": "인가자 전용 · 연간회원 뱃지"},
-    # ── 서포터즈 구매 가능 ──
-    {"name": "수품 · 굿즈 (서포터즈)", "kind": "서포터즈", "price": 0, "stock": 999,
-     "options": [], "image": "goods.jpg",
-     "desc": "인가자 전용 품목 이외의 수품 및 굿즈 (서포터즈 구매 가능)"},
+     "desc": "인가자 전용 · 연간회원 뱃지 5,500원 · 연간회원 및 서포터즈 가입 시 1개 무상지급 · 추가구매 시 기입 · 수량을 적어주세요."},
 ]
 
 
-MERCH_SEED_VERSION = 4  # 기본 수품목록 변경 시 올리면 자동 재시드(관리자 추가분은 보존)
+MERCH_SEED_VERSION = 5  # 기본 수품목록 변경 시 올리면 자동 재시드(관리자 추가분은 보존)
 
 
 def _merch_seed_once(doc):
