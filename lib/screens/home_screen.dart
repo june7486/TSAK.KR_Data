@@ -1351,8 +1351,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // 노출순서: 내 행사 관리 → 수품 구매 → 후원 계좌.
-          // (수요조사·수품판매 등 진행정보는 개인프로필 첫 화면에 노출하지 않는다.)
+          // 수요조사 진행중인 수품이 있을 때만 개인 프로필 내부에 노출.
+          //  (진행중 항목이 없으면 아무것도 표시하지 않아 첫 화면을 깔끔하게 유지)
+          if (_surveys.isNotEmpty) ...[
+            _personalSurveyWaitlist(),
+            const SizedBox(height: 10),
+          ],
+          // 노출순서: 내 행사 관리 → 수품 구매 → (수요조사 진행중) → 후원 계좌.
           // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
           _personalDonationBanner(state),
         ],

@@ -2503,6 +2503,34 @@ def _merch_products_sorted(doc):
     return sorted(prods, key=lambda p: pos.get(str(p.get("id")), 10 ** 9))
 
 
+def _norm_spec_list(v):
+    """견적서 기반 세부항목(사양/옵션) 리스트를 정규화한다.
+    각 항목은 {label, value, note} 형태(모두 문자열). 최대 60개·길이 제한."""
+    out = []
+    if not isinstance(v, list):
+        return out
+    for it in v[:60]:
+        if not isinstance(it, dict):
+            # "라벨: 값" 문자열도 허용
+            s = str(it or "").strip()
+            if not s:
+                continue
+            if ":" in s:
+                a, b = s.split(":", 1)
+                out.append({"label": a.strip()[:40],
+                            "value": b.strip()[:120], "note": ""})
+            else:
+                out.append({"label": s[:40], "value": "", "note": ""})
+            continue
+        label = str(it.get("label", "") or "")[:40]
+        value = str(it.get("value", "") or "")[:120]
+        note = str(it.get("note", "") or "")[:200]
+        if not (label or value or note):
+            continue
+        out.append({"label": label, "value": value, "note": note})
+    return out
+
+
 def _merch_doc_defaults(doc):
     """확장 필드 기본값 보장(예약/제작자/공여/재고/공지)."""
     doc.setdefault("orders", [])
@@ -5071,16 +5099,36 @@ class Handler(BaseHTTPRequestHandler):
     def _set_sid_cookie(self, sid):
         self._pending_sid = sid
 
+    def _is_https_req(self):
+        """요청이 HTTPS(또는 HTTPS 리버스프록시 뒤)인지 판정.
+        - X-Forwarded-Proto: https  (샌드박스/운영 프록시)
+        - Forwarded: proto=https
+        """
+        try:
+            xfp = (self.headers.get("X-Forwarded-Proto") or "").strip().lower()
+            if xfp.split(",")[0].strip() == "https":
+                return True
+            fwd = (self.headers.get("Forwarded") or "").lower()
+            if "proto=https" in fwd:
+                return True
+        except Exception:
+            pass
+        return False
+
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         if getattr(self, "_pending_sid", None):
+            # 세션토큰 쿠키 — HttpOnly 로 JS/XSS 탈취 차단, HTTPS 요청이면 Secure 부여.
+            #  (앱은 응답 본문의 sid 를 X-TSAK-Session 헤더로 사용하므로 쿠키는
+            #   보조 수단이며 HttpOnly 로 두어도 동작에 영향이 없다.)
+            secure = "; Secure" if self._is_https_req() else ""
             self.send_header(
                 "Set-Cookie",
-                "tsak_sid=%s; Path=/; Max-Age=%d; SameSite=Strict"
-                % (urllib.parse.quote(self._pending_sid), _SESS_TTL))
+                "tsak_sid=%s; Path=/; Max-Age=%d; SameSite=Strict; HttpOnly%s"
+                % (urllib.parse.quote(self._pending_sid), _SESS_TTL, secure))
             self._pending_sid = None
         self._cors()
         self.end_headers()
@@ -5811,9 +5859,20 @@ class Handler(BaseHTTPRequestHandler):
                 orders.sort(key=lambda x: str(x.get("created", "")), reverse=True)
                 reserves = list(doc.get("reservations", []))
                 reserves.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                # 견적서 기반 세부항목 — 마스터는 항상, 관리자는 설정이 on일 때만 수신.
+                cfgd = doc.get("config", {})
+                spec_ok = self._auth_ok("master") or (
+                    cfgd.get("quoteSpecAdminAllowed") is True)
+                prods_out = _merch_products_sorted(doc)
+                if not spec_ok:
+                    prods_out = [
+                        {k: v for k, v in pr.items()
+                         if k not in ("specList", "quoteFile", "quoteFileName")}
+                        for pr in prods_out
+                    ]
                 return self._json({
                     "ok": True,
-                    "products": _merch_products_sorted(doc),
+                    "products": prods_out,
                     "orders": orders,
                     "reservations": reserves,
                     "makers": doc.get("makers", []),
@@ -7122,6 +7181,18 @@ class Handler(BaseHTTPRequestHandler):
                     "desc": str(d.get("desc", "") or "")[:400],
                     "size": str(d.get("size", "") or "")[:80],
                     "makerId": str(d.get("makerId", "") or "")[:40],
+                    # 견적서 기반 세부항목(사양/옵션) — 마스터 전용 관리, 관리자 노출은
+                    #  설정(quoteSpecAdminAllowed)에 따른다. [{label, value, note}]
+                    "specList": _norm_spec_list(
+                        d.get("specList", (existing or {}).get("specList", []))),
+                    # 견적서 원본 파일(마스터 전용 파일열람 대상)
+                    "quoteFile": str(
+                        d.get("quoteFile", (existing or {}).get("quoteFile", ""))
+                        or "")[:300],
+                    "quoteFileName": str(
+                        d.get("quoteFileName",
+                              (existing or {}).get("quoteFileName", ""))
+                        or "")[:200],
                     "active": d.get("active", True) is not False,
                     "credentialOnly": d.get("credentialOnly", False) is True,
                     "created": (existing or {}).get("created", _now_stamp()),

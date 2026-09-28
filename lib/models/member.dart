@@ -33,6 +33,10 @@ class Member {
     this.privacyAgreedAt = '',
     List<String>? mentors,
     List<String>? parents,
+    this.linkApprovalStatus = '',
+    this.linkApprovalNote = '',
+    this.linkApprovedAt = '',
+    this.linkApprovedBy = '',
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     this.sample = false,
@@ -142,6 +146,17 @@ class Member {
   /// 페런츠(보호자) 인가번호 목록 (복수 지정 가능)
   List<String> parents;
 
+  /// 멘토·페런츠 연결 상태: ''(미요청) | 'pending'(요청) | 'approved'(승인) | 'held'(보류)
+  /// 한 대상(멘토/페런츠)을 가리키는 연결 단위 상태.
+  String linkApprovalStatus;
+
+  /// 연결 요청/처리 메모(요청 사유·처리 의견 등)
+  String linkApprovalNote;
+
+  /// 연결 승인 처리 일시(예: "2025.09.24 10:30") 및 처리자
+  String linkApprovedAt;
+  String linkApprovedBy;
+
   /// 연간회비 납부 이력: {"2024": true, "2025": true, ...}
   Map<String, bool> feeYears;
 
@@ -240,6 +255,10 @@ class Member {
     'privacyAgreedAt': privacyAgreedAt,
     'mentors': mentors,
     'parents': parents,
+    'linkApprovalStatus': linkApprovalStatus,
+    'linkApprovalNote': linkApprovalNote,
+    'linkApprovedAt': linkApprovedAt,
+    'linkApprovedBy': linkApprovedBy,
     'feeYears': feeYears,
     'eventAttend': eventAttend,
     'sample': sample,
@@ -297,6 +316,10 @@ class Member {
       privacyAgreedAt: '${map['privacyAgreedAt'] ?? ''}',
       mentors: castStrList(map['mentors']),
       parents: castStrList(map['parents']),
+      linkApprovalStatus: '${map['linkApprovalStatus'] ?? ''}',
+      linkApprovalNote: '${map['linkApprovalNote'] ?? ''}',
+      linkApprovedAt: '${map['linkApprovedAt'] ?? ''}',
+      linkApprovedBy: '${map['linkApprovedBy'] ?? ''}',
       feeYears: castBoolMap(map['feeYears']),
       eventAttend: castBoolMap(map['eventAttend']),
       sample: map['sample'] == true,
@@ -339,6 +362,10 @@ class Member {
     String? privacyAgreedAt,
     List<String>? mentors,
     List<String>? parents,
+    String? linkApprovalStatus,
+    String? linkApprovalNote,
+    String? linkApprovedAt,
+    String? linkApprovedBy,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     bool? sample,
@@ -378,6 +405,10 @@ class Member {
       privacyAgreedAt: privacyAgreedAt ?? this.privacyAgreedAt,
       mentors: mentors ?? List<String>.from(this.mentors),
       parents: parents ?? List<String>.from(this.parents),
+      linkApprovalStatus: linkApprovalStatus ?? this.linkApprovalStatus,
+      linkApprovalNote: linkApprovalNote ?? this.linkApprovalNote,
+      linkApprovedAt: linkApprovedAt ?? this.linkApprovedAt,
+      linkApprovedBy: linkApprovedBy ?? this.linkApprovedBy,
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),
       eventAttend: eventAttend ?? Map<String, bool>.from(this.eventAttend),
       sample: sample ?? this.sample,

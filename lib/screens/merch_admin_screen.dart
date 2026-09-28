@@ -1532,6 +1532,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Widget _productCard(Map<String, dynamic> p, {bool inList = false}) {
     final active = p['active'] != false;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
+    final specList =
+        ((p['specList'] as List?) ?? []).whereType<Map>().toList();
+    final quoteName = '${p['quoteFileName'] ?? ''}';
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final price = (p['price'] as num?)?.toInt() ?? 0;
     final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
@@ -1666,6 +1669,26 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     ),
                   ),
                 ],
+                // 견적서 기반 세부항목 — 마스터/허용 관리자에게만 수신된 경우 표시
+                if (specList.isNotEmpty || quoteName.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.request_quote_outlined,
+                          size: 13, color: AppColors.tigerGold),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          '견적 세부항목 ${specList.length}건'
+                          '${quoteName.isNotEmpty ? ' · $quoteName' : ''}',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.tigerGold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -1699,6 +1722,41 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
     bool active = existing?['active'] != false;
     bool credentialOnly = existing?['credentialOnly'] == true;
+    // 견적서 기반 세부항목(사양/옵션) — 마스터만 편집. [{label, value, note}]
+    final bool isMaster = context.read<AppState>().isMaster;
+    final List<Map<String, String>> specList =
+        ((existing?['specList'] as List?) ?? [])
+            .whereType<Map>()
+            .map((e) => e.map((k, v) => MapEntry('$k', '${v ?? ''}')))
+            .toList();
+    if (specList.isEmpty) {
+      specList.add({'label': '', 'value': '', 'note': ''});
+    }
+    String quoteFile = '${existing?['quoteFile'] ?? ''}';
+    String quoteFileName = '${existing?['quoteFileName'] ?? ''}';
+
+    Future<void> pickQuote(StateSetter setDlg) async {
+      try {
+        final files = await pickDataFiles(
+          dialogTitle: '견적서 파일 선택',
+          allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'xlsx', 'xls'],
+        );
+        if (files.isEmpty) return;
+        final f = files.first;
+        final r = await _nas.merchMakerUpload(f.name, base64Encode(f.bytes));
+        if (r['ok'] == true && r['file'] != null) {
+          setDlg(() {
+            quoteFile = '${r['file']}';
+            quoteFileName = f.name;
+          });
+          if (mounted) _snack('견적서를 첨부했습니다');
+        } else {
+          if (mounted) _snack('첨부 실패: ${r['error']}');
+        }
+      } catch (e) {
+        if (mounted) _snack('첨부 오류: $e');
+      }
+    }
 
     Future<void> pickImage(StateSetter setDlg) async {
       try {
@@ -1800,6 +1858,106 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L / 58,60)'),
                 _dlgField(size, '사이즈 안내 (자유 텍스트)'),
                 _dlgField(desc, '설명'),
+                // ── 견적서 기반 세부항목 (마스터 전용 관리) ──
+                if (isMaster) ...[
+                  const Divider(height: 18),
+                  Row(
+                    children: [
+                      const Icon(Icons.request_quote_outlined,
+                          size: 16, color: AppColors.tigerGold),
+                      const SizedBox(width: 5),
+                      const Expanded(
+                        child: Text('견적서 기반 세부항목 (사양/옵션)',
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.purpleDark)),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => setDlg(() => specList.add(
+                            {'label': '', 'value': '', 'note': ''})),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('항목 추가',
+                            style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const Text(
+                    '견적서에서 확인한 사양·옵션·단가 근거 등을 항목별로 기록합니다. '
+                    '(마스터 전용 — 관리자 노출은 설정에서 허용)',
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                  ),
+                  const SizedBox(height: 6),
+                  for (var i = 0; i < specList.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextFormField(
+                              initialValue: specList[i]['label'],
+                              decoration: const InputDecoration(
+                                  labelText: '항목', isDense: true),
+                              style: const TextStyle(fontSize: 12.5),
+                              onChanged: (v) => specList[i]['label'] = v,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            flex: 4,
+                            child: TextFormField(
+                              initialValue: specList[i]['value'],
+                              decoration: const InputDecoration(
+                                  labelText: '사양/값', isDense: true),
+                              style: const TextStyle(fontSize: 12.5),
+                              onChanged: (v) => specList[i]['value'] = v,
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 16,
+                            icon: const Icon(Icons.close),
+                            onPressed: () => setDlg(() => specList.removeAt(i)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.attach_file,
+                          size: 15, color: AppColors.tigerGold),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          quoteFileName.isEmpty
+                              ? '견적서 파일 없음'
+                              : '견적서: $quoteFileName',
+                          style: const TextStyle(
+                              fontSize: 11.5, color: AppColors.textGray),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => pickQuote(setDlg),
+                        icon: const Icon(Icons.upload_file, size: 15),
+                        label: const Text('견적서 첨부',
+                            style: TextStyle(fontSize: 12)),
+                      ),
+                      if (quoteFile.isNotEmpty)
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 16,
+                          icon: const Icon(Icons.close),
+                          onPressed: () => setDlg(() {
+                            quoteFile = '';
+                            quoteFileName = '';
+                          }),
+                        ),
+                    ],
+                  ),
+                ],
                 // 사이즈 프리셋
                 Align(
                   alignment: Alignment.centerLeft,
@@ -1883,6 +2041,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         size: size.text.trim(),
         image: image.trim(),
         desc: desc.text.trim(),
+        specList: isMaster
+            ? specList
+                .where((e) =>
+                    (e['label'] ?? '').trim().isNotEmpty ||
+                    (e['value'] ?? '').trim().isNotEmpty)
+                .toList()
+            : const [],
+        quoteFile: isMaster ? quoteFile : '',
+        quoteFileName: isMaster ? quoteFileName : '',
         active: active,
         credentialOnly: credentialOnly,
       );
