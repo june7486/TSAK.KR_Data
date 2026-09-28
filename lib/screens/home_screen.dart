@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/member_card.dart';
+import '../widgets/scroll_down_hint.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/donate_sheet.dart';
 import '../widgets/inquiry_sheet.dart';
@@ -57,6 +58,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _searchCtrl = TextEditingController();
   final _scroll = ScrollController();
+  /// 개인 로그인(본인) 창 스크롤 컨트롤러 — 하단 스크롤 유도 화살표용.
+  final _personalScroll = ScrollController();
   bool _selectMode = false;
   final Set<String> _selected = {};
   bool _deepLinkHandled = false;
@@ -182,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _scroll.dispose();
+    _personalScroll.dispose();
     super.dispose();
   }
 
@@ -522,7 +526,11 @@ class _HomeScreenState extends State<HomeScreen> {
             child: state.isSelfAccess
                 // 개인 페이지: 헤더(개인정보·바로가기)를 함께 스크롤에 포함해
                 // 화면이 잘리지 않고 아래로 스크롤되도록 한다.
-                ? CustomScrollView(
+                ? ScrollDownHint(
+                    controller: _personalScroll,
+                    bottomInset: 78,
+                    child: CustomScrollView(
+                    controller: _personalScroll,
                     slivers: [
                       SliverToBoxAdapter(child: _personalHeader(state)),
                       const SliverToBoxAdapter(child: SizedBox(height: 8)),
@@ -550,6 +558,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     ],
+                  ),
                   )
                 : (state.membersLoading && !state.membersLoaded)
                     ? _loadingList(loaded: members.length)

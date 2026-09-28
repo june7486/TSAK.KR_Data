@@ -109,6 +109,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   String _s(Map<String, dynamic> m, String k) => '${m[k] ?? ''}'.trim();
 
+  /// 각인 메달 종류('mentor'|'parent'|'') — 수령인 정보 표시 여부 판단.
+  String _medalKind(Map<String, dynamic> o) {
+    final k = _s(o, 'recipientKind');
+    if (k == 'mentor' || k == 'parent') return k;
+    return '';
+  }
+
+  /// 해당 품목의 수령인 목록(각인 메달).
+  List<Map<String, dynamic>> _recipsOf(Map<String, dynamic> o) {
+    final list = o['recipients'];
+    final out = <Map<String, dynamic>>[];
+    if (list is List) {
+      for (final r in list) {
+        if (r is Map) out.add(r.cast<String, dynamic>());
+      }
+    } else if (o['recipient'] is Map) {
+      out.add((o['recipient'] as Map).cast<String, dynamic>());
+    }
+    return out;
+  }
+
   int get _sumTotal =>
       _items.fold(0, (p, o) => p + _i(o, 'total'));
 
@@ -1322,6 +1343,56 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: AppColors.taegeukBlue)),
+                // 각인 메달(멘토/페런츠) 수여받는 분(수령인) 정보 표시.
+                if (_medalKind(o).isNotEmpty && _recipsOf(o).isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.tigerGold.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.tigerGold.withValues(alpha: 0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.card_giftcard,
+                                size: 13, color: AppColors.tigerGold),
+                            const SizedBox(width: 4),
+                            Text(
+                                '각인 — ${_medalKind(o) == 'mentor' ? '멘토' : '페런츠'} 수령인',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.purpleDark)),
+                          ],
+                        ),
+                        for (final r in _recipsOf(o))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              [
+                                if ('${r['unit'] ?? ''}'.trim().isNotEmpty)
+                                  '소속 ${r['unit']}',
+                                if ('${r['name'] ?? ''}'.trim().isNotEmpty)
+                                  '${r['name']}',
+                                if ('${r['phone'] ?? ''}'.trim().isNotEmpty)
+                                  '${r['phone']}',
+                              ].join(' · '),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textDark),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 // 항목별 배송상태 선택 (관리자·마스터)
                 if (canManage &&
                     widget.statuses.isNotEmpty &&

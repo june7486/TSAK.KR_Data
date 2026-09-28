@@ -5858,7 +5858,9 @@ class Handler(BaseHTTPRequestHandler):
                     prods.append({k: pr.get(k) for k in
                                   ("id", "name", "kind", "price", "stock",
                                    "options", "image", "desc", "active",
-                                   "credentialOnly")})
+                                   "credentialOnly")}
+                                 | {"recipientKind":
+                                    _medal_recipient_kind(pr.get("name", ""))})
                 # 수요조사 진행중인 기획 아이템(누구나 조회 — 사전신청용).
                 surveys = []
                 for pl in _merch_plans_sorted(doc):

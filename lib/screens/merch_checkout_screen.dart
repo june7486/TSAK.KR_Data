@@ -487,8 +487,11 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
 
   Widget _recipientFields(int idx, String kind) {
     final c = _recips.putIfAbsent(idx, () => _RecipientCtl());
-    final pname =
-        '${(widget.lines[idx]['name'] ?? '').toString().split('(').first}'.trim();
+    final pname = (widget.lines[idx]['name'] ?? '')
+        .toString()
+        .split('(')
+        .first
+        .trim();
     final isMentor = kind == 'mentor';
     return Container(
       padding: const EdgeInsets.all(10),
