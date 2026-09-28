@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_config.dart';
 import '../services/app_state.dart';
+import '../services/nas_api.dart';
 import '../services/build_info.g.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
@@ -60,6 +61,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _selected = {};
   bool _deepLinkHandled = false;
 
+  // 수요조사 진행중 목록(개인 페이지 수품구매 하단 대기자 명단/순번 표기용).
+  List<Map<String, dynamic>> _surveys = [];
+  String _myNo = '';
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +75,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     // 로그인 직후 미승인 일반회원이 있으면 관리자·마스터에게 알림 팝업.
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPendingApprovals());
+    // 수요조사 진행중 목록 로드(개인 페이지 대기자 명단용).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSurveys());
+  }
+
+  Future<void> _loadSurveys() async {
+    try {
+      final r = await context.read<NasApi>().merch();
+      if (!mounted) return;
+      final who = context.read<AppState>().who;
+      setState(() {
+        _surveys = ((r['surveys'] as List?) ?? [])
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+        _myNo = who;
+      });
+    } catch (_) {
+      // 무시 — 목록 없으면 미표시
+    }
   }
 
   bool _pendingChecked = false;
@@ -861,7 +884,7 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _searchCtrl,
             onChanged: (v) => state.setQuery(v),
             decoration: InputDecoration(
-              hintText: '통합검색 · AI 자연어 · 범위(1-100) · 전화번호',
+              hintText: '통합검색 (인가번호, 이름, 전화번호, 범위(1-100), 연맹, 지역대, 성별, 평생회원 등)',
               prefixIcon: const Icon(Icons.search, color: AppColors.purple),
               suffixIcon: _searchCtrl.text.isEmpty
                   ? null
@@ -1289,8 +1312,141 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 10),
+          // 수요조사 진행중 — 대기자 명단/순번 + 최소주문 대비 신청자 수
+          if (_surveys.isNotEmpty) _personalSurveyWaitlist(),
+          const SizedBox(height: 10),
           // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
           _personalDonationBanner(state),
+        ],
+      ),
+    );
+  }
+
+  /// 개인 페이지 수품구매 하단 — 수요조사 대기자 명단/순번 + 최소주문 대비 신청자 수.
+  /// 예) "11번째 신청자 / 50명(최소제작신청수량)"
+  Widget _personalSurveyWaitlist() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.35), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.campaign_outlined, size: 17, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text('수요조사 진행중 (내 신청 순번)',
+                    style: TextStyle(
+                        color: AppColors.purpleDark,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800)),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const MerchShopScreen())),
+                child: const Text('신청하기 ›',
+                    style: TextStyle(
+                        color: AppColors.taegeukRed,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final s in _surveys) _surveyWaitRow(s),
+        ],
+      ),
+    );
+  }
+
+  Widget _surveyWaitRow(Map<String, dynamic> s) {
+    final name = '${s['name'] ?? ''}';
+    final minQty = (s['minQty'] as num?)?.toInt() ?? 0;
+    final apps = (s['applicants'] as List?) ?? [];
+    final count = (s['count'] as num?)?.toInt() ?? apps.length;
+    // 내 신청 순번 찾기 (인가번호 우선, 없으면 세션 who).
+    int mySeq = 0;
+    final myNo = _myNo.replaceAll(RegExp(r'[^0-9]'), '');
+    if (myNo.isNotEmpty) {
+      for (final a in apps) {
+        final n = '${(a as Map)['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+        if (n.isNotEmpty && n == myNo) {
+          mySeq = ((a['no'] as num?)?.toInt()) ?? 0;
+          break;
+        }
+      }
+    }
+    final ratio = minQty > 0 ? (count / minQty).clamp(0.0, 1.0) : 0.0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(name,
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w800, color: AppColors.textDark)),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              if (mySeq > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.tigerGold.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('$mySeq번째 신청자',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.purpleDark)),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.textGray.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('아직 미신청',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray)),
+                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '/ $count명 신청 (최소 제작 $minQty명)',
+                  style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.purple),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 6,
+              backgroundColor: AppColors.purpleLight.withValues(alpha: 0.15),
+              valueColor: const AlwaysStoppedAnimation(AppColors.purple),
+            ),
+          ),
         ],
       ),
     );

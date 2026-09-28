@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
+import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/hscroll_menu.dart';
@@ -36,6 +37,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   String? _error;
 
   List<Map<String, dynamic>> _products = [];
+  List<Map<String, dynamic>> _surveys = [];
   Map<String, dynamic> _config = {};
   int _annualFee = 0;
 
@@ -63,6 +65,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       if (!mounted) return;
       setState(() {
         _products = ((r['products'] as List?) ?? [])
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+        _surveys = ((r['surveys'] as List?) ?? [])
             .map((e) => (e as Map).cast<String, dynamic>())
             .toList();
         _config = ((r['config'] as Map?) ?? {}).cast<String, dynamic>();
@@ -191,6 +196,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     ),
                   ),
                 ),
+              // ── 수요조사 진행중 (수품구매 최하단 · 누구나 사전신청) ──
+              if (_surveys.isNotEmpty)
+                SliverToBoxAdapter(child: _surveySection()),
             ],
           );
         },
@@ -1077,6 +1085,340 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: color),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 수요조사 진행중 — 수품구매 최하단 구분선 + 사전신청 (누구나)
+  // ─────────────────────────────────────────────────────────────
+  Widget _surveySection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 110),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(thickness: 1.2, height: 28),
+          Row(
+            children: [
+              const Icon(Icons.campaign_outlined,
+                  size: 20, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text('수요조사 진행중 — 사전신청',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: AppColors.purpleDark)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '아래 수품은 제작 착수 전 수요조사 단계입니다. 누구나 사전신청할 수 있으며, 최소 제작 착수 수량 달성 시 제작이 진행됩니다.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          for (final s in _surveys) _surveyCard(s),
+        ],
+      ),
+    );
+  }
+
+  Widget _surveyCard(Map<String, dynamic> s) {
+    final name = '${s['name'] ?? ''}';
+    final photo = '${s['photo'] ?? ''}';
+    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
+    final price = (s['price'] as num?)?.toInt() ?? 0;
+    final minQty = (s['minQty'] as num?)?.toInt() ?? 0;
+    final count = (s['count'] as num?)?.toInt() ?? (s['applicants'] as List?)?.length ?? 0;
+    final progress = '${s['progress'] ?? ''}';
+    final maker = '${s['maker'] ?? ''}';
+    final desc = '${s['desc'] ?? ''}';
+    final video = '${s['video'] ?? ''}';
+    final ratio = minQty > 0 ? (count / minQty).clamp(0.0, 1.0) : 0.0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: 78,
+                    height: 78,
+                    color: AppColors.purpleLight.withValues(alpha: 0.15),
+                    child: imgUrl.isEmpty
+                        ? const Icon(Icons.image_outlined,
+                            color: AppColors.textGray)
+                        : Image.network(imgUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                                Icons.broken_image_outlined,
+                                color: AppColors.textGray)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14.5)),
+                          ),
+                          if (progress.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.scoutGreen.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(progress,
+                                  style: const TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.scoutGreen)),
+                            ),
+                        ],
+                      ),
+                      if (maker.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text('기획자 $maker',
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.textGray)),
+                        ),
+                      if (price > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(_won(price),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13.5,
+                                  color: AppColors.taegeukRed)),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (desc.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(desc,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textDark, height: 1.4)),
+            ),
+          if (video.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.play_circle_outline,
+                      size: 16, color: AppColors.taegeukRed),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(video,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 8,
+                    backgroundColor: AppColors.purpleLight.withValues(alpha: 0.15),
+                    valueColor: const AlwaysStoppedAnimation(AppColors.purple),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '$count명 신청 / 최소 제작 착수 $minQty명'
+                  '${minQty > 0 ? "  (${((ratio) * 100).round()}%)" : ""}',
+                  style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.purpleDark),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => _applySurvey(s),
+                icon: const Text('＋',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800, height: 1.0)),
+                label: const Text('사전신청 하기',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _applySurvey(Map<String, dynamic> s) async {
+    final planId = '${s['id'] ?? ''}';
+    final nameCtl = TextEditingController();
+    final noCtl = TextEditingController();
+    final phoneCtl = TextEditingController();
+    final emailCtl = TextEditingController();
+    final memoCtl = TextEditingController();
+    // 로그인(개인) 상태면 인가번호/이름 기본값 채움.
+    final who = context.read<AppState>().who;
+    if (who.isNotEmpty) {
+      try {
+        final m = context.read<AppState>().byNumber(who);
+        if (m != null) {
+          nameCtl.text = m.name;
+          noCtl.text = m.number;
+        } else {
+          noCtl.text = who;
+        }
+      } catch (_) {}
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, setS) => AlertDialog(
+          title: Text('사전신청 · ${s['name'] ?? ''}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '누구나 신청 가능합니다. 범스카우트인가자는 인가번호를 남겨주세요(선택).',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                ),
+                const SizedBox(height: 10),
+                _sf(nameCtl, '이름 *', autofocus: true),
+                _sf(noCtl, '인가번호 (범스카우트인가자 · 선택)'),
+                _sf(phoneCtl, '연락처 (선택)',
+                    keyboard: TextInputType.phone),
+                _sf(emailCtl, '이메일 (선택)',
+                    keyboard: TextInputType.emailAddress),
+                _sf(memoCtl, '메모/수량 (선택)', maxLines: 2),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dctx, false),
+                child: const Text('취소')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dctx, true),
+                child: const Text('신청')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) {
+      nameCtl.dispose();
+      noCtl.dispose();
+      phoneCtl.dispose();
+      emailCtl.dispose();
+      memoCtl.dispose();
+      return;
+    }
+    final name = nameCtl.text.trim();
+    if (name.isEmpty) {
+      _snack('이름을 입력해 주세요', color: AppColors.taegeukRed);
+      nameCtl.dispose();
+      noCtl.dispose();
+      phoneCtl.dispose();
+      emailCtl.dispose();
+      memoCtl.dispose();
+      return;
+    }
+    try {
+      final r = await _nas.merchSurveyApply(
+        planId: planId,
+        name: name,
+        number: noCtl.text.trim(),
+        phone: phoneCtl.text.trim(),
+        email: emailCtl.text.trim(),
+        memo: memoCtl.text.trim(),
+      );
+      if (!mounted) return;
+      final no = (r['no'] as num?)?.toInt();
+      final cnt = (r['count'] as num?)?.toInt();
+      _snack(
+        no != null
+            ? '사전신청 완료 · $no번째 신청자입니다 (누적 ${cnt ?? no}명)'
+            : '사전신청이 접수되었습니다',
+        color: AppColors.scoutGreen,
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _snack('신청 접수 실패: $e', color: AppColors.taegeukRed);
+    } finally {
+      nameCtl.dispose();
+      noCtl.dispose();
+      phoneCtl.dispose();
+      emailCtl.dispose();
+      memoCtl.dispose();
+    }
+  }
+
+  Widget _sf(TextEditingController c, String label,
+      {int maxLines = 1, TextInputType? keyboard, bool autofocus = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TextField(
+        controller: c,
+        maxLines: maxLines,
+        autofocus: autofocus,
+        keyboardType: keyboard,
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
+      ),
     );
   }
 }

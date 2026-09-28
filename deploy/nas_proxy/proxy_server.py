@@ -1865,6 +1865,33 @@ def _merch_supplies_sorted(doc):
     return sorted(items, key=lambda p: pos.get(str(p.get("id")), 10 ** 9))
 
 
+def _merch_plans_sorted(doc):
+    """plansOrder(기획 id 배열) 기준으로 기획실 아이템을 정렬해 반환."""
+    items = list(doc.get("plans", []))
+    order = doc.get("plansOrder", [])
+    pos = {str(k): i for i, k in enumerate(order)}
+    return sorted(items, key=lambda p: pos.get(str(p.get("id")), 10 ** 9))
+
+
+def _merch_survey_applicants(doc, plan_id):
+    """특정 기획 아이템의 수요조사 신청자 명단(순번 포함) 및 최소수량 대비 현황."""
+    plan = next((x for x in doc.get("plans", [])
+                 if str(x.get("id")) == str(plan_id)), None)
+    if not plan:
+        return None
+    apps = plan.get("applicants", [])
+    if not isinstance(apps, list):
+        apps = []
+    minimum = int(plan.get("minQty", 0) or 0)
+    return {
+        "planId": str(plan_id),
+        "name": plan.get("name", ""),
+        "minimum": minimum,
+        "count": len(apps),
+        "applicants": apps,
+    }
+
+
 def _merch_save(doc):
     _save_json(MERCH_FILE, doc)
 
@@ -2153,6 +2180,8 @@ def _merch_doc_defaults(doc):
     doc.setdefault("productOrder", [])  # 상품 표시 순서(상품 id 배열, 앞=먼저)
     doc.setdefault("supplies", [])      # 중앙회 비품 재고 리스트(품명/수량/비고/갱신·확인 이력)
     doc.setdefault("suppliesOrder", [])  # 비품 표시 순서(비품 id 배열, 앞=먼저)
+    doc.setdefault("plans", [])          # 기획실 아이템(사진/설명/메모/가격/동영상/기획자 등)
+    doc.setdefault("plansOrder", [])     # 기획실 표시 순서(기획 id 배열, 앞=먼저)
     doc.setdefault("bundles", [])      # 합친 주문 묶음 [{id,name,keys:[],created}]
     doc.setdefault("archive", [])      # 30일 경과 삭제분 영구 보전
     cfg = doc.get("config")
@@ -5132,9 +5161,33 @@ class Handler(BaseHTTPRequestHandler):
                                   ("id", "name", "kind", "price", "stock",
                                    "options", "image", "desc", "active",
                                    "credentialOnly")})
+                # 수요조사 진행중인 기획 아이템(누구나 조회 — 사전신청용).
+                surveys = []
+                for pl in _merch_plans_sorted(doc):
+                    if pl.get("surveyOpen") is not True:
+                        continue
+                    apps = pl.get("applicants", [])
+                    if not isinstance(apps, list):
+                        apps = []
+                    surveys.append({
+                        "id": pl.get("id"),
+                        "name": pl.get("name", ""),
+                        "photo": pl.get("photo", ""),
+                        "video": pl.get("video", ""),
+                        "desc": pl.get("desc", ""),
+                        "memo": pl.get("memo", ""),
+                        "price": int(pl.get("price", 0) or 0),
+                        "maker": pl.get("maker", ""),
+                        "submittedAt": pl.get("submittedAt", ""),
+                        "progress": pl.get("progress", ""),
+                        "minQty": int(pl.get("minQty", 0) or 0),
+                        "count": len(apps),
+                        "applicants": apps,   # 개인 페이지 순번/명단 확인용
+                    })
                 return self._json({
                     "ok": True,
                     "products": prods,
+                    "surveys": surveys,
                     "config": {
                         "annualFee": int(cfg.get("annualFee", 10000) or 0),
                         "salesOpen": cfg.get("salesOpen", True) is not False,
@@ -5228,6 +5281,7 @@ class Handler(BaseHTTPRequestHandler):
                     "donations": doc.get("donations", []),
                     "stockLog": doc.get("stockLog", []),
                     "supplies": _merch_supplies_sorted(doc),
+                    "plans": _merch_plans_sorted(doc),
                     "config": doc.get("config", {}),
                     "orderOrder": doc.get("orderOrder", []),
                     "bundles": doc.get("bundles", []),
@@ -6663,6 +6717,153 @@ class Handler(BaseHTTPRequestHandler):
                 doc["suppliesOrder"] = ids
                 _merch_save(doc)
                 return self._json({"ok": True, "count": len(ids)})
+            if p == "/api/merch/plan":
+                # 기획실 아이템 등록/수정(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("id", "") or "")
+                s = self._sess() or {}
+                who = str(d.get("who", "") or s.get("who", "") or "")
+                who_name = str(d.get("whoName", "") or "")
+                plans = doc.get("plans", [])
+                existing = next((x for x in plans
+                                 if str(x.get("id")) == pid), None) if pid else None
+                now = _now_stamp()
+
+                def _i(v, dv=0):
+                    try:
+                        return int(v)
+                    except Exception:
+                        return dv
+
+                if existing is None:
+                    item = {
+                        "id": pid or ("pl" + _secrets.token_urlsafe(5)),
+                        "name": str(d.get("name", "") or "")[:80],
+                        "photo": str(d.get("photo", "") or "")[:300],
+                        "video": str(d.get("video", "") or "")[:300],
+                        "desc": str(d.get("desc", "") or "")[:2000],
+                        "memo": str(d.get("memo", "") or "")[:1000],
+                        "price": _i(d.get("price", 0)),
+                        "maker": str(d.get("maker", "") or "")[:80],   # 기획자
+                        "submittedAt": str(d.get("submittedAt", "") or ""),  # 기획안 제출일
+                        "progress": str(d.get("progress", "") or "")[:200],  # 현재 진행상황
+                        "minQty": _i(d.get("minQty", 0)),   # 최소 제작 착수 수량
+                        "surveyOpen": d.get("surveyOpen") is True,  # 수요조사 진행 여부
+                        "applicants": [],
+                        "created": now,
+                        "createdBy": who,
+                        "createdByName": who_name,
+                    }
+                    plans.append(item)
+                else:
+                    for k in ("name", "photo", "video", "desc", "memo", "maker",
+                              "submittedAt", "progress"):
+                        if k in d:
+                            lim = 2000 if k == "desc" else (
+                                1000 if k == "memo" else (
+                                    300 if k in ("photo", "video") else 200))
+                            existing[k] = str(d.get(k, "") or "")[:lim]
+                    if "price" in d:
+                        existing["price"] = _i(d.get("price", 0))
+                    if "minQty" in d:
+                        existing["minQty"] = _i(d.get("minQty", 0))
+                    if "surveyOpen" in d:
+                        existing["surveyOpen"] = d.get("surveyOpen") is True
+                    item = existing
+                item["updatedAt"] = now
+                doc["plans"] = plans
+                order = [str(x) for x in doc.get("plansOrder", [])]
+                for it in plans:
+                    if str(it.get("id")) not in order:
+                        order.append(str(it.get("id")))
+                order = [k for k in order
+                         if any(str(it.get("id")) == k for it in plans)]
+                doc["plansOrder"] = order
+                _merch_save(doc)
+                return self._json({"ok": True, "item": item})
+            if p == "/api/merch/plan/delete":
+                # 기획 아이템 삭제(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("id", "") or "")
+                before = len(doc.get("plans", []))
+                doc["plans"] = [x for x in doc.get("plans", [])
+                                if str(x.get("id")) != pid]
+                doc["plansOrder"] = [
+                    k for k in doc.get("plansOrder", []) if str(k) != pid]
+                _merch_save(doc)
+                return self._json({"ok": True,
+                                   "removed": before - len(doc["plans"])})
+            if p == "/api/merch/plan/order":
+                # 기획실 표시 순서 저장(관리자).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                ids = [str(x) for x in (d.get("ids") or [])]
+                doc["plansOrder"] = ids
+                _merch_save(doc)
+                return self._json({"ok": True, "count": len(ids)})
+            if p == "/api/merch/survey/apply":
+                # 수요조사 사전신청 (누구나 가능 — 로그인 불필요).
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("planId", "") or "")
+                plan = next((x for x in doc.get("plans", [])
+                             if str(x.get("id")) == pid), None)
+                if not plan:
+                    return self._json({"ok": False, "error": "plan_not_found"}, 404)
+                if plan.get("surveyOpen") is not True:
+                    return self._json(
+                        {"ok": False, "error": "survey_closed"}, 400)
+                name = str(d.get("name", "") or "").strip()[:40]
+                if not name:
+                    return self._json({"ok": False, "error": "name"}, 400)
+                s = self._sess() or {}
+                sess_who = re.sub(r"[^0-9]", "", str(s.get("who", "") or ""))
+                number = str(d.get("number", "") or "").strip()[:20]
+                if not number and sess_who:
+                    number = sess_who   # 인가자 로그인 시 인가번호 자동
+                phone = str(d.get("phone", "") or "").strip()[:30]
+                email = str(d.get("email", "") or "").strip()[:80]
+                memo = str(d.get("memo", "") or "").strip()[:300]
+                apps = plan.get("applicants", [])
+                if not isinstance(apps, list):
+                    apps = []
+                # 중복 신청 방지(전화번호 기준)
+                if phone and any(str(a.get("phone", "")) == phone for a in apps):
+                    return self._json(
+                        {"ok": False, "error": "duplicate"}, 409)
+                apps.append({
+                    "id": "ap" + _secrets.token_urlsafe(5),
+                    "name": name,
+                    "number": number,      # 범스카우트 인가번호(선택)
+                    "phone": phone,
+                    "email": email,
+                    "memo": memo,
+                    "at": _now_stamp(),
+                    "no": len(apps) + 1,   # 신청 순번
+                })
+                plan["applicants"] = apps
+                _merch_save(doc)
+                return self._json({"ok": True, "count": len(apps),
+                                   "no": len(apps)})
+            if p == "/api/merch/survey/applicants":
+                # 수요조사 신청자 명단 조회.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                doc = _merch_doc()
+                pid = str(d.get("planId", "") or "")
+                data = _merch_survey_applicants(doc, pid)
+                if data is None:
+                    return self._json({"ok": False, "error": "plan_not_found"}, 404)
+                return self._json({"ok": True, "survey": data})
             if p == "/api/merch/order/update":
                 if not self._require("admin"):
                     return

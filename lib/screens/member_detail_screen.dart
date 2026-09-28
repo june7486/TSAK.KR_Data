@@ -1112,6 +1112,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ['등록 단위대', m.regUnit],
       ['인가일', m.date],
       ['생일', m.birthday],
+      if (m.genderVisible && m.gender.isNotEmpty) ['성별', m.gender],
       ['기념일', m.anniversary],
       ['훈련현황', m.trainingStatus],
       ['포상', m.awards],

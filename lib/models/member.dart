@@ -37,6 +37,8 @@ class Member {
     Map<String, bool>? eventAttend,
     this.sample = false,
     this.nameVisible = true,
+    this.gender = '',
+    this.genderVisible = false,
     this.updatedAt,
   }) : mentors = mentors ?? <String>[],
        parents = parents ?? <String>[],
@@ -152,6 +154,12 @@ class Member {
   /// 이름 공개 여부 — 관리자가 개인 프로필에서 토글. false면 다른 회원에게 "(이름 비공개)".
   bool nameVisible;
 
+  /// 성별 — '남' | '여' | ''(미입력). 저장 시 남/여 중 하나는 필수.
+  String gender;
+
+  /// 성별 공개 여부 — 기본값 false(비노출). true여야 다른 회원에게 노출된다.
+  bool genderVisible;
+
   /// 다른 회원(관리자·본인 제외)에게 보여줄 표시 이름.
   /// [canSeeRealName]이 true(관리자·마스터·본인)면 실제 이름,
   /// 아니면서 nameVisible=false면 "(이름 비공개)"로 마스킹한다.
@@ -167,8 +175,14 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
+
+  /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
+  String displayGender({required bool canSeeRealName}) {
+    if (canSeeRealName || genderVisible) return gender;
+    return '';
+  }
 
   /// 로그인 아이디 (일반회원은 전화번호, 인가자는 인가번호)
   String get loginId => accessPhone.trim().isNotEmpty
@@ -230,6 +244,8 @@ class Member {
     'eventAttend': eventAttend,
     'sample': sample,
     'nameVisible': nameVisible,
+    'gender': gender,
+    'genderVisible': genderVisible,
     'updatedAt': updatedAt?.millisecondsSinceEpoch,
   };
 
@@ -285,6 +301,8 @@ class Member {
       eventAttend: castBoolMap(map['eventAttend']),
       sample: map['sample'] == true,
       nameVisible: map['nameVisible'] != false,
+      gender: '${map['gender'] ?? ''}',
+      genderVisible: map['genderVisible'] == true,
       updatedAt: map['updatedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int)
           : null,
@@ -325,6 +343,8 @@ class Member {
     Map<String, bool>? eventAttend,
     bool? sample,
     bool? nameVisible,
+    String? gender,
+    bool? genderVisible,
     DateTime? updatedAt,
   }) {
     return Member(
@@ -362,6 +382,8 @@ class Member {
       eventAttend: eventAttend ?? Map<String, bool>.from(this.eventAttend),
       sample: sample ?? this.sample,
       nameVisible: nameVisible ?? this.nameVisible,
+      gender: gender ?? this.gender,
+      genderVisible: genderVisible ?? this.genderVisible,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

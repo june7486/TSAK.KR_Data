@@ -16,6 +16,7 @@ import '../widgets/hscroll_menu.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
 import 'supplies_screen.dart';
+import 'plans_tab.dart';
 
 /// 수품 판매관리 화면 (관리자·마스터 전용).
 /// 탭: 판매관리 / 누적판매 / 재고 / 공여 / 제작자 / 설정
@@ -242,6 +243,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _ledgerTab(),
                 _stockTab(),
                 const SuppliesScreen(embedded: true),
+                const PlansTab(),
                 _donationTab(),
                 _makerTab(),
                 _configTab(),
@@ -257,6 +259,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     '판매대장',
     '재고',
     '비품재고',
+    '기획실',
     '공여',
     '제작자',
     '설정',

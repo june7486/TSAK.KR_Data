@@ -51,6 +51,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   Map<String, bool> _fees = {};
   Member? _existing;
 
+  /// 성별 — '남' | '여' | ''. 남/여 중 하나는 필수. 공개여부는 기본 비노출.
+  String _gender = '';
+  bool _genderVisible = false;
+
   /// 개인정보 수집·이용 및 제3자 제공 동의 (저장/가입 필수)
   bool _privacyAgreed = false;
   String _privacyAgreedAt = '';
@@ -105,6 +109,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _parents = List<String>.from(m?.parents ?? []);
     _privacyAgreed = m?.privacyAgreed ?? false;
     _privacyAgreedAt = m?.privacyAgreedAt ?? '';
+    _gender = m?.gender ?? '';
+    _genderVisible = m?.genderVisible ?? false;
   }
 
   @override
@@ -301,6 +307,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 label: '주소',
                 hint: '주소검색 버튼으로 검색하세요',
               ),
+              _genderEditor(),
               _field(
                 '활동',
                 _activity,
@@ -826,8 +833,116 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   }
 
   /// 공용 저장 로직 — 저장만 수행 (pop 없음)
+  /// 성별 선택 — 남/여 중 하나는 **필수**. 공개여부는 기본 **비노출**.
+  /// 남/여 선택 후 '비노출'을 다시 선택할 수 있다.
+  Widget _genderEditor() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.wc, size: 16, color: AppColors.purple),
+                const SizedBox(width: 6),
+                const Text(
+                  '성별',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '(남/여 필수 · 공개여부 기본 비노출)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray.withValues(alpha: 0.9),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _genderChip('남', AppColors.taegeukBlue),
+                const SizedBox(width: 8),
+                _genderChip('여', AppColors.taegeukRed),
+                const Spacer(),
+                // 공개여부(비노출/공개)
+                SegmentedButton<bool>(
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('비노출')),
+                    ButtonSegment(value: true, label: Text('공개')),
+                  ],
+                  selected: {_genderVisible},
+                  onSelectionChanged: (s) =>
+                      setState(() => _genderVisible = s.first),
+                ),
+              ],
+            ),
+            if (_gender.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  '성별(남/여)을 선택해야 저장할 수 있습니다',
+                  style: TextStyle(fontSize: 11, color: AppColors.taegeukRed),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _genderChip(String value, Color color) {
+    final on = _gender == value;
+    return GestureDetector(
+      onTap: () => setState(() => _gender = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+        decoration: BoxDecoration(
+          color: on ? color : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: on ? color : color.withValues(alpha: 0.4),
+            width: on ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 13.5,
+            color: on ? Colors.white : color,
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<bool> _saveInternal() async {
     if (!(_formKey.currentState?.validate() ?? false)) return false;
+    // 성별(남/여)은 필수
+    if (_gender != '남' && _gender != '여') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('성별(남/여)을 선택해 주세요'),
+            backgroundColor: AppColors.taegeukRed,
+          ),
+        );
+      }
+      return false;
+    }
     final state = context.read<AppState>();
     // 관리자(app)·마스터는 개인정보 동의 없이도 입력·수정 가능.
     // (일반 개인/비인가자 본인 접근은 동의가 필수)
@@ -883,6 +998,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       accessPhone: _existing?.accessPhone ?? '',
       privacyAgreed: _privacyAgreed,
       privacyAgreedAt: _privacyAgreedAt,
+      nameVisible: _existing?.nameVisible ?? true,
+      gender: _gender,
+      genderVisible: _genderVisible,
     );
     await state.save(member);
     _existing = member; // 이후 dirty 비교 기준 갱신

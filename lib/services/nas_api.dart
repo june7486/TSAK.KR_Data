@@ -1793,6 +1793,110 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 관리자: 기획실 아이템 등록/수정.
+  Future<Map<String, dynamic>> merchSavePlan({
+    String id = '',
+    required String name,
+    String photo = '',
+    String video = '',
+    String desc = '',
+    String memo = '',
+    int price = 0,
+    String maker = '',
+    String submittedAt = '',
+    String progress = '',
+    int minQty = 0,
+    bool? surveyOpen,
+    String whoName = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/plan'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            'name': name,
+            'photo': photo,
+            'video': video,
+            'desc': desc,
+            'memo': memo,
+            'price': price,
+            'maker': maker,
+            'submittedAt': submittedAt,
+            'progress': progress,
+            'minQty': minQty,
+            if (surveyOpen != null) 'surveyOpen': surveyOpen,
+            if (whoName.isNotEmpty) 'whoName': whoName,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 기획 아이템 삭제.
+  Future<bool> merchDeletePlan(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/plan/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 관리자: 기획실 표시 순서 저장.
+  Future<bool> merchPlansOrder(List<String> ids) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/plan/order'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ids': ids}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 수요조사 사전신청 (누구나 가능 — 로그인 불필요).
+  Future<Map<String, dynamic>> merchSurveyApply({
+    required String planId,
+    required String name,
+    String number = '',
+    String phone = '',
+    String email = '',
+    String memo = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/survey/apply'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'planId': planId,
+            'name': name,
+            'number': number,
+            'phone': phone,
+            'email': email,
+            'memo': memo,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 관리자: 수요조사 신청자 명단 조회.
+  Future<Map<String, dynamic>> merchSurveyApplicants(String planId) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/survey/applicants'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'planId': planId}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 관리자: 주문 상태/메모/수량 수정.
   Future<Map<String, dynamic>> merchUpdateOrder({
     required String id,
