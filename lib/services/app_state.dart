@@ -51,6 +51,22 @@ class AppState extends ChangeNotifier {
   bool _grantedAdmin = false;
   bool get isGrantedAdmin => _grantedAdmin;
 
+  // ---------- 데이터 로딩 상태 ----------
+  /// 서버(또는 로컬)에서 명단을 불러오는 중인지 — 첫 화면 로딩 문구에 사용.
+  bool _membersLoading = false;
+  bool get membersLoading => _membersLoading;
+
+  /// 명단을 최초 1회 이상 로드 완료했는지(빈 목록과 로딩 중을 구분).
+  bool _membersLoaded = false;
+  bool get membersLoaded => _membersLoaded;
+
+  /// 현재 명단 로딩 상태를 갱신하고 UI에 알린다.
+  void _setMembersLoading(bool v) {
+    if (_membersLoading == v) return;
+    _membersLoading = v;
+    notifyListeners();
+  }
+
   /// 이 세션이 영구 마스터 인가번호(예: 415)로 로그인됐는지.
   bool get isPermanentMaster => isMaster && AppConfig.isPermanentMaster(_who);
 
@@ -100,6 +116,11 @@ class AppState extends ChangeNotifier {
           _who = who;
           _sessionStart = start;
           _applyAccessScope();
+          // 세션 복원 시에도 최신 명단을 백그라운드로 재조회(로딩 문구 표시).
+          if (repo.isNasMode) {
+            _setMembersLoading(true);
+            unawaited(_reloadAfterLogin());
+          }
         }
       }
     } catch (_) {}
@@ -249,6 +270,8 @@ class AppState extends ChangeNotifier {
       // [보안] 로그인 전에는 서버가 데이터를 주지 않는다(401). 로그인 직후
       //  세션이 붙은 상태에서 서버 데이터를 다시 불러온다.
       if (repo.isNasMode) {
+        // 화면이 즉시 "불러오는 중" 문구를 표시하도록 로딩 플래그를 켠다.
+        _setMembersLoading(true);
         unawaited(_reloadAfterLogin());
       }
     }
@@ -257,9 +280,14 @@ class AppState extends ChangeNotifier {
 
   /// 로그인 직후 서버에서 (권한 범위의) 데이터를 재조회한다.
   Future<void> _reloadAfterLogin() async {
+    _setMembersLoading(true);
     try {
       await repo.syncFromNas();
+      _membersLoaded = true;
     } catch (_) {}
+    //  서버 동기화가 끝나면 먼저 명단을 화면에 반영(체감 로딩 단축).
+    refresh();
+    _setMembersLoading(false);
     try {
       await loadConfig();
     } catch (_) {}

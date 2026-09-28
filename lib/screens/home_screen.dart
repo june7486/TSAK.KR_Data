@@ -518,15 +518,17 @@ class _HomeScreenState extends State<HomeScreen> {
           if (!state.isSelfAccess) _filterBar(state),
           const SizedBox(height: 4),
           Expanded(
-            child: members.isEmpty
-                ? _empty()
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.only(bottom: 90),
-                    itemCount: members.length,
-                    itemBuilder: (context, i) {
-                      final m = members[i];
-                      return MemberCard(
+            child: (state.membersLoading && members.isEmpty)
+                ? _loadingList()
+                : members.isEmpty
+                    ? _empty()
+                    : ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.only(bottom: 90),
+                        itemCount: members.length,
+                        itemBuilder: (context, i) {
+                          final m = members[i];
+                          return MemberCard(
                         member: m,
                         scale: state.listScale,
                         selectMode: _selectMode,
@@ -1734,6 +1736,41 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text(
             '검색 결과가 없습니다',
             style: TextStyle(color: AppColors.textGray, fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 초기 로딩 — 명단을 서버에서 불러오는 동안 표시(빈 화면 방지).
+  Widget _loadingList() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 42,
+            height: 42,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: AppColors.purple,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '자료를 불러오는 중입니다…',
+            style: TextStyle(
+              color: AppColors.purpleDark,
+              fontSize: 15.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '인가자 명단 ${members.length > 0 ? members.length : ''} '
+            '데이터를 준비하고 있어요. 잠시만 기다려 주세요.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textGray, fontSize: 12.5),
           ),
         ],
       ),
