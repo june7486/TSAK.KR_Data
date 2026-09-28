@@ -38,6 +38,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Future<Map<String, dynamic>?>? _pwFuture;
   String? _pwFutureKey;
 
+  /// 이름 공개/비공개 서버 저장 진행 중 여부(연타 방지).
+  bool _nameBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -159,10 +162,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.tigerGold,
-                      width: 2,
-                    ),
+                    border: Border.all(color: AppColors.tigerGold, width: 2),
                   ),
                   child: Text(
                     '#${m.number}',
@@ -189,17 +189,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ),
                     if (m.lifetimeMember) ...[
                       const SizedBox(width: 6),
-                      const Icon(Icons.star,
-                          color: AppColors.tigerGold, size: 20),
+                      const Icon(
+                        Icons.star,
+                        color: AppColors.tigerGold,
+                        size: 20,
+                      ),
                     ],
                   ],
                 ),
                 const SizedBox(height: 4),
                 if (m.league.isNotEmpty || m.unit.isNotEmpty)
                   Text(
-                    [m.league, m.unit]
-                        .where((e) => e.isNotEmpty)
-                        .join(' · '),
+                    [m.league, m.unit].where((e) => e.isNotEmpty).join(' · '),
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -335,15 +336,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         ),
         child: Row(
           children: [
-            Icon(visible ? Icons.visibility : Icons.visibility_off,
-                size: 16,
-                color: visible ? AppColors.scoutGreen : AppColors.taegeukRed),
+            Icon(
+              visible ? Icons.visibility : Icons.visibility_off,
+              size: 16,
+              color: visible ? AppColors.scoutGreen : AppColors.taegeukRed,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 visible ? '이름 공개 중 (다른 회원에게 표시)' : '이름 비공개 (다른 회원에게 숨김)',
                 style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w700),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             SegmentedButton<bool>(
@@ -356,8 +361,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ButtonSegment(value: false, label: Text('비공개')),
               ],
               selected: {visible},
-              onSelectionChanged: (s) => _setNameVisible(m, s.first),
+              onSelectionChanged: _nameBusy
+                  ? null
+                  : (s) => _setNameVisible(m, s.first),
             ),
+            if (_nameBusy)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
           ],
         ),
       ),
@@ -365,28 +381,38 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Future<void> _setNameVisible(Member m, bool visible) async {
+    if (_nameBusy) return; // 연타 방지 (서버 저장은 순차 처리)
+    if (m.nameVisible == visible) return;
     final ident = m.number.isNotEmpty ? m.number : m.phone;
+    final state = context.read<AppState>();
+    // ── 낙관적(즉시) 반영 — 서버 왕복을 기다리지 않고 UI를 바로 갱신 ──
+    state.setNameVisible(m.id, visible);
+    setState(() => _nameBusy = true);
     try {
-      final r = await context
-          .read<NasApi>()
-          .setMemberNameVisible(ident: ident, visible: visible);
+      final r = await context.read<NasApi>().setMemberNameVisible(
+        ident: ident,
+        visible: visible,
+      );
       if (!mounted) return;
       if (r['ok'] == true) {
-        final state = context.read<AppState>();
-        state.setNameVisible(m.id, visible);
         _snack(visible ? '이름을 공개로 설정했습니다.' : '이름을 비공개로 설정했습니다.');
       } else {
+        // 실패 → 되돌림
+        state.setNameVisible(m.id, !visible);
         _snack('변경 실패: ${r['error']}');
       }
     } catch (e) {
-      if (mounted) _snack('오류: $e');
+      if (!mounted) return;
+      state.setNameVisible(m.id, !visible); // 되돌림
+      _snack('오류: $e');
+    } finally {
+      if (mounted) setState(() => _nameBusy = false);
     }
   }
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Widget _qaButton(_QA a) {
@@ -446,7 +472,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   for (final e in byCat.entries)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.purple.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(8),
@@ -483,7 +511,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               Container(
                 margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 8),
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.bg,
                   borderRadius: BorderRadius.circular(10),
@@ -494,10 +524,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       t.category == '후원'
                           ? Icons.volunteer_activism
                           : t.category == '수품구매'
-                              ? Icons.shopping_bag
-                              : t.category == '참가비'
-                                  ? Icons.event_available
-                                  : Icons.savings,
+                          ? Icons.shopping_bag
+                          : t.category == '참가비'
+                          ? Icons.event_available
+                          : Icons.savings,
                       size: 18,
                       color: AppColors.scoutGreen,
                     ),
@@ -510,15 +540,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                             '${t.category}'
                             '${t.event.isNotEmpty ? ' · ${t.event}' : ''}',
                             style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textDark),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark,
+                            ),
                           ),
                           Text(
                             '${t.date}'
                             '${t.context.isNotEmpty ? ' · ${t.context}' : ''}',
                             style: const TextStyle(
-                                fontSize: 11, color: AppColors.textGray),
+                              fontSize: 11,
+                              color: AppColors.textGray,
+                            ),
                           ),
                         ],
                       ),
@@ -526,16 +559,20 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     Text(
                       '${_won(t.amount)}원',
                       style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.scoutGreen),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.scoutGreen,
+                      ),
                     ),
                     GestureDetector(
                       onTap: () => _addDeposit(m, existing: t),
                       child: const Padding(
                         padding: EdgeInsets.only(left: 6),
-                        child: Icon(Icons.edit, size: 15,
-                            color: AppColors.textGray),
+                        child: Icon(
+                          Icons.edit,
+                          size: 15,
+                          color: AppColors.textGray,
+                        ),
                       ),
                     ),
                   ],
@@ -724,7 +761,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ),
     );
     if (ok != true) return;
-    await context.read<AppState>().save(m.copyWith(purchases: ctrl.text.trim()));
+    await context.read<AppState>().save(
+      m.copyWith(purchases: ctrl.text.trim()),
+    );
     if (mounted) setState(() {});
   }
 
@@ -833,7 +872,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.tigerGold.withValues(alpha: 0.16),
+                              color: AppColors.tigerGold.withValues(
+                                alpha: 0.16,
+                              ),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: AppColors.tigerGold.withValues(
@@ -883,7 +924,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -984,20 +1027,30 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(isPending ? Icons.hourglass_top : Icons.pause_circle_outline,
-                  color: color, size: 20),
+              Icon(
+                isPending ? Icons.hourglass_top : Icons.pause_circle_outline,
+                color: color,
+                size: 20,
+              ),
               const SizedBox(width: 8),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w900,
-                      color: color)),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           const Text(
             '미승인 회원들에 대한 안내 : 관리자에게 승인 요청을 해주십시요.',
-            style: TextStyle(fontSize: 12.5, color: AppColors.textDark, height: 1.35),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textDark,
+              height: 1.35,
+            ),
           ),
           if (state.isApp || state.isMaster) ...[
             const SizedBox(height: 10),
@@ -1005,8 +1058,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.scoutGreen,
-                      minimumSize: const Size(0, 38)),
+                    backgroundColor: AppColors.scoutGreen,
+                    minimumSize: const Size(0, 38),
+                  ),
                   onPressed: () => _approvalSet(state, m, 'approve'),
                   icon: const Icon(Icons.check_circle_outline, size: 16),
                   label: const Text('승인', style: TextStyle(fontSize: 12.5)),
@@ -1014,8 +1068,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 38),
-                      foregroundColor: AppColors.taegeukRed),
+                    minimumSize: const Size(0, 38),
+                    foregroundColor: AppColors.taegeukRed,
+                  ),
                   onPressed: () => _approvalSet(state, m, 'hold'),
                   icon: const Icon(Icons.pause_circle_outline, size: 16),
                   label: const Text('보류', style: TextStyle(fontSize: 12.5)),
@@ -1039,9 +1094,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(n > 0
-            ? (action == 'approve' ? '승인했습니다' : '보류로 변경했습니다')
-            : '처리 실패 — 잠시 후 다시 시도하세요'),
+        content: Text(
+          n > 0
+              ? (action == 'approve' ? '승인했습니다' : '보류로 변경했습니다')
+              : '처리 실패 — 잠시 후 다시 시도하세요',
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -1135,15 +1192,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               Icon(
                 m.isRegular ? Icons.person_outline : Icons.verified_user,
                 size: 16,
-                color: m.isRegular
-                    ? AppColors.textGray
-                    : AppColors.taegeukBlue,
+                color: m.isRegular ? AppColors.textGray : AppColors.taegeukBlue,
               ),
               const SizedBox(width: 6),
               Text(
-                m.isRegular
-                    ? '현재: 일반회원 (비인가자)'
-                    : '현재: 인가자 (#${m.number})',
+                m.isRegular ? '현재: 일반회원 (비인가자)' : '현재: 인가자 (#${m.number})',
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
@@ -1217,7 +1270,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukBlue),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukBlue,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('승격'),
           ),
@@ -1295,8 +1350,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.info_outline,
-                      color: AppColors.lifetimeGold, size: 16),
+                  Icon(
+                    Icons.info_outline,
+                    color: AppColors.lifetimeGold,
+                    size: 16,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1389,8 +1447,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   loading
                       ? '조회 중…'
                       : (pw == null || pw.isEmpty
-                          ? '조회 실패'
-                          : '$pw${isDefault ? '  (기본값)' : ''}'),
+                            ? '조회 실패'
+                            : '$pw${isDefault ? '  (기본값)' : ''}'),
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w800,
@@ -1443,7 +1501,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('초기화'),
           ),
@@ -1451,7 +1511,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    final err = await context.read<AppState>().setMemberPassword(m, reset: true);
+    final err = await context.read<AppState>().setMemberPassword(
+      m,
+      reset: true,
+    );
     if (!mounted) return;
     _snack(err == null ? '비밀번호를 초기화했습니다 ($target)' : '실패: $err');
   }
@@ -1486,9 +1549,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       if (nw != null && mounted) _snack('4자 이상 입력하세요');
       return;
     }
-    final err = await context
-        .read<AppState>()
-        .setMemberPassword(m, value: nw);
+    final err = await context.read<AppState>().setMemberPassword(m, value: nw);
     if (!mounted) return;
     _snack(err == null ? '비밀번호를 변경했습니다' : '실패: $err');
   }
