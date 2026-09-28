@@ -11,7 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/member_card.dart';
-import '../widgets/scroll_arrows.dart';
+import '../widgets/hscroll_menu.dart';
 import '../widgets/donate_sheet.dart';
 import '../widgets/inquiry_sheet.dart';
 import 'app_access_screen.dart';
@@ -869,8 +869,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 6),
           // AI 자연어 검색 예시 칩 — 누르면 바로 검색 실행
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          HScrollMenu(
+            height: 30,
             child: Row(
               children: [
                 const Icon(Icons.auto_awesome, size: 13, color: Colors.white70),
@@ -927,8 +927,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 6),
           // 연회비 연도별 납부 인원 (작게)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          HScrollMenu(
+            height: 18,
             child: Row(
               children: [
                 const Icon(
@@ -960,8 +960,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 8),
           // 바로가기 — 행사관리를 맨 앞에 배치(가장 자주 쓰는 진입점).
           // 이어서 재무 바로가기(관리자·마스터 전용: 후원현황/수품구매/참가비/지출/결산/기본자료)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          HScrollMenu(
+            height: 48,
+            padding: const EdgeInsets.only(right: 8),
             child: Row(
               children: [
                 _eventButton(),
@@ -1559,9 +1560,8 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         children: [
-          ScrollArrows(
-            step: 200,
-            color: AppColors.purple,
+          HScrollMenu(
+            height: 34,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -1611,9 +1611,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          ScrollArrows(
-            step: 200,
-            color: AppColors.purple,
+          HScrollMenu(
+            height: 34,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -1652,9 +1651,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          ScrollArrows(
-            step: 200,
-            color: AppColors.purple,
+          HScrollMenu(
+            height: 34,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [

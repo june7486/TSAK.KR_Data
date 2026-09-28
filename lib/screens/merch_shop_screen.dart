@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import 'merch_checkout_screen.dart';
 
 /// 수품구매(굿즈) 쇼핑몰 — 로그인 없이 열람·장바구니·주문 가능.
@@ -220,8 +221,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               style: TextStyle(fontSize: 12, color: AppColors.textGray)),
           const SizedBox(width: 8),
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            child: HScrollMenu(
+              height: 40,
               child: Row(
                 children: [
                   for (final it in items)

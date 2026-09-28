@@ -11,6 +11,7 @@ import '../services/finance_report.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
 
 /// Phase 4 — 기본자료 폴더 은행거래내역 종합분석 보고서 화면.
@@ -355,10 +356,9 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   }
 
   Widget _yearFilterChips(List<String> yearKeys) {
-    return SizedBox(
+    return HScrollMenu(
       height: 36,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
+      child: Row(
         children: [
           _chip('전체', 'all'),
           ...yearKeys.map((y) => _chip(y, y)),

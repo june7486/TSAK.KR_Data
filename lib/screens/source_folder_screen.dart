@@ -5,6 +5,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import 'finance_analysis_screen.dart';
 
 /// 기본자료 폴더 — 명단/인가자명단/은행거래내역/후원현황/지출내역/행사자료 파일 첨부
@@ -89,8 +90,8 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
           Container(
             color: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            child: HScrollMenu(
+              height: 40,
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
                 children: [

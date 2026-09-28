@@ -5,7 +5,7 @@ import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
-import '../widgets/scroll_arrows.dart';
+import '../widgets/hscroll_menu.dart';
 import 'all_photos_screen.dart';
 import 'event_detail_screen.dart';
 
@@ -339,9 +339,8 @@ class _EventYearScreenState extends State<EventYearScreen> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: ScrollArrows(
-        step: 180,
-        color: AppColors.purple,
+      child: HScrollMenu(
+        height: 40,
         child: Row(
           children: [
             for (final y in list)

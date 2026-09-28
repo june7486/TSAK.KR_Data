@@ -10,6 +10,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/finance_export_sheet.dart';
+import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
 import 'bank_import_screen.dart';
 import 'finance_transaction_edit_screen.dart';
@@ -151,8 +152,8 @@ class _FinanceScreenState extends State<FinanceScreen>
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: HScrollMenu(
+        height: 42,
         child: Row(
           children: [
             for (final y in years)
@@ -228,8 +229,8 @@ class _FinanceScreenState extends State<FinanceScreen>
             ],
           ),
           const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          HScrollMenu(
+            height: 42,
             child: Row(
               children: [
                 _miniChip('전체', _selType, (v) => setState(() => _selType = v),

@@ -11,6 +11,7 @@ import '../services/import_parser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import '../widgets/member_avatar.dart';
 
 /// 자료 가져오기 (AI 자동 인식)
@@ -62,8 +63,8 @@ class _ImportScreenState extends State<ImportScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       color: AppColors.purple.withValues(alpha: 0.05),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: HScrollMenu(
+        height: 44,
         child: Row(
           children: [
             _srcBtn(Icons.folder_open, '파일 (엑셀/CSV/PDF/워드/JSON)', _pickFile),

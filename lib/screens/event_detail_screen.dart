@@ -12,6 +12,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
+import '../widgets/hscroll_menu.dart';
 import 'roster_screen.dart';
 import 'event_review_screen.dart';
 
@@ -1393,8 +1394,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           Container(
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            child: HScrollMenu(
+              height: 30,
               child: Row(
                 children: [
                   _crumb('사진+동영상', () => setState(() {
