@@ -965,6 +965,22 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _privacyAgreedAt = _nowStamp();
     }
 
+    // 멘토·페런츠 연결 승인 상태 — 대상이 바뀌면 재승인(pending) 요청으로 전환.
+    final mentorsChanged =
+        _mentors.join(',') != (_existing?.mentors ?? const []).join(',');
+    final parentsChanged =
+        _parents.join(',') != (_existing?.parents ?? const []).join(',');
+    final hasLinks = _mentors.isNotEmpty || _parents.isNotEmpty;
+    String linkStatus = _existing?.linkApprovalStatus ?? '';
+    String linkNote = _existing?.linkApprovalNote ?? '';
+    if ((mentorsChanged || parentsChanged) && hasLinks) {
+      linkStatus = 'pending';
+      linkNote = '';
+    } else if (!hasLinks) {
+      linkStatus = '';
+      linkNote = '';
+    }
+
     final member = Member(
       id: id,
       number: _number.text.trim(),
@@ -993,6 +1009,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       eventAttend: _existing?.eventAttend ?? {},
       mentors: List<String>.from(_mentors),
       parents: List<String>.from(_parents),
+      linkApprovalStatus: linkStatus,
+      linkApprovalNote: linkNote,
+      linkApprovedAt: _existing?.linkApprovedAt ?? '',
+      linkApprovedBy: _existing?.linkApprovedBy ?? '',
       isRegular: _existing?.isRegular ?? false,
       personalPassword: _existing?.personalPassword ?? '',
       accessPhone: _existing?.accessPhone ?? '',

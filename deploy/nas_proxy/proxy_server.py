@@ -398,6 +398,69 @@ def _pending_members():
     return out
 
 
+# ---- 멘토·페런츠 연결 승인 ----
+#  회원이 멘토/페런츠(보호자)를 지정하면 관리자·마스터 승인을 받도록 한다.
+#  linkApprovalStatus: ''(미요청) | 'pending'(요청) | 'approved'(승인) | 'held'(보류)
+def _link_of(m):
+    s = str(m.get("linkApprovalStatus") or "").strip()
+    if s in ("pending", "approved", "held"):
+        return s
+    return ""
+
+
+def _link_pending_members():
+    """멘토/페런츠를 지정했고 승인 대기(pending)인 회원 목록."""
+    out = []
+    for m in _ev_members():
+        mentors = m.get("mentors") or []
+        parents = m.get("parents") or []
+        if not isinstance(mentors, list):
+            mentors = []
+        if not isinstance(parents, list):
+            parents = []
+        if not (mentors or parents):
+            continue
+        if _link_of(m) != "pending":
+            continue
+        out.append({
+            "id": str(m.get("id", "")),
+            "number": str(m.get("number", "")),
+            "name": str(m.get("name", "")),
+            "phone": str(m.get("phone", "")),
+            "unit": str(m.get("unit", "")),
+            "league": str(m.get("league", "")),
+            "mentors": [str(x) for x in mentors],
+            "parents": [str(x) for x in parents],
+            "note": str(m.get("linkApprovalNote", "")),
+            "linkApprovalStatus": "pending",
+        })
+    return out
+
+
+def _set_member_link(ident, status, note=""):
+    """멘토·페런츠 연결 승인 상태 변경(단일). 반환: (ok, name)"""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d or status not in ("pending", "approved", "held"):
+        return False, ""
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            if (re.sub(r"[^0-9]", "", str(m.get("number", ""))) == d
+                    or re.sub(r"[^0-9]", "", str(m.get("accessPhone")
+                                                 or m.get("phone") or "")) == d
+                    or str(m.get("id", "")) == str(ident)):
+                m["linkApprovalStatus"] = status
+                if note:
+                    m["linkApprovalNote"] = str(note)[:300]
+                if status == "approved":
+                    m["linkApprovedAt"] = _now_stamp()
+                members[i] = m
+                _save_json(DB_FILE, members)
+                _touch_meta({"updatedBy": "link-approval"})
+                return True, str(m.get("name", ""))
+    return False, ""
+
+
 
 def _scope_finance(tier, who, fin):
     """재무는 관리자·마스터만 전체. 개인·비인가자에게는 빈 구조(F02)."""
@@ -5484,6 +5547,13 @@ class Handler(BaseHTTPRequestHandler):
                 pending = _pending_members()
                 return self._json({"ok": True, "pending": pending,
                                    "count": len(pending)})
+            if p == "/api/link/pending":
+                # 멘토·페런츠 연결 승인 대기 목록(관리자·마스터).
+                if not self._require("admin"):
+                    return
+                pending = _link_pending_members()
+                return self._json({"ok": True, "pending": pending,
+                                   "count": len(pending)})
             # ---- Phase4: 은행거래 종합분석 (캐시 우선, 관리자·마스터) ----
             if p == "/api/finance/analysis":
                 if not self._require("admin"):
@@ -6515,7 +6585,29 @@ class Handler(BaseHTTPRequestHandler):
                         if ok:
                             done += 1
                 return self._json({"ok": True, "done": done})
-            # ---- 개인 셀프 비밀번호 변경 (본인) ----
+            if p == "/api/link/set":
+                # 멘토·페런츠 연결 승인/보류/대기 처리(관리자·마스터).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                action = str(d.get("action", "approve"))
+                note = str(d.get("note", "") or "")
+                idents = d.get("idents")
+                if not isinstance(idents, list):
+                    idents = [d.get("ident", "")]
+                idents = [str(x) for x in idents if str(x).strip()]
+                if not idents:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                status = {
+                    "approve": "approved", "hold": "held",
+                    "pending": "pending",
+                }.get(action, "approved")
+                done = 0
+                for x in idents:
+                    ok, _ = _set_member_link(x, status, note)
+                    if ok:
+                        done += 1
+                return self._json({"ok": True, "done": done})
             if p == "/api/personal/password":
                 d = json.loads(self._body() or b"{}")
                 no = re.sub(r"[^0-9]", "", str(d.get("number", "")))

@@ -1141,6 +1141,20 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 멘토·페런츠 연결 승인 상태 뱃지(라벨) — 승인대기/보류/승인.
+  String _linkBadge(Member m) {
+    switch (m.linkApprovalStatus) {
+      case 'pending':
+        return '  [승인대기]';
+      case 'held':
+        return '  [보류]';
+      case 'approved':
+        return '  [승인됨]';
+      default:
+        return '';
+    }
+  }
+
   Widget _infoCard(Member m) {
     final rows = <List<String>>[
       ['소속 연맹', m.league],
@@ -1154,7 +1168,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ['훈련현황', m.trainingStatus],
       ['포상', m.awards],
       ['전문과정 이수', m.specialtyCourses],
-      ['멘토', m.mentors.map((e) => '#$e').join(', ')],
+      ['멘토', '${m.mentors.map((e) => '#$e').join(', ')}${_linkBadge(m)}'],
       ['페런츠', m.parents.map((e) => '#$e').join(', ')],
       ['ATAS 인가번호', m.atasNo],
       ['핸드폰', m.phone],

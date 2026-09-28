@@ -31,6 +31,7 @@ import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 import 'regular_members_screen.dart';
 import 'approval_screen.dart';
+import 'link_approval_screen.dart';
 import 'settings_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
@@ -1036,6 +1037,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.isApp || state.isMaster) ...[
                   // (2) 승인관리 (관리자·마스터)
                   _approvalButton(),
+                  // (2-1) 멘토·페런츠 연결 승인 (관리자·마스터)
+                  _linkApprovalButton(),
                   // (3) 일반회원 (관리자·마스터)
                   _regularMembersButton(),
                 ],
@@ -1626,6 +1629,38 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.white)),
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 멘토·페런츠 연결 승인 진입 버튼 — 관리자·마스터 전용.
+  Widget _linkApprovalButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LinkApprovalScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.family_restroom, size: 16, color: Colors.white),
+              SizedBox(width: 5),
+              Text('연결승인',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white)),
             ],
           ),
         ),

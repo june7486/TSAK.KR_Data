@@ -1166,6 +1166,34 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 멘토·페런츠 연결 승인 대기 목록 (관리자·마스터).
+  Future<List<Map<String, dynamic>>> linkPending() async {
+    final r = await http
+        .get(_uri('/api/link/pending'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 15));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return ((j['pending'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 멘토·페런츠 연결 승인 처리 (관리자·마스터).
+  ///  action: 'approve' | 'hold' | 'pending'
+  Future<Map<String, dynamic>> linkSet({
+    required String action,
+    required List<String> idents,
+    String note = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/link/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'action': action, 'idents': idents, 'note': note}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 은행거래 종합분석 (캐시) — 관리자·마스터.
   Future<Map<String, dynamic>> financeAnalysis({bool force = false}) async {
     final r = await http
