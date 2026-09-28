@@ -48,6 +48,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Map<String, dynamic> _access = {};
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
+  /// 사용자 정의 '메뉴추가' 탭 목록 [{name, note}] (PDF page9 최종 결정).
+  List<Map<String, dynamic>> _customTabs = [];
   int _cols = 5;
   int _pinchBaseCols = 3;
 
@@ -119,8 +121,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _attendees = atts;
         _fees = fees;
         _expenses = exps;
+        _customTabs = ((e['customTabs'] as List?) ?? [])
+            .map((x) => (x as Map).cast<String, dynamic>())
+            .toList();
         _loading = false;
-        final len = widget.canManage ? 5 : 1; // 참가자는 사진탭만
+        // 기본 탭(고정) + 사용자 정의 '메뉴추가' 탭(PDF page9 최종 결정).
+        final customCount = _customTabs.length;
+        final len = (widget.canManage ? 5 : 1) + (widget.canManage ? customCount : 0);
         // ⚠️ 버그 수정: _load() 마다 TabController 를 새로 만들면 index 가 0
         // (참가자 탭)으로 되돌아가, 사진+동영상 하위폴더에 진입해도 다시
         // 사진 탭으로 돌아가 버렸다. 현재 탭 인덱스를 보존한다.
@@ -152,19 +159,35 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final baseTabs = const ['참가자', '사진+동영상', '기획서', '참가비·후원금', '행사비지출'];
     final tabs = widget.canManage
-        ? const ['참가자', '사진+동영상', '기획서', '참가비·후원금', '행사비지출']
-        : const ['사진+동영상'];
+        ? <String>[...baseTabs, ..._customTabs.map((e) => '${e['name'] ?? ''}')]
+        : const <String>['사진+동영상'];
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text(widget.title, style: const TextStyle(fontSize: 16)),
-            Text(
-              '${widget.year}'
-              '${'${_event['place'] ?? ''}'.isNotEmpty ? ' · ${_event['place']}' : ''}',
-              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.title,
+                      style: const TextStyle(fontSize: 16),
+                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    '${widget.year}'
+                    '${'${_event['place'] ?? ''}'.isNotEmpty ? ' · ${_event['place']}' : ''}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            // [turn9-6] 행사명 옆 QR 아이콘 (PDF page9 최종 결정) — 참가 등록 QR.
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '행사 QR 코드 (참가 등록)',
+              onPressed: _showEventQr,
+              icon: const Icon(Icons.qr_code_2, size: 20),
             ),
           ],
         ),
@@ -198,12 +221,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   case 'qr':
                     _showEventQr();
                     break;
+                  case 'addmenu':
+                    _addCustomTab();
+                    break;
                 }
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'qr', child: Text('행사 QR 코드 (참가 등록)')),
                 PopupMenuItem(value: 'zip', child: Text('사진 전체 ZIP 다운로드')),
                 PopupMenuItem(value: 'request', child: Text('전체 참가자 사진 업로드 요청')),
+                PopupMenuItem(value: 'addmenu', child: Text('메뉴 추가 (사용자 정의 탭)')),
               ],
             ),
         ],
@@ -231,6 +258,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                             _planTab(),
                             _financeTab('fee'),
                             _financeTab('expense'),
+                            for (final t in _customTabs) _customTabView(t),
                           ]
                         : [_mediaTab()],
                   ),
@@ -2324,6 +2352,197 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         ),
       ),
     );
+  }
+
+  // ======================== 메뉴추가(사용자 정의 탭) ========================
+  /// 커스텀 탭 하나의 뷰 — 제목 + 관리자 편집 가능한 메모(내용).
+  Widget _customTabView(Map<String, dynamic> t) {
+    final note = '${t['note'] ?? ''}';
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.tab, size: 18, color: AppColors.purple),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                '${t['name'] ?? '메뉴'}',
+                style: const TextStyle(
+                    fontSize: 15.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _editCustomTab(t),
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('편집', style: TextStyle(fontSize: 12.5)),
+            ),
+            TextButton.icon(
+              onPressed: () => _removeCustomTab(t),
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('삭제', style: TextStyle(fontSize: 12.5)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE6E1D6)),
+          ),
+          child: Text(
+            note.trim().isEmpty ? '내용을 입력하려면 우측 상단 "편집"을 눌러주세요.' : note,
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color: note.trim().isEmpty
+                  ? AppColors.textGray
+                  : AppColors.textDark,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 커스텀 탭 추가(메뉴추가).
+  Future<void> _addCustomTab() async {
+    final nameCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('메뉴 추가'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '메뉴 이름 (예: 준비물 체크)'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                  hintText: '내용/메모 (선택)', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('추가')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final name = nameCtrl.text.trim();
+    if (name.isEmpty) return;
+    final next = <Map<String, dynamic>>[
+      ..._customTabs.map((e) => {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'}),
+      {'name': name, 'note': noteCtrl.text.trim()},
+    ];
+    await _saveCustomTabs(next);
+  }
+
+  /// 커스텀 탭 편집(이름/내용).
+  Future<void> _editCustomTab(Map<String, dynamic> t) async {
+    final nameCtrl = TextEditingController(text: '${t['name'] ?? ''}');
+    final noteCtrl = TextEditingController(text: '${t['note'] ?? ''}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('메뉴 편집'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(hintText: '메뉴 이름'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                  hintText: '내용/메모', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('저장')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final name = nameCtrl.text.trim();
+    if (name.isEmpty) return;
+    final next = _customTabs.map((e) {
+      final same = identical(e, t) ||
+          ('${e['name'] ?? ''}' == '${t['name'] ?? ''}' &&
+              '${e['note'] ?? ''}' == '${t['note'] ?? ''}');
+      return same
+          ? {'name': name, 'note': noteCtrl.text.trim()}
+          : {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'};
+    }).toList();
+    await _saveCustomTabs(next);
+  }
+
+  /// 커스텀 탭 삭제.
+  Future<void> _removeCustomTab(Map<String, dynamic> t) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('메뉴 삭제'),
+        content: Text('"${t['name'] ?? ''}" 메뉴를 삭제할까요?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    final next = _customTabs
+        .where((e) =>
+            !('${e['name'] ?? ''}' == '${t['name'] ?? ''}' &&
+                '${e['note'] ?? ''}' == '${t['note'] ?? ''}'))
+        .map((e) => {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'})
+        .toList();
+    await _saveCustomTabs(next);
+  }
+
+  Future<void> _saveCustomTabs(List<Map<String, dynamic>> tabs) async {
+    final r = await _nas.eventTabsSave(
+      year: widget.year,
+      title: widget.title,
+      tabs: tabs,
+    );
+    if (!mounted) return;
+    if (r) {
+      _snack('메뉴를 저장했습니다');
+      await _load();
+    } else {
+      _snack('메뉴 저장에 실패했습니다');
+    }
   }
 
   bool _isVisited(Map<String, dynamic> a) {

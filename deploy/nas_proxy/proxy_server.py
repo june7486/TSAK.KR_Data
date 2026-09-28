@@ -8428,6 +8428,37 @@ class Handler(BaseHTTPRequestHandler):
                     "started": started,
                     "job": _ev_thumb_job_state(),
                 })
+            if p == "/api/event/meta":
+                # 행사 사용자 정의 '메뉴추가' 탭 저장 (PDF page9 최종 결정).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not title:
+                    return self._json({"ok": False, "error": "title"}, 400)
+                tabs_in = d.get("customTabs")
+                with LOCK:
+                    doc = _ev_doc()
+                    eid = _ev_id(year, title)
+                    e = doc.get("events", {}).get(eid)
+                    if not e:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    if isinstance(tabs_in, list):
+                        clean = []
+                        for t in tabs_in[:40]:
+                            if not isinstance(t, dict):
+                                continue
+                            nm = str(t.get("name", "") or "")[:60].strip()
+                            if not nm:
+                                continue
+                            clean.append({
+                                "name": nm,
+                                "note": str(t.get("note", "") or "")[:4000],
+                            })
+                        e["customTabs"] = clean
+                    _ev_save(doc)
+                return self._json({"ok": True, "customTabs": e.get("customTabs", [])})
             if p == "/api/event/create":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
@@ -8459,6 +8490,7 @@ class Handler(BaseHTTPRequestHandler):
                     e.setdefault("accessLog", [])
                     e.setdefault("uploaders", {})
                     e.setdefault("fileTimes", {})
+                    e.setdefault("customTabs", [])   # 사용자 정의 메뉴추가 탭
                     _ev_save(doc)
                 _ensure_event_dirs(year, title)
                 return self._json({"ok": True, "id": eid, "event": e})

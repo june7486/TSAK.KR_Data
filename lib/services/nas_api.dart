@@ -694,9 +694,30 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// 행사 이름/연도 변경
-  Future<Map<String, dynamic>> eventRename({
+  /// 행사 사용자 정의 '메뉴추가' 탭 저장 (PDF page9 최종 결정).
+  /// [tabs] = [{'name': '...', 'note': '...'}]
+  Future<bool> eventTabsSave({
     required String year,
+    required String title,
+    required List<Map<String, dynamic>> tabs,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/meta'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'customTabs': tabs,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 행사 이름/연도 변경
+  Future<Map<String, dynamic>> eventRename({    required String year,
     required String title,
     String? newTitle,
     String? newYear,
