@@ -5,9 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'scout_silhouette.dart';
 
-/// 인가자 사진 아바타 — 사진이 없으면 이름 첫 글자를 이니셜로 표시
+/// 사진 미등록 회원의 기본 이미지(범/호랑이) 에셋 경로
+const String kDefaultMemberPhoto =
+    'assets/images/default_member_tiger.png';
+
+/// 인가자 사진 아바타 — 사진이 없으면 기본 호랑이 이미지를 표시
 class MemberAvatar extends StatelessWidget {
   const MemberAvatar({
     super.key,
@@ -41,31 +44,42 @@ class MemberAvatar extends StatelessWidget {
     Widget child;
     if (photoPath.isNotEmpty) {
       child = _buildImage();
-    } else if (!showNumber) {
-      // 사진 없음 → 회색 스카우트 실루엣 (배낭 + 로빙햇)
-      child = ScoutSilhouette(size: size);
     } else {
-      // 글자(이니셜) 대신 인가번호를 표시
-      final label = number.trim().isNotEmpty ? number.trim() : _initial(name);
-      final isNumber = number.trim().isNotEmpty;
-      child = Container(
-        color: border.withValues(alpha: 0.15),
-        alignment: Alignment.center,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: size * 0.12),
-            child: Text(
-              label,
-              maxLines: 1,
-              style: TextStyle(
-                color: border,
-                fontWeight: FontWeight.w800,
-                fontSize: size * (isNumber ? 0.42 : 0.4),
+      // 사진 없음 → 기본 호랑이 이미지 + (인가번호 오버레이)
+      child = Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            kDefaultMemberPhoto,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _fallback(),
+          ),
+          if (showNumber && number.trim().isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.45),
+                padding: const EdgeInsets.symmetric(vertical: 1),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    number.trim(),
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: size * 0.26,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+        ],
       );
     }
 
@@ -127,10 +141,4 @@ class MemberAvatar extends StatelessWidget {
     alignment: Alignment.center,
     child: Icon(Icons.person, color: AppColors.purple, size: size * 0.5),
   );
-
-  String _initial(String n) {
-    final t = n.trim();
-    if (t.isEmpty) return '?';
-    return t.characters.first;
-  }
 }
