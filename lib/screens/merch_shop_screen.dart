@@ -475,7 +475,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 // ── 수량 선택 + 장바구니 (한 줄) ──
                 Row(
                   children: [
-                    _qtyBtn(Icons.remove, () {
+                    _qtyBtn('-', () {
                       if (qty > 1) setState(() => _cardQty['${p['id']}'] = qty - 1);
                     }),
                     Expanded(
@@ -485,7 +485,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                                 fontWeight: FontWeight.w800, fontSize: 14)),
                       ),
                     ),
-                    _qtyBtn(Icons.add, () {
+                    _qtyBtn('+', () {
                       final max = stock > 0 ? stock : 99;
                       if (qty < max) setState(() => _cardQty['${p['id']}'] = qty + 1);
                     }),
@@ -828,7 +828,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    _qtyBtn(Icons.remove, () {
+                                    _qtyBtn('-', () {
                                       setState(() {
                                         if (line.qty > 1) {
                                           line.qty -= 1;
@@ -843,7 +843,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                                           style: const TextStyle(
                                               fontWeight: FontWeight.w800)),
                                     ),
-                                    _qtyBtn(Icons.add, () {
+                                    _qtyBtn('+', () {
                                       setState(() => line.qty += 1);
                                       setSheet(() {});
                                     }),
@@ -913,16 +913,24 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     );
   }
 
-  Widget _qtyBtn(IconData icon, VoidCallback onTap) => InkWell(
+  /// 수량 증감 버튼 — 아이콘 글리프(tree-shaking) 이슈 회피를 위해 부호 문자 사용.
+  Widget _qtyBtn(String sign, VoidCallback onTap) => InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.all(4),
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.textGray.withValues(alpha: 0.4)),
-            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: AppColors.purple.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, size: 15),
+          child: Text(sign,
+              style: const TextStyle(
+                  fontSize: 17,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.purple)),
         ),
       );
 

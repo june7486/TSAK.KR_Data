@@ -1176,14 +1176,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      _miniBtn(Icons.remove, () => _changeQty(o, -1)),
+                      _stepBtn('-', () => _changeQty(o, -1)),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         child: Text('$qty',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w800)),
+                                fontWeight: FontWeight.w800, fontSize: 14)),
                       ),
-                      _miniBtn(Icons.add, () => _changeQty(o, 1)),
+                      _stepBtn('+', () => _changeQty(o, 1)),
+                      const SizedBox(width: 8),
+                      Text('수량',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textGray)),
                       const Spacer(),
                       TextButton.icon(
                         style: TextButton.styleFrom(
@@ -1216,17 +1220,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  Widget _miniBtn(IconData i, VoidCallback onTap) => InkWell(
+  /// 수량 증감 버튼 — 아이콘 글리프(폰트 tree-shaking) 이슈를 피하기 위해
+  /// 부호 문자(-/+)를 직접 렌더링한다(모든 플랫폼에서 동일하게 표시).
+  Widget _stepBtn(String sign, VoidCallback onTap) => InkWell(
         onTap: _busy ? null : onTap,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.all(3),
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: Colors.white,
-            border: Border.all(color: AppColors.textGray.withValues(alpha: 0.4)),
-            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+                color: AppColors.purple.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(i, size: 14),
+          child: Text(sign,
+              style: const TextStyle(
+                  fontSize: 17,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.purple)),
         ),
       );
 
