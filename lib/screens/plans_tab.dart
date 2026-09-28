@@ -9,6 +9,7 @@ import '../services/nas_api.dart';
 import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
+import 'merch_detail_screen.dart';
 
 /// 기획실 — 신규 수품 아이템 기획 관리 화면(관리자·마스터 전용, 탭 내장형).
 ///
@@ -557,7 +558,7 @@ class _PlansTabState extends State<PlansTab> {
 
   Widget _planCard(Map<String, dynamic> p) {
     final photo = '${p['photo'] ?? ''}';
-    final photoUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
+    final photoUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo, crop: true);
     final apps = (p['applicants'] as List?) ?? [];
     final count = apps.length;
     final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
@@ -579,20 +580,23 @@ class _PlansTabState extends State<PlansTab> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  width: 54,
-                  height: 54,
-                  color: AppColors.bg,
-                  child: photoUrl.isEmpty
-                      ? const Icon(Icons.image_outlined,
-                          color: AppColors.textGray)
-                      : Image.network(photoUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                              Icons.broken_image_outlined,
-                              color: AppColors.textGray)),
+              GestureDetector(
+                onTap: () => _openPlanDetail(p),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 54,
+                    height: 54,
+                    color: AppColors.bg,
+                    child: photoUrl.isEmpty
+                        ? const Icon(Icons.image_outlined,
+                            color: AppColors.textGray)
+                        : Image.network(photoUrl,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                                Icons.broken_image_outlined,
+                                color: AppColors.textGray)),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -702,6 +706,13 @@ class _PlansTabState extends State<PlansTab> {
         ],
       ),
     );
+  }
+
+  /// 기획안 이미지 클릭 → 확대 이미지 + 상세 설명 화면(돌아가기 포함).
+  void _openPlanDetail(Map<String, dynamic> p) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => MerchDetailScreen(item: p, isSurvey: true),
+    ));
   }
 
   Widget _chip(String t, Color c) => Container(

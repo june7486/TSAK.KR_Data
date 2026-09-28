@@ -37,13 +37,15 @@ class NasApi {
   Uri _uri(String path) => Uri.parse('$_base$path');
 
   /// 수품 이미지 URL (로컬 파일명 또는 외부 URL → 프록시 경유, 같은 출처).
-  String merchImageUrl(String image) {
+  /// [crop] 이 true 이면 상·하단 텍스트를 자동 제거한 순수 수품 이미지를 받는다.
+  String merchImageUrl(String image, {bool crop = false}) {
     final s = image.trim();
     if (s.isEmpty) return '';
+    final c = crop ? '&crop=1' : '';
     if (s.startsWith('http')) {
-      return '$_base/api/merch/img?src=${Uri.encodeComponent(s)}';
+      return '$_base/api/merch/img?src=${Uri.encodeComponent(s)}$c';
     }
-    return '$_base/api/merch/img?name=${Uri.encodeComponent(s)}';
+    return '$_base/api/merch/img?name=${Uri.encodeComponent(s)}$c';
   }
 
   /// 도로명주소 검색 (행정안전부 JUSO, 프록시 경유·무인증).

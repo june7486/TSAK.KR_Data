@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/hscroll_menu.dart';
 import 'merch_checkout_screen.dart';
+import 'merch_detail_screen.dart';
 
 /// 수품구매(굿즈) 쇼핑몰 — 로그인 없이 열람·장바구니·주문 가능.
 /// 연회비 미납 시 서버가 주문을 차단한다(연회비 게이트).
@@ -370,7 +371,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final price = (p['price'] as num?)?.toInt() ?? 0;
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
-    final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
+    final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}', crop: true);
     final kind = '${p['kind'] ?? ''}';
     final soldOut = stock <= 0;
     final qty = _qtyOf(p);
@@ -390,27 +391,30 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 이미지: 크롭 없이 전체가 보이도록 contain
+          // 이미지: 크롭 없이 전체가 보이도록 contain / 탭하면 확대·상세
           Expanded(
-            child: Container(
-              width: double.infinity,
-              color: const Color(0xFFF7F5FB),
-              child: imgUrl.isEmpty
-                  ? const Center(
-                      child: Icon(Icons.image_outlined,
-                          size: 40, color: AppColors.textGray))
-                  : Image.network(
-                      imgUrl,
-                      fit: BoxFit.contain,
-                      loadingBuilder: (_, child, prog) => prog == null
-                          ? child
-                          : const Center(
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2)),
-                      errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(Icons.image_not_supported,
-                              color: AppColors.textGray)),
-                    ),
+            child: GestureDetector(
+              onTap: () => _openDetail(p),
+              child: Container(
+                width: double.infinity,
+                color: const Color(0xFFF7F5FB),
+                child: imgUrl.isEmpty
+                    ? const Center(
+                        child: Icon(Icons.image_outlined,
+                            size: 40, color: AppColors.textGray))
+                    : Image.network(
+                        imgUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (_, child, prog) => prog == null
+                            ? child
+                            : const Center(
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2)),
+                        errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.image_not_supported,
+                                color: AppColors.textGray)),
+                      ),
+              ),
             ),
           ),
           Padding(
@@ -461,6 +465,26 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontSize: 10, color: AppColors.textGray)),
+                const SizedBox(height: 2),
+                // 상세 설명 보기 (상품명/설명 클릭 → 확대·상세)
+                InkWell(
+                  onTap: () => _openDetail(p),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Icon(Icons.open_in_full,
+                            size: 12, color: AppColors.purple),
+                        SizedBox(width: 4),
+                        Text('상세보기 · 이미지 확대',
+                            style: TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.purple,
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -530,6 +554,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         ],
       ),
     );
+  }
+
+  /// 수품 이미지 클릭 → 확대 이미지 + 상세 설명 화면(돌아가기 포함, 에러 방지).
+  void _openDetail(Map<String, dynamic> p, {bool isSurvey = false}) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => MerchDetailScreen(item: p, isSurvey: isSurvey),
+    ));
   }
 
   // ==================== 장바구니 ====================
@@ -1064,7 +1095,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   Widget _surveyCard(Map<String, dynamic> s) {
     final name = '${s['name'] ?? ''}';
     final photo = '${s['photo'] ?? ''}';
-    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
+    final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo, crop: true);
     final price = (s['price'] as num?)?.toInt() ?? 0;
     final minQty = (s['minQty'] as num?)?.toInt() ?? 0;
     final count = (s['count'] as num?)?.toInt() ?? (s['applicants'] as List?)?.length ?? 0;
@@ -1095,20 +1126,23 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    width: 78,
-                    height: 78,
-                    color: AppColors.purpleLight.withValues(alpha: 0.15),
-                    child: imgUrl.isEmpty
-                        ? const Icon(Icons.image_outlined,
-                            color: AppColors.textGray)
-                        : Image.network(imgUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                                Icons.broken_image_outlined,
-                                color: AppColors.textGray)),
+                GestureDetector(
+                  onTap: () => _openDetail(s, isSurvey: true),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 78,
+                      height: 78,
+                      color: AppColors.purpleLight.withValues(alpha: 0.15),
+                      child: imgUrl.isEmpty
+                          ? const Icon(Icons.image_outlined,
+                              color: AppColors.textGray)
+                          : Image.network(imgUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.broken_image_outlined,
+                                  color: AppColors.textGray)),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
