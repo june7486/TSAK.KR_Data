@@ -2604,11 +2604,19 @@ def _merch_resolve_contact(num, phone, name="", email=""):
     if n:
         m = _ev_member_by_ident(n)
         if m:
-            return n, ("regular" if m.get("isRegular") else "member")
+            mno = re.sub(r"[^0-9]", "", str(m.get("number", ""))) or n
+            return mno, ("regular" if m.get("isRegular") else "member")
     if p:
+        # 비인가(전화) 회원은 자동생성/조회하여 '회원번호'를 contactId 로 사용한다.
+        #  → 개인프로필이 회원번호로 조회해도 본인 주문이 정확히 매칭된다.
+        m = _ev_member_by_ident(p)
+        if m:
+            mno = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            if mno:
+                return mno, ("regular" if m.get("isRegular") else "member")
         no = _merch_ensure_regular(p, name, email)
         if no:
-            return no, "regular"
+            return re.sub(r"[^0-9]", "", str(no)), "regular"
     return n, ""
 
 
@@ -2725,23 +2733,24 @@ def _merch_purge_deleted(doc):
     return doc
 
 
-_PH2NO_CACHE = {"n": -1, "map": {}}
+_PH2NO_CACHE = {"ts": 0.0, "map": {}}
 
 
 def _phone_owner_map():
-    """전화번호 → 회원번호 맵(회원 수 기준 캐시)."""
-    members = _ev_members()
-    n = len(members)
-    if _PH2NO_CACHE.get("n") == n:
+    """전화번호 → 회원번호 맵 (TTL 캐시: NAS 재조회 최소화).
+    매 호출마다 회원목록을 읽으면 느리므로(주문 조회 지연) 30초 캐시한다."""
+    import time as _t
+    now = _t.time()
+    if _PH2NO_CACHE["map"] and (now - _PH2NO_CACHE["ts"] < 30):
         return _PH2NO_CACHE["map"]
     m = {}
-    for mem in members:
+    for mem in _ev_members():
         no = re.sub(r"[^0-9]", "", str(mem.get("number", "")))
         for f in ("phone", "accessPhone", "loginId"):
             p = re.sub(r"[^0-9]", "", str(mem.get(f, "") or ""))
             if p and p not in m:
                 m[p] = no
-    _PH2NO_CACHE["n"] = n
+    _PH2NO_CACHE["ts"] = now
     _PH2NO_CACHE["map"] = m
     return m
 
@@ -2770,6 +2779,13 @@ def _merch_match_ident(rec, d):
             return True  # 전화정보 없음 → contactId 신뢰
         owner = _phone_owner_map().get(order_ph, order_ph)
         return owner == ci
+    # ③ 회원번호(d)로 조회 — 레코드 전화의 실제 소유자가 d 이면 본인 주문.
+    #    (주문 시 contactId 가 전화번호로 저장된 경우도 회원번호 로그인에서 인식)
+    order_ph = ph or bn
+    if order_ph:
+        owner = _phone_owner_map().get(order_ph, order_ph)
+        if owner and owner == d:
+            return True
     return False
 
 
