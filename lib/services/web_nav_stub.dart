@@ -1,4 +1,6 @@
 // 비웹(모바일·데스크톱 네이티브)용 스텁.
+import 'dart:typed_data';
+
 bool get isWebRuntime => false;
 
 /// 네이티브는 웹 구분이 무의미하므로 false.
@@ -32,5 +34,11 @@ void openPrintableHtml(String html) {}
 /// 파일 다운로드 — 네이티브에서는 no-op(호출부에서 클립보드 폴백).
 void downloadTextFile(String content, String filename, String mime) {}
 
+/// 바이너리 파일 다운로드 — 네이티브에서는 no-op.
+void downloadBytesFile(Uint8List bytes, String filename, String mime) {}
+
 /// 네이티브에는 자동 재로드가 없으므로 항상 허용(사실상 미사용).
 bool guardAutoReloadOnce() => true;
+
+/// 카카오 우편번호 — 웹 전용. 네이티브에서는 null 을 반환한다.
+Future<String?> openKakaoPostcode() async => null;

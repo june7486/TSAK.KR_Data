@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../services/file_save.dart';
 import '../services/roster_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -185,10 +186,13 @@ class _RosterScreenState extends State<RosterScreen> {
         ext = fmt == 'excel' ? 'xls' : 'doc';
         mime = fmt == 'excel' ? MimeType.microsoftExcel : MimeType.microsoftWord;
       }
-      await FileSaver.instance.saveFile(
-        name: name,
+      await saveBytes(
         bytes: bytes,
+        name: name,
         ext: ext,
+        mime: ext == 'xls'
+            ? 'application/vnd.ms-excel'
+            : 'application/msword',
         mimeType: mime,
       );
       _snack('저장했습니다 ($name.$ext)');

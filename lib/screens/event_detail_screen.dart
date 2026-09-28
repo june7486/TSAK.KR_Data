@@ -11,6 +11,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/hscroll_menu.dart';
 import 'roster_screen.dart';
@@ -1284,9 +1285,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     decoration: const InputDecoration(labelText: '메일주소'),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
+                  AddressField(
                     controller: addrC,
-                    decoration: const InputDecoration(labelText: '주소'),
+                    label: '주소',
+                    hint: '주소검색 버튼으로 검색하세요',
                   ),
                   const SizedBox(height: 12),
                   const Align(

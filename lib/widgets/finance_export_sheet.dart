@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:printing/printing.dart';
 
+import '../services/file_save.dart';
 import '../services/finance_export.dart';
 import '../theme/app_theme.dart';
 
@@ -221,13 +222,18 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
       if (_format == FinanceFormat.jpg) {
         final img = await Printing.raster(bytes, dpi: 150).first;
         final png = await img.toPng();
-        await FileSaver.instance.saveFile(
-            name: name, bytes: png, ext: 'png', mimeType: MimeType.png);
+        await saveBytes(
+            bytes: png,
+            name: name,
+            ext: 'png',
+            mime: 'image/png',
+            mimeType: MimeType.png);
       } else {
-        await FileSaver.instance.saveFile(
-          name: name,
+        await saveBytes(
           bytes: bytes,
+          name: name,
           ext: _format.extension,
+          mime: _mimeStr(_format),
           mimeType: _mimeOf(_format),
         );
       }
@@ -279,6 +285,26 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
         return MimeType.jpeg;
       case FinanceFormat.ppt:
         return MimeType.microsoftPresentation;
+    }
+  }
+
+  /// 웹 다운로드용 MIME 문자열.
+  String _mimeStr(FinanceFormat f) {
+    switch (f) {
+      case FinanceFormat.excel:
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case FinanceFormat.pdf:
+        return 'application/pdf';
+      case FinanceFormat.word:
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case FinanceFormat.txt:
+        return 'text/plain;charset=utf-8';
+      case FinanceFormat.csv:
+        return 'text/csv;charset=utf-8';
+      case FinanceFormat.jpg:
+        return 'image/jpeg';
+      case FinanceFormat.ppt:
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     }
   }
 

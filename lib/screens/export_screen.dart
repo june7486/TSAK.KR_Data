@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/member.dart';
 import '../services/contact_service.dart';
 import '../services/export_service.dart';
+import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/hscroll_menu.dart';
@@ -342,17 +343,19 @@ class _ExportScreenState extends State<ExportScreen>
           // JPG는 첫 페이지를 이미지로 저장
           final img = await Printing.raster(bytes, dpi: 150).first;
           final png = await img.toPng();
-          await FileSaver.instance.saveFile(
-            name: name,
+          await saveBytes(
             bytes: png,
+            name: name,
             ext: 'png',
+            mime: 'image/png',
             mimeType: MimeType.png,
           );
         } else {
-          await FileSaver.instance.saveFile(
-            name: name,
+          await saveBytes(
             bytes: bytes,
+            name: name,
             ext: _format.extension,
+            mime: _mimeStr(_format),
             mimeType: _mimeOf(_format),
           );
         }
@@ -379,6 +382,24 @@ class _ExportScreenState extends State<ExportScreen>
         return MimeType.jpeg;
       case ExportFormat.ppt:
         return MimeType.microsoftPresentation;
+    }
+  }
+
+  /// 웹 다운로드용 MIME 문자열.
+  String _mimeStr(ExportFormat f) {
+    switch (f) {
+      case ExportFormat.excel:
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case ExportFormat.pdf:
+        return 'application/pdf';
+      case ExportFormat.word:
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case ExportFormat.txt:
+        return 'text/plain;charset=utf-8';
+      case ExportFormat.jpg:
+        return 'image/jpeg';
+      case ExportFormat.ppt:
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     }
   }
 

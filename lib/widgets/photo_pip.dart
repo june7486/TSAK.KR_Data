@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io' show File;
 
+import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 
 /// 인가자 사진을 PiP(작은 창)로 확대해 보여주고,
@@ -292,12 +293,13 @@ class _PhotoPipState extends State<_PhotoPip> {
           'TSAK_${widget.number.isNotEmpty ? widget.number : widget.name}';
       if (!mounted) return;
 
-      // 웹: 다운로드 / 모바일: 갤러리·공유
+      // 웹: 다운로드 / 모바일: 저장(실패 시 공유 시트)
       try {
-        await FileSaver.instance.saveFile(
-          name: fname,
+        await saveBytes(
           bytes: png,
+          name: fname,
           ext: 'png',
+          mime: 'image/png',
           mimeType: MimeType.png,
         );
       } catch (_) {

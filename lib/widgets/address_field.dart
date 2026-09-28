@@ -1,20 +1,24 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../services/nas_api.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 
-/// 도로명주소 검색 필드.
-/// - 우측 "주소검색" 버튼 → 검색 다이얼로그(자동완성 목록)
-/// - 입력 중 debounce 자동완성 (선택 시 도로명 주소로 채움)
+/// 주소 입력 필드 — 카카오 우편번호(Postcode) API 기반.
+///
+/// - 우측 "주소검색" 버튼 → 카카오 우편번호 팝업
+///   (`//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js`)
+/// - 도로명주소(userSelectedType==='R')를 우선 사용, 없으면 지번주소
+/// - 선택 결과를 `[우편번호] 도로명주소` 형태로 컨트롤러에 채운다.
+/// - 이어서 상세주소를 입력받아 뒤에 덧붙인다. (선택)
+///
+/// 웹이 아닌 네이티브 환경에서는 카카오 스크립트를 쓸 수 없으므로
+/// 직접 입력 다이얼로그로 대체한다.
 class AddressField extends StatefulWidget {
   const AddressField({
     super.key,
     required this.controller,
     this.label = '주소',
-    this.hint = '주소 입력',
+    this.hint = '주소검색 버튼으로 검색하세요',
     this.required = false,
   });
 
@@ -28,30 +32,94 @@ class AddressField extends StatefulWidget {
 }
 
 class _AddressFieldState extends State<AddressField> {
-  Timer? _debounce;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onChanged(String _) {
-    // 자동완성은 검색 다이얼로그에서 제공 (입력 필드 자체는 자유입력 허용)
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {});
-  }
+  bool _busy = false;
 
   Future<void> _openSearch() async {
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AddressSearchSheet(initial: widget.controller.text),
-    );
-    if (picked != null && picked.isNotEmpty) {
-      widget.controller.text = picked;
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    String? picked;
+    try {
+      if (isWebRuntime) {
+        picked = await openKakaoPostcode();
+      } else {
+        picked = await _manualEntry();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
+
+    if (!mounted || picked == null || picked.trim().isEmpty) return;
+
+    widget.controller.text = picked.trim();
+
+    // 상세주소를 추가로 입력받아 덧붙인다. (카카오 예제와 동일한 흐름)
+    final detail = await _askDetail();
+    if (detail != null && detail.trim().isNotEmpty) {
+      widget.controller.text = '${widget.controller.text} ${detail.trim()}';
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<String?> _askDetail() async {
+    final c = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('상세주소 입력'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '예) 101동 1203호 / 3층',
+            isDense: true,
+          ),
+          onSubmitted: (_) => Navigator.pop(ctx, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('건너뛰기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    return ok == true ? c.text : null;
+  }
+
+  Future<String?> _manualEntry() async {
+    final c = TextEditingController(text: widget.controller.text);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('주소 입력'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          maxLines: 2,
+          minLines: 1,
+          decoration: const InputDecoration(
+            hintText: '[우편번호] 도로명주소 상세주소',
+            isDense: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    return ok == true ? c.text : null;
   }
 
   @override
@@ -62,7 +130,6 @@ class _AddressFieldState extends State<AddressField> {
         controller: widget.controller,
         maxLines: 2,
         minLines: 1,
-        onChanged: _onChanged,
         validator: widget.required
             ? (v) => (v == null || v.trim().isEmpty) ? '주소를 입력하세요' : null
             : null,
@@ -70,175 +137,60 @@ class _AddressFieldState extends State<AddressField> {
           labelText: widget.label + (widget.required ? ' *' : ''),
           hintText: widget.hint,
           isDense: true,
-          suffixIcon: IconButton(
-            tooltip: '주소검색',
-            icon: const Icon(Icons.search, size: 20),
-            onPressed: _openSearch,
-          ),
+          suffixIcon: _busy
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  tooltip: '주소검색 (카카오)',
+                  icon: const Icon(Icons.search, size: 20),
+                  onPressed: _openSearch,
+                ),
         ),
       ),
     );
   }
 }
 
-class _AddressSearchSheet extends StatefulWidget {
-  const _AddressSearchSheet({this.initial = ''});
-  final String initial;
+/// 카카오 스타일 주소검색 버튼 (다른 화면에서 재사용 가능).
+class KakaoAddressButton extends StatelessWidget {
+  const KakaoAddressButton({
+    super.key,
+    required this.onPicked,
+    this.current = '',
+    this.label = '주소 검색',
+  });
 
-  @override
-  State<_AddressSearchSheet> createState() => _AddressSearchSheetState();
-}
-
-class _AddressSearchSheetState extends State<_AddressSearchSheet> {
-  late final TextEditingController _q =
-      TextEditingController(text: widget.initial);
-  Timer? _debounce;
-  bool _loading = false;
-  String? _error;
-  List<Map<String, dynamic>> _items = [];
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initial.trim().isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _search());
-    }
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _q.dispose();
-    super.dispose();
-  }
-
-  void _onChanged(String _) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), _search);
-  }
-
-  Future<void> _search() async {
-    final kw = _q.text.trim();
-    if (kw.length < 2) {
-      setState(() {
-        _items = [];
-        _error = null;
-      });
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final nas = context.read<NasApi>();
-    final items = await nas.addrSearch(kw);
-    if (!mounted) return;
-    setState(() {
-      _items = items;
-      _loading = false;
-      if (items.isEmpty) _error = '검색 결과가 없습니다';
-    });
-  }
+  final ValueChanged<String> onPicked;
+  final String current;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return Container(
-      padding: EdgeInsets.only(bottom: bottom),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.textGray.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: AppColors.purple),
-                const SizedBox(width: 6),
-                const Text('도로명주소 검색',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            TextField(
-              controller: _q,
-              autofocus: true,
-              onChanged: _onChanged,
-              onSubmitted: (_) => _search(),
-              decoration: InputDecoration(
-                hintText: '도로명·건물명·지번 (예: 세종대로, 강남대로12길)',
-                isDense: true,
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: _loading
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : null,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Flexible(
-              child: _items.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 30),
-                      child: Text(
-                        _error ?? '주소를 검색해 주세요',
-                        style: const TextStyle(color: AppColors.textGray),
-                      ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final it = _items[i];
-                        final road = '${it['road'] ?? ''}';
-                        final road2 = '${it['roadPart2'] ?? ''}';
-                        final jibun = '${it['jibun'] ?? ''}';
-                        final zip = '${it['zip'] ?? ''}';
-                        final full = '$road $road2'.trim();
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.place_outlined,
-                              color: AppColors.purple, size: 20),
-                          title: Text(full,
-                              style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w700)),
-                          subtitle: Text(
-                            jibun + (zip.isNotEmpty ? '  ·  우편번호 $zip' : ''),
-                            style: const TextStyle(
-                                fontSize: 11.5, color: AppColors.textGray),
-                          ),
-                          onTap: () => Navigator.pop(
-                              context, zip.isNotEmpty ? '[$zip] $full' : full),
-                        );
-                      },
-                    ),
-            ),
-          ],
+    return SizedBox(
+      height: 46,
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.textDark,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
+        onPressed: () async {
+          String? picked;
+          if (isWebRuntime) {
+            picked = await openKakaoPostcode();
+          }
+          if (picked != null && picked.trim().isNotEmpty) {
+            onPicked(picked.trim());
+          }
+        },
+        icon: const Icon(Icons.search, size: 18, color: Colors.white),
+        label: Text(label),
       ),
     );
   }

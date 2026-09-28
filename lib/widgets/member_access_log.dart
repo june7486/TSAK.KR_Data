@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 
 /// 회원 접속 로그 — 마스터 전용.
@@ -212,10 +213,11 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
           '회원접속기록_${widget.member.name}_${DateTime.now().toString().substring(0, 10)}';
       // 엑셀 한글 깨짐 방지를 위해 UTF-8 BOM 을 붙인다.
       final bytes = utf8.encode('\uFEFF${b.toString()}');
-      await FileSaver.instance.saveFile(
-        name: name,
+      await saveBytes(
         bytes: Uint8List.fromList(bytes),
+        name: name,
         ext: 'csv',
+        mime: 'text/csv;charset=utf-8',
         mimeType: MimeType.csv,
       );
       if (mounted) _snack('CSV 파일로 내보냈습니다');

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 // 전역 document / location / 브라우저 캐시 API.
 @JS('document')
@@ -30,6 +32,7 @@ extension type _Document(JSObject _) implements JSObject {
 extension type _Element(JSObject _) implements JSObject {
   external _Style get style;
   external set src(String v);
+  external void click();
   external void remove();
 }
 
@@ -90,12 +93,14 @@ extension type _Blob._(JSObject _) implements JSObject {
 
 extension type _URL._(JSObject _) implements JSObject {
   external static String createObjectURL(JSObject blob);
+  external static void revokeObjectURL(String url);
 }
 
 extension type _Anchor(JSObject _) implements JSObject {
   external set href(String v);
   external set download(String v);
   external void click();
+  external void remove();
 }
 
 /// 텍스트(HTML/CSV 등)를 파일로 다운로드한다. (Blob + <a download>)
@@ -109,6 +114,33 @@ void downloadTextFile(String content, String filename, String mime) {
     a.href = url;
     a.download = filename;
     a.click();
+  } catch (_) {}
+}
+
+/// 바이너리(엑셀·PDF·이미지 등)를 파일로 다운로드한다.
+/// (Blob + <a download>) — PC 브라우저에서는 기본 저장 폴더(다운로드)로 저장된다.
+void downloadBytesFile(Uint8List bytes, String filename, String mime) {
+  try {
+    final parts = <JSAny>[bytes.toJS].toJS;
+    final optMap = <String, String>{'type': mime};
+    final blob = _Blob(parts, optMap.jsify()! as JSObject);
+    final url = _URL.createObjectURL(blob);
+    final a = _document.createElement('a') as _Anchor;
+    a.href = url;
+    a.download = filename;
+    // DOM 에 붙여야 일부 브라우저(사파리/파폭)에서 클릭 다운로드가 동작한다.
+    try {
+      (_document.body as _Body).appendChild(a as _Element);
+    } catch (_) {}
+    a.click();
+    _setTimeout((() {
+      try {
+        a.remove();
+      } catch (_) {}
+      try {
+        _URL.revokeObjectURL(url);
+      } catch (_) {}
+    }).toJS, 4000);
   } catch (_) {}
 }
 
@@ -286,4 +318,50 @@ void reloadPage() {
   try {
     _location.reload();
   } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────────
+// 카카오 우편번호(주소검색)
+//  window.tsakOpenKakaoPostcode(cb) 브리지를 Dart 에서 호출한다.
+//  (브리지 구현은 web/index.html 참고)
+// ─────────────────────────────────────────────────────────────
+
+@JS('tsakOpenKakaoPostcode')
+external void _tsakOpenKakaoPostcode(JSFunction cb);
+
+extension type _KakaoResult(JSObject _) implements JSObject {
+  external String? get zonecode;
+  external String? get address;
+}
+
+/// 카카오 우편번호 팝업을 연다.
+/// 선택 시 `[우편번호] 도로명주소` 문자열을, 취소/실패 시 null 을 반환한다.
+Future<String?> openKakaoPostcode() {
+  final completer = Completer<String?>();
+  try {
+    void done(JSAny? data) {
+      if (completer.isCompleted) return;
+      if (data == null || data.isUndefinedOrNull) {
+        completer.complete(null);
+        return;
+      }
+      try {
+        final obj = data as _KakaoResult;
+        final zip = obj.zonecode ?? '';
+        final addr = (obj.address ?? '').trim();
+        if (addr.isEmpty) {
+          completer.complete(null);
+        } else {
+          completer.complete(zip.isNotEmpty ? '[$zip] $addr' : addr);
+        }
+      } catch (_) {
+        completer.complete(null);
+      }
+    }
+
+    _tsakOpenKakaoPostcode(done.toJS);
+  } catch (_) {
+    if (!completer.isCompleted) completer.complete(null);
+  }
+  return completer.future;
 }

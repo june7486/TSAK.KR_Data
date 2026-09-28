@@ -32,6 +32,9 @@
   <title>TSAK 인가자 관리</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- 카카오 우편번호(주소검색) API -->
+  <script src="//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+
   <!-- 성능: 첫 프레임을 앞당기는 리소스 힌트 -->
   <!-- (1) 엔진/스크립트 조기 발견 -->
   <link rel="preload" href="flutter_bootstrap.js" as="script">
@@ -101,6 +104,42 @@
     </div>
   </div>
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // 카카오 우편번호 주소검색 브리지.
+    //  - Flutter(Dart)에서 window.tsakOpenKakaoPostcode(cb) 를 호출하면
+    //    카카오 팝업을 열고, 선택 결과를 cb({zonecode, address}) 로 돌려준다.
+    //  - 취소/오류 시 cb(null) 을 호출한다.
+    window.tsakOpenKakaoPostcode = function (cb) {
+      try {
+        if (!window.kakao || !window.kakao.Postcode) {
+          // 스크립트가 아직 안 실렸으면 동적으로 로드 후 재시도
+          var s = document.createElement('script');
+          s.src = '//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
+          s.onload = function () { window.tsakOpenKakaoPostcode(cb); };
+          s.onerror = function () { cb(null); };
+          document.head.appendChild(s);
+          return;
+        }
+        new window.kakao.Postcode({
+          width: 560,
+          height: 680,
+          oncomplete: function (data) {
+            var addr = '';
+            if (data.userSelectedType === 'R') {
+              addr = data.roadAddress || '';
+            } else {
+              addr = data.jibunAddress || '';
+            }
+            if (!addr) addr = data.address || '';
+            cb({ zonecode: data.zonecode || '', address: addr });
+          },
+          onclose: function () { /* 사용자가 닫음 — 콜백 없음 */ }
+        }).open();
+      } catch (e) {
+        try { cb(null); } catch (_) {}
+      }
+    };
+  </script>
   <script>
     // Flutter 엔진 첫 프레임 후 스플래시 제거
     (function () {

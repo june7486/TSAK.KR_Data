@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:file_saver/file_saver.dart';
 
 import '../services/app_state.dart';
+import '../services/file_save.dart';
 import '../services/finance_report.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -137,10 +138,11 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
       final bytes = await FinanceReportService.build(_a);
       if (!mounted) return;
       setState(() => _building = false);
-      await FileSaver.instance.saveFile(
-        name: FinanceReportService.fileName(),
+      await saveBytes(
         bytes: Uint8List.fromList(bytes),
+        name: FinanceReportService.fileName(),
         ext: 'pdf',
+        mime: 'application/pdf',
         mimeType: MimeType.pdf,
       );
       _snack('보고서를 저장했습니다.');
