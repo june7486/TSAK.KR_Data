@@ -54,6 +54,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   bool _showArchive = false;
   bool _archiveLoading = false;
   final List<Map<String, dynamic>> _archived = [];
+  // 주문내역별 보기 — ON 시 주문번호 묶음 내부를 주문번호별로 펼쳐서 노출
+  bool _perOrderView = false;
 
   // 수품판매대장(ledger)
   List<Map<String, dynamic>> _ledgerRows = [];
@@ -396,6 +398,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           Icons.receipt_long_outlined,
         ),
         const SizedBox(height: 8),
+        _perOrderToggle(),
+        const SizedBox(height: 8),
         if (groups.isEmpty)
           const Padding(
             padding: EdgeInsets.all(12),
@@ -404,6 +408,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               style: TextStyle(color: AppColors.textGray),
             ),
           )
+        else if (_perOrderView)
+          // 주문내역별 보기: 주문번호 다음 주문내역·다음 주문번호 순으로 펼침
+          for (final g in groups) ..._perOrderBlocks(g, isReserve: false)
         else
           ReorderableListView.builder(
             shrinkWrap: true,
@@ -493,6 +500,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               style: TextStyle(color: AppColors.textGray),
             ),
           )
+        else if (_perOrderView)
+          for (final g in reserveGroups) ..._perOrderBlocks(g, isReserve: true)
         else
           for (final g in reserveGroups) _groupCard(g, isReserve: true),
         const SizedBox(height: 20),
@@ -501,6 +510,200 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         if (_showArchive) _archiveSection(),
       ],
     );
+  }
+
+  // ---------- 주문내역별 보기 토글 ----------
+  /// ON 시 주문번호 묶음 내부를 "주문번호 → 주문내역" 순으로 펼쳐
+  /// 합치기 전 개별 주문 상황을 확인할 수 있게 한다.
+  Widget _perOrderToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _perOrderView
+            ? AppColors.taegeukBlue.withValues(alpha: 0.10)
+            : AppColors.purple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (_perOrderView ? AppColors.taegeukBlue : AppColors.purple)
+              .withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _perOrderView ? Icons.view_list : Icons.view_agenda_outlined,
+            size: 18,
+            color: _perOrderView ? AppColors.taegeukBlue : AppColors.purple,
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '주문내역별 보기',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: AppColors.purpleDark,
+                  ),
+                ),
+                Text(
+                  'ON: 주문번호 → 주문내역 순으로 펼쳐 합치기 전 상황 확인',
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _perOrderView,
+            activeThumbColor: AppColors.taegeukBlue,
+            onChanged: (v) => setState(() => _perOrderView = v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 주문내역별 보기 블록 — 주문번호 헤더 + 품목별 개별 내역 줄.
+  List<Widget> _perOrderBlocks(
+    List<Map<String, dynamic>> items, {
+    required bool isReserve,
+  }) {
+    final head = items.first;
+    final orderNo = '${head['orderNo'] ?? ''}'.trim();
+    final buyer = '${head['buyerName'] ?? ''}'.trim();
+    final created = '${head['created'] ?? head['createdAt'] ?? ''}'.trim();
+    final grand = items.fold<int>(
+      0,
+      (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt(),
+    );
+    final bundle = _bundleNameOf(items);
+    return [
+      Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: (isReserve ? Colors.orange : AppColors.purple)
+                .withValues(alpha: 0.30),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── 주문번호 헤더(중요 tag) ──
+            Row(
+              children: [
+                Icon(
+                  isReserve ? Icons.bookmark_border : Icons.receipt_long_outlined,
+                  size: 15,
+                  color: isReserve ? Colors.orange : AppColors.purple,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    orderNo.isEmpty ? '(번호없음) ' : orderNo,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: AppColors.purpleDark,
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                _pill('${items.length}항목', AppColors.textGray),
+              ],
+            ),
+            if (buyer.isNotEmpty || created.isNotEmpty || bundle != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  '$buyer'
+                  '${created.isNotEmpty ? ' · $created' : ''}'
+                  '${bundle != null ? ' · 묶음:$bundle' : ''}',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            const Divider(height: 14),
+            // ── 주문내역 개별 라인 ──
+            for (final o in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 18,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.purple.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: InkWell(
+                        onTap: () =>
+                            _openGroup([o], isReserve: isReserve),
+                        child: const Icon(Icons.edit,
+                            size: 11, color: AppColors.purple),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${o['product'] ?? o['productName'] ?? '수품'} '
+                        '×${(o['qty'] as num?)?.toInt() ?? 1}'
+                        '${('${o['option'] ?? ''}'.trim()).isEmpty ? '' : ' / ${o['option']}'}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textDark,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (!isReserve) ...[
+                      _pill(
+                        '${o['status'] ?? ''}'.trim().isEmpty
+                            ? '접수'
+                            : '${o['status']}',
+                        AppColors.textGray,
+                      ),
+                      const SizedBox(width: 4),
+                      _pill(
+                        o['paid'] == true ? '입금' : '미입금',
+                        o['paid'] == true
+                            ? AppColors.scoutGreen
+                            : AppColors.taegeukRed,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            const SizedBox(height: 2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                '합계 ${_won(grand)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  color: AppColors.taegeukBlue,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   // ---------- 일괄편집 툴바 ----------

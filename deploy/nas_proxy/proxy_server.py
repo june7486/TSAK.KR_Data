@@ -1666,7 +1666,7 @@ def _pwd_hash(pw):
 
 
 def _now_stamp():
-    return datetime.datetime.now().strftime("%Y.%m.%d %H:%M")
+    return datetime.datetime.now().strftime("%Y.%m.%d %H:%M:%S")
 
 
 def _now_date():
@@ -2122,28 +2122,44 @@ def _merch_name_short(name):
     return n
 
 
-def _merch_make_order_no(name, created, amount):
-    """주문번호 생성: {약자}-{YYMMDD}-{HHMM}-{금액}
-    예) 승준-260928-0130-45000  → 주문자·구매일·구매시간·금액을 모두 유추 가능."""
-    try:
-        dt = datetime.datetime.strptime(str(created or ""), "%Y.%m.%d %H:%M")
-    except Exception:
-        dt = datetime.datetime.now()
+def _merch_parse_dt(created):
+    """'created' 문자열을 datetime 으로 파싱(초 포함/미포함 모두 허용)."""
+    s = str(created or "").strip()
+    for fmt in ("%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M"):
+        try:
+            return datetime.datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    return datetime.datetime.now()
+
+
+def _merch_make_order_no(name, created, count):
+    """주문번호 생성: {YYMMDD}-{HH:MM:SS}-{주문자}-{NNNN}
+    예) 260928-18:55:30-이승준-0010  → 날짜·시간·주문자·아이템 수를 모두 유추 가능.
+    'count' = 한 주문번호로 함께 구매한 아이템 수(장바구니 10개 → 0010)."""
+    dt = _merch_parse_dt(created)
     ymd = dt.strftime("%y%m%d")
-    hm = dt.strftime("%H%M")
+    hms = dt.strftime("%H:%M:%S")
+    nm = re.sub(r"\s+", "", str(name or "")) or "미상"
+    nm = nm[:10]
     try:
-        amt = int(amount or 0)
+        cnt = int(count or 0)
     except Exception:
-        amt = 0
-    return "%s-%s-%s-%d" % (_merch_name_short(name), ymd, hm, amt)
+        cnt = 0
+    return "%s-%s-%s-%04d" % (ymd, hms, nm, cnt)
 
 
-def _merch_assign_no(doc, rec):
+def _merch_assign_no(doc, rec, count=None):
     """레코드에 중복 없는 주문번호(orderNo)를 부여하고 반환."""
     if rec.get("orderNo"):
         return rec["orderNo"]
-    amount = rec.get("grandTotal", rec.get("total", rec.get("amount", 0)))
-    base = _merch_make_order_no(rec.get("buyerName"), rec.get("created"), amount)
+    if count is None:
+        cnt = rec.get("itemCount", rec.get("lineCount", 0))
+        if not cnt:
+            cnt = len(rec.get("lines", [])) or rec.get("qty", 0) or 0
+    else:
+        cnt = count
+    base = _merch_make_order_no(rec.get("buyerName"), rec.get("created"), cnt)
     used = set()
     for o in doc.get("orders", []):
         if isinstance(o, dict) and o.get("orderNo"):
@@ -6381,10 +6397,11 @@ class Handler(BaseHTTPRequestHandler):
                     if not built:
                         return self._json(
                             {"ok": False, "error": "product_not_found"}, 404)
-                    # 대표 주문번호: 전체 합계 금액으로 1개 생성 후 전 라인 공유
+                    # 대표 주문번호: 총 아이템 수(수량 합)를 포함해 1개 생성 후 전 라인 공유
                     rep = {"buyerName": bname0, "created": created0,
                            "grandTotal": total0 + fee_added0}
-                    shared_no = _merch_assign_no(doc, rep)
+                    shared_no = _merch_assign_no(
+                        doc, rep, count=sum(b[2] for b in built))
                     out_orders = []
                     for (lprod, lunit, lqty, lfee, ltotal,
                          lopt, lsize) in built:
@@ -6499,7 +6516,7 @@ class Handler(BaseHTTPRequestHandler):
                     "memo": str(d.get("memo", "") or "")[:200],
                     "created": _now_stamp(),
                 }
-                _merch_assign_no(doc, order)
+                _merch_assign_no(doc, order, count=1)
                 doc.setdefault("orders", []).append(order)
                 _merch_save(doc)
                 # 인가자/비인가자 프로필에 주문 내역 부착

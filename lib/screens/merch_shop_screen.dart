@@ -312,7 +312,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       fontSize: 12, color: AppColors.textDark, height: 1.5)),
             ),
           ],
-          // 안내: 예약(수요조사) 모드 안내
+          // 안내: 제작 예정(수요조사) 수품은 하단에서 사전신청
           if (_reserveMode) ...[
             const SizedBox(height: 8),
             Container(
@@ -323,9 +323,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Text(
-                '※ 현재 예약(수요조사) 기간입니다.\n'
-                '   구매 의사가 있으시면 "예약"으로 신청해 주세요.\n'
-                '   일정 수량 이상 예약 시 제작이 확정됩니다.',
+                '※ 제작 예정 수품은 이 페이지 하단의 "수요조사 진행중" 에서\n'
+                '   사전신청할 수 있습니다. 일정 수량 이상 신청 시 제작이 확정됩니다.\n'
+                '   일반 수품은 장바구니에 담아 주문하세요.',
                 style: TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w700, height: 1.45),
               ),
@@ -504,26 +504,21 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                         height: 34,
                         child: FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor: soldOut || (!_salesOpen && !_reserveMode)
+                            // 상품 카드는 항상 '장바구니 담기'. (예약은 기획실 수요조사 항목에서만)
+                            backgroundColor: (soldOut || !_salesOpen)
                                 ? AppColors.textGray
-                                : (_reserveMode
-                                    ? AppColors.tigerGold
-                                    : AppColors.purple),
+                                : AppColors.purple,
                             padding: EdgeInsets.zero,
                             visualDensity: VisualDensity.compact,
                           ),
-                          onPressed: (soldOut || (!_salesOpen && !_reserveMode))
+                          onPressed: (soldOut || !_salesOpen)
                               ? null
-                              : () => _reserveMode
-                                  ? _reserve(p, options, qty)
-                                  : _addToCart(p, options, qty),
-                          child: Text(_reserveMode ? '예약' : '담기',
+                              : () => _addToCart(p, options, qty),
+                          child: const Text('담기',
                               style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 12.5,
-                                  color: _reserveMode
-                                      ? Colors.black87
-                                      : Colors.white)),
+                                  color: Colors.white)),
                         ),
                       ),
                     ),
@@ -569,64 +564,6 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         ],
       ),
     );
-  }
-
-  // 예약(수요조사) — 장바구니 없이 단일 품목 예약 신청 화면으로 이동.
-  Future<void> _reserve(
-      Map<String, dynamic> p, List<String> options, int qty) async {
-    if (options.isNotEmpty) {
-      final chosen = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('${p['name']} 옵션 선택'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final o in options)
-                ListTile(
-                  dense: true,
-                  title: Text(o),
-                  onTap: () => Navigator.pop(ctx, o),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          ],
-        ),
-      );
-      if (chosen == null) return;
-      _doReserve(p, chosen, qty);
-      return;
-    }
-    _doReserve(p, '', qty);
-  }
-
-  Future<void> _doReserve(
-      Map<String, dynamic> p, String option, int qty) async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => MerchCheckoutScreen(
-          lines: [
-            {
-              'productId': '${p['id']}',
-              'name': '${p['name']}',
-              'image': '${p['image'] ?? ''}',
-              'price': (p['price'] as num?)?.toInt() ?? 0,
-              'option': option,
-              'qty': qty,
-            }
-          ],
-          config: _config,
-          mode: 'reserve',
-        ),
-      ),
-    );
-    if (ok == true) {
-      _snack('예약이 접수되었습니다. (${p['name']}'
-          '${option.isNotEmpty ? ' / $option' : ''} × $qty)');
-    }
   }
 
   void _mergeCart(Map<String, dynamic> p, String option, [int qty = 1]) {
