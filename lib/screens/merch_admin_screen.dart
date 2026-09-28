@@ -338,10 +338,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 margin: const EdgeInsets.only(bottom: 8),
                 child: IntrinsicHeight(
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       if (_selMode)
-                        Center(
+                        Padding(
+                          padding: const EdgeInsets.only(right: 2),
                           child: Checkbox(
                             value: _selKeys.contains(k),
                             onChanged: (_) => _toggleSel(k),
@@ -349,14 +350,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                           ),
                         ),
                       Expanded(child: _groupCard(g, isReserve: false)),
-                      // 우측 순서이동 손잡이 — 항상 노출 (일괄편집 모드가 아니어도 표시)
+                      // 우측 순서변경 손잡이 — 좌측 체크박스와 높이·정렬 통일(항상 노출)
                       ReorderableDragStartListener(
                         index: i,
                         child: MouseRegion(
                           cursor: SystemMouseCursors.grab,
                           child: Container(
-                            width: 40,
-                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            width: 44,
+                            height: 52,
+                            margin: const EdgeInsets.only(left: 4),
                             decoration: BoxDecoration(
                               color: AppColors.purple.withValues(alpha: 0.07),
                               borderRadius: BorderRadius.circular(10),
@@ -365,18 +367,19 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                               ),
                             ),
                             child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
                                   Icons.drag_indicator,
-                                  size: 22,
+                                  size: 20,
                                   color: AppColors.purple,
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 1),
                                 Text(
-                                  '순서',
+                                  '순서변경',
                                   style: TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 8.5,
                                     fontWeight: FontWeight.w700,
                                     color: AppColors.purple.withValues(
                                       alpha: 0.85,
@@ -462,7 +465,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           if (_selMode) ...[
             const SizedBox(height: 4),
             Text(
-              '선택 ${_selKeys.length}건 · 우측 「순서」 손잡이를 끌어 이동',
+              '선택 ${_selKeys.length}건 · 우측 「순서변경」 손잡이를 끌어 이동',
               style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
             const SizedBox(height: 8),
