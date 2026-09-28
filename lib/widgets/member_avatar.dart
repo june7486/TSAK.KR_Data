@@ -20,6 +20,7 @@ class MemberAvatar extends StatelessWidget {
     this.number = '',
     this.showNumber = true,
     this.square = false,
+    this.useTigerDefault = true,
   });
 
   final String name;
@@ -36,6 +37,10 @@ class MemberAvatar extends StatelessWidget {
   /// true면 사각형(라운드) 프레임
   final bool square;
 
+  /// true면 사진 없을 때 기본 호랑이 이미지를 사용.
+  /// false(비회원·일반회원)면 사람 실루엣(기본이미지)을 사용.
+  final bool useTigerDefault;
+
   @override
   Widget build(BuildContext context) {
     final border = leagueColor(league);
@@ -43,6 +48,37 @@ class MemberAvatar extends StatelessWidget {
     Widget child;
     if (photoPath.isNotEmpty) {
       child = _buildImage();
+    } else if (!useTigerDefault) {
+      // 비회원(일반회원) — 호랑이 이미지 대신 기본 사람 아이콘
+      child = Stack(
+        fit: StackFit.expand,
+        children: [
+          _fallback(),
+          if (showNumber && number.trim().isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.45),
+                padding: const EdgeInsets.symmetric(vertical: 1),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    number.trim(),
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: size * 0.26,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
     } else {
       // 사진 없음 → 기본 호랑이 이미지 + (인가번호 오버레이)
       child = Stack(

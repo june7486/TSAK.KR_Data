@@ -7,6 +7,7 @@ import '../services/nas_api.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import 'order_detail_screen.dart';
 
 /// 수품 통계·현황 페이지 — **관리자·마스터 전용**.
@@ -28,6 +29,62 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _reserves = [];
   List<String> _statuses = const [];
+
+  /// 기간 설정 — 'all'(전체) | 'y:2026' | 'm:2026-09' | 'd:2026-09-28'
+  String _periodKey = 'all';
+
+  /// 주문의 날짜 문자열에서 YYYY-MM-DD 추출(생성일 기준).
+  String _orderDay(Map<String, dynamic> o) {
+    final raw = '${o['created'] ?? o['createdAt'] ?? o['paidDate'] ?? ''}'
+        .trim();
+    if (raw.isEmpty) return '';
+    final m = RegExp(r'(\d{4})[.\-/년 ]\s*(\d{1,2})[.\-/월 ]\s*(\d{1,2})')
+        .firstMatch(raw);
+    if (m == null) return '';
+    final y = m.group(1)!;
+    final mo = m.group(2)!.padLeft(2, '0');
+    final d = m.group(3)!.padLeft(2, '0');
+    return '$y-$mo-$d';
+  }
+
+  /// 기간 필터 통과 여부.
+  bool _inPeriod(Map<String, dynamic> o) {
+    if (_periodKey == 'all') return true;
+    final day = _orderDay(o);
+    if (day.isEmpty) return false;
+    if (_periodKey.startsWith('y:')) {
+      return day.startsWith(_periodKey.substring(2));
+    }
+    if (_periodKey.startsWith('m:')) {
+      return day.startsWith(_periodKey.substring(2));
+    }
+    if (_periodKey.startsWith('d:')) {
+      return day == _periodKey.substring(2);
+    }
+    return true;
+  }
+
+  /// 데이터에서 존재하는 연도/연월 목록을 만든다.
+  List<MapEntry<String, String>> _periodOptions() {
+    final years = <String>{};
+    final months = <String>{};
+    final days = <String>{};
+    for (final o in _orders) {
+      final day = _orderDay(o);
+      if (day.length >= 4) years.add(day.substring(0, 4));
+      if (day.length >= 7) months.add(day.substring(0, 7));
+      if (day.length >= 10) days.add(day);
+    }
+    final yearList = years.toList()..sort((a, b) => b.compareTo(a));
+    final monthList = months.toList()..sort((a, b) => b.compareTo(a));
+    final dayList = days.toList()..sort((a, b) => b.compareTo(a));
+    return [
+      const MapEntry('all', '전체'),
+      for (final y in yearList) MapEntry('y:$y', '$y년'),
+      for (final m in monthList.take(12)) MapEntry('m:$m', '${m.substring(5)}월'),
+      for (final d in dayList.take(14)) MapEntry('d:$d', d.substring(5)),
+    ];
+  }
 
   @override
   void initState() {
@@ -124,7 +181,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
   }
 
   Widget _body() {
-    final valid = _orders.where((o) => !_isCancelled(o)).toList();
+    final valid = _orders
+        .where((o) => !_isCancelled(o) && _inPeriod(o))
+        .toList();
     final cancelled = _orders.where(_isCancelled).toList();
 
     // 합계
@@ -184,6 +243,8 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
+        _periodBar(),
+        const SizedBox(height: 12),
         Row(
           children: [
             _stat('총 주문', '${valid.length}건', AppColors.purple),
@@ -470,8 +531,84 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
         label: Text(label, style: const TextStyle(fontSize: 12)),
       );
 
-  Widget _stat(String label, String value, Color c) => Expanded(
-        child: Container(
+  /// 기간 설정 바 — 전체/연도/월/일 선택 (좌우 화살표 스크롤 포함).
+  Widget _periodBar() {
+    final options = _periodOptions();
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.calendar_month,
+                  size: 16, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Text('기간 설정',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: AppColors.purpleDark)),
+              const Spacer(),
+              if (_periodKey != 'all')
+                TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
+                  onPressed: () => setState(() => _periodKey = 'all'),
+                  child: const Text('초기화', style: TextStyle(fontSize: 11)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          HScrollMenu(
+            height: 36,
+            child: Row(
+              children: [
+                for (final e in options)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _periodKey = e.key),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _periodKey == e.key
+                              ? AppColors.purple
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: AppColors.purple.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          e.value,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _periodKey == e.key
+                                ? Colors.white
+                                : AppColors.purple,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value, Color c) => Expanded(        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
             color: c.withValues(alpha: 0.08),

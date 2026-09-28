@@ -9,6 +9,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
 
@@ -169,19 +170,52 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             icon: const Icon(Icons.refresh),
           ),
         ],
-        bottom: TabBar(
-          controller: _tab,
-          isScrollable: true,
-          tabs: const [
-            Tab(text: '상품관리'),
-            Tab(text: '주문관리'),
-            Tab(text: '누적판매'),
-            Tab(text: '판매대장'),
-            Tab(text: '재고'),
-            Tab(text: '공여'),
-            Tab(text: '제작자'),
-            Tab(text: '설정'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(46),
+          child: Container(
+            color: AppColors.purple,
+            padding: const EdgeInsets.only(bottom: 4),
+            child: HScrollMenu(
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: _tabLabels.asMap().entries.map((e) {
+                  final i = e.key;
+                  final selected = _tab.index == i;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _tab.index = i),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: Text(
+                          e.value,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: selected
+                                ? AppColors.purpleDark
+                                : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
         ),
       ),
       body: _loading
@@ -203,6 +237,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
     );
   }
+
+  static const List<String> _tabLabels = [
+    '상품관리',
+    '주문관리',
+    '누적판매',
+    '판매대장',
+    '재고',
+    '공여',
+    '제작자',
+    '설정',
+  ];
 
   Widget _errorView() => Center(
     child: Column(
@@ -775,6 +820,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final head = items.first;
     final orderNo = '${head['orderNo'] ?? ''}'.trim();
     final buyer = '${head['buyerName'] ?? ''}'.trim();
+    final buyerNo = '${head['buyerNumber'] ?? ''}'.trim();
+    final buyerPhone = '${head['phone'] ?? ''}'.trim();
     final created = '${head['created'] ?? head['createdAt'] ?? ''}'.trim();
     final allPaid = items.every((o) => o['paid'] == true);
     final anyCancelled =
@@ -854,8 +901,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 ),
               ],
               const SizedBox(height: 6),
-              // 품목 미리보기 (장바구니처럼 나열)
-              for (final o in items.take(4))
+              // 품목 미리보기 (장바구니처럼 나열, 아주 작은 글씨)
+              for (final o in items.take(6))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Row(
@@ -868,42 +915,56 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                           '×${(o['qty'] as num?)?.toInt() ?? 1}'
                           '${('${o['option'] ?? ''}'.trim()).isEmpty ? '' : ' / ${o['option']}'}',
                           style: const TextStyle(
-                              fontSize: 12, color: AppColors.textDark),
+                              fontSize: 11, color: AppColors.textDark),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (!isReserve) ...[
+                        const SizedBox(width: 6),
+                        _pill(
+                          '${o['status'] ?? ''}'.trim().isEmpty
+                              ? '접수'
+                              : '${o['status']}',
+                          AppColors.textGray,
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              if (items.length > 4)
-                Text('외 ${items.length - 4}개 품목…',
+              if (items.length > 6)
+                Text('외 ${items.length - 6}개 품목…',
                     style: const TextStyle(
-                        fontSize: 11.5, color: AppColors.textGray)),
+                        fontSize: 11, color: AppColors.textGray)),
               const SizedBox(height: 6),
               Row(
                 children: [
                   const Icon(Icons.person_outline,
                       size: 13, color: AppColors.textGray),
                   const SizedBox(width: 3),
-                  Text(buyer.isEmpty ? '구매자 미상' : buyer,
+                  Expanded(
+                    child: Text(
+                      '${buyer.isEmpty ? '구매자 미상' : buyer}'
+                      '${buyerNo.isEmpty ? '' : ' · $buyerNo'}'
+                      '${buyerPhone.isEmpty ? '' : ' · $buyerPhone'}',
                       style: const TextStyle(
-                          fontSize: 12, color: AppColors.textDark)),
-                  const SizedBox(width: 10),
-                  const Icon(Icons.event_outlined,
-                      size: 13, color: AppColors.textGray),
-                  const SizedBox(width: 3),
+                          fontSize: 11.5, color: AppColors.textDark),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Flexible(
                     child: Text(created,
                         style: const TextStyle(
-                            fontSize: 12, color: AppColors.textGray),
+                            fontSize: 11, color: AppColors.textGray),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   Text('총 ${items.length}종 $sumQty개',
                       style: const TextStyle(
-                          fontSize: 11.5, color: AppColors.textGray)),
+                          fontSize: 11, color: AppColors.textGray)),
                   const SizedBox(width: 8),
                   Text(_won(grand),
                       style: const TextStyle(
@@ -1006,16 +1067,22 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final price = (p['price'] as num?)?.toInt() ?? 0;
     final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
+    final credentialOnly = p['credentialOnly'] == true;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        // 인가자 전용 상품은 바탕색을 다르게(틸/청록 계열) 표시
+        color: credentialOnly
+            ? const Color(0xFFE6F4F1)
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: (active ? AppColors.purple : AppColors.textGray).withValues(
-            alpha: 0.15,
-          ),
+          color: (credentialOnly
+                  ? AppColors.scoutGreen
+                  : (active ? AppColors.purple : AppColors.textGray))
+              .withValues(alpha: credentialOnly ? 0.55 : 0.15),
+          width: credentialOnly ? 1.6 : 1,
         ),
       ),
       child: Row(
@@ -1051,6 +1118,26 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               children: [
                 Row(
                   children: [
+                    // 인가자 전용 상품 — 상품명 말머리 표시
+                    if (credentialOnly) ...[
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.scoutGreen,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          '범인가자 전용',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
                     Expanded(
                       child: Text(
                         '${p['name'] ?? ''}',
@@ -1209,7 +1296,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 ),
                 const SizedBox(height: 8),
                 _dlgField(name, '소품명'),
-                _dlgField(kind, '종류 (예: 인가자 전용)'),
+                _dlgField(kind, '종류 · 추가설명 (예: 각인 가능, 세트)'),
                 _dlgField(price, '가격 (원)', number: true),
                 _dlgField(stock, '재고 수량', number: true),
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L / 58,60)'),

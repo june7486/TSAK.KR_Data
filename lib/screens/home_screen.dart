@@ -531,6 +531,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         scale: state.listScale,
                         selectMode: _selectMode,
                         selected: _selected.contains(m.id),
+                        // 관리자·마스터는 실명, 일반회원은 nameVisible=false 회원을 마스킹
+                        canSeeRealName: state.isApp ||
+                            state.isMaster ||
+                            state.who.replaceAll(RegExp(r'[^0-9]'), '') ==
+                                m.number.replaceAll(RegExp(r'[^0-9]'), ''),
                         onTap: () {
                           if (_selectMode) {
                             _toggle(m.id);
@@ -965,8 +970,15 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.only(right: 8),
             child: Row(
               children: [
+                // (1) 행사관리 — 가장 자주 쓰는 진입점
                 _eventButton(),
-                // 수품 구매 — 모든 사용자(일반 인가자·개인·관리자·마스터)에게 노출.
+                if (state.isApp || state.isMaster) ...[
+                  // (2) 승인관리 (관리자·마스터)
+                  _approvalButton(),
+                  // (3) 일반회원 (관리자·마스터)
+                  _regularMembersButton(),
+                ],
+                // (4) 수품 구매 — 모든 사용자에게 노출
                 _finButton(
                   '수품 구매',
                   Icons.shopping_cart_checkout,
@@ -974,50 +986,48 @@ class _HomeScreenState extends State<HomeScreen> {
                   -4,
                 ),
                 if (state.isApp || state.isMaster) ...[
-                  _approvalButton(),
-                  _finButton(
-                    '후원현황',
-                    Icons.volunteer_activism,
-                    AppColors.taegeukRed,
-                    1,
-                  ),
+                  // (5) 수품판매관리
                   _finButton(
                     '수품판매관리',
                     Icons.shopping_bag,
                     AppColors.taegeukBlue,
                     -2,
                   ),
+                  // (6) 수품통계
                   _finButton(
                     '수품통계',
                     Icons.insights,
                     const Color(0xFF6A1B9A),
                     -3,
                   ),
+                  // (7) 참가비
                   _finButton(
                     '참가비',
                     Icons.event_available,
                     AppColors.tigerGold,
                     3,
                   ),
+                  // (8) 지출현황
                   _finButton(
                     '지출현황',
                     Icons.payments,
                     const Color(0xFF00838F),
                     4,
                   ),
+                  // (9) 결산
                   _finButton(
                     '결산',
                     Icons.calculate,
                     AppColors.scoutGreen,
                     5,
                   ),
+                  // (10) 기본자료
                   _finButton(
                     '기본자료',
                     Icons.folder_open,
                     AppColors.purple,
                     -1,
                   ),
-                  _regularMembersButton(),
                 ],
               ],
             ),

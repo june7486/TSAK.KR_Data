@@ -62,6 +62,14 @@ class AppTheme {
           fontWeight: FontWeight.w700,
         ),
       ),
+      tabBarTheme: const TabBarThemeData(
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white70,
+        indicatorColor: Colors.white,
+        dividerColor: Colors.transparent,
+        labelStyle: TextStyle(fontWeight: FontWeight.w800),
+        unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w600),
+      ),
       cardTheme: CardThemeData(
         color: AppColors.card,
         elevation: 2,

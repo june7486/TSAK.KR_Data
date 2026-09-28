@@ -992,7 +992,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          for (int i = 0; i < _items.length; i++) _itemRow(_items[i], i, canManage),
+          // 주문상태 일괄적용 (관리자·마스터, 예약 아님)
+          if (canManage && widget.statuses.isNotEmpty && !widget.isReserve) ...[
+            _bulkStatusBar(),
+            const SizedBox(height: 10),
+          ],
+          for (int i = 0; i < _items.length; i++)
+            _itemRow(_items[i], i, canManage),
           const Divider(height: 20),
           Row(
             children: [
@@ -1004,6 +1010,61 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
                       color: AppColors.taegeukBlue)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 주문상태 일괄적용 바 — 모든 아이템에 한 번에 적용.
+  Widget _bulkStatusBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.layers, size: 15, color: AppColors.purple),
+              const SizedBox(width: 5),
+              const Text('주문상태 일괄적용',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purpleDark)),
+              const Spacer(),
+              Text('전체 ${_items.length}개 항목에 적용',
+                  style: const TextStyle(
+                      fontSize: 10.5, color: AppColors.textGray)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final s in widget.statuses)
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    minimumSize: const Size(0, 30),
+                    foregroundColor: _statusColor(s),
+                    side: BorderSide(
+                        color: _statusColor(s).withValues(alpha: 0.5)),
+                  ),
+                  onPressed: _busy ? null : () => _patchGroup({'status': s}),
+                  child: Text(s,
+                      style: const TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w700)),
+                ),
             ],
           ),
         ],
@@ -1066,6 +1127,51 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: AppColors.taegeukBlue)),
+                // 항목별 배송상태 선택 (관리자·마스터)
+                if (canManage &&
+                    widget.statuses.isNotEmpty &&
+                    !widget.isReserve) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.local_shipping_outlined,
+                          size: 14, color: AppColors.textGray),
+                      const SizedBox(width: 4),
+                      const Text('배송상태',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textGray)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: widget.statuses
+                                  .contains(_s(o, 'status'))
+                              ? _s(o, 'status')
+                              : null,
+                          isExpanded: true,
+                          isDense: true,
+                          hint: Text(
+                              _s(o, 'status').isEmpty
+                                  ? '미지정'
+                                  : _s(o, 'status'),
+                              style: const TextStyle(fontSize: 12)),
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textDark),
+                          items: [
+                            for (final s in widget.statuses)
+                              DropdownMenuItem(value: s, child: Text(s)),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (v) {
+                                  if (v != null) {
+                                    _patchItem('${o['id']}', {'status': v});
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (canManage) ...[
                   const SizedBox(height: 4),
                   Row(

@@ -16,6 +16,7 @@ class MemberCard extends StatelessWidget {
     this.onLongPress,
     this.onCheckToggle,
     this.onEdit,
+    this.canSeeRealName = true,
   });
 
   final Member member;
@@ -28,6 +29,9 @@ class MemberCard extends StatelessWidget {
 
   /// 이름 좌측 편집창 — 실명/개인정보 입력 화면으로 이동
   final VoidCallback? onEdit;
+
+  /// 관리자·마스터·본인이면 true(실명 표시). false면 nameVisible=false 회원을 마스킹.
+  final bool canSeeRealName;
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +128,8 @@ class MemberCard extends StatelessWidget {
                 size: 52 * s,
                 number: member.number,
                 showNumber: false,
+                // 비회원(일반회원)은 기본 호랑이 대신 사람 실루엣 사용
+                useTigerDefault: !member.isRegular,
               ),
               SizedBox(width: 10 * s),
               Expanded(
@@ -134,7 +140,7 @@ class MemberCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            member.name.isEmpty ? '(이름없음)' : member.name,
+                            member.displayName(canSeeRealName: canSeeRealName),
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 19 * s,

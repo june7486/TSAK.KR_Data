@@ -152,6 +152,16 @@ class Member {
   /// 이름 공개 여부 — 관리자가 개인 프로필에서 토글. false면 다른 회원에게 "(이름 비공개)".
   bool nameVisible;
 
+  /// 다른 회원(관리자·본인 제외)에게 보여줄 표시 이름.
+  /// [canSeeRealName]이 true(관리자·마스터·본인)면 실제 이름,
+  /// 아니면서 nameVisible=false면 "(이름 비공개)"로 마스킹한다.
+  String displayName({required bool canSeeRealName}) {
+    if (canSeeRealName || nameVisible) {
+      return name.isEmpty ? '(이름없음)' : name;
+    }
+    return '(이름 비공개)';
+  }
+
   /// 마지막 수정 시각
   DateTime? updatedAt;
 

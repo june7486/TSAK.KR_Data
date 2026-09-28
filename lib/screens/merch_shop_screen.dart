@@ -353,28 +353,6 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ),
-          // 연계 구매 링크(구글폼·네이버폼 등) — 주소가 설정돼 있을 때만 노출
-          if (_formUrl.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.taegeukBlue,
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                ),
-                onPressed: _openForm,
-                icon: const Icon(Icons.open_in_new, size: 18),
-                label: Text(_formLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              '※ 공식 주문폼이 열립니다(기존 방식으로 주문하실 수 있습니다).',
-              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
-            ),
-          ],
         ],
       ),
     );
@@ -388,11 +366,17 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final kind = '${p['kind'] ?? ''}';
     final soldOut = stock <= 0;
     final qty = _qtyOf(p);
+    final credentialOnly = p['credentialOnly'] == true;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        // 인가자 전용 상품은 바탕색을 다르게
+        color: credentialOnly ? const Color(0xFFE6F4F1) : Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.12)),
+        border: Border.all(
+          color: (credentialOnly ? AppColors.scoutGreen : AppColors.purple)
+              .withValues(alpha: credentialOnly ? 0.55 : 0.12),
+          width: credentialOnly ? 1.6 : 1,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -442,6 +426,22 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                             fontWeight: FontWeight.w800)),
                   ),
                 const SizedBox(height: 4),
+                // 인가자 전용 — 상품명 말머리 표시
+                if (credentialOnly)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.scoutGreen,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('범인가자 전용',
+                        style: TextStyle(
+                            fontSize: 9.5,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900)),
+                  ),
                 Text('${p['name'] ?? ''}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
