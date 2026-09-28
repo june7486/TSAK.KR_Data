@@ -3671,6 +3671,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       _row('연락처', '${m['phone']}'),
                     if ('${m['email'] ?? ''}'.isNotEmpty)
                       _row('이메일', '${m['email']}'),
+                    // ── 계좌·사업자등록증·입금현황 (PDF page28~29 최종 결정) ──
+                    if ('${m['account'] ?? ''}'.isNotEmpty)
+                      _row('계좌', '${m['account']}'),
+                    if ('${m['bizNumber'] ?? ''}'.isNotEmpty)
+                      _row('사업자등록번호', '${m['bizNumber']}'),
+                    _makerBizLicenseRow(m),
+                    _makerDepositRow(m),
                   ],
                 ),
               ),
@@ -3867,6 +3874,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final phone = TextEditingController(text: '${existing?['phone'] ?? ''}');
     final email = TextEditingController(text: '${existing?['email'] ?? ''}');
     final memo = TextEditingController(text: '${existing?['memo'] ?? ''}');
+    // [turn9-5] 제작자 페이지 보강 — 계좌번호·사업자등록증·입금현황 (PDF page28~29 최종 결정).
+    final account = TextEditingController(text: '${existing?['account'] ?? ''}');
+    final bizNumber = TextEditingController(
+      text: '${existing?['bizNumber'] ?? ''}',
+    );
+    final paidAmount = TextEditingController(
+      text: '${existing?['paidAmount'] ?? ''}',
+    );
+    String bizLicenseFile = '${existing?['bizLicenseFile'] ?? ''}';
+    bool paid = existing?['paid'] == true;
     String photo = '${existing?['photo'] ?? ''}';
     final List<String> extraFiles = ((existing?['extraFiles'] as List?) ?? [])
         .map((e) => '$e')
@@ -3893,6 +3910,49 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   _dlgField(manager, '담당자'),
                   _dlgField(phone, '연락처'),
                   _dlgField(email, '이메일'),
+                  const Divider(),
+                  // ── 계좌번호 · 사업자등록증 · 입금현황 (PDF page28~29 최종 결정) ──
+                  _dlgField(account, '계좌번호 (예: 기업은행 01087539798 안승휘)'),
+                  _dlgField(bizNumber, '사업자등록번호'),
+                  _fileRow(
+                    '사업자등록증',
+                    bizLicenseFile,
+                    () => _pickFile((n) => setDlg(() => bizLicenseFile = n)),
+                    () => setDlg(() => bizLicenseFile = ''),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '입금현황',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 130,
+                        child: _dlgField(paidAmount, '입금액(원)'),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '입금 완료',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      Switch(
+                        value: paid,
+                        activeThumbColor: AppColors.scoutGreen,
+                        onChanged: (v) => setDlg(() => paid = v),
+                      ),
+                    ],
+                  ),
                   const Divider(),
                   // 결제·입금 관련 항목은 제작자 페이지에서 제외(제작 내역 중심).
                   _fileRow(
@@ -4006,6 +4066,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       'manager': manager.text.trim(),
       'phone': phone.text.trim(),
       'email': email.text.trim(),
+      'account': account.text.trim(),
+      'bizNumber': bizNumber.text.trim(),
+      'bizLicenseFile': bizLicenseFile,
+      'paidAmount': paidAmount.text.trim(),
+      'paid': paid,
       'photo': photo,
       'extraFiles': extraFiles,
       'progress': progress,
@@ -4781,6 +4846,76 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ],
     ),
   );
+
+  /// 제작자 카드 — 사업자등록증 파일 행(열람/다운로드, PDF page28 최종 결정).
+  Widget _makerBizLicenseRow(Map<String, dynamic> m) {
+    final f = '${m['bizLicenseFile'] ?? ''}'.trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 64,
+            child: Text(
+              '사업자등록증',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+          ),
+          Expanded(
+            child: f.isEmpty
+                ? const Text(
+                    '미첨부',
+                    style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
+                  )
+                : TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 24),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => _openMakerFile(f),
+                    icon: const Icon(Icons.description_outlined, size: 15),
+                    label: const Text(
+                      '사업자등록증 열람/다운로드',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 제작자 카드 — 입금현황 행(입금액·완료여부, PDF page29 최종 결정).
+  Widget _makerDepositRow(Map<String, dynamic> m) {
+    final paid = m['paid'] == true;
+    final amt = m['paidAmount'] ?? 0;
+    final hasData = paid || (amt != null && '$amt' != '0' && '$amt'.isNotEmpty);
+    if (!hasData) return const SizedBox.shrink();
+    return _row(
+      '입금현황',
+      '${_won(amt)}원${paid ? ' · 입금완료' : ' · 미완료'}',
+    );
+  }
+
+  /// 제작자 민감파일(견적서/사업자등록증) 열람 — 마스터, 허용된 관리자만 서버가 허용.
+  Future<void> _openMakerFile(String name) async {
+    final url = _nas.merchFileUrl(name);
+    try {
+      final ok = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!ok && mounted) _snack('파일을 열 수 없습니다 (열람 권한 확인)');
+    } catch (_) {
+      try {
+        await launchUrl(Uri.parse(url));
+      } catch (_) {
+        if (mounted) _snack('파일 링크: $url');
+      }
+    }
+  }
 
   Widget _dlgField(
     TextEditingController c,
