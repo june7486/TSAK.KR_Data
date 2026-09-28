@@ -972,7 +972,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     1,
                   ),
                   _finButton(
-                    '수품구매',
+                    '수품판매관리',
                     Icons.shopping_bag,
                     AppColors.taegeukBlue,
                     -2,

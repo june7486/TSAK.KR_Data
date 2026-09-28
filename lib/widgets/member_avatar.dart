@@ -7,8 +7,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// 사진 미등록 회원의 기본 이미지(범/호랑이) 에셋 경로
-const String kDefaultMemberPhoto =
-    'assets/images/default_member_tiger.png';
+const String kDefaultMemberPhoto = 'assets/images/default_member_tiger.png';
 
 /// 인가자 사진 아바타 — 사진이 없으면 기본 호랑이 이미지를 표시
 class MemberAvatar extends StatelessWidget {
