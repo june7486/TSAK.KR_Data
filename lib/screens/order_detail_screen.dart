@@ -661,8 +661,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final h = _head;
     final items = _items.map((o) =>
         '<li>${_s(o, 'product')} × ${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')} = ${_won(_i(o, 'total'))}</li>').join();
-    return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
-<style>
+    final inner = '''<style>
  body{font-family:'Malgun Gothic',sans-serif;margin:0}
  .slide{width:960px;height:540px;margin:12px auto;padding:48px;box-sizing:border-box;
    background:#fff;border:1px solid #E4E0D8;display:flex;flex-direction:column}
@@ -674,7 +673,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
  ul{line-height:2;font-size:16px;color:#3A3A3A}
  .big{font-size:34px;color:#7C6A9C;font-weight:700;margin-top:auto}
  .brand{font-size:11px;letter-spacing:3px;color:#9A9388}
-</style></head><body>
+</style>
 <div class="slide s1">
  <div class="brand">한국범스카우트중앙회 · TSAK</div>
  <h2>수품 주문 내역서</h2>
@@ -689,8 +688,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
  <h2>합계</h2>
  <div>상품합계 ${_won(_sumTotal)}${_sumFee > 0 ? ' · 연회비 ${_won(_sumFee)}' : ''}${_sumShip > 0 ? ' · 배송비 ${_won(_sumShip)}' : ''}</div>
  <div class="big">총 ${_won(_grand)}</div>
-</div>
-</body></html>''';
+</div>''';
+    return wrapPrintHtml('수품 주문 내역서 (슬라이드)', inner);
   }
 
   Future<void> _print() async {

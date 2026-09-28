@@ -248,8 +248,12 @@ def _log_access_login(tier, role, ident, who, ua, ip, extra=None):
                 ident = re.sub(r"[^0-9]", "", str(m.get("number", "")))
     except Exception:
         pass
+    # 본인 로그인 여부 — 개인/비인가자가 자기 인가번호(전화)로 접속한 경우.
+    is_self = str(tier) in ("personal", "guest")
     entry = {
         "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "event": "login",
+        "self": is_self,
         "tier": str(tier or ""),
         "role": str(role or ""),
         "ident": ident,
@@ -261,6 +265,52 @@ def _log_access_login(tier, role, ident, who, ua, ip, extra=None):
     }
     if extra:
         entry.update(extra)
+    _access_log_append(entry)
+    return entry
+
+
+def _log_access_view(viewer_tier, viewer_who, target_ident, ua, ip):
+    """타 사용자(마스터/관리자/다른 회원)가 개인 프로필을 열람한 이력 1건 기록."""
+    target = re.sub(r"[^0-9]", "", str(target_ident or ""))
+    if not target:
+        return None
+    vwho = re.sub(r"[^0-9]", "", str(viewer_who or ""))
+    name = ""
+    try:
+        m = _ev_member_by_ident(target)
+        if m:
+            name = str(m.get("name", ""))
+    except Exception:
+        pass
+    tier = str(viewer_tier or "")
+    # 열람자 표시 라벨 — 마스터/관리자/인가자(번호)/비인가자.
+    if tier == "master":
+        label = "마스터"
+    elif tier == "app":
+        label = "관리자"
+    elif tier == "personal":
+        label = "인가자"
+    elif tier == "guest":
+        label = "비인가자"
+    else:
+        label = "열람자"
+    is_self = bool(vwho) and vwho == target and tier in ("personal", "guest")
+    entry = {
+        "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "event": "view",
+        "self": is_self,
+        "tier": tier,
+        "role": label,
+        "ident": target,
+        "who": vwho,
+        "name": name,
+        "viewer": label + ((" " + vwho) if vwho else ""),
+        "viewerTier": tier,
+        "viewerWho": vwho,
+        "device": _ua_device_name(ua),
+        "ua": str(ua or "")[:300],
+        "ip": str(ip or ""),
+    }
     _access_log_append(entry)
     return entry
 
@@ -4566,10 +4616,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline' "
-            "'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' "
-            "data: blob:; font-src 'self' data:; connect-src 'self' "
-            "https:; object-src 'none'; base-uri 'self'")
+            "default-src 'self' blob:; script-src 'self' 'unsafe-inline' "
+            "'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' blob:; "
+            "img-src 'self' data: blob:; font-src 'self' data:; "
+            "connect-src 'self' https: blob:; frame-src 'self' blob:; "
+            "child-src 'self' blob:; object-src 'none'; base-uri 'self'")
         self.send_header("Cache-Control", "no-store")
 
     def _cors_static(self):
@@ -4935,6 +4986,28 @@ class Handler(BaseHTTPRequestHandler):
                 if not no:
                     return self._json({"ok": False, "error": "number"}, 400)
                 return self._json({"ok": True, "logs": _access_log_for(no)})
+            # ---- 프로필 열람 로그 기록 ----
+            #  마스터/관리자/다른 회원이 개인 프로필을 열람한 이력을 남긴다.
+            #  본인 로그인(personal/guest가 자기 번호)은 self=true 로 기록.
+            if p == "/api/member/access-log/view":
+                s = self._sess()
+                if not s:
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
+                d = json.loads(self._body() or b"{}")
+                target = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                if not target:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                ua = self.headers.get("User-Agent", "")
+                ip = self.client_address[0] if self.client_address else ""
+                viewer_tier = str(s.get("tier", ""))
+                viewer_who = str(s.get("who", ""))
+                # 개인/비인가자가 본인 프로필을 열람한 경우 → 로그인 기록만으로
+                #  충분하므로 중복 열람기록은 남기지 않는다.
+                is_self = (viewer_tier in ("personal", "guest")
+                           and viewer_who and viewer_who == target)
+                if not is_self:
+                    _log_access_view(viewer_tier, viewer_who, target, ua, ip)
+                return self._json({"ok": True, "logged": (not is_self)})
             # ---- 전체 회원 접속 로그 (마스터 전용, 대시보드용) ----
             if p == "/api/access/logs":
                 if not self._require("master"):

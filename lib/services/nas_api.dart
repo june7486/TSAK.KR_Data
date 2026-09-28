@@ -1087,6 +1087,19 @@ class NasApi {
         .toList();
   }
 
+  /// 프로필 열람 로그 기록 (마스터/관리자/타 회원이 개인 프로필을 열람한 이력).
+  Future<void> logProfileView(String number) async {
+    try {
+      await http
+          .post(
+            _uri('/api/member/access-log/view'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({'number': number}),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {}
+  }
+
   /// 접속 로그 삭제 (마스터 전용).
   ///  mode: 'one'(ts+number 1건) | 'member'(해당 회원 전체) | 'all'(전체)
   Future<bool> deleteAccessLog({

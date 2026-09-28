@@ -145,12 +145,15 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
               style: pw.TextStyle(font: reg, fontSize: 8, color: gray)),
           pw.SizedBox(height: 10),
           pw.Table.fromTextArray(
-            headers: const ['일시', '역할', '기기', 'IP'],
+            headers: const ['일시', '구분', '이벤트', '역할', '열람자', '기기', 'IP'],
             data: [
               for (final l in _logs)
                 [
                   '${l['ts'] ?? ''}',
+                  l['self'] == true ? '본인' : '타인',
+                  '${l['event'] ?? ''}' == 'view' ? '열람' : '로그인',
                   '${l['role'] ?? l['tier'] ?? ''}',
+                  '${l['viewer'] ?? ''}',
                   '${l['device'] ?? ''}',
                   '${l['ip'] ?? ''}',
                 ],
@@ -202,11 +205,14 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
     setState(() => _busy = true);
     try {
       final b = StringBuffer();
-      b.writeln('일시,역할,기기,IP,UA');
+      b.writeln('일시,구분,이벤트,역할,열람자,기기,IP,UA');
       for (final l in _logs) {
         String q(Object? v) => '"${'${v ?? ''}'.replaceAll('"', '""')}"';
         b.writeln(
-            [q(l['ts']), q(l['role'] ?? l['tier']), q(l['device']), q(l['ip']), q(l['ua'])]
+            [q(l['ts']), q(l['self'] == true ? '본인' : '타인'),
+             q('${l['event'] ?? ''}' == 'view' ? '열람' : '로그인'),
+             q(l['role'] ?? l['tier']), q(l['viewer']), q(l['device']),
+             q(l['ip']), q(l['ua'])]
                 .join(','));
       }
       final name =
@@ -244,7 +250,7 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
                 const Icon(Icons.history, size: 19, color: AppColors.purple),
                 const SizedBox(width: 8),
                 const Expanded(
-                  child: Text('회원 접속 기록 (최근 100건)',
+                  child: Text('회원 접속·열람 기록 (최근 100건)',
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                 ),
                 IconButton(
@@ -342,29 +348,59 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
     final ts = '${l['ts'] ?? ''}';
     final ip = '${l['ip'] ?? ''}';
     final tier = '${l['tier'] ?? ''}';
+    final isSelf = l['self'] == true;
+    final isView = '${l['event'] ?? ''}' == 'view';
+    final viewer = '${l['viewer'] ?? ''}'.trim();
     Color c = AppColors.purple;
     if (tier == 'master') c = AppColors.lifetimeGold;
     if (tier == 'app') c = AppColors.taegeukBlue;
     if (tier == 'guest') c = AppColors.scoutGreen;
+    // 본인 로그인/접속은 색상 변경 + 굵게 강조한다.
+    final Color selfColor = AppColors.taegeukRed;
+    final Color rowColor = isSelf ? selfColor : c;
     return Container(
       margin: const EdgeInsets.only(bottom: 5),
       padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
       decoration: BoxDecoration(
-        color: i.isEven ? const Color(0xFFF8F6FC) : Colors.white,
+        color: isSelf
+            ? selfColor.withValues(alpha: 0.07)
+            : (i.isEven ? const Color(0xFFF8F6FC) : Colors.white),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.12)),
+        border: Border.all(
+          color: isSelf
+              ? selfColor.withValues(alpha: 0.45)
+              : AppColors.purple.withValues(alpha: 0.12),
+          width: isSelf ? 1.4 : 1,
+        ),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
-              color: c.withValues(alpha: 0.12),
+              color: rowColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(role.isEmpty ? '-' : role,
                 style: TextStyle(
-                    fontSize: 10.5, fontWeight: FontWeight.w800, color: c)),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: rowColor)),
+          ),
+          const SizedBox(width: 7),
+          // 이벤트 구분: 본인 로그인 / 열람
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: (isView ? AppColors.purple : AppColors.scoutGreen)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(isView ? '열람' : '로그인',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: isView ? AppColors.purple : AppColors.scoutGreen)),
           ),
           const SizedBox(width: 9),
           Expanded(
@@ -373,28 +409,74 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.access_time, size: 12, color: AppColors.textGray),
+                    Icon(Icons.access_time,
+                        size: 12, color: AppColors.textGray),
                     const SizedBox(width: 4),
                     Text(ts,
-                        style: const TextStyle(
-                            fontSize: 11.5, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight:
+                                isSelf ? FontWeight.w900 : FontWeight.w700,
+                            color: isSelf ? selfColor : AppColors.textDark)),
+                    if (isSelf) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: selfColor,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text('본인 접속',
+                            style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white)),
+                      ),
+                    ],
                   ],
                 ),
+                if (isView && viewer.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.visibility,
+                          size: 12, color: AppColors.textGray),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text('열람자 $viewer',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight:
+                                    isSelf ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelf ? selfColor : AppColors.textDark)),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    const Icon(Icons.devices_other, size: 12, color: AppColors.textGray),
+                    const Icon(Icons.devices_other,
+                        size: 12, color: AppColors.textGray),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(device,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.textDark)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight:
+                                  isSelf ? FontWeight.w800 : FontWeight.w400,
+                              color:
+                                  isSelf ? selfColor : AppColors.textDark)),
                     ),
                     if (ip.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      const Icon(Icons.public, size: 11, color: AppColors.textGray),
+                      const Icon(Icons.public,
+                          size: 11, color: AppColors.textGray),
                       const SizedBox(width: 3),
                       Text(ip,
                           style: const TextStyle(

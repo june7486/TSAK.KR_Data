@@ -604,6 +604,16 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// 프로필 열람 로그 기록 — 마스터/관리자/타 회원이 개인 프로필을 열람한 이력.
+  /// (본인 로그인 열람은 서버에서 중복 기록을 생략한다.)
+  Future<void> logProfileView(String number) async {
+    if (!repo.isNasMode) return;
+    if (number.trim().isEmpty) return;
+    try {
+      await nas.logProfileView(number);
+    } catch (_) {}
+  }
+
   /// 회원 접속 로그 조회 (마스터 전용, 최신 100건).
   Future<List<Map<String, dynamic>>> fetchMemberAccessLog(String number) async {
     if (!repo.isNasMode || !isMaster) return [];

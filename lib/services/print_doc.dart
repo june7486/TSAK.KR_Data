@@ -127,6 +127,7 @@ String buildMujiDoc({
 
   return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>${_esc(meta.title)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
  *{box-sizing:border-box}
  @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:14mm}
@@ -149,8 +150,21 @@ String buildMujiDoc({
  .sum .g{font-size:18px;font-weight:700;color:#7C6A9C}
  .foot{margin-top:28px;padding-top:12px;border-top:1px solid #E4E0D8;font-size:11px;color:#9A9388;
    display:flex;justify-content:space-between}
- @media print{body{padding:0}}
+ /* 상단 툴바 — 닫기(뒤로가기)·인쇄 버튼. (모든 출력창 공통 규칙) */
+ .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;align-items:center;
+   justify-content:flex-end;padding:10px 14px;background:#F4F1EA;
+   border-bottom:1px solid #E4E0D8;margin:-30px -30px 16px}
+ .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:left}
+ .tsak-bar button{font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;
+   border-radius:8px;padding:8px 16px;border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
+ .tsak-bar button.pri{background:#7C6A9C;color:#fff}
+ @media print{.tsak-bar{display:none!important}body{padding:0}}
 </style></head><body>
+<div class="tsak-bar">
+  <span class="sp">${_esc(meta.title)}</span>
+  <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
+  <button onclick="window.close(); if(!window.closed){history.back();}">닫기(뒤로)</button>
+</div>
 $head
 $metaHtml
 $table
@@ -164,3 +178,37 @@ String _stamp() {
   String p(int n) => n.toString().padLeft(2, '0');
   return '${d.year}.${p(d.month)}.${p(d.day)} ${p(d.hour)}:${p(d.minute)}';
 }
+
+/// (모든 이미지·출력창 공통 규칙) 상단 툴바(닫기/뒤로가기 + 인쇄) + 기본 스타일로
+/// 임의 [inner] HTML 본문을 감싸 완전한 문서를 만든다.
+///
+/// `buildMujiDoc` 를 사용하지 않는 특수 출력(통계 표, 슬라이드형 PPT 등)에서
+/// 재사용한다. 툴바는 인쇄 시 숨겨진다.
+String wrapPrintHtml(String title, String inner, {bool landscape = false}) => '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>${_esc(title)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ *{box-sizing:border-box}
+ @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:14mm}
+ body{font-family:'Malgun Gothic','NanumGothic',sans-serif;color:#2c2c2c;padding:0;margin:0;background:#fff}
+ .print-body{padding:24px}
+ table{border-collapse:collapse;width:100%;font-size:12.5px}
+ th,td{border-bottom:1px solid #EDEAE3;padding:8px 10px}
+ th{background:#F4F1EA;color:#5A564E;font-weight:700}
+ /* 상단 툴바 — 닫기(뒤로가기)·인쇄 버튼. (모든 출력창 공통 규칙) */
+ .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;align-items:center;
+   justify-content:flex-end;padding:10px 14px;background:#F4F1EA;
+   border-bottom:1px solid #E4E0D8}
+ .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:left}
+ .tsak-bar button{font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;
+   border-radius:8px;padding:8px 16px;border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
+ .tsak-bar button.pri{background:#7C6A9C;color:#fff}
+ @media print{.tsak-bar{display:none!important}.print-body{padding:0}}
+</style></head><body>
+<div class="tsak-bar">
+  <span class="sp">${_esc(title)}</span>
+  <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
+  <button onclick="window.close(); if(!window.closed){history.back();}">닫기(뒤로)</button>
+</div>
+<div class="print-body">$inner</div>
+</body></html>''';

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
+import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -415,14 +416,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
 
-  /// 인쇄용 HTML 문서 래핑(스타일 포함).
+  /// 인쇄용 HTML 문서 래핑(스타일 포함) — 공통 툴바(닫기/뒤로+인쇄) 적용.
   String _wrap(String inner) =>
-      '<!doctype html><html><head><meta charset="utf-8">'
-      '<meta name="viewport" content="width=device-width,initial-scale=1">'
-      '<style>body{font-family:"NanumGothic",sans-serif;padding:16px;color:#2c2c2c}'
-      'table{border-collapse:collapse;width:100%;font-size:12px}'
-      'th,td{border:1px solid #ccc;padding:6px}th{background:#F3E5F5}'
-      '</style></head><body>$inner</body></html>';
+      wrapPrintHtml('수품 통계·현황', inner, landscape: true);
 
   Future<void> _snackAsync(String m) async {
     if (!mounted) return;

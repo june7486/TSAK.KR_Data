@@ -44,8 +44,29 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadKnownEvents());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadKnownEvents();
+      _logView();
+    });
   }
+
+  /// 프로필 열람 로그 기록 — 마스터/관리자/다른 회원이 본 이력을 남긴다.
+  /// (개인·비인가자가 본인 프로필을 연 경우 서버가 중복 기록을 생략한다.)
+  Future<void> _logView() async {
+    try {
+      final state = context.read<AppState>();
+      final m = state.byId(widget.memberId);
+      if (m == null) return;
+      final ident = m.number.isNotEmpty ? m.number : m.phone;
+      if (ident.trim().isEmpty) return;
+      await state.logProfileView(ident);
+      // 열람 기록이 갱신된 뒤 접속기록 섹션을 새로고침한다.
+      if (mounted) setState(() => _accessLogRefreshKey++);
+    } catch (_) {}
+  }
+
+  /// 접속기록 섹션 새로고침 트리거(열람 로그 기록 후 갱신).
+  int _accessLogRefreshKey = 0;
 
   Future<void> _loadKnownEvents() async {
     try {
@@ -129,7 +150,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _infoCard(m),
                 _membershipSection(m),
                 _passwordSection(m),
-                MemberAccessLogSection(member: m),
+                MemberAccessLogSection(
+                  key: ValueKey('access-log-$_accessLogRefreshKey'),
+                  member: m,
+                ),
                 const SizedBox(height: 30),
               ],
             ),
@@ -768,8 +792,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _eventSection(Member m) {
-    // 참가한 모든 행사를 최신순(연도 내림차순)으로 아래로 나열한다.
-    final events = m.eventAttend.keys.toList()
+    // 프로필에 등록된 행사 + 행사관리(events.json)에 정의된 모든 행사를 합집합으로
+    // 표시한다 — 누락 없이 모든 행사 리스트를 노출(미등록 행사는 '미등록'으로 표시).
+    final names = <String>{
+      ...m.eventAttend.keys,
+      if (_knownLoaded) ..._knownEvents,
+    };
+    final events = names.toList()
       ..sort((a, b) {
         final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
         final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
@@ -777,6 +806,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         return b.compareTo(a);
       });
     final attendedCount = events.where((e) => m.eventAttend[e] == true).length;
+    final missingCount =
+        events.where((e) => !m.eventAttend.containsKey(e)).length;
     return _section(
       title: '행사참가',
       icon: Icons.event,
@@ -784,7 +815,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ? Row(
               children: [
                 Text(
-                  '등록된 행사가 없습니다.',
+                  '행사 목록을 불러오는 중입니다.',
                   style: TextStyle(color: AppColors.textGray, fontSize: 13),
                 ),
                 const Spacer(),
@@ -799,7 +830,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '참가 $attendedCount건 · 전체 ${events.length}건',
+                  '참가 $attendedCount건 · 전체 ${events.length}건'
+                  '${missingCount > 0 ? ' · 미등록 $missingCount건' : ''}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textGray,
@@ -808,6 +840,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 ...events.map((e) {
+                  final hasKey = m.eventAttend.containsKey(e);
                   final attend = m.eventAttend[e] == true;
                   final missing = _knownLoaded && !_knownEvents.contains(e);
                   return Column(
@@ -828,15 +861,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                attend ? '참가' : '불참',
+                                !hasKey ? '미등록' : (attend ? '참가' : '불참'),
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: attend
                                       ? AppColors.taegeukBlue
-                                      : AppColors.textGray,
+                                      : (hasKey
+                                          ? AppColors.textGray
+                                          : AppColors.lifetimeGold),
                                   fontWeight: attend
                                       ? FontWeight.w700
-                                      : FontWeight.w400,
+                                      : (hasKey
+                                          ? FontWeight.w400
+                                          : FontWeight.w700),
                                 ),
                               ),
                               onChanged: (v) {
