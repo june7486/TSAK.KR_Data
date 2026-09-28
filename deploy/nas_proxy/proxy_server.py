@@ -54,6 +54,7 @@ FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거�
 REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
 MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
 MERCH_MAKER_DIR = BASE + "/수품제작자"           # 수품 제작자 첨부파일 저장 폴더
+MERCH_IMG_UPLOAD_DIR = HERE + "/merch_img_upload"  # 관리자 업로드 상품 이미지 폴더
 LOCK = threading.Lock()
 
 # 행사별 하위 폴더(항목) — 번호+한글명, 업로드 가능 폴더엔 "_(업로드가능)" 꼬리말
@@ -4312,6 +4313,7 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_merch_image_named(self, name, src):
         """수품 이미지 제공.
         - name(파일명)이 있으면 로컬 merch_img 폴더에서 제공(우선).
+        - 없으면 <업로드 이미지 폴더>에서 제공(관리자가 업로드한 상품 이미지).
         - 없으면 src(외부 URL)를 받아 캐시 후 제공.
         """
         safe = os.path.basename(str(name or ""))
@@ -4321,8 +4323,22 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     with open(local, "rb") as f:
                         body = f.read()
-                    ctype = "image/png" if safe.lower().endswith(".png") \
-                        else "image/jpeg"
+                    ctype = ("image/png" if safe.lower().endswith(".png")
+                             else "image/gif" if safe.lower().endswith(".gif")
+                             else "image/webp" if safe.lower().endswith(".webp")
+                             else "image/jpeg")
+                    return self._bytes_cache(body, ctype, max_age=604800)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 500)
+            up = os.path.join(MERCH_IMG_UPLOAD_DIR, safe)
+            if os.path.exists(up):
+                try:
+                    with open(up, "rb") as f:
+                        body = f.read()
+                    ctype = ("image/png" if safe.lower().endswith(".png")
+                             else "image/gif" if safe.lower().endswith(".gif")
+                             else "image/webp" if safe.lower().endswith(".webp")
+                             else "image/jpeg")
                     return self._bytes_cache(body, ctype, max_age=604800)
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)}, 500)
@@ -6162,6 +6178,39 @@ class Handler(BaseHTTPRequestHandler):
                 if rec and rec.get("contactId"):
                     _merch_detach_from_member(rec.get("contactId"), rid, "reservation")
                 return self._json({"ok": True})
+            if p == "/api/merch/img/upload":
+                # 상품 이미지 업로드(multipart 아님: {name, data(base64)}).
+                #  저장: 관리자 업로드 폴더 → 상품.image = 저장파일명.
+                if not self._require("admin"):
+                    return
+                raw = self._body()
+                d = json.loads(raw or b"{}")
+                fname = _safe_name(str(d.get("filename", "") or ""))
+                b64 = str(d.get("data", "") or "")
+                if not fname or not b64:
+                    return self._json({"ok": False, "error": "bad"}, 400)
+                import base64 as _b64
+                try:
+                    blob = _b64.b64decode(b64.split(",")[-1])
+                except Exception:
+                    return self._json({"ok": False, "error": "decode"}, 400)
+                if len(blob) > 30 * 1024 * 1024:
+                    return self._json({"ok": False, "error": "too_large"}, 400)
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                stored = "pr_" + stamp + "_" + fname
+                try:
+                    os.makedirs(MERCH_IMG_UPLOAD_DIR, exist_ok=True)
+                    with open(os.path.join(MERCH_IMG_UPLOAD_DIR, stored), "wb") as f:
+                        f.write(blob)
+                except Exception as e:
+                    # NAS 폴더가 있으면 그쪽으로 폴백
+                    try:
+                        NAS.write(MERCH_MAKER_DIR + "/" + stored, blob)
+                    except Exception:
+                        return self._json({"ok": False, "error": str(e)}, 500)
+                return self._json({
+                    "ok": True, "file": stored,
+                    "url": "/api/merch/img?name=" + urllib.parse.quote(stored)})
             if p == "/api/merch/maker/upload":
                 # 제작자 첨부파일 업로드(multipart 아님: {name, data(base64)})
                 if not self._require("admin"):

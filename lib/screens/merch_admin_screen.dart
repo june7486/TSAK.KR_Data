@@ -9,6 +9,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/merch_order_detail.dart';
 
 /// 수품 판매관리 화면 (관리자·마스터 전용).
 /// 탭: 판매관리 / 누적판매 / 재고 / 공여 / 제작자 / 설정
@@ -203,19 +204,22 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       children: [
         _noticeEditor(),
         const SizedBox(height: 14),
-        _subHeader('판매 상품 관리', '상품 등록·수정·판매중지', Icons.shopping_bag_outlined),
+        _subHeader('소품(상품) 관리', '상품 등록·수정·판매중지 · 이미지/가격/사이즈/재고',
+            Icons.shopping_bag_outlined),
         const SizedBox(height: 8),
         if (_products.isEmpty)
           const Padding(
             padding: EdgeInsets.all(20),
             child: Text(
-              '등록된 상품이 없습니다',
+              '등록된 소품이 없습니다. 아래 + 버튼으로 추가하세요.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textGray),
             ),
           )
         else
           for (final p in _products) _productCard(p),
+        const SizedBox(height: 8),
+        _addProductButton(),
         const SizedBox(height: 16),
         _subHeader(
           '주문 내역 (${_orders.length})',
@@ -438,7 +442,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final price = TextEditingController(text: '${existing?['price'] ?? ''}');
     final stock = TextEditingController(text: '${existing?['stock'] ?? ''}');
     final desc = TextEditingController(text: '${existing?['desc'] ?? ''}');
-    final image = TextEditingController(text: '${existing?['image'] ?? ''}');
+    String image = '${existing?['image'] ?? ''}';
     final size = TextEditingController(text: '${existing?['size'] ?? ''}');
     final options = TextEditingController(
       text: (((existing?['options'] as List?) ?? [])
@@ -447,23 +451,121 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
     bool active = existing?['active'] != false;
 
+    Future<void> pickImage(StateSetter setDlg) async {
+      try {
+        final files = await pickDataFiles(
+            dialogTitle: '소품 이미지 선택', allowedExtensions: const ['jpg', 'jpeg', 'png', 'gif', 'webp']);
+        if (files.isEmpty) return;
+        final f = files.first;
+        final b64 = base64Encode(f.bytes);
+        final r = await _nas.merchImageUpload(f.name, b64);
+        if (r['ok'] == true && r['file'] != null) {
+          setDlg(() => image = '${r['file']}');
+          if (mounted) _snack('이미지를 업로드했습니다');
+        } else {
+          if (mounted) _snack('이미지 업로드 실패: ${r['error']}');
+        }
+      } catch (e) {
+        if (mounted) _snack('이미지 오류: $e');
+      }
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => AlertDialog(
-          title: Text(existing == null ? '상품 등록' : '상품 수정'),
+          title: Text(existing == null ? '소품 등록' : '소품 수정'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _dlgField(name, '상품명'),
+                // 이미지 미리보기 + 업로드
+                Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 64,
+                        height: 64,
+                        color: AppColors.bg,
+                        child: image.trim().isEmpty
+                            ? const Icon(Icons.image_outlined,
+                                color: AppColors.textGray)
+                            : (image.startsWith('http')
+                                ? Image.network(image, fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.broken_image_outlined,
+                                        color: AppColors.textGray))
+                                : Image.network(
+                                    _nas.merchImageUrl(image),
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.broken_image_outlined,
+                                        color: AppColors.textGray))),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact),
+                            onPressed: () => pickImage(setDlg),
+                            icon: const Icon(Icons.upload_file, size: 16),
+                            label: const Text('이미지 업로드'),
+                          ),
+                          if (image.trim().isNotEmpty)
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact),
+                              onPressed: () => setDlg(() => image = ''),
+                              child: const Text('이미지 제거',
+                                  style: TextStyle(fontSize: 12)),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _dlgField(name, '소품명'),
                 _dlgField(kind, '종류 (예: 인가자 전용)'),
                 _dlgField(price, '가격 (원)', number: true),
                 _dlgField(stock, '재고 수량', number: true),
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L / 58,60)'),
                 _dlgField(size, '사이즈 안내 (자유 텍스트)'),
-                _dlgField(image, '이미지 (파일명 또는 URL)'),
                 _dlgField(desc, '설명'),
+                // 사이즈 프리셋
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final s in const [
+                        'S (28)',
+                        'M (30)',
+                        'L (32)',
+                        'XL (34)',
+                        'XXL (36)',
+                      ])
+                        ActionChip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(s, style: const TextStyle(fontSize: 11)),
+                          onPressed: () {
+                            final cur = size.text.trim();
+                            final parts = cur.isEmpty
+                                ? <String>[]
+                                : cur.split(',').map((e) => e.trim()).toList();
+                            if (!parts.contains(s)) parts.add(s);
+                            setDlg(() => size.text = parts.join(', '));
+                          },
+                        ),
+                    ],
+                  ),
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('판매중'),
@@ -502,7 +604,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         stock: int.tryParse(stock.text.trim()) ?? 0,
         options: optList,
         size: size.text.trim(),
-        image: image.text.trim(),
+        image: image.trim(),
         desc: desc.text.trim(),
         active: active,
       );
@@ -525,6 +627,28 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     if (!mounted) return;
     _snack(ok ? '삭제했습니다' : '삭제 실패');
     if (ok) _load();
+  }
+
+  /// 소품(상품) 추가 — 이미지/가격/사이즈/재고 등 기존 구성과 동일하게 등록.
+  Widget _addProductButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.purple,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          side: BorderSide(
+              color: AppColors.purple.withValues(alpha: 0.5),
+              style: BorderStyle.solid),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: () => _editProduct(existing: null),
+        icon: const Icon(Icons.add_circle_outline, size: 20),
+        label: const Text('소품 추가 (이미지·가격·사이즈·재고)',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+      ),
+    );
   }
 
   Widget _orderCard(Map<String, dynamic> o) {
@@ -562,6 +686,41 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               ),
             ],
           ),
+          if ('${o['orderNo'] ?? ''}'.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () => _showOrderDetail(o, isReserve: false),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined,
+                        size: 13, color: AppColors.purple),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text('주문번호 ${o['orderNo']}',
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.purpleDark,
+                              letterSpacing: 0.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        size: 14, color: AppColors.purple),
+                    const Text('내역 보기',
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           _row(
             '구매자',
@@ -701,6 +860,41 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               _pill(status, Colors.orange),
             ],
           ),
+          if ('${r['orderNo'] ?? ''}'.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () => _showOrderDetail(r, isReserve: true),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined,
+                        size: 13, color: Colors.orange),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text('예약번호 ${r['orderNo']}',
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.purpleDark,
+                              letterSpacing: 0.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        size: 14, color: Colors.orange),
+                    const Text('내역 보기',
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           _row(
             '예약자',
@@ -753,6 +947,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// 주문/예약 상세 내역 다이얼로그(주문번호 클릭).
+  void _showOrderDetail(Map<String, dynamic> rec, {required bool isReserve}) {
+    MerchOrderDetail.show(
+      context,
+      rec: rec,
+      isReserve: isReserve,
+      statuses: isReserve ? _reserveStatuses : _statuses,
     );
   }
 
@@ -1245,14 +1449,18 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   isOrder ? AppColors.purple : Colors.orange),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(orderNo.isEmpty ? '(번호 없음)' : orderNo,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
-                        color: AppColors.purpleDark,
-                        letterSpacing: 0.2),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                child: InkWell(
+                  onTap: () => _showOrderDetail(row, isReserve: !isOrder),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Text(orderNo.isEmpty ? '(번호 없음)' : '$orderNo  ›',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                          color: AppColors.purpleDark,
+                          letterSpacing: 0.2),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
               ),
               Text(_won((amount as num?)?.toInt() ?? 0),
                   style: const TextStyle(
@@ -1260,12 +1468,39 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ],
           ),
           const SizedBox(height: 5),
-          Text(
-            '${buyer.isEmpty ? '주문자 미상' : buyer} · '
-            '${product.isEmpty ? '상품' : product}${qty > 1 ? ' ×$qty' : ''}',
-            style: const TextStyle(fontSize: 12),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          InkWell(
+            onTap: () => _showBuyerHistory(
+              buyer.isEmpty ? '주문자 미상' : buyer,
+              (row['contactId'] ?? row['buyerNumber'] ?? '').toString(),
+            ),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  const Icon(Icons.person_outline,
+                      size: 13, color: AppColors.taegeukBlue),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      '${buyer.isEmpty ? '주문자 미상' : buyer} · '
+                      '${product.isEmpty ? '상품' : product}${qty > 1 ? ' ×$qty' : ''}',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.taegeukBlue),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Text('  이력',
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.taegeukBlue,
+                          fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 3),
           Row(
@@ -1291,6 +1526,155 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// 주문자별 주문 이력 조회(대장에서 주문자명 클릭).
+  void _showBuyerHistory(String buyerName, String ident) {
+    final d = ident.replaceAll(RegExp(r'[^0-9]'), '');
+    bool match(Map<String, dynamic> r) {
+      if (d.isNotEmpty) {
+        for (final k in const ['contactId', 'buyerNumber', 'phone']) {
+          if ('${r[k] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '') == d) {
+            return true;
+          }
+        }
+      }
+      return '${r['buyerName'] ?? ''}'.trim() == buyerName.trim();
+    }
+
+    final orders = _orders.where(match).toList()
+      ..sort((a, b) => '${b['created']}'.compareTo('${a['created']}'));
+    final reserves = _reserves.where(match).toList()
+      ..sort((a, b) => '${b['created']}'.compareTo('${a['created']}'));
+    int sumOf(List<Map<String, dynamic>> xs) => xs.fold(
+        0, (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt());
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.history, size: 20, color: AppColors.taegeukBlue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$buyerName 주문 이력',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800)),
+                  Text('주문 ${orders.length}건 · 예약 ${reserves.length}건',
+                      style: const TextStyle(
+                          fontSize: 11.5, color: AppColors.textGray)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (orders.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.scoutGreen.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Text('총 주문금액(합계): ${_won(sumOf(orders))}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.scoutGreen)),
+                  ),
+                const SizedBox(height: 10),
+                if (orders.isEmpty && reserves.isEmpty)
+                  const Text('이 주문자의 내역이 없습니다.',
+                      style: TextStyle(color: AppColors.textGray)),
+                for (final o in orders)
+                  _buyerHistoryTile(o, isReserve: false),
+                for (final r in reserves) _buyerHistoryTile(r, isReserve: true),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buyerHistoryTile(Map<String, dynamic> r, {required bool isReserve}) {
+    final paid = r['paid'] == true;
+    final amount = (r['grandTotal'] ?? r['total'] ?? r['_amount'] ?? 0);
+    return InkWell(
+      onTap: () => _showOrderDetail(r, isReserve: isReserve),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: (isReserve ? Colors.orange : AppColors.purple)
+                  .withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(isReserve ? Icons.bookmark_border : Icons.receipt_long,
+                size: 15,
+                color: isReserve ? Colors.orange : AppColors.purple),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${r['orderNo'] ?? '(번호 없음)'}',
+                      style: const TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  Text(
+                    '${r['product'] ?? ''}'
+                    '${(r['qty'] as num?)?.toInt() != null ? ' ×${r['qty']}' : ''}'
+                    ' · ${r['created'] ?? ''}',
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textGray),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(_won((amount as num?)?.toInt() ?? 0),
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w800)),
+                Text(
+                  isReserve
+                      ? '${r['status'] ?? '예약'}'
+                      : (paid ? '입금완료' : '미입금'),
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: isReserve
+                          ? Colors.orange
+                          : (paid
+                              ? AppColors.scoutGreen
+                              : AppColors.taegeukRed)),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

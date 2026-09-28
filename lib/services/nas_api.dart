@@ -1595,6 +1595,19 @@ class NasApi {
   String merchFileUrl(String name) =>
       '$_base/api/merch/file?name=${Uri.encodeComponent(name)}';
 
+  /// 관리자: 상품 이미지 업로드 (base64). 반환: {ok, file, url}
+  Future<Map<String, dynamic>> merchImageUpload(
+      String filename, String dataB64) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/img/upload'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'filename': filename, 'data': dataB64}),
+        )
+        .timeout(const Duration(seconds: 120));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 관리자: 수품 공여(행사/홍보) 기록.
   Future<Map<String, dynamic>> merchSaveDonation(
       Map<String, dynamic> data) async {

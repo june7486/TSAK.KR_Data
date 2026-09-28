@@ -117,6 +117,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _purchaseSection(m),
                 MerchActivitySection(
                   ident: m.number.isNotEmpty ? m.number : m.phone,
+                  memberName: m.name,
+                  phone: m.phone,
+                  email: m.email,
                 ),
                 _infoCard(m),
                 _membershipSection(m),

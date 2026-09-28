@@ -41,7 +41,8 @@ class AppState extends ChangeNotifier {
   String get who => _who;
   bool get isMaster => _tier == 'master';
   bool get isPersonal => _tier == 'personal';
-  bool get isApp => _tier == 'app';
+  /// 관리자(app) 등급 — 마스터는 관리자의 모든 권한을 상속한다.
+  bool get isApp => _tier == 'app' || _tier == 'master';
   bool get isGuest => _tier == 'guest';
 
   /// 이 세션이 영구 마스터 인가번호(예: 415)로 로그인됐는지.

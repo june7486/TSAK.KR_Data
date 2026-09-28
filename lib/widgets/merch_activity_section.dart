@@ -3,14 +3,27 @@ import 'package:provider/provider.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import 'merch_inquiry_sheet.dart';
+import 'merch_order_detail.dart';
 
 /// 개인 프로필에 표시되는 수품 구매/예약 내역 위젯.
 /// 수품 주문 진행 상황을 가로 진행 바(세그먼트)로 보여준다.
+/// 주문번호를 클릭하면 주문 상세 내역을 조회할 수 있다.
 class MerchActivitySection extends StatefulWidget {
-  const MerchActivitySection({super.key, required this.ident, this.title = '수품구매 내역'});
+  const MerchActivitySection({
+    super.key,
+    required this.ident,
+    this.title = '수품구매 내역',
+    this.memberName = '',
+    this.phone = '',
+    this.email = '',
+  });
 
   final String ident;
   final String title;
+  final String memberName;
+  final String phone;
+  final String email;
 
   @override
   State<MerchActivitySection> createState() => _MerchActivitySectionState();
@@ -87,8 +100,42 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
             for (final o in _orders) _orderRow(o),
             for (final r in _reserves) _reserveRow(r),
           ],
+          if (!_loading) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.purple,
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => showMerchInquiry(
+                  context: context,
+                  name: widget.memberName,
+                  phone: widget.phone,
+                  email: widget.email,
+                ),
+                icon: const Icon(Icons.mark_email_read_outlined, size: 17),
+                label: const Text('문의하기 (메일로 문의)',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  void _openDetail(Map<String, dynamic> rec, {required bool isReserve}) {
+    MerchOrderDetail.show(
+      context,
+      rec: rec,
+      isReserve: isReserve,
+      statuses: _statuses.map((e) => '$e').toList(),
     );
   }
 
@@ -123,23 +170,39 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
           ),
           if (orderNo.isNotEmpty) ...[
             const SizedBox(height: 3),
-            Row(
-              children: [
-                const Icon(Icons.receipt_long_outlined, size: 12, color: AppColors.textGray),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    '주문번호 $orderNo',
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.purpleDark,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            InkWell(
+              onTap: () => _openDetail(o, isReserve: false),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined,
+                        size: 12, color: AppColors.purple),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '주문번호 $orderNo',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.purpleDark,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        size: 14, color: AppColors.purple),
+                    Text('상세',
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w800)),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
           const SizedBox(height: 6),
@@ -180,21 +243,37 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
           ),
           if (orderNo.isNotEmpty) ...[
             const SizedBox(height: 3),
-            Row(
-              children: [
-                const Icon(Icons.receipt_long_outlined, size: 12, color: AppColors.textGray),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text('예약번호 $orderNo',
-                      style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.purpleDark,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+            InkWell(
+              onTap: () => _openDetail(r, isReserve: true),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined,
+                        size: 12, color: Colors.orange),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text('예약번호 $orderNo',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.purpleDark,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        size: 14, color: Colors.orange),
+                    const Text('상세',
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w800)),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
           const SizedBox(height: 4),
