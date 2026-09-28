@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
-import '../widgets/merch_order_detail.dart';
+import 'order_detail_screen.dart';
 
 /// 수품 통계·현황 페이지 — **관리자·마스터 전용**.
 ///
@@ -205,6 +208,8 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
           ],
         ),
         const SizedBox(height: 14),
+        _exportBar(),
+        const SizedBox(height: 14),
         _box('구매자별 현황 (${buyerList.length}명)', [
           if (buyerList.isEmpty)
             const Text('데이터 없음', style: TextStyle(color: AppColors.textGray))
@@ -261,6 +266,209 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
       ],
     );
   }
+
+  // ==================== 익스포트 / 공유 / 선택 출력 ====================
+  static const _exportEmail = 'june7558@gmail.com';
+
+  /// 현재 통계를 텍스트/CSV/HTML로 변환한다.
+  String _reportText() {
+    final valid = _orders.where((o) => !_isCancelled(o)).toList();
+    final totalSales = valid.fold<int>(0, (p, o) => p + _actual(o));
+    final paidSum =
+        valid.where((o) => o['paid'] == true).fold<int>(0, (p, o) => p + _actual(o));
+    final b = StringBuffer();
+    b.writeln('수품 통계·현황');
+    b.writeln('총 주문: ${valid.length}건');
+    b.writeln('총 매출: ${_won(totalSales)}');
+    b.writeln('입금 완료: ${_won(paidSum)}');
+    b.writeln('미수금: ${_won(totalSales - paidSum)}');
+    b.writeln('');
+    b.writeln('[주문 목록]');
+    for (final o in _orders) {
+      b.writeln('${o['orderNo'] ?? ''} | ${o['buyerName'] ?? ''} | '
+          '${o['product'] ?? ''} x${_i(o['qty']) == 0 ? 1 : _i(o['qty'])} | '
+          '${_won(_actual(o))} | ${o['status'] ?? ''} | '
+          '${o['paid'] == true ? '입금완료' : '미입금'}');
+    }
+    return b.toString();
+  }
+
+  String _csv() {
+    final rows = <List<String>>[
+      ['주문번호', '구매자', '상품', '수량', '금액', '상태', '입금', '주문일'],
+    ];
+    for (final o in _orders) {
+      rows.add([
+        '${o['orderNo'] ?? ''}',
+        '${o['buyerName'] ?? ''}',
+        '${o['product'] ?? ''}',
+        '${_i(o['qty']) == 0 ? 1 : _i(o['qty'])}',
+        '${_actual(o)}',
+        '${o['status'] ?? ''}',
+        o['paid'] == true ? '입금완료' : '미입금',
+        '${o['created'] ?? o['createdAt'] ?? ''}',
+      ]);
+    }
+    return rows
+        .map((r) => r
+            .map((c) => '"${c.replaceAll('"', '""')}"')
+            .join(','))
+        .join('\r\n');
+  }
+
+  String _reportHtml() {
+    final valid = _orders.where((o) => !_isCancelled(o)).toList();
+    final totalSales = valid.fold<int>(0, (p, o) => p + _actual(o));
+    final paidSum =
+        valid.where((o) => o['paid'] == true).fold<int>(0, (p, o) => p + _actual(o));
+    final sb = StringBuffer();
+    sb.write('<h2 style="margin:0 0 8px">수품 통계·현황</h2>');
+    sb.write(
+        '<p style="margin:0 0 4px"><b>총 주문</b> ${valid.length}건 · '
+        '<b>총 매출</b> ${_won(totalSales)} · '
+        '<b>입금</b> ${_won(paidSum)} · '
+        '<b>미수금</b> ${_won(totalSales - paidSum)}</p>');
+    sb.write('<table border="1" cellspacing="0" cellpadding="6" '
+        'style="border-collapse:collapse;width:100%;font-size:12px">');
+    sb.write('<thead><tr style="background:#F3E5F5">'
+        '<th>주문번호</th><th>구매자</th><th>상품</th><th>수량</th>'
+        '<th>금액</th><th>상태</th><th>입금</th><th>주문일</th></tr></thead><tbody>');
+    for (final o in _orders) {
+      sb.write('<tr>'
+          '<td>${_esc('${o['orderNo'] ?? ''}')}</td>'
+          '<td>${_esc('${o['buyerName'] ?? ''}')}</td>'
+          '<td>${_esc('${o['product'] ?? ''}')}</td>'
+          '<td>${_i(o['qty']) == 0 ? 1 : _i(o['qty'])}</td>'
+          '<td style="text-align:right">${_won(_actual(o))}</td>'
+          '<td>${_esc('${o['status'] ?? ''}')}</td>'
+          '<td>${o['paid'] == true ? '입금완료' : '미입금'}</td>'
+          '<td>${_esc('${o['created'] ?? o['createdAt'] ?? ''}')}</td>'
+          '</tr>');
+    }
+    sb.write('</tbody></table>');
+    return sb.toString();
+  }
+
+  String _esc(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
+  /// 인쇄용 HTML 문서 래핑(스타일 포함).
+  String _wrap(String inner) =>
+      '<!doctype html><html><head><meta charset="utf-8">'
+      '<meta name="viewport" content="width=device-width,initial-scale=1">'
+      '<style>body{font-family:"NanumGothic",sans-serif;padding:16px;color:#2c2c2c}'
+      'table{border-collapse:collapse;width:100%;font-size:12px}'
+      'th,td{border:1px solid #ccc;padding:6px}th{background:#F3E5F5}'
+      '</style></head><body>$inner</body></html>';
+
+  Future<void> _snackAsync(String m) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  void _print() {
+    final html = _wrap(_reportHtml());
+    if (isWebRuntime) {
+      openPrintableHtml(html);
+    } else {
+      Clipboard.setData(ClipboardData(text: _reportText()));
+      _snackAsync('내역을 복사했습니다');
+    }
+  }
+
+  Future<void> _copyCsv() async {
+    await Clipboard.setData(ClipboardData(text: _csv()));
+    _snackAsync('CSV를 클립보드에 복사했습니다 (엑셀에 붙여넣기)');
+  }
+
+  Future<void> _copyText() async {
+    await Clipboard.setData(ClipboardData(text: _reportText()));
+    _snackAsync('내역 텍스트를 복사했습니다 (워드/메모장 붙여넣기)');
+  }
+
+  Future<void> _mail() async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: _exportEmail,
+      query: 'subject=${Uri.encodeComponent('[수품 통계·현황]')}'
+          '&body=${Uri.encodeComponent(_reportText())}',
+    );
+    try {
+      await launchUrl(uri);
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: _reportText()));
+      _snackAsync('메일 앱을 열 수 없어 내용을 복사했습니다');
+    }
+  }
+
+  Future<void> _share() async {
+    final link = '${_nas.baseUrl}/#stats';
+    await Clipboard.setData(ClipboardData(text:
+        '수품 통계·현황 공유 링크: $link\n\n${_reportText()}'));
+    _snackAsync('공유 링크와 내역을 복사했습니다');
+  }
+
+  Widget _exportBar() => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.purple.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.ios_share, size: 17, color: AppColors.purple),
+                SizedBox(width: 6),
+                Text('내보내기 · 공유',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                        color: AppColors.purpleDark)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '인쇄(PDF) · 엑셀(CSV) · 워드(텍스트) · 이미지(JPG: 인쇄 후 저장) · 메일 · 링크 공유',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _expBtn(Icons.print_outlined, '인쇄 / PDF', _print),
+                _expBtn(Icons.grid_on_outlined, '엑셀 (CSV)', _copyCsv),
+                _expBtn(Icons.description_outlined, '워드 (텍스트)', _copyText),
+                _expBtn(Icons.image_outlined, '이미지 (JPG)',
+                    () => _print()),
+                _expBtn(Icons.mail_outline, '메일 발송', _mail),
+                _expBtn(Icons.link, '공유 링크', _share),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '※ 이미지(JPG)는 인쇄 화면에서 "대상=PDF/이미지 저장"으로 저장할 수 있습니다.',
+              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+            ),
+          ],
+        ),
+      );
+
+  Widget _expBtn(IconData icon, String label, VoidCallback onTap) => OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.purpleDark,
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+      );
 
   Widget _stat(String label, String value, Color c) => Expanded(
         child: Container(
@@ -325,15 +533,28 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
         ),
       );
 
+  static String _gkey(Map<String, dynamic> o) {
+    final no = '${o['orderNo'] ?? ''}'.trim();
+    return no.isNotEmpty ? no : '#${o['id'] ?? ''}';
+  }
+
+  void _openGroup(Map<String, dynamic> o) {
+    final key = _gkey(o);
+    final items = _orders.where((x) => _gkey(x) == key).toList();
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => OrderDetailScreen(
+            groupKey: key,
+            initialItems: items,
+            canManage: true,
+            statuses: _statuses,
+          ),
+        ))
+        .then((_) => _load());
+  }
+
   Widget _unpaidRow(Map<String, dynamic> o) => InkWell(
-        onTap: () => MerchOrderDetail.show(
-          context,
-          rec: o,
-          isReserve: false,
-          statuses: _statuses,
-          editable: true,
-          onChanged: _load,
-        ),
+        onTap: () => _openGroup(o),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../screens/order_detail_screen.dart';
 import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import 'merch_inquiry_sheet.dart';
-import 'merch_order_detail.dart';
 
 /// 개인 프로필에 표시되는 수품 구매/예약 내역 위젯(수품구매현황 통합).
 /// - 주문 진행 상황을 가로 진행 바(세그먼트)로 보여준다.
@@ -144,8 +144,8 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
                         fontWeight: FontWeight.w800,
                         color: AppColors.textGray)),
               ),
-            for (final o in _orders) _orderRow(o),
-            for (final r in _reserves) _reserveRow(r),
+            for (final g in _groupBy(_orders)) _groupRow(g, isReserve: false),
+            for (final g in _groupBy(_reserves)) _groupRow(g, isReserve: true),
           ],
           if (!_loading) ...[
             const SizedBox(height: 10),
@@ -190,159 +190,153 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
     );
   }
 
-  void _openDetail(Map<String, dynamic> rec, {required bool isReserve}) {
-    final editable = context.read<AppState>().isApp;
-    MerchOrderDetail.show(
-      context,
-      rec: rec,
-      isReserve: isReserve,
-      statuses: _statuses.map((e) => '$e').toList(),
-      editable: editable,
-      onChanged: _load,
-    );
+  // ---------- 주문번호별 그룹핑 ----------
+  static String _groupKeyOf(Map<String, dynamic> o) {
+    final no = '${o['orderNo'] ?? ''}'.trim();
+    if (no.isNotEmpty) return no;
+    return '#${o['id'] ?? ''}';
   }
 
-  Widget _orderRow(Map<String, dynamic> o) {
-    final status = (o['status'] ?? '').toString();
+  List<List<Map<String, dynamic>>> _groupBy(List<Map<String, dynamic>> src) {
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final o in src) {
+      final k = _groupKeyOf(o);
+      (map[k] ??= []).add(o);
+    }
+    return map.values.toList();
+  }
+
+  /// 그룹(주문번호) 상세 — 장바구니형 페이지로 이동.
+  Future<void> _openGroup(List<Map<String, dynamic>> items,
+      {required bool isReserve}) async {
+    if (items.isEmpty) return;
+    final editable = context.read<AppState>().isApp;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => OrderDetailScreen(
+        groupKey: _groupKeyOf(items.first),
+        initialItems: items,
+        canManage: editable,
+        ident: widget.ident,
+        statuses: _statuses.map((e) => '$e').toList(),
+        isReserve: isReserve,
+      ),
+    ));
+    _load();
+  }
+
+  /// 주문번호로 통합된 행(장바구니 요약). 클릭 → 장바구니형 상세.
+  Widget _groupRow(List<Map<String, dynamic>> items,
+      {required bool isReserve}) {
+    final head = items.first;
+    final orderNo = '${head['orderNo'] ?? ''}'.trim();
+    final status = (head['status'] ?? (isReserve ? '예약접수' : '')).toString();
+    final cancelled = status.contains('취소');
+    final created =
+        (head['created'] ?? head['createdAt'] ?? '').toString().trim();
+    final grand = items.fold<int>(
+        0, (p, o) => p + ((o['grandTotal'] ?? o['total'] ?? 0) as num).toInt());
+    final sumQty = items.fold<int>(
+        0, (p, o) => p + ((o['qty'] as num?)?.toInt() ?? 1));
+    final received = items.every((o) => o['received'] == true);
     final statuses = _statuses.map((e) => e.toString()).toList();
     final current = statuses.indexOf(status);
-    final cancelled = status.contains('취소');
-    final product = (o['product'] ?? '').toString().trim();
-    final orderNo = (o['orderNo'] ?? '').toString().trim();
-    final qty = (o['qty'] as num?)?.toInt() ?? 1;
-    final total = (o['grandTotal'] ?? o['total']) ?? 0;
-    final created = (o['created'] ?? o['createdAt'] ?? '').toString();
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  product.isEmpty ? '수품 주문' : (qty > 1 ? '$product ×$qty' : product),
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text('${_won((total as num?)?.toInt() ?? 0)}원',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-            ],
-          ),
-          if (orderNo.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            InkWell(
-              onTap: () => _openDetail(o, isReserve: false),
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.receipt_long_outlined,
-                        size: 12, color: AppColors.purple),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        '주문번호 $orderNo',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.purpleDark,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 14, color: AppColors.purple),
-                    Text('상세',
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            color: AppColors.purple,
-                            fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-          if (statuses.isNotEmpty && !cancelled)
-            _ProgressBar(steps: statuses, current: current)
-          else
-            _pill(status.isEmpty ? '접수' : status, cancelled ? Colors.red : AppColors.purple),
-          const SizedBox(height: 3),
-          Text('주문일 ${created.isEmpty ? '-' : created}',
-              style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
-        ],
-      ),
-    );
-  }
 
-  Widget _reserveRow(Map<String, dynamic> r) {
-    final status = (r['status'] ?? '예약접수').toString();
-    final product = (r['product'] ?? '').toString().trim();
-    final orderNo = (r['orderNo'] ?? '').toString().trim();
-    final qty = (r['qty'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 1;
-    final created = (r['created'] ?? r['createdAt'] ?? '').toString();
+    // 품목명 요약 (없으면 '수품 주문')
+    final names = items
+        .map((o) => ('${o['product'] ?? o['productName'] ?? ''}').trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final title = names.isEmpty
+        ? (isReserve ? '수품 예약' : '수품 주문')
+        : (names.length == 1 ? names.first : '${names.first} 외 ${names.length - 1}종');
+
     return Padding(
       padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      child: InkWell(
+        onTap: () => _openGroup(items, isReserve: isReserve),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: (cancelled
+                        ? Colors.red
+                        : (isReserve ? Colors.orange : AppColors.purple))
+                    .withValues(alpha: 0.22)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                    product.isEmpty ? '수품 예약' : (qty > 1 ? '$product ×$qty' : product),
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(title,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  Text('${_won(grand)}원',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 12.5)),
+                ],
               ),
-              _pill('예약 $status', Colors.orange),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                      isReserve
+                          ? Icons.bookmark_border
+                          : Icons.receipt_long_outlined,
+                      size: 12,
+                      color: isReserve ? Colors.orange : AppColors.purple),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      '${isReserve ? '예약번호' : '주문번호'} ${orderNo.isEmpty ? '-' : orderNo}',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.purpleDark,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right,
+                      size: 14, color: AppColors.purple),
+                  const Text('상세',
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.purple,
+                          fontWeight: FontWeight.w800)),
+                  const Spacer(),
+                  Text('${items.length}종 $sumQty개',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textGray)),
+                  if (received) ...[
+                    const SizedBox(width: 5),
+                    _pill('수령확인', AppColors.tigerGold),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 6),
+              if (isReserve)
+                _pill('예약 $status', Colors.orange)
+              else if (statuses.isNotEmpty && !cancelled)
+                _ProgressBar(steps: statuses, current: current)
+              else
+                _pill(status.isEmpty ? '접수' : status,
+                    cancelled ? Colors.red : AppColors.purple),
+              const SizedBox(height: 3),
+              Text(
+                  '${isReserve ? '예약' : '주문'}일 ${created.isEmpty ? '-' : created}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
             ],
           ),
-          if (orderNo.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            InkWell(
-              onTap: () => _openDetail(r, isReserve: true),
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.receipt_long_outlined,
-                        size: 12, color: Colors.orange),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text('예약번호 $orderNo',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.purpleDark,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 14, color: Colors.orange),
-                    const Text('상세',
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 4),
-          Text(created.isEmpty ? '예약(수요조사) 접수됨 — 제작 판단 후 안내됩니다.' : '$created · 수요조사 접수됨',
-              style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
-        ],
+        ),
       ),
     );
   }

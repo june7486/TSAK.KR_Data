@@ -28,6 +28,7 @@ class _AdminScreenState extends State<AdminScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppState>().loadAdmin();
       context.read<AppState>().refreshServerPaused();
+      _loadAdmins();
     });
   }
 
@@ -49,6 +50,8 @@ class _AdminScreenState extends State<AdminScreen> {
         children: [
           _serverPauseCard(state),
           const SizedBox(height: 12),
+          _grantAdminCard(state),
+          const SizedBox(height: 12),
           _appPasswordCard(state),
           const SizedBox(height: 12),
           _personalPasswordCard(state),
@@ -69,6 +72,157 @@ class _AdminScreenState extends State<AdminScreen> {
       ),
     ],
   );
+
+  // ---- 관리자 지정 (마스터가 인가번호별로 관리자 권한 부여/회수) ----
+  bool _adminsLoading = true;
+  List<String> _adminNumbers = [];
+  final TextEditingController _grantCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _grantCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAdmins() async {
+    setState(() => _adminsLoading = true);
+    final r = await context.read<AppState>().nas.merchantAdmins();
+    if (!mounted) return;
+    final lst = (r['admins'] as List?)?.map((e) => '$e').toList() ?? [];
+    setState(() {
+      _adminNumbers = lst;
+      _adminsLoading = false;
+    });
+  }
+
+  Widget _grantAdminCard(AppState state) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _title('관리자 지정', Icons.admin_panel_settings_outlined,
+                AppColors.purple),
+            const SizedBox(height: 6),
+            const Text(
+              '인가번호를 입력해 해당 ID에 관리자 권한을 부여합니다. '
+              '부여된 ID는 개인 로그인으로 접속해도 수품판매관리·통계 등 관리자 기능을 사용할 수 있습니다.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _grantCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '인가번호',
+                      hintText: '예: 1234',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _busy ? null : () => _grantAdmin(state),
+                  icon: const Icon(Icons.person_add_alt_1, size: 18),
+                  label: const Text('권한 부여'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.verified_user_outlined,
+                    size: 16, color: AppColors.scoutGreen),
+                const SizedBox(width: 6),
+                const Text('현재 지정된 관리자',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                const Spacer(),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _loadAdmins,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: '새로고침',
+                ),
+              ],
+            ),
+            if (_adminsLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_adminNumbers.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text('지정된 관리자가 없습니다.',
+                    style: TextStyle(fontSize: 12.5, color: AppColors.textGray)),
+              )
+            else
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final no in _adminNumbers)
+                    Chip(
+                      label: Text('인가 $no'),
+                      deleteIcon: const Icon(Icons.close, size: 15),
+                      onDeleted: _busy ? null : () => _revokeAdmin(state, no),
+                      backgroundColor:
+                          AppColors.purple.withValues(alpha: 0.08),
+                      labelStyle: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12),
+                    ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _grantAdmin(AppState state) async {
+    final no = _grantCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (no.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('인가번호를 입력하세요')));
+      return;
+    }
+    final master = await _askMaster('관리자 권한 부여 (인가 $no)');
+    if (master == null) return;
+    setState(() => _busy = true);
+    final r = await state.nas.grantAdmin(master, no);
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    final ok = r['ok'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(ok
+              ? '인가 $no 님에게 관리자 권한을 부여했습니다'
+              : '실패: ${r['error'] ?? '확인 불가'}')),
+    );
+    if (ok) {
+      _grantCtrl.clear();
+      _loadAdmins();
+    }
+  }
+
+  Future<void> _revokeAdmin(AppState state, String no) async {
+    final master = await _askMaster('관리자 권한 회수 (인가 $no)');
+    if (master == null) return;
+    setState(() => _busy = true);
+    final r = await state.nas.revokeAdmin(master, no);
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    final ok = r['ok'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? '인가 $no 님의 관리자 권한을 회수했습니다' : '실패')),
+    );
+    if (ok) _loadAdmins();
+  }
 
   // ---- 3) 앱 서버 일시 정지 ----
   Widget _serverPauseCard(AppState state) {

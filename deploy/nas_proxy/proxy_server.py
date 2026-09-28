@@ -4555,51 +4555,6 @@ class Handler(BaseHTTPRequestHandler):
                         for n in admins]
                 return self._json({"ok": True, "admins": rows,
                                    "count": len(rows)})
-            if p == "/api/admin/grant":
-                d = json.loads(self._body() or b"{}")
-                if not _is_master_val(d.get("master")):
-                    return self._json({"ok": False, "error": "master"}, 401)
-                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
-                if not no:
-                    return self._json({"ok": False, "error": "number"}, 400)
-                # 실제 존재하는 인가자인지 확인
-                m = _ev_member_by_ident(no)
-                if not m or not str(m.get("number", "")).strip():
-                    return self._json(
-                        {"ok": False, "error": "not_found"}, 404)
-                with LOCK:
-                    cfg = _load_json(CFG_FILE, _default_config())
-                    lst = cfg.setdefault("admins", [])
-                    if not isinstance(lst, list):
-                        lst = []
-                    if no not in lst:
-                        lst.append(no)
-                    cfg["admins"] = sorted(
-                        set(re.sub(r"[^0-9]", "", str(x)) for x in lst if x))
-                    _save_json(CFG_FILE, cfg)
-                return self._json({"ok": True, "admins": cfg["admins"],
-                                   "number": no,
-                                   "name": str(m.get("name", ""))})
-            if p == "/api/admin/revoke":
-                d = json.loads(self._body() or b"{}")
-                if not _is_master_val(d.get("master")):
-                    return self._json({"ok": False, "error": "master"}, 401)
-                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
-                if not no:
-                    return self._json({"ok": False, "error": "number"}, 400)
-                with LOCK:
-                    cfg = _load_json(CFG_FILE, _default_config())
-                    lst = cfg.get("admins", [])
-                    if isinstance(lst, list):
-                        cfg["admins"] = [
-                            re.sub(r"[^0-9]", "", str(x))
-                            for x in lst
-                            if re.sub(r"[^0-9]", "", str(x)) != no]
-                    else:
-                        cfg["admins"] = []
-                    _save_json(CFG_FILE, cfg)
-                return self._json({"ok": True, "admins": cfg["admins"],
-                                   "number": no})
             if p == "/api/members":
                 # F01: 무인증 차단 + 역할별 최소 항목
                 if not self._require():
@@ -5388,6 +5343,51 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
         try:
+            if p == "/api/admin/grant":
+                d = json.loads(self._body() or b"{}")
+                if not _is_master_val(d.get("master")):
+                    return self._json({"ok": False, "error": "master"}, 401)
+                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                # 실제 존재하는 인가자인지 확인
+                m = _ev_member_by_ident(no)
+                if not m or not str(m.get("number", "")).strip():
+                    return self._json(
+                        {"ok": False, "error": "not_found"}, 404)
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    lst = cfg.setdefault("admins", [])
+                    if not isinstance(lst, list):
+                        lst = []
+                    if no not in lst:
+                        lst.append(no)
+                    cfg["admins"] = sorted(
+                        set(re.sub(r"[^0-9]", "", str(x)) for x in lst if x))
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "admins": cfg["admins"],
+                                   "number": no,
+                                   "name": str(m.get("name", ""))})
+            if p == "/api/admin/revoke":
+                d = json.loads(self._body() or b"{}")
+                if not _is_master_val(d.get("master")):
+                    return self._json({"ok": False, "error": "master"}, 401)
+                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    lst = cfg.get("admins", [])
+                    if isinstance(lst, list):
+                        cfg["admins"] = [
+                            re.sub(r"[^0-9]", "", str(x))
+                            for x in lst
+                            if re.sub(r"[^0-9]", "", str(x)) != no]
+                    else:
+                        cfg["admins"] = []
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "admins": cfg["admins"],
+                                   "number": no})
             if p == "/api/login":
                 d = json.loads(self._body() or b"{}")
                 tier = d.get("tier", "")

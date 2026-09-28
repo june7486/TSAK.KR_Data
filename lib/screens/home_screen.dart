@@ -17,6 +17,7 @@ import '../widgets/inquiry_sheet.dart';
 import 'app_access_screen.dart';
 import 'admin_screen.dart';
 import 'merch_admin_screen.dart';
+import 'merch_shop_screen.dart';
 import 'merch_stats_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
@@ -964,6 +965,13 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               children: [
                 _eventButton(),
+                // 수품 구매 — 모든 사용자(일반 인가자·개인·관리자·마스터)에게 노출.
+                _finButton(
+                  '수품 구매',
+                  Icons.shopping_cart_checkout,
+                  const Color(0xFF6D4C41),
+                  -4,
+                ),
                 if (state.isApp || state.isMaster) ...[
                   _approvalButton(),
                   _finButton(
@@ -1236,6 +1244,38 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(color: Colors.white70, fontSize: 10),
           ),
           const SizedBox(height: 10),
+          // 수품 구매 — 개인 페이지에서도 소품 구매창으로 진입(주문·결제 연동).
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MerchShopScreen()),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.tigerGold, width: 2),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.shopping_cart_checkout,
+                      size: 18, color: AppColors.purple),
+                  SizedBox(width: 6),
+                  Text(
+                    '수품 구매 (소품 주문·결제)',
+                    style: TextStyle(
+                      color: AppColors.purple,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
           _personalDonationBanner(state),
         ],
@@ -1430,6 +1470,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MerchStatsScreen()),
+            );
+          } else if (tab == -4) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MerchShopScreen()),
             );
           } else if (tab < 0) {
             Navigator.push(
