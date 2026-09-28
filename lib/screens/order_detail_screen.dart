@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
+import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -55,6 +56,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _changed = false;
+
+  /// 주문상태 적용 방식 — true: 전체 일괄적용, false: 선택 항목만.
+  bool _applyAll = true;
+
+  /// 선택된 항목 id(선택 적용 모드).
+  final Set<String> _selItems = <String>{};
 
   @override
   void initState() {
@@ -211,6 +218,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final nx = cur + delta;
     if (nx < 1) return;
     await _patchItem('${o['id']}', {'qty': nx});
+  }
+
+  /// 항목 순서 이동 — 화면 표시 순서만 변경(주문번호 그룹 내 정렬).
+  void _moveItem(int from, int to) {
+    if (to < 0 || to >= _items.length) return;
+    setState(() {
+      final it = _items.removeAt(from);
+      _items.insert(to, it);
+      _changed = true;
+    });
   }
 
   Future<void> _deleteItem(Map<String, dynamic> o) async {
@@ -563,68 +580,49 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   String _orderHtml() {
     final h = _head;
-    // 무인양품(MUJI) 스타일: 여백·정렬·얇은 구분선·저채도 다색 악센트.
-    final accents = [
-      '#7C6A9C', '#3D6E70', '#A6763C', '#4C6A92', '#8A5A75', '#5E7A4B'
-    ];
+    // 전역 기본 출력 규칙: 무인양품(MUJI) + 다양한 색채, A4 세로.
     final rows = _items.asMap().entries.map((e) {
       final o = e.value;
-      final ac = accents[e.key % accents.length];
-      return '''
-      <tr>
-        <td style="border-left:4px solid $ac">${_s(o, 'product')}${_s(o, 'size').isNotEmpty ? '<div class="sub">사이즈 ${_s(o, 'size')}</div>' : ''}${_s(o, 'option').isNotEmpty ? '<div class="sub">옵션 ${_s(o, 'option')}</div>' : ''}</td>
-        <td style="text-align:center">${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')}</td>
-        <td style="text-align:right">${_won(_i(o, 'unitPrice'))}</td>
-        <td style="text-align:right;font-weight:600">${_won(_i(o, 'total'))}</td>
-      </tr>''';
-    }).join();
-    return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
-<title>주문내역 ${widget.groupKey}</title>
-<style>
- *{box-sizing:border-box}
- body{font-family:'Malgun Gothic','NanumGothic',sans-serif;color:#3A3A3A;
-   padding:32px;max-width:760px;margin:0 auto;background:#fff;font-size:13px}
- .brand{font-size:11px;letter-spacing:3px;color:#9A9388}
- h1{font-size:21px;color:#4A4A48;font-weight:600;margin:4px 0 2px}
- .ordno{font-size:12px;color:#8C877E;margin-bottom:18px;letter-spacing:.5px}
- .meta{display:flex;flex-wrap:wrap;gap:0 28px;padding:14px 0;border-top:1px solid #E4E0D8;
-   border-bottom:1px solid #E4E0D8;font-size:12.5px;line-height:1.9}
- .meta div{min-width:200px}
- .meta b{color:#4A4A48;font-weight:600;display:inline-block;min-width:64px}
- table{width:100%;border-collapse:collapse;margin-top:18px}
- th{font-weight:600;color:#6E6960;text-align:left;font-size:12px;letter-spacing:.5px;
-   border-bottom:1px solid #4A4A48;padding:8px 10px}
- td{border-bottom:1px solid #EDEAE3;padding:10px;vertical-align:top}
- .sub{font-size:11px;color:#9A9388;margin-top:2px}
- .sum{margin-top:20px;padding-top:14px;border-top:2px solid #4A4A48;text-align:right;font-size:13px;line-height:2}
- .sum .g{font-size:18px;font-weight:700;color:#7C6A9C}
- .foot{margin-top:28px;padding-top:12px;border-top:1px solid #E4E0D8;font-size:11px;color:#9A9388;
-   display:flex;justify-content:space-between}
- @media print{body{padding:0}}
-</style></head><body>
-<div class="brand">한국범스카우트중앙회 · TSAK</div>
-<h1>수품 주문 내역서</h1>
-<div class="ordno">주문번호 ${widget.groupKey}</div>
-<div class="meta">
- <div><b>주문일</b> ${_s(h, 'created')}</div>
- <div><b>진행상태</b> ${_s(h, 'status')} (${_allPaid ? '입금완료' : '미입금'}${_anyReceived ? ' · 수령완료' : ''})</div>
- <div><b>주문자</b> ${_s(h, 'buyerName')} (${_s(h, 'buyerNumber')})</div>
- <div><b>연락처</b> ${_s(h, 'phone')}</div>
- <div><b>이메일</b> ${_s(h, 'email')}</div>
- <div><b>배송</b> ${_s(h, 'shipMethod')}</div>
- <div><b>주소</b> ${_s(h, 'address')}</div>
- <div><b>운송장</b> ${_s(h, 'invoice')}${_s(h, 'invoiceCompany').isNotEmpty ? ' (${_s(h, 'invoiceCompany')})' : ''}</div>
-</div>
-<table>
- <tr><th>상품</th><th style="text-align:center">수량</th><th style="text-align:right">단가</th><th style="text-align:right">금액</th></tr>
- $rows
-</table>
-<div class="sum">
- 상품합계 ${_won(_sumTotal)}${_sumFee > 0 ? '<br>연회비 ${_won(_sumFee)}' : ''}${_sumShip > 0 ? '<br>배송비 ${_won(_sumShip)}' : ''}
- <br>총 결제금액 <span class="g">${_won(_grand)}</span>
-</div>
-<div class="foot"><span>한국범스카우트중앙회 수품 판매</span><span>${_s(h, 'created')}</span></div>
-</body></html>''';
+      final ac = kMujiAccents[e.key % kMujiAccents.length];
+      final opt = [
+        if (_s(o, 'size').isNotEmpty) '사이즈 ${_s(o, 'size')}',
+        if (_s(o, 'option').isNotEmpty) '옵션 ${_s(o, 'option')}',
+      ].join(' · ');
+      return [
+        DocCell(_s(o, 'product'), accent: ac, sub: opt.isEmpty ? null : opt),
+        DocCell('${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')}', align: 'center'),
+        DocCell(_won(_i(o, 'unitPrice')), align: 'right'),
+        DocCell(_won(_i(o, 'total')), align: 'right', bold: true),
+      ];
+    }).toList();
+    final summary = StringBuffer('상품합계 ${_won(_sumTotal)}');
+    if (_sumFee > 0) summary.write('<br>연회비 ${_won(_sumFee)}');
+    if (_sumShip > 0) summary.write('<br>배송비 ${_won(_sumShip)}');
+    summary.write('<br>총 결제금액 <span class="g">${_won(_grand)}</span>');
+    return buildMujiDoc(
+      meta: DocMeta(
+        title: '수품 주문 내역서',
+        subtitle: '주문번호 ${widget.groupKey}',
+        author: _s(h, 'buyerName'),
+        extra: {
+          '주문일': _s(h, 'created'),
+          '상태': '${_s(h, 'status')} (${_allPaid ? '입금완료' : '미입금'}'
+              '${_anyReceived ? ' · 수령완료' : ''})',
+          '주문자': '${_s(h, 'buyerName')} (${_s(h, 'buyerNumber')})',
+          '연락처': _s(h, 'phone'),
+          '이메일': _s(h, 'email'),
+          '배송': _s(h, 'shipMethod'),
+          '주소': _s(h, 'address'),
+          if (_s(h, 'invoice').isNotEmpty)
+            '운송장': '${_s(h, 'invoice')}'
+                '${_s(h, 'invoiceCompany').isNotEmpty ? ' (${_s(h, 'invoiceCompany')})' : ''}',
+        },
+      ),
+      columns: const ['상품', '수량', '단가', '금액'],
+      rows: rows,
+      summary: summary.toString(),
+      footerLeft: '한국범스카우트중앙회 수품 판매',
+    );
   }
 
   /// 엑셀(CSV) — UTF-8 BOM 포함(Excel 한글 호환).
@@ -977,6 +975,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 
   Widget _itemsCard(bool canManage) {
+    // 묶인 주문번호 목록(중복 제거, 등장 순서 유지)
+    final orderNos = <String>[];
+    for (final o in _items) {
+      final no = _s(o, 'orderNo');
+      if (no.isNotEmpty && !orderNos.contains(no)) orderNos.add(no);
+    }
+    final showNos = orderNos.length > 1;
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -991,14 +996,109 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       fontSize: 11.5, color: AppColors.textGray)),
             ],
           ),
+          // 묶인 경우: 구성 주문번호 모두 표시
+          if (showNos) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.taegeukBlue.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppColors.taegeukBlue.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.merge_type,
+                          size: 14, color: AppColors.taegeukBlue),
+                      const SizedBox(width: 5),
+                      Text('묶인 주문번호 ${orderNos.length}건',
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.taegeukBlue)),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final no in orderNos)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: AppColors.taegeukBlue
+                                    .withValues(alpha: 0.35)),
+                          ),
+                          child: Text(no,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.purpleDark)),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
-          // 주문상태 일괄적용 (관리자·마스터, 예약 아님)
+          // 주문상태 적용 바 (일괄/선택) — 관리자·마스터, 예약 아님
           if (canManage && widget.statuses.isNotEmpty && !widget.isReserve) ...[
             _bulkStatusBar(),
             const SizedBox(height: 10),
           ],
           for (int i = 0; i < _items.length; i++)
-            _itemRow(_items[i], i, canManage),
+            if (canManage)
+              Container(
+                key: ValueKey('di-${_items[i]['id']}'),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: _itemRow(_items[i], i, canManage)),
+                    // 우측 순서변경 삼선(≡) 손잡이 — 위/아래로 항목 순서 이동
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: _busy || i == 0
+                              ? null
+                              : () => _moveItem(i, i - 1),
+                          child: Icon(Icons.keyboard_arrow_up,
+                              size: 20,
+                              color: i == 0
+                                  ? AppColors.textGray.withValues(alpha: 0.3)
+                                  : AppColors.purple),
+                        ),
+                        const Icon(Icons.drag_handle,
+                            size: 18, color: AppColors.textGray),
+                        InkWell(
+                          onTap: _busy || i == _items.length - 1
+                              ? null
+                              : () => _moveItem(i, i + 1),
+                          child: Icon(Icons.keyboard_arrow_down,
+                              size: 20,
+                              color: i == _items.length - 1
+                                  ? AppColors.textGray.withValues(alpha: 0.3)
+                                  : AppColors.purple),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              )
+            else
+              _itemRow(_items[i], i, canManage),
           const Divider(height: 20),
           Row(
             children: [
@@ -1017,8 +1117,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  /// 주문상태 일괄적용 바 — 모든 아이템에 한 번에 적용.
+  /// 주문상태 적용 바 — [일괄적용] 체크 여부에 따라 전체 또는 선택 항목에 적용.
   Widget _bulkStatusBar() {
+    final selCount = _selItems.length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
@@ -1033,16 +1134,51 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             children: [
               const Icon(Icons.layers, size: 15, color: AppColors.purple),
               const SizedBox(width: 5),
-              const Text('주문상태 일괄적용',
+              const Text('주문상태 적용',
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: AppColors.purpleDark)),
               const Spacer(),
-              Text('전체 ${_items.length}개 항목에 적용',
-                  style: const TextStyle(
-                      fontSize: 10.5, color: AppColors.textGray)),
+              // 일괄적용 체크란
+              InkWell(
+                onTap: _busy
+                    ? null
+                    : () => setState(() {
+                          _applyAll = !_applyAll;
+                          if (_applyAll) _selItems.clear();
+                        }),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                          _applyAll
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          size: 17,
+                          color: AppColors.purple),
+                      const SizedBox(width: 4),
+                      const Text('일괄적용',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.purpleDark)),
+                    ],
+                  ),
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _applyAll
+                ? '전체 ${_items.length}개 항목에 적용됩니다'
+                : '항목별로 체크(☑) 후 적용 · 선택 $selCount개',
+            style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
           ),
           const SizedBox(height: 6),
           Wrap(
@@ -1060,7 +1196,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     side: BorderSide(
                         color: _statusColor(s).withValues(alpha: 0.5)),
                   ),
-                  onPressed: _busy ? null : () => _patchGroup({'status': s}),
+                  onPressed: _busy ||
+                          (!_applyAll && _selItems.isEmpty)
+                      ? null
+                      : () => _applyStatus(s),
                   child: Text(s,
                       style: const TextStyle(
                           fontSize: 11.5, fontWeight: FontWeight.w700)),
@@ -1070,6 +1209,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// 상태 적용 — 일괄이면 전체, 아니면 선택 항목만.
+  Future<void> _applyStatus(String s) async {
+    if (_applyAll) {
+      await _patchGroup({'status': s});
+    } else {
+      final ids = _selItems.toList();
+      for (final id in ids) {
+        await _saveItem(id, {'status': s});
+      }
+      if (mounted) {
+        setState(() => _selItems.clear());
+        _snack('선택 $ids.length개 항목 상태를 "$s"(으)로 변경했습니다');
+      }
+    }
   }
 
   Widget _itemRow(Map<String, dynamic> o, int idx, bool canManage) {
@@ -1090,6 +1245,33 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 일괄적용이 아닐 때만 항목 선택 체크란(관리자·마스터)
+          if (canManage &&
+              !_applyAll &&
+              widget.statuses.isNotEmpty &&
+              !widget.isReserve)
+            Padding(
+              padding: const EdgeInsets.only(right: 2, top: 14),
+              child: InkWell(
+                onTap: _busy
+                    ? null
+                    : () => setState(() {
+                          final id = '${o['id']}';
+                          if (_selItems.contains(id)) {
+                            _selItems.remove(id);
+                          } else {
+                            _selItems.add(id);
+                          }
+                        }),
+                child: Icon(
+                  _selItems.contains('${o['id']}')
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
+                  size: 19,
+                  color: AppColors.purple,
+                ),
+              ),
+            ),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Container(
@@ -1114,6 +1296,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         fontWeight: FontWeight.w800, fontSize: 13.5),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis),
+                // 항목이 속한 주문번호(묶음 주문 시 항목별로 다를 수 있음)
+                if (_s(o, 'orderNo').isNotEmpty)
+                  Text('주문번호 ${_s(o, 'orderNo')}',
+                      style: const TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.textGray,
+                          letterSpacing: 0.2)),
                 if (size.isNotEmpty || option.isNotEmpty)
                   Text([
                     if (size.isNotEmpty) '사이즈 $size',
