@@ -106,11 +106,9 @@ class _FinanceScreenState extends State<FinanceScreen>
             ],
           ),
         ],
-        bottom: TabBar(
-          isScrollable: true,
-          controller: _tab,
-          indicatorColor: AppColors.tigerGold,
-          tabs: [for (final t in _tabs) Tab(text: t)],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: HsTabStrip(controller: _tab, labels: _tabs),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

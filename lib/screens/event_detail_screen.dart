@@ -152,14 +152,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   @override
   Widget build(BuildContext context) {
     final tabs = widget.canManage
-        ? const [
-            Tab(text: '참가자'),
-            Tab(text: '사진+동영상'),
-            Tab(text: '기획서'),
-            Tab(text: '참가비·후원금'),
-            Tab(text: '행사비지출'),
-          ]
-        : const [Tab(text: '사진+동영상')];
+        ? const ['참가자', '사진+동영상', '기획서', '참가비·후원금', '행사비지출']
+        : const ['사진+동영상'];
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -175,13 +169,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         ),
         bottom: _tab == null
             ? null
-            : TabBar(
-                controller: _tab,
-                isScrollable: true,
-                indicatorColor: Colors.white,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                tabs: tabs,
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: HsTabStrip(controller: _tab!, labels: tabs),
               ),
         actions: [
           const AppHomeEmblem(size: 22),
