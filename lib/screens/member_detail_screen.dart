@@ -14,7 +14,9 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/member_access_log.dart';
 import '../widgets/merch_activity_section.dart';
+import '../widgets/personal_survey_section.dart';
 import '../widgets/photo_pip.dart';
+import '../widgets/scroll_down_hint.dart';
 import 'finance_transaction_edit_screen.dart';
 import 'export_screen.dart';
 import 'member_edit_screen.dart';
@@ -68,6 +70,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// 접속기록 섹션 새로고침 트리거(열람 로그 기록 후 갱신).
   int _accessLogRefreshKey = 0;
 
+  /// 상세 화면 스크롤 컨트롤러 — 하단 스크롤 유도 화살표(ScrollDownHint)에 사용.
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadKnownEvents() async {
     try {
       final api = context.read<NasApi>();
@@ -98,8 +109,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
+      body: ScrollDownHint(
+        controller: _scroll,
+        bottomInset: 16,
+        child: CustomScrollView(
+          controller: _scroll,
+          slivers: [
           SliverAppBar(
             expandedHeight: 176,
             pinned: true,
@@ -147,6 +162,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   canEditMemo: context.read<AppState>().isApp,
                   onEditMemo: () => _editPurchases(m),
                 ),
+                // 수요 대기(사전신청 순번) — 개인 상세 정보창에서 '수품 구매'와 함께 노출.
+                //  진행중인 수요조사가 없으면 위젯이 스스로 비표시된다.
+                PersonalSurveySection(
+                  ident: m.number.isNotEmpty ? m.number : m.phone,
+                ),
                 _infoCard(m),
                 _membershipSection(m),
                 _passwordSection(m),
@@ -158,7 +178,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

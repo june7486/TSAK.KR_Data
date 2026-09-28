@@ -2861,9 +2861,52 @@ def _merch_resolve_contact(num, phone, name="", email=""):
 
 
 def _merch_json_product(pr):
-    return {k: pr.get(k) for k in
-            ("id", "name", "kind", "price", "stock", "options", "image",
-             "desc", "active", "makerId", "size")}
+    out = {k: pr.get(k) for k in
+           ("id", "name", "kind", "price", "stock", "options", "image",
+            "desc", "active", "makerId", "size")}
+    # 각인 메달(멘토/페런츠)은 수여받는 사람(수령인) 정보 입력이 필수 → 프런트에서 폼 노출.
+    out["recipientKind"] = _medal_recipient_kind(pr.get("name", ""))
+    return out
+
+
+def _medal_recipient_kind(name):
+    """각인 메달 종류 판별 → 'mentor' | 'parent' | ''
+    - 멘토 메달  : 수령인(멘토) 소속·이름·연락처 필요
+    - 페런츠 메달: 수령인(보호자) 이름·연락처 필요
+    (약장/패치 등 그 외 품목은 대상 아님)"""
+    n = str(name or "")
+    if "메달" not in n:
+        return ""
+    if "멘토" in n:
+        return "mentor"
+    if "페런츠" in n or "페렌츠" in n:
+        return "parent"
+    return ""
+
+
+def _medal_recipient_ok(kind, rcp):
+    """수령인 정보 유효성 검사(각인 메달 필수)."""
+    if kind not in ("mentor", "parent"):
+        return True
+    if not isinstance(rcp, dict):
+        return False
+    name = str(rcp.get("name", "") or "").strip()
+    phone = str(rcp.get("phone", "") or "").strip()
+    if kind == "mentor":
+        unit = str(rcp.get("unit", "") or "").strip()
+        return bool(unit and name and phone)
+    return bool(name and phone)
+
+
+def _medal_recipient_clean(rcp):
+    """저장용 수령인 정보 정규화."""
+    if not isinstance(rcp, dict):
+        return {}
+    return {
+        "unit": str(rcp.get("unit", "") or "")[:80],
+        "name": str(rcp.get("name", "") or "")[:40],
+        "phone": str(rcp.get("phone", "") or "")[:20],
+    }
 
 
 def _merch_mine(ident):
@@ -7064,11 +7107,32 @@ class Handler(BaseHTTPRequestHandler):
                         lfee = fee_added0 if li == 0 else 0
                         ltotal = lunit * lqty
                         total0 += ltotal
+                        # 각인 메달(멘토/페런츠) 수령인 정보 — 라인별 필수.
+                        mkind = _medal_recipient_kind(lprod.get("name", ""))
+                        raw_recips = ln.get("recipients")
+                        if not isinstance(raw_recips, list):
+                            raw_recips = ([ln.get("recipient")]
+                                          if isinstance(ln.get("recipient"), dict)
+                                          else [])
+                        recips = [_medal_recipient_clean(r) for r in raw_recips
+                                  if isinstance(r, dict)]
+                        if mkind:
+                            # 필수: 최소 1명 + 제출된 모든 수령인이 유효해야 함.
+                            if not recips or not all(
+                                    _medal_recipient_ok(mkind, r)
+                                    for r in recips):
+                                return self._json({
+                                    "ok": False,
+                                    "error": "medal_recipient_required",
+                                    "recipientKind": mkind,
+                                    "product": str(lprod.get("name", "")),
+                                }, 400)
                         built.append((lprod, lunit, lqty, lfee, ltotal,
                                       str(ln.get("option", "")
                                           or d.get("option", "") or ""),
                                       str(ln.get("size", "")
-                                          or d.get("size", "") or "")))
+                                          or d.get("size", "") or ""),
+                                      mkind, recips))
                     if not built:
                         return self._json(
                             {"ok": False, "error": "product_not_found"}, 404)
@@ -7079,7 +7143,7 @@ class Handler(BaseHTTPRequestHandler):
                         doc, rep, count=sum(b[2] for b in built))
                     out_orders = []
                     for (lprod, lunit, lqty, lfee, ltotal,
-                         lopt, lsize) in built:
+                         lopt, lsize, mkind, recips) in built:
                         oid = "o" + _secrets.token_urlsafe(6)
                         order = {
                             "id": oid,
@@ -7094,6 +7158,9 @@ class Handler(BaseHTTPRequestHandler):
                             "total": ltotal,
                             "annualFeeAdded": lfee,
                             "grandTotal": ltotal + lfee,
+                            "recipientKind": mkind,
+                            "recipients": recips,
+                            "recipient": (recips[0] if recips else {}),
                             "buyerName": bname0[:40],
                             "buyerNumber": ident0,
                             "contactId": oc0,
@@ -7159,6 +7226,22 @@ class Handler(BaseHTTPRequestHandler):
                 qty = max(1, qty)
                 total = unit * qty
                 ship = str(d.get("shipMethod", "") or "현장구매")
+                # 각인 메달(멘토/페런츠) 수령인 정보 — 필수.
+                mkind = _medal_recipient_kind(prod.get("name", ""))
+                raw_recips = d.get("recipients")
+                if not isinstance(raw_recips, list):
+                    raw_recips = ([d.get("recipient")]
+                                  if isinstance(d.get("recipient"), dict) else [])
+                recips = [_medal_recipient_clean(r) for r in raw_recips
+                          if isinstance(r, dict)]
+                if mkind and (not recips or not all(
+                        _medal_recipient_ok(mkind, r) for r in recips)):
+                    return self._json({
+                        "ok": False,
+                        "error": "medal_recipient_required",
+                        "recipientKind": mkind,
+                        "product": str(prod.get("name", "")),
+                    }, 400)
                 # 주문자 식별: 인가번호 우선, 없으면 전화로 비인가 자동생성
                 oc, octype = _merch_resolve_contact(ident, phone, bname, email)
                 oid = "o" + _secrets.token_urlsafe(6)
@@ -7175,6 +7258,9 @@ class Handler(BaseHTTPRequestHandler):
                     "total": total,
                     "annualFeeAdded": fee_added,
                     "grandTotal": total + fee_added,
+                    "recipientKind": mkind,
+                    "recipients": recips,
+                    "recipient": (recips[0] if recips else {}),
                     "buyerName": bname[:40],
                     "buyerNumber": ident,
                     "contactId": oc,

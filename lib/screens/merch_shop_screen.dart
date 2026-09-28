@@ -922,6 +922,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               'price': l.price,
               'option': l.option,
               'qty': l.qty,
+              // 각인 메달(멘토/페런츠) 수령인 정보 입력이 필요함을 체크아웃에 전달.
+              'recipientKind': '${l.product['recipientKind'] ?? ''}',
             })
         .toList();
     final ok = await Navigator.of(context).push<bool>(

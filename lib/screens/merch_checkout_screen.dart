@@ -41,6 +41,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
   final _memo = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  /// 각인 메달(멘토/페런츠) 라인별 수령인 입력 컨트롤러.
+  ///  key = 라인 인덱스. 각인 내용(수여받는 사람 정보)이 있어야 판매 가능.
+  final Map<int, _RecipientCtl> _recips = {};
+
   bool _noticeChecked = false;
   bool _feePaidYes = true; // 연간회비 납부 여부(예=면제, 아니요=추가)
   String _ship = '현장구매';
@@ -65,6 +69,16 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
       (!_isReserve && !_feePaidYes && _annualFee > 0) ? _annualFee : 0;
   int get _grandTotal => _goodsTotal + _shipExtra + _feeExtra;
 
+  /// 각인 메달 수령인 대상 라인 인덱스 → recipientKind('mentor'|'parent').
+  Map<int, String> get _medalLines {
+    final out = <int, String>{};
+    for (int i = 0; i < widget.lines.length; i++) {
+      final k = '${widget.lines[i]['recipientKind'] ?? ''}'.trim();
+      if (k == 'mentor' || k == 'parent') out[i] = k;
+    }
+    return out;
+  }
+
   @override
   void dispose() {
     _number.dispose();
@@ -73,6 +87,9 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
     _email.dispose();
     _address.dispose();
     _memo.dispose();
+    for (final c in _recips.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -121,6 +138,11 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
               ],
               _buyerSection(),
               const SizedBox(height: 12),
+              // 각인 메달(멘토/페런츠) — 수여받는 사람 정보 필수 입력.
+              if (_medalLines.isNotEmpty) ...[
+                _recipientSection(),
+                const SizedBox(height: 12),
+              ],
               if (!_isReserve) ...[
                 _shippingSection(),
                 const SizedBox(height: 12),
@@ -439,6 +461,85 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         ),
       );
 
+  /// 각인 메달(멘토/페런츠) — 수여받는 사람(수령인) 정보 입력 섹션.
+  ///  멘토: 소속 · 이름 · 연락처 / 페런츠: 이름 · 연락처.
+  ///  이 정보(각인 내용)가 있어야 판매 가능하다.
+  Widget _recipientSection() => _card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _title('각인 메달 — 수여받는 분 정보 (필수)',
+                icon: Icons.card_giftcard, color: AppColors.taegeukRed),
+            const SizedBox(height: 6),
+            const Text(
+              '멘토·페런츠 메달은 각인 작업을 위해 수여받는 분의 정보가 반드시 필요합니다.\n'
+              '· 멘토 메달: 멘토 대장님의 소속 · 이름 · 연락처\n'
+              '· 페런츠 메달: 페런츠(보호자)의 이름 · 연락처',
+              style: TextStyle(fontSize: 12, height: 1.45),
+            ),
+            for (final e in _medalLines.entries) ...[
+              const SizedBox(height: 10),
+              _recipientFields(e.key, e.value),
+            ],
+          ],
+        ),
+      );
+
+  Widget _recipientFields(int idx, String kind) {
+    final c = _recips.putIfAbsent(idx, () => _RecipientCtl());
+    final pname =
+        '${(widget.lines[idx]['name'] ?? '').toString().split('(').first}'.trim();
+    final isMentor = kind == 'mentor';
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.tigerGold.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$pname · ${isMentor ? '멘토' : '페런츠'} 수령인',
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          if (isMentor)
+            TextFormField(
+              key: ValueKey('rcp-unit-$idx'),
+              controller: c.unit,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? '멘토 소속을 입력하세요'
+                  : null,
+              decoration: const InputDecoration(
+                  labelText: '멘토 소속 *', isDense: true),
+            ),
+          if (isMentor) const SizedBox(height: 8),
+          TextFormField(
+            key: ValueKey('rcp-name-$idx'),
+            controller: c.name,
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? '수령인 이름을 입력하세요'
+                : null,
+            decoration: InputDecoration(
+                labelText: '${isMentor ? '멘토' : '페런츠'} 이름 *', isDense: true),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            key: ValueKey('rcp-phone-$idx'),
+            controller: c.phone,
+            keyboardType: TextInputType.phone,
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? '수령인 연락처를 입력하세요'
+                : null,
+            decoration: InputDecoration(
+                labelText: '${isMentor ? '멘토' : '페런츠'} 연락처 *', isDense: true),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _waitingNotice() {
     final pct = (_stepProgress * 100).round();
     return Container(
@@ -591,14 +692,25 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
       } else {
         // 장바구니의 모든 라인을 **하나의 주문번호**로 통합 주문.
         final lines = <Map<String, dynamic>>[];
+        final medalLines = _medalLines;
         for (int i = 0; i < widget.lines.length; i++) {
           final l = widget.lines[i];
+          final mk = medalLines[i];
           lines.add({
             'productId': '${l['productId']}',
             'qty': (l['qty'] as num?)?.toInt() ?? 1,
             'option': '${l['option'] ?? ''}',
             if ((l['size'] ?? '') != '') 'size': '${l['size']}',
             if (l['price'] != null) 'unitPrice': (l['price'] as num).toInt(),
+            // 각인 메달: 수여받는 사람(수령인) 정보 필수 전송.
+            if (mk != null)
+              'recipients': [
+                {
+                  'unit': _recips[i]?.unit.text.trim() ?? '',
+                  'name': _recips[i]?.name.text.trim() ?? '',
+                  'phone': _recips[i]?.phone.text.trim() ?? '',
+                }
+              ],
           });
         }
         _setStep('서버에 주문을 저장하는 중… (가장 오래 걸리는 단계)', 0.45);
@@ -618,6 +730,11 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
           _setStep('주문 내역을 개인 프로필에 연동하는 중…', 0.9);
           await _resultDialog(reserve: false, last: r);
           if (mounted) Navigator.pop(context, true);
+        } else if (r['error'] == 'medal_recipient_required') {
+          _snack('각인 메달은 수여받는 분의 정보(소속·이름·연락처)를 입력해야 판매할 수 있습니다.',
+              color: AppColors.taegeukRed);
+          setState(() => _busy = false);
+          return;
         } else if (r['error'] == 'annual_fee_required') {
           _snack('연회비 납부 후 구매할 수 있습니다.', color: AppColors.taegeukRed);
           setState(() => _busy = false);
@@ -747,5 +864,19 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: color),
     );
+  }
+}
+
+
+/// 각인 메달 수령인 입력 컨트롤러 모음.
+class _RecipientCtl {
+  final unit = TextEditingController();
+  final name = TextEditingController();
+  final phone = TextEditingController();
+
+  void dispose() {
+    unit.dispose();
+    name.dispose();
+    phone.dispose();
   }
 }
