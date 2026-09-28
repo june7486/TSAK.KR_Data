@@ -6065,18 +6065,40 @@ class Handler(BaseHTTPRequestHandler):
                 did = str(d.get("id", "") or ("dn" + _secrets.token_urlsafe(5)))
                 don = doc.get("donations", [])
                 existing = next((x for x in don if str(x.get("id")) == did), None)
+                # 삭제 요청
+                if d.get("delete") is True and existing:
+                    don.remove(existing)
+                    doc["donations"] = don
+                    _merch_save(doc)
+                    return self._json({"ok": True, "deleted": did})
                 item = dict(existing) if existing else {"id": did,
                                                         "created": _now_stamp()}
                 item["id"] = did
-                for k in ("item", "qty", "target", "date", "note"):
-                    if k in d:
-                        if k == "qty":
-                            try:
-                                item[k] = int(d.get(k, 0) or 0)
-                            except Exception:
-                                item[k] = 0
-                        else:
-                            item[k] = str(d.get(k, "") or "")[:200]
+                # 금액(정수)
+                if "amount" in d:
+                    try:
+                        item["amount"] = int(d.get("amount", 0) or 0)
+                    except Exception:
+                        item["amount"] = 0
+                # 수량(정수)
+                if "qty" in d:
+                    try:
+                        item["qty"] = int(d.get("qty", 0) or 0)
+                    except Exception:
+                        item["qty"] = 0
+                # 텍스트 필드(구/신 필드명 모두 수용)
+                text_map = [
+                    ("product", ("product", "item")),
+                    ("recipient", ("recipient", "target")),
+                    ("event", ("event",)),
+                    ("date", ("date",)),
+                    ("memo", ("memo", "note")),
+                ]
+                for canon, keys in text_map:
+                    for k in keys:
+                        if k in d:
+                            item[canon] = str(d.get(k, "") or "")[:300]
+                            break
                 item["updated"] = _now_stamp()
                 if existing:
                     don[don.index(existing)] = item
