@@ -324,24 +324,48 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 key: ValueKey('ord-$k'),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (_selMode)
-                      Checkbox(
-                        value: _selKeys.contains(k),
-                        onChanged: (_) => _toggleSel(k),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    Expanded(child: _groupCard(g, isReserve: false)),
-                    if (_selMode)
-                      ReorderableDragStartListener(
-                        index: i,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 20),
-                          child: const Icon(Icons.drag_indicator,
-                              color: AppColors.purple),
+                      Center(
+                        child: Checkbox(
+                          value: _selKeys.contains(k),
+                          onChanged: (_) => _toggleSel(k),
+                          visualDensity: VisualDensity.compact,
                         ),
                       ),
+                    Expanded(child: _groupCard(g, isReserve: false)),
+                    // 우측 순서이동 손잡이 — 항상 노출 (일괄편집 모드가 아니어도 표시)
+                    ReorderableDragStartListener(
+                      index: i,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Container(
+                          width: 40,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.purple.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: AppColors.purple.withValues(alpha: 0.22)),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.drag_indicator,
+                                  size: 22, color: AppColors.purple),
+                              const SizedBox(height: 2),
+                              Text('순서',
+                                  style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.purple
+                                          .withValues(alpha: 0.85))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -405,7 +429,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           ),
           if (_selMode) ...[
             const SizedBox(height: 4),
-            Text('선택 ${_selKeys.length}건 · 우측 손잡이(≡)를 끌어 순서 이동',
+            Text('선택 ${_selKeys.length}건 · 우측 「순서」 손잡이를 끌어 이동',
                 style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
             const SizedBox(height: 8),
             Wrap(

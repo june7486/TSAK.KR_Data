@@ -518,8 +518,8 @@ class _HomeScreenState extends State<HomeScreen> {
           if (!state.isSelfAccess) _filterBar(state),
           const SizedBox(height: 4),
           Expanded(
-            child: (state.membersLoading && members.isEmpty)
-                ? _loadingList()
+            child: (state.membersLoading && !state.membersLoaded)
+                ? _loadingList(loaded: members.length)
                 : members.isEmpty
                     ? _empty()
                     : ListView.builder(
@@ -1743,7 +1743,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 초기 로딩 — 명단을 서버에서 불러오는 동안 표시(빈 화면 방지).
-  Widget _loadingList() {
+  Widget _loadingList({int loaded = 0}) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1767,7 +1767,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            '인가자 명단 ${members.length > 0 ? members.length : ''} '
+            '인가자 명단${loaded > 0 ? ' $loaded' : ''} '
             '데이터를 준비하고 있어요. 잠시만 기다려 주세요.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textGray, fontSize: 12.5),

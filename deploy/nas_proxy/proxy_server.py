@@ -6126,6 +6126,114 @@ class Handler(BaseHTTPRequestHandler):
                 if cfg.get("salesOpen", True) is False and not is_admin:
                     return self._json(
                         {"ok": False, "error": "sales_closed"}, 403)
+                # ---------- 배치(장바구니 통합) 주문 ----------
+                # 같은 장바구니의 모든 품목이 **하나의 주문번호(orderNo)** 를 공유한다.
+                _lines = d.get("lines")
+                if isinstance(_lines, list) and _lines:
+                    ident0 = re.sub(r"[^0-9]", "",
+                                    str(d.get("buyerNumber", "") or ""))
+                    phone0 = str(d.get("phone", "") or "")
+                    bname0 = str(d.get("buyerName", "") or "")
+                    email0 = str(d.get("email", "") or "")
+                    # 연회비 게이트(엄격모드)
+                    if (cfg.get("annualFeeRequired", False) is True
+                            and not is_admin):
+                        paid0, _m0 = _merch_fee_paid(ident0, d.get("year"))
+                        if not paid0:
+                            return self._json(
+                                {"ok": False, "error": "annual_fee_required"},
+                                403)
+                    fee_added0 = 0
+                    if d.get("addAnnualFee") is True:
+                        try:
+                            fee_added0 = int(cfg.get("annualFee", 0) or 0)
+                        except Exception:
+                            fee_added0 = 0
+                    oc0, octype0 = _merch_resolve_contact(
+                        ident0, phone0, bname0, email0)
+                    created0 = _now_stamp()
+                    ship0 = str(d.get("shipMethod", "") or "현장구매")
+                    # 유효 라인 수집
+                    built = []
+                    total0 = 0
+                    for li, ln in enumerate(_lines):
+                        if not isinstance(ln, dict):
+                            continue
+                        lpid = str(ln.get("productId", "") or "")
+                        lprod = next((x for x in doc.get("products", [])
+                                      if str(x.get("id")) == lpid), None)
+                        if not lprod:
+                            continue
+                        try:
+                            lunit = int(ln.get("unitPrice",
+                                               lprod.get("price", 0)) or 0)
+                            lqty = max(1, int(ln.get("qty", 1) or 1))
+                        except Exception:
+                            lunit, lqty = 0, 1
+                        lfee = fee_added0 if li == 0 else 0
+                        ltotal = lunit * lqty
+                        total0 += ltotal
+                        built.append((lprod, lunit, lqty, lfee, ltotal,
+                                      str(ln.get("option", "")
+                                          or d.get("option", "") or ""),
+                                      str(ln.get("size", "")
+                                          or d.get("size", "") or "")))
+                    if not built:
+                        return self._json(
+                            {"ok": False, "error": "product_not_found"}, 404)
+                    # 대표 주문번호: 전체 합계 금액으로 1개 생성 후 전 라인 공유
+                    rep = {"buyerName": bname0, "created": created0,
+                           "grandTotal": total0 + fee_added0}
+                    shared_no = _merch_assign_no(doc, rep)
+                    out_orders = []
+                    for (lprod, lunit, lqty, lfee, ltotal,
+                         lopt, lsize) in built:
+                        oid = "o" + _secrets.token_urlsafe(6)
+                        order = {
+                            "id": oid,
+                            "year": str(datetime.datetime.now().year),
+                            "productId": str(lprod.get("id", "")),
+                            "product": str(lprod.get("name", "")),
+                            "kind": str(lprod.get("kind", "")),
+                            "unitPrice": lunit,
+                            "qty": lqty,
+                            "option": lopt,
+                            "size": lsize,
+                            "total": ltotal,
+                            "annualFeeAdded": lfee,
+                            "grandTotal": ltotal + lfee,
+                            "buyerName": bname0[:40],
+                            "buyerNumber": ident0,
+                            "contactId": oc0,
+                            "contactType": octype0,
+                            "phone": phone0[:20],
+                            "email": email0[:80],
+                            "address": str(d.get("address", "") or "")[:200],
+                            "shipMethod": ship0,
+                            "shipNote": str(d.get("shipNote", "") or "")[:200],
+                            "paid": False,
+                            "status": "입금확인중",
+                            "statusHistory": [{"status": "입금확인중",
+                                               "at": created0, "by": "system"}],
+                            "memo": str(d.get("memo", "") or "")[:200],
+                            "created": created0,
+                            "orderNo": shared_no,
+                        }
+                        doc.setdefault("orders", []).append(order)
+                        if oc0:
+                            _merch_attach_to_member(oc0, oid, "order")
+                        out_orders.append(order)
+                    _merch_save(doc)
+                    return self._json({
+                        "ok": True,
+                        "orders": out_orders,
+                        "orderNo": shared_no,
+                        "order": out_orders[0],
+                        "contactId": oc0,
+                        "contactType": octype0,
+                        "account": cfg.get("account", {}),
+                    })
+                # ---------- 단일 품목 주문(기존) ----------
                 pid = str(d.get("productId", "") or "")
                 prod = next((x for x in doc.get("products", [])
                              if str(x.get("id")) == pid), None)

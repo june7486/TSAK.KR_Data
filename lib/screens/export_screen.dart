@@ -11,6 +11,7 @@ import '../services/contact_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/hscroll_menu.dart';
 import '../widgets/member_card.dart';
 
 /// 명단 내보내기 + 단체 문자/메일 화면
@@ -74,14 +75,13 @@ class _ExportScreenState extends State<ExportScreen>
       appBar: AppBar(
         title: Text(widget.title, style: const TextStyle(fontSize: 16)),
         actions: const [AppHomeEmblem(size: 24)],
-        bottom: TabBar(
-          controller: _tab,
-          indicatorColor: AppColors.tigerGold,
-          tabs: const [
-            Tab(icon: Icon(Icons.file_download), text: '파일 내보내기'),
-            Tab(icon: Icon(Icons.sms), text: '문자 발송'),
-            Tab(icon: Icon(Icons.email), text: '메일 발송'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(46),
+          child: HsTabStrip(
+            controller: _tab,
+            labels: const ['파일 내보내기', '문자 발송', '메일 발송'],
+            icons: const [Icons.file_download, Icons.sms, Icons.email],
+          ),
         ),
       ),
       body: TabBarView(

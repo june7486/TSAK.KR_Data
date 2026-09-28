@@ -539,53 +539,45 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
           _snack('예약 접수에 실패했습니다.', color: AppColors.taegeukRed);
         }
       } else {
-        int ok = 0;
-        Map<String, dynamic> last = {};
+        // 장바구니의 모든 라인을 **하나의 주문번호**로 통합 주문.
+        final lines = <Map<String, dynamic>>[];
         for (int i = 0; i < widget.lines.length; i++) {
           final l = widget.lines[i];
-          final r = await _nas.merchOrder(
-            productId: '${l['productId']}',
-            buyerName: _name.text.trim(),
-            buyerNumber: _number.text.trim(),
-            qty: (l['qty'] as num?)?.toInt() ?? 1,
-            option: '${l['option'] ?? ''}',
-            phone: _phone.text.trim(),
-            email: _email.text.trim(),
-            address: _address.text.trim(),
-            shipMethod: _ship,
-            shipNote: '',
-            memo: '묶음주문',
-            unitPrice: (l['price'] as num?)?.toInt(),
-            // 연회비는 첫 라인에만 1회 가산
-            addAnnualFee: (i == 0 && !_feePaidYes),
-          );
-          if (r['ok'] == true) {
-            ok++;
-            last = r;
-          } else if (r['error'] == 'annual_fee_required') {
-            if (!mounted) return;
-            _snack('연회비 납부 후 구매할 수 있습니다.',
-                color: AppColors.taegeukRed);
-            setState(() => _busy = false);
-            return;
-          } else if (r['error'] == 'sales_closed') {
-            if (!mounted) return;
-            _snack('현재 판매가 중지되어 있습니다.', color: AppColors.taegeukRed);
-            setState(() => _busy = false);
-            return;
-          } else {
-            if (!mounted) return;
-            _snack('주문 실패: ${r['error']}', color: AppColors.taegeukRed);
-            setState(() => _busy = false);
-            return;
-          }
+          lines.add({
+            'productId': '${l['productId']}',
+            'qty': (l['qty'] as num?)?.toInt() ?? 1,
+            'option': '${l['option'] ?? ''}',
+            if ((l['size'] ?? '') != '') 'size': '${l['size']}',
+            if (l['price'] != null) 'unitPrice': (l['price'] as num).toInt(),
+          });
         }
+        final r = await _nas.merchOrderBatch(
+          lines: lines,
+          buyerName: _name.text.trim(),
+          buyerNumber: _number.text.trim(),
+          phone: _phone.text.trim(),
+          email: _email.text.trim(),
+          address: _address.text.trim(),
+          shipMethod: _ship,
+          memo: '묶음주문',
+          addAnnualFee: !_feePaidYes,
+        );
         if (!mounted) return;
-        if (ok > 0) {
-          await _resultDialog(reserve: false, last: last);
+        if (r['ok'] == true) {
+          await _resultDialog(reserve: false, last: r);
           if (mounted) Navigator.pop(context, true);
+        } else if (r['error'] == 'annual_fee_required') {
+          _snack('연회비 납부 후 구매할 수 있습니다.', color: AppColors.taegeukRed);
+          setState(() => _busy = false);
+          return;
+        } else if (r['error'] == 'sales_closed') {
+          _snack('현재 판매가 중지되어 있습니다.', color: AppColors.taegeukRed);
+          setState(() => _busy = false);
+          return;
         } else {
-          _snack('주문에 실패했습니다.', color: AppColors.taegeukRed);
+          _snack('주문 실패: ${r['error']}', color: AppColors.taegeukRed);
+          setState(() => _busy = false);
+          return;
         }
       }
     } catch (e) {

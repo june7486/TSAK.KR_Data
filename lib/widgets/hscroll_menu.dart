@@ -235,6 +235,7 @@ class HsTabStrip extends StatelessWidget {
     super.key,
     required this.controller,
     required this.labels,
+    this.icons,
     this.bg,
     this.selectedColor,
     this.unselectedColor,
@@ -243,6 +244,9 @@ class HsTabStrip extends StatelessWidget {
 
   final TabController controller;
   final List<String> labels;
+
+  /// 선택 시 각 탭에 표시할 아이콘(라벨과 길이 동일 시 적용, 아니면 무시).
+  final List<IconData>? icons;
   final Color? bg;
   final Color? selectedColor;
   final Color? unselectedColor;
@@ -269,6 +273,8 @@ class HsTabStrip extends StatelessWidget {
               children: labels.asMap().entries.map((e) {
                 final i = e.key;
                 final selected = controller.index == i;
+                final hasIcon =
+                    icons != null && icons!.length == labels.length;
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: GestureDetector(
@@ -284,13 +290,24 @@ class HsTabStrip extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.5),
                         ),
                       ),
-                      child: Text(
-                        e.value,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: selected ? selFg : unselFg,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (hasIcon) ...[
+                            Icon(icons![i],
+                                size: 16,
+                                color: selected ? selFg : unselFg),
+                            const SizedBox(width: 5),
+                          ],
+                          Text(
+                            e.value,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: selected ? selFg : unselFg,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

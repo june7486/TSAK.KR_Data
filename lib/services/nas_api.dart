@@ -1469,6 +1469,45 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 장바구니 일괄 주문 — 모든 품목이 **하나의 주문번호(orderNo)** 를 공유한다.
+  /// [lines]: [{productId, qty, option, size, unitPrice}] 형태의 목록.
+  Future<Map<String, dynamic>> merchOrderBatch({
+    required List<Map<String, dynamic>> lines,
+    required String buyerName,
+    required String buyerNumber,
+    String phone = '',
+    String email = '',
+    String address = '',
+    String shipMethod = '현장구매',
+    String shipNote = '',
+    String memo = '',
+    String option = '',
+    bool addAnnualFee = false,
+    String year = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/merch/order'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'lines': lines,
+            'buyerName': buyerName,
+            'buyerNumber': buyerNumber,
+            'phone': phone,
+            'email': email,
+            'address': address,
+            'shipMethod': shipMethod,
+            'shipNote': shipNote,
+            'memo': memo,
+            'option': option,
+            if (addAnnualFee) 'addAnnualFee': true,
+            if (year.isNotEmpty) 'year': year,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 내 수품 주문/예약 내역(상태 파이프라인 포함).
   Future<Map<String, dynamic>> merchMine({required String ident}) async {
     final qs = '?ident=${Uri.encodeComponent(ident)}';
