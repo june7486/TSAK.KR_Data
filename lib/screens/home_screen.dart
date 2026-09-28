@@ -536,53 +536,84 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          _header(state),
+          if (!state.isSelfAccess) _header(state),
           // 개인/비인가자(본인 1인) 접근에서는 검색·필터를 숨겨 다른 회원 열람 차단
           if (!state.isSelfAccess) _filterBar(state),
           const SizedBox(height: 4),
           Expanded(
-            child: (state.membersLoading && !state.membersLoaded)
-                ? _loadingList(loaded: members.length)
-                : members.isEmpty
-                    ? _empty()
-                    : ListView.builder(
-                        controller: _scroll,
-                        padding: const EdgeInsets.only(bottom: 90),
-                        itemCount: members.length,
-                        itemBuilder: (context, i) {
-                          final m = members[i];
-                          return MemberCard(
-                        member: m,
-                        scale: state.listScale,
-                        selectMode: _selectMode,
-                        selected: _selected.contains(m.id),
-                        // 관리자·마스터는 실명, 일반회원은 nameVisible=false 회원을 마스킹
-                        canSeeRealName: state.isApp ||
-                            state.isMaster ||
-                            state.who.replaceAll(RegExp(r'[^0-9]'), '') ==
-                                m.number.replaceAll(RegExp(r'[^0-9]'), ''),
-                        onTap: () {
-                          if (_selectMode) {
-                            _toggle(m.id);
-                          } else {
-                            _openDetail(m);
-                          }
-                        },
-                        onLongPress: state.isSelfAccess
-                            ? null
-                            : () {
-                                if (!_selectMode) {
-                                  setState(() {
-                                    _selectMode = true;
-                                    _selected.add(m.id);
-                                  });
-                                }
-                              },
-                        onCheckToggle: () => _toggle(m.id),
-                        onEdit: () => _openEdit(m),
-                      );
-                    },
-                  ),
+            child: state.isSelfAccess
+                // 개인 페이지: 헤더(개인정보·바로가기)를 함께 스크롤에 포함해
+                // 화면이 잘리지 않고 아래로 스크롤되도록 한다.
+                ? CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(child: _personalHeader(state)),
+                      const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                      if (members.isEmpty)
+                        const SliverToBoxAdapter(child: SizedBox(height: 8))
+                      else
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, i) {
+                              final m = members[i];
+                              return MemberCard(
+                                member: m,
+                                scale: state.listScale,
+                                selectMode: _selectMode,
+                                selected: _selected.contains(m.id),
+                                canSeeRealName: true,
+                                onTap: () => _openDetail(m),
+                                onLongPress: null,
+                                onCheckToggle: () => _toggle(m.id),
+                                onEdit: () => _openEdit(m),
+                              );
+                            },
+                            childCount: members.length,
+                          ),
+                        ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                    ],
+                  )
+                : (state.membersLoading && !state.membersLoaded)
+                    ? _loadingList(loaded: members.length)
+                    : members.isEmpty
+                        ? _empty()
+                        : ListView.builder(
+                            controller: _scroll,
+                            padding: const EdgeInsets.only(bottom: 90),
+                            itemCount: members.length,
+                            itemBuilder: (context, i) {
+                              final m = members[i];
+                              return MemberCard(
+                                member: m,
+                                scale: state.listScale,
+                                selectMode: _selectMode,
+                                selected: _selected.contains(m.id),
+                                canSeeRealName: state.isApp ||
+                                    state.isMaster ||
+                                    state.who.replaceAll(
+                                            RegExp(r'[^0-9]'), '') ==
+                                        m.number
+                                            .replaceAll(RegExp(r'[^0-9]'), ''),
+                                onTap: () {
+                                  if (_selectMode) {
+                                    _toggle(m.id);
+                                  } else {
+                                    _openDetail(m);
+                                  }
+                                },
+                                onLongPress: () {
+                                  if (!_selectMode) {
+                                    setState(() {
+                                      _selectMode = true;
+                                      _selected.add(m.id);
+                                    });
+                                  }
+                                },
+                                onCheckToggle: () => _toggle(m.id),
+                                onEdit: () => _openEdit(m),
+                              );
+                            },
+                          ),
           ),
           if (state.isSelfAccess) _personalActionBar(state),
           _bottomBar(context, state),
@@ -651,13 +682,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.taegeukBlue,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 12),
                   ),
                   onPressed: me == null
                       ? null
                       : () => _openPasswordMenuItem(state, me),
                   icon: const Icon(Icons.password, size: 18),
-                  label: const Text('비밀번호'),
+                  label: const Text('비밀번호 변경',
+                      style: TextStyle(fontSize: 13)),
                 ),
               ],
             ),
@@ -1141,36 +1174,35 @@ class _HomeScreenState extends State<HomeScreen> {
               const Spacer(),
               // V 표시 영역 — 누르면 본인 정보 편집(수정/저장) 시트 열림
               if (me != null)
-                GestureDetector(
-                  onTap: () => _openPersonalEditSheet(state, me),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.scoutGreen, width: 2),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.verified,
-                          color: AppColors.scoutGreen,
-                          size: 18,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          '본인 정보 편집',
-                          style: TextStyle(
-                            color: AppColors.scoutGreen,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
+                Material(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(
+                        color: AppColors.scoutGreen, width: 2),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _openPersonalEditSheet(state, me),
+                    child: const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified,
+                              color: AppColors.scoutGreen, size: 18),
+                          SizedBox(width: 4),
+                          Text(
+                            '본인 정보 편집',
+                            style: TextStyle(
+                              color: AppColors.scoutGreen,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1194,7 +1226,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '범스카우트 #${me.number.isEmpty ? '-' : me.number}',
+                        me.isRegular
+                            ? '서포터즈'
+                            : '범스카우트 #${me.number.isEmpty ? '-' : me.number}',
                         style: const TextStyle(
                           color: AppColors.purple,
                           fontWeight: FontWeight.w900,
@@ -1203,7 +1237,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'ATAS #${me.atasNo.isEmpty ? '-' : me.atasNo}',
+                        me.isRegular
+                            ? '일반회원 (비인가)'
+                            : 'ATAS #${me.atasNo.isEmpty ? '-' : me.atasNo}',
                         style: const TextStyle(
                           color: AppColors.taegeukBlue,
                           fontWeight: FontWeight.w900,
@@ -1315,9 +1351,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // 수요조사 진행중 — 대기자 명단/순번 + 최소주문 대비 신청자 수
-          if (_surveys.isNotEmpty) _personalSurveyWaitlist(),
-          const SizedBox(height: 10),
+          // 노출순서: 내 행사 관리 → 수품 구매 → 후원 계좌.
+          // (수요조사·수품판매 등 진행정보는 개인프로필 첫 화면에 노출하지 않는다.)
           // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
           _personalDonationBanner(state),
         ],

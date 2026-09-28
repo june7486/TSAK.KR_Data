@@ -694,36 +694,43 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Future<void> _print() async {
     if (isWebRuntime) {
-      openPrintableHtml(_orderHtml());
+      // 기본 출력 형식 = PDF. 새 창에서 자동으로 인쇄(=PDF 저장) 대화상자를 띄운다.
+      openPrintableHtml(_orderHtml(), autoPrint: true);
     } else {
       await Clipboard.setData(ClipboardData(text: _orderText()));
       _snack('내역을 복사했습니다(문서에 붙여넣기)');
     }
   }
 
-  /// 저장 — 기본(JPG: 기기에 저장) + 추천 포맷 옵션.
+  /// 저장 — 기본(PDF: 인쇄 대화상자에서 "PDF로 저장") + 기타 포맷 옵션.
   Future<void> _save() async {
-    // 1) 기본값: 기기에 저장(JPG) 확인
+    // 1) 기본값: PDF 저장 확인
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('기기에 저장'),
-        content: const Text('기기에 저장하시겠습니까?\n(기본: JPG 이미지)',
+        title: const Text('파일로 저장'),
+        content: const Text('주문내역을 PDF로 저장하시겠습니까?\n(기본: PDF — 인쇄창에서 "PDF로 저장")',
             style: TextStyle(fontSize: 13.5)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('취소')),
+          TextButton(
+              onPressed: () {
+                Navigator.pop(ctx, false);
+                _pickFormat();
+              },
+              child: const Text('다른 형식')),
           FilledButton.icon(
             onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.download, size: 18),
-            label: const Text('기기에 저장 (JPG)'),
+            icon: const Icon(Icons.picture_as_pdf, size: 18),
+            label: const Text('PDF 저장'),
           ),
         ],
       ),
     );
     if (go != true) return;
-    if (mounted) await _pickFormat();
+    _print();
   }
 
   /// 다양한 포맷으로 저장(추천 옵션).
@@ -742,16 +749,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
             ),
             ListTile(
-              leading: const Icon(Icons.image, color: AppColors.purple),
-              title: const Text('JPG (이미지)'),
-              subtitle: const Text('추천 · 인쇄화면에서 "이미지로 저장" · 스마트폰 저장에 적합'),
-              onTap: () => Navigator.pop(ctx, 'jpg'),
+              leading: const Icon(Icons.picture_as_pdf, color: AppColors.taegeukRed),
+              title: const Text('PDF (기본 · 추천)'),
+              subtitle: const Text('인쇄화면에서 "PDF로 저장" · 보관/전송용'),
+              onTap: () => Navigator.pop(ctx, 'pdf'),
             ),
             ListTile(
-              leading: const Icon(Icons.picture_as_pdf, color: AppColors.taegeukRed),
-              title: const Text('PDF'),
-              subtitle: const Text('추천 · 인쇄화면에서 "PDF로 저장" · 보관/전송용'),
-              onTap: () => Navigator.pop(ctx, 'pdf'),
+              leading: const Icon(Icons.image, color: AppColors.purple),
+              title: const Text('JPG (이미지)'),
+              subtitle: const Text('인쇄화면에서 "이미지로 저장" · 스마트폰 저장에 적합'),
+              onTap: () => Navigator.pop(ctx, 'jpg'),
             ),
             ListTile(
               leading: const Icon(Icons.grid_on, color: AppColors.scoutGreen),
@@ -1602,8 +1609,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       backgroundColor: AppColors.purple,
                       padding: const EdgeInsets.symmetric(vertical: 12)),
                   onPressed: _save,
-                  icon: const Icon(Icons.download_outlined, size: 18),
-                  label: const Text('저장 (JPG 기본)',
+                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                  label: const Text('저장 (PDF 기본)',
                       style: TextStyle(fontWeight: FontWeight.w800)),
                 ),
               ),

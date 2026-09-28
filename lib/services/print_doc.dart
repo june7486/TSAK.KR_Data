@@ -154,16 +154,17 @@ String buildMujiDoc({
  .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;align-items:center;
    justify-content:flex-end;padding:10px 14px;background:#F4F1EA;
    border-bottom:1px solid #E4E0D8;margin:-30px -30px 16px}
- .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:left}
+ .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:center}
  .tsak-bar button{font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;
    border-radius:8px;padding:8px 16px;border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
  .tsak-bar button.pri{background:#7C6A9C;color:#fff}
+ .tsak-bar button.back{background:#5E7A4B;color:#fff;border-color:#5E7A4B}
  @media print{.tsak-bar{display:none!important}body{padding:0}}
 </style></head><body>
 <div class="tsak-bar">
+  <button class="back" onclick="window.close(); if(!window.closed){history.back();}" title="이전 화면으로">‹ 돌아가기</button>
   <span class="sp">${_esc(meta.title)}</span>
   <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
-  <button onclick="window.close(); if(!window.closed){history.back();}">닫기(뒤로)</button>
 </div>
 $head
 $metaHtml
@@ -199,16 +200,17 @@ String wrapPrintHtml(String title, String inner, {bool landscape = false}) => ''
  .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;align-items:center;
    justify-content:flex-end;padding:10px 14px;background:#F4F1EA;
    border-bottom:1px solid #E4E0D8}
- .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:left}
+ .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:center}
  .tsak-bar button{font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;
    border-radius:8px;padding:8px 16px;border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
  .tsak-bar button.pri{background:#7C6A9C;color:#fff}
+ .tsak-bar button.back{background:#5E7A4B;color:#fff;border-color:#5E7A4B}
  @media print{.tsak-bar{display:none!important}.print-body{padding:0}}
 </style></head><body>
 <div class="tsak-bar">
+  <button class="back" onclick="window.close(); if(!window.closed){history.back();}" title="이전 화면으로">‹ 돌아가기</button>
   <span class="sp">${_esc(title)}</span>
   <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
-  <button onclick="window.close(); if(!window.closed){history.back();}">닫기(뒤로)</button>
 </div>
 <div class="print-body">$inner</div>
 </body></html>''';

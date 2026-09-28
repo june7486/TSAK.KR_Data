@@ -29,7 +29,7 @@ Future<String> clearAppCache() async => '모바일 앱에서는 캐시 정리가
 void reloadPage() {}
 
 /// 인쇄용 HTML 열기 — 네이티브에서는 no-op(호출부에서 별도 처리).
-void openPrintableHtml(String html) {}
+void openPrintableHtml(String html, {bool autoPrint = false}) {}
 
 /// 파일 다운로드 — 네이티브에서는 no-op(호출부에서 클립보드 폴백).
 void downloadTextFile(String content, String filename, String mime) {}

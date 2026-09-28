@@ -435,22 +435,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                                       alignment: Alignment.center,
                                       color: AppColors.purple
                                           .withValues(alpha: 0.05),
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.drag_indicator,
-                                              size: 18,
-                                              color: AppColors.purple
-                                                  .withValues(alpha: 0.7)),
-                                          Text(
-                                            '${i + 1}',
-                                            style: const TextStyle(
-                                                fontSize: 10,
-                                                color: AppColors.textGray),
-                                          ),
-                                        ],
-                                      ),
+                                      child: Icon(Icons.drag_indicator,
+                                          size: 18,
+                                          color: AppColors.purple
+                                              .withValues(alpha: 0.7)),
                                     ),
                                   ),
                                 ),
@@ -544,13 +532,40 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           SizedBox(width: 30, child: Text('No', style: style)),
           Expanded(flex: 4, child: Text('품명', style: style)),
           SizedBox(
-              width: 44,
+              width: 62,
               child: Text('수량', style: style, textAlign: TextAlign.center)),
           Expanded(flex: 3, child: Text('비고', style: style)),
           SizedBox(width: 44),
         ],
       ),
     );
+  }
+
+  /// 수량 셀 — 화면에서 바로 수정(인라인 편집) 가능.
+  Widget _qtyCell(Map<String, dynamic> s) {    return _InlineQty(
+      value: (s['qty'] as num?)?.toInt() ?? 0,
+      onChanged: (v) => _saveQty(s, v),
+    );
+  }
+
+  /// 인라인 수량 저장 — 품명 등 나머지 정보는 유지한 채 수량만 갱신.
+  Future<void> _saveQty(Map<String, dynamic> s, int qty) async {
+    if (qty < 0) return;
+    final r = await _nas.merchSaveSupply(
+      id: '${s['id']}',
+      name: '${s['name'] ?? ''}',
+      qty: qty,
+      note: '${s['note'] ?? ''}',
+      checkedAt: '${s['checkedAt'] ?? ''}',
+      whoName: _whoName,
+    );
+    if (!mounted) return;
+    if (r['ok'] != true) {
+      _snack('수량 저장 실패');
+      return;
+    }
+    setState(() => s['qty'] = qty);
+    _snack('수량을 $qty개로 저장했습니다');
   }
 
   Widget _row(Map<String, dynamic> s, int i) {
@@ -562,55 +577,47 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       if (checkedBy.isNotEmpty) '#$checkedBy',
       if (checkedName.isNotEmpty) checkedName,
     ].join(' ');
-    final accent = _hex(kMujiAccents[i % kMujiAccents.length]);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
             width: 30,
-            child: Row(
-              children: [
-                Container(width: 3, height: 30, color: accent),
-                const SizedBox(width: 5),
-                Text('${i + 1}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textGray)),
-              ],
-            ),
+            child: Text('${i + 1}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textGray)),
           ),
           Expanded(
             flex: 4,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${s['name'] ?? ''}',
-                    style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w700)),
-                if (checkedAt.isNotEmpty || updatedAt.isNotEmpty)
-                  Text(
-                    '확인 $checkedAt'
-                    '${updatedAt.isNotEmpty ? '  ·  갱신 $updatedAt' : ''}',
-                    style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.textGray),
-                  ),
-                if (who.isNotEmpty)
-                  Text('확인자 $who',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _edit(existing: s),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${s['name'] ?? ''}',
                       style: const TextStyle(
-                          fontSize: 10.5, color: AppColors.scoutGreen)),
-              ],
+                          fontSize: 14.5, fontWeight: FontWeight.w700)),
+                  if (checkedAt.isNotEmpty || updatedAt.isNotEmpty)
+                    Text(
+                      '확인 $checkedAt'
+                      '${updatedAt.isNotEmpty ? '  ·  갱신 $updatedAt' : ''}',
+                      style: const TextStyle(
+                          fontSize: 10.5, color: AppColors.textGray),
+                    ),
+                  if (who.isNotEmpty)
+                    Text('확인자 $who',
+                        style: const TextStyle(
+                            fontSize: 10.5, color: AppColors.scoutGreen)),
+                ],
+              ),
             ),
           ),
-          SizedBox(
-            width: 44,
-            child: Text('${s['qty'] ?? 0}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.taegeukBlue)),
-          ),
+          SizedBox(width: 62, child: _qtyCell(s)),
           Expanded(
             flex: 3,
             child: Text('${s['note'] ?? ''}',
@@ -640,5 +647,108 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   Color _hex(String h) {
     final v = h.replaceAll('#', '');
     return Color(int.parse('FF$v', radix: 16));
+  }
+}
+
+/// 재고 수량 인라인 편집 위젯 — 숫자를 누르면 바로 입력/저장.
+///
+/// 화면(표) 안에서 각 비품의 수량을 즉시 수정할 수 있어, 항목을 열지 않고도
+/// 재고를 관리할 수 있게 한다. 값이 바뀌면 [onChanged]로 저장한다.
+class _InlineQty extends StatefulWidget {
+  const _InlineQty({required this.value, required this.onChanged});
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_InlineQty> createState() => _InlineQtyState();
+}
+
+class _InlineQtyState extends State<_InlineQty> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: '${widget.value}');
+  final _focus = FocusNode();
+  bool _editing = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    setState(() {
+      _editing = true;
+      _ctrl.text = '${widget.value}';
+      _ctrl.selection =
+          TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    });
+    _focus.requestFocus();
+  }
+
+  void _commit() {
+    if (!_editing) return;
+    final v = int.tryParse(_ctrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+    setState(() => _editing = false);
+    if (v != null && v != widget.value) {
+      widget.onChanged(v);
+    } else {
+      _ctrl.text = '${widget.value}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_editing) {
+      return InkWell(
+        onTap: _start,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.taegeukBlue.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: AppColors.taegeukBlue.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('${widget.value}',
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.taegeukBlue)),
+              const SizedBox(width: 3),
+              Icon(Icons.edit,
+                  size: 12,
+                  color: AppColors.taegeukBlue.withValues(alpha: 0.7)),
+            ],
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: 56,
+      child: TextField(
+        controller: _ctrl,
+        focusNode: _focus,
+        autofocus: true,
+        textAlign: TextAlign.center,
+        keyboardType: TextInputType.number,
+        style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: AppColors.taegeukBlue),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _commit(),
+        onTapOutside: (_) => _commit(),
+      ),
+    );
   }
 }

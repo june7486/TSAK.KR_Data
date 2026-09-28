@@ -3349,6 +3349,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ? ''
         : (photo.startsWith('http') ? photo : _nas.merchFileUrl(photo));
     final quote = '${m['quoteFile'] ?? ''}';
+    final bizLicense = '${m['bizLicenseFile'] ?? ''}';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -3414,9 +3415,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           _row('금액', _won((m['amount'] as num?)?.toInt() ?? 0)),
           _row('입금일', '${m['paidDate'] ?? '-'}'),
           _row('배송일', '${m['shipDate'] ?? '-'}'),
+          if ('${m['account'] ?? ''}'.isNotEmpty)
+            _row('계좌번호', '${m['account']}'),
+          if ('${m['bizNumber'] ?? ''}'.isNotEmpty)
+            _row('사업자등록번호', '${m['bizNumber']}'),
           if (quote.isNotEmpty) ...[
             const SizedBox(height: 4),
             _fileChip(quote, '견적서'),
+          ],
+          if (bizLicense.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _fileChip(bizLicense, '사업자등록증'),
           ],
           if (files.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -3536,8 +3545,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       text: '${existing?['shipDate'] ?? ''}',
     );
     final memo = TextEditingController(text: '${existing?['memo'] ?? ''}');
+    final account = TextEditingController(text: '${existing?['account'] ?? ''}');
+    final bizNumber =
+        TextEditingController(text: '${existing?['bizNumber'] ?? ''}');
     String quoteFile = '${existing?['quoteFile'] ?? ''}';
     String photo = '${existing?['photo'] ?? ''}';
+    String bizLicenseFile = '${existing?['bizLicenseFile'] ?? ''}';
     final List<String> extraFiles = ((existing?['extraFiles'] as List?) ?? [])
         .map((e) => '$e')
         .toList();
@@ -3569,6 +3582,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   _dlgField(paidDate, '입금일'),
                   _dlgField(shipDate, '배송일'),
                   const Divider(),
+                  // 정산·세금계산서용 계좌 및 사업자 정보
+                  _dlgField(account, '계좌번호 (예: 기업은행 010-8753-9798 안승휘)'),
+                  _dlgField(bizNumber, '사업자등록번호'),
+                  const Divider(),
                   _fileRow(
                     '견적서 파일',
                     quoteFile,
@@ -3580,6 +3597,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     photo,
                     () => _pickFile((n) => setDlg(() => photo = n)),
                     () => setDlg(() => photo = ''),
+                  ),
+                  _fileRow(
+                    '사업자등록증',
+                    bizLicenseFile,
+                    () => _pickFile((n) => setDlg(() => bizLicenseFile = n)),
+                    () => setDlg(() => bizLicenseFile = ''),
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -3690,8 +3713,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       'amount': int.tryParse(amount.text.trim()) ?? 0,
       'paidDate': paidDate.text.trim(),
       'shipDate': shipDate.text.trim(),
+      'account': account.text.trim(),
+      'bizNumber': bizNumber.text.trim(),
       'quoteFile': quoteFile,
       'photo': photo,
+      'bizLicenseFile': bizLicenseFile,
       'extraFiles': extraFiles,
       'progress': progress,
       'memo': memo.text.trim(),
@@ -3822,6 +3848,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         if ('${m['ceo'] ?? ''}'.isNotEmpty) '대표 ${m['ceo']}',
         if ('${m['manager'] ?? ''}'.isNotEmpty) '담당 ${m['manager']}',
         if ('${m['phone'] ?? ''}'.isNotEmpty) '${m['phone']}',
+        if ('${m['account'] ?? ''}'.isNotEmpty) '계좌 ${m['account']}',
+        if ('${m['bizNumber'] ?? ''}'.isNotEmpty) '사업자 ${m['bizNumber']}',
       ].join(' · ');
       rows.add([
         DocCell('${i + 1}', align: 'center'),

@@ -2169,7 +2169,7 @@ DEFAULT_SUPPLIES = [
     ("경품추첨함", 1, ""),
     ("쟁반 대형", 2, ""),
     ("쟁반 소형", 1, ""),
-    ("아이스박스", 1, "311호 이종학(?)님 中"),
+    ("아이스박스", 1, "311호 이종학 선배님 기증"),
     ("사무용품", 1, "불펜, 메직, 가위, 칼, 각종"),
     ("감사장 액자 SAMPLE", 1, ""),
     ("다용도 액자", 1, ""),
@@ -7421,7 +7421,8 @@ class Handler(BaseHTTPRequestHandler):
                 existing = next((x for x in makers if str(x.get("id")) == mid), None)
                 fields = ("category", "company", "ceo", "manager", "phone", "email",
                           "madeDate", "unitPrice", "quoteFile", "amount", "paidDate",
-                          "shipDate", "photo", "memo")
+                          "shipDate", "photo", "memo", "account", "bizLicenseFile",
+                          "bizNumber")
                 item = dict(existing) if existing else {"id": mid,
                                                         "created": _now_stamp()}
                 item["id"] = mid

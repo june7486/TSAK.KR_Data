@@ -146,9 +146,23 @@ void downloadBytesFile(Uint8List bytes, String filename, String mime) {
 
 /// 인쇄용 HTML 문서를 새 탭/창에서 열어 사용자가 인쇄 또는 PDF 저장할 수
 /// 있게 한다. (Blob URL + window.open)
-void openPrintableHtml(String html) {
+///
+/// [autoPrint] 가 true 이면 문서 로드 후 자동으로 인쇄(=PDF 저장) 대화상자를
+/// 띄운다. 주문내역 등 **기본 출력 형식이 PDF**인 문서에서 사용한다.
+void openPrintableHtml(String html, {bool autoPrint = false}) {
+  var doc = html;
+  if (autoPrint && !doc.contains('tsak-autoprint')) {
+    const script =
+        '<script class="tsak-autoprint">window.addEventListener("load",function(){'
+        'setTimeout(function(){try{window.print();}catch(e){}},600);});</script>';
+    if (doc.contains('</body>')) {
+      doc = doc.replaceFirst('</body>', '$script</body>');
+    } else {
+      doc = '$doc$script';
+    }
+  }
   try {
-    final parts = <JSAny>[html.toJS].toJS;
+    final parts = <JSAny>[doc.toJS].toJS;
     final opts = <String, String>{'type': 'text/html;charset=utf-8'}.jsify()!;
     final blob = _Blob(parts, opts as JSObject);
     final url = _URL.createObjectURL(blob);
@@ -156,7 +170,7 @@ void openPrintableHtml(String html) {
   } catch (_) {
     try {
       _window.open(
-          'data:text/html;charset=utf-8,${Uri.encodeComponent(html)}',
+          'data:text/html;charset=utf-8,${Uri.encodeComponent(doc)}',
           '_blank');
     } catch (_) {}
   }
