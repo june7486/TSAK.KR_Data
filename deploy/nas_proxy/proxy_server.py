@@ -2317,11 +2317,12 @@ def _merch_rebuild_order(doc):
 
 
 def _merch_attach_to_member(ident, oid, kind="order"):
-    """주문/예약 id를 회원 프로필 수품 내역에 부착(중복 방지). 반환: 부착 성공 여부."""
+    """주문/예약/사전신청 id를 회원 프로필 수품 내역에 부착(중복 방지). 반환: 부착 성공 여부."""
     d = re.sub(r"[^0-9]", "", str(ident or ""))
     if not d or not oid:
         return False
-    key = "merchReservations" if kind == "reservation" else "merchOrders"
+    key = ("merchReservations" if kind == "reservation"
+           else ("merchSurveys" if kind == "survey" else "merchOrders"))
     with _MEMBER_WRITE_LOCK:
         members = _ev_members()
         for i, m in enumerate(members):
@@ -2343,11 +2344,12 @@ def _merch_attach_to_member(ident, oid, kind="order"):
 
 
 def _merch_detach_from_member(ident, oid, kind="order"):
-    """회원 프로필에서 주문/예약 id 제거(주문 삭제 시)."""
+    """회원 프로필에서 주문/예약/사전신청 id 제거(주문 삭제 시)."""
     d = re.sub(r"[^0-9]", "", str(ident or ""))
     if not d or not oid:
         return
-    key = "merchReservations" if kind == "reservation" else "merchOrders"
+    key = ("merchReservations" if kind == "reservation"
+           else ("merchSurveys" if kind == "survey" else "merchOrders"))
     with _MEMBER_WRITE_LOCK:
         members = _ev_members()
         hit = False
@@ -2447,6 +2449,44 @@ def _merch_mine(ident):
     orders.sort(key=lambda x: str(x.get("created", "")), reverse=True)
     reserves.sort(key=lambda x: str(x.get("created", "")), reverse=True)
     return orders, reserves
+
+
+def _merch_mine_surveys(ident):
+    """한 회원(인가번호/전화)이 사전신청한 수요조사 수품 목록 + 순번/최소제작수량.
+    프로필의 '수품구매' 항목에 예약(사전신청) 수품을 노출하기 위함."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return []
+    doc = _merch_doc()
+    out = []
+    for pl in _merch_plans_sorted(doc):
+        apps = pl.get("applicants", [])
+        if not isinstance(apps, list):
+            continue
+        mine = None
+        for a in apps:
+            ci = re.sub(r"[^0-9]", "", str(a.get("contactId", "") or ""))
+            ph = re.sub(r"[^0-9]", "", str(a.get("phone", "") or ""))
+            if d in (ci, ph):
+                mine = a
+                break
+        if mine is None:
+            continue
+        out.append({
+            "planId": pl.get("id"),
+            "name": pl.get("name", ""),
+            "photo": pl.get("photo", ""),
+            "price": int(pl.get("price", 0) or 0),
+            "minQty": int(pl.get("minQty", 0) or 0),
+            "progress": pl.get("progress", ""),
+            "maker": pl.get("maker", ""),
+            "surveyOpen": pl.get("surveyOpen") is True,
+            "count": len(apps),
+            "myNo": mine.get("no", 0),
+            "memo": mine.get("memo", ""),
+            "at": mine.get("at", ""),
+        })
+    return out
 
 
 DELETED_KEEP_DAYS = 30
@@ -5165,7 +5205,8 @@ class Handler(BaseHTTPRequestHandler):
                 is_credentialed = bool(
                     (buyer and buyer.get("number")) or sess_who)
                 prods = []
-                for pr in doc.get("products", []):
+                # 상품구성(관리자) 페이지 순서(productOrder)대로 노출 — 기본순서 일치
+                for pr in _merch_products_sorted(doc):
                     if pr.get("active") is False and not is_admin:
                         continue
                     # 인가자 전용 상품: 인가번호가 확인된 구매자(또는 관리자)만 노출.
@@ -5229,12 +5270,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not ident and s.get("who"):
                     ident = s.get("who")
                 orders, reserves = _merch_mine(ident)
+                surveys = _merch_mine_surveys(ident)
                 doc = _merch_doc()
                 cfg = doc.get("config", {})
                 return self._json({
                     "ok": True,
                     "orders": orders,
                     "reservations": reserves,
+                    "surveys": surveys,
                     "statuses": cfg.get("statuses", list(MERCH_ORDER_STATUSES)),
                     "reserveStatuses": cfg.get("reserveStatuses",
                                                list(MERCH_RESERVE_STATUSES)),
@@ -6850,27 +6893,40 @@ class Handler(BaseHTTPRequestHandler):
                 phone = str(d.get("phone", "") or "").strip()[:30]
                 email = str(d.get("email", "") or "").strip()[:80]
                 memo = str(d.get("memo", "") or "").strip()[:300]
+                # 인가자/비인가자 구분 — 수품구매와 동일 프로세스.
+                #   인가번호 우선, 없으면 전화번호로 비인가(일반)회원 자동 생성.
+                contact_id, contact_type = _merch_resolve_contact(
+                    number, phone, name, email)
+                contact_id_n = re.sub(r"[^0-9]", "", str(contact_id or ""))
                 apps = plan.get("applicants", [])
                 if not isinstance(apps, list):
                     apps = []
-                # 중복 신청 방지(전화번호 기준)
+                # 중복 신청 방지(전화번호 또는 식별번호 기준)
                 if phone and any(str(a.get("phone", "")) == phone for a in apps):
                     return self._json(
                         {"ok": False, "error": "duplicate"}, 409)
+                ap_id = "ap" + _secrets.token_urlsafe(5)
                 apps.append({
-                    "id": "ap" + _secrets.token_urlsafe(5),
+                    "id": ap_id,
                     "name": name,
-                    "number": number,      # 범스카우트 인가번호(선택)
+                    "number": number,            # 범스카우트 인가번호(선택)
+                    "contactId": contact_id_n,   # 인가번호 또는 자동생성 전화식별번호
+                    "contactType": contact_type, # 'member' | 'regular' | ''
                     "phone": phone,
                     "email": email,
                     "memo": memo,
                     "at": _now_stamp(),
-                    "no": len(apps) + 1,   # 신청 순번
+                    "no": len(apps) + 1,         # 신청 순번
                 })
                 plan["applicants"] = apps
+                # 회원 프로필에 사전신청 부착 → 프로필 수품구매 항목에 노출
+                if contact_id_n:
+                    _merch_attach_to_member(contact_id_n, ap_id, "survey")
                 _merch_save(doc)
                 return self._json({"ok": True, "count": len(apps),
-                                   "no": len(apps)})
+                                   "no": len(apps),
+                                   "contactId": contact_id_n,
+                                   "contactType": contact_type})
             if p == "/api/merch/survey/applicants":
                 # 수요조사 신청자 명단 조회.
                 if not self._require("admin"):

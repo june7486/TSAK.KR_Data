@@ -42,6 +42,7 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
   bool _loading = true;
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _reserves = [];
+  List<Map<String, dynamic>> _surveys = [];
   List<dynamic> _statuses = const [];
 
   @override
@@ -58,6 +59,7 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
       setState(() {
         _orders = (r['orders'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         _reserves = (r['reservations'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        _surveys = (r['surveys'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         _statuses = (r['statuses'] as List?) ?? const [];
         _loading = false;
       });
@@ -128,7 +130,7 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             )
-          else if (_orders.isEmpty && _reserves.isEmpty)
+          else if (_orders.isEmpty && _reserves.isEmpty && _surveys.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(memo.isEmpty ? '수품 구매 내역이 없습니다.' : '온라인 주문 내역이 없습니다.',
@@ -146,6 +148,22 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
               ),
             for (final g in _groupBy(_orders)) _groupRow(g, isReserve: false),
             for (final g in _groupBy(_reserves)) _groupRow(g, isReserve: true),
+            // 사전신청(수요조사) 수품 리스트 — 프로필 수품구매 항목에 노출
+            if (_surveys.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Row(
+                children: [
+                  Icon(Icons.campaign_outlined, size: 14, color: AppColors.tigerGold),
+                  SizedBox(width: 5),
+                  Text('사전신청한 수품 (수요조사)',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textGray)),
+                ],
+              ),
+              for (final s in _surveys) _surveyRow(s),
+            ],
           ],
           if (!_loading) ...[
             const SizedBox(height: 10),
@@ -336,6 +354,87 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
                   style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 사전신청(수요조사) 수품 한 줄 — 내 순번 + 최소제작 대비 인원.
+  Widget _surveyRow(Map<String, dynamic> s) {
+    final name = '${s['name'] ?? ''}'.trim();
+    final myNo = (s['myNo'] as num?)?.toInt() ?? 0;
+    final minQty = (s['minQty'] as num?)?.toInt() ?? 0;
+    final count = (s['count'] as num?)?.toInt() ?? 0;
+    final progress = '${s['progress'] ?? ''}'.trim();
+    final open = s['surveyOpen'] == true;
+    final ratio = minQty > 0 ? (count / minQty).clamp(0.0, 1.0) : 0.0;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.35)),
+          color: AppColors.tigerGold.withValues(alpha: 0.05),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(name.isEmpty ? '수품' : name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12.5),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+                if (!open)
+                  _pill('조사마감', AppColors.textGray)
+                else if (progress.isNotEmpty)
+                  _pill(progress, AppColors.scoutGreen),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                if (myNo > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.tigerGold.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('$myNo번째 신청자',
+                        style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.purpleDark)),
+                  ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '/ $count명 신청 (최소 $minQty명)',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.purple),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 6,
+                backgroundColor: AppColors.purpleLight.withValues(alpha: 0.15),
+                valueColor: const AlwaysStoppedAnimation(AppColors.tigerGold),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -613,9 +613,27 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
               ],
               if (contactType == 'regular' && contactId.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Text('· 비인가 회원으로 등록되었습니다 (회원번호 $contactId).\n'
+                Text('· 비인가 회원(신규 ID)으로 등록되었습니다 (회원번호 $contactId).\n'
                     '  이후 주문 진행 상황을 조회할 수 있습니다.',
                     style: const TextStyle(fontSize: 11.5, height: 1.4)),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppColors.tigerGold.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '신규 ID가 생성되었습니다.\n'
+                    '다음에는 전화번호로 로그인 하십시요.\n'
+                    '로그인하시면 주문 및 배송상태 확인이 가능합니다.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        height: 1.45,
+                        color: AppColors.purpleDark),
+                  ),
+                ),
               ] else if (contactId.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 const Text('· 주문 내역이 인가자 프로필에 기록되었습니다.',

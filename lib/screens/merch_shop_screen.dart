@@ -1322,12 +1322,33 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       if (!mounted) return;
       final no = (r['no'] as num?)?.toInt();
       final cnt = (r['count'] as num?)?.toInt();
+      final ctype = '${r['contactType'] ?? ''}';
+      final cid = '${r['contactId'] ?? ''}';
       _snack(
         no != null
             ? '사전신청 완료 · $no번째 신청자입니다 (누적 ${cnt ?? no}명)'
             : '사전신청이 접수되었습니다',
         color: AppColors.scoutGreen,
       );
+      // 비인가자(신규 ID) 안내 — 수품구매와 동일 프로세스
+      if (ctype == 'regular' && cid.isNotEmpty && mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('신규 ID 생성 안내'),
+            content: const Text(
+              '신규 ID가 생성되었습니다.\n'
+              '다음에는 전화번호로 로그인 하십시요.\n'
+              '로그인하시면 주문 및 배송상태 확인이 가능합니다.',
+              style: TextStyle(fontSize: 13, height: 1.5),
+            ),
+            actions: [
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx), child: const Text('확인')),
+            ],
+          ),
+        );
+      }
       await _load();
     } catch (e) {
       if (!mounted) return;

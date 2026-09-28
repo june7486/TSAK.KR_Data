@@ -16,6 +16,7 @@ echo "▶ flutter build web (release, sw off, opt4)..."
 flutter build web --release --pwa-strategy none \
   --optimization-level 4 \
   --no-wasm-dry-run \
+  --no-tree-shake-icons \
   --dart-define=flutter.inspector.structuredErrors=false \
   --dart-define=debugShowCheckedModeBanner=false
 

@@ -885,6 +885,9 @@ class _HomeScreenState extends State<HomeScreen> {
             onChanged: (v) => state.setQuery(v),
             decoration: InputDecoration(
               hintText: '통합검색 (인가번호, 이름, 전화번호, 범위(1-100), 연맹, 지역대, 성별, 평생회원 등)',
+              hintStyle: const TextStyle(
+                  fontSize: 11.5, color: AppColors.textGray, height: 1.2),
+              hintMaxLines: 2,
               prefixIcon: const Icon(Icons.search, color: AppColors.purple),
               suffixIcon: _searchCtrl.text.isEmpty
                   ? null
