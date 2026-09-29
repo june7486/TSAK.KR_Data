@@ -20,4 +20,7 @@ flutter build web --release --pwa-strategy none \
   --dart-define=flutter.inspector.structuredErrors=false \
   --dart-define=debugShowCheckedModeBanner=false
 
+echo "▶ version.json 기록 (앱과 동일 스탬프 — 정확한 버전 감지용)..."
+python3 scripts/gen_version_json.py
+
 echo "✓ 빌드 완료: build/web"

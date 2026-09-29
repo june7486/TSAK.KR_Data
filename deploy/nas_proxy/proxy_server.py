@@ -5523,22 +5523,25 @@ class Handler(BaseHTTPRequestHandler):
             # 빌드 산출물(main.dart.js)의 수정시각을 버전으로 노출한다.
             # 재빌드(재배포) 시 값이 바뀌므로 클라이언트가 자동 감지/새로고침한다.
             if p == "/version.json":
-                stamp = "0"
-                try:
-                    bf = os.path.join(STATIC_DIR, "main.dart.js")
-                    mt = os.path.getmtime(bf)
-                    # 한국시간(KST) 기준 YYYYMMDDHHMMSS — 앱(kBuildStampInt)과 동일 기준
-                    try:
-                        from zoneinfo import ZoneInfo
-                        dt = datetime.datetime.fromtimestamp(
-                            mt, ZoneInfo("Asia/Seoul"))
-                    except Exception:
-                        dt = datetime.datetime.fromtimestamp(mt)
-                    stamp = dt.strftime("%Y%m%d%H%M%S")
-                except Exception:
-                    stamp = "0"
+                # 1순위: 빌드 시 심어둔 version.json 의 스탬프(앱과 동일 값 → 정확 감지).
+                # 2순위(폴백): main.dart.js mtime (한국시간 KST).
                 vj = _load_json(os.path.join(STATIC_DIR, "version.json"), {})
-                vj["build_id"] = stamp
+                stamp = str(vj.get("version") or vj.get("build_id") or "").strip()
+                if not stamp or not stamp.isdigit():
+                    stamp = "0"
+                    try:
+                        bf = os.path.join(STATIC_DIR, "main.dart.js")
+                        mt = os.path.getmtime(bf)
+                        try:
+                            from zoneinfo import ZoneInfo
+                            dt = datetime.datetime.fromtimestamp(
+                                mt, ZoneInfo("Asia/Seoul"))
+                        except Exception:
+                            dt = datetime.datetime.fromtimestamp(mt)
+                        stamp = dt.strftime("%Y%m%d%H%M%S")
+                    except Exception:
+                        stamp = "0"
+                vj["build_id"] = int(stamp)
                 vj["version"] = stamp
                 resp = self._json(vj)
                 return resp

@@ -53,9 +53,10 @@ DateTime? parseStamp(int stamp) {
   }
 }
 
-/// 빌드 시작(앱 기록)과 빌드 완료(서버 mtime) 사이 오차 허용 범위(분).
-/// 같은 빌드인데 수십 초 차이로 "새 버전"으로 오판하지 않도록 한다.
-const int _kVersionToleranceMin = 15;
+/// 스탬프 정수 비교 시 허용하는 절대 초 오차(시계 오차 흡수용).
+/// 서버는 빌드 시 심어둔 version.json 을 그대로 내려주므로 앱↔서버 스탬프가
+/// 정확히 일치한다. 0~5초 차이는 같은 빌드(시계 오차)로 간주한다.
+const int _kVersionToleranceSec = 5;
 
 /// 서버(프록시)의 최신 빌드 버전을 조회한다. (웹 전용, 실패 시 null)
 ///
@@ -84,21 +85,24 @@ Future<ServerVersion?> fetchServerVersion() async {
 
 /// 현재 앱 버전과 서버 최신 버전을 비교한다.
 ///
-/// 앱은 빌드 시작, 서버는 빌드 완료(main.dart.js mtime) 시각이므로
-/// [_kVersionToleranceMin] 분 이내 차이는 같은 빌드로 간주한다.
+/// 서버는 빌드 시 심어둔 version.json(앱과 동일 스탬프)을 내려주므로
+/// 두 값이 **정확히 같으면 같은 빌드**다. 값이 다르면(±[_kVersionToleranceSec]
+/// 초 초과) 다른 버전 → 재다운로드 대상으로 판정한다.
 Future<VersionStatus> checkVersion() async {
   final sv = await fetchServerVersion();
   if (sv == null) return VersionStatus.unknown;
   final apt = parseStamp(kBuildStampInt);
   final spt = parseStamp(sv.stamp);
+  // 정확 일치(시계 오차 허용)면 같은 빌드.
+  if (sv.stamp == kBuildStampInt) return VersionStatus.upToDate;
   if (apt == null || spt == null) {
     if (sv.stamp > kBuildStampInt) return VersionStatus.serverNewer;
     if (sv.stamp < kBuildStampInt) return VersionStatus.serverOlder;
     return VersionStatus.upToDate;
   }
-  final diffMin = spt.difference(apt).inMinutes;
-  if (diffMin >= _kVersionToleranceMin) return VersionStatus.serverNewer;
-  if (diffMin <= -_kVersionToleranceMin) return VersionStatus.serverOlder;
+  final diffSec = spt.difference(apt).inSeconds;
+  if (diffSec > _kVersionToleranceSec) return VersionStatus.serverNewer;
+  if (diffSec < -_kVersionToleranceSec) return VersionStatus.serverOlder;
   return VersionStatus.upToDate;
 }
 
