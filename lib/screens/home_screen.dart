@@ -327,6 +327,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(builder: (_) => const StatsScreen()),
                 ),
               ),
+              // 명단 선택 (일괄작업) — 통계 아이콘 옆에 배치
+              IconButton(
+                tooltip: '명단 선택 (일괄작업)',
+                icon: const Icon(Icons.checklist),
+                onPressed: () => setState(() => _selectMode = true),
+              ),
             ],
             if (state.isSelfAccess)
               IconButton(
