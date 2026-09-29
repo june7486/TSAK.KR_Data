@@ -483,7 +483,7 @@ MIME = {
     ".css": "text/css", ".json": "application/json", ".png": "image/png",
     ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon",
     ".wasm": "application/wasm", ".ttf": "font/ttf", ".woff": "font/woff",
-    ".woff2": "font/woff2", ".map": "application/json", ".txt": "text/plain",
+    ".woff2": "font/woff2", ".otf": "font/otf", ".map": "application/json", ".txt": "text/plain",
     ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
     ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
     ".m4v": "video/x-m4v", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska",
