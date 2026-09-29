@@ -16,6 +16,7 @@ class Member {
     this.tel = '',
     this.email = '',
     this.residentNo = '',
+    this.scoutNo = '',
     this.bio = '',
     this.date = '',
     this.atasNo = '',
@@ -47,6 +48,7 @@ class Member {
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     List<String>? pendingEventNames,
+    Map<String, String>? fieldPerms,
     this.sample = false,
     this.nameVisible = true,
     this.gender = '',
@@ -56,7 +58,8 @@ class Member {
        parents = parents ?? <String>[],
        feeYears = feeYears ?? <String, bool>{},
        eventAttend = eventAttend ?? <String, bool>{},
-       pendingEventNames = pendingEventNames ?? <String>[];
+       pendingEventNames = pendingEventNames ?? <String>[],
+       fieldPerms = fieldPerms ?? <String, String>{};
 
   /// 내부 고유 ID
   String id;
@@ -94,8 +97,11 @@ class Member {
   /// 이메일
   String email;
 
-  /// 주민번호(회원번호) — 민감정보. 마스터가 노출 여부를 결정한다.
+  /// 주민등록번호(앞자리) — 민감정보. 마스터가 항목별 노출 여부를 결정한다.
   String residentNo;
+
+  /// Scout 회원번호 — 명부의 인가번호에 해당하는 정식 회원번호.
+  String scoutNo;
 
   /// 비고 / 한줄소개 (명단 비고 열 등)
   String bio;
@@ -197,6 +203,11 @@ class Member {
   /// 프로필에서 '관리목록누락행사-심사중'으로 표시된다.
   List<String> pendingEventNames;
 
+  /// 항목별 노출 권한(마스터가 회원별로 지정).
+  /// key: 회원 필드명, value: 'public'(노출) | 'admin'(관리자노출) | 'hidden'(비노출).
+  /// 값이 없으면 전역 기본 노출 설정(config.fieldVisibility)을 따른다.
+  Map<String, String> fieldPerms;
+
   /// 샘플(예시) 회원 여부 — 모든 회원에게 노출된다.
   bool sample;
 
@@ -224,7 +235,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $bio $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
@@ -275,6 +286,7 @@ class Member {
     'tel': tel,
     'email': email,
     'residentNo': residentNo,
+    'scoutNo': scoutNo,
     'bio': bio,
     'date': date,
     'atasNo': atasNo,
@@ -306,6 +318,7 @@ class Member {
     'feeYears': feeYears,
     'eventAttend': eventAttend,
     'pendingEventNames': pendingEventNames,
+    'fieldPerms': fieldPerms,
     'sample': sample,
     'nameVisible': nameVisible,
     'gender': gender,
@@ -345,6 +358,7 @@ class Member {
       tel: '${map['tel'] ?? ''}',
       email: '${map['email'] ?? ''}',
       residentNo: '${map['residentNo'] ?? ''}',
+      scoutNo: '${map['scoutNo'] ?? ''}',
       bio: '${map['bio'] ?? ''}',
       date: '${map['date'] ?? ''}',
       atasNo: '${map['atasNo'] ?? ''}',
@@ -376,6 +390,14 @@ class Member {
       feeYears: castBoolMap(map['feeYears']),
       eventAttend: castBoolMap(map['eventAttend']),
       pendingEventNames: castStrList(map['pendingEventNames']),
+      fieldPerms: () {
+        final out = <String, String>{};
+        final v = map['fieldPerms'];
+        if (v is Map) {
+          v.forEach((k, val) => out['$k'] = '$val');
+        }
+        return out;
+      }(),
       sample: map['sample'] == true,
       nameVisible: map['nameVisible'] != false,
       gender: '${map['gender'] ?? ''}',
@@ -399,6 +421,7 @@ class Member {
     String? tel,
     String? email,
     String? residentNo,
+    String? scoutNo,
     String? bio,
     String? date,
     String? atasNo,
@@ -429,6 +452,7 @@ class Member {
     String? linkApprovedBy,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
+    Map<String, String>? fieldPerms,
     bool? sample,
     bool? nameVisible,
     String? gender,
@@ -449,6 +473,7 @@ class Member {
       tel: tel ?? this.tel,
       email: email ?? this.email,
       residentNo: residentNo ?? this.residentNo,
+      scoutNo: scoutNo ?? this.scoutNo,
       bio: bio ?? this.bio,
       date: date ?? this.date,
       atasNo: atasNo ?? this.atasNo,
@@ -479,6 +504,7 @@ class Member {
       linkApprovedBy: linkApprovedBy ?? this.linkApprovedBy,
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),
       eventAttend: eventAttend ?? Map<String, bool>.from(this.eventAttend),
+      fieldPerms: fieldPerms ?? Map<String, String>.from(this.fieldPerms),
       sample: sample ?? this.sample,
       nameVisible: nameVisible ?? this.nameVisible,
       gender: gender ?? this.gender,

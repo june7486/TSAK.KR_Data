@@ -71,7 +71,7 @@ class _MemberFieldVisibilityScreenState
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: TsakAppBar(
-        title: const Text('회원정보 항목 노출 설정'),
+        title: const Text('개인정보 기본 노출 설정'),
         actions: const [AppHomeEmblem(size: 22)],
       ),
       body: Stack(
@@ -98,7 +98,7 @@ class _MemberFieldVisibilityScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '명단 엑셀 항목 노출 관리',
+                            '명단 항목 기본 노출값',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 15,
@@ -107,9 +107,9 @@ class _MemberFieldVisibilityScreenState
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '타인에게 공개할 항목을 선택하세요. '
-                            '관리자·본인에게는 항상 전체가 표시됩니다.\n'
-                            '현재 민감정보 공개 $sensitiveOn건',
+                            '전체 회원에게 동일하게 적용되는 기본 노출값입니다.\n'
+                            '개별 회원은 각자 페이지에서 따로 조정할 수 있습니다.\n'
+                            '민감정보 공개 $sensitiveOn건 · 관리자·본인은 항상 전체 표시',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
@@ -147,9 +147,9 @@ class _MemberFieldVisibilityScreenState
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 6),
                 child: Text(
-                  '· 민감정보를 켜면 일반 인가자·비인가자에게도 해당 항목이 '
-                  '표시됩니다. 개인정보 보호에 유의하세요.\n'
-                  '· 주민번호(회원번호)는 명단 원본 열로, 노출 시 신중히 판단하세요.',
+                  '· 여기서 설정한 값은 전체 회원의 기본 노출값으로 동일하게 적용됩니다.\n'
+                  '· 개별 회원 페이지에서 항목별 “노출/관리자/비노출/삭제”로 조정하면 그 값이 우선합니다.\n'
+                  '· 주민등록번호·연락처 등 민감정보 공개는 신중히 판단하세요.',
                   style: TextStyle(color: AppColors.textGray, fontSize: 12),
                 ),
               ),

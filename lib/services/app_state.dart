@@ -658,6 +658,61 @@ class AppState extends ChangeNotifier {
     await setConfig({'fieldVisibility': next});
   }
 
+  // ---------- 회원별 항목 노출 권한 (마스터가 개인 페이지에서 지정) ----------
+  //  값: 'public'(노출) | 'admin'(관리자노출) | 'hidden'(비노출)
+  //  지정이 없으면 전역 기본 노출(fieldVisibility)을 따른다.
+  static const String permPublic = 'public';
+  static const String permAdmin = 'admin';
+  static const String permHidden = 'hidden';
+
+  /// 특정 회원(member) 항목의 유효 노출 권한을 반환한다.
+  String permFor(Member m, String key) {
+    final v = m.fieldPerms[key];
+    if (v == permPublic) return permPublic;
+    if (v == permAdmin) return permAdmin;
+    if (v == permHidden) return permHidden;
+    return fieldVisible(key) ? permPublic : permHidden;
+  }
+
+  /// 개인 프로필에서 그 항목이 **[보는 사람]에게** 보이는지 판정.
+  ///  · 관리자/마스터/본인: 'hidden' 이어도 보인다(관리 목적).
+  ///  · 그 외(타인·비인가자): 'public' 일 때만 보인다.
+  bool canViewField(
+    Member m,
+    String key, {
+    required bool isAdminViewer,
+    bool isSelf = false,
+  }) {
+    final p = permFor(m, key);
+    if (isAdminViewer || isSelf) return true;
+    return p == permPublic;
+  }
+
+  /// 표시할 값(문자열) — 권한 없으면 빈 문자열. 비노출(민감)은 마스킹.
+  String visibleFieldValue(
+    Member m,
+    String key,
+    String rawValue, {
+    required bool isAdminViewer,
+    bool isSelf = false,
+  }) {
+    if (canViewField(m, key, isAdminViewer: isAdminViewer, isSelf: isSelf)) {
+      return rawValue;
+    }
+    return '';
+  }
+
+  /// 마스터: 회원의 특정 항목 노출 권한을 저장한다.
+  Future<void> setMemberFieldPerm(Member m, String key, String? value) async {
+    final next = Map<String, String>.from(m.fieldPerms);
+    if (value == null || value.isEmpty) {
+      next.remove(key);
+    } else {
+      next[key] = value;
+    }
+    await save(m.copyWith(fieldPerms: next));
+  }
+
   /// QR에 담을 **절대 접속 URL의 origin** 을 구한다.
   ///
   /// QR은 카메라/스캐너로 열리므로 반드시 http(s) 절대 주소여야 한다.

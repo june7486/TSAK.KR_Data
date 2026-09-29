@@ -145,7 +145,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   () => _push(const RolePermissionsScreen()),
                 ),
                 _tile(
-                  '회원정보 항목 노출 설정',
+                  '개인정보 기본 노출 설정',
                   Icons.visibility_outlined,
                   AppColors.scoutGreen,
                   () => _push(const MemberFieldVisibilityScreen()),

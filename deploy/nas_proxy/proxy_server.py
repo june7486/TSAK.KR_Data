@@ -1219,7 +1219,8 @@ def _default_field_visibility():
     기본 정책: 일반 항목은 노출(None=미지정 시 노출), 민감 항목은 비노출(False).
     """
     return {
-        "residentNo": False,   # 주민번호(회원번호) — 민감
+        "scoutNo": True,       # Scout 회원번호(인가번호) — 공개
+        "residentNo": False,   # 주민등록번호 — 민감
         "tel": False,          # 연락처(유선) — 민감
         "phone": False,        # 핸드폰 — 민감
         "email": False,        # 이메일 — 민감
@@ -1239,7 +1240,8 @@ def _default_field_visibility():
 
 # 민감정보 필드 정의(앱 UI에서 재사용). key → (라벨, 민감여부)
 FIELD_SPECS = [
-    ("residentNo", "주민번호(회원번호)", True),
+    ("scoutNo", "Scout 회원번호", False),
+    ("residentNo", "주민등록번호", True),
     ("tel", "연락처", True),
     ("phone", "핸드폰", True),
     ("email", "이메일", True),
@@ -4952,6 +4954,9 @@ def _merge_addrbook(members, rows, *, overwrite=False):
             val = _addr_clean(x.get(src))
             if val and _put(m, dst, val):
                 changed = True
+        # Scout 회원번호 = 인가번호(number). 비어있을 때만 채운다.
+        if x["no"] and _put(m, "scoutNo", x["no"]):
+            changed = True
         # 핸드폰 → phone, 연락처 → tel (각각 별도 필드로 보존)
         hp = _addr_clean(x.get("hp"))
         if hp and _put(m, "phone", hp):

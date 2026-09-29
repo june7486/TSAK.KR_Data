@@ -40,6 +40,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _tel,
       _email,
       _residentNo,
+      _scoutNo,
       _date,
       _atas,
       _activity,
@@ -100,6 +101,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _tel = TextEditingController(text: m?.tel ?? '');
     _email = TextEditingController(text: m?.email ?? '');
     _residentNo = TextEditingController(text: m?.residentNo ?? '');
+    _scoutNo = TextEditingController(text: m?.scoutNo ?? '');
     _date = TextEditingController(text: m?.date ?? '');
     _atas = TextEditingController(text: m?.atasNo ?? '');
     _activity = TextEditingController(text: m?.activity ?? '');
@@ -137,6 +139,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _tel,
       _email,
       _residentNo,
+      _scoutNo,
       _date,
       _atas,
       _activity,
@@ -270,9 +273,16 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 keyboard: TextInputType.phone,
               ),
               _field(
-                '주민번호(회원번호)',
+                'Scout 회원번호',
+                _scoutNo,
+                hint: '명부 인가번호(예: 2186) — 비어있으면 인가번호 사용',
+                icon: Icons.confirmation_number_outlined,
+                numeric: true,
+              ),
+              _field(
+                '주민등록번호',
                 _residentNo,
-                hint: '명단 원본 열 — 민감정보 (노출은 마스터 설정)',
+                hint: '주민등록번호 앞자리 — 민감정보 (노출은 마스터 설정)',
                 icon: Icons.credit_card,
               ),
               _field(
@@ -426,6 +436,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _tel.text.trim() != m.tel ||
         _email.text.trim() != m.email ||
         _residentNo.text.trim() != m.residentNo ||
+        _scoutNo.text.trim() != m.scoutNo ||
         _date.text.trim() != m.date ||
         _atas.text.trim() != m.atasNo ||
         _activity.text.trim() != m.activity ||
@@ -1030,6 +1041,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       tel: _tel.text.trim(),
       email: _email.text.trim(),
       residentNo: _residentNo.text.trim(),
+      scoutNo: _scoutNo.text.trim(),
       bio: _bio.text.trim(),
       date: _date.text.trim(),
       atasNo: _atas.text.trim(),

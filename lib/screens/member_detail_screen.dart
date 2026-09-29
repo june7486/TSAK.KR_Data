@@ -1556,89 +1556,251 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Widget _infoCard(Member m) {
     final state = context.watch<AppState>();
-    final admin = state.isApp || state.isMaster; // 관리자·마스터는 전체 열람
-    final isSelf = state.isSelfNumber(m.number); // 본인도 전체 열람
-    // 항목 노출: 관리자·본인은 항상 허용, 그 외에는 마스터 설정을 따른다.
-    bool vis(String key) => admin || isSelf || state.fieldVisible(key);
-    // 비노출 항목은 관리자에게만 안내 문구로 보여준다.
-    String v(String key, String value) =>
-        vis(key) ? value : (admin ? '— (비노출 설정)' : '');
+    final admin = state.isApp || state.isMaster; // 관리자·마스터: 전체 열람
+    final isMaster = state.isMaster; // 마스터: 노출관리(체크박스)까지
+    final isSelf = state.isSelfNumber(m.number); // 본인: 전체 열람
 
-    final rows = <List<String>>[
-      ['소속 연맹', m.league],
-      ['등록 연맹', m.regLeague],
-      ['소속 단위대', m.unit],
-      ['등록 단위대', m.regUnit],
-      ['인가일', v('date', m.date)],
-      if (vis('residentNo')) ['주민번호', m.residentNo],
-      ['생일', v('birthday', m.birthday)],
-      if (m.genderVisible && m.gender.isNotEmpty) ['성별', m.gender],
-      ['기념일', m.anniversary],
-      ['훈련현황', m.trainingStatus],
-      ['포상', v('awards', m.awards)],
-      ['전문과정 이수', v('specialtyCourses', m.specialtyCourses)],
-      ['멘토', '${m.mentors.map((e) => '#$e').join(', ')}${_linkBadge(m)}'],
-      ['페런츠', m.parents.map((e) => '#$e').join(', ')],
-      ['ATAS 인가번호', v('atasNo', m.atasNo)],
-      ['핸드폰', v('phone', m.phone)],
-      ['연락처', v('tel', m.tel)],
-      ['이메일', v('email', m.email)],
-      ['우편번호', v('zipCode', m.zipCode)],
-      ['주소', v('address', m.address)],
-      ['한줄소개', v('bio', m.bio)],
-      ['활동', v('activity', m.activity)],
-      ['메모', m.memo],
-      [
+    // 표시할 값 계산 — 회원별 노출권한 반영.
+    //  관리자·본인은 값 전체 + 권한 상태 태그, 타인은 '노출'일 때만 값.
+    String disp(String key, String value) {
+      if (value.trim().isEmpty) return '';
+      final p = state.permFor(m, key);
+      if (admin || isSelf) {
+        if (p == AppState.permHidden) return '$value   (비노출)';
+        if (p == AppState.permAdmin) return '$value   (관리자 노출)';
+        return value;
+      }
+      return p == AppState.permPublic ? value : '';
+    }
+
+    // (라벨, 키, 값) — 항목별 노출관리 대상.
+    final fields = <List<String>>[
+      ['소속 연맹', 'league', m.league],
+      ['등록 연맹', 'regLeague', m.regLeague],
+      ['소속 단위대', 'unit', m.unit],
+      ['등록 단위대', 'regUnit', m.regUnit],
+      ['인가일', 'date', m.date],
+      ['Scout 회원번호', 'scoutNo', m.scoutNo],
+      ['주민등록번호', 'residentNo', m.residentNo],
+      ['생일', 'birthday', m.birthday],
+      ['성별', 'gender', m.gender],
+      ['기념일', 'anniversary', m.anniversary],
+      ['훈련현황', 'trainingStatus', m.trainingStatus],
+      ['포상', 'awards', m.awards],
+      ['전문과정 이수', 'specialtyCourses', m.specialtyCourses],
+      ['ATAS 인가번호', 'atasNo', m.atasNo],
+      ['핸드폰', 'phone', m.phone],
+      ['연락처', 'tel', m.tel],
+      ['이메일', 'email', m.email],
+      ['우편번호', 'zipCode', m.zipCode],
+      ['주소', 'address', m.address],
+      ['한줄소개', 'bio', m.bio],
+      ['활동', 'activity', m.activity],
+      ['메모', 'memo', m.memo],
+    ];
+
+    final children = <Widget>[];
+    for (final f in fields) {
+      final label = f[0], key = f[1], raw = f[2];
+      // 성별: 공개설정(genderVisible)도 함께 존중(관리자·본인 제외).
+      if (key == 'gender' && !(admin || isSelf) && !m.genderVisible) continue;
+      final hasPerm = m.fieldPerms.containsKey(key);
+      if (raw.trim().isEmpty && !hasPerm) continue; // 값·설정 모두 없으면 숨김
+      final shown = disp(key, raw);
+      if (shown.isEmpty && !isMaster) continue; // 비노출 항목은 마스터만 관리
+      children.add(_infoFieldRow(state, m, label, key, shown, isMaster));
+    }
+    // 멘토·페런츠 (구조 항목 — 노출관리 제외)
+    children.add(
+      _plainRow(
+        '멘토',
+        '${m.mentors.map((e) => '#$e').join(', ')}${_linkBadge(m)}',
+      ),
+    );
+    children.add(_plainRow('페런츠', m.parents.map((e) => '#$e').join(', ')));
+    children.add(
+      _plainRow(
         '개인정보 동의',
         m.privacyAgreed
             ? '동의함${m.privacyAgreedAt.isNotEmpty ? ' (${m.privacyAgreedAt})' : ''}'
             : '미동의',
-      ],
-    ].where((r) => r[1].trim().isNotEmpty).toList();
+      ),
+    );
+    children.removeWhere((w) => w is SizedBox);
 
     return _section(
       title: '인가 정보',
       icon: Icons.badge,
-      child: rows.isEmpty
+      child: children.isEmpty
           ? Text(
               '등록된 상세 정보가 없습니다. 편집 버튼을 눌러 입력하세요.',
               style: TextStyle(color: AppColors.textGray, fontSize: 13),
             )
           : Column(
-              children: rows
-                  .map(
-                    (r) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 96,
-                            child: Text(
-                              r[0],
-                              style: const TextStyle(
-                                color: AppColors.textGray,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              r[1],
-                              style: const TextStyle(
-                                color: AppColors.textDark,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                  .toList(),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children,
             ),
     );
+  }
+
+  /// 값 없는 일반 행(구조 항목용).
+  Widget _plainRow(String label, String value) {
+    if (value.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textGray,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: AppColors.textDark, fontSize: 13.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 항목 1줄 + (마스터면) 노출관리 체크박스.
+  Widget _infoFieldRow(
+    AppState state,
+    Member m,
+    String label,
+    String key,
+    String shown,
+    bool isMaster,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 96,
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textGray,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  shown.isEmpty ? '(값 없음)' : shown,
+                  style: TextStyle(
+                    color: shown.isEmpty
+                        ? AppColors.textGray
+                        : AppColors.textDark,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isMaster) _permRow(state, m, key),
+        ],
+      ),
+    );
+  }
+
+  /// 마스터 전용 항목 노출관리 — 노출 / 관리자노출 / 비노출 / 삭제.
+  Widget _permRow(AppState state, Member m, String key) {
+    final cur = state.permFor(m, key); // 적용 중인 유효 권한
+    final explicit = m.fieldPerms[key]; // 개별 지정값(없으면 전역 기본)
+    const tips = {
+      'public': '모든 회원에게 노출',
+      'admin': '관리자·본인만 노출',
+      'hidden': '아무에게도 비노출',
+      'delete': '개별 설정 삭제(전역 기본값 적용)',
+    };
+    Widget chip(String val, String label, IconData icon, Color color) {
+      final sel = (val == 'delete') ? explicit == null : cur == val;
+      return Tooltip(
+        message: tips[val] ?? '',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _setPerm(state, m, key, val == 'delete' ? null : val),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: sel ? color.withValues(alpha: 0.14) : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: sel ? color : AppColors.textGray.withValues(alpha: 0.35),
+                width: sel ? 1.4 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 13, color: sel ? color : AppColors.textGray),
+                const SizedBox(width: 3),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: sel ? FontWeight.w800 : FontWeight.w500,
+                    color: sel ? color : AppColors.textGray,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 96, top: 4, bottom: 2),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          chip('public', '노출', Icons.visibility, AppColors.scoutGreen),
+          chip(
+            'admin',
+            '관리자',
+            Icons.admin_panel_settings,
+            AppColors.taegeukBlue,
+          ),
+          chip('hidden', '비노출', Icons.visibility_off, AppColors.textGray),
+          chip('delete', '삭제', Icons.delete_outline, AppColors.taegeukRed),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setPerm(
+    AppState state,
+    Member m,
+    String key,
+    String? value,
+  ) async {
+    try {
+      await state.setMemberFieldPerm(m, key, value);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
+    }
   }
 
   /// 회원 구분 관리 — 일반회원(비인가자) → 인가자 승격 / 강등 (관리자·마스터)
