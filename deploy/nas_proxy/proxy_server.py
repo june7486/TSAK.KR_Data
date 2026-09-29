@@ -7215,7 +7215,8 @@ class Handler(BaseHTTPRequestHandler):
                 if existing:
                     posts[posts.index(existing)] = new_post
                 else:
-                    # 신규 글 → 관리자 이상 알림 큐 적재
+                    # 신규 글 → 목록에 추가 + 관리자 이상 알림 큐 적재
+                    posts.append(new_post)
                     try:
                         _board_notify(new_post)
                     except Exception:
