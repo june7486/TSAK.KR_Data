@@ -703,16 +703,15 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                                   child: MouseRegion(
                                     cursor: SystemMouseCursors.grab,
                                     child: Container(
-                                      width: 34,
+                                      width: 30,
                                       alignment: Alignment.center,
-                                      color: AppColors.purple.withValues(
-                                        alpha: 0.05,
-                                      ),
+                                      // (p.30) 좌측 컬러 바 제거 — 심플하게.
+                                      color: Colors.transparent,
                                       child: Icon(
                                         Icons.drag_indicator,
                                         size: 18,
-                                        color: AppColors.purple.withValues(
-                                          alpha: 0.7,
+                                        color: AppColors.textGray.withValues(
+                                          alpha: 0.55,
                                         ),
                                       ),
                                     ),

@@ -3586,17 +3586,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             width: 44,
             child: Text('사진', style: style, textAlign: TextAlign.center),
           ),
-          Expanded(flex: 5, child: Text('품명', style: style)),
+          Expanded(flex: 5, child: Text('품명 / 누적판매', style: style)),
           SizedBox(
-            width: 62,
+            width: 66,
             child: Text('재고', style: style, textAlign: TextAlign.center),
           ),
-          SizedBox(width: 14),
-          SizedBox(
-            width: 54,
-            child: Text('판매', style: style, textAlign: TextAlign.center),
-          ),
-          SizedBox(width: 36),
+          SizedBox(width: 40),
         ],
       ),
     );
@@ -3872,20 +3867,19 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       fontSize: 14,
                     ),
                   ),
-                  if (low)
-                    const Text(
-                      '재고 부족',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.taegeukRed,
-                      ),
+                  Text(
+                    low ? '누적판매 $sold · 재고 부족' : '누적판매 $sold',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: low ? AppColors.taegeukRed : AppColors.textGray,
                     ),
+                  ),
                 ],
               ),
             ),
           ),
           SizedBox(
-            width: 62,
+            width: 66,
             child: _StockQty(
               value: stock,
               onChanged: (v) async {
@@ -3902,21 +3896,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               },
             ),
           ),
-          const SizedBox(width: 14),
           SizedBox(
-            width: 54,
-            child: Text(
-              '$sold',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textGray,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 36,
+            width: 40,
             child: PopupMenuButton<String>(
               padding: EdgeInsets.zero,
               icon: const Icon(Icons.more_vert, size: 18),

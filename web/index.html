@@ -56,14 +56,32 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
   <style>
+    /* (p.4·p.5) 한글 폰트 보강 — 번들 NanumGothic 을 웹 셸에도 등록하고,
+       아이폰/안드로이드에서 공통으로 존재하는 시스템 한글 폰트를 우선순위로
+       지정한다. 스플래시 등 DOM 텍스트의 한글 두부(□□) 깨짐을 방지한다. */
+    @font-face {
+      font-family: 'NanumGothic';
+      src: url('assets/assets/fonts/NanumGothic-Regular-s.ttf') format('truetype');
+      font-weight: 400; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'NanumGothic';
+      src: url('assets/assets/fonts/NanumGothic-Bold-s.ttf') format('truetype');
+      font-weight: 700; font-style: normal; font-display: swap;
+    }
+    html, body {
+      margin: 0; height: 100%;
+      font-family: 'NanumGothic', -apple-system, BlinkMacSystemFont,
+        'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic',
+        system-ui, sans-serif;
+    }
     /* 앱 초기 로딩 중 브랜드 스플래시 (Flutter 첫 프레임 전까지 표시) */
-    html, body { margin: 0; height: 100%; }
     #tsak-splash {
       position: fixed; inset: 0; z-index: 9999;
       display: flex; flex-direction: column; align-items: center;
       justify-content: center; gap: 18px;
       background: linear-gradient(160deg, #5B2C8D 0%, #3a1a5e 100%);
-      color: #fff; font-family: -apple-system, BlinkMacSystemFont,
+      color: #fff; font-family: 'NanumGothic', -apple-system, BlinkMacSystemFont,
         'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
       transition: opacity .45s ease;
     }
