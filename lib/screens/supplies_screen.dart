@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
@@ -8,6 +9,7 @@ import '../services/file_pick.dart';
 import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
+import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -337,14 +339,34 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-  Future<void> _print() async {
+  Future<void> _print({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
     if (_items.isEmpty) {
       _snack('인쇄할 항목이 없습니다');
       return;
     }
     final html = _docHtml();
     if (isWebRuntime) {
-      openPrintableHtml(html);
+      // 규칙(#14): 형식 순서 PDF→JPG→엑셀→PPT→워드.
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          await Clipboard.setData(ClipboardData(text: _csvText()));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          await Clipboard.setData(ClipboardData(text: _plainText(format)));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
+      }
     } else {
       await saveText(
         content: html,
@@ -354,6 +376,75 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       );
       _snack('문서를 저장했습니다');
     }
+  }
+
+  /// 비품 재고 → CSV(엑셀).
+  String _csvText() {
+    final buf = StringBuffer();
+    buf.writeln('번호,품명,수량,비고,확인일자,확인자');
+    for (var i = 0; i < _items.length; i++) {
+      final p = _items[i];
+      buf.writeln('${i + 1},${p['name'] ?? ''},${p['qty'] ?? 0},'
+          '${p['note'] ?? ''},${p['checked'] ?? ''},${p['whoName'] ?? ''}');
+    }
+    return buf.toString();
+  }
+
+  /// 비품 재고 → PPT/워드 붙여넣기용 텍스트.
+  String _plainText(TsakOutputFormat format) {
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '중앙회 비품 재고 (슬라이드용)'
+        : '중앙회 비품 재고 리스트 (문서용)');
+    buf.writeln('한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}');
+    buf.writeln();
+    for (var i = 0; i < _items.length; i++) {
+      final p = _items[i];
+      buf.writeln('${i + 1}. ${p['name'] ?? ''} / ${p['qty'] ?? 0}개'
+          '${'${p['note'] ?? ''}'.trim().isEmpty ? '' : ' / ${p['note']}'}');
+    }
+    return buf.toString();
+  }
+
+  /// 출력 형식 선택 다이얼로그 (#14 규칙).
+  Future<void> _showOutputDialog() async {
+    if (_items.isEmpty) {
+      _snack('출력할 항목이 없습니다');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('출력 형식 선택'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const SizedBox(height: 12),
+            TsakOutputBar(
+              onFormat: (f) {
+                Navigator.pop(ctx);
+                _print(format: f);
+              },
+              onShareImage: () {
+                Navigator.pop(ctx);
+                _print(format: TsakOutputFormat.jpg);
+              },
+              onShareLink: () {
+                Navigator.pop(ctx);
+                showLinkShareDialog(context, '${_nas.baseUrl}/#/supplies');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
   }
 
   Future<void> _email() async {
@@ -447,8 +538,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         actions: [
           const AppHomeEmblem(size: 22),
           IconButton(
-            tooltip: '인쇄 / PDF 저장',
-            onPressed: _print,
+            tooltip: '출력 (형식 선택)',
+            onPressed: _showOutputDialog,
             icon: const Icon(Icons.print_outlined),
           ),
           IconButton(
@@ -567,8 +658,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
               if (widget.embedded) ...[
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: '인쇄 / PDF',
-                  onPressed: _print,
+                  tooltip: '출력 (형식 선택)',
+                  onPressed: _showOutputDialog,
                   icon: const Icon(Icons.print_outlined, size: 20),
                 ),
                 IconButton(
