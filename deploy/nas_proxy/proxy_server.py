@@ -8224,7 +8224,9 @@ class Handler(BaseHTTPRequestHandler):
                 b64 = str(d.get("data", "") or "")
                 if not fname or not b64:
                     return self._json({"ok": False, "error": "bad"}, 400)
-                import base64
+                # 주의: do_POST 내부에서 'import base64' 를 쓰면 함수 전체에서
+                #  base64 가 로컬로 취급되어 앞쪽 /api/files 핸들러가 깨진다.
+                #  전역 import 를 그대로 사용한다.
                 try:
                     blob = base64.b64decode(b64.split(",")[-1])
                 except Exception:
