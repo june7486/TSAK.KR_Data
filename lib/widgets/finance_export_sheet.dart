@@ -16,13 +16,14 @@ Future<void> showFinanceExportSheet(
   BuildContext context, {
   required FinanceExportData data,
   List<FinanceFormat> formats = const [
-    FinanceFormat.excel,
+    // 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드 (이후 CSV·TXT 보조).
     FinanceFormat.pdf,
-    FinanceFormat.word,
-    FinanceFormat.txt,
-    FinanceFormat.csv,
     FinanceFormat.jpg,
+    FinanceFormat.excel,
     FinanceFormat.ppt,
+    FinanceFormat.word,
+    FinanceFormat.csv,
+    FinanceFormat.txt,
   ],
 }) {
   return showModalBottomSheet<void>(

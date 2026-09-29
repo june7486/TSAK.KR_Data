@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
 import '../services/nas_api.dart';
+import '../services/output_formats.dart';
 import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
@@ -459,8 +461,8 @@ class _PlansTabState extends State<PlansTab> {
                 if (_plans.isNotEmpty)
                   IconButton(
                     visualDensity: VisualDensity.compact,
-                    tooltip: '기획안 목록 인쇄/PDF',
-                    onPressed: _printPlans,
+                    tooltip: '기획안 목록 출력 (PDF·JPG·엑셀·PPT·워드)',
+                    onPressed: _showPlansOutputDialog,
                     icon: const Icon(Icons.print_outlined, size: 20),
                   ),
                 IconButton(
@@ -748,7 +750,7 @@ class _PlansTabState extends State<PlansTab> {
     return '$buf원';
   }
 
-  void _printPlans() {
+  String _plansDocHtml() {
     final rows = <List<DocCell>>[];
     for (var i = 0; i < _plans.length; i++) {
       final p = _plans[i];
@@ -781,10 +783,119 @@ class _PlansTabState extends State<PlansTab> {
       columns: const ['번호', '아이템', '기획자', '가격', '기획안 제출일', '진행상황', '신청/최소'],
       rows: rows,
     );
-    if (isWebRuntime) {
-      openPrintableHtml(html);
-    } else {
-      _snack('웹에서 인쇄할 수 있습니다');
+    return html;
+  }
+
+  /// 기획안 목록 출력 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
+  Future<void> _printPlans({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
+    if (_plans.isEmpty) {
+      _snack('출력할 기획안이 없습니다');
+      return;
     }
+    final html = _plansDocHtml();
+    if (isWebRuntime) {
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          await Clipboard.setData(ClipboardData(text: _plansCsvText()));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          await Clipboard.setData(
+              ClipboardData(text: _plansPlainText(format)));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
+      }
+    } else {
+      await Clipboard.setData(ClipboardData(text: _plansPlainText(format)));
+      _snack('기획안 목록을 복사했습니다');
+    }
+  }
+
+  /// 기획안 출력 형식 선택 다이얼로그 (#14 규칙).
+  Future<void> _showPlansOutputDialog() async {
+    if (_plans.isEmpty) {
+      _snack('출력할 기획안이 없습니다');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('기획안 목록 출력 형식'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const SizedBox(height: 12),
+            TsakOutputBar(
+              onFormat: (f) {
+                Navigator.pop(ctx);
+                _printPlans(format: f);
+              },
+              onShareImage: () {
+                Navigator.pop(ctx);
+                _printPlans(format: TsakOutputFormat.jpg);
+              },
+              onShareLink: () {
+                Navigator.pop(ctx);
+                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  /// 기획안 목록 → CSV(엑셀).
+  String _plansCsvText() {
+    final buf = StringBuffer();
+    buf.writeln('번호,아이템,기획자,가격,제출일,진행상황,신청,최소');
+    for (var i = 0; i < _plans.length; i++) {
+      final p = _plans[i];
+      final apps = (p['applicants'] as List?) ?? [];
+      final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
+      buf.writeln('${i + 1},${p['name'] ?? ''},${p['maker'] ?? ''},'
+          '${(p['price'] as num?)?.toInt() ?? 0},${p['submittedAt'] ?? ''},'
+          '${p['progress'] ?? ''},${apps.length},$minQty');
+    }
+    return buf.toString();
+  }
+
+  /// 기획안 목록 → PPT/워드 붙여넣기용 텍스트.
+  String _plansPlainText(TsakOutputFormat format) {
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '수품 기획안 목록 (슬라이드용)'
+        : '수품 기획안 목록 (문서용)');
+    buf.writeln('한국범스카우트중앙회 · 기획실');
+    buf.writeln();
+    for (var i = 0; i < _plans.length; i++) {
+      final p = _plans[i];
+      final apps = (p['applicants'] as List?) ?? [];
+      final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
+      buf.writeln('${i + 1}. ${p['name'] ?? ''} / ${p['maker'] ?? ''} / '
+          '${_won((p['price'] as num?)?.toInt() ?? 0)} / '
+          '신청 ${apps.length}명${minQty > 0 ? ' (최소 $minQty)' : ''} / '
+          '${p['progress'] ?? ''}');
+    }
+    buf.writeln();
+    buf.writeln('총 ${_plans.length}건');
+    return buf.toString();
   }
 }

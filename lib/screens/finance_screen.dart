@@ -796,7 +796,7 @@ class _FinanceScreenState extends State<FinanceScreen>
               ),
               onPressed: () => _exportTab(tabIndex),
               icon: const Icon(Icons.ios_share, size: 18),
-              label: Text('「$label」 출력 (엑셀·PDF·워드·PPT·CSV·TXT·JPG)',
+              label: Text('「$label」 출력 (PDF·JPG·엑셀·PPT·워드·CSV·TXT)',
                   style: const TextStyle(
                       fontSize: 12, fontWeight: FontWeight.w800)),
             ),

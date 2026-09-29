@@ -2338,23 +2338,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               color: AppColors.purpleDark,
             ),
           ),
+          const SizedBox(height: 4),
+          const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
           const SizedBox(height: 8),
+          TsakOutputBar(
+            onFormat: (f) => _exportReport(f),
+            onShareImage: () => _exportReport(TsakOutputFormat.jpg),
+            onShareLink: () => _exportReportLink(),
+          ),
+          const SizedBox(height: 6),
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
-              _exportBtn(
-                Icons.table_chart_outlined,
-                '엑셀(CSV)',
-                () => _exportReport('csv'),
-              ),
-              _exportBtn(Icons.grid_on, '표 복사', () => _exportReport('clip')),
-              _exportBtn(Icons.link, '링크 복사', () => _exportReport('link')),
-              _exportBtn(
-                Icons.print_outlined,
-                '인쇄',
-                () => _exportReport('print'),
-              ),
+              _exportBtn(Icons.grid_on, '표 복사', () => _exportReportClip()),
             ],
           ),
         ],
@@ -2370,47 +2368,91 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         label: Text(t),
       );
 
-  Future<void> _exportReport(String type) async {
-    if (type == 'link') {
-      final link = Uri.base.toString();
-      await Clipboard.setData(ClipboardData(text: link));
-      if (mounted) _snack('현재 페이지 링크를 복사했습니다');
-      return;
-    }
-    if (type == 'print') {
-      // MUJI 규칙 문서(A4 세로)로 인쇄/PDF 저장
-      final html = _reportDocHtml();
-      if (isWebRuntime) {
-        openPrintableHtml(html);
-      } else {
-        await Clipboard.setData(ClipboardData(text: _reportText()));
-        if (mounted) _snack('리포트를 복사했습니다');
-      }
-      return;
-    }
-    final buf = StringBuffer();
-    if (type == 'csv') {
-      buf.writeln('구분,항목,수치');
-      buf.writeln('총주문,${(_stats['orderCount'] ?? _orders.length)}건,');
-      buf.writeln('총매출,${_stats['totalSales'] ?? 0},원');
-      buf.writeln('연회비,${_stats['totalAnnualFee'] ?? 0},원');
-      buf.writeln('예약접수,${_stats['reserveCount'] ?? _reserves.length}건,');
-      final byStatus = ((_stats['byStatus'] as Map?) ?? {});
-      for (final e in byStatus.entries) {
-        buf.writeln('상태별,${e.key},${e.value}건');
-      }
-      final byProduct = ((_stats['byProduct'] as Map?) ?? {});
-      for (final e in byProduct.entries) {
-        final m = (e.value as Map?) ?? {};
-        buf.writeln('상품별,${e.key},${m['qty'] ?? 0}개/${m['amount'] ?? 0}원');
+  void _exportReportLink() {
+    final link = Uri.base.toString();
+    Clipboard.setData(ClipboardData(text: link));
+    if (mounted) _snack('현재 페이지 링크를 복사했습니다');
+  }
+
+  /// 표(텍스트) 클립보드 복사.
+  Future<void> _exportReportClip() async {
+    await Clipboard.setData(ClipboardData(text: _reportText()));
+    if (mounted) _snack('표를 복사했습니다');
+  }
+
+  Future<void> _exportReport(TsakOutputFormat format) async {
+    // 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
+    final html = _reportDocHtml();
+    if (isWebRuntime) {
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          await Clipboard.setData(ClipboardData(text: _reportCsvText()));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          await Clipboard.setData(
+              ClipboardData(text: _reportPlainText(format)));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
       }
     } else {
-      buf.write(_reportText());
+      await Clipboard.setData(ClipboardData(text: _reportText()));
+      if (mounted) _snack('리포트를 복사했습니다');
     }
-    await Clipboard.setData(ClipboardData(text: buf.toString()));
-    if (mounted) {
-      _snack(type == 'csv' ? 'CSV를 복사했습니다(엑셀에 붙여넣기)' : '표를 복사했습니다');
+  }
+
+  /// 누적판매 리포트 → CSV(엑셀).
+  String _reportCsvText() {
+    final buf = StringBuffer();
+    buf.writeln('구분,항목,수치,단위');
+    buf.writeln('총주문,${(_stats['orderCount'] ?? _orders.length)}건,');
+    buf.writeln('총매출,${_stats['totalSales'] ?? 0},원');
+    buf.writeln('연회비,${_stats['totalAnnualFee'] ?? 0},원');
+    buf.writeln('예약접수,${_stats['reserveCount'] ?? _reserves.length}건,');
+    final byStatus = ((_stats['byStatus'] as Map?) ?? {});
+    for (final e in byStatus.entries) {
+      buf.writeln('상태별,${e.key},${e.value}건');
     }
+    final byProduct = ((_stats['byProduct'] as Map?) ?? {});
+    for (final e in byProduct.entries) {
+      final m = (e.value as Map?) ?? {};
+      buf.writeln('상품별,${e.key},${m['qty'] ?? 0}개/${m['amount'] ?? 0}원');
+    }
+    return buf.toString();
+  }
+
+  /// 누적판매 리포트 → PPT/워드 붙여넣기용 텍스트.
+  String _reportPlainText(TsakOutputFormat format) {
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '수품 누적판매 리포트 (슬라이드용)'
+        : '수품 누적판매 리포트 (문서용)');
+    buf.writeln('한국범스카우트중앙회');
+    buf.writeln();
+    buf.writeln('총 주문: ${_stats['orderCount'] ?? _orders.length}건');
+    buf.writeln('총 매출: ${_won((_stats['totalSales'] as num?)?.toInt() ?? 0)}');
+    buf.writeln(
+        '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}');
+    buf.writeln('예약접수: ${_stats['reserveCount'] ?? _reserves.length}건');
+    final byProduct = ((_stats['byProduct'] as Map?) ?? {});
+    if (byProduct.isNotEmpty) {
+      buf.writeln();
+      buf.writeln('[상품별]');
+      for (final e in byProduct.entries) {
+        final m = (e.value as Map?) ?? {};
+        buf.writeln('· ${e.key}: ${m['qty'] ?? 0}개 / '
+            '${_won((m['amount'] as num?)?.toInt() ?? 0)}');
+      }
+    }
+    return buf.toString();
   }
 
   String _reportText() {
@@ -2525,15 +2567,119 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
   }
 
-  /// 판매대장을 MUJI 규칙 문서로 인쇄/PDF 저장.
-  void _printLedger() {
+  /// 판매대장 출력 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
+  Future<void> _printLedger({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
+    if (_ledgerRows.isEmpty) {
+      _snack('출력할 판매대장이 없습니다');
+      return;
+    }
     final html = _ledgerDocHtml();
     if (isWebRuntime) {
-      openPrintableHtml(html);
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          await Clipboard.setData(ClipboardData(text: _ledgerCsvText()));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          await Clipboard.setData(
+              ClipboardData(text: _ledgerPlainText(format)));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
+      }
     } else {
-      Clipboard.setData(ClipboardData(text: _ledgerText()));
+      await Clipboard.setData(ClipboardData(text: _ledgerText()));
       _snack('판매대장을 복사했습니다');
     }
+  }
+
+  /// 판매대장 → CSV(엑셀).
+  String _ledgerCsvText() {
+    final buf = StringBuffer();
+    buf.writeln('번호,구분,주문번호,주문자,상품,수량,금액,상태,입금');
+    for (var i = 0; i < _ledgerRows.length; i++) {
+      final row = _ledgerRows[i];
+      final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
+      final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
+      final paid = row['paid'] == true ? '입금완료' : '미입금';
+      buf.writeln('${i + 1},$kind,${row['orderNo'] ?? ''},'
+          '${row['buyerName'] ?? row['name'] ?? ''},${row['product'] ?? ''},'
+          '${row['qty'] ?? 1},${(amount as num?)?.toInt() ?? 0},'
+          '${row['status'] ?? ''},$paid');
+    }
+    return buf.toString();
+  }
+
+  /// 판매대장 → PPT/워드 붙여넣기용 텍스트.
+  String _ledgerPlainText(TsakOutputFormat format) {
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '수품 판매대장 (슬라이드용)'
+        : '수품 판매대장 (문서용)');
+    buf.writeln('한국범스카우트중앙회 · ${_ledgerLabel()}');
+    buf.writeln();
+    final amountTotal = (_ledgerSummary['amountTotal'] as num?)?.toInt() ?? 0;
+    for (var i = 0; i < _ledgerRows.length; i++) {
+      final row = _ledgerRows[i];
+      final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
+      final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
+      buf.writeln('${i + 1}. [$kind] ${row['orderNo'] ?? ''} '
+          '${row['buyerName'] ?? row['name'] ?? ''} / ${row['product'] ?? ''} '
+          '× ${row['qty'] ?? 1} / ${_won((amount as num?)?.toInt() ?? 0)}');
+    }
+    buf.writeln();
+    buf.writeln('합계: ${_won(amountTotal)} · ${_ledgerRows.length}건');
+    return buf.toString();
+  }
+
+  /// 판매대장 출력 형식 선택 다이얼로그 (#14 규칙).
+  Future<void> _showLedgerOutputDialog() async {
+    if (_ledgerRows.isEmpty) {
+      _snack('출력할 판매대장이 없습니다');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('판매대장 출력 형식'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const SizedBox(height: 12),
+            TsakOutputBar(
+              onFormat: (f) {
+                Navigator.pop(ctx);
+                _printLedger(format: f);
+              },
+              onShareImage: () {
+                Navigator.pop(ctx);
+                _printLedger(format: TsakOutputFormat.jpg);
+              },
+              onShareLink: () {
+                Navigator.pop(ctx);
+                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
   }
 
   /// 판매대장을 메일로 발송.
@@ -2762,9 +2908,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),
-                    onPressed: _ledgerRows.isEmpty ? null : _printLedger,
+                    onPressed:
+                        _ledgerRows.isEmpty ? null : _showLedgerOutputDialog,
                     icon: const Icon(Icons.print_outlined, size: 16),
-                    label: const Text('인쇄/PDF'),
+                    label: const Text('출력(형식)'),
                   ),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
@@ -3146,8 +3293,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
-              tooltip: '재고 현황표 인쇄 / PDF',
-              onPressed: () => _printStock(stock),
+              tooltip: '재고 현황표 출력 (PDF·JPG·엑셀·PPT·워드)',
+              onPressed: stock.isEmpty
+                  ? null
+                  : () => _showStockOutputDialog(stock),
               icon: const Icon(Icons.print_outlined, size: 20),
             ),
             IconButton(
@@ -3230,19 +3379,114 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  /// 재고 현황표를 MUJI 규칙 문서로 인쇄/PDF 저장.
-  void _printStock(List<Map<String, dynamic>> stock) {
+  /// 재고 현황표 출력 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
+  Future<void> _printStock(
+    List<Map<String, dynamic>> stock, {
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
     if (stock.isEmpty) {
       _snack('인쇄할 재고가 없습니다');
       return;
     }
     final html = _stockDocHtml(stock);
     if (isWebRuntime) {
-      openPrintableHtml(html);
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          await Clipboard.setData(ClipboardData(text: _stockCsvText(stock)));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          await Clipboard.setData(
+              ClipboardData(text: _stockPlainText(stock, format)));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
+      }
     } else {
       Clipboard.setData(ClipboardData(text: _stockText(stock)));
       _snack('재고 내역을 복사했습니다');
     }
+  }
+
+  /// 재고 현황표 출력 형식 선택 다이얼로그 (#14 규칙).
+  Future<void> _showStockOutputDialog(List<Map<String, dynamic>> stock) async {
+    if (stock.isEmpty) {
+      _snack('출력할 재고가 없습니다');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('재고 현황표 출력 형식'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const SizedBox(height: 12),
+            TsakOutputBar(
+              onFormat: (f) {
+                Navigator.pop(ctx);
+                _printStock(stock, format: f);
+              },
+              onShareImage: () {
+                Navigator.pop(ctx);
+                _printStock(stock, format: TsakOutputFormat.jpg);
+              },
+              onShareLink: () {
+                Navigator.pop(ctx);
+                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  /// 재고 현황표 → CSV(엑셀).
+  String _stockCsvText(List<Map<String, dynamic>> stock) {
+    final buf = StringBuffer();
+    buf.writeln('번호,품명,재고,누적판매');
+    for (var i = 0; i < stock.length; i++) {
+      final s = stock[i];
+      buf.writeln('${i + 1},${s['name'] ?? ''},${s['stock'] ?? 0},'
+          '${s['sold'] ?? 0}');
+    }
+    return buf.toString();
+  }
+
+  /// 재고 현황표 → PPT/워드 붙여넣기용 텍스트.
+  String _stockPlainText(
+      List<Map<String, dynamic>> stock, TsakOutputFormat format) {
+    final total =
+        stock.fold<int>(0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '수품 재고 현황표 (슬라이드용)'
+        : '수품 재고 현황표 (문서용)');
+    buf.writeln('한국범스카우트중앙회 · 기준일 ${_todayYmd()}');
+    buf.writeln();
+    for (var i = 0; i < stock.length; i++) {
+      final s = stock[i];
+      buf.writeln('${i + 1}. ${s['name'] ?? ''} / 재고 ${s['stock'] ?? 0} '
+          '/ 누적 ${s['sold'] ?? 0}');
+    }
+    buf.writeln();
+    buf.writeln('총 ${stock.length}종 · 총 재고 $total');
+    return buf.toString();
   }
 
   /// 재고 현황표를 메일로 발송.
@@ -3532,10 +3776,23 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
         children: [
-          _subHeader(
-            '수품 공여 (행사·홍보)',
-            '수품을 무상 제공한 내역 관리',
-            Icons.volunteer_activism_outlined,
+          Row(
+            children: [
+              Expanded(
+                child: _subHeader(
+                  '수품 공여 (행사·홍보)',
+                  '수품을 무상 제공한 내역 관리',
+                  Icons.volunteer_activism_outlined,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '공여 내역 출력 (PDF·JPG·엑셀·PPT·워드)',
+                onPressed:
+                    _donations.isEmpty ? null : () => _showDonationOutputDialog(),
+                icon: const Icon(Icons.print_outlined, size: 20),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           if (_donations.isEmpty)
@@ -3550,6 +3807,174 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             for (final d in _donations) _donationCard(d),
         ],
       ),
+    );
+  }
+
+  /// 공여 내역 출력 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
+  Future<void> _printDonation({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
+    if (_donations.isEmpty) {
+      _snack('출력할 공여 내역이 없습니다');
+      return;
+    }
+    final html = _donationDocHtml();
+    if (isWebRuntime) {
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          await Clipboard.setData(ClipboardData(text: _donationCsvText()));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          await Clipboard.setData(
+              ClipboardData(text: _donationPlainText(format)));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
+      }
+    } else {
+      await Clipboard.setData(ClipboardData(text: _donationText()));
+      _snack('공여 내역을 복사했습니다');
+    }
+  }
+
+  /// 공여 내역 출력 형식 선택 다이얼로그 (#14 규칙).
+  Future<void> _showDonationOutputDialog() async {
+    if (_donations.isEmpty) {
+      _snack('출력할 공여 내역이 없습니다');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('공여 내역 출력 형식'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const SizedBox(height: 12),
+            TsakOutputBar(
+              onFormat: (f) {
+                Navigator.pop(ctx);
+                _printDonation(format: f);
+              },
+              onShareImage: () {
+                Navigator.pop(ctx);
+                _printDonation(format: TsakOutputFormat.jpg);
+              },
+              onShareLink: () {
+                Navigator.pop(ctx);
+                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  String _donationText() {
+    final buf = StringBuffer();
+    buf.writeln('수품 공여 내역 (행사·홍보)');
+    buf.writeln('한국범스카우트중앙회 · 총 ${_donations.length}건');
+    buf.writeln('────────────────────────────');
+    for (var i = 0; i < _donations.length; i++) {
+      final d = _donations[i];
+      buf.writeln('${i + 1}. ${d['product'] ?? ''} / '
+          '${d['qty'] ?? 0}개 / ${_won((d['amount'] as num?)?.toInt() ?? 0)} / '
+          '${d['date'] ?? d['created'] ?? ''}');
+    }
+    return buf.toString();
+  }
+
+  /// 공여 내역 → CSV(엑셀).
+  String _donationCsvText() {
+    final buf = StringBuffer();
+    buf.writeln('번호,품명,구분,수량,금액,수령처,행사,일자,메모');
+    for (var i = 0; i < _donations.length; i++) {
+      final d = _donations[i];
+      buf.writeln('${i + 1},${d['product'] ?? ''},'
+          '${d['kind'] ?? d['category'] ?? '공여'},${d['qty'] ?? 0},'
+          '${(d['amount'] as num?)?.toInt() ?? 0},${d['recipient'] ?? ''},'
+          '${d['event'] ?? ''},${d['date'] ?? d['created'] ?? ''},'
+          '${d['memo'] ?? ''}');
+    }
+    return buf.toString();
+  }
+
+  /// 공여 내역 → PPT/워드 붙여넣기용 텍스트.
+  String _donationPlainText(TsakOutputFormat format) {
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '수품 공여 내역 (슬라이드용)'
+        : '수품 공여 내역 (문서용)');
+    buf.writeln('한국범스카우트중앙회');
+    buf.writeln();
+    var total = 0;
+    for (var i = 0; i < _donations.length; i++) {
+      final d = _donations[i];
+      final amt = (d['amount'] as num?)?.toInt() ?? 0;
+      total += amt;
+      final recipient = '${d['recipient'] ?? ''}'.trim();
+      final arrow = recipient.isEmpty ? '' : ' → $recipient';
+      buf.writeln('${i + 1}. [${d['kind'] ?? d['category'] ?? '공여'}] '
+          '${d['product'] ?? ''} × ${d['qty'] ?? 0} / ${_won(amt)}$arrow');
+    }
+    buf.writeln();
+    buf.writeln('총 ${_donations.length}건 · 금액합계 ${_won(total)}');
+    return buf.toString();
+  }
+
+  String _donationDocHtml() {
+    var totalAmt = 0;
+    var totalQty = 0;
+    final rows = <List<DocCell>>[];
+    for (var i = 0; i < _donations.length; i++) {
+      final d = _donations[i];
+      final qty = (d['qty'] as num?)?.toInt() ?? 0;
+      final amt = (d['amount'] as num?)?.toInt() ?? 0;
+      totalAmt += amt;
+      totalQty += qty;
+      rows.add([
+        DocCell('${i + 1}', align: 'center'),
+        DocCell('${d['product'] ?? ''}',
+            accent: kMujiAccents[i % kMujiAccents.length], bold: true),
+        DocCell('${d['kind'] ?? d['category'] ?? '공여'}', align: 'center'),
+        DocCell('$qty', align: 'center'),
+        DocCell(amt > 0 ? _won(amt) : '-', align: 'right'),
+        DocCell('${d['recipient'] ?? d['event'] ?? ''}'),
+        DocCell('${d['date'] ?? d['created'] ?? ''}', align: 'center'),
+      ]);
+    }
+    return buildMujiDoc(
+      meta: DocMeta(
+        title: '수품 공여 내역',
+        subtitle: '한국범스카우트중앙회 · 행사·홍보 무상 제공',
+        description: '행사·홍보 목적으로 무상 제공한 수품 내역입니다.',
+        author: _whoName(),
+        extra: {
+          '총 건수': '${_donations.length}건',
+          '총 수량': '$totalQty개',
+          '금액 합계': _won(totalAmt),
+        },
+      ),
+      columns: const ['번호', '품명', '구분', '수량', '금액', '수령처/행사', '일자'],
+      rows: rows,
+      summary: '총 <b>${_donations.length}</b>건 · 수량 <b>$totalQty</b>개 · '
+          '금액 <span class="g">${_won(totalAmt)}</span>',
     );
   }
 
