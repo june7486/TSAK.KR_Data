@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -269,12 +270,20 @@ class _BoardScreenState extends State<BoardScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // URL 생성 — 이 게시글의 공유 URL 생성/복사 (로그인 필요 안내)
-                    IconButton(
-                      tooltip: 'URL 생성 (이 글 공유 링크)',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.link,
-                          size: 20, color: AppColors.purple),
+                    // URL 생성 — 이 게시글의 전체 주소를 바로 생성/복사 (외부에 노출된 버튼)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        minimumSize: const Size(0, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: AppColors.purple,
+                        side: BorderSide(
+                            color: AppColors.purple.withValues(alpha: 0.5)),
+                      ),
+                      icon: const Icon(Icons.link, size: 16),
+                      label: const Text('URL', style: TextStyle(fontSize: 12.5)),
                       onPressed: () => _shareLink(id),
                     ),
                     PopupMenuButton<String>(
@@ -666,6 +675,15 @@ class _BoardScreenState extends State<BoardScreen> {
         ((existing?['links'] as List?) ?? []).map((e) => '$e').toList();
     final linkCtrl = TextEditingController();
 
+    // 등록 버튼 활성 조건: 이름 + 제목 + 본문(글자수 제한 없음) + 비밀번호.
+    //  · 비노출은 기본값 '노출'의 옵션이므로 활성 조건과 무관하다.
+    //  · 수정 시 이미 비밀번호가 있는 글이면 재입력 없이도 통과한다.
+    bool canSubmit() =>
+        authorCtrl.text.trim().isNotEmpty &&
+        titleCtrl.text.trim().isNotEmpty &&
+        bodyCtrl.text.trim().isNotEmpty &&
+        (pwCtrl.text.isNotEmpty || existing?['hasPassword'] == true);
+
     final res = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -698,6 +716,7 @@ class _BoardScreenState extends State<BoardScreen> {
                       Expanded(
                         child: TextField(
                           controller: authorCtrl,
+                          onChanged: (_) => setD(() {}),
                           decoration: const InputDecoration(labelText: '작성자'),
                         ),
                       ),
@@ -715,6 +734,7 @@ class _BoardScreenState extends State<BoardScreen> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: titleCtrl,
+                    onChanged: (_) => setD(() {}),
                     decoration: const InputDecoration(labelText: '제목'),
                   ),
                   const SizedBox(height: 8),
@@ -722,6 +742,7 @@ class _BoardScreenState extends State<BoardScreen> {
                     controller: bodyCtrl,
                     maxLines: 6,
                     minLines: 3,
+                    onChanged: (_) => setD(() {}),
                     decoration: const InputDecoration(
                       labelText: '내용',
                       alignLabelWithHint: true,
@@ -861,6 +882,7 @@ class _BoardScreenState extends State<BoardScreen> {
                         child: TextField(
                           controller: pwCtrl,
                           obscureText: true,
+                          onChanged: (_) => setD(() {}),
                           decoration: InputDecoration(
                             labelText: existing?['hasPassword'] == true
                                 ? '비밀번호 (변경 시 입력)'
@@ -900,9 +922,8 @@ class _BoardScreenState extends State<BoardScreen> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-              onPressed: titleCtrl.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(ctx, 'publish'),
+              onPressed:
+                  canSubmit() ? () => Navigator.pop(ctx, 'publish') : null,
               child: const Text('등록'),
             ),
           ],
@@ -1163,10 +1184,26 @@ class _BoardScreenState extends State<BoardScreen> {
     );
   }
 
+  /// 이 게시글의 "전체 주소"를 만든다.
+  ///  · 웹에서는 현재 접속한 실제 origin(예: https://39.123.241.4:5071)을 사용하고,
+  ///  · 그 외(네이티브)에서는 서버 baseUrl 에서 origin 을 추출한다.
+  String _postFullUrl(String id) {
+    String origin = '';
+    if (kIsWeb) {
+      try {
+        origin = Uri.base.origin; // 실제 브라우저 주소창의 origin
+      } catch (_) {
+        origin = '';
+      }
+    }
+    if (origin.isEmpty || origin == 'null') {
+      origin = _nas.baseUrl.split('/api').first.replaceAll(RegExp(r'/+$'), '');
+    }
+    return '$origin/?access=board&id=${Uri.encodeComponent(id)}';
+  }
+
   Future<void> _shareLink(String id) async {
-    final url = _nas.fileDownloadUrl('board', '');
-    // URL 생성: 로그인 후 해당 게시글로 바로 진입(?access=board&id=..).
-    final link = '${url.split('/api')[0]}/?access=board&id=$id';
+    final link = _postFullUrl(id);
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1177,7 +1214,7 @@ class _BoardScreenState extends State<BoardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-                '아래 URL을 복사해 다른 사람에게 보낼 수 있습니다. 외부에서 접속해도 로그인한 권한자만 열람할 수 있습니다.',
+                '아래 URL이 이 게시글의 전체 주소입니다. 그대로 복사해 다른 사람에게 보낼 수 있으며, 외부에서 접속해도 로그인한 권한자만 열람할 수 있습니다.',
                 style: TextStyle(fontSize: 12, color: AppColors.textGray, height: 1.4)),
             const SizedBox(height: 10),
             Container(
@@ -1189,19 +1226,22 @@ class _BoardScreenState extends State<BoardScreen> {
                 border: Border.all(
                     color: AppColors.purple.withValues(alpha: 0.25)),
               ),
+              // 전체 주소를 줄바꿈 없이 그대로 노출(길면 자동 스크롤).
               child: SelectableText(link,
+                  maxLines: null,
                   style: const TextStyle(fontSize: 12, color: AppColors.purple)),
             ),
           ],
         ),
         actions: [
-          TextButton(
+          TextButton.icon(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: link));
               Navigator.pop(ctx);
-              _snack('이 게시글 URL을 복사했습니다');
+              _snack('이 게시글 전체 주소를 복사했습니다');
             },
-            child: const Text('URL 복사'),
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('URL 복사'),
           ),
           FilledButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),

@@ -675,10 +675,12 @@ class AppState extends ChangeNotifier {
     String mode = 'one',
     String? ts,
     String? number,
+    List<Map<String, dynamic>>? items,
   }) async {
     if (!repo.isNasMode || !isMaster) return false;
     try {
-      return await nas.deleteAccessLog(mode: mode, ts: ts, number: number);
+      return await nas.deleteAccessLog(
+          mode: mode, ts: ts, number: number, items: items);
     } catch (_) {
       return false;
     }

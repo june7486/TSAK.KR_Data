@@ -6733,6 +6733,23 @@ class Handler(BaseHTTPRequestHandler):
                     elif mode == "member":
                         no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
                         logs = [x for x in logs if str(x.get("ident", "")) != no]
+                    elif mode == "bulk":
+                        # 선택 삭제: items=[{ts, ident}, ...] 정확히 일치하는 건만 제거.
+                        items = d.get("items") or []
+                        keys = set()
+                        for it in items:
+                            if not isinstance(it, dict):
+                                continue
+                            t = str(it.get("ts", ""))
+                            k = re.sub(r"[^0-9]", "", str(it.get("ident", "")))
+                            keys.add((t, k))
+                        if keys:
+                            logs = [
+                                x for x in logs
+                                if (str(x.get("ts", "")),
+                                    re.sub(r"[^0-9]", "", str(x.get("ident", ""))))
+                                not in keys
+                            ]
                     else:
                         ts = str(d.get("ts", ""))
                         ident = re.sub(r"[^0-9]", "", str(d.get("number", "")))

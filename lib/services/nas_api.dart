@@ -1127,10 +1127,12 @@ class NasApi {
 
   /// 접속 로그 삭제 (마스터 전용).
   ///  mode: 'one'(ts+number 1건) | 'member'(해당 회원 전체) | 'all'(전체)
+  ///        | 'bulk'(선택 삭제 — items: [{ts, ident}, ...])
   Future<bool> deleteAccessLog({
     String mode = 'one',
     String? ts,
     String? number,
+    List<Map<String, dynamic>>? items,
   }) async {
     final r = await http
         .post(
@@ -1140,6 +1142,7 @@ class NasApi {
             'mode': mode,
             if (ts != null) 'ts': ts,
             if (number != null) 'number': number,
+            if (items != null) 'items': items,
           }),
         )
         .timeout(const Duration(seconds: 15));

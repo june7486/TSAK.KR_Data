@@ -36,11 +36,22 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
   bool _loading = true;
   bool _busy = false;
 
+  /// 선택 삭제 모드 — 마스터가 원하는 기록만 골라 지울 수 있다.
+  bool _selectMode = false;
+
+  /// 선택된 로그의 고유키 (ts + '\u0000' + ident).
+  final Set<String> _selected = {};
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
+
+  String _key(Map<String, dynamic> l) =>
+      '${l['ts'] ?? ''}\u0000${(l['ident'] ?? widget.member.loginId) ?? ''}';
+
+  String get _title => '${widget.member.name} (${widget.member.loginId})';
 
   Future<void> _load() async {
     final state = context.read<AppState>();
@@ -54,10 +65,9 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
     setState(() {
       _logs = logs;
       _loading = false;
+      _selected.clear();
     });
   }
-
-  String get _title => '${widget.member.name} (${widget.member.loginId})';
 
   Future<void> _deleteOne(Map<String, dynamic> log) async {
     final ok = await _confirm('이 접속 기록 1건을 삭제할까요?');
@@ -70,6 +80,36 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
     if (!mounted) return;
     _snack(done ? '삭제했습니다' : '삭제 실패');
     if (done) await _load();
+  }
+
+  /// 선택한 기록들을 한 번에 삭제한다(마스터 전용, 선택 삭제).
+  Future<void> _deleteSelected() async {
+    if (_selected.isEmpty) return;
+    final ok = await _confirm('선택한 접속 기록 ${_selected.length}건을 삭제할까요?');
+    if (ok != true) return;
+    final items = <Map<String, dynamic>>[];
+    for (final l in _logs) {
+      if (_selected.contains(_key(l))) {
+        items.add({
+          'ts': '${l['ts'] ?? ''}',
+          'ident': '${l['ident'] ?? widget.member.loginId}',
+        });
+      }
+    }
+    final done = await context.read<AppState>().deleteMemberAccessLog(
+          mode: 'bulk',
+          number: widget.member.loginId,
+          items: items,
+        );
+    if (!mounted) return;
+    _snack(done ? '선택한 ${items.length}건을 삭제했습니다' : '삭제 실패');
+    if (done) {
+      setState(() {
+        _selectMode = false;
+        _selected.clear();
+      });
+      await _load();
+    }
   }
 
   Future<void> _deleteAll() async {
@@ -285,7 +325,7 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
               ),
             ),
             const SizedBox(height: 10),
-            // 출력 / 공유 / 내보내기 / 전체삭제
+            // 출력 / 공유 / 내보내기 / 선택삭제 / 전체삭제
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -308,6 +348,25 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
                 if (_logs.isNotEmpty)
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
+                        foregroundColor:
+                            _selectMode ? Colors.white : AppColors.purple,
+                        backgroundColor:
+                            _selectMode ? AppColors.purple : null,
+                        side: BorderSide(
+                            color: AppColors.purple.withValues(alpha: 0.6))),
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                              _selectMode = !_selectMode;
+                              _selected.clear();
+                            }),
+                    icon: Icon(_selectMode ? Icons.close : Icons.checklist,
+                        size: 17),
+                    label: Text(_selectMode ? '선택 취소' : '선택 삭제'),
+                  ),
+                if (_logs.isNotEmpty)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.taegeukRed),
                     onPressed: _busy ? null : _deleteAll,
                     icon: const Icon(Icons.delete_sweep, size: 17),
@@ -315,6 +374,59 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
                   ),
               ],
             ),
+            // 선택 삭제 모드일 때 표시되는 선택 툴바
+            if (_selectMode && _logs.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.purple.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                      color: AppColors.purple.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text('선택 ${_selected.length}건 / 전체 ${_logs.length}건',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.purple)),
+                    ),
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                                if (_selected.length == _logs.length) {
+                                  _selected.clear();
+                                } else {
+                                  _selected
+                                    ..clear()
+                                    ..addAll(_logs.map(_key));
+                                }
+                              }),
+                      child: Text(
+                          _selected.length == _logs.length ? '전체 해제' : '전체 선택',
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 4),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.taegeukRed,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: _busy || _selected.isEmpty
+                          ? null
+                          : _deleteSelected,
+                      icon: const Icon(Icons.delete, size: 16),
+                      label: Text('선택 ${_selected.length}건 삭제'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             if (_loading)
               const Padding(
@@ -358,23 +470,41 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
     // 본인 로그인/접속은 색상 변경 + 굵게 강조한다.
     final Color selfColor = AppColors.taegeukRed;
     final Color rowColor = isSelf ? selfColor : c;
-    return Container(
+    final bool selected = _selectMode && _selected.contains(_key(l));
+    final Widget tile = Container(
       margin: const EdgeInsets.only(bottom: 5),
       padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
       decoration: BoxDecoration(
-        color: isSelf
-            ? selfColor.withValues(alpha: 0.07)
-            : (i.isEven ? const Color(0xFFF8F6FC) : Colors.white),
+        color: selected
+            ? AppColors.purple.withValues(alpha: 0.10)
+            : (isSelf
+                ? selfColor.withValues(alpha: 0.07)
+                : (i.isEven ? const Color(0xFFF8F6FC) : Colors.white)),
         borderRadius: BorderRadius.circular(9),
         border: Border.all(
-          color: isSelf
-              ? selfColor.withValues(alpha: 0.45)
-              : AppColors.purple.withValues(alpha: 0.12),
-          width: isSelf ? 1.4 : 1,
+          color: selected
+              ? AppColors.purple
+              : (isSelf
+                  ? selfColor.withValues(alpha: 0.45)
+                  : AppColors.purple.withValues(alpha: 0.12)),
+          width: selected ? 1.6 : (isSelf ? 1.4 : 1),
         ),
       ),
       child: Row(
         children: [
+          if (_selectMode)
+            Checkbox(
+              value: selected,
+              visualDensity: VisualDensity.compact,
+              activeColor: AppColors.purple,
+              onChanged: (_) => setState(() {
+                if (selected) {
+                  _selected.remove(_key(l));
+                } else {
+                  _selected.add(_key(l));
+                }
+              }),
+            ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
@@ -496,6 +626,19 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
           ),
         ],
       ),
+    );
+    // 선택 삭제 모드에서는 타일 전체를 눌러도 토글되게 감싼다.
+    if (!_selectMode) return tile;
+    return InkWell(
+      borderRadius: BorderRadius.circular(9),
+      onTap: () => setState(() {
+        if (selected) {
+          _selected.remove(_key(l));
+        } else {
+          _selected.add(_key(l));
+        }
+      }),
+      child: tile,
     );
   }
 }
