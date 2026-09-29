@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_config.dart';
 import '../services/app_state.dart';
+import '../services/nas_api.dart';
 import '../services/build_info.g.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
@@ -65,6 +66,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _selectMode = false;
   final Set<String> _selected = {};
   bool _deepLinkHandled = false;
+  // 게시판/주문 등 관리자 이상 알림 배지
+  int _boardUnread = 0;
 
   @override
   void initState() {
@@ -76,6 +79,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     // 로그인 직후 미승인 일반회원이 있으면 관리자·마스터에게 알림 팝업.
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPendingApprovals());
+    // 게시판 새 글 알림 배지 로드(관리자 이상).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadBoardUnread());
+  }
+
+  /// 관리자 이상 알림(게시판 새 글 등) 미확인 건수 로드.
+  Future<void> _loadBoardUnread() async {
+    final state = context.read<AppState>();
+    if (!(state.isApp || state.isMaster)) return;
+    try {
+      final r = await context.read<NasApi>().notifyList();
+      if (!mounted) return;
+      setState(() => _boardUnread = (r['unread'] as num?)?.toInt() ?? 0);
+    } catch (_) {}
   }
 
   bool _pendingChecked = false;
@@ -341,6 +357,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 tooltip: '명단 선택 (일괄작업)',
                 icon: const Icon(Icons.checklist),
                 onPressed: () => setState(() => _selectMode = true),
+              ),
+              // 게시판 — 새 글 알림 배지 표시(관리자 이상)
+              IconButton(
+                tooltip: '행사·수품판매 게시판',
+                icon: Badge(
+                  isLabelVisible: _boardUnread > 0,
+                  label: Text('$_boardUnread'),
+                  child: const Icon(Icons.forum_outlined),
+                ),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BoardScreen()),
+                  );
+                  _loadBoardUnread();
+                },
               ),
             ],
             if (state.isSelfAccess)
