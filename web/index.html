@@ -175,18 +175,31 @@
         return true;
       }
       function clearCachesAndReload() {
-        try {
-          if ('caches' in window) {
-            caches.keys()
-              .then(function (ks) {
-                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
-              })
-              .catch(function () {})
-              .then(function () { location.reload(); });
-          } else {
-            location.reload();
-          }
-        } catch (e) { location.reload(); }
+        // 1) 폰트/앱코드를 HTTP 캐시까지 무시하고 강제로 다시 받는다(cache:'reload').
+        //    → 옛 아이콘 폰트가 브라우저 캐시에 남아 픽토그램이 누락되는 문제 해결.
+        var warm = [];
+        try { warm.push(fetch('assets/fonts/MaterialIcons-Regular.otf', { cache: 'reload' })); } catch (e) {}
+        try { warm.push(fetch('flutter_bootstrap.js', { cache: 'reload' })); } catch (e) {}
+        try { warm.push(fetch('main.dart.js', { cache: 'reload' })); } catch (e) {}
+        var after = function () {
+          try {
+            if ('caches' in window) {
+              caches.keys()
+                .then(function (ks) {
+                  return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+                })
+                .catch(function () {})
+                .then(function () { location.reload(); });
+            } else {
+              location.reload();
+            }
+          } catch (e) { location.reload(); }
+        };
+        if (warm.length) {
+          Promise.all(warm).catch(function () {}).then(after);
+        } else {
+          after();
+        }
       }
       function versionCheck() {
         // 새 버전 감지: 서버 version.json 과 마지막으로 연 앱 버전을 비교한다.

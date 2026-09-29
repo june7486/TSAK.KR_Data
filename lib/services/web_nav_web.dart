@@ -86,6 +86,13 @@ extension type _Window(JSObject _) implements JSObject {
   external double get innerWidth;
 }
 
+// fetch — 캐시 무시 강제 재다운로드(cache:'reload')용
+@JS('fetch')
+external JSPromise<JSAny> _fetch(String url, JSObject opts);
+
+JSObject _cacheReloadOpts() =>
+    <String, Object?>{'cache': 'reload'}.jsify() as JSObject;
+
 // Blob / URL (인쇄용 문서 생성)
 extension type _Blob._(JSObject _) implements JSObject {
   external factory _Blob(JSArray<JSAny> parts, JSObject options);
@@ -292,6 +299,14 @@ bool openExternalUrl(String url) {
 Future<String> clearAppCache() async {
   int clearedCaches = 0;
   int clearedWorkers = 0;
+
+  // 0) 아이콘 폰트를 HTTP 캐시까지 무시하고 강제 재다운로드.
+  //    → 옛 폰트가 캐시에 남아 픽토그램이 누락되는 문제를 근본 해결.
+  try {
+    await _fetch('assets/fonts/MaterialIcons-Regular.otf',
+            _cacheReloadOpts())
+        .toDart;
+  } catch (_) {}
 
   // 1) Cache Storage 비우기 (서비스워커가 캐싱한 앱 셸/자산)
   try {
