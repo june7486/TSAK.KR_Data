@@ -9,9 +9,11 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/inquiry_sheet.dart';
+import 'access_log_screen.dart';
 import 'admin_screen.dart';
 import 'board_screen.dart';
 import 'bulk_screen.dart';
+import 'event_year_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'merch_admin_screen.dart';
@@ -187,7 +189,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   '최근 주문내역',
                   Icons.receipt_long,
                   AppColors.taegeukBlue,
-                  () => _pushTab(const MerchAdminScreen(), 1),
+                  () => _pushTab(1),
                 ),
                 _tile(
                   '재무 확인',
@@ -199,13 +201,13 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   '수품 재고 확인',
                   Icons.inventory_2,
                   AppColors.scoutGreen,
-                  () => _pushTab(const MerchAdminScreen(), 4),
+                  () => _pushTab(4),
                 ),
                 _tile(
                   '행사 확인',
                   Icons.event_note,
                   AppColors.purple,
-                  () => _pushTab(const MerchAdminScreen(), 7),
+                  () => _push(const EventYearScreen()),
                 ),
                 _tile(
                   '사진관리 / 통계',
@@ -230,7 +232,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   '로그 확인',
                   Icons.history,
                   AppColors.textGray,
-                  () => _pushTab(const MerchAdminScreen(), 10),
+                  () => _push(const AccessLogScreen()),
                 ),
               ]),
               _section('앱 · 문의', [
@@ -457,13 +459,20 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => w));
   }
 
-  void _pushTab(Widget w, int tab) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => w));
+  /// 특정 탭으로 수품 판매관리 화면을 연다.
+  /// (탭 번호는 MerchAdminScreen(initialTab:)로 전달되어 실제로 그 탭이 열린다.)
+  void _pushTab(int tab) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MerchAdminScreen(initialTab: tab),
+      ),
+    );
   }
 
   /// 첫 화면 표시글(홈 공지) 확인·변경 — 수품 판매관리 설정 탭의 공지 편집으로 연결.
   void _editHomeNotice() {
-    _pushTab(const MerchAdminScreen(), 0);
+    _pushTab(0);
     _snack('상품관리 탭 상단의 공지 편집기에서 첫 화면 표시글을 변경할 수 있습니다');
   }
 

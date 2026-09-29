@@ -7985,6 +7985,8 @@ class Handler(BaseHTTPRequestHandler):
             # ---- 접속 로그 삭제 (마스터 전용) ----
             #  mode: 'one'(ts 1건) | 'member'(해당 회원 전체) | 'all'(전체)
             if p == "/api/member/access-log/delete":
+                if not self._require("master"):
+                    return
                 d = json.loads(self._body() or b"{}")
                 mode = str(d.get("mode", "one"))
                 with _ACCESS_LOG_LOCK:

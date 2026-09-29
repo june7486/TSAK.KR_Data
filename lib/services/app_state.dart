@@ -873,6 +873,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 전체 회원 접속·열람 로그 조회 (마스터 전용, 최신 limit건).
+  Future<List<Map<String, dynamic>>> fetchAllAccessLogs(
+      {int limit = 200}) async {
+    if (!repo.isNasMode || !isMaster) return [];
+    try {
+      return await nas.allAccessLogs(limit: limit);
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// 접속 로그 삭제 (마스터 전용).
   Future<bool> deleteMemberAccessLog({
     String mode = 'one',

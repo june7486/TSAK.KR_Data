@@ -1423,6 +1423,21 @@ class NasApi {
         .toList();
   }
 
+  /// 전체 회원 접속·열람 로그 조회 (마스터 전용, 대시보드용).
+  ///  limit: 최대 조회 건수(기본 200).
+  Future<List<Map<String, dynamic>>> allAccessLogs({int limit = 200}) async {
+    final r = await http
+        .get(
+          _uri('/api/access/logs?limit=$limit'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return ((j['logs'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
   /// 프로필 열람 로그 기록 (마스터/관리자/타 회원이 개인 프로필을 열람한 이력).
   Future<void> logProfileView(String number) async {
     try {

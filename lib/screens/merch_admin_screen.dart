@@ -26,7 +26,11 @@ import 'plans_tab.dart';
 /// 수품 판매관리 화면 (관리자·마스터 전용).
 /// 탭: 판매관리 / 누적판매 / 재고 / 공여 / 제작자 / 설정
 class MerchAdminScreen extends StatefulWidget {
-  const MerchAdminScreen({super.key});
+  const MerchAdminScreen({super.key, this.initialTab = 0});
+
+  /// 진입 시 선택할 탭 인덱스(0=상품관리 … 10=설정).
+  /// 마스터 관리창의 타일에서 특정 탭으로 바로 열 때 사용한다.
+  final int initialTab;
 
   @override
   State<MerchAdminScreen> createState() => _MerchAdminScreenState();
@@ -34,7 +38,13 @@ class MerchAdminScreen extends StatefulWidget {
 
 class _MerchAdminScreenState extends State<MerchAdminScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 11, vsync: this);
+  late final TabController _tab = TabController(
+    length: 11,
+    vsync: this,
+    initialIndex: widget.initialTab < 0
+        ? 0
+        : (widget.initialTab > 10 ? 10 : widget.initialTab),
+  );
 
   NasApi get _nas => context.read<NasApi>();
 
