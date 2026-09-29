@@ -78,6 +78,9 @@ class _AuthGateState extends State<AuthGate> {
   String _eventYear = '';
   String _eventTitle = '';
 
+  /// 게시판 글 딥링크 파라미터 (?access=board&id=..)
+  String _boardId = '';
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +109,8 @@ class _AuthGateState extends State<AuthGate> {
     } else if (access == 'event') {
       _eventYear = uri.queryParameters['year'] ?? '';
       _eventTitle = uri.queryParameters['title'] ?? '';
+    } else if (access == 'board') {
+      _boardId = uri.queryParameters['id'] ?? '';
     }
   }
 
@@ -147,6 +152,7 @@ class _AuthGateState extends State<AuthGate> {
       openMemberNo: _prefillNo,
       openEventYear: _eventYear,
       openEventTitle: _eventTitle,
+      openBoardId: _boardId,
     );
   }
 }

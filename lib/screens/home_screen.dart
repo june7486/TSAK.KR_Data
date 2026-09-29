@@ -45,6 +45,7 @@ class HomeScreen extends StatefulWidget {
     this.openMemberNo = '',
     this.openEventYear = '',
     this.openEventTitle = '',
+    this.openBoardId = '',
   });
 
   /// 로그인 직후 자동으로 열 개인정보 편집 인가번호 (QR 딥링크)
@@ -53,6 +54,9 @@ class HomeScreen extends StatefulWidget {
   /// 로그인 직후 자동으로 열 행사 QR 딥링크 (연도/행사명)
   final String openEventYear;
   final String openEventTitle;
+
+  /// 게시판 글 딥링크 — 로그인 후 해당 게시글 화면을 바로 연다.
+  final String openBoardId;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -76,6 +80,8 @@ class _HomeScreenState extends State<HomeScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkMember());
     } else if (widget.openEventTitle.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkEvent());
+    } else if (widget.openBoardId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLinkBoard());
     }
     // 로그인 직후 미승인 일반회원이 있으면 관리자·마스터에게 알림 팝업.
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPendingApprovals());
@@ -195,6 +201,19 @@ class _HomeScreenState extends State<HomeScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
+    );
+    if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// 게시판 글 딥링크 — 로그인 후 해당 게시글 화면을 바로 연다.
+  Future<void> _openDeepLinkBoard() async {
+    if (_deepLinkHandled) return;
+    _deepLinkHandled = true;
+    final id = widget.openBoardId.trim();
+    if (id.isEmpty) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => BoardScreen(openId: id)),
     );
     if (mounted) context.read<AppState>().refresh();
   }

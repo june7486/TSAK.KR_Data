@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
@@ -7,12 +9,16 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 
-/// 행사 + 수품판매 게시판 (#12).
-/// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호, 사진·동영상·첨부.
+/// 게시판 (#12).
+/// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호.
+/// - 모든 게시글에 첨부파일·사진·동영상·링크(URL) 첨부 가능.
 /// - 관리자: 수정/삭제/비노출 지정.
-/// - URL 공유: 로그인한 권한자만 열람 가능(서버가 세션 검사).
+/// - URL 생성: 로그인한 권한자만 열람 가능(서버가 세션 검사).
 class BoardScreen extends StatefulWidget {
-  const BoardScreen({super.key});
+  const BoardScreen({super.key, this.openId = ''});
+
+  /// 열 때 바로 펼칠 게시글 ID (URL 딥링크).
+  final String openId;
 
   @override
   State<BoardScreen> createState() => _BoardScreenState();
@@ -34,6 +40,34 @@ class _BoardScreenState extends State<BoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  /// URL 딥링크(openId)로 열린 경우 해당 글을 상단으로 스크롤·강조.
+  bool _deepLinkScrolled = false;
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _maybeScrollToDeepLink() {
+    if (_deepLinkScrolled) return;
+    _deepLinkScrolled = true;
+    final id = widget.openId.trim();
+    if (id.isEmpty) return;
+    final idx = _posts.indexWhere((p) => '${p['id']}' == id);
+    if (idx < 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final approx = 40.0 + idx * 180.0;
+      _scroll.animateTo(
+        approx.clamp(0.0, _scroll.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   NasApi get _nas => context.read<NasApi>();
 
   Future<void> _load() async {
@@ -51,6 +85,7 @@ class _BoardScreenState extends State<BoardScreen> {
         _isAdmin = r['isAdmin'] == true;
         _loading = false;
       });
+      _maybeScrollToDeepLink();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -72,7 +107,7 @@ class _BoardScreenState extends State<BoardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F7),
       appBar: AppBar(
-        title: const Text('행사 · 수품판매 게시판'),
+        title: const Text('게시판'),
         actions: [
           const AppHomeEmblem(size: 22),
           IconButton(
@@ -95,6 +130,7 @@ class _BoardScreenState extends State<BoardScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
+                    controller: _scroll,
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
                     children: [
                       _categoryBar(),
@@ -167,6 +203,7 @@ class _BoardScreenState extends State<BoardScreen> {
         .map((e) => '$e')
         .toList();
     final media = ((p['media'] as List?) ?? []).map((e) => '$e').toList();
+    final links = ((p['links'] as List?) ?? []).map((e) => '$e').toList();
     final device = '${p['device'] ?? ''}';
     final ip = '${p['ip'] ?? ''}';
     final mine = state.who.isNotEmpty && author == state.who;
@@ -316,6 +353,16 @@ class _BoardScreenState extends State<BoardScreen> {
                 runSpacing: 6,
                 children: [
                   for (final a in attachments) _attachmentChip(a),
+                ],
+              ),
+            ],
+            if (links.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final u in links) _linkChip(u),
                 ],
               ),
             ],
@@ -532,6 +579,54 @@ class _BoardScreenState extends State<BoardScreen> {
     );
   }
 
+  Widget _linkChip(String url) {
+    return InkWell(
+      onTap: () => _openLink(url),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        constraints: const BoxConstraints(maxWidth: 260),
+        decoration: BoxDecoration(
+          color: AppColors.taegeukBlue.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(6),
+          border:
+              Border.all(color: AppColors.taegeukBlue.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.link, size: 14, color: AppColors.taegeukBlue),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(url,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.taegeukBlue)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 링크(URL) 열기 — 외부 브라우저/새 창.
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+      _snack('올바른 링크가 아닙니다');
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(uri);
+      } catch (_) {
+        _snack('링크를 열 수 없습니다');
+      }
+    }
+  }
+
   // ============================ 액션 ============================
 
   Future<void> _editPost({Map<String, dynamic>? existing}) async {
@@ -547,6 +642,16 @@ class _BoardScreenState extends State<BoardScreen> {
         TextEditingController(text: '${existing?['pwdHint'] ?? ''}');
     String category = '${existing?['category'] ?? '공지'}';
     bool hidden = existing?['hidden'] == true;
+    // 글 작성 시 함께 올리는 첨부(사진/동영상/파일) + 링크(URL)
+    final writeMedia = ((existing?['media'] as List?) ?? [])
+        .map((e) => '$e')
+        .toList();
+    final writeAttacks = ((existing?['attachments'] as List?) ?? [])
+        .map((e) => '$e')
+        .toList();
+    final writeLinks =
+        ((existing?['links'] as List?) ?? []).map((e) => '$e').toList();
+    final linkCtrl = TextEditingController();
 
     final res = await showDialog<String>(
       context: context,
@@ -588,8 +693,8 @@ class _BoardScreenState extends State<BoardScreen> {
                         width: 110,
                         child: TextField(
                           controller: numberCtrl,
-                          decoration:
-                              const InputDecoration(labelText: '인가번호'),
+                          decoration: const InputDecoration(
+                              labelText: '인가번호', hintText: '(선택)'),
                         ),
                       ),
                     ],
@@ -609,6 +714,133 @@ class _BoardScreenState extends State<BoardScreen> {
                       alignLabelWithHint: true,
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  // ── 첨부(사진·동영상·파일) ──
+                  Row(
+                    children: [
+                      const Icon(Icons.attach_file,
+                          size: 16, color: AppColors.purple),
+                      const SizedBox(width: 6),
+                      const Text('첨부 (사진 · 동영상 · 파일)',
+                          style: TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w800)),
+                      const Spacer(),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact),
+                        onPressed: () async {
+                          final picked = await pickDataFiles(
+                            allowMultiple: true,
+                            dialogTitle: '게시글 첨부 (사진/동영상/파일)',
+                          );
+                          if (picked.isEmpty) return;
+                          for (final f in picked) {
+                            await _nas.uploadFile('board', f.name, f.bytes);
+                            final isMedia = RegExp(
+                                    r'\.(jpg|jpeg|png|gif|webp|mp4|mov|webm|m4v)$',
+                                    caseSensitive: false)
+                                .hasMatch(f.name);
+                            if (isMedia) {
+                              writeMedia.add(f.name);
+                            } else {
+                              writeAttacks.add(f.name);
+                            }
+                          }
+                          setD(() {});
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('파일 선택'),
+                      ),
+                    ],
+                  ),
+                  if (writeMedia.isEmpty && writeAttacks.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 2, bottom: 2),
+                      child: Text('첨부된 파일이 없습니다',
+                          style:
+                              TextStyle(fontSize: 11, color: AppColors.textGray)),
+                    )
+                  else
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final n in [...writeMedia, ...writeAttacks])
+                          InputChip(
+                            label: Text(n,
+                                style: const TextStyle(fontSize: 11)),
+                            avatar: Icon(
+                                writeMedia.contains(n)
+                                    ? Icons.image_outlined
+                                    : Icons.insert_drive_file_outlined,
+                                size: 15,
+                                color: AppColors.scoutGreen),
+                            onDeleted: () => setD(() {
+                              writeMedia.remove(n);
+                              writeAttacks.remove(n);
+                            }),
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 10),
+                  // ── 링크(URL) ──
+                  Row(
+                    children: [
+                      const Icon(Icons.link, size: 16, color: AppColors.purple),
+                      const SizedBox(width: 6),
+                      const Text('링크 (URL)',
+                          style: TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: linkCtrl,
+                          keyboardType: TextInputType.url,
+                          decoration: const InputDecoration(
+                              labelText: '링크 주소',
+                              hintText: 'https://...',
+                              isDense: true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact),
+                        onPressed: () {
+                          final u = linkCtrl.text.trim();
+                          if (u.isEmpty) return;
+                          writeLinks.add(u);
+                          linkCtrl.clear();
+                          setD(() {});
+                        },
+                        child: const Text('추가'),
+                      ),
+                    ],
+                  ),
+                  if (writeLinks.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final u in writeLinks)
+                            InputChip(
+                              label: Text(u,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11)),
+                              avatar: const Icon(Icons.public,
+                                  size: 15, color: AppColors.taegeukBlue),
+                              onDeleted: () =>
+                                  setD(() => writeLinks.remove(u)),
+                            ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -678,6 +910,9 @@ class _BoardScreenState extends State<BoardScreen> {
         password: pwCtrl.text,
         pwdHint: hintCtrl.text.trim(),
         device: _deviceLabel(),
+        attachments: writeAttacks,
+        media: writeMedia,
+        links: writeLinks,
       );
       _snack(existing == null ? '등록했습니다' : '수정했습니다');
       await _load();
@@ -827,6 +1062,7 @@ class _BoardScreenState extends State<BoardScreen> {
     final media = ((post['media'] as List?) ?? []).map((e) => '$e').toList();
     final attachments =
         ((post['attachments'] as List?) ?? []).map((e) => '$e').toList();
+    final links = ((post['links'] as List?) ?? []).map((e) => '$e').toList();
     try {
       for (final f in picked) {
         await _nas.uploadFile('board', f.name, f.bytes);
@@ -849,6 +1085,7 @@ class _BoardScreenState extends State<BoardScreen> {
         hidden: post['hidden'] == true,
         attachments: attachments,
         media: media,
+        links: links,
       );
       _snack('첨부했습니다');
       await _load();
@@ -915,16 +1152,18 @@ class _BoardScreenState extends State<BoardScreen> {
 
   Future<void> _shareLink(String id) async {
     final url = _nas.fileDownloadUrl('board', '');
-    final link = '${url.split('/api')[0]}/#/board?id=$id';
+    // URL 생성: 로그인 후 해당 게시글로 바로 진입(?access=board&id=..).
+    final link = '${url.split('/api')[0]}/?access=board&id=$id';
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('링크 공유'),
+        title: const Text('링크 공유 (URL 생성)'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('아래 링크를 공유하세요. 로그인한 권한자만 열람할 수 있습니다.',
+            const Text(
+                '아래 URL을 공유하세요. 외부에서 접속해도 로그인한 권한자만 열람할 수 있습니다.',
                 style: TextStyle(fontSize: 12, color: AppColors.textGray)),
             const SizedBox(height: 10),
             SelectableText(link,
@@ -933,6 +1172,14 @@ class _BoardScreenState extends State<BoardScreen> {
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: link));
+              Navigator.pop(ctx);
+              _snack('URL을 복사했습니다');
+            },
+            child: const Text('URL 복사'),
+          ),
+          FilledButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
         ],
       ),

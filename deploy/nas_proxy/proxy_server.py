@@ -7201,6 +7201,7 @@ class Handler(BaseHTTPRequestHandler):
                     "comments": existing.get("comments", []) if existing else [],
                     "attachments": d.get("attachments", (existing or {}).get("attachments", [])),
                     "media": d.get("media", (existing or {}).get("media", [])),
+                    "links": d.get("links", (existing or {}).get("links", [])),
                     "hidden": bool(d.get("hidden", (existing or {}).get("hidden", False))),
                     "device": str(d.get("device", "") or "")[:120],
                     "ip": self.client_address[0] if self.client_address else "",

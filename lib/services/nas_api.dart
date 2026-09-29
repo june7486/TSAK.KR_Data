@@ -1465,6 +1465,7 @@ class NasApi {
     String device = '',
     List<String> attachments = const [],
     List<String> media = const [],
+    List<String> links = const [],
   }) async {
     final r = await http
         .post(
@@ -1483,6 +1484,7 @@ class NasApi {
             'device': device,
             'attachments': attachments,
             'media': media,
+            'links': links,
           }),
         )
         .timeout(const Duration(seconds: 60));
