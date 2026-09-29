@@ -266,28 +266,41 @@ class _BoardScreenState extends State<BoardScreen> {
                     ],
                   ),
                 ),
-                PopupMenuButton<String>(
-                  onSelected: (v) {
-                    if (v == 'edit') {
-                      _editPost(existing: p);
-                    } else if (v == 'delete') {
-                      _deletePost(p);
-                    } else if (v == 'share') {
-                      _shareLink(id);
-                    } else if (v == 'hide') {
-                      _toggleHide(p, !hidden);
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    if (_isAdmin || mine)
-                      const PopupMenuItem(value: 'edit', child: Text('수정')),
-                    if (_isAdmin || mine)
-                      const PopupMenuItem(value: 'delete', child: Text('삭제')),
-                    const PopupMenuItem(value: 'share', child: Text('링크 공유')),
-                    if (_isAdmin)
-                      PopupMenuItem(
-                          value: 'hide',
-                          child: Text(hidden ? '비노출 해제' : '비노출')),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // URL 생성 — 이 게시글의 공유 URL 생성/복사 (로그인 필요 안내)
+                    IconButton(
+                      tooltip: 'URL 생성 (이 글 공유 링크)',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.link,
+                          size: 20, color: AppColors.purple),
+                      onPressed: () => _shareLink(id),
+                    ),
+                    PopupMenuButton<String>(
+                      onSelected: (v) {
+                        if (v == 'edit') {
+                          _editPost(existing: p);
+                        } else if (v == 'delete') {
+                          _deletePost(p);
+                        } else if (v == 'share') {
+                          _shareLink(id);
+                        } else if (v == 'hide') {
+                          _toggleHide(p, !hidden);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        if (_isAdmin || mine)
+                          const PopupMenuItem(value: 'edit', child: Text('수정')),
+                        if (_isAdmin || mine)
+                          const PopupMenuItem(value: 'delete', child: Text('삭제')),
+                        const PopupMenuItem(value: 'share', child: Text('URL 생성')),
+                        if (_isAdmin)
+                          PopupMenuItem(
+                              value: 'hide',
+                              child: Text(hidden ? '비노출 해제' : '비노출')),
+                      ],
+                    ),
                   ],
                 ),
               ],
@@ -1157,17 +1170,28 @@ class _BoardScreenState extends State<BoardScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('링크 공유 (URL 생성)'),
+        icon: const Icon(Icons.link, color: AppColors.purple, size: 34),
+        title: const Text('이 게시글 URL 생성'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-                '아래 URL을 공유하세요. 외부에서 접속해도 로그인한 권한자만 열람할 수 있습니다.',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+                '아래 URL을 복사해 다른 사람에게 보낼 수 있습니다. 외부에서 접속해도 로그인한 권한자만 열람할 수 있습니다.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray, height: 1.4)),
             const SizedBox(height: 10),
-            SelectableText(link,
-                style: const TextStyle(fontSize: 12, color: AppColors.purple)),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.purple.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: AppColors.purple.withValues(alpha: 0.25)),
+              ),
+              child: SelectableText(link,
+                  style: const TextStyle(fontSize: 12, color: AppColors.purple)),
+            ),
           ],
         ),
         actions: [
@@ -1175,7 +1199,7 @@ class _BoardScreenState extends State<BoardScreen> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: link));
               Navigator.pop(ctx);
-              _snack('URL을 복사했습니다');
+              _snack('이 게시글 URL을 복사했습니다');
             },
             child: const Text('URL 복사'),
           ),

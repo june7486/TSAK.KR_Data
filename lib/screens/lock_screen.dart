@@ -75,12 +75,13 @@ class _LockScreenState extends State<LockScreen> {
     } catch (_) {}
     if (!allowed) return;
 
+    // 새 버전이 있으면 무조건 캐시 삭제 후 최신 버전을 다시 다운로드한다.
     setState(() => _updating = true);
     try {
       await clearAppCache();
     } catch (_) {}
     if (!mounted) return;
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     reloadPage(); // 최신 버전을 다시 다운로드
   }
 
@@ -272,7 +273,7 @@ class _LockScreenState extends State<LockScreen> {
         bg = AppColors.scoutGreen;
         break;
       case VersionStatus.serverNewer:
-        msg = '새 버전이 있습니다. [캐시 삭제]를 눌러 주세요';
+        msg = '새로운 버전이 있어 자동으로 다운로드합니다 (캐시 삭제)';
         bg = AppColors.taegeukRed;
         break;
       case VersionStatus.serverOlder:
@@ -289,6 +290,12 @@ class _LockScreenState extends State<LockScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
+    // 요구: 버전체크 결과 새 버전이 있으면 무조건 캐시 삭제(+최신 재다운로드).
+    if (st == VersionStatus.serverNewer) {
+      setState(() => _updating = true);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await _clearCache();
+    }
   }
 
   void _switchTier(String t) {
@@ -356,7 +363,7 @@ class _LockScreenState extends State<LockScreen> {
                           ),
                           SizedBox(width: 8),
                           Text(
-                            '새 버전으로 업데이트 중…',
+                            '새로운 버전이 있어 다운로드 중입니다',
                             style: TextStyle(color: Colors.white, fontSize: 12),
                           ),
                         ],

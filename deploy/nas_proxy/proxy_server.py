@@ -6459,7 +6459,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("ETag", etag)
                     _reval = name in ("index.html", "flutter_bootstrap.js",
                                       "main.dart.js", "flutter_service_worker.js",
-                                      "manifest.json")
+                                      "manifest.json") or \
+                        _os.path.splitext(name)[1].lower() in (".ttf", ".woff", ".woff2", ".otf")
                     self.send_header("Cache-Control",
                                      "no-cache" if _reval else "public, max-age=604800")
                     self._cors_static()
@@ -6475,8 +6476,12 @@ class Handler(BaseHTTPRequestHandler):
                 if name in ("index.html", "flutter_bootstrap.js", "main.dart.js",
                             "flutter_service_worker.js", "manifest.json"):
                     cache = "no-cache"                 # 항상 재검증(304) → 업데이트 즉시 반영
-                elif "/canvaskit/" in fp or \
-                        ext in (".wasm", ".ttf", ".woff", ".woff2", ".otf") or \
+                elif ext in (".ttf", ".woff", ".woff2", ".otf"):
+                    # ⚠️ 폰트(특히 MaterialIcons)는 앱 코드 변경에 따라 서브셋 내용이 바뀐다.
+                    #  immutable(1년) 로 캐시하면 사용자가 새 아이콘을 영영 못 본다(PC 누락 원인).
+                    #  항상 재검증(ETag 304) → 내용이 바뀌면 즉시 새 폰트로 교체된다.
+                    cache = "no-cache"
+                elif "/canvaskit/" in fp or ext == ".wasm" or \
                         name.startswith("main.dart.js."):
                     cache = "public, max-age=31536000, immutable"
                 elif "/assets/" in fp:
