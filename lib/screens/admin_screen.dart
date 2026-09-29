@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
@@ -102,12 +103,13 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title('관리자 지정', Icons.admin_panel_settings_outlined,
-                AppColors.purple),
+            _title('관리자 계정 (생성 · 삭제)', Icons.vpn_key,
+                AppColors.taegeukRed),
             const SizedBox(height: 6),
             const Text(
-              '인가번호를 입력해 해당 ID에 관리자 권한을 부여합니다. '
-              '부여된 ID는 개인 로그인으로 접속해도 수품판매관리·통계 등 관리자 기능을 사용할 수 있습니다.',
+              '관리자 계정은 「아이디(로그인) = 인가번호」 + 「암호 = 개인 비밀번호」로 동작합니다. '
+              '인가번호를 지정하면 그 ID가 관리자로 승격되고, 개인 로그인으로 접속해도 '
+              '수품판매관리·통계 등 관리자 기능을 사용할 수 있습니다.',
               style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
             ),
             const SizedBox(height: 10),
@@ -118,7 +120,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     controller: _grantCtrl,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: '인가번호',
+                      labelText: '아이디 (인가번호)',
                       hintText: '예: 1234',
                       isDense: true,
                       border: OutlineInputBorder(),
@@ -133,6 +135,31 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    onPressed:
+                        _busy ? null : () => _createAdminAccount(state),
+                    icon: const Icon(Icons.badge_outlined, size: 16),
+                    label: const Text('계정 생성 (권한+암호)'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    onPressed: _busy ? null : () => _loadAdmins(),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('목록 새로고침'),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -141,15 +168,13 @@ class _AdminScreenState extends State<AdminScreen> {
                 const SizedBox(width: 6),
                 const Text('현재 지정된 관리자',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                const Spacer(),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _loadAdmins,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  tooltip: '새로고침',
-                ),
+                const SizedBox(width: 6),
+                Text('(${_adminNumbers.length})',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textGray)),
               ],
             ),
+            const SizedBox(height: 4),
             if (_adminsLoading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
@@ -162,26 +187,351 @@ class _AdminScreenState extends State<AdminScreen> {
                     style: TextStyle(fontSize: 12.5, color: AppColors.textGray)),
               )
             else
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
+              Column(
                 children: [
                   for (final no in _adminNumbers)
-                    Chip(
-                      label: Text('인가 $no'),
-                      deleteIcon: const Icon(Icons.close, size: 15),
-                      onDeleted: _busy ? null : () => _revokeAdmin(state, no),
-                      backgroundColor:
-                          AppColors.purple.withValues(alpha: 0.08),
-                      labelStyle: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 12),
-                    ),
+                    _adminAccountTile(state, no),
                 ],
               ),
           ],
         ),
       ),
     );
+  }
+
+  /// 관리자 계정 1행 — 아이디/권한/암호 조작 진입.
+  Widget _adminAccountTile(AppState state, String no) {
+    final name = _memberName(state, no);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.admin_panel_settings,
+              size: 18, color: AppColors.purple),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('아이디 #$no',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 13)),
+                Text(
+                  name.isEmpty ? '이름 미확인' : name,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textGray),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '아이디 복사',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: no));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('관리자 아이디(#$no)를 복사했습니다')),
+              );
+            },
+            icon: const Icon(Icons.copy, size: 17),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '계정 관리 (암호 생성·삭제)',
+            onPressed: _busy ? null : () => _adminAccountSheet(state, no),
+            icon: const Icon(Icons.tune, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _memberName(AppState state, String no) {
+    try {
+      final m = state.repo.byNumber(no);
+      return m?.name ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// 계정 생성 = 관리자 권한 부여 + 개인 비밀번호 지정을 한 번에.
+  Future<void> _createAdminAccount(AppState state) async {
+    final noCtrl = TextEditingController(text: _grantCtrl.text.trim());
+    final pwCtrl = TextEditingController();
+    final isPM = state.isPermanentMaster;
+    final masterCtrl = TextEditingController();
+    if (isPM) masterCtrl.text = state.masterToken();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('관리자 계정 생성'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('아이디(인가번호)와 암호(개인 비밀번호)를 지정하면 '
+                '해당 계정이 관리자로 생성됩니다.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: noCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: '아이디 (인가번호)', isDense: true),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: pwCtrl,
+              decoration: InputDecoration(
+                  labelText: '암호 (개인 비밀번호)',
+                  hintText: '비우면 기본 {인가번호}!@@',
+                  isDense: true),
+            ),
+            if (!isPM) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: masterCtrl,
+                obscureText: true,
+                decoration:
+                    const InputDecoration(labelText: '마스터 비밀번호 확인'),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('생성')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final no = noCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (no.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('인가번호를 입력하세요')));
+      return;
+    }
+    setState(() => _busy = true);
+    // 1) 권한 부여
+    final r = await state.nas.grantAdmin(masterCtrl.text.trim(), no);
+    // 2) 암호 지정/초기화
+    final val = pwCtrl.text.trim();
+    final err = await state.setPersonalPassword(
+      masterCtrl.text.trim(),
+      no,
+      value: val,
+      reset: val.isEmpty,
+    );
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    final granted = r['ok'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(granted
+            ? '관리자 계정(#$no) 생성 완료 · 암호 '
+                '${val.isEmpty ? '기본값($no!@@)' : '지정됨'}'
+                '${err != null ? ' (암호: $err)' : ''}'
+            : '실패: ${r['error'] ?? '권한 부여 확인 불가'}'),
+      ),
+    );
+    if (granted) {
+      _grantCtrl.clear();
+      await state.loadAdmin();
+      _loadAdmins();
+    }
+  }
+
+  /// 계정별 관리 시트 — 아이디/암호 생성·초기화·삭제.
+  Future<void> _adminAccountSheet(AppState state, String no) async {
+    final name = _memberName(state, no);
+    final pws = (state.adminState['personalPasswords'] as Map?) ?? {};
+    final hasCustom = pws.containsKey(no);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.vpn_key, color: AppColors.taegeukRed),
+                  const SizedBox(width: 8),
+                  Text('관리자 계정 관리',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _kvLine('아이디 (로그인)', '#$no'),
+              _kvLine('이름', name.isEmpty ? '미확인' : name),
+              _kvLine('암호 상태',
+                  hasCustom ? '지정됨 (개별 설정)' : '기본값 ($no!@@)'),
+              const SizedBox(height: 6),
+              Text(
+                '개인 로그인 화면에서 아이디 #$no · 위 암호로 접속하면 관리자 기능이 열립니다.',
+                style: const TextStyle(
+                    fontSize: 11.5, color: AppColors.textGray),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: no));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('아이디(#$no)를 복사했습니다')),
+                    );
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('아이디 복사'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _adminResetPassword(state, no);
+                      },
+                      icon: const Icon(Icons.restart_alt, size: 18),
+                      label: const Text('암호 초기화'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.purple),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _adminSetPassword(state, no);
+                      },
+                      icon: const Icon(Icons.edit, size: 18),
+                      label: const Text('암호 지정'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.taegeukRed),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _revokeAdmin(state, no);
+                  },
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('계정 삭제 (권한 회수)'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _kvLine(String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 96,
+              child: Text(k,
+                  style: const TextStyle(
+                      fontSize: 12.5, color: AppColors.textGray)),
+            ),
+            Expanded(
+              child: Text(v,
+                  style: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _adminResetPassword(AppState state, String no) async {
+    final master = await _askMaster('관리자 #$no 암호 초기화');
+    if (master == null) return;
+    setState(() => _busy = true);
+    final err = await state.setPersonalPassword(master, no, reset: true);
+    await state.loadAdmin();
+    if (mounted) setState(() => _busy = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(err == null
+                ? '#$no 암호를 기본값($no!@@)으로 초기화했습니다'
+                : '실패: $err')),
+      );
+    }
+  }
+
+  Future<void> _adminSetPassword(AppState state, String no) async {
+    final pwCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('관리자 #$no 암호 지정'),
+        content: TextField(
+          controller: pwCtrl,
+          autofocus: true,
+          decoration:
+              const InputDecoration(labelText: '새 암호 (개인 비밀번호)'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('지정')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final val = pwCtrl.text.trim();
+    if (val.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('암호를 입력하세요')));
+      return;
+    }
+    final master = await _askMaster('관리자 #$no 암호 지정');
+    if (master == null) return;
+    setState(() => _busy = true);
+    final err = await state.setPersonalPassword(master, no, value: val);
+    await state.loadAdmin();
+    if (mounted) setState(() => _busy = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(err == null
+                ? '#$no 관리자 암호를 지정했습니다'
+                : '실패: $err')),
+      );
+    }
   }
 
   Future<void> _grantAdmin(AppState state) async {
