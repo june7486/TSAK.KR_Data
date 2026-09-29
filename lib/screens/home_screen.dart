@@ -198,12 +198,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const SizedBox(width: 4),
+        // 엠블럼+텍스트를 좌측 열에 배치하고, 아래 검색창(좌우 16px)과 좌측 라인을 맞춘다.
+        //  leading 폭을 0으로 두고 title 좌측 여백 12 + 엠블럼 내부 패딩 4 = 16px 정렬.
+        leadingWidth: 0,
         titleSpacing: 0,
         title: _selectMode
-            ? Text('${_selected.length}명 선택됨')
+            ? Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text('${_selected.length}명 선택됨'),
+              )
             : Row(
                 children: [
+                  // 좌측 여백 — 아래 검색창(16px)과 좌측 라인 정렬.
+                  const SizedBox(width: 12),
                   // 엠블럼 — 누르면 초기 화면(필터 초기화 + 맨 위로)
                   AppHomeEmblem(
                     size: 30,
