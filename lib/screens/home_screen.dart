@@ -504,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: _MenuItem(
                       icon: Icons.workspace_premium,
                       label: '마스터 관리창 — 백업/회원/권한/로그/재무',
-                      color: AppColors.lifetimeGold,
+                      color: AppColors.taegeukRed,
                       role: '마스터',
                     ),
                   ),
@@ -537,14 +537,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ],
-                const PopupMenuItem(
-                  value: 'settings',
-                  child: _MenuItem(
-                    icon: Icons.settings,
-                    label: '설정 · 백업/복원',
-                    color: AppColors.purple,
+                if (state.isMaster)
+                  const PopupMenuItem(
+                    value: 'settings',
+                    child: _MenuItem(
+                      icon: Icons.settings,
+                      label: '설정 · 백업/복원',
+                      color: AppColors.taegeukRed,
+                      role: '마스터',
+                    ),
                   ),
-                ),
                 if (!state.isSelfAccess) ...[
                   const PopupMenuItem(
                     value: 'refresh',
@@ -580,7 +582,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: _MenuItem(
                     icon: Icons.favorite,
                     label: '개발자 후원',
-                    color: AppColors.tigerGold,
+                    color: AppColors.lifetimeGold,
                   ),
                 ),
                 // 문의 (모든 접근 등급)
