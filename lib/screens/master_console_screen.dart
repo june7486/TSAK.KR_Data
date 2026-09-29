@@ -16,6 +16,7 @@ import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'merch_admin_screen.dart';
 import 'member_request_screen.dart';
+import 'member_field_visibility_screen.dart';
 import 'regular_members_screen.dart';
 import 'role_permissions_screen.dart';
 import 'settings_screen.dart';
@@ -105,90 +106,192 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
               _statusCard(state, paused),
               const SizedBox(height: 12),
               _section('서버 · 데이터', [
-                _tile('백업 만들기', Icons.backup, AppColors.scoutGreen,
-                    () => _run(() async {
-                          await _nas.createBackup();
-                          await _load();
-                        }, '백업')),
-                _tile('복원 (최근 백업)', Icons.restore, AppColors.taegeukBlue,
-                    _restorePicker),
                 _tile(
+                  '백업 만들기',
+                  Icons.backup,
+                  AppColors.scoutGreen,
+                  () => _run(() async {
+                    await _nas.createBackup();
+                    await _load();
+                  }, '백업'),
+                ),
+                _tile(
+                  '복원 (최근 백업)',
+                  Icons.restore,
+                  AppColors.taegeukBlue,
+                  _restorePicker,
+                ),
+                _tile(
+                  paused ? '서버 개시' : '서버 중지',
+                  paused ? Icons.play_circle : Icons.pause_circle,
+                  paused ? AppColors.scoutGreen : AppColors.taegeukRed,
+                  () => _run(
+                    () => state.setServerPaused('', !paused),
                     paused ? '서버 개시' : '서버 중지',
-                    paused ? Icons.play_circle : Icons.pause_circle,
-                    paused ? AppColors.scoutGreen : AppColors.taegeukRed,
-                    () => _run(
-                        () => state.setServerPaused('', !paused),
-                        paused ? '서버 개시' : '서버 중지')),
-                _tile('백업/복원 상세', Icons.settings_backup_restore,
-                    AppColors.purple, () => _push(const SettingsScreen())),
+                  ),
+                ),
+                _tile(
+                  '백업/복원 상세',
+                  Icons.settings_backup_restore,
+                  AppColors.purple,
+                  () => _push(const SettingsScreen()),
+                ),
               ]),
               _section('회원 · 권한', [
-                _tile('메뉴별 접근권한 관리', Icons.tune, AppColors.purple,
-                    () => _push(const RolePermissionsScreen())),
-                _tile('관리자 권한 선정 · 관리', Icons.verified_user,
-                    AppColors.taegeukBlue, () => _push(const AdminScreen())),
-                _tile('회원관리 (인가자)', Icons.people_alt,
-                    AppColors.purple, () => _push(const RegularMembersScreen())),
-                _tile('승인관리 (비인가·행사·연회비·평생 통합)',
-                    Icons.how_to_reg, AppColors.tigerGold,
-                    () => _push(const MemberRequestScreen())),
-                _tile('일괄작업 (단체문자)', Icons.campaign,
-                    AppColors.taegeukBlue, () => _push(const BulkScreen())),
+                _tile(
+                  '메뉴별 접근권한 관리',
+                  Icons.tune,
+                  AppColors.purple,
+                  () => _push(const RolePermissionsScreen()),
+                ),
+                _tile(
+                  '회원정보 항목 노출 설정',
+                  Icons.visibility_outlined,
+                  AppColors.scoutGreen,
+                  () => _push(const MemberFieldVisibilityScreen()),
+                ),
+                _tile(
+                  '관리자 권한 선정 · 관리',
+                  Icons.verified_user,
+                  AppColors.taegeukBlue,
+                  () => _push(const AdminScreen()),
+                ),
+                _tile(
+                  '회원관리 (인가자)',
+                  Icons.people_alt,
+                  AppColors.purple,
+                  () => _push(const RegularMembersScreen()),
+                ),
+                _tile(
+                  '승인관리 (비인가·행사·연회비·평생 통합)',
+                  Icons.how_to_reg,
+                  AppColors.tigerGold,
+                  () => _push(const MemberRequestScreen()),
+                ),
+                _tile(
+                  '일괄작업 (단체문자)',
+                  Icons.campaign,
+                  AppColors.taegeukBlue,
+                  () => _push(const BulkScreen()),
+                ),
               ]),
               _section('조회 · 확인', [
-                _tile('최근 올라온 게시글', Icons.forum_outlined,
-                    AppColors.purple, () => _push(const BoardScreen()),
-                    badge: _unread > 0 ? '$_unread' : null),
-                _tile('최근 주문내역', Icons.receipt_long, AppColors.taegeukBlue,
-                    () => _pushTab(const MerchAdminScreen(), 1)),
-                _tile('재무 확인', Icons.account_balance_wallet,
-                    AppColors.tigerGold, () => _push(const FinanceScreen())),
-                _tile('수품 재고 확인', Icons.inventory_2, AppColors.scoutGreen,
-                    () => _pushTab(const MerchAdminScreen(), 4)),
-                _tile('행사 확인', Icons.event_note, AppColors.purple,
-                    () => _pushTab(const MerchAdminScreen(), 7)),
-                _tile('사진관리 / 통계', Icons.insights,
-                    AppColors.taegeukBlue, () => _push(const StatsScreen())),
+                _tile(
+                  '최근 올라온 게시글',
+                  Icons.forum_outlined,
+                  AppColors.purple,
+                  () => _push(const BoardScreen()),
+                  badge: _unread > 0 ? '$_unread' : null,
+                ),
+                _tile(
+                  '최근 주문내역',
+                  Icons.receipt_long,
+                  AppColors.taegeukBlue,
+                  () => _pushTab(const MerchAdminScreen(), 1),
+                ),
+                _tile(
+                  '재무 확인',
+                  Icons.account_balance_wallet,
+                  AppColors.tigerGold,
+                  () => _push(const FinanceScreen()),
+                ),
+                _tile(
+                  '수품 재고 확인',
+                  Icons.inventory_2,
+                  AppColors.scoutGreen,
+                  () => _pushTab(const MerchAdminScreen(), 4),
+                ),
+                _tile(
+                  '행사 확인',
+                  Icons.event_note,
+                  AppColors.purple,
+                  () => _pushTab(const MerchAdminScreen(), 7),
+                ),
+                _tile(
+                  '사진관리 / 통계',
+                  Icons.insights,
+                  AppColors.taegeukBlue,
+                  () => _push(const StatsScreen()),
+                ),
               ]),
               _section('출력 · 로그', [
-                _tile('출력 (명단·PDF·엑셀)', Icons.print, AppColors.purple,
-                    () => _push(ExportScreen(
-                        members: context.read<AppState>().members,
-                        title: '전체 명단 출력'))),
-                _tile('로그 확인', Icons.history, AppColors.textGray,
-                    () => _pushTab(const MerchAdminScreen(), 10)),
+                _tile(
+                  '출력 (명단·PDF·엑셀)',
+                  Icons.print,
+                  AppColors.purple,
+                  () => _push(
+                    ExportScreen(
+                      members: context.read<AppState>().members,
+                      title: '전체 명단 출력',
+                    ),
+                  ),
+                ),
+                _tile(
+                  '로그 확인',
+                  Icons.history,
+                  AppColors.textGray,
+                  () => _pushTab(const MerchAdminScreen(), 10),
+                ),
               ]),
               _section('앱 · 문의', [
-                _tile('문의글 확인 · 답변', Icons.help_outline,
-                    AppColors.taegeukBlue, () => showInquirySheet(context)),
-                _tile('첫 화면 표시글 확인 · 변경', Icons.push_pin_outlined,
-                    AppColors.tigerGold, () => _editHomeNotice()),
-                _tile('버전 확인', Icons.info_outline, AppColors.textGray,
-                    () => _showVersion()),
-                _tile('관리자 계정 관리', Icons.vpn_key, AppColors.taegeukRed,
-                    () => _push(const AdminScreen())),
+                _tile(
+                  '문의글 확인 · 답변',
+                  Icons.help_outline,
+                  AppColors.taegeukBlue,
+                  () => showInquirySheet(context),
+                ),
+                _tile(
+                  '첫 화면 표시글 확인 · 변경',
+                  Icons.push_pin_outlined,
+                  AppColors.tigerGold,
+                  () => _editHomeNotice(),
+                ),
+                _tile(
+                  '버전 확인',
+                  Icons.info_outline,
+                  AppColors.textGray,
+                  () => _showVersion(),
+                ),
+                _tile(
+                  '관리자 계정 관리',
+                  Icons.vpn_key,
+                  AppColors.taegeukRed,
+                  () => _push(const AdminScreen()),
+                ),
               ]),
               _section('알림', [
                 if (_notifies.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('최근 알림이 없습니다',
-                        style: TextStyle(color: AppColors.textGray)),
+                    child: Text(
+                      '최근 알림이 없습니다',
+                      style: TextStyle(color: AppColors.textGray),
+                    ),
                   )
                 else
                   for (final n in _notifies.take(8))
                     ListTile(
                       dense: true,
-                      leading: const Icon(Icons.notifications_active,
-                          color: AppColors.tigerGold, size: 20),
-                      title: Text('${n['title'] ?? ''}',
-                          style: const TextStyle(fontSize: 13)),
-                      subtitle: Text('${n['created'] ?? ''}',
-                          style: const TextStyle(fontSize: 11)),
+                      leading: const Icon(
+                        Icons.notifications_active,
+                        color: AppColors.tigerGold,
+                        size: 20,
+                      ),
+                      title: Text(
+                        '${n['title'] ?? ''}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      subtitle: Text(
+                        '${n['created'] ?? ''}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
                       trailing: n['read'] == true
                           ? null
-                          : const Icon(Icons.circle,
-                              size: 8, color: AppColors.taegeukRed),
+                          : const Icon(
+                              Icons.circle,
+                              size: 8,
+                              color: AppColors.taegeukRed,
+                            ),
                     ),
               ]),
             ],
@@ -202,8 +305,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   children: [
                     CircularProgressIndicator(color: Colors.white),
                     SizedBox(height: 12),
-                    Text('처리 중입니다...',
-                        style: TextStyle(color: Colors.white)),
+                    Text('처리 중입니다...', style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -228,11 +330,14 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('마스터 관리 콘솔',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900)),
+                const Text(
+                  '마스터 관리 콘솔',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   '서버 ${paused ? '중지됨' : '가동 중'} · 백업 ${_backups.length}개'
@@ -253,11 +358,14 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
-          child: Text(title,
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textGray)),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textGray,
+            ),
+          ),
         ),
         Card(
           margin: EdgeInsets.zero,
@@ -268,8 +376,13 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
     );
   }
 
-  Widget _tile(String label, IconData icon, Color color, VoidCallback onTap,
-      {String? badge}) {
+  Widget _tile(
+    String label,
+    IconData icon,
+    Color color,
+    VoidCallback onTap, {
+    String? badge,
+  }) {
     return ListTile(
       leading: Icon(icon, color: color),
       title: Text(label, style: const TextStyle(fontSize: 14)),
@@ -280,11 +393,14 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                 color: AppColors.taegeukRed,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(badge,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800)),
+              child: Text(
+                badge,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             )
           : const Icon(Icons.chevron_right, color: AppColors.textGray),
       onTap: onTap,
@@ -319,11 +435,13 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
         content: Text('$name 으로 복원하시겠습니까?\n현재 데이터는 백업 후 교체됩니다.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('복원')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('복원'),
+          ),
         ],
       ),
     );
@@ -354,11 +472,15 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('버전 정보'),
-        content: Text('앱 버전: v${AppConfig.appVersion}\n'
-            '빌드: $kBuildDisplay'),
+        content: Text(
+          '앱 버전: v${AppConfig.appVersion}\n'
+          '빌드: $kBuildDisplay',
+        ),
         actions: [
           FilledButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );

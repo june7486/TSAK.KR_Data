@@ -1206,7 +1206,55 @@ def _default_config():
         "serverPaused": False,          # 앱 서버 일시 정지
         "admins": [],                   # 마스터가 관리자 권한을 부여한 인가번호 목록
         "rolePermissions": _default_role_perms(),  # 역할별 메뉴 접근권한(마스터 설정)
+        # ---- 회원정보 필드 노출 설정 (마스터가 항목별 노출/비노출 지정) ----
+        #  sensitive=True 항목은 '타인에게' 노출 시 기본 마스킹(비노출)된다.
+        "fieldVisibility": _default_field_visibility(),
     }
+
+
+def _default_field_visibility():
+    """회원정보 항목별 노출 기본값.
+
+    key: 회원 데이터 필드명(또는 표시용 키). sensitive=True 는 민감정보.
+    기본 정책: 일반 항목은 노출(None=미지정 시 노출), 민감 항목은 비노출(False).
+    """
+    return {
+        "residentNo": False,   # 주민번호(회원번호) — 민감
+        "tel": False,          # 연락처(유선) — 민감
+        "phone": False,        # 핸드폰 — 민감
+        "email": False,        # 이메일 — 민감
+        "address": False,      # 주소 — 민감
+        "zipCode": False,      # 우편번호 — 민감
+        "birthday": False,     # 생일 — 민감
+        "bio": True,           # 비고/한줄소개 — 공개
+        "league": True,        # 소속 연맹 — 공개
+        "unit": True,          # 소속 단위대 — 공개
+        "date": True,          # 인가일 — 공개
+        "atasNo": True,        # ATAS 인가번호 — 공개
+        "activity": True,      # 활동 — 공개
+        "awards": True,        # 포상 — 공개
+        "specialtyCourses": True,  # 전문과정 — 공개
+    }
+
+
+# 민감정보 필드 정의(앱 UI에서 재사용). key → (라벨, 민감여부)
+FIELD_SPECS = [
+    ("residentNo", "주민번호(회원번호)", True),
+    ("tel", "연락처", True),
+    ("phone", "핸드폰", True),
+    ("email", "이메일", True),
+    ("address", "주소", True),
+    ("zipCode", "우편번호", True),
+    ("birthday", "생일", True),
+    ("bio", "비고/한줄소개", False),
+    ("league", "소속 연맹", False),
+    ("unit", "소속 단위대", False),
+    ("date", "인가일", False),
+    ("atasNo", "ATAS 인가번호", False),
+    ("activity", "활동", False),
+    ("awards", "포상", False),
+    ("specialtyCourses", "전문과정 이수", False),
+]
 
 
 def _role_perms():
@@ -1365,26 +1413,48 @@ def _read_excel_sheets(b, filename=""):
             rows.append([c.strip().strip('"') for c in ln.split(delim)])
         return [("CSV", rows)]
 
-    # 구형 .xls
+    # 구형 .xls — 날짜 셀은 YYYY-MM-DD 로 정규화(엑셀 일련번호 노출 방지).
     if low.endswith(".xls"):
         import xlrd
+        from xlrd import xldate
         wb = xlrd.open_workbook(file_contents=b)
         sheets = []
         for sh in wb.sheets():
             rows = []
             for r in range(sh.nrows):
-                rows.append([str(sh.cell_value(r, c)).strip() for c in range(sh.ncols)])
+                vals = []
+                for c in range(sh.ncols):
+                    v = sh.cell_value(r, c)
+                    if sh.cell_type(r, c) == xlrd.XL_CELL_DATE:
+                        try:
+                            v = xldate.xldate_as_datetime(
+                                v, wb.datemode).strftime("%Y-%m-%d")
+                        except Exception:
+                            v = str(v).strip()
+                    else:
+                        v = str(v).strip()
+                    vals.append(v)
+                rows.append(vals)
             sheets.append((sh.name, rows))
         return sheets
 
     # 기본: xlsx — 모든 시트 순회
     import openpyxl
+    import datetime as _dt
     wb = openpyxl.load_workbook(io.BytesIO(b), data_only=True, read_only=True)
     sheets = []
     for ws in wb.worksheets:
         rows = []
         for row in ws.iter_rows(values_only=True):
-            rows.append(["" if c is None else str(c).strip() for c in row])
+            vals = []
+            for c in row:
+                if c is None:
+                    vals.append("")
+                elif isinstance(c, (_dt.datetime, _dt.date)):
+                    vals.append(c.strftime("%Y-%m-%d"))
+                else:
+                    vals.append(str(c).strip())
+            rows.append(vals)
         sheets.append((ws.title, rows))
     wb.close()
     return sheets
@@ -4750,10 +4820,12 @@ def _addr_num(v):
 
 
 def _addr_clean(v):
-    """셀 문자열 정리 — 엑셀의 None/nan 표기를 빈 문자열로."""
+    """셀 문자열 정리 — 엑셀 None/nan 표기, '401213.0' 류 float 표기 제거."""
     s = str(v or "").strip()
     if s in ("None", "nan", "NaN", "none"):
         return ""
+    if re.fullmatch(r"\d+\.0", s):
+        s = s[:-2]
     return s
 
 
@@ -4791,7 +4863,13 @@ def _parse_addr_rows(sheets):
         cn = _find_col(header, ["성명", "이름"])
         if ci < 0 or cn < 0:
             continue
-        cbirth = _find_col(header, ["주민번호", "생년월일", "생일"])
+        # 주민번호(회원번호) 는 민감정보 → 별도 보관. 생년월일/생일은 별도 컬럼.
+        cres = _find_col(header, ["주민번호"])
+        cbirth = _find_col(header, ["생년월일", "생일"])
+        if cres < 0 and cbirth >= 0:
+            cres = cbirth   # '생년월일'로만 표기된 명단도 있음
+        if cbirth < 0:
+            cbirth = cres
         cleague = _find_col(header, ["연맹"])
         cunit = _find_col(header, ["소속대", "소속"])
         cdate = _find_col(header, ["인가일", "인가년도", "인가연도", "인가날짜"])
@@ -4818,6 +4896,7 @@ def _parse_addr_rows(sheets):
             out.append({
                 "no": no, "name": nm,
                 "birth": cell(r, cbirth),
+                "resident": cell(r, cres),
                 "league": cell(r, cleague), "unit": cell(r, cunit),
                 "date": cell(r, cdate),
                 "memo": cell(r, cmemo), "zip": cell(r, czip),
@@ -4842,8 +4921,11 @@ def _merge_addrbook(members, rows, *, overwrite=False):
             by_no[n] = m
     mapping = [
         ("league", "league"), ("unit", "unit"),
-        ("addr", "address"), ("email", "email"),
-        ("birth", "birthday"), ("memo", "memo"),
+        ("addr", "address"), ("zip", "zipCode"),
+        ("email", "email"),
+        ("birth", "birthday"), ("resident", "residentNo"),
+        ("date", "date"),
+        ("memo", "bio"),
     ]
     filled = {}
     updated = 0
@@ -4870,8 +4952,12 @@ def _merge_addrbook(members, rows, *, overwrite=False):
             val = _addr_clean(x.get(src))
             if val and _put(m, dst, val):
                 changed = True
-        ph = _addr_clean(x.get("hp")) or _addr_clean(x.get("tel"))
-        if ph and _put(m, "phone", ph):
+        # 핸드폰 → phone, 연락처 → tel (각각 별도 필드로 보존)
+        hp = _addr_clean(x.get("hp"))
+        if hp and _put(m, "phone", hp):
+            changed = True
+        tl = _addr_clean(x.get("tel"))
+        if tl and _put(m, "tel", tl):
             changed = True
         if changed:
             updated += 1
@@ -6763,6 +6849,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 cfg = _load_json(CFG_FILE, _default_config())
                 cfg.pop("personalPasswords", None)   # 개인비번은 공개 config에서 제외
+                # 필드 노출 설정은 항상 완전한 형태(누락 키 보충)로 노출.
+                fv = dict(_default_field_visibility())
+                fv.update(cfg.get("fieldVisibility") or {})
+                cfg["fieldVisibility"] = fv
                 return self._json({"ok": True, "config": cfg})
             # ---- 역할별 메뉴 접근권한 (조회: 인증, 설정: 마스터 전용) ----
             if p == "/api/perms":
@@ -8235,6 +8325,13 @@ class Handler(BaseHTTPRequestHandler):
                 if d.get("requirePw") and need != APP_PW:
                     return self._json({"ok": False, "error": "auth"}, 401)
                 cfg = _load_json(CFG_FILE, _default_config())
+                # fieldVisibility 는 부분 패치 허용(기존 값 위에 병합).
+                if "fieldVisibility" in d and isinstance(d["fieldVisibility"], dict):
+                    fv = dict(_default_field_visibility())
+                    fv.update(cfg.get("fieldVisibility") or {})
+                    fv.update({k: bool(v) for k, v in d["fieldVisibility"].items()})
+                    d = dict(d)
+                    d["fieldVisibility"] = fv
                 cfg.update({k: v for k, v in d.items() if not k.startswith("_")})
                 _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "config": cfg})

@@ -129,81 +129,81 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         child: CustomScrollView(
           controller: _scroll,
           slivers: [
-          SliverAppBar(
-            expandedHeight: 176,
-            pinned: true,
-            backgroundColor: AppColors.purple,
-            leading: const AppBackButton(label: '뒤로'),
-            leadingWidth: 84,
-            flexibleSpace: FlexibleSpaceBar(background: _header(m)),
-            actions: [
-              const AppHomeEmblem(size: 24),
-              IconButton(
-                icon: const Icon(Icons.ios_share),
-                tooltip: '개인정보 출력 (PDF·JPG·엑셀·워드·PPT)',
-                onPressed: () => _exportPersonal(m),
-              ),
-              IconButton(
-                icon: const Icon(Icons.qr_code_2),
-                tooltip: 'QR코드',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => QrScreen(member: m)),
+            SliverAppBar(
+              expandedHeight: 176,
+              pinned: true,
+              backgroundColor: AppColors.purple,
+              leading: const AppBackButton(label: '뒤로'),
+              leadingWidth: 84,
+              flexibleSpace: FlexibleSpaceBar(background: _header(m)),
+              actions: [
+                const AppHomeEmblem(size: 24),
+                IconButton(
+                  icon: const Icon(Icons.ios_share),
+                  tooltip: '개인정보 출력 (PDF·JPG·엑셀·워드·PPT)',
+                  onPressed: () => _exportPersonal(m),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.edit),
-                tooltip: '편집',
-                onPressed: () => _edit(m),
-              ),
-            ],
-          ),
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _quickActions(m),
-                _approvalBanner(m),
-                // (요구 #4) 편집 화면 최상단: 평생회원 여부 → 연간회비 납부현황
-                //  · 관리자·마스터에게만 노출된다.
-                if (context.watch<AppState>().isApp ||
-                    context.watch<AppState>().isMaster) ...[
-                  _lifetimeSection(m),
-                  _feeTracker(m),
-                ],
-                // (요구 #5) 순서: 연간회비 납부 이력 → 등록요청 → 자격
-                //  등록요청·자격은 MemberRegistrationRequestSection 내부 순서를 따른다.
-                MemberRegistrationRequestSection(
-                  member: m,
-                  isSelf: context.watch<AppState>().isSelfNumber(m.number),
+                IconButton(
+                  icon: const Icon(Icons.qr_code_2),
+                  tooltip: 'QR코드',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => QrScreen(member: m)),
+                  ),
                 ),
-                _eventSection(m),
-                _depositSection(m),
-                MerchActivitySection(
-                  ident: m.number.isNotEmpty ? m.number : m.phone,
-                  memberName: m.name,
-                  phone: m.phone,
-                  email: m.email,
-                  memo: m.purchases,
-                  canEditMemo: context.read<AppState>().isApp,
-                  onEditMemo: () => _editPurchases(m),
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  tooltip: '편집',
+                  onPressed: () => _edit(m),
                 ),
-                // 수요 대기(사전신청 순번) — 개인 상세 정보창에서 '수품 구매'와 함께 노출.
-                //  진행중인 수요조사가 없으면 위젯이 스스로 비표시된다.
-                PersonalSurveySection(
-                  ident: m.number.isNotEmpty ? m.number : m.phone,
-                ),
-                _infoCard(m),
-                _membershipSection(m),
-                _passwordSection(m),
-                MemberAccessLogSection(
-                  key: ValueKey('access-log-$_accessLogRefreshKey'),
-                  member: m,
-                ),
-                const SizedBox(height: 30),
               ],
             ),
-          ),
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _quickActions(m),
+                  _approvalBanner(m),
+                  // (요구 #4) 편집 화면 최상단: 평생회원 여부 → 연간회비 납부현황
+                  //  · 관리자·마스터에게만 노출된다.
+                  if (context.watch<AppState>().isApp ||
+                      context.watch<AppState>().isMaster) ...[
+                    _lifetimeSection(m),
+                    _feeTracker(m),
+                  ],
+                  // (요구 #5) 순서: 연간회비 납부 이력 → 등록요청 → 자격
+                  //  등록요청·자격은 MemberRegistrationRequestSection 내부 순서를 따른다.
+                  MemberRegistrationRequestSection(
+                    member: m,
+                    isSelf: context.watch<AppState>().isSelfNumber(m.number),
+                  ),
+                  _eventSection(m),
+                  _depositSection(m),
+                  MerchActivitySection(
+                    ident: m.number.isNotEmpty ? m.number : m.phone,
+                    memberName: m.name,
+                    phone: m.phone,
+                    email: m.email,
+                    memo: m.purchases,
+                    canEditMemo: context.read<AppState>().isApp,
+                    onEditMemo: () => _editPurchases(m),
+                  ),
+                  // 수요 대기(사전신청 순번) — 개인 상세 정보창에서 '수품 구매'와 함께 노출.
+                  //  진행중인 수요조사가 없으면 위젯이 스스로 비표시된다.
+                  PersonalSurveySection(
+                    ident: m.number.isNotEmpty ? m.number : m.phone,
+                  ),
+                  _infoCard(m),
+                  _membershipSection(m),
+                  _passwordSection(m),
+                  MemberAccessLogSection(
+                    key: ValueKey('access-log-$_accessLogRefreshKey'),
+                    member: m,
+                  ),
+                  const SizedBox(height: 30),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -738,8 +738,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 Text(
                   m.lifetimeMember
                       ? (m.lifetimeSince.isNotEmpty
-                          ? '평생회원 (${m.lifetimeSince})'
-                          : '평생회원')
+                            ? '평생회원 (${m.lifetimeSince})'
+                            : '평생회원')
                       : '평생회원 미등록',
                   style: TextStyle(
                     color: m.lifetimeMember
@@ -762,9 +762,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     m.copyWith(
                       lifetimeMember: v,
                       lifetimeSince: v && m.lifetimeSince.isEmpty
-                          ? DateTime.now()
-                              .toIso8601String()
-                              .substring(0, 10)
+                          ? DateTime.now().toIso8601String().substring(0, 10)
                           : m.lifetimeSince,
                     ),
                   ),
@@ -778,8 +776,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           else
             Row(
               children: [
-                const Icon(Icons.info_outline,
-                    size: 15, color: AppColors.textGray),
+                const Icon(
+                  Icons.info_outline,
+                  size: 15,
+                  color: AppColors.textGray,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -823,7 +824,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ? () {
                         final map = Map<String, bool>.from(m.feeYears);
                         map[y] = !paid;
-                        context.read<AppState>().save(m.copyWith(feeYears: map));
+                        context.read<AppState>().save(
+                          m.copyWith(feeYears: map),
+                        );
                       }
                     : null,
                 child: Container(
@@ -914,16 +917,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     //  충돌하나, 사용자 지시 "가장 마지막 내용이 최종 의사결정"에 따라 참여한 행사만 노출.)
     //  - 참여(attend == true) 로 등록된 행사만 리스트에 포함한다.
     //  - '미등록'/'불참' 행사는 목록에서 제외한다(참여한 요약에만 반영됨).
-    final events = m.eventAttend.entries
-        .where((e) => e.value == true)
-        .map((e) => e.key)
-        .toList()
-      ..sort((a, b) {
-        final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
-        final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
-        if (ya != yb) return yb.compareTo(ya);
-        return b.compareTo(a);
-      });
+    final events =
+        m.eventAttend.entries
+            .where((e) => e.value == true)
+            .map((e) => e.key)
+            .toList()
+          ..sort((a, b) {
+            final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
+            final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
+            if (ya != yb) return yb.compareTo(ya);
+            return b.compareTo(a);
+          });
     final attendedCount = events.length;
     // 본인이 제안했으나 아직 승인 전(심사중)인 행사 — '관리목록누락행사-심사중'
     final pending = m.pendingEventNames
@@ -941,8 +945,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Row(
                   children: [
-                    const Icon(Icons.hourglass_top,
-                        size: 15, color: AppColors.tigerGold),
+                    const Icon(
+                      Icons.hourglass_top,
+                      size: 15,
+                      color: AppColors.tigerGold,
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -956,7 +963,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.tigerGold.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(6),
@@ -1037,13 +1046,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                   color: attend
                                       ? AppColors.taegeukBlue
                                       : (hasKey
-                                          ? AppColors.textGray
-                                          : AppColors.lifetimeGold),
+                                            ? AppColors.textGray
+                                            : AppColors.lifetimeGold),
                                   fontWeight: attend
                                       ? FontWeight.w700
                                       : (hasKey
-                                          ? FontWeight.w400
-                                          : FontWeight.w700),
+                                            ? FontWeight.w400
+                                            : FontWeight.w700),
                                 ),
                               ),
                               onChanged: (v) {
@@ -1159,8 +1168,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final years = <String>{
       ..._knownEventList.map((e) => '${e['year'] ?? ''}'.trim()),
       '${DateTime.now().year}',
-    }.where((y) => y.isNotEmpty).toList()
-      ..sort((a, b) => b.compareTo(a));
+    }.where((y) => y.isNotEmpty).toList()..sort((a, b) => b.compareTo(a));
     String year = years.isNotEmpty ? years.first : '${DateTime.now().year}';
     final selected = <String>{}; // 복수선택
     final titleCtrl = TextEditingController();
@@ -1173,10 +1181,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) {
-          final inYear = _knownEventList
-              .where((e) => '${e['year']}'.trim() == year)
-              .toList()
-            ..sort((a, b) => '${a['title']}'.compareTo('${b['title']}'));
+          final inYear =
+              _knownEventList
+                  .where((e) => '${e['year']}'.trim() == year)
+                  .toList()
+                ..sort((a, b) => '${a['title']}'.compareTo('${b['title']}'));
           return AlertDialog(
             title: const Text('행사 추가'),
             content: SizedBox(
@@ -1188,12 +1197,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   // 연도 선택 (요구 #10)
                   Row(
                     children: [
-                      const Icon(Icons.calendar_today,
-                          size: 16, color: AppColors.purple),
+                      const Icon(
+                        Icons.calendar_today,
+                        size: 16,
+                        color: AppColors.purple,
+                      ),
                       const SizedBox(width: 6),
-                      const Text('연도 선택',
-                          style: TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w800)),
+                      const Text(
+                        '연도 선택',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: DropdownButtonFormField<String>(
@@ -1202,12 +1218,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
                             isDense: true,
-                            contentPadding:
-                                EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                           ),
                           items: years
-                              .map((y) => DropdownMenuItem(
-                                  value: y, child: Text('$y년')))
+                              .map(
+                                (y) => DropdownMenuItem(
+                                  value: y,
+                                  child: Text('$y년'),
+                                ),
+                              )
                               .toList(),
                           onChanged: (v) => setD(() {
                             year = v ?? year;
@@ -1218,16 +1240,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text('해당 연도 행사 — 복수선택 가능',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w800)),
+                  const Text(
+                    '해당 연도 행사 — 복수선택 가능',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
                   const SizedBox(height: 6),
                   Expanded(
                     child: inYear.isEmpty
                         ? const Center(
-                            child: Text('이 연도에 등록된 행사가 없습니다',
-                                style: TextStyle(
-                                    color: AppColors.textGray, fontSize: 12.5)),
+                            child: Text(
+                              '이 연도에 등록된 행사가 없습니다',
+                              style: TextStyle(
+                                color: AppColors.textGray,
+                                fontSize: 12.5,
+                              ),
+                            ),
                           )
                         : ListView.builder(
                             itemCount: inYear.length,
@@ -1240,10 +1267,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                 contentPadding: EdgeInsets.zero,
                                 value: chk,
                                 activeColor: AppColors.purple,
-                                title: Text(t,
-                                    style:
-                                        const TextStyle(fontSize: 13.5)),
-                                subtitle: [
+                                title: Text(
+                                  t,
+                                  style: const TextStyle(fontSize: 13.5),
+                                ),
+                                subtitle:
+                                    [
                                       if ('${e['period']}'.trim().isNotEmpty)
                                         '${e['period']}',
                                       if ('${e['place']}'.trim().isNotEmpty)
@@ -1256,12 +1285,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                               .trim()
                                               .isNotEmpty)
                                             '${e['period']}',
-                                          if ('${e['place']}'
-                                              .trim()
-                                              .isNotEmpty)
+                                          if ('${e['place']}'.trim().isNotEmpty)
                                             '${e['place']}',
                                         ].join(' · '),
-                                        style: const TextStyle(fontSize: 11)),
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
                                 onChanged: (v) => setD(() {
                                   if (v == true) {
                                     selected.add(t);
@@ -1287,7 +1315,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               ? '새 행사 직접 만들기 (즉시 등록)'
                               : '새 행사 직접 만들기 (관리자 승인 후 등록)',
                           style: const TextStyle(
-                              fontSize: 12.5, fontWeight: FontWeight.w700),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
@@ -1296,27 +1326,34 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     TextField(
                       controller: titleCtrl,
                       decoration: const InputDecoration(
-                          labelText: '행사명 *', isDense: true),
+                        labelText: '행사명 *',
+                        isDense: true,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: periodCtrl,
                       decoration: const InputDecoration(
-                          labelText: '행사기간 (예: 2026.03.14~15)',
-                          isDense: true),
+                        labelText: '행사기간 (예: 2026.03.14~15)',
+                        isDense: true,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: placeCtrl,
                       decoration: const InputDecoration(
-                          labelText: '장소', isDense: true),
+                        labelText: '장소',
+                        isDense: true,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: descCtrl,
                       maxLines: 2,
                       decoration: const InputDecoration(
-                          labelText: '행사 소개/개요', isDense: true),
+                        labelText: '행사 소개/개요',
+                        isDense: true,
+                      ),
                     ),
                   ],
                 ],
@@ -1328,7 +1365,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 child: const Text('취소'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                ),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: Text(addNew ? '등록' : '추가 (${selected.length})'),
               ),
@@ -1350,15 +1389,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         // 관리자·마스터는 즉시 행사로 등록 (행사관리 '행사만들기'와 동일).
         try {
           await context.read<NasApi>().eventCreate(
-                year: year,
-                title: title,
-                period: periodCtrl.text.trim(),
-                place: placeCtrl.text.trim(),
-                desc: descCtrl.text.trim(),
-                by: state.who.isNotEmpty
-                    ? state.who
-                    : (state.isMaster ? '마스터' : '관리자'),
-              );
+            year: year,
+            title: title,
+            period: periodCtrl.text.trim(),
+            place: placeCtrl.text.trim(),
+            desc: descCtrl.text.trim(),
+            by: state.who.isNotEmpty
+                ? state.who
+                : (state.isMaster ? '마스터' : '관리자'),
+          );
           await _loadKnownEvents();
           _snack('행사를 만들고 참가 이력에 추가했습니다');
         } catch (e) {
@@ -1372,12 +1411,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         // 개인은 제안 → 관리자·마스터 승인 후 등록(심사중으로 표시).
         try {
           await context.read<NasApi>().eventPrivateCreate(
-                year: year,
-                title: title,
-                period: periodCtrl.text.trim(),
-                place: placeCtrl.text.trim(),
-                desc: descCtrl.text.trim(),
-              );
+            year: year,
+            title: title,
+            period: periodCtrl.text.trim(),
+            place: placeCtrl.text.trim(),
+            desc: descCtrl.text.trim(),
+          );
           state.refresh();
           _snack('‘$title’ 행사를 등록요청했습니다 (관리자 승인 대기)');
         } catch (e) {
@@ -1516,25 +1555,38 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _infoCard(Member m) {
+    final state = context.watch<AppState>();
+    final admin = state.isApp || state.isMaster; // 관리자·마스터는 전체 열람
+    final isSelf = state.isSelfNumber(m.number); // 본인도 전체 열람
+    // 항목 노출: 관리자·본인은 항상 허용, 그 외에는 마스터 설정을 따른다.
+    bool vis(String key) => admin || isSelf || state.fieldVisible(key);
+    // 비노출 항목은 관리자에게만 안내 문구로 보여준다.
+    String v(String key, String value) =>
+        vis(key) ? value : (admin ? '— (비노출 설정)' : '');
+
     final rows = <List<String>>[
       ['소속 연맹', m.league],
       ['등록 연맹', m.regLeague],
       ['소속 단위대', m.unit],
       ['등록 단위대', m.regUnit],
-      ['인가일', m.date],
-      ['생일', m.birthday],
+      ['인가일', v('date', m.date)],
+      if (vis('residentNo')) ['주민번호', m.residentNo],
+      ['생일', v('birthday', m.birthday)],
       if (m.genderVisible && m.gender.isNotEmpty) ['성별', m.gender],
       ['기념일', m.anniversary],
       ['훈련현황', m.trainingStatus],
-      ['포상', m.awards],
-      ['전문과정 이수', m.specialtyCourses],
+      ['포상', v('awards', m.awards)],
+      ['전문과정 이수', v('specialtyCourses', m.specialtyCourses)],
       ['멘토', '${m.mentors.map((e) => '#$e').join(', ')}${_linkBadge(m)}'],
       ['페런츠', m.parents.map((e) => '#$e').join(', ')],
-      ['ATAS 인가번호', m.atasNo],
-      ['핸드폰', m.phone],
-      ['이메일', m.email],
-      ['주소', m.address],
-      ['활동', m.activity],
+      ['ATAS 인가번호', v('atasNo', m.atasNo)],
+      ['핸드폰', v('phone', m.phone)],
+      ['연락처', v('tel', m.tel)],
+      ['이메일', v('email', m.email)],
+      ['우편번호', v('zipCode', m.zipCode)],
+      ['주소', v('address', m.address)],
+      ['한줄소개', v('bio', m.bio)],
+      ['활동', v('activity', m.activity)],
       ['메모', m.memo],
       [
         '개인정보 동의',

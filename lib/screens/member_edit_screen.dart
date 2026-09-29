@@ -35,11 +35,15 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _regLeague,
       _regUnit,
       _address,
+      _zipCode,
       _phone,
+      _tel,
       _email,
+      _residentNo,
       _date,
       _atas,
       _activity,
+      _bio,
       _memo,
       _birthday,
       _anniversary;
@@ -91,11 +95,15 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _regLeague = TextEditingController(text: m?.regLeague ?? '');
     _regUnit = TextEditingController(text: m?.regUnit ?? '');
     _address = TextEditingController(text: m?.address ?? '');
+    _zipCode = TextEditingController(text: m?.zipCode ?? '');
     _phone = TextEditingController(text: m?.phone ?? '');
+    _tel = TextEditingController(text: m?.tel ?? '');
     _email = TextEditingController(text: m?.email ?? '');
+    _residentNo = TextEditingController(text: m?.residentNo ?? '');
     _date = TextEditingController(text: m?.date ?? '');
     _atas = TextEditingController(text: m?.atasNo ?? '');
     _activity = TextEditingController(text: m?.activity ?? '');
+    _bio = TextEditingController(text: m?.bio ?? '');
     _memo = TextEditingController(text: m?.memo ?? '');
     _birthday = TextEditingController(text: m?.birthday ?? '');
     _anniversary = TextEditingController(text: m?.anniversary ?? '');
@@ -124,11 +132,15 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _regLeague,
       _regUnit,
       _address,
+      _zipCode,
       _phone,
+      _tel,
       _email,
+      _residentNo,
       _date,
       _atas,
       _activity,
+      _bio,
       _memo,
       _birthday,
       _anniversary,
@@ -251,6 +263,19 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 phone: true,
               ),
               _field(
+                '연락처',
+                _tel,
+                hint: '유선/추가 전화 (예: 051-702-7766)',
+                icon: Icons.call,
+                keyboard: TextInputType.phone,
+              ),
+              _field(
+                '주민번호(회원번호)',
+                _residentNo,
+                hint: '명단 원본 열 — 민감정보 (노출은 마스터 설정)',
+                icon: Icons.credit_card,
+              ),
+              _field(
                 '생일',
                 _birthday,
                 hint: '예: 1980.05.14 (또는 05-14)',
@@ -303,10 +328,24 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.email,
                 keyboard: TextInputType.emailAddress,
               ),
+              _field(
+                '우편번호',
+                _zipCode,
+                hint: '예: 06130',
+                icon: Icons.markunread_mailbox,
+                numeric: true,
+              ),
               AddressField(
                 controller: _address,
                 label: '주소',
                 hint: '주소검색 버튼으로 검색하세요',
+              ),
+              _field(
+                '한줄소개 (비고)',
+                _bio,
+                hint: '명단 비고/한줄소개',
+                icon: Icons.short_text,
+                maxLines: 2,
               ),
               _genderEditor(),
               _field(
@@ -382,11 +421,15 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _regLeague.text.trim() != m.regLeague ||
         _regUnit.text.trim() != m.regUnit ||
         _address.text.trim() != m.address ||
+        _zipCode.text.trim() != m.zipCode ||
         _phone.text.trim() != m.phone ||
+        _tel.text.trim() != m.tel ||
         _email.text.trim() != m.email ||
+        _residentNo.text.trim() != m.residentNo ||
         _date.text.trim() != m.date ||
         _atas.text.trim() != m.atasNo ||
         _activity.text.trim() != m.activity ||
+        _bio.text.trim() != m.bio ||
         _memo.text.trim() != m.memo ||
         _birthday.text.trim() != m.birthday ||
         _anniversary.text.trim() != m.anniversary ||
@@ -406,9 +449,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     final agreed = _privacyAgreed;
     final privileged = state.isApp || state.isMaster;
     final exempt = privileged; // 관리자·마스터는 동의 없이도 저장 가능
-    final c = (agreed || exempt)
-        ? AppColors.scoutGreen
-        : AppColors.taegeukRed;
+    final c = (agreed || exempt) ? AppColors.scoutGreen : AppColors.taegeukRed;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -419,9 +460,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       child: Row(
         children: [
           Icon(
-              (agreed || exempt) ? Icons.verified : Icons.warning_amber_rounded,
-              color: c,
-              size: 20),
+            (agreed || exempt) ? Icons.verified : Icons.warning_amber_rounded,
+            color: c,
+            size: 20,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -430,9 +472,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 Text(
                   agreed
                       ? '개인정보 동의 완료'
-                      : (exempt
-                          ? '관리자 모드 — 동의 없이 저장 가능'
-                          : '개인정보 동의 필요 (필수)'),
+                      : (exempt ? '관리자 모드 — 동의 없이 저장 가능' : '개인정보 동의 필요 (필수)'),
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
@@ -450,18 +490,12 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 else if (!agreed && exempt)
                   const Text(
                     '관리자·마스터는 개인정보 동의를 받지 않고도 입력·수정할 수 있습니다',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: AppColors.textGray,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
                   )
                 else if (!agreed)
                   const Text(
                     '아래 「개인정보 수집·이용 및 제3자 제공 동의」에 체크해야 저장됩니다',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: AppColors.textGray,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
                   ),
               ],
             ),
@@ -991,8 +1025,12 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       regLeague: _regLeague.text.trim(),
       regUnit: _regUnit.text.trim(),
       address: _address.text.trim(),
+      zipCode: _zipCode.text.trim(),
       phone: _phone.text.trim(),
+      tel: _tel.text.trim(),
       email: _email.text.trim(),
+      residentNo: _residentNo.text.trim(),
+      bio: _bio.text.trim(),
       date: _date.text.trim(),
       atasNo: _atas.text.trim(),
       activity: _activity.text.trim(),

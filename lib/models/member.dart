@@ -11,8 +11,12 @@ class Member {
     this.regLeague = '',
     this.regUnit = '',
     this.address = '',
+    this.zipCode = '',
     this.phone = '',
+    this.tel = '',
     this.email = '',
+    this.residentNo = '',
+    this.bio = '',
     this.date = '',
     this.atasNo = '',
     this.activity = '',
@@ -78,11 +82,23 @@ class Member {
   /// 주소
   String address;
 
+  /// 우편번호 (예: "06130")
+  String zipCode;
+
   /// 핸드폰
   String phone;
 
+  /// 연락처(유선/추가 전화) — 핸드폰과 별도 관리 (예: "051-702-7766")
+  String tel;
+
   /// 이메일
   String email;
+
+  /// 주민번호(회원번호) — 민감정보. 마스터가 노출 여부를 결정한다.
+  String residentNo;
+
+  /// 비고 / 한줄소개 (명단 비고 열 등)
+  String bio;
 
   /// 인가일 (예: "2025.12.19.")
   String date;
@@ -208,7 +224,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $phone $email $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $bio $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
@@ -243,31 +259,34 @@ class Member {
         ..sort();
 
   /// 자격 지정이 승인되었는지 여부.
-  bool get qualificationApproved =>
-      qualificationStatus.trim() == 'approved';
+  bool get qualificationApproved => qualificationStatus.trim() == 'approved';
 
   Map<String, dynamic> toMap() => {
     'id': id,
     'number': number,
     'name': name,
-      'league': league,
-      'unit': unit,
-      'regLeague': regLeague,
-      'regUnit': regUnit,
-      'address': address,
+    'league': league,
+    'unit': unit,
+    'regLeague': regLeague,
+    'regUnit': regUnit,
+    'address': address,
+    'zipCode': zipCode,
     'phone': phone,
+    'tel': tel,
     'email': email,
+    'residentNo': residentNo,
+    'bio': bio,
     'date': date,
     'atasNo': atasNo,
     'activity': activity,
     'memo': memo,
     'birthday': birthday,
     'anniversary': anniversary,
-      'trainingStatus': trainingStatus,
-      'awards': awards,
-      'specialtyCourses': specialtyCourses,
-      'purchases': purchases,
-      'photoPath': photoPath,
+    'trainingStatus': trainingStatus,
+    'awards': awards,
+    'specialtyCourses': specialtyCourses,
+    'purchases': purchases,
+    'photoPath': photoPath,
     'lifetimeMember': lifetimeMember,
     'lifetimeSince': lifetimeSince,
     'qualificationStatus': qualificationStatus,
@@ -304,7 +323,8 @@ class Member {
     }
 
     List<String> castStrList(dynamic v) {
-      if (v is List) return v.map((e) => '$e').where((s) => s.isNotEmpty).toList();
+      if (v is List)
+        return v.map((e) => '$e').where((s) => s.isNotEmpty).toList();
       if (v is String && v.trim().isNotEmpty) {
         return v.split(RegExp(r'[,\s]+')).where((s) => s.isNotEmpty).toList();
       }
@@ -320,8 +340,12 @@ class Member {
       regLeague: '${map['regLeague'] ?? ''}',
       regUnit: '${map['regUnit'] ?? ''}',
       address: '${map['address'] ?? ''}',
+      zipCode: '${map['zipCode'] ?? ''}',
       phone: '${map['phone'] ?? ''}',
+      tel: '${map['tel'] ?? ''}',
       email: '${map['email'] ?? ''}',
+      residentNo: '${map['residentNo'] ?? ''}',
+      bio: '${map['bio'] ?? ''}',
       date: '${map['date'] ?? ''}',
       atasNo: '${map['atasNo'] ?? ''}',
       activity: '${map['activity'] ?? ''}',
@@ -370,8 +394,12 @@ class Member {
     String? regLeague,
     String? regUnit,
     String? address,
+    String? zipCode,
     String? phone,
+    String? tel,
     String? email,
+    String? residentNo,
+    String? bio,
     String? date,
     String? atasNo,
     String? activity,
@@ -416,8 +444,12 @@ class Member {
       regLeague: regLeague ?? this.regLeague,
       regUnit: regUnit ?? this.regUnit,
       address: address ?? this.address,
+      zipCode: zipCode ?? this.zipCode,
       phone: phone ?? this.phone,
+      tel: tel ?? this.tel,
       email: email ?? this.email,
+      residentNo: residentNo ?? this.residentNo,
+      bio: bio ?? this.bio,
       date: date ?? this.date,
       atasNo: atasNo ?? this.atasNo,
       activity: activity ?? this.activity,

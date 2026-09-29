@@ -105,8 +105,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// 마스터가 역할 권한을 변경(서버 저장 후 로컬 반영).
-  Future<bool> setRolePermission(
-      String role, Map<String, bool> updates) async {
+  Future<bool> setRolePermission(String role, Map<String, bool> updates) async {
     if (!isMaster || !repo.isNasMode) return false;
     try {
       final ok = await nas.setPerms(role, updates);
@@ -118,6 +117,7 @@ class AppState extends ChangeNotifier {
   }
 
   bool get isPersonal => _tier == 'personal';
+
   /// 관리자(app) 등급 — 마스터는 관리자의 모든 권한을 상속한다.
   /// 또한 마스터가 '관리자 지정'을 부여한 인가번호도 app 세션을 받으므로
   /// 서버가 내려준 admin 플래그와 함께 관리자로 취급한다.
@@ -195,9 +195,7 @@ class AppState extends ChangeNotifier {
   /// 본인 1인 열람(개인 접근) 모드 여부.
   /// 영구 마스터(415)가 '개인 권한'을 선택한 경우도 본인 화면으로 취급한다.
   bool get isSelfAccess =>
-      _tier == 'personal' ||
-      _tier == 'guest' ||
-      isPermanentMasterAsPersonal;
+      _tier == 'personal' || _tier == 'guest' || isPermanentMasterAsPersonal;
 
   /// 개인 접근 시 본인 정보만 열람·수정 가능하도록 저장소 제한을 갱신
   void _applyAccessScope() {
@@ -315,7 +313,8 @@ class AppState extends ChangeNotifier {
         if (!ok) {
           for (final m in repo.allUnscoped()) {
             final mid = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
-            if (mid == phone || m.phone.replaceAll(RegExp(r'[^0-9]'), '') == phone) {
+            if (mid == phone ||
+                m.phone.replaceAll(RegExp(r'[^0-9]'), '') == phone) {
               final pw = m.personalPassword.trim().isNotEmpty
                   ? m.personalPassword.trim()
                   : m.phoneLast4;
@@ -390,14 +389,24 @@ class AppState extends ChangeNotifier {
       if (repo.isNasMode && nas.sessionId.isEmpty) {
         try {
           if (finalTier == 'master') {
-            await nas.grantSession('master', id: personalNo,
-                master: AppConfig.masterPassword, log: true);
+            await nas.grantSession(
+              'master',
+              id: personalNo,
+              master: AppConfig.masterPassword,
+              log: true,
+            );
           } else if (finalTier == 'app') {
-            await nas.grantSession('app'
-                , master: AppConfig.masterPassword, log: true);
+            await nas.grantSession(
+              'app',
+              master: AppConfig.masterPassword,
+              log: true,
+            );
           } else if (tier == 'personal' || tier == 'guest') {
             await nas.grantSession(
-                tier, id: personalNo.isNotEmpty ? personalNo : id, log: true);
+              tier,
+              id: personalNo.isNotEmpty ? personalNo : id,
+              log: true,
+            );
           }
         } catch (_) {}
       }
@@ -613,6 +622,42 @@ class AppState extends ChangeNotifier {
   }
 
   String get appAccessUrl => '${_config['appAccessUrl'] ?? ''}';
+
+  // ---------- 회원정보 항목별 노출 설정 (마스터) ----------
+  /// 민감정보로 취급되는 필드 키 — 설정이 없으면 비노출.
+  static const Set<String> sensitiveFields = {
+    'residentNo',
+    'tel',
+    'phone',
+    'email',
+    'address',
+    'zipCode',
+    'birthday',
+  };
+
+  Map<String, dynamic> get fieldVisibility {
+    final raw = _config['fieldVisibility'];
+    if (raw is Map) return raw.map((k, v) => MapEntry('$k', v == true));
+    return const {};
+  }
+
+  /// 항목 노출 여부. 서버/로컬 설정에 값이 있으면 그 값을,
+  /// 없으면 민감정보는 비노출(기본 안전)로 판단한다.
+  bool fieldVisible(String key) {
+    final fv = _config['fieldVisibility'];
+    if (fv is Map && fv.containsKey(key)) {
+      final v = fv[key];
+      return v == true || v == 1 || v == 'true';
+    }
+    return !sensitiveFields.contains(key);
+  }
+
+  Future<void> setFieldVisibility(String key, bool visible) async {
+    // 로컬·서버 모두 안전하도록 기존 설정 위에 병합해 전송한다.
+    final next = {...fieldVisibility, key: visible};
+    await setConfig({'fieldVisibility': next});
+  }
+
   /// QR에 담을 **절대 접속 URL의 origin** 을 구한다.
   ///
   /// QR은 카메라/스캐너로 열리므로 반드시 http(s) 절대 주소여야 한다.
@@ -659,7 +704,8 @@ class AppState extends ChangeNotifier {
   /// 전용 경량 착지 페이지(/qr.html)로 연결한다 — 앱(5MB) 로딩 없이 즉시 뜬다.
   String eventQrLink(String year, String title) {
     final base = qrBaseUrl;
-    final q = '/qr.html'
+    final q =
+        '/qr.html'
         '?year=${Uri.encodeComponent(year)}'
         '&title=${Uri.encodeComponent(title)}';
     return base.isEmpty ? q : '$base$q';
@@ -782,7 +828,11 @@ class AppState extends ChangeNotifier {
     if (!repo.isNasMode || !isMaster) return false;
     try {
       return await nas.deleteAccessLog(
-          mode: mode, ts: ts, number: number, items: items);
+        mode: mode,
+        ts: ts,
+        number: number,
+        items: items,
+      );
     } catch (_) {
       return false;
     }
@@ -902,7 +952,8 @@ class AppState extends ChangeNotifier {
     for (final m in repo.allUnscoped()) {
       set.addAll(m.eventAttend.keys.where((e) => e.trim().isNotEmpty));
     }
-    final list = set.toList()..sort((a, b) {
+    final list = set.toList()
+      ..sort((a, b) {
         final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
         final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
         if (ya != yb) return yb.compareTo(ya);
@@ -1397,7 +1448,9 @@ class AppState extends ChangeNotifier {
     bool reset = false,
   }) async {
     final newPw = reset
-        ? (m.isRegular ? m.phoneLast4 : '${m.number}${AppConfig.personalSuffix}')
+        ? (m.isRegular
+              ? m.phoneLast4
+              : '${m.number}${AppConfig.personalSuffix}')
         : (value ?? '').trim();
     if (newPw.isEmpty) return '비밀번호가 비어 있습니다';
     await repo.save(m.copyWith(personalPassword: newPw));
@@ -1431,8 +1484,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// 개인정보 동의 현황
-  int get privacyAgreedCount =>
-      repo.all().where((m) => m.privacyAgreed).length;
+  int get privacyAgreedCount => repo.all().where((m) => m.privacyAgreed).length;
   int get privacyPendingCount =>
       repo.all().where((m) => !m.privacyAgreed).length;
 
@@ -1450,8 +1502,7 @@ class AppState extends ChangeNotifier {
     if (n.isEmpty) return null;
     // 인가번호 중복 방지
     for (final x in repo.allUnscoped()) {
-      if (x.id != m.id &&
-          x.number.replaceAll(RegExp(r'[^0-9]'), '') == n) {
+      if (x.id != m.id && x.number.replaceAll(RegExp(r'[^0-9]'), '') == n) {
         return null;
       }
     }
