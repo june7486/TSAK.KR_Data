@@ -26,6 +26,10 @@ class NasApi {
   /// 마지막 로그인이 '마스터가 지정한 관리자'였는지 여부(서버 응답).
   bool lastLoginAdmin = false;
 
+  /// 마지막 로그인이 '서포터즈'(일반회원)였는지 여부(서버 응답).
+  /// 서포터즈는 개인접근 화면은 보되 타인 개인정보는 열람할 수 없다.
+  bool lastLoginSupporter = false;
+
   String get baseUrl => _base;
 
   /// 모든 요청에 공통으로 붙는 인증 헤더.
@@ -116,6 +120,7 @@ class NasApi {
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     final sid = '${j['sid'] ?? ''}';
     lastLoginAdmin = j['admin'] == true;
+    lastLoginSupporter = j['supporter'] == true;
     if (j['ok'] == true && sid.isNotEmpty) sessionId = sid;
     return j;
   }
@@ -187,6 +192,44 @@ class NasApi {
         )
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  // ---- 역할별 권한 (Role Permissions) ----
+  /// 역할별 메뉴 접근권한 맵 조회.
+  /// 반환: { roleKey: { menuKey: bool, ... }, ... }
+  Future<Map<String, Map<String, bool>>> fetchPerms() async {
+    try {
+      final r = await http
+          .get(_uri('/api/perms'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      final raw = (j['perms'] as Map?) ?? {};
+      final out = <String, Map<String, bool>>{};
+      raw.forEach((k, v) {
+        if (v is Map) {
+          out['$k'] = {
+            for (final e in v.entries) '${e.key}': e.value == true,
+          };
+        }
+      });
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 특정 역할의 권한 일부를 변경 (마스터 전용).
+  /// [role] = master|app|personal|supporter|guest, [updates] = { menuKey: bool }
+  Future<bool> setPerms(String role, Map<String, bool> updates) async {
+    final r = await http
+        .post(
+          _uri('/api/perms/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'role': role, 'updates': updates}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
   }
 
   // ---- Members ----

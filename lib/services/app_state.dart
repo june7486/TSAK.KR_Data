@@ -41,6 +41,82 @@ class AppState extends ChangeNotifier {
   String get tier => _tier;
   String get who => _who;
   bool get isMaster => _tier == 'master';
+
+  // ---------- 역할 / 메뉴 접근권한 ----------
+  /// 서포터즈(일반회원 로그인) 여부 — 서버 로그인 응답으로 설정.
+  bool _isSupporter = false;
+  bool get isSupporter => _isSupporter;
+
+  /// 실효 역할 키 — master | app | personal | supporter | guest
+  /// (관리자 부여 계정은 app, 일반회원 개인로그인은 supporter 로 본다)
+  String get roleKey {
+    if (isMaster) return 'master';
+    if (isApp) return 'app';
+    if (_isSupporter) return 'supporter';
+    if (_tier == 'guest') return 'guest';
+    return 'personal';
+  }
+
+  /// 서버가 내려준 역할별 메뉴권한 (없으면 빈 맵 → 기본 허용 로직 사용).
+  Map<String, Map<String, bool>> _perms = {};
+  Map<String, Map<String, bool>> get perms => _perms;
+
+  /// 현재 역할의 메뉴 접근 가능 여부.
+  ///  서버 권한표가 있으면 그것을, 없으면 기존 티어 규칙으로 판정한다.
+  bool can(String menu) {
+    final table = _perms[roleKey];
+    if (table != null && table.containsKey(menu)) {
+      return table[menu] == true;
+    }
+    // 서버 권한표 미수신 시 폴백(기존 동작 보존).
+    switch (menu) {
+      case 'bulk':
+      case 'stats':
+        return isApp || isMaster;
+      case 'finance':
+      case 'merchMgmt':
+      case 'memberAdd':
+        return isApp || isMaster;
+      case 'memberDetail':
+        return !(_tier == 'personal' || _tier == 'guest' || _isSupporter) ||
+            isMaster ||
+            isApp;
+      case 'memberSearch':
+        return !(_tier == 'guest' || _isSupporter) || isMaster || isApp;
+      case 'board':
+      case 'events':
+      case 'merchBuy':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// 서버 역할별 권한표 로드.
+  Future<void> loadRolePermissions() async {
+    if (!repo.isNasMode) return;
+    try {
+      final p = await nas.fetchPerms();
+      if (p.isNotEmpty) {
+        _perms = p;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// 마스터가 역할 권한을 변경(서버 저장 후 로컬 반영).
+  Future<bool> setRolePermission(
+      String role, Map<String, bool> updates) async {
+    if (!isMaster || !repo.isNasMode) return false;
+    try {
+      final ok = await nas.setPerms(role, updates);
+      if (ok) await loadRolePermissions();
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   bool get isPersonal => _tier == 'personal';
   /// 관리자(app) 등급 — 마스터는 관리자의 모든 권한을 상속한다.
   /// 또한 마스터가 '관리자 지정'을 부여한 인가번호도 app 세션을 받으므로
@@ -278,6 +354,7 @@ class AppState extends ChangeNotifier {
       //  로컬 검증만 성공한 경우 세션을 별도로 확보한다(아래에서 처리).
       if (ok && repo.isNasMode && nas.sessionId.isNotEmpty) {
         _grantedAdmin = nas.lastLoginAdmin;
+        _isSupporter = nas.lastLoginSupporter;
       }
     }
     if (ok) {
@@ -313,6 +390,8 @@ class AppState extends ChangeNotifier {
       _applyAccessScope();
       _persistSession();
       notifyListeners();
+      // 역할별 메뉴권한표 로드(마스터가 설정한 값 반영).
+      if (repo.isNasMode) unawaited(loadRolePermissions());
       // [보안] 로그인 전에는 서버가 데이터를 주지 않는다(401). 로그인 직후
       //  세션이 붙은 상태에서 서버 데이터를 다시 불러온다.
       if (repo.isNasMode) {

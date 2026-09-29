@@ -134,14 +134,15 @@ CORS_ALLOW_ORIGINS = [
 ]
 
 
-def _sess_new(tier, who=""):
+def _sess_new(tier, who="", regular=False):
     sid = _secrets.token_urlsafe(32)
     with _SESS_LOCK:
         # 오래된 세션 정리
         now = time.time()
         for k in [k for k, v in _SESS.items() if v.get("exp", 0) < now]:
             _SESS.pop(k, None)
-        _SESS[sid] = {"tier": tier, "who": who, "exp": now + _SESS_TTL}
+        _SESS[sid] = {"tier": tier, "who": who, "regular": bool(regular),
+                      "exp": now + _SESS_TTL}
     return sid
 
 
@@ -320,25 +321,59 @@ def _log_access_view(viewer_tier, viewer_who, target_ident, ua, ip):
     return entry
 
 
-def _scope_members(tier, who, members):
+def _scope_members(tier, who, members, regular=False):
     """역할별 최소 항목 제공(대량 명단 열람 최소화).
 
     - 관리자(app)·마스터: 전체
-    - 개인(personal): 본인 1건만 + 민감 필드 제거
-    - 비인가자(guest): 본인 1건만 + 민감 필드 제거
-    - 단, '샘플' 회원(sample=true)은 모든 회원이 볼 수 있다(안내·예시용).
+    - 범스카우트(personal): 역할권한에 따라
+        · memberDetail 허용 시 → 전원 상세(민감필드 제거)
+        · memberSearch 만 허용 시 → 전원 축약형(이름·번호 중심)
+        · 둘 다 불가 시 → 본인 1건만
+    - 서포터즈(regular personal)/비인가자(guest): 본인 1건만 + 민감 필드 제거
+    - '샘플' 회원(sample=true)은 모든 회원이 볼 수 있다(안내·예시용).
     """
     who = re.sub(r"[^0-9]", "", str(who or ""))
     if tier in ("app", "master"):
         return members
+    # 실효 역할 키 도출
+    if tier == "personal":
+        role = "supporter" if regular else "personal"
+    else:
+        role = "guest"
+    detail = _perm_for(role, "memberDetail")
+    search = _perm_for(role, "memberSearch")
     out = []
     for m in members:
         num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
         lid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
         ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
-        if (who and who in (num, lid, ph)) or m.get("sample") is True:
-            out.append(_redact_member(m))
+        is_self = bool(who) and (who in (num, lid, ph))
+        is_sample = m.get("sample") is True
+        if is_self or is_sample or detail:
+            out.append(_redact_member(m))        # 상세(민감필드만 제거)
+        elif search:
+            out.append(_summary_member(m))       # 이름·번호 중심 축약
+        # 그 외(supporter/guest 타인)는 제외 → 개인정보 보호
     return out
+
+
+def _summary_member(m):
+    """축약형 회원 정보 — 이름·번호 등 최소 항목만 노출(타인 조회용)."""
+    name = m.get("name", "")
+    if m.get("nameVisible") is False:
+        name = "(이름 비공개)"
+    return {
+        "id": m.get("id", ""),
+        "number": m.get("number", ""),
+        "name": name,
+        "nameVisible": m.get("nameVisible", True),
+        "league": m.get("league", ""),
+        "unit": m.get("unit", ""),
+        "isRegular": bool(m.get("isRegular")),
+        "lifetimeMember": bool(m.get("lifetimeMember")),
+        "approvalStatus": m.get("approvalStatus", ""),
+        "summaryOnly": True,
+    }
 
 
 def _redact_member(m):
@@ -813,6 +848,43 @@ def _touch_meta(extra=None):
     return m
 
 
+def _default_role_perms():
+    """역할별 메뉴 접근권한 기본값 (마스터가 마스터창에서 변경 가능).
+    메뉴 키:
+      bulk(단체문자) finance(재무) merchMgmt(수품관리/등록/판매) stats(통계)
+      board(게시판) events(행사관리) merchBuy(수품구매)
+      memberSearch(명단검색) memberAdd(인가자 생성) memberDetail(타인 상세열람)
+    """
+    def p(**kw):
+        base = {k: False for k in (
+            "bulk", "finance", "merchMgmt", "stats", "board", "events",
+            "merchBuy", "memberSearch", "memberAdd", "memberDetail")}
+        base.update(kw)
+        return base
+    return {
+        # 마스터: 전부 허용
+        "master": p(bulk=True, finance=True, merchMgmt=True, stats=True,
+                    board=True, events=True, merchBuy=True,
+                    memberSearch=True, memberAdd=True, memberDetail=True),
+        # 관리자: 마스터 전용(앱관리·마스터창)을 제외한 전부 허용
+        "app": p(bulk=True, finance=True, merchMgmt=True, stats=True,
+                 board=True, events=True, merchBuy=True,
+                 memberSearch=True, memberAdd=True, memberDetail=True),
+        # 범스카우트(인가자): 수품구매·행사·게시판만, 타인 상세 불가(이름·번호만 조회)
+        "personal": p(bulk=False, finance=False, merchMgmt=False, stats=False,
+                      board=True, events=True, merchBuy=True,
+                      memberSearch=True, memberAdd=False, memberDetail=False),
+        # 서포터즈(일반회원): 같은 화면이나 개인정보(명단검색/상세) 불가
+        "supporter": p(bulk=False, finance=False, merchMgmt=False, stats=False,
+                       board=True, events=True, merchBuy=True,
+                       memberSearch=False, memberAdd=False, memberDetail=False),
+        # 비인가자: 최소 권한
+        "guest": p(bulk=False, finance=False, merchMgmt=False, stats=False,
+                   board=True, events=True, merchBuy=True,
+                   memberSearch=False, memberAdd=False, memberDetail=False),
+    }
+
+
 def _default_config():
     return {
         "adminEmail": "june7558@gmail.com",
@@ -830,7 +902,28 @@ def _default_config():
         "personalPasswords": {},        # 인가번호 → 개인비번 (미설정 시 "{no}!@@")
         "serverPaused": False,          # 앱 서버 일시 정지
         "admins": [],                   # 마스터가 관리자 권한을 부여한 인가번호 목록
+        "rolePermissions": _default_role_perms(),  # 역할별 메뉴 접근권한(마스터 설정)
     }
+
+
+def _role_perms():
+    """역할별 메뉴권한 설정(누락 키는 기본값으로 보충)."""
+    cfg = _load_json(CFG_FILE, _default_config())
+    saved = cfg.get("rolePermissions", {}) or {}
+    base = _default_role_perms()
+    out = {}
+    for role, dflt in base.items():
+        merged = dict(dflt)
+        role_saved = saved.get(role, {}) or {}
+        for k in merged:
+            if k in role_saved:
+                merged[k] = bool(role_saved[k])
+        out[role] = merged
+    return out
+
+
+def _perm_for(role, key):
+    return bool(_role_perms().get(role, {}).get(key, False))
 
 
 # --- seed members into NAS on first boot ---
@@ -1129,6 +1222,22 @@ def _granted_admins():
 def _is_granted_admin(no):
     no = re.sub(r"[^0-9]", "", str(no or ""))
     return bool(no) and no in _granted_admins()
+
+
+def _member_by_number(no):
+    no = re.sub(r"[^0-9]", "", str(no or ""))
+    if not no:
+        return None
+    for m in _load_json(DB_FILE, []):
+        if re.sub(r"[^0-9]", "", str(m.get("number", ""))) == no:
+            return m
+    return None
+
+
+def _is_regular_member(no):
+    """해당 인가번호가 일반회원(서포터즈)인지 — isRegular 플래그 기준."""
+    m = _member_by_number(no)
+    return bool(m and m.get("isRegular") is True)
 
 
 def _verify(tier, value):
@@ -5714,7 +5823,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 s = self._sess() or {}
                 members = _load_json(DB_FILE, [])
-                members = _scope_members(s.get("tier"), s.get("who"), members)
+                members = _scope_members(s.get("tier"), s.get("who"), members,
+                                         regular=bool(s.get("regular")))
                 return self._json({"ok": True, "members": members})
             # ---- 접속 비밀번호 "현재값" 조회 (요구: 마스터 로그인 시에만 노출) ----
             if p == "/api/member/password":
@@ -5840,6 +5950,31 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = _load_json(CFG_FILE, _default_config())
                 cfg.pop("personalPasswords", None)   # 개인비번은 공개 config에서 제외
                 return self._json({"ok": True, "config": cfg})
+            # ---- 역할별 메뉴 접근권한 (조회: 인증, 설정: 마스터 전용) ----
+            if p == "/api/perms":
+                if not self._require():
+                    return
+                return self._json({"ok": True, "perms": _role_perms()})
+            if p == "/api/perms/set":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                role = str(d.get("role", "")).strip()
+                if role not in _default_role_perms():
+                    return self._json({"ok": False, "error": "bad role"}, 400)
+                updates = d.get("updates", d.get("perms", {})) or {}
+                if not isinstance(updates, dict):
+                    updates = {}
+                cfg = _load_json(CFG_FILE, _default_config())
+                rp = cfg.get("rolePermissions") or _default_role_perms()
+                cur = dict(rp.get(role) or _default_role_perms()[role])
+                for k, v in updates.items():
+                    if str(k) in cur:
+                        cur[str(k)] = bool(v)
+                rp[role] = cur
+                cfg["rolePermissions"] = rp
+                _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "role": role, "perms": cur})
             # ---- 재무 (F02: 관리자·마스터 전용) ----
             if p == "/api/finance":
                 if not self._require("admin"):
@@ -6697,11 +6832,12 @@ class Handler(BaseHTTPRequestHandler):
                         no = re.sub(r"[^0-9]", "", str(m.get("number", ""))) if m else ""
                         _log_access_login("guest", "일반회원",
                                           ident or no, ident or no, _ua, _ip)
-                    sid = _sess_new("guest", no) if ok else ""
+                    sid = _sess_new("guest", no, regular=True) if ok else ""
                     if sid:
                         self._set_sid_cookie(sid)
                     return self._json(
-                        {"ok": ok, "role": role, "number": no, "sid": sid})
+                        {"ok": ok, "role": role, "number": no,
+                         "supporter": bool(ok), "sid": sid})
                 ok, role = _verify(tier, value)
                 # 세션에 기록할 신원: 개인은 인가번호, 그 외는 role
                 who = ""
@@ -6714,16 +6850,22 @@ class Handler(BaseHTTPRequestHandler):
                 if ok and tier == "personal" and _is_granted_admin(who):
                     granted_admin = True
                     sess_tier = "app"
+                # 개인 로그인이라도 일반회원(서포터즈)이면 role 을 supporter 로 알린다.
+                is_supporter = False
+                if ok and tier == "personal" and not granted_admin:
+                    is_supporter = _is_regular_member(who)
                 if ok:
                     _log_access_login(tier, role,
                                       who or re.sub(r"[^0-9]", "", str(ident)),
                                       who, _ua, _ip)
-                sid = _sess_new(sess_tier, who) if ok else ""
+                sid = _sess_new(sess_tier, who,
+                                regular=bool(is_supporter)) if ok else ""
                 if sid:
                     self._set_sid_cookie(sid)
                 return self._json(
                     {"ok": ok, "role": role, "silent": (tier == "master"),
-                     "admin": granted_admin, "sid": sid})
+                     "admin": granted_admin, "supporter": is_supporter,
+                     "sid": sid})
             # ---- 세션 종료 ----
             if p == "/api/logout":
                 _sess_del(self._sid())
@@ -6766,11 +6908,12 @@ class Handler(BaseHTTPRequestHandler):
                         _ok = bool(m)
                     if not _ok:
                         return self._json({"ok": False, "error": "unknown"}, 404)
-                    sid = _sess_new("personal", ident)
+                    sid = _sess_new("personal", ident,
+                                    regular=_is_regular_member(ident))
                 elif tier == "guest":
                     if len(ident) < 4:
                         return self._json({"ok": False, "error": "id"}, 400)
-                    sid = _sess_new("guest", ident)
+                    sid = _sess_new("guest", ident, regular=True)
                 else:
                     return self._json({"ok": False, "error": "tier"}, 400)
                 # [수정] 앱은 개인/마스터 로그인을 로컬에서 검증하고 세션만
