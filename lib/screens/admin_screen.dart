@@ -89,11 +89,35 @@ class _AdminScreenState extends State<AdminScreen> {
     setState(() => _adminsLoading = true);
     final r = await context.read<AppState>().nas.merchantAdmins();
     if (!mounted) return;
-    final lst = (r['admins'] as List?)?.map((e) => '$e').toList() ?? [];
+    _captureAdminNames(r);
+    // 서버는 [{number, name}] 객체 배열을 반환한다(문자열 배열 호환도 유지).
+    final lst = <String>[];
+    for (final e in (r['admins'] as List?) ?? []) {
+      if (e is Map) {
+        final no = '${e['number'] ?? ''}'.trim();
+        if (no.isNotEmpty) lst.add(no);
+      } else {
+        final s = '$e'.trim();
+        if (s.isNotEmpty) lst.add(s);
+      }
+    }
     setState(() {
       _adminNumbers = lst;
       _adminsLoading = false;
     });
+  }
+
+  /// 서버 응답에서 관리자 이름 힌트를 얻는다 (없으면 회원명 fallback).
+  final Map<String, String> _adminNames = {};
+
+  void _captureAdminNames(Map<String, dynamic> r) {
+    for (final e in (r['admins'] as List?) ?? []) {
+      if (e is Map) {
+        final no = '${e['number'] ?? ''}'.trim();
+        final nm = '${e['name'] ?? ''}'.trim();
+        if (no.isNotEmpty && nm.isNotEmpty) _adminNames[no] = nm;
+      }
+    }
   }
 
   Widget _grantAdminCard(AppState state) {
@@ -254,6 +278,8 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   String _memberName(AppState state, String no) {
+    final hint = _adminNames[no];
+    if (hint != null && hint.isNotEmpty) return hint;
     try {
       final m = state.repo.byNumber(no);
       return m?.name ?? '';
