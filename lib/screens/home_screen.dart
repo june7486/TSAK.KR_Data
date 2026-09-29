@@ -23,6 +23,7 @@ import 'merch_stats_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'event_year_screen.dart';
+import 'board_screen.dart';
 import 'event_detail_screen.dart';
 import 'finance_screen.dart';
 import 'import_screen.dart';
@@ -33,6 +34,7 @@ import 'regular_members_screen.dart';
 import 'approval_screen.dart';
 import 'link_approval_screen.dart';
 import 'settings_screen.dart';
+import 'master_console_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
 
@@ -366,6 +368,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(builder: (_) => const AdminScreen()),
                     );
                     break;
+                  case 'master_console':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const MasterConsoleScreen()),
+                    );
+                    break;
                   case 'import':
                     Navigator.push(
                       context,
@@ -428,6 +437,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.admin_panel_settings,
                       label: '앱 관리 — 앱접근 비번 변경/정지/복구',
                       color: AppColors.taegeukRed,
+                    ),
+                  ),
+                if (state.isMaster)
+                  const PopupMenuItem(
+                    value: 'master_console',
+                    child: _MenuItem(
+                      icon: Icons.workspace_premium,
+                      label: '마스터 관리창 — 백업/회원/권한/로그/재무',
+                      color: AppColors.tigerGold,
                     ),
                   ),
                 if (!state.isSelfAccess) ...[
@@ -1024,10 +1042,11 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.only(right: 8),
             child: Row(
               children: [
+                // (0) 행사+수품판매 게시판 — 행사관리 앞에 배치(요구 #12)
+                _boardButton(),
                 // (1) 행사관리 — 가장 자주 쓰는 진입점
                 _eventButton(),
                 if (state.isApp || state.isMaster) ...[
-                  // (2) 승인관리 (관리자·마스터)
                   _approvalButton(),
                   // (2-1) 멘토·페런츠 연결 승인 (관리자·마스터)
                   _linkApprovalButton(),
@@ -1470,6 +1489,41 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 행사+수품판매 게시판 진입 버튼 (요구 #12)
+  Widget _boardButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BoardScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.forum_outlined, size: 14, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '행사·수품 게시판',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

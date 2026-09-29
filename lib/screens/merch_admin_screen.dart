@@ -30,7 +30,7 @@ class MerchAdminScreen extends StatefulWidget {
 
 class _MerchAdminScreenState extends State<MerchAdminScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 8, vsync: this);
+  late final TabController _tab = TabController(length: 11, vsync: this);
 
   NasApi get _nas => context.read<NasApi>();
 
@@ -179,6 +179,18 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isMaster = context.watch<AppState>().isMaster;
+    // #9: 마스터가 아니면 마스터 전용 탭을 숨긴다.
+    final visibleIndexes = <int>[
+      for (int i = 0; i < _tabLabels.length; i++)
+        if (isMaster || !_masterOnlyTabs.contains(i)) i,
+    ];
+    if (!visibleIndexes.contains(_tab.index)) {
+      // 비마스터가 숨겨진 탭에 머무르면 첫 탭으로 이동.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _tab.index = 0);
+      });
+    }
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -200,8 +212,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               height: 42,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
-                children: _tabLabels.asMap().entries.map((e) {
-                  final i = e.key;
+                children: visibleIndexes.map((i) {
                   final selected = _tab.index == i;
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
@@ -223,7 +234,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                           ),
                         ),
                         child: Text(
-                          e.value,
+                          _tabLabels[i],
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
@@ -253,16 +264,32 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _reportsTab(),
                 _ledgerTab(),
                 _stockTab(),
-                const SuppliesScreen(embedded: true),
-                const PurchaseScreen(embedded: true),
+                isMaster
+                    ? const SuppliesScreen(embedded: true)
+                    : _masterOnlyNotice(),
+                isMaster
+                    ? const PurchaseScreen(embedded: true)
+                    : _masterOnlyNotice(),
                 const PlansTab(),
                 _donationTab(),
-                _makerTab(),
+                isMaster ? _makerTab() : _masterOnlyNotice(),
                 _configTab(),
               ],
             ),
     );
   }
+
+  Widget _masterOnlyNotice() => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.lock_outline, size: 48, color: AppColors.textGray),
+            const SizedBox(height: 12),
+            const Text('마스터 권한에서만 접근할 수 있는 메뉴입니다',
+                style: TextStyle(color: AppColors.textGray)),
+          ],
+        ),
+      );
 
   static const List<String> _tabLabels = [
     '상품관리',
@@ -277,6 +304,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     '제작자',
     '설정',
   ];
+
+  /// 마스터 전용 탭 인덱스 (#9: 수품제작 리스트 등은 마스터만 접근).
+  static const Set<int> _masterOnlyTabs = {5, 6, 9};
 
   Widget _errorView() => Center(
     child: Column(

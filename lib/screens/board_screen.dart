@@ -1,0 +1,965 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../services/app_state.dart';
+import '../services/file_pick.dart';
+import '../services/nas_api.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
+
+/// 행사 + 수품판매 게시판 (#12).
+/// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호, 사진·동영상·첨부.
+/// - 관리자: 수정/삭제/비노출 지정.
+/// - URL 공유: 로그인한 권한자만 열람 가능(서버가 세션 검사).
+class BoardScreen extends StatefulWidget {
+  const BoardScreen({super.key});
+
+  @override
+  State<BoardScreen> createState() => _BoardScreenState();
+}
+
+class _BoardScreenState extends State<BoardScreen> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _posts = [];
+  bool _isAdmin = false;
+  String _filter = '전체';
+  final Set<String> _liked = {};
+
+  static const _categories = ['전체', '공지', '행사', '수품', '일반'];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  NasApi get _nas => context.read<NasApi>();
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final r = await _nas.boardList();
+      if (!mounted) return;
+      setState(() {
+        _posts = ((r['posts'] as List?) ?? [])
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+        _isAdmin = r['isAdmin'] == true;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '게시판을 불러오지 못했습니다: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  String _deviceLabel() => '이 기기';
+
+  List<Map<String, dynamic>> get _visible {
+    if (_filter == '전체') return _posts;
+    return _posts.where((p) => '${p['category'] ?? '일반'}' == _filter).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAF9F7),
+      appBar: AppBar(
+        title: const Text('행사 · 수품판매 게시판'),
+        actions: [
+          const AppHomeEmblem(size: 22),
+          IconButton(
+            tooltip: '새로고침',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: AppColors.purple,
+        onPressed: () => _editPost(),
+        icon: const Icon(Icons.edit),
+        label: const Text('글쓰기'),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _errorView()
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                    children: [
+                      _categoryBar(),
+                      const SizedBox(height: 8),
+                      if (_visible.isEmpty)
+                        _emptyView()
+                      else
+                        for (final p in _visible) _postCard(p),
+                    ],
+                  ),
+                ),
+    );
+  }
+
+  Widget _categoryBar() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final c in _categories)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: Text(c),
+                selected: _filter == c,
+                selectedColor: AppColors.purple.withValues(alpha: 0.15),
+                onSelected: (_) => setState(() => _filter = c),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyView() => Padding(
+        padding: const EdgeInsets.only(top: 80),
+        child: Column(
+          children: [
+            Icon(Icons.forum_outlined,
+                size: 64, color: AppColors.purple.withValues(alpha: 0.3)),
+            const SizedBox(height: 12),
+            const Text('아직 등록된 게시글이 없습니다',
+                style: TextStyle(color: AppColors.textGray)),
+            const SizedBox(height: 6),
+            const Text('첫 소식을 남겨보세요!',
+                style: TextStyle(color: AppColors.textGray, fontSize: 12)),
+          ],
+        ),
+      );
+
+  Widget _postCard(Map<String, dynamic> p) {
+    final state = context.watch<AppState>();
+    final id = '${p['id']}';
+    final author = '${p['author'] ?? ''}';
+    final number = '${p['number'] ?? ''}';
+    final title = '${p['title'] ?? ''}';
+    final category = '${p['category'] ?? '일반'}';
+    final body = '${p['body'] ?? ''}';
+    final created = '${p['created'] ?? ''}';
+    final updated = '${p['updated'] ?? ''}';
+    final hasPassword = p['hasPassword'] == true;
+    final pwdHint = '${p['pwdHint'] ?? ''}';
+    final likes = (p['likes'] as num?)?.toInt() ?? 0;
+    final views = (p['views'] as num?)?.toInt() ?? 0;
+    final hidden = p['hidden'] == true;
+    final comments = ((p['comments'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+    final attachments = ((p['attachments'] as List?) ?? [])
+        .map((e) => '$e')
+        .toList();
+    final media = ((p['media'] as List?) ?? []).map((e) => '$e').toList();
+    final device = '${p['device'] ?? ''}';
+    final ip = '${p['ip'] ?? ''}';
+    final mine = state.who.isNotEmpty && author == state.who;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 15,
+                  backgroundColor: AppColors.purple.withValues(alpha: 0.15),
+                  child: Text(
+                    author.isNotEmpty ? author.characters.first : '?',
+                    style: const TextStyle(
+                        color: AppColors.purple, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            author.isEmpty ? '익명' : author,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 14),
+                          ),
+                          if (number.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text(number,
+                                style: const TextStyle(
+                                    fontSize: 11, color: AppColors.textGray)),
+                          ],
+                          const SizedBox(width: 6),
+                          _chip(category, AppColors.purple),
+                          if (hasPassword) ...[
+                            const SizedBox(width: 6),
+                            _chip('비밀글', AppColors.taegeukBlue),
+                          ],
+                          if (hidden && _isAdmin) ...[
+                            const SizedBox(width: 6),
+                            _chip('비노출', AppColors.taegeukRed),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        updated.isNotEmpty && updated != created
+                            ? '$created  (수정 $updated)  ·  조회 $views'
+                            : '$created  ·  조회 $views',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'edit') {
+                      _editPost(existing: p);
+                    } else if (v == 'delete') {
+                      _deletePost(p);
+                    } else if (v == 'share') {
+                      _shareLink(id);
+                    } else if (v == 'hide') {
+                      _toggleHide(p, !hidden);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    if (_isAdmin || mine)
+                      const PopupMenuItem(value: 'edit', child: Text('수정')),
+                    if (_isAdmin || mine)
+                      const PopupMenuItem(value: 'delete', child: Text('삭제')),
+                    const PopupMenuItem(value: 'share', child: Text('링크 공유')),
+                    if (_isAdmin)
+                      PopupMenuItem(
+                          value: 'hide',
+                          child: Text(hidden ? '비노출 해제' : '비노출')),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark)),
+            const SizedBox(height: 4),
+            SelectableText(
+              body,
+              style: const TextStyle(
+                  fontSize: 14, height: 1.5, color: AppColors.textDark),
+            ),
+            if (hasPassword && pwdHint.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.lock_outline,
+                      size: 13, color: AppColors.textGray),
+                  const SizedBox(width: 4),
+                  Text('비밀번호 힌트: $pwdHint',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textGray)),
+                ],
+              ),
+            ],
+            if (_isAdmin && (device.isNotEmpty || ip.isNotEmpty)) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.taegeukRed.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.devices,
+                        size: 12, color: AppColors.taegeukRed),
+                    const SizedBox(width: 4),
+                    Text(
+                      '기기: ${device.isEmpty ? '-' : device}'
+                      '   IP: ${ip.isEmpty ? '-' : ip}',
+                      style: const TextStyle(
+                          fontSize: 10.5, color: AppColors.taegeukRed),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (media.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _mediaStrip(media),
+            ],
+            if (attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final a in attachments) _attachmentChip(a),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _likeButton(p, likes),
+                const SizedBox(width: 12),
+                InkWell(
+                  onTap: () => _addComment(p),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.mode_comment_outlined,
+                            size: 16, color: AppColors.textGray),
+                        const SizedBox(width: 4),
+                        Text('댓글 ${comments.length}',
+                            style: const TextStyle(
+                                fontSize: 12.5, color: AppColors.textGray)),
+                      ],
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                InkWell(
+                  onTap: () => _addAttachment(p),
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    child: Row(
+                      children: [
+                        Icon(Icons.attach_file,
+                            size: 16, color: AppColors.purple),
+                        SizedBox(width: 3),
+                        Text('첨부',
+                            style: TextStyle(
+                                fontSize: 12.5, color: AppColors.purple)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (comments.isNotEmpty) ...[
+              const Divider(height: 18),
+              for (final c in comments) _commentTile(p, c),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mediaStrip(List<String> media) {
+    return SizedBox(
+      height: 110,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: media.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (_, i) {
+          final name = media[i];
+          final isVideo = RegExp(r'\.(mp4|mov|webm|m4v)$', caseSensitive: false)
+              .hasMatch(name);
+          final url = _nas.fileDownloadUrl('board', name);
+          return GestureDetector(
+            onTap: () => _openAttachment(name),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 150,
+                color: Colors.black12,
+                child: isVideo
+                    ? const Center(
+                        child: Icon(Icons.play_circle_fill,
+                            size: 40, color: Colors.white))
+                    : Image.network(url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.broken_image,
+                            color: AppColors.textGray)),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _commentTile(Map<String, dynamic> post, Map<String, dynamic> c) {
+    final cid = '${c['id']}';
+    final author = '${c['author'] ?? ''}';
+    final body = '${c['body'] ?? ''}';
+    final created = '${c['created'] ?? ''}';
+    final device = '${c['device'] ?? ''}';
+    final ip = '${c['ip'] ?? ''}';
+    return Padding(
+      padding: const EdgeInsets.only(left: 14, bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.subdirectory_arrow_right,
+              size: 14, color: AppColors.textGray),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      author.isEmpty ? '익명' : author,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12.5),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(created,
+                        style: const TextStyle(
+                            fontSize: 10.5, color: AppColors.textGray)),
+                    if (_isAdmin && (device.isNotEmpty || ip.isNotEmpty)) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                          '· ${device.isEmpty ? ip : device}'
+                          '${(device.isNotEmpty && ip.isNotEmpty) ? ' / $ip' : ''}',
+                          style: const TextStyle(
+                              fontSize: 10, color: AppColors.taegeukRed)),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                SelectableText(body,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.textDark)),
+              ],
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            iconSize: 15,
+            tooltip: '댓글 삭제',
+            icon: const Icon(Icons.close, color: AppColors.textGray),
+            onPressed: () => _deleteComment(post, cid),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String t, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: c.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(t,
+            style: TextStyle(
+                fontSize: 10, color: c, fontWeight: FontWeight.w800)),
+      );
+
+  Widget _likeButton(Map<String, dynamic> p, int likes) {
+    final id = '${p['id']}';
+    final liked = _liked.contains(id);
+    return InkWell(
+      onTap: () => _toggleLike(p),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          children: [
+            Icon(
+              liked ? Icons.favorite : Icons.favorite_border,
+              size: 16,
+              color: liked ? AppColors.taegeukRed : AppColors.textGray,
+            ),
+            const SizedBox(width: 4),
+            Text('좋아요 $likes',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: liked ? FontWeight.w800 : FontWeight.w500,
+                  color: liked ? AppColors.taegeukRed : AppColors.textGray,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _attachmentChip(String name) {
+    return InkWell(
+      onTap: () => _openAttachment(name),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppColors.scoutGreen.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(6),
+          border:
+              Border.all(color: AppColors.scoutGreen.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.attach_file, size: 14, color: AppColors.scoutGreen),
+            const SizedBox(width: 4),
+            Text(name,
+                style: const TextStyle(
+                    fontSize: 11.5, color: AppColors.scoutGreen)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================ 액션 ============================
+
+  Future<void> _editPost({Map<String, dynamic>? existing}) async {
+    final state = context.read<AppState>();
+    final titleCtrl = TextEditingController(text: '${existing?['title'] ?? ''}');
+    final bodyCtrl = TextEditingController(text: '${existing?['body'] ?? ''}');
+    final authorCtrl = TextEditingController(
+        text: '${existing?['author'] ?? (state.who.isNotEmpty ? state.who : '')}');
+    final numberCtrl =
+        TextEditingController(text: '${existing?['number'] ?? ''}');
+    final pwCtrl = TextEditingController();
+    final hintCtrl =
+        TextEditingController(text: '${existing?['pwdHint'] ?? ''}');
+    String category = '${existing?['category'] ?? '공지'}';
+    bool hidden = existing?['hidden'] == true;
+
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(existing == null ? '게시글 쓰기' : '게시글 수정'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: category,
+                          decoration: const InputDecoration(labelText: '분류'),
+                          items: const [
+                            DropdownMenuItem(value: '공지', child: Text('공지')),
+                            DropdownMenuItem(value: '행사', child: Text('행사')),
+                            DropdownMenuItem(value: '수품', child: Text('수품')),
+                            DropdownMenuItem(value: '일반', child: Text('일반')),
+                          ],
+                          onChanged: (v) =>
+                              setD(() => category = v ?? '공지'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: authorCtrl,
+                          decoration: const InputDecoration(labelText: '작성자'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 110,
+                        child: TextField(
+                          controller: numberCtrl,
+                          decoration:
+                              const InputDecoration(labelText: '인가번호'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(labelText: '제목'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: bodyCtrl,
+                    maxLines: 6,
+                    minLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '내용',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: pwCtrl,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: existing?['hasPassword'] == true
+                                ? '비밀번호 (변경 시 입력)'
+                                : '비밀번호 (선택)',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 120,
+                        child: TextField(
+                          controller: hintCtrl,
+                          decoration: const InputDecoration(labelText: '힌트'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_isAdmin) ...[
+                    const SizedBox(height: 4),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: hidden,
+                      title: const Text('비노출(관리자만 보기)',
+                          style: TextStyle(fontSize: 13)),
+                      onChanged: (v) => setD(() => hidden = v == true),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+              onPressed: titleCtrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, 'publish'),
+              child: const Text('등록'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (res != 'publish') return;
+    if (titleCtrl.text.trim().isEmpty) return;
+    try {
+      await _nas.boardSave(
+        id: '${existing?['id'] ?? ''}',
+        category: category,
+        title: titleCtrl.text.trim(),
+        body: bodyCtrl.text.trim(),
+        author: authorCtrl.text.trim(),
+        number: numberCtrl.text.trim(),
+        hidden: hidden,
+        password: pwCtrl.text,
+        pwdHint: hintCtrl.text.trim(),
+        device: _deviceLabel(),
+      );
+      _snack(existing == null ? '등록했습니다' : '수정했습니다');
+      await _load();
+    } catch (e) {
+      _snack('저장 실패: $e');
+    }
+  }
+
+  Future<void> _addComment(Map<String, dynamic> post) async {
+    final state = context.read<AppState>();
+    final ctrl = TextEditingController();
+    final authorCtrl = TextEditingController(
+        text: state.who.isNotEmpty ? state.who : '');
+    final pwCtrl = TextEditingController();
+    final locked = post['hasPassword'] == true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('댓글 달기'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: authorCtrl,
+              decoration: const InputDecoration(labelText: '작성자'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              maxLines: 3,
+              minLines: 1,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '댓글'),
+            ),
+            if (locked && !_isAdmin) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: pwCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '비밀글 비밀번호',
+                  helperText: '비밀글에는 비밀번호가 필요합니다',
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('등록'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || ctrl.text.trim().isEmpty) return;
+    try {
+      final r = await _nas.boardComment(
+        postId: '${post['id']}',
+        author: authorCtrl.text.trim(),
+        number: '${post['number'] ?? ''}',
+        body: ctrl.text.trim(),
+        password: pwCtrl.text,
+        device: _deviceLabel(),
+      );
+      if (r['ok'] == true) {
+        await _load();
+      } else {
+        _snack('댓글 실패: ${r['error'] ?? '비밀번호 확인'}');
+      }
+    } catch (e) {
+      _snack('댓글 실패: $e');
+    }
+  }
+
+  Future<void> _toggleLike(Map<String, dynamic> post) async {
+    final id = '${post['id']}';
+    final on = !_liked.contains(id);
+    setState(() {
+      if (on) {
+        _liked.add(id);
+      } else {
+        _liked.remove(id);
+      }
+    });
+    try {
+      await _nas.boardLike(postId: id, on: on);
+      await _load();
+    } catch (e) {
+      _snack('좋아요 실패: $e');
+    }
+  }
+
+  Future<void> _deletePost(Map<String, dynamic> post) async {
+    String pw = '';
+    if (post['hasPassword'] == true && !_isAdmin) {
+      final ctrl = TextEditingController();
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('비밀번호 확인'),
+          content: TextField(
+            controller: ctrl,
+            obscureText: true,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: '비밀번호'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('확인')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      pw = ctrl.text;
+    }
+    final done = await _nas.boardDelete(postId: '${post['id']}', password: pw);
+    _snack(done ? '삭제했습니다' : '삭제 실패 (비밀번호 확인)');
+    await _load();
+  }
+
+  Future<void> _deleteComment(Map<String, dynamic> post, String cid) async {
+    await _nas.boardDelete(postId: '${post['id']}', commentId: cid);
+    await _load();
+  }
+
+  Future<void> _toggleHide(Map<String, dynamic> post, bool hidden) async {
+    await _nas.boardHide(postId: '${post['id']}', hidden: hidden);
+    _snack(hidden ? '비노출로 지정했습니다' : '비노출을 해제했습니다');
+    await _load();
+  }
+
+  Future<void> _addAttachment(Map<String, dynamic> post) async {
+    final picked = await pickDataFiles(
+      allowMultiple: true,
+      dialogTitle: '게시판 첨부 추가 (사진/동영상/파일)',
+    );
+    if (picked.isEmpty) return;
+    final media = ((post['media'] as List?) ?? []).map((e) => '$e').toList();
+    final attachments =
+        ((post['attachments'] as List?) ?? []).map((e) => '$e').toList();
+    try {
+      for (final f in picked) {
+        await _nas.uploadFile('board', f.name, f.bytes);
+        final isMedia = RegExp(r'\.(jpg|jpeg|png|gif|webp|mp4|mov|webm|m4v)$',
+                caseSensitive: false)
+            .hasMatch(f.name);
+        if (isMedia) {
+          media.add(f.name);
+        } else {
+          attachments.add(f.name);
+        }
+      }
+      await _nas.boardSave(
+        id: '${post['id']}',
+        category: '${post['category'] ?? '일반'}',
+        title: '${post['title'] ?? ''}',
+        body: '${post['body'] ?? ''}',
+        author: '${post['author'] ?? ''}',
+        number: '${post['number'] ?? ''}',
+        hidden: post['hidden'] == true,
+        attachments: attachments,
+        media: media,
+      );
+      _snack('첨부했습니다');
+      await _load();
+    } catch (e) {
+      _snack('첨부 실패: $e');
+    }
+  }
+
+  void _openAttachment(String name) {
+    final url = _nas.fileDownloadUrl('board', name);
+    final isImg = RegExp(r'\.(jpg|jpeg|png|gif|webp)$', caseSensitive: false)
+        .hasMatch(name);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: Text(name, style: const TextStyle(fontSize: 13)),
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            Flexible(
+              child: isImg
+                  ? InteractiveViewer(
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('미리보기를 열 수 없는 파일입니다'),
+                        ),
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.insert_drive_file,
+                              size: 48, color: AppColors.textGray),
+                          const SizedBox(height: 12),
+                          const Text('첨부파일 (별도 창에서 열람)',
+                              style: TextStyle(color: AppColors.textGray)),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: const Icon(Icons.download),
+                            label: const Text('링크 복사 안내'),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _shareLink(String id) async {
+    final url = _nas.fileDownloadUrl('board', '');
+    final link = '${url.split('/api')[0]}/#/board?id=$id';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('링크 공유'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('아래 링크를 공유하세요. 로그인한 권한자만 열람할 수 있습니다.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+            const SizedBox(height: 10),
+            SelectableText(link,
+                style: const TextStyle(fontSize: 12, color: AppColors.purple)),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
+  }
+
+  Widget _errorView() => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline,
+                size: 48, color: AppColors.taegeukRed),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(_error!, textAlign: TextAlign.center),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('다시 시도')),
+          ],
+        ),
+      );
+
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
+    );
+  }
+}

@@ -1433,6 +1433,160 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  // ==================== 행사 + 수품판매 게시판 (#12) ====================
+  /// 게시판 글 목록. 반환: {ok, posts, isAdmin}
+  Future<Map<String, dynamic>> boardList() async {
+    final r = await http
+        .get(_uri('/api/board/list'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 게시판 글 상세.
+  Future<Map<String, dynamic>> boardGet(String id) async {
+    final r = await http
+        .get(_uri('/api/board/get?id=${Uri.encodeComponent(id)}'),
+            headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 게시판 글 작성/수정. 반환: {ok, id}
+  Future<Map<String, dynamic>> boardSave({
+    String id = '',
+    String category = '일반',
+    required String title,
+    required String body,
+    String author = '',
+    String number = '',
+    bool hidden = false,
+    String password = '',
+    String pwdHint = '',
+    String device = '',
+    List<String> attachments = const [],
+    List<String> media = const [],
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/board/post'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            'category': category,
+            'title': title,
+            'body': body,
+            'author': author,
+            'number': number,
+            'hidden': hidden,
+            'password': password,
+            'pwdHint': pwdHint,
+            'device': device,
+            'attachments': attachments,
+            'media': media,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 게시판 댓글 추가.
+  Future<Map<String, dynamic>> boardComment({
+    required String postId,
+    String author = '',
+    String number = '',
+    required String body,
+    String password = '',
+    String device = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/board/comment'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'postId': postId,
+            'author': author,
+            'number': number,
+            'body': body,
+            'password': password,
+            'device': device,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 게시판 좋아요 토글. 반환: {ok, likes}
+  Future<Map<String, dynamic>> boardLike({
+    required String postId,
+    required bool on,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/board/like'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'postId': postId, 'on': on}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 게시판 글/댓글 삭제.
+  Future<bool> boardDelete({
+    String postId = '',
+    String commentId = '',
+    String password = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/board/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'postId': postId,
+            'commentId': commentId,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 게시판 글 비노출 토글(관리자 이상).
+  Future<Map<String, dynamic>> boardHide({
+    required String postId,
+    required bool hidden,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/board/hide'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'postId': postId, 'hidden': hidden}),
+        )
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 게시판 조회수 증가.
+  Future<void> boardView(String postId) async {
+    try {
+      await http
+          .post(
+            _uri('/api/board/view'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({'postId': postId}),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {}
+  }
+
+  /// 알림 목록(관리자 이상). 반환: {ok, items, unread}
+  Future<Map<String, dynamic>> notifyList() async {
+    final r = await http
+        .get(_uri('/api/notify/list'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   // ==================== 수품구매 (굿즈) ====================
   /// 공개 상품목록/설정/연회비 납부여부 조회. 로그인 불필요.
   /// [ident] = 인가번호 또는 전화번호(연회비 판단용, 선택)

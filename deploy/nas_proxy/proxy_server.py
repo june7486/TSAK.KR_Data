@@ -53,6 +53,7 @@ ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인
 FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거래 종합분석 캐시
 REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
 BOARD_FILE = BASE + "/db/board.json"            # 행사+수품판매 게시판(글/댓글/좋아요/첨부/비밀번호/비노출)
+NOTIFY_FILE = BASE + "/db/notify.json"          # 게시판/주문 등 관리자 이상 알림 큐
 MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
 MERCH_MAKER_DIR = BASE + "/수품제작자"           # 수품 제작자 첨부파일 저장 폴더
 MERCH_IMG_UPLOAD_DIR = HERE + "/merch_img_upload"  # 관리자 업로드 상품 이미지 폴더
@@ -87,6 +88,7 @@ SUB_FOLDERS = {
     "donation": "후원현황",
     "expense": "지출내역",
     "event": "행사자료",
+    "board": "게시판첨부",
 }
 HIST_FILE = BASE + "/db/finance_history.json"  # 연도/월별 스냅샷(집계 캐시)
 
@@ -1919,6 +1921,48 @@ def _now_ymd(o):
     c = str((o or {}).get("created", ""))
     m = re.match(r"(\d{4})", c)
     return m.group(1) if m else str((o or {}).get("year", ""))
+
+
+# ===================== 행사 + 수품판매 게시판 (#12) =====================
+def _board_doc():
+    return _load_json(BOARD_FILE, {"posts": []})
+
+
+def _board_save(doc):
+    _save_json(BOARD_FILE, doc)
+
+
+def _board_public(post, is_admin):
+    """클라이언트 노출용으로 민감 필드(password 해시) 제거."""
+    out = dict(post)
+    out.pop("password", None)
+    out["hasPassword"] = bool(post.get("password"))
+    if not is_admin:
+        out.pop("hidden", None)
+    return out
+
+
+def _board_next_id(posts):
+    return "bd" + _secrets.token_urlsafe(6)
+
+
+def _board_notify(post):
+    """신규 게시글 → 관리자 이상 알림 큐에 적재."""
+    doc = _load_json(NOTIFY_FILE, {"items": []})
+    items = doc.get("items", [])
+    items.insert(0, {
+        "id": "nt" + _secrets.token_urlsafe(6),
+        "type": "board",
+        "title": str(post.get("title", "") or "새 게시글"),
+        "category": str(post.get("category", "") or ""),
+        "author": str(post.get("author", "") or ""),
+        "postId": str(post.get("id", "") or ""),
+        "text": "새 게시글이 등록되었습니다: " + str(post.get("title", "") or ""),
+        "created": _now_stamp(),
+        "read": False,
+    })
+    doc["items"] = items[:200]
+    _save_json(NOTIFY_FILE, doc)
 
 
 # ===================== 도로명주소 검색 (행정안전부 JUSO 오픈API) =====================
@@ -5833,6 +5877,42 @@ class Handler(BaseHTTPRequestHandler):
                 out.sort(key=lambda x: str(x.get("created", "")), reverse=True)
                 return self._json({"ok": True, "posts": out,
                                    "isAdmin": is_admin})
+            # ---------- 행사 + 수품판매 게시판 (#12) ----------
+            if p == "/api/board/list":
+                if not self._require():
+                    return
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                doc = _board_doc()
+                out = []
+                for pst in doc.get("posts", []):
+                    if pst.get("hidden") and not is_admin:
+                        continue
+                    out.append(_board_public(pst, is_admin))
+                out.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                return self._json({"ok": True, "posts": out, "isAdmin": is_admin})
+            if p == "/api/board/get":
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                bid = q.get("id", [""])[0]
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                doc = _board_doc()
+                pst = next((x for x in doc.get("posts", [])
+                            if str(x.get("id")) == bid), None)
+                if not pst:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                if pst.get("hidden") and not is_admin:
+                    return self._json({"ok": False, "error": "hidden"}, 403)
+                return self._json({"ok": True, "post": _board_public(pst, is_admin)})
+            if p == "/api/notify/list":
+                if not self._require("admin"):
+                    return
+                doc = _load_json(NOTIFY_FILE, {"items": []})
+                items = doc.get("items", [])
+                unread = sum(1 for x in items if not x.get("read"))
+                return self._json({"ok": True, "items": items[:100], "unread": unread})
             # ---------- 수품구매 (굿즈) ----------
             if p == "/api/merch":
                 # 로그인 없이도 공개 조회 가능 (무인증 구매 버튼용)
@@ -7089,6 +7169,149 @@ class Handler(BaseHTTPRequestHandler):
                     posts.remove(post)
                     _review_save_posts(year, title, posts)
                 return self._json({"ok": True})
+            # ---------- 행사 + 수품판매 게시판 (#12) POST ----------
+            if p == "/api/board/post":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                doc = _board_doc()
+                posts = doc.get("posts", [])
+                bid = str(d.get("id", "") or ("bd" + _secrets.token_urlsafe(6)))
+                existing = next((x for x in posts if str(x.get("id")) == bid), None)
+                # 수정 권한: 원글 작성자 본인 또는 관리자
+                if existing and not is_admin:
+                    if str(existing.get("author", "")) != str(s.get("who", "")):
+                        return self._json({"ok": False, "error": "forbidden"}, 403)
+                    if existing.get("password"):
+                        if _pwd_hash(str(d.get("password", ""))) != existing.get("password"):
+                            return self._json({"ok": False, "error": "password"}, 403)
+                new_post = {
+                    "id": bid,
+                    "category": str(d.get("category", "") or "일반")[:20],
+                    "title": str(d.get("title", "") or "")[:120],
+                    "body": str(d.get("body", "") or ""),
+                    "author": str(d.get("author", "") or "")[:40],
+                    "number": str(d.get("number", "") or "")[:20],
+                    "created": existing.get("created") if existing else _now_stamp(),
+                    "updated": _now_stamp(),
+                    "likes": int(existing.get("likes", 0) or 0) if existing else 0,
+                    "views": int(existing.get("views", 0) or 0) if existing else 0,
+                    "comments": existing.get("comments", []) if existing else [],
+                    "attachments": d.get("attachments", (existing or {}).get("attachments", [])),
+                    "media": d.get("media", (existing or {}).get("media", [])),
+                    "hidden": bool(d.get("hidden", (existing or {}).get("hidden", False))),
+                    "device": str(d.get("device", "") or "")[:120],
+                    "ip": self.client_address[0] if self.client_address else "",
+                }
+                pw = str(d.get("password", "") or "")
+                if pw:
+                    new_post["password"] = _pwd_hash(pw)
+                    new_post["pwdHint"] = str(d.get("pwdHint", "") or "")[:40]
+                elif existing:
+                    new_post["password"] = existing.get("password")
+                    new_post["pwdHint"] = existing.get("pwdHint", "")
+                if existing:
+                    posts[posts.index(existing)] = new_post
+                else:
+                    # 신규 글 → 관리자 이상 알림 큐 적재
+                    try:
+                        _board_notify(new_post)
+                    except Exception:
+                        pass
+                doc["posts"] = posts
+                _board_save(doc)
+                return self._json({"ok": True, "id": bid})
+            if p == "/api/board/comment":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                bid = str(d.get("postId", "") or "")
+                doc = _board_doc()
+                posts = doc.get("posts", [])
+                post = next((x for x in posts if str(x.get("id")) == bid), None)
+                if not post:
+                    return self._json({"ok": False, "error": "post not found"}, 404)
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                if post.get("password") and not is_admin:
+                    if _pwd_hash(str(d.get("password", ""))) != post.get("password"):
+                        return self._json({"ok": False, "error": "password"}, 403)
+                cm = {
+                    "id": "c" + _secrets.token_urlsafe(6),
+                    "author": str(d.get("author", "") or "")[:40],
+                    "number": str(d.get("number", "") or "")[:20],
+                    "body": str(d.get("body", "") or ""),
+                    "created": _now_stamp(),
+                    "device": str(d.get("device", "") or "")[:120],
+                    "ip": self.client_address[0] if self.client_address else "",
+                }
+                post.setdefault("comments", []).append(cm)
+                _board_save(doc)
+                return self._json({"ok": True, "id": cm["id"]})
+            if p == "/api/board/like":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                bid = str(d.get("postId", "") or "")
+                on = bool(d.get("on", True))
+                doc = _board_doc()
+                post = next((x for x in doc.get("posts", []) if str(x.get("id")) == bid), None)
+                if not post:
+                    return self._json({"ok": False, "error": "post not found"}, 404)
+                cur = int(post.get("likes", 0) or 0)
+                post["likes"] = max(0, cur + (1 if on else -1))
+                _board_save(doc)
+                return self._json({"ok": True, "likes": post["likes"]})
+            if p == "/api/board/delete":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                bid = str(d.get("postId", "") or "")
+                cid = str(d.get("commentId", "") or "")
+                doc = _board_doc()
+                posts = doc.get("posts", [])
+                s = self._sess() or {}
+                is_admin = s.get("tier") in ("app", "master")
+                post = next((x for x in posts if str(x.get("id")) == bid), None)
+                if cid and post:
+                    post["comments"] = [c for c in post.get("comments", [])
+                                        if str(c.get("id")) != cid]
+                    _board_save(doc)
+                    return self._json({"ok": True})
+                if post:
+                    if not is_admin:
+                        if str(post.get("author", "")) != str(s.get("who", "")):
+                            return self._json({"ok": False, "error": "forbidden"}, 403)
+                        if post.get("password"):
+                            if _pwd_hash(str(d.get("password", ""))) != post.get("password"):
+                                return self._json({"ok": False, "error": "password"}, 403)
+                    posts.remove(post)
+                    _board_save(doc)
+                return self._json({"ok": True})
+            if p == "/api/board/hide":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                bid = str(d.get("postId", "") or "")
+                doc = _board_doc()
+                post = next((x for x in doc.get("posts", []) if str(x.get("id")) == bid), None)
+                if post:
+                    post["hidden"] = bool(d.get("hidden", True))
+                    _board_save(doc)
+                return self._json({"ok": True, "hidden": bool((post or {}).get("hidden"))})
+            if p == "/api/board/view":
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                bid = str(d.get("postId", "") or "")
+                doc = _board_doc()
+                post = next((x for x in doc.get("posts", []) if str(x.get("id")) == bid), None)
+                if post:
+                    post["views"] = int(post.get("views", 0) or 0) + 1
+                    _board_save(doc)
+                return self._json({"ok": True, "views": int((post or {}).get("views", 0) or 0)})
             # ---------- 수품구매 (굿즈) POST ----------
             if p == "/api/merch/order":
                 # 무인증(비로그인) 구매 가능. 연회비 미납이라도 '엄격모드'일 때만 차단.
