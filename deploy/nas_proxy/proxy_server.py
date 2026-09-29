@@ -5524,8 +5524,16 @@ class Handler(BaseHTTPRequestHandler):
             # 재빌드(재배포) 시 값이 바뀌므로 클라이언트가 자동 감지/새로고침한다.
             if p == "/version.json":
                 # 1순위: 빌드 시 심어둔 version.json 의 스탬프(앱과 동일 값 → 정확 감지).
+                #   ※ 이 파일은 로컬(build/web)에 있으므로 NAS 용 _load_json 이 아니라
+                #     로컬 파일을 직접 읽는다.
                 # 2순위(폴백): main.dart.js mtime (한국시간 KST).
-                vj = _load_json(os.path.join(STATIC_DIR, "version.json"), {})
+                vj = {}
+                try:
+                    with open(os.path.join(STATIC_DIR, "version.json"),
+                              encoding="utf-8") as _f:
+                        vj = json.load(_f)
+                except Exception:
+                    vj = {}
                 stamp = str(vj.get("version") or vj.get("build_id") or "").strip()
                 if not stamp or not stamp.isdigit():
                     stamp = "0"

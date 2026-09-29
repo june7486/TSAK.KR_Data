@@ -188,23 +188,9 @@
           }
         } catch (e) { location.reload(); }
       }
-      try {
-        // (A) 옛 서비스워커 1회성 해제
-        if ('serviceWorker' in navigator &&
-            localStorage.getItem('tsak_sw_off') !== '1') {
-          navigator.serviceWorker.getRegistrations()
-            .then(function (rs) {
-              return Promise.all(rs.map(function (r) { return r.unregister(); }))
-                .then(function () { return rs.length; });
-            })
-            .catch(function () { return 0; })
-            .then(function (n) {
-              try { localStorage.setItem('tsak_sw_off', '1'); } catch (e) {}
-              if (n > 0 && guarded()) clearCachesAndReload();
-            });
-          return;
-        }
-        // (B) 새 버전 감지
+      function versionCheck() {
+        // 새 버전 감지: 서버 version.json 과 마지막으로 연 앱 버전을 비교한다.
+        //  값이 다르면 캐시(정적자산)를 지우고 새 버전을 다시 내려받는다.
         fetch('version.json?_=' + Date.now(), { cache: 'no-store' })
           .then(function (r) { return r.json(); })
           .then(function (v) {
@@ -217,6 +203,30 @@
             if (prev && prev !== curS && guarded()) clearCachesAndReload();
           })
           .catch(function () {});
+      }
+      try {
+        // (A) 옛 서비스워커 1회성 해제 (낡은 main.dart.js 서빙 차단)
+        if ('serviceWorker' in navigator &&
+            localStorage.getItem('tsak_sw_off') !== '1') {
+          navigator.serviceWorker.getRegistrations()
+            .then(function (rs) {
+              return Promise.all(rs.map(function (r) { return r.unregister(); }))
+                .then(function () { return rs.length; });
+            })
+            .catch(function () { return 0; })
+            .then(function (n) {
+              try { localStorage.setItem('tsak_sw_off', '1'); } catch (e) {}
+              if (n > 0) {
+                // 워커가 있었으면 캐시 정리 후 재로드(그 후 versionCheck 는 재로드된 문서에서 실행됨)
+                if (guarded()) clearCachesAndReload();
+                return;
+              }
+              versionCheck(); // 워커가 없으면 바로 버전 감지
+            });
+        } else {
+          // (B) 새 버전 감지 — 서비스워커가 없어도 항상 실행
+          versionCheck();
+        }
       } catch (e) {}
     })();
   </script>
