@@ -25,6 +25,9 @@ class Member {
     this.purchases = '',
     this.photoPath = '',
     this.lifetimeMember = false,
+    this.lifetimeSince = '',
+    this.qualificationStatus = '',
+    this.qualificationNote = '',
     this.isRegular = false,
     this.approvalStatus = '',
     this.personalPassword = '',
@@ -114,6 +117,15 @@ class Member {
 
   /// 평생회원 여부
   bool lifetimeMember;
+
+  /// 평생회원 등록일 (예: "2022-04-13") — 등록요청 승인 시 기록.
+  String lifetimeSince;
+
+  /// 자격 지정 상태: ''(미지정) | 'approved'(승인) — 등록요청 승인 시 기록.
+  String qualificationStatus;
+
+  /// 자격 지정 메모 (승인 시 관리자 의견).
+  String qualificationNote;
 
   /// 일반회원(비인가자) 여부 — true면 인가자가 아닌 일반 참가자/신규회원
   bool isRegular;
@@ -224,6 +236,10 @@ class Member {
       eventAttend.entries.where((e) => e.value).map((e) => e.key).toList()
         ..sort();
 
+  /// 자격 지정이 승인되었는지 여부.
+  bool get qualificationApproved =>
+      qualificationStatus.trim() == 'approved';
+
   Map<String, dynamic> toMap() => {
     'id': id,
     'number': number,
@@ -247,6 +263,9 @@ class Member {
       'purchases': purchases,
       'photoPath': photoPath,
     'lifetimeMember': lifetimeMember,
+    'lifetimeSince': lifetimeSince,
+    'qualificationStatus': qualificationStatus,
+    'qualificationNote': qualificationNote,
     'isRegular': isRegular,
     'approvalStatus': approvalStatus,
     'personalPassword': personalPassword,
@@ -308,6 +327,9 @@ class Member {
       purchases: '${map['purchases'] ?? ''}',
       photoPath: '${map['photoPath'] ?? ''}',
       lifetimeMember: map['lifetimeMember'] == true,
+      lifetimeSince: '${map['lifetimeSince'] ?? ''}',
+      qualificationStatus: '${map['qualificationStatus'] ?? ''}',
+      qualificationNote: '${map['qualificationNote'] ?? ''}',
       isRegular: map['isRegular'] == true,
       approvalStatus: '${map['approvalStatus'] ?? ''}',
       personalPassword: '${map['personalPassword'] ?? ''}',
@@ -354,6 +376,9 @@ class Member {
     String? purchases,
     String? photoPath,
     bool? lifetimeMember,
+    String? lifetimeSince,
+    String? qualificationStatus,
+    String? qualificationNote,
     bool? isRegular,
     String? approvalStatus,
     String? personalPassword,
@@ -397,6 +422,9 @@ class Member {
       purchases: purchases ?? this.purchases,
       photoPath: photoPath ?? this.photoPath,
       lifetimeMember: lifetimeMember ?? this.lifetimeMember,
+      lifetimeSince: lifetimeSince ?? this.lifetimeSince,
+      qualificationStatus: qualificationStatus ?? this.qualificationStatus,
+      qualificationNote: qualificationNote ?? this.qualificationNote,
       isRegular: isRegular ?? this.isRegular,
       approvalStatus: approvalStatus ?? this.approvalStatus,
       personalPassword: personalPassword ?? this.personalPassword,

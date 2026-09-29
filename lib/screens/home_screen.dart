@@ -34,6 +34,7 @@ import 'qr_screen.dart';
 import 'regular_members_screen.dart';
 import 'approval_screen.dart';
 import 'link_approval_screen.dart';
+import 'member_request_screen.dart';
 import 'settings_screen.dart';
 import 'master_console_screen.dart';
 import 'source_folder_screen.dart';
@@ -455,6 +456,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           builder: (_) => const MasterConsoleScreen()),
                     );
                     break;
+                  case 'member_request':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const MemberRequestScreen()),
+                    );
+                    break;
                   case 'import':
                     Navigator.push(
                       context,
@@ -528,6 +536,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       label: '마스터 관리창 — 백업/회원/권한/로그/재무',
                       color: AppColors.taegeukRed,
                       role: '마스터',
+                    ),
+                  ),
+                if (state.isApp || state.isMaster)
+                  const PopupMenuItem(
+                    value: 'member_request',
+                    child: _MenuItem(
+                      icon: Icons.app_registration,
+                      label: '등록요청 승인 — 평생회원·연회비·자격',
+                      color: AppColors.lifetimeGold,
+                      role: '관리자',
                     ),
                   ),
                 if (!state.isSelfAccess) ...[

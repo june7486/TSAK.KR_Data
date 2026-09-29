@@ -788,6 +788,69 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // ---------- 회원 등록요청 (평생회원·연회비·자격) ----------
+  /// 등록요청 제출 (로그인 회원 누구나). 성공 시 null, 실패 시 메시지.
+  Future<String?> submitMemberRequest({
+    required String type,
+    String year = '',
+    String date = '',
+    String note = '',
+    String newNumber = '',
+  }) async {
+    if (!repo.isNasMode) return '서버 연결이 필요합니다';
+    try {
+      final r = await nas.memberRequestSubmit(
+        type: type,
+        ident: who,
+        year: year,
+        date: date,
+        note: note,
+        newNumber: newNumber,
+      );
+      if (r['ok'] == true) return null;
+      return '${r['error'] ?? '요청 실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  /// 등록요청 대기 목록 조회(관리자·마스터).
+  Future<List<Map<String, dynamic>>> fetchMemberRequests() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return [];
+    try {
+      return await nas.memberRequestList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 본인(개인 프로필)의 등록요청 이력 조회 — 로그인 회원 누구나.
+  /// [ident] 미지정 시 로그인 세션의 who 를 사용한다.
+  Future<List<Map<String, dynamic>>> fetchMyMemberRequests({
+    String ident = '',
+  }) async {
+    if (!repo.isNasMode) return [];
+    final id = ident.trim().isNotEmpty ? ident : who;
+    if (id.trim().isEmpty) return [];
+    try {
+      return await nas.myMemberRequests();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 등록요청 승인/반려 처리 후 로컬 캐시 갱신.
+  Future<bool> setMemberRequest(String id, String action) async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return false;
+    try {
+      final ok = await nas.memberRequestSet(id: id, action: action);
+      if (ok) await repo.syncFromNas();
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---------- 일반회원 승인 시스템 ----------
   /// 미승인(승인 대기) 일반회원 목록.
   List<Member> get pendingMembers =>

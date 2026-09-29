@@ -15,6 +15,7 @@ import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'merch_admin_screen.dart';
+import 'member_request_screen.dart';
 import 'regular_members_screen.dart';
 import 'role_permissions_screen.dart';
 import 'settings_screen.dart';
@@ -130,6 +131,8 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                     AppColors.purple, () => _push(const RegularMembersScreen())),
                 _tile('승인 대기 관리', Icons.how_to_reg, AppColors.tigerGold,
                     () => _push(const ApprovalScreen())),
+                _tile('등록요청 승인', Icons.app_registration, AppColors.lifetimeGold,
+                    () => _push(const MemberRequestScreen())),
                 _tile('일괄작업 (단체문자)', Icons.campaign,
                     AppColors.taegeukBlue, () => _push(const BulkScreen())),
               ]),

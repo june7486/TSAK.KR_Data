@@ -13,6 +13,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/member_access_log.dart';
+import '../widgets/member_registration_request_section.dart';
 import '../widgets/merch_activity_section.dart';
 import '../widgets/personal_survey_section.dart';
 import '../widgets/photo_pip.dart';
@@ -152,6 +153,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 _approvalBanner(m),
                 _depositSection(m),
                 _feeTracker(m),
+                // 등록요청 — 평생회원/연회비 납부/자격 지정 (본인 요청 → 관리자·마스터 승인)
+                MemberRegistrationRequestSection(
+                  member: m,
+                  isSelf: context.watch<AppState>().isSelfNumber(m.number),
+                ),
                 _eventSection(m),
                 MerchActivitySection(
                   ident: m.number.isNotEmpty ? m.number : m.phone,
@@ -668,6 +674,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _feeTracker(Member m) {
+    final state = context.watch<AppState>();
+    // 납부 연도 변경은 관리자·마스터 전용, 평생회원 지정은 마스터 전용이다.
+    //  (일반 회원은 '등록요청'으로 요청 → 관리자·마스터 승인)
+    final canAdmin = state.isApp || state.isMaster;
+    final canMaster = state.isMaster;
     final years = <String>{
       '2024',
       '2025',
@@ -691,14 +702,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.star, color: Colors.white, size: 18),
-                  SizedBox(width: 6),
+                  const Icon(Icons.star, color: Colors.white, size: 18),
+                  const SizedBox(width: 6),
                   Text(
-                    '평생회원',
-                    style: TextStyle(
+                    m.lifetimeSince.isNotEmpty
+                        ? '평생회원 (${m.lifetimeSince})'
+                        : '평생회원',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w800,
                     ),
@@ -712,11 +725,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             children: years.map((y) {
               final paid = m.feeYears[y] == true;
               return GestureDetector(
-                onTap: () {
-                  final map = Map<String, bool>.from(m.feeYears);
-                  map[y] = !paid;
-                  context.read<AppState>().save(m.copyWith(feeYears: map));
-                },
+                onTap: canAdmin
+                    ? () {
+                        final map = Map<String, bool>.from(m.feeYears);
+                        map[y] = !paid;
+                        context.read<AppState>().save(m.copyWith(feeYears: map));
+                      }
+                    : null,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -749,23 +764,49 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             }).toList(),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Switch(
-                value: m.lifetimeMember,
-                activeThumbColor: AppColors.tigerGold,
-                onChanged: (v) => context.read<AppState>().save(
-                  m.copyWith(lifetimeMember: v),
+          if (canMaster)
+            Row(
+              children: [
+                Switch(
+                  value: m.lifetimeMember,
+                  activeThumbColor: AppColors.tigerGold,
+                  onChanged: (v) => context.read<AppState>().save(
+                    m.copyWith(
+                      lifetimeMember: v,
+                      lifetimeSince: v && m.lifetimeSince.isEmpty
+                          ? DateTime.now()
+                              .toIso8601String()
+                              .substring(0, 10)
+                          : m.lifetimeSince,
+                    ),
+                  ),
                 ),
-              ),
-              const Text(
-                '평생회원 지정',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
+                const Text(
+                  '평생회원 지정 (마스터)',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 15, color: AppColors.textGray),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '평생회원 지정은 마스터만 가능합니다. '
+                    '개인 프로필의 “등록요청”으로 요청하세요.',
+                    style: TextStyle(
+                        fontSize: 11.5, color: AppColors.textGray),
+                  ),
+                ),
+              ],
+            ),
           Text(
-            '* 연도를 눌러 납부 여부를 변경할 수 있습니다.',
+            canAdmin
+                ? '* 연도를 눌러 납부 여부를 변경할 수 있습니다.'
+                : '* 연회비 납부 여부는 관리자·마스터가 관리합니다. (본인은 등록요청)',
             style: TextStyle(fontSize: 11, color: AppColors.textGray),
           ),
         ],

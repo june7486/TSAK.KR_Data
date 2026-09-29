@@ -232,6 +232,72 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  // ---- 회원 등록요청 (평생회원·연회비·자격) ----
+  /// 등록요청 제출. type: lifetime | fee | qualification
+  Future<Map<String, dynamic>> memberRequestSubmit({
+    required String type,
+    String ident = '',
+    String year = '',
+    String date = '',
+    String note = '',
+    String newNumber = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member/request'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'type': type,
+            if (ident.isNotEmpty) 'ident': ident,
+            if (year.isNotEmpty) 'year': year,
+            if (date.isNotEmpty) 'date': date,
+            if (note.isNotEmpty) 'note': note,
+            if (newNumber.isNotEmpty) 'newNumber': newNumber,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 등록요청 대기 목록(관리자·마스터).
+  Future<List<Map<String, dynamic>>> memberRequestList() async {
+    final r = await http
+        .get(_uri('/api/member/request/list'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['pending'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 본인(로그인 세션)의 등록요청 이력 조회 — 개인 프로필의 '등록요청'
+  /// 상태 표시용. 로그인 회원이면 누구나 조회 가능하다.
+  Future<List<Map<String, dynamic>>> myMemberRequests() async {
+    final r = await http
+        .get(_uri('/api/member/request/mine'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['items'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 등록요청 승인/반려(관리자·마스터). action: approve | reject
+  Future<bool> memberRequestSet({
+    required String id,
+    required String action,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member/request/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id, 'action': action}),
+        )
+        .timeout(const Duration(seconds: 25));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
   // ---- Members ----
   Future<List<Member>> fetchMembers() async {
     final r = await http
