@@ -152,8 +152,8 @@ class MemberCard extends StatelessWidget {
                         SizedBox(width: 6 * s),
                         Container(
                           padding: EdgeInsets.symmetric(
-                            horizontal: 8 * s,
-                            vertical: 2 * s,
+                            horizontal: 9 * s,
+                            vertical: 3 * s,
                           ),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
@@ -164,11 +164,12 @@ class MemberCard extends StatelessWidget {
                           child: Text(
                             member.number.trim().isEmpty
                                 ? '일반 ${member.loginId}'
-                                : member.number,
+                                : '${member.number}호',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 12 * s,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 15 * s,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.2,
                             ),
                           ),
                         ),
@@ -193,8 +194,8 @@ class MemberCard extends StatelessWidget {
                               'ATAS ${member.atasNo}',
                               style: TextStyle(
                                 color: AppColors.scoutGreen,
-                                fontSize: 11 * s,
-                                fontWeight: FontWeight.w800,
+                                fontSize: 13 * s,
+                                fontWeight: FontWeight.w900,
                               ),
                             ),
                           ),

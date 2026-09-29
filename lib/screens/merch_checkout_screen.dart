@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/nas_api.dart';
+import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
@@ -90,6 +92,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
     for (final c in _recips.values) {
       c.dispose();
     }
+    // 화면 종료 시 화면 꺼짐 방지를 확실히 해제.
+    try {
+      WakelockPlus.disable();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -592,8 +598,9 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
           ),
           const SizedBox(height: 10),
           const Text(
-            '⏳ 서버 저장 중입니다. 창을 닫지 말고 잠시만 기다려 주세요.\n'
-            '· 진행률이 멈춘 듯 보여도 정상 처리 중일 수 있습니다.\n'
+            '⏳ 주문 데이터를 생성하고 있습니다. 창을 닫지 말고 잠시만 기다려 주세요.\n'
+            '· 처리 중에는 화면이 자동으로 꺼지지 않습니다.\n'
+            '· 진행률이 멈춘 듯 보여도 정상 처리 중일 수 있으니 그대로 기다려 주세요.\n'
             '· 부득이 창을 닫았다면 개인 프로필의 "수품구매"에서 주문 내역을 확인하세요.\n'
             '· 주문 내역이 없을 경우에만 다시 주문해 주세요.',
             style: TextStyle(
@@ -658,6 +665,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
       _step = _isReserve ? '예약을 접수하는 중…' : '주문을 접수하는 중…';
       _stepProgress = 0.15;
     });
+    // 처리 중에는 화면이 꺼지지 않도록 유지(사용자가 이탈/오류로 오해하지 않게).
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {}
     // 실제 처리 시간이 길어도 진행률이 멈춘 듯 보이지 않도록 90%까지 서서히 올린다.
     final ticker = Timer.periodic(const Duration(milliseconds: 800), (_) {
       if (!mounted) return;
@@ -736,18 +747,22 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         } else if (r['error'] == 'medal_recipient_required') {
           _snack('각인 메달은 수여받는 분의 정보(소속·이름·연락처)를 입력해야 판매할 수 있습니다.',
               color: AppColors.taegeukRed);
+          await WakelockPlus.disable();
           setState(() => _busy = false);
           return;
         } else if (r['error'] == 'annual_fee_required') {
           _snack('연회비 납부 후 구매할 수 있습니다.', color: AppColors.taegeukRed);
+          await WakelockPlus.disable();
           setState(() => _busy = false);
           return;
         } else if (r['error'] == 'sales_closed') {
           _snack('현재 판매가 중지되어 있습니다.', color: AppColors.taegeukRed);
+          await WakelockPlus.disable();
           setState(() => _busy = false);
           return;
         } else {
           _snack('주문 실패: ${r['error']}', color: AppColors.taegeukRed);
+          await WakelockPlus.disable();
           setState(() => _busy = false);
           return;
         }
@@ -756,6 +771,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
       if (mounted) _snack('오류: $e', color: AppColors.taegeukRed);
     } finally {
       ticker.cancel();
+      // 처리 종료 시 화면 꺼짐 방지 해제.
+      try {
+        await WakelockPlus.disable();
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _busy = false;
@@ -810,11 +829,13 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
                     color: AppColors.tigerGold.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text(
-                    '신규 ID가 생성되었습니다.\n'
-                    '다음에는 전화번호로 로그인 하십시요.\n'
-                    '로그인하시면 주문 및 배송상태 확인이 가능합니다.',
-                    style: TextStyle(
+                  child: Text(
+                    '전화번호로 아이디가 생성되었습니다.\n'
+                    '· ID: ${_phone.text.trim()}\n'
+                    '· PW: 전화번호 뒷 4자리\n'
+                    '아이디·비밀번호로 로그인하면 주문·배송 상태를 확인할 수 있습니다.\n'
+                    '로그인 후 본인 비밀번호로 변경할 수 있습니다.',
+                    style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         height: 1.45,
@@ -855,11 +876,49 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
           ),
         ),
         actions: [
+          // 주문확인하기 — 입력한 전화번호로 자동 로그인 후 개인 화면으로 이동.
+          if (contactType == 'regular' && _phone.text.trim().length >= 4)
+            OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await _autoLoginAndGoHome();
+              },
+              icon: const Icon(Icons.login, size: 18),
+              label: const Text('주문확인하기 (자동 로그인)'),
+            ),
           FilledButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('확인')),
         ],
       ),
     );
+  }
+
+  /// 신규(비인가) 주문자 — 전화번호+뒤4자리로 자동 로그인 후 첫 화면으로 이동.
+  Future<void> _autoLoginAndGoHome() async {
+    final state = context.read<AppState>();
+    final phone = _phone.text.trim();
+    final last4 = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    String pw = '';
+    if (last4.length >= 4) pw = last4.substring(last4.length - 4);
+    try {
+      final ok = await state.login('guest', pw, id: phone);
+      if (!mounted) return;
+      if (ok) {
+        // 모든 화면을 닫고 첫 화면(개인 프로필)으로 이동.
+        Navigator.of(context).popUntil((r) => r.isFirst);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('전화번호로 로그인했습니다. 개인 화면에서 진행상황을 확인하세요.'),
+            backgroundColor: AppColors.scoutGreen,
+          ),
+        );
+      } else {
+        _snack('자동 로그인에 실패했습니다. 전화번호와 뒤 4자리를 확인해 주세요.',
+            color: AppColors.taegeukRed);
+      }
+    } catch (e) {
+      if (mounted) _snack('로그인 오류: $e', color: AppColors.taegeukRed);
+    }
   }
 
   void _snack(String msg, {Color? color}) {

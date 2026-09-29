@@ -18,6 +18,7 @@ class AppState extends ChangeNotifier {
     repo.syncStatus.addListener(_onSync);
     _loadFontScale();
     _loadServerBase();
+    loadPermanentMasterMode();
     refresh();
     if (repo.isNasMode) {
       loadConfig();
@@ -70,12 +71,57 @@ class AppState extends ChangeNotifier {
   /// 이 세션이 영구 마스터 인가번호(예: 415)로 로그인됐는지.
   bool get isPermanentMaster => isMaster && AppConfig.isPermanentMaster(_who);
 
+  /// 영구 마스터(415)의 권한 선택 모드.
+  ///  true = 마스터 권한 사용(기본), false = 개인 권한만 사용.
+  bool _permanentMasterMode = true;
+  bool get permanentMasterMode => _permanentMasterMode;
+
+  /// 영구 마스터가 '개인 권한'을 선택했는지 — 이 경우 마스터 기능 UI를 숨긴다.
+  bool get isPermanentMasterAsPersonal =>
+      AppConfig.isPermanentMaster(_who) && !_permanentMasterMode;
+
+  /// 영구 마스터 권한 모드 불러오기.
+  Future<void> loadPermanentMasterMode() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      _permanentMasterMode = p.getBool(AppConfig.kPermanentMasterMode) ?? true;
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// 영구 마스터 권한 모드 설정·저장. 즉시 UI에 반영된다.
+  Future<void> setPermanentMasterMode(bool master) async {
+    _permanentMasterMode = master;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(AppConfig.kPermanentMasterMode, master);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// 실효 티어 — 영구 마스터가 개인권한을 선택하면 personal 로 취급(마스터 UI 숨김).
+  String get effectiveTier {
+    if (isMaster && isPermanentMasterAsPersonal) return 'personal';
+    return _tier;
+  }
+
+  /// UI 노출용 — 마스터 기능(관리창·통계 등)을 화면에 표시할지.
+  /// 영구 마스터가 개인권한을 선택하면 false(단, 서버 인증용 isMaster 는 유지).
+  bool get showMasterUi => isMaster && !isPermanentMasterAsPersonal;
+
+  /// UI 노출용 — 관리자 이상 기능을 화면에 표시할지.
+  bool get showAdminUi => isApp && !isPermanentMasterAsPersonal;
+
   /// 서버 마스터 작업용 값.
   /// 영구 마스터는 마스터 비번 없이 'PM:<인가번호>' 토큰으로 인가된다.
   String masterToken() => isPermanentMaster ? 'PM:$_who' : '';
 
-  /// 본인 1인 열람(개인 접근) 모드 여부
-  bool get isSelfAccess => _tier == 'personal' || _tier == 'guest';
+  /// 본인 1인 열람(개인 접근) 모드 여부.
+  /// 영구 마스터(415)가 '개인 권한'을 선택한 경우도 본인 화면으로 취급한다.
+  bool get isSelfAccess =>
+      _tier == 'personal' ||
+      _tier == 'guest' ||
+      isPermanentMasterAsPersonal;
 
   /// 개인 접근 시 본인 정보만 열람·수정 가능하도록 저장소 제한을 갱신
   void _applyAccessScope() {

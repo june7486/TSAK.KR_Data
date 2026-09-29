@@ -1351,6 +1351,76 @@ class _HomeScreenState extends State<HomeScreen> {
           //    → 개인 상세 정보창(MemberDetailScreen)에서 '수품 구매'와 함께 노출.
           // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
           _personalDonationBanner(state),
+          // (415 전용) 영구 마스터 — 마스터/개인 권한 on/off (제일 하단)
+          if (AppConfig.isPermanentMaster(state.who))
+            _permanentMasterToggle(state),
+        ],
+      ),
+    );
+  }
+
+  /// 영구 마스터(415) 개인정보 하단 — 마스터 권한/개인 권한 선택 토글.
+  Widget _permanentMasterToggle(AppState state) {
+    final asMaster = state.permanentMasterMode;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: asMaster
+            ? AppColors.lifetimeGold.withValues(alpha: 0.12)
+            : AppColors.tigerGold.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (asMaster ? AppColors.lifetimeGold : AppColors.tigerGold)
+              .withValues(alpha: 0.55),
+          width: 1.4,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            asMaster ? Icons.workspace_premium : Icons.person_outline,
+            size: 20,
+            color: asMaster ? AppColors.lifetimeGold : AppColors.tigerGold,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  asMaster ? '마스터 권한 사용 중' : '개인 권한 사용 중',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  asMaster
+                      ? '영구 마스터(415) — 관리·통계·설정 등 모든 기능 사용'
+                      : '개인 권한 — 본인 정보·수품구매만 표시(마스터 기능 숨김)',
+                  style: const TextStyle(
+                      fontSize: 10.5, color: AppColors.textGray),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: asMaster,
+            activeThumbColor: AppColors.lifetimeGold,
+            onChanged: (v) async {
+              await state.setPermanentMasterMode(v);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(v
+                        ? '마스터 권한으로 전환했습니다'
+                        : '개인 권한으로 전환했습니다'),
+                    duration: const Duration(milliseconds: 1100),
+                  ),
+                );
+              }
+            },
+          ),
         ],
       ),
     );

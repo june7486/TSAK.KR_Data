@@ -50,6 +50,9 @@ dependencies:
   intl: ^0.19.0
   http: ^1.2.0
 
+  # 주문 처리 중 화면 꺼짐 방지 (wakelock)
+  wakelock_plus: ^1.2.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

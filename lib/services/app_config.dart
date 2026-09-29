@@ -65,4 +65,6 @@ class AppConfig {
   static const String kAuthWho = 'auth_who';
   static const String kSessionSid = 'auth_session_sid'; // 서버 발급 세션토큰
   static const String kAdminEmail = 'admin_email';
+  // 영구 마스터(415)의 권한 선택 — true=마스터 권한, false=개인 권한.
+  static const String kPermanentMasterMode = 'permanent_master_mode';
 }
