@@ -9,7 +9,6 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/inquiry_sheet.dart';
 import 'admin_screen.dart';
-import 'approval_screen.dart';
 import 'board_screen.dart';
 import 'bulk_screen.dart';
 import 'export_screen.dart';
@@ -129,9 +128,8 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                     AppColors.taegeukBlue, () => _push(const AdminScreen())),
                 _tile('회원관리 (인가자)', Icons.people_alt,
                     AppColors.purple, () => _push(const RegularMembersScreen())),
-                _tile('승인 대기 관리', Icons.how_to_reg, AppColors.tigerGold,
-                    () => _push(const ApprovalScreen())),
-                _tile('등록요청 승인', Icons.app_registration, AppColors.lifetimeGold,
+                _tile('승인관리 (비인가·행사·연회비·평생 통합)',
+                    Icons.how_to_reg, AppColors.tigerGold,
                     () => _push(const MemberRequestScreen())),
                 _tile('일괄작업 (단체문자)', Icons.campaign,
                     AppColors.taegeukBlue, () => _push(const BulkScreen())),
