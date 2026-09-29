@@ -54,6 +54,8 @@ FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거�
 REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
 BOARD_FILE = BASE + "/db/board.json"            # 행사+수품판매 게시판(글/댓글/좋아요/첨부/비밀번호/비노출)
 NOTIFY_FILE = BASE + "/db/notify.json"          # 게시판/주문 등 관리자 이상 알림 큐
+SEEN_FILE = BASE + "/db/approval_seen.json"     # 관리자(아이디)별 승인/알림 '확인(읽음)' 워터마크
+EVENT_STAFF_FILE = BASE + "/db/event_staff.json"  # 행사 스텝(STAFF) 지정 — 지정자는 해당 행사 전체 게시판 노출
 MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
 MERCH_MAKER_DIR = BASE + "/수품제작자"           # 수품 제작자 첨부파일 저장 폴더
 MERCH_IMG_UPLOAD_DIR = HERE + "/merch_img_upload"  # 관리자 업로드 상품 이미지 폴더
@@ -412,6 +414,10 @@ def _set_member_approval(ident, status):
                                                  or m.get("phone") or "")) == d
                     or str(m.get("id", "")) == str(ident)):
                 m["approvalStatus"] = status
+                if status == "pending":
+                    # 승인 대기로 진입한 시각(미확인 배지 집계 기준).
+                    m["approvalAt"] = datetime.datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S")
                 members[i] = m
                 _save_json(DB_FILE, members)
                 _touch_meta({"count": len(members), "updatedBy": "approval"})
@@ -433,9 +439,306 @@ def _pending_members():
                 "unit": str(m.get("unit", "")),
                 "league": str(m.get("league", "")),
                 "created": str(m.get("created", "")),
+                "approvalAt": str(m.get("approvalAt", "")),
                 "approvalStatus": "pending",
             })
     return out
+
+
+# ---- 회원 등록요청 (평생회원·연회비 납부·자격 지정) ----
+#  회원이 개인프로필에서 '등록요청' → 관리자/마스터가 승인/반려.
+#  status: 'pending' | 'approved' | 'rejected'
+#  type:   'lifetime'(평생회원) | 'fee'(연회비 납부) | 'qualification'(자격 지정)
+REQ_FILE = None  # 지연 초기화(아래 _member_requests_file)
+
+
+def _member_requests_file():
+    global REQ_FILE
+    if REQ_FILE is None:
+        REQ_FILE = BASE + "/db/member_requests.json"
+    return REQ_FILE
+
+
+def _load_member_requests():
+    return _load_json(_member_requests_file(), {"items": []})
+
+
+def _save_member_requests(doc):
+    _save_json(_member_requests_file(), doc)
+
+
+def _add_member_request(req):
+    """등록요청 추가(중복 방지). 반환: (ok, id)"""
+    with _MEMBER_WRITE_LOCK:
+        doc = _load_member_requests()
+        items = doc.get("items") or []
+        ident = re.sub(r"[^0-9]", "", str(req.get("ident", "")))
+        rtype = str(req.get("type", "")).strip()
+        year = str(req.get("year", "")).strip()
+        event = str(req.get("event", "")).strip()
+        # 같은 회원·타입·연도·행사의 pending 요청은 중복 생성하지 않는다.
+        for it in items:
+            if (it.get("status") == "pending"
+                    and re.sub(r"[^0-9]", "", str(it.get("ident", ""))) == ident
+                    and str(it.get("type", "")) == rtype
+                    and str(it.get("year", "")) == year
+                    and str(it.get("event", "")) == event):
+                return True, str(it.get("id", ""))
+        rid = "req_%d_%s" % (int(time.time() * 1000),
+                             _secrets.token_hex(3))
+        req = dict(req)
+        req["id"] = rid
+        req["status"] = "pending"
+        req["created"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        items.insert(0, req)
+        doc["items"] = items[:2000]
+        _save_member_requests(doc)
+        return True, rid
+
+
+def _pending_member_requests():
+    """미처리(pending) 등록요청 목록(최신 우선)."""
+    doc = _load_member_requests()
+    return [it for it in (doc.get("items") or [])
+            if str(it.get("status", "")) == "pending"]
+
+
+def _apply_member_request(req):
+    """승인된 요청을 실제 회원 데이터에 반영."""
+    ident = re.sub(r"[^0-9]", "", str(req.get("ident", "")))
+    rtype = str(req.get("type", "")).strip()
+    year = str(req.get("year", "")).strip()
+    if not ident:
+        return False
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            mp = re.sub(r"[^0-9]", "", str(
+                m.get("accessPhone") or m.get("phone") or ""))
+            if ident in (mn, mp):
+                if rtype == "lifetime":
+                    m["lifetimeMember"] = True
+                    _lts = str(req.get("date", "")).strip()
+                    if _lts:
+                        m["lifetimeSince"] = _lts
+                    elif not str(m.get("lifetimeSince", "")).strip():
+                        m["lifetimeSince"] = datetime.datetime.now().strftime(
+                            "%Y-%m-%d")
+                elif rtype == "fee" and year:
+                    fy = dict(m.get("feeYears") or {})
+                    fy[year] = True
+                    m["feeYears"] = fy
+                elif rtype == "event":
+                    ev = str(req.get("event", "")).strip()
+                    if ev:
+                        ea = dict(m.get("eventAttend") or {})
+                        ea[ev] = True
+                        m["eventAttend"] = ea
+                elif rtype == "regular":
+                    # 비인가회원 등록 승인 — 일반회원으로 인정(승인 상태).
+                    m["isRegular"] = True
+                    m["approvalStatus"] = "approved"
+                elif rtype == "qualification":
+                    m["qualificationStatus"] = "approved"
+                    if str(req.get("note", "")).strip():
+                        m["qualificationNote"] = str(req.get("note", "")).strip()
+                # 인가자 승격 요청(번호 포함)이면 반영
+                newno = re.sub(r"[^0-9]", "", str(req.get("newNumber", "")))
+                if rtype == "qualification" and newno:
+                    m["number"] = newno
+                    m["isRegular"] = False
+                m["updatedAt"] = int(time.time() * 1000)
+                members[i] = m
+                _save_json(DB_FILE, members)
+                _touch_meta({"count": len(members), "updatedBy": "member-request"})
+                return True
+    return False
+
+
+def _revert_member_request(req):
+    """승인 취소/반려 시 실제 회원 데이터에 반영된 효과를 되돌린다.
+    - fee(연회비): 해당 연도를 feeYears 에서 제거 → 연회비 납부 이력에서도 제외.
+    - lifetime(평생회원): 평생회원 지정 해제(다른 사유로 지정됐을 수 있어 보수적으로
+      요청 당시 기록한 lifetimeSince 와 일치할 때만 해제).
+    """
+    ident = re.sub(r"[^0-9]", "", str(req.get("ident", "")))
+    rtype = str(req.get("type", "")).strip()
+    year = str(req.get("year", "")).strip()
+    if not ident:
+        return False
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            mp = re.sub(r"[^0-9]", "", str(
+                m.get("accessPhone") or m.get("phone") or ""))
+            if ident in (mn, mp):
+                if rtype == "fee" and year:
+                    fy = dict(m.get("feeYears") or {})
+                    fy.pop(year, None)
+                    m["feeYears"] = fy
+                elif rtype == "lifetime":
+                    _lts = str(req.get("date", "")).strip()
+                    cur = str(m.get("lifetimeSince", "")).strip()
+                    if not _lts or (_lts and _lts == cur):
+                        m["lifetimeMember"] = False
+                        m["lifetimeSince"] = ""
+                elif rtype == "event":
+                    ev = str(req.get("event", "")).strip()
+                    if ev:
+                        ea = dict(m.get("eventAttend") or {})
+                        ea.pop(ev, None)
+                        m["eventAttend"] = ea
+                m["updatedAt"] = int(time.time() * 1000)
+                members[i] = m
+                _save_json(DB_FILE, members)
+                _touch_meta({"count": len(members), "updatedBy": "member-request-revert"})
+                return True
+    return False
+
+
+def _set_member_request_status(rid, action):
+    """등록요청 상태 변경. approve 시 실제 반영. 반환: (ok, name, type)"""
+    with _MEMBER_WRITE_LOCK:
+        doc = _load_member_requests()
+        items = doc.get("items") or []
+        for i, it in enumerate(items):
+            if str(it.get("id", "")) == str(rid):
+                if action == "approve":
+                    _apply_member_request(it)
+                    it["status"] = "approved"
+                elif action == "reject":
+                    # 이미 승인되어 반영된 경우 되돌린다(연회비 이력에서도 제외).
+                    if str(it.get("status", "")) == "approved":
+                        _revert_member_request(it)
+                    it["status"] = "rejected"
+                elif action == "delete":
+                    items.pop(i)
+                    doc["items"] = items
+                    _save_member_requests(doc)
+                    return True, str(it.get("name", "")), str(it.get("type", ""))
+                else:
+                    it["status"] = action
+                it["handledAt"] = datetime.datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S")
+                items[i] = it
+                doc["items"] = items
+                _save_member_requests(doc)
+                return True, str(it.get("name", "")), str(it.get("type", ""))
+    return False, "", ""
+
+
+# ---- 관리자(아이디)별 '확인(읽음)' 워터마크 ----
+#  배지 숫자는 "해당 아이디가 아직 확인하지 않은 항목"만 표시한다.
+#  관리자가 승인화면/알림을 열어 확인하면 그 시각을 워터마크로 저장하고,
+#  그 이후 새로 들어온 항목만 다시 미확인으로 집계된다.
+#  stored: {"admins": {"{owner}": {"approval_at": "YYYY-MM-DD HH:MM:SS",
+#                                  "board_at":   "YYYY-MM-DD HH:MM:SS"}}}
+_SEEN_LOCK = threading.Lock()
+
+
+def _owner_key(sess):
+    """세션 기준 배지 소유자 키. 관리자 개인은 인가번호, 공용 관리자는 tier."""
+    if not sess:
+        return ""
+    who = re.sub(r"[^0-9]", "", str(sess.get("who", "") or ""))
+    if who:
+        return "no:" + who
+    return "tier:" + str(sess.get("tier", "") or "")
+
+
+def _seen_doc():
+    return _load_json(SEEN_FILE, {"admins": {}})
+
+
+def _seen_get(owner, kind):
+    if not owner:
+        return ""
+    doc = _seen_doc()
+    a = (doc.get("admins") or {}).get(owner) or {}
+    return str(a.get(kind + "_at", "") or "")
+
+
+def _seen_set(owner, kind, stamp=""):
+    if not owner:
+        return
+    with _SEEN_LOCK:
+        doc = _seen_doc()
+        admins = doc.get("admins") or {}
+        a = admins.get(owner) or {}
+        # 시각은 반드시 동일 포맷(%Y-%m-%d %H:%M:%S)으로 저장해 문자열 비교 가능.
+        a[kind + "_at"] = (stamp or datetime.datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"))
+        admins[owner] = a
+        doc["admins"] = admins
+        _save_json(SEEN_FILE, doc)
+
+
+def _norm_stamp(s):
+    """타임스탬프를 비교 가능한 정수키로 정규화.
+    '2025.03.14 10:22:05' / '2025-03-14 10:22:05' 등 구분자 무관.
+    반환: (숫자키:int, 빈값여부:bool)  — 정렬/비교용."""
+    digits = re.sub(r"[^0-9]", "", str(s or ""))
+    if not digits:
+        return 0, True
+    # 최소 YYYYMMDD 8자리 확보(부분 타임스탬프 보정)
+    return int(digits.ljust(14, "0")[:14]), False
+
+
+def _count_unread(items, stamp_key, watermark):
+    """items(...{stamp_key:타임스탬프}) 중 watermark 이후 항목 수.
+    watermark 가 비어 있으면 전체를 미확인으로 본다."""
+    wm_key, wm_empty = _norm_stamp(watermark)
+    n = 0
+    for it in items:
+        ts_key, ts_empty = _norm_stamp(it.get(stamp_key))
+        if ts_empty:
+            n += 1
+            continue
+        if wm_empty or ts_key > wm_key:
+            n += 1
+    return n
+
+
+def _board_badge_unread(owner):
+    """게시판 알림 큐(notify.json)에서 해당 아이디가 미확인한 건수."""
+    if not owner:
+        return 0
+    doc = _load_json(NOTIFY_FILE, {"items": []})
+    items = doc.get("items", [])
+    wm = _seen_get(owner, "board")
+    return _count_unread(items, "created", wm)
+
+
+def _approval_badge_unread(owner):
+    """통합 승인 대기 중 해당 아이디가 미확인한 건수.
+     · 비인가회원: approvalAt(없으면 created)
+     · 등록요청:   created
+    """
+    if not owner:
+        return 0
+    wm = _seen_get(owner, "approval")
+    wm_key, wm_empty = _norm_stamp(wm)
+    total = 0
+    # 1) 비인가회원 등록 대기
+    try:
+        for m in _pending_members():
+            ts_key, ts_empty = _norm_stamp(
+                m.get("approvalAt") or m.get("created"))
+            if ts_empty or wm_empty or ts_key > wm_key:
+                total += 1
+    except Exception:
+        pass
+    # 2) 회원 등록요청 큐(평생·연회비·행사·자격 등)
+    try:
+        for it in _pending_member_requests():
+            ts_key, ts_empty = _norm_stamp(it.get("created"))
+            if ts_empty or wm_empty or ts_key > wm_key:
+                total += 1
+    except Exception:
+        pass
+    return total
 
 
 # ---- 멘토·페런츠 연결 승인 ----
@@ -1817,6 +2120,7 @@ def _ev_union_events():
         key=lambda x: (str(x.get("year", "") or "0000"), str(x.get("title", ""))),
         reverse=True,
     )
+    out = _ev_append_pending_private(out)
     return out
 
 
@@ -1870,8 +2174,267 @@ def _ev_list(tree=False):
             except Exception:
                 info["folders"] = []
         out.append(info)
+    out = _ev_append_pending_private(out)
     out.sort(key=lambda x: (str(x.get("year", "0")), x.get("title", "")), reverse=True)
     return out
+
+
+def _ev_append_pending_private(out):
+    """관리자 목록에 '개인제안 심사중' 행사를 관리목록누락 형태로 덧붙인다."""
+    try:
+        pend = _priv_pending_list()
+    except Exception:
+        pend = []
+    if not pend:
+        return out
+    have = {(str(e.get("year", "")), str(e.get("title", ""))) for e in out}
+    for it in pend:
+        y = str(it.get("year", "")).strip()
+        t = str(it.get("title", "")).strip()
+        if not t or (y, t) in have:
+            continue
+        have.add((y, t))
+        out.append({
+            "id": it.get("id"), "year": y, "title": t,
+            "period": str(it.get("period", "")),
+            "place": str(it.get("place", "")),
+            "desc": str(it.get("desc", "")),
+            "created": str(it.get("created", "")),
+            "createdBy": str(it.get("by", "") or ("개인제안 #%s" % it.get("ident", ""))),
+            "attendees": [], "defined": False, "pendingPrivate": True,
+            "privateId": it.get("id"),
+            "media": {"photo": 0, "video": 0}, "memberCount": 0,
+        })
+    return out
+
+
+# ---- 개인(개인프로필) 제안 행사 — 관리자·마스터 승인 전 '심사중' ----
+PRIV_EVENTS_FILE = BASE + "/db/private_events.json"
+
+
+def _priv_events_doc():
+    return _load_json(PRIV_EVENTS_FILE, {"items": []})
+
+
+def _priv_events_save(doc):
+    _save_json(PRIV_EVENTS_FILE, doc)
+
+
+def _priv_event_id(item):
+    return str((item or {}).get("id", ""))
+
+
+def _priv_event_ident(item):
+    return re.sub(r"[^0-9]", "", str((item or {}).get("ident", "")))
+
+
+def _priv_event_belongs(m, item):
+    """제안자가 해당 회원(m)인지 판별(인가번호/전화/로그인ID)."""
+    ident = _priv_event_ident(item)
+    if not ident:
+        return False
+    mid = re.sub(r"[^0-9]", "", str((m or {}).get("number", "")))
+    mp = re.sub(r"[^0-9]", "", str((m or {}).get("phone", "")))
+    ml = re.sub(r"[^0-9]", "", str((m or {}).get("loginId", "")))
+    return ident in (mid, mp, ml)
+
+
+def _priv_add_event(req):
+    """개인 제안 행사 추가. 반환: (ok, id)."""
+    with _MEMBER_WRITE_LOCK:
+        doc = _priv_events_doc()
+        items = doc.get("items") or []
+        year = str(req.get("year", "")).strip()
+        title = str(req.get("title", "")).strip()
+        ident = re.sub(r"[^0-9]", "", str(req.get("ident", "")))
+        if not title or not ident:
+            return False, ""
+        for it in items:
+            if (it.get("status") == "pending"
+                    and _priv_event_ident(it) == ident
+                    and str(it.get("year", "")) == year
+                    and str(it.get("title", "")) == title):
+                return True, _priv_event_id(it)
+        rid = "pev_%d_%s" % (int(time.time() * 1000), _secrets.token_hex(3))
+        it = dict(req)
+        it["id"] = rid
+        it["status"] = "pending"
+        it["created"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        items.insert(0, it)
+        doc["items"] = items[:2000]
+        _priv_events_save(doc)
+        return True, rid
+
+
+def _priv_pending_list(ident=""):
+    doc = _priv_events_doc()
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    out = []
+    for it in (doc.get("items") or []):
+        if str(it.get("status", "")) != "pending":
+            continue
+        if d and _priv_event_ident(it) != d:
+            continue
+        out.append(it)
+    return out
+
+
+def _priv_member_names(m):
+    """해당 회원이 제안한 pending 행사명 집합(프로필 심사중 표시용)."""
+    names = set()
+    for it in _priv_pending_list():
+        if _priv_event_belongs(m, it):
+            t = str(it.get("title", "")).strip()
+            if t:
+                names.add(t)
+    return names
+
+
+def _attach_pending_event_names(members):
+    """members 각 항목에 pendingEventNames(심사중 행사명 목록)을 주석한다."""
+    try:
+        pend = _priv_pending_list()
+    except Exception:
+        pend = []
+    if not pend:
+        return members
+    for m in members:
+        names = [str(it.get("title", "")).strip() for it in pend
+                 if _priv_event_belongs(m, it)
+                 and str(it.get("title", "")).strip()]
+        if names:
+            m["pendingEventNames"] = names
+    return members
+
+
+def _priv_approve(item):
+    """제안 행사 승인 → 실제 행사(events.json)로 등록. 반환: (ok, year, title)."""
+    year = str(item.get("year", "")).strip()
+    title = str(item.get("title", "")).strip()
+    if not title or not re.match(r"^\d{4}$", year):
+        return False, year, title
+    with LOCK:
+        doc = _ev_doc()
+        eid = _ev_id(year, title)
+        e = doc.setdefault("events", {}).setdefault(eid, {})
+        e.update({
+            "year": year,
+            "title": title,
+            "period": str(item.get("period", "")),
+            "place": str(item.get("place", "")),
+            "desc": str(item.get("desc", "")),
+            "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "createdBy": str(item.get("by", "") or ("개인제안 #%s" % item.get("ident", ""))),
+        })
+        e.setdefault("attendees", [])
+        e.setdefault("fees", [])
+        e.setdefault("expenses", [])
+        e.setdefault("requested", [])
+        e.setdefault("accessLog", [])
+        e.setdefault("uploaders", {})
+        e.setdefault("fileTimes", {})
+        e.setdefault("customTabs", [])
+        _ev_save(doc)
+    try:
+        _ensure_event_dirs(year, title)
+    except Exception:
+        pass
+    return True, year, title
+
+
+def _priv_set_status(pid, action):
+    """제안 행사 승인/반려. 반환: (ok, action, item)."""
+    with _MEMBER_WRITE_LOCK:
+        doc = _priv_events_doc()
+        items = doc.get("items") or []
+        for i, it in enumerate(items):
+            if _priv_event_id(it) == str(pid):
+                if action == "approve":
+                    it["status"] = "approved"
+                elif action == "reject":
+                    it["status"] = "rejected"
+                elif action == "delete":
+                    items.pop(i)
+                    doc["items"] = items
+                    _priv_events_save(doc)
+                    return True, action, it
+                else:
+                    it["status"] = action
+                it["handledAt"] = datetime.datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S")
+                items[i] = it
+                doc["items"] = items
+                _priv_events_save(doc)
+                if action == "approve":
+                    _priv_approve(it)
+                return True, action, it
+    return False, action, None
+
+
+# ---- 행사 스텝(STAFF) — 지정자는 해당 행사 전체 게시판 노출 ----
+def _staff_doc():
+    return _load_json(EVENT_STAFF_FILE, {"events": {}})
+
+
+def _staff_save(doc):
+    _save_json(EVENT_STAFF_FILE, doc)
+
+
+def _staff_key(year, title):
+    return f"{_ev_safe(year)}||{_ev_safe(title)}"
+
+
+def _staff_of(year, title):
+    """해당 행사의 스텝 목록 [{ident,number,name,unit,phone}]."""
+    doc = _staff_doc()
+    e = (doc.get("events") or {}).get(_staff_key(year, title)) or {}
+    return list(e.get("staff") or [])
+
+
+def _staff_is(year, title, ident):
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return False
+    for a in _staff_of(year, title):
+        if _ev_attendee_ident(a) == d:
+            return True
+    return False
+
+
+def _staff_add(year, title, entry):
+    with _MEMBER_WRITE_LOCK:
+        doc = _staff_doc()
+        k = _staff_key(year, title)
+        e = (doc.get("events") or {}).setdefault(k, {})
+        lst = e.setdefault("staff", [])
+        if _staff_is(year, title, _ev_attendee_ident(entry)):
+            return False
+        lst.append({
+            "ident": _ev_attendee_ident(entry),
+            "number": str(entry.get("number", "")),
+            "loginId": str(entry.get("loginId", "")),
+            "name": str(entry.get("name", "")),
+            "unit": str(entry.get("unit", "")),
+            "league": str(entry.get("league", "")),
+            "phone": str(entry.get("phone", "")),
+        })
+        doc.setdefault("events", {})[k] = e
+        _staff_save(doc)
+        return True
+
+
+def _staff_remove(year, title, ident):
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    with _MEMBER_WRITE_LOCK:
+        doc = _staff_doc()
+        k = _staff_key(year, title)
+        e = (doc.get("events") or {}).get(k) or {}
+        lst = [a for a in (e.get("staff") or [])
+               if _ev_attendee_ident(a) != d]
+        e["staff"] = lst
+        doc.setdefault("events", {})[k] = e
+        _staff_save(doc)
+        return True
 
 
 def _ev_files(year, title, key, sub=""):
@@ -3132,6 +3695,7 @@ def _merch_ensure_regular(phone, name="", email=""):
             "isRegular": True,
             "personalPassword": _ev_phone_last4(d),
             "approvalStatus": "pending",
+            "approvalAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "merchOrders": [],
         }
         members.append(rec)
@@ -4176,8 +4740,150 @@ def _ev_backup_members():
         pass
 
 
+# ============ 명단 주소록(엑셀) → 회원정보 반영 (요구#2) ============
+def _addr_num(v):
+    """인가번호 셀 정규화: '1.0' → '1', 앞뒤 공백/기호 제거."""
+    s = str(v or "").strip()
+    if re.fullmatch(r"\d+\.0", s):
+        s = s[:-2]
+    return re.sub(r"[^0-9]", "", s)
+
+
+def _addr_clean(v):
+    """셀 문자열 정리 — 엑셀의 None/nan 표기를 빈 문자열로."""
+    s = str(v or "").strip()
+    if s in ("None", "nan", "NaN", "none"):
+        return ""
+    return s
+
+
+def _parse_addr_rows(sheets):
+    """주소록 시트들 → [{no,name,birth,league,unit,date,memo,zip,addr,email,hp,tel}].
+
+    범스카우트 명단(범진급대장) 레이아웃을 자동 인식한다:
+      인가번호, 성명, 주민번호(회원번호), 연맹, 소속대, 인가일, (비고),
+      우편번호, 주소, 이메일, 핸드폰, 연락처
+    헤더 행을 앞쪽에서 자동 탐색하고, 없으면 0행을 헤더로 간주한다.
+    """
+    def _find_col(header, keys):
+        for i, h in enumerate(header):
+            hn = re.sub(r"[\s()]", "", str(h or ""))
+            for k in keys:
+                kn = re.sub(r"[\s()]", "", k)
+                if kn and kn in hn:
+                    return i
+        return -1
+
+    out = []
+    for _name, rows in (sheets or []):
+        if not rows:
+            continue
+        hi = -1
+        for i, r in enumerate(rows[:15]):
+            joined = " ".join(str(c) for c in r)
+            if ("인가번호" in joined or "성명" in joined) and "주소" in joined:
+                hi = i
+                break
+        if hi < 0:
+            hi = 0
+        header = rows[hi]
+        ci = _find_col(header, ["인가번호", "번호", "연번"])
+        cn = _find_col(header, ["성명", "이름"])
+        if ci < 0 or cn < 0:
+            continue
+        cbirth = _find_col(header, ["주민번호", "생년월일", "생일"])
+        cleague = _find_col(header, ["연맹"])
+        cunit = _find_col(header, ["소속대", "소속"])
+        cdate = _find_col(header, ["인가일", "인가년도", "인가연도", "인가날짜"])
+        cmemo = _find_col(header, ["비고", "메모"])
+        czip = _find_col(header, ["우편번호"])
+        # '비고' 열은 헤더가 비어 있는 명단이 많다 → 우편번호 바로 앞 열을 비고로 본다.
+        if cmemo < 0 and czip > 0:
+            cmemo = czip - 1
+        caddr = _find_col(header, ["주소"])
+        cemail = _find_col(header, ["이메일", "메일"])
+        chp = _find_col(header, ["핸드폰", "휴대폰", "휴대전화", "핸드"])
+        ctel = _find_col(header, ["연락처", "전화"])
+
+        def cell(r, idx):
+            if idx is None or idx < 0 or idx >= len(r):
+                return ""
+            return _addr_clean(r[idx])
+
+        for r in rows[hi + 1:]:
+            no = _addr_num(cell(r, ci))
+            nm = cell(r, cn)
+            if not no or not nm:
+                continue
+            out.append({
+                "no": no, "name": nm,
+                "birth": cell(r, cbirth),
+                "league": cell(r, cleague), "unit": cell(r, cunit),
+                "date": cell(r, cdate),
+                "memo": cell(r, cmemo), "zip": cell(r, czip),
+                "addr": cell(r, caddr), "email": cell(r, cemail),
+                "hp": cell(r, chp), "tel": cell(r, ctel),
+            })
+    return out
+
+
+def _merge_addrbook(members, rows, *, overwrite=False):
+    """주소록 rows 를 members 에 병합(비파괴). 반환: 요약 dict.
+
+    · 기본(fill): **빈 필드만** 채운다(기존 값 보존).  overwrite=True 면 대체.
+    · 매칭 키: 인가번호(number) 정확 일치.
+    · 주소(address)·생일(birthday)·연락처(phone)·이메일(email)·
+      연맹(league)·소속대(unit)·비고(memo) 를 대상으로 한다.
+    """
+    by_no = {}
+    for m in members:
+        n = _addr_num(m.get("number", ""))
+        if n and n not in by_no:
+            by_no[n] = m
+    mapping = [
+        ("league", "league"), ("unit", "unit"),
+        ("addr", "address"), ("email", "email"),
+        ("birth", "birthday"), ("memo", "memo"),
+    ]
+    filled = {}
+    updated = 0
+    matched = 0
+    unmatched = []
+
+    def _put(m, dst, val):
+        cur = str(m.get(dst, "") or "").strip()
+        if cur in ("", "None") or overwrite:
+            if cur != val:
+                m[dst] = val
+                filled[dst] = filled.get(dst, 0) + 1
+                return True
+        return False
+
+    for x in rows:
+        m = by_no.get(x["no"])
+        if m is None:
+            unmatched.append(x["no"])
+            continue
+        matched += 1
+        changed = False
+        for src, dst in mapping:
+            val = _addr_clean(x.get(src))
+            if val and _put(m, dst, val):
+                changed = True
+        ph = _addr_clean(x.get("hp")) or _addr_clean(x.get("tel"))
+        if ph and _put(m, "phone", ph):
+            changed = True
+        if changed:
+            updated += 1
+    return {"matched": matched, "updated": updated,
+            "unmatched": unmatched, "filled": filled, "total": len(members)}
+
+
 # 회원파일 백그라운드 쓰기 직렬화(동시 스캔 시 서로 덮어쓰기 방지)
-_MEMBER_WRITE_LOCK = threading.Lock()
+#  RLock(재진입 락) 사용: _set_member_request_status 가 락을 잡은 상태에서
+#  _apply_member_request / _revert_member_request 를 호출하는데, 이들이 같은
+#  락을 다시 획득한다. threading.Lock 이면 재진입 시 데드락(승인/반려 무한대기).
+_MEMBER_WRITE_LOCK = threading.RLock()
 
 
 def _ev_guest_ensure_account_async(phone, name, event_name):
@@ -4222,6 +4928,8 @@ def _ev_guest_ensure_account_async(phone, name, event_name):
                         "personalPassword": _ev_phone_last4(d),
                         # 신규 일반회원은 관리자·마스터 승인 대기(pending) 상태로 생성.
                         "approvalStatus": "pending",
+                        "approvalAt": datetime.datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"),
                     }
                     members.append(found)
                 else:
@@ -5468,6 +6176,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Access-Control-Allow-Headers",
             "Content-Type, X-TSAK-Session, Authorization")
+        self._hsts()
+
+    def _hsts(self):
+        """(요구#4) 보안경고 방지 — HTTPS 로 접속한 경우에만 HSTS 헤더를 부여.
+
+        · HSTS 는 반드시 HTTPS 응답에만 실어야 한다(HTTP 에 실으면 브라우저가
+          무시). 리버스프록시(X-Forwarded-Proto: https) 뒤에서도 동작하도록
+          `_is_https_req()` 로 판정한다.
+        · 한 번이라도 HTTPS+HSTS 로 접속되면, 이후 브라우저가 http 로 접속해도
+          자동으로 https 로 승격/차단하여 '안전하지 않음' 이 재발하지 않는다.
+        · includeSubDomains 는 well-known 파일 제약상 넣지 않는다(운영 안전).
+        """
+        try:
+            if self._is_https_req():
+                self.send_header(
+                    "Strict-Transport-Security",
+                    "max-age=31536000")
+        except Exception:
+            pass
 
     # ---- 세션 인증 (F01/F02) ----
     def _sid(self):
@@ -5825,6 +6552,7 @@ class Handler(BaseHTTPRequestHandler):
                 members = _load_json(DB_FILE, [])
                 members = _scope_members(s.get("tier"), s.get("who"), members,
                                          regular=bool(s.get("regular")))
+                _attach_pending_event_names(members)
                 return self._json({"ok": True, "members": members})
             # ---- 접속 비밀번호 "현재값" 조회 (요구: 마스터 로그인 시에만 노출) ----
             if p == "/api/member/password":
@@ -5906,6 +6634,92 @@ class Handler(BaseHTTPRequestHandler):
                 pending = _pending_members()
                 return self._json({"ok": True, "pending": pending,
                                    "count": len(pending)})
+            # ---- 회원 등록요청(평생회원·연회비·자격) 대기 목록(관리자·마스터) ----
+            if p == "/api/member/request/list":
+                if not self._require("admin"):
+                    return
+                pend = _pending_member_requests()
+                return self._json({"ok": True, "pending": pend,
+                                   "count": len(pend)})
+            # ---- 본인 등록요청 이력 조회(로그인 회원 누구나,
+            #      관리자·마스터는 ident 지정 시 해당 회원 이력 조회) ----
+            if p == "/api/member/request/mine":
+                s = self._sess()
+                if not s:
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                req_ident = re.sub(r"[^0-9]", "", str(q.get("ident", [""])[0]))
+                is_admin = s.get("tier") in ("app", "master")
+                if req_ident and is_admin:
+                    ident = req_ident
+                else:
+                    ident = re.sub(r"[^0-9]", "", str(s.get("who", "")))
+                if not ident:
+                    return self._json({"ok": True, "items": []})
+                doc = _load_member_requests()
+                items = [it for it in (doc.get("items") or [])
+                         if re.sub(r"[^0-9]", "",
+                                   str(it.get("ident", ""))) == ident]
+                return self._json({"ok": True, "items": items[:50]})
+            # ---- 통합 승인 대시보드(관리자·마스터) ----
+            #  비인가회원 등록 · 행사 참가 · 연회비 납부 · 평생회원 등록 등
+            #  승인 대기 항목을 한 화면에서 처리한다. (승인 큐는 dict 리스트로
+            #  통일 → 향후 새 항목이 추가되어도 자동으로 노출됨)
+            if p == "/api/approval/overview":
+                if not self._require("admin"):
+                    return
+                queues = []
+
+                # 1) 비인가회원(일반회원) 등록 승인 대기
+                try:
+                    q1 = _pending_members()
+                except Exception:
+                    q1 = []
+                queues.append({"key": "regular", "title": "비인가회원 등록",
+                               "kind": "member", "count": len(q1),
+                               "items": q1})
+
+                # 2) 회원 등록요청 큐(평생·연회비·행사·기타) — 유형별 분리
+                try:
+                    pend = _pending_member_requests()
+                except Exception:
+                    pend = []
+                _type_meta = {
+                    "lifetime": "평생회원 납부 등록",
+                    "fee": "연회비 납부 등록",
+                    "event": "행사 참가자 등록",
+                    "qualification": "자격 지정",
+                    "regular": "비인가회원 등록",
+                }
+                _order = ["lifetime", "fee", "event", "qualification"]
+                _known = set(_order) | {"regular"}
+                for t in _order + sorted(
+                        {str(it.get("type", "")) for it in pend} - _known):
+                    sub = [it for it in pend if str(it.get("type", "")) == t]
+                    if not sub:
+                        continue
+                    queues.append({
+                        "key": "req:" + t,
+                        "title": _type_meta.get(t, "기타 등록요청 (%s)" % t),
+                        "kind": "request", "count": len(sub), "items": sub,
+                    })
+                # 알 수 없는(신규) 타입도 개별 큐로 노출 → 누락 없음
+                for it in pend:
+                    t = str(it.get("type", ""))
+                    if t in _known:
+                        continue
+                    _known.add(t)
+                    sub = [x for x in pend if str(x.get("type", "")) == t]
+                    queues.append({"key": "req:" + t,
+                                   "title": "기타 등록요청 (%s)" % t,
+                                   "kind": "request",
+                                   "count": len(sub), "items": sub})
+                total = sum(int(q.get("count", 0)) for q in queues)
+                # 해당 아이디가 아직 확인하지 않은(미확인) 건수 — 배지용.
+                owner = _owner_key(self._sess())
+                unread = _approval_badge_unread(owner)
+                return self._json({"ok": True, "queues": queues,
+                                   "total": total, "unread": unread})
             if p == "/api/link/pending":
                 # 멘토·페런츠 연결 승인 대기 목록(관리자·마스터).
                 if not self._require("admin"):
@@ -6103,6 +6917,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "not found"}, 404)
                 e = dict(e)
                 e["id"] = eid
+                try:
+                    e["staff"] = _staff_of(year, title)
+                except Exception:
+                    e["staff"] = []
                 return self._json({"ok": True, "event": e})
             if p == "/api/event/photos/all":
                 if not self._require():
@@ -6178,7 +6996,9 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 doc = _load_json(NOTIFY_FILE, {"items": []})
                 items = doc.get("items", [])
-                unread = sum(1 for x in items if not x.get("read"))
+                # 해당 관리자(아이디)가 아직 확인하지 않은 건수만 배지로 표시.
+                owner = _owner_key(self._sess())
+                unread = _board_badge_unread(owner)
                 return self._json({"ok": True, "items": items[:100], "unread": unread})
             # ---------- 수품구매 (굿즈) ----------
             if p == "/api/merch":
@@ -6752,6 +7572,91 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
         try:
+            # ---- 행사 스텝(STAFF) 등록/해제 — 관리자·마스터 전용 ----
+            if p == "/api/event/staff/add":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                number = str(d.get("number", "")).strip()
+                if not title or not number:
+                    return self._json({"ok": False, "error": "args"}, 400)
+                m = _ev_member_by_ident(number)
+                entry = {
+                    "number": number,
+                    "name": str((m or {}).get("name", "") or d.get("name", "")),
+                    "unit": str((m or {}).get("unit", "")),
+                    "league": str((m or {}).get("league", "")),
+                    "phone": str((m or {}).get("phone", "")),
+                    "loginId": str((m or {}).get("loginId", "")),
+                }
+                ok = _staff_add(year, title, entry)
+                return self._json({"ok": True, "added": ok,
+                                   "staff": _staff_of(year, title)})
+            if p == "/api/event/staff/remove":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                ident = str(d.get("number", "") or d.get("ident", ""))
+                _staff_remove(year, title, ident)
+                return self._json({"ok": True,
+                                   "staff": _staff_of(year, title)})
+            # ---- 개인 제안 행사(심사중) — 개인 로그인 누구나 ----
+            if p == "/api/event/private/create":
+                s = self._sess()
+                if not s:
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not title:
+                    return self._json({"ok": False, "error": "title"}, 400)
+                if not year or not re.match(r"^\d{4}$", year):
+                    return self._json(
+                        {"ok": False, "error": "year",
+                         "message": "행사 생성 시 연도(4자리)는 필수입니다."}, 400)
+                ident = re.sub(r"[^0-9]", "", str(s.get("who", "")))
+                if not ident:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                m = _ev_member_by_ident(ident)
+                req = {
+                    "ident": ident,
+                    "name": str((m or {}).get("name", "")),
+                    "year": year, "title": title,
+                    "period": str(d.get("period", "")),
+                    "place": str(d.get("place", "")),
+                    "desc": str(d.get("desc", "")),
+                    "by": {"master": "master", "app": "app",
+                           "personal": "범스카우트", "guest": "비인가자"}.get(
+                        s.get("tier"), s.get("tier")),
+                }
+                ok, rid = _priv_add_event(req)
+                return self._json({"ok": ok, "id": rid})
+            if p == "/api/event/private/mine":
+                s = self._sess()
+                if not s:
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
+                ident = re.sub(r"[^0-9]", "", str(s.get("who", "")))
+                return self._json({"ok": True,
+                                   "items": _priv_pending_list(ident)})
+            if p == "/api/event/private/list":
+                if not self._require("admin"):
+                    return
+                return self._json({"ok": True, "items": _priv_pending_list()})
+            if p == "/api/event/private/set":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                pid = str(d.get("id", "")).strip()
+                action = str(d.get("action", "")).strip()
+                if not pid or action not in ("approve", "reject", "delete"):
+                    return self._json({"ok": False, "error": "args"}, 400)
+                ok, act, item = _priv_set_status(pid, action)
+                return self._json({"ok": ok, "action": act,
+                                   "item": item or {}})
             if p == "/api/perms/set":
                 if not self._require("master"):
                     return
@@ -7065,6 +7970,76 @@ class Handler(BaseHTTPRequestHandler):
                         if ok:
                             done += 1
                 return self._json({"ok": True, "done": done})
+            # ---- 회원 등록요청 제출(로그인 회원 누구나) ----
+            if p == "/api/member/request":
+                s = self._sess()
+                if not s:
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
+                d = json.loads(self._body() or b"{}")
+                rtype = str(d.get("type", "")).strip()
+                if rtype not in ("lifetime", "fee", "qualification",
+                                 "event", "regular"):
+                    return self._json({"ok": False, "error": "type"}, 400)
+                # ident(인가번호) — 미지정 시 세션 who 사용, 그래도 없으면 400
+                ident = re.sub(r"[^0-9]", "", str(d.get("ident", "")))
+                if not ident:
+                    ident = re.sub(r"[^0-9]", "", str(s.get("who", "")))
+                if not ident:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                m = _member_by_number(ident) or _ev_member_by_ident(ident)
+                if not m:
+                    return self._json({"ok": False, "error": "unknown"}, 404)
+                req = {
+                    "ident": ident,
+                    "number": re.sub(r"[^0-9]", "", str(m.get("number", ""))),
+                    "name": str(m.get("name", "")),
+                    "type": rtype,
+                    "year": str(d.get("year", "")).strip(),
+                    "date": str(d.get("date", "")).strip(),
+                    "event": str(d.get("event", "")).strip(),
+                    "note": str(d.get("note", "")).strip(),
+                    "newNumber": str(d.get("newNumber", "")).strip(),
+                    "by": {"master": "master", "app": "app",
+                           "personal": "범스카우트", "guest": "비인가자"}.get(
+                        s.get("tier"), s.get("tier")),
+                }
+                if rtype == "fee" and not req["year"]:
+                    return self._json({"ok": False, "error": "year"}, 400)
+                ok, rid = _add_member_request(req)
+                return self._json({"ok": ok, "id": rid})
+            # ---- 회원 등록요청 승인/반려(관리자·마스터) ----
+            if p == "/api/member/request/set":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                rid = str(d.get("id", "")).strip()
+                action = str(d.get("action", "approve")).strip()
+                if not rid:
+                    return self._json({"ok": False, "error": "id"}, 400)
+                if action not in ("approve", "reject", "pending", "delete"):
+                    return self._json({"ok": False, "error": "action"}, 400)
+                ok, name, rtype = _set_member_request_status(rid, action)
+                return self._json({"ok": ok, "name": name, "type": rtype})
+            # ---- 배지 '확인(읽음)' 처리(관리자·마스터) ----
+            #  해당 아이디가 승인화면/게시판을 열어 확인했음을 기록한다.
+            #  kind: 'approval'(통합 승인) | 'board'(게시판 알림) | 'all'
+            #  이후 그 시각 이후에 들어온 새 항목만 다시 배지 숫자로 집계된다.
+            if p == "/api/badge/seen":
+                if not self._require("admin"):
+                    return
+                d = {}
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    d = {}
+                kind = str(d.get("kind", "all")).strip() or "all"
+                owner = _owner_key(self._sess())
+                kinds = ["approval", "board"] if kind == "all" else [kind]
+                for k in kinds:
+                    if k in ("approval", "board"):
+                        _seen_set(owner, k)
+                return self._json({"ok": True, "owner": owner,
+                                   "kinds": kinds})
             if p == "/api/link/set":
                 # 멘토·페런츠 연결 승인/보류/대기 처리(관리자·마스터).
                 if not self._require("admin"):
@@ -7151,6 +8126,59 @@ class Handler(BaseHTTPRequestHandler):
                     _save_json(DB_FILE, members)
                     meta = _touch_meta({"count": len(members), "updatedBy": d.get("by", "app")})
                 return self._json({"ok": True, "meta": meta})
+            if p == "/api/members/merge-addressbook":
+                # (요구#2) 회원정보 업데이트 — 명단 주소록(엑셀) 반영.
+                #  관리자·마스터 전용. 파일(base64) 또는 서버 경로(path)로 업로드.
+                #  기본은 비파괴(fill): 빈 필드만 채우고 기존 값은 보존한다.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                b = b""
+                fname = str(d.get("filename") or "addressbook.xls")
+                if d.get("data"):
+                    b = base64.b64decode(str(d.get("data")))
+                elif d.get("path"):
+                    with open(str(d.get("path")), "rb") as f:
+                        b = f.read()
+                if not b:
+                    return self._json({"ok": False, "error": "no file"}, 400)
+                overwrite = d.get("overwrite") is True
+                dry = d.get("dry") is True
+                try:
+                    sheets = _read_excel_sheets(b, fname)
+                except Exception as e:
+                    return self._json({"ok": False, "error": f"excel: {e}"}, 400)
+                rows = _parse_addr_rows(sheets)
+                if not rows:
+                    return self._json(
+                        {"ok": False, "error": "row",
+                         "message": "인가번호·성명·주소 헤더를 찾지 못했습니다."}, 400)
+                with _MEMBER_WRITE_LOCK:
+                    members = _ev_members()
+                    summary = _merge_addrbook(members, rows, overwrite=overwrite)
+                    if not dry and summary["updated"] > 0:
+                        _ev_backup_members()
+                        _save_json(DB_FILE, members)
+                        _touch_meta({"count": len(members),
+                                     "updatedBy": "addressbook"})
+                # 감사 로그
+                try:
+                    with LOCK:
+                        log = _load_json(IMP_LOG_FILE, {"items": []})
+                        log.setdefault("items", []).append({
+                            "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "folder": "주소록", "name": fname,
+                            "summary": (f"매칭 {summary['matched']}명 · 갱신 "
+                                        f"{summary['updated']}명"
+                                        + (" · 미리보기" if dry else "")),
+                            "by": (self._sess() or {}).get("who", ""),
+                        })
+                        _save_json(IMP_LOG_FILE, log)
+                except Exception:
+                    pass
+                return self._json({"ok": True, "dry": dry,
+                                   "overwrite": overwrite,
+                                   "rowsParsed": len(rows), **summary})
             if p == "/api/member/name-visible":
                 # 관리자·마스터: 회원 이름 공개/비공개 토글 (개인 프로필 좌우 버튼)
                 if not self._require("admin"):

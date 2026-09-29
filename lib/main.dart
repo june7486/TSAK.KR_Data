@@ -144,7 +144,7 @@ class _AuthGateState extends State<AuthGate> {
     if (!state.unlocked || !state.sessionValid) {
       return LockScreen(
         onUnlocked: () => setState(() {}),
-        initialTier: _prefillNo.isNotEmpty ? 'personal' : 'app',
+        initialTier: _prefillNo.isNotEmpty ? 'personal' : 'personal',
         initialId: _prefillNo,
       );
     }

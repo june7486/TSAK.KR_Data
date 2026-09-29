@@ -18,7 +18,7 @@ class LockScreen extends StatefulWidget {
   const LockScreen({
     super.key,
     this.onUnlocked,
-    this.initialTier = 'app',
+    this.initialTier = 'personal',
     this.initialId = '',
   });
 
@@ -656,10 +656,13 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   Widget _tierTabs() {
+    // (요구#5) 첫 화면 로그인 위치 이동 — 사용 빈도순으로 재배치하여
+    //  관리자 로그인 탭을 맨 앞에서 뒤쪽으로 옮긴다.
+    //  범스카우트(다수) → 비인가자 → 관리자 → 마스터(최소)
     final tabs = [
-      ('app', '관리자', Icons.admin_panel_settings),
       ('personal', '범스카우트', Icons.person),
       ('guest', '비인가자', Icons.person_outline),
+      ('app', '관리자', Icons.admin_panel_settings),
       ('master', '마스터', Icons.workspace_premium),
     ];
     return Row(

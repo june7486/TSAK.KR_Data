@@ -35,7 +35,7 @@ class StatsScreen extends StatelessWidget {
           _sectionTitle('회원 유형 분포'),
           _typeDistribution(state),
           const SizedBox(height: 12),
-          _sectionTitle('멘토 · 보호자 연결 현황'),
+          _sectionTitle('멘토 · 페런츠 연결 현황'),
           _linkStatus(state),
           const SizedBox(height: 12),
           _sectionTitle('연맹별 인가자 분포'),
@@ -248,7 +248,7 @@ class StatsScreen extends StatelessWidget {
     );
   }
 
-  /// 멘토·보호자 연결 현황
+  /// 멘토·페런츠 연결 현황
   Widget _linkStatus(AppState state) {
     final total = state.total;
     return Card(
@@ -266,7 +266,7 @@ class StatsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _progressLine(
-              '보호자 지정',
+              '페런츠 지정',
               state.parentLinkedCount,
               total,
               AppColors.taegeukRed,

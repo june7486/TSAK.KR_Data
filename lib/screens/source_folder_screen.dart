@@ -63,6 +63,12 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
         titleSpacing: 0,
         actions: [
           const AppHomeEmblem(size: 24),
+          if (_selected == 'member_list')
+            IconButton(
+              tooltip: '회원정보 업데이트 (주소록 엑셀 반영)',
+              icon: const Icon(Icons.sync_alt, color: AppColors.purple),
+              onPressed: _busy ? null : _syncAddressbookFromPicker,
+            ),
           if (_selected == 'bank')
             IconButton(
               tooltip: '은행거래 종합분석 보고서',
@@ -70,7 +76,8 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => const FinanceAnalysisScreen()),
+                  builder: (_) => const FinanceAnalysisScreen(),
+                ),
               ),
             ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
@@ -81,8 +88,13 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
         onPressed: _busy ? null : _pickAndUpload,
         icon: _busy
             ? const SizedBox(
-                width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
             : const Icon(Icons.attach_file),
         label: const Text('파일 첨부'),
       ),
@@ -100,11 +112,11 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
-                        avatar: Icon(f.$3,
-                            size: 15,
-                            color: _selected == f.$1
-                                ? Colors.white
-                                : f.$4),
+                        avatar: Icon(
+                          f.$3,
+                          size: 15,
+                          color: _selected == f.$1 ? Colors.white : f.$4,
+                        ),
                         label: Text(f.$2, style: const TextStyle(fontSize: 12)),
                         selected: _selected == f.$1,
                         selectedColor: f.$4,
@@ -131,15 +143,20 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
             child: Row(
               children: [
-                const Icon(Icons.info_outline,
-                    size: 15, color: AppColors.textGray),
+                const Icon(
+                  Icons.info_outline,
+                  size: 15,
+                  color: AppColors.textGray,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     '첨부한 파일은 NAS "$_selectedLabel" 폴더에 저장되고 '
                     '자동 분석되어 인가자별 기록·통계에 반영됩니다.',
                     style: const TextStyle(
-                        fontSize: 11.5, color: AppColors.textGray),
+                      fontSize: 11.5,
+                      color: AppColors.textGray,
+                    ),
                   ),
                 ),
               ],
@@ -149,36 +166,42 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _files.isEmpty
-                    ? _empty()
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _files.length,
-                        itemBuilder: (_, i) => _fileTile(_files[i]),
-                      ),
+                ? _empty()
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _files.length,
+                    itemBuilder: (_, i) => _fileTile(_files[i]),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  String get _selectedLabel =>
-      _folders.firstWhere((f) => f.$1 == _selected).$2;
+  String get _selectedLabel => _folders.firstWhere((f) => f.$1 == _selected).$2;
 
   Widget _empty() => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.folder_open,
-                size: 56, color: AppColors.textGray.withValues(alpha: 0.4)),
-            const SizedBox(height: 10),
-            Text('$_selectedLabel 폴더가 비어 있습니다',
-                style: const TextStyle(color: AppColors.textGray, fontSize: 13)),
-            const SizedBox(height: 4),
-            const Text('아래 파일 첨부 버튼으로 자료를 올려주세요',
-                style: TextStyle(color: AppColors.textGray, fontSize: 11.5)),
-          ],
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.folder_open,
+          size: 56,
+          color: AppColors.textGray.withValues(alpha: 0.4),
         ),
-      );
+        const SizedBox(height: 10),
+        Text(
+          '$_selectedLabel 폴더가 비어 있습니다',
+          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          '아래 파일 첨부 버튼으로 자료를 올려주세요',
+          style: TextStyle(color: AppColors.textGray, fontSize: 11.5),
+        ),
+      ],
+    ),
+  );
 
   Widget _fileTile(Map<String, dynamic> f) {
     final name = '${f['name']}';
@@ -206,10 +229,14 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
           backgroundColor: color.withValues(alpha: 0.13),
           child: Icon(icon, size: 19, color: color),
         ),
-        title: Text(name,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-        subtitle: Text(_sizeText(size),
-            style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+        title: Text(
+          name,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          _sizeText(size),
+          style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+        ),
         trailing: IconButton(
           icon: const Icon(Icons.download, size: 20),
           onPressed: () {
@@ -217,9 +244,11 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
             final url = nas.fileDownloadUrl(_selected, name);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: SelectableText(url,
-                    maxLines: 2,
-                    style: const TextStyle(fontSize: 11, color: Colors.white)),
+                content: SelectableText(
+                  url,
+                  maxLines: 2,
+                  style: const TextStyle(fontSize: 11, color: Colors.white),
+                ),
                 duration: const Duration(seconds: 6),
               ),
             );
@@ -250,6 +279,13 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
         ),
       );
       await _load();
+      // (요구#2) 인가자명단(주소록) 엑셀이면 → 회원정보 업데이트 제안.
+      final low = f.name.toLowerCase();
+      final isExcel =
+          low.endsWith('.xls') || low.endsWith('.xlsx') || low.endsWith('.csv');
+      if (_selected == 'member_list' && isExcel) {
+        await _offerAddressbookSync(f.name, bytes);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -260,6 +296,99 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
       );
     }
     if (mounted) setState(() => _busy = false);
+  }
+
+  /// (요구#2) 이미 보관 중인 주소록 파일을 골라 회원정보에 반영.
+  Future<void> _syncAddressbookFromPicker() async {
+    final res = await pickDataFiles(allowedExtensions: ['xls', 'xlsx', 'csv']);
+    if (res.isEmpty) return;
+    final f = res.first;
+    if (f.bytes.isEmpty) return;
+    await _offerAddressbookSync(f.name, f.bytes);
+  }
+
+  /// (요구#2) 회원정보 업데이트 — 명단 주소록(엑셀)을 회원정보에 반영.
+  ///
+  ///  · 먼저 **미리보기(dry)** 로 매칭/갱신 예정 건수를 계산해 보여주고,
+  ///  · 관리자가 승인하면 **비파괴(빈 칸만 채우기)** 로 반영한다.
+  ///    (기존에 입력된 값은 절대 덮어쓰지 않는다)
+  Future<void> _offerAddressbookSync(String filename, List<int> bytes) async {
+    final nas = context.read<NasApi>();
+    try {
+      final prev = await nas.mergeAddressbook(filename, bytes, dry: true);
+      if (!mounted) return;
+      final matched = (prev['matched'] as num?)?.toInt() ?? 0;
+      final upd = (prev['updated'] as num?)?.toInt() ?? 0;
+      final filled = prev['filled'];
+      if (upd == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('반영할 새 정보가 없습니다(이미 최신 상태).')),
+        );
+        return;
+      }
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('회원정보 업데이트'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('주소록에서 $matched명을 확인했고,\n$upd명의 정보를 채울 수 있습니다.'),
+                const SizedBox(height: 8),
+                if (filled is Map)
+                  Text(
+                    '· 주소 ${filled['address'] ?? 0} · 연락처 ${filled['phone'] ?? 0}\n'
+                    '· 이메일 ${filled['email'] ?? 0} · 생일 ${filled['birthday'] ?? 0}\n'
+                    '· 소속대 ${filled['unit'] ?? 0} · 연맹 ${filled['league'] ?? 0}',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                const Text(
+                  '기존에 입력된 값은 그대로 두고 비어 있는 항목만 채웁니다.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('업데이트'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      setState(() => _busy = true);
+      final res = await nas.mergeAddressbook(filename, bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('회원정보 업데이트 완료 · ${res['updated'] ?? 0}명 갱신'),
+          backgroundColor: AppColors.scoutGreen,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('업데이트 실패: $e'),
+          backgroundColor: AppColors.taegeukRed,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   static String _sizeText(int bytes) {

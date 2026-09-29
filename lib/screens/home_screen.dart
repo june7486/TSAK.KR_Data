@@ -2119,7 +2119,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 6),
                 _filterChip(
-                  label: '보호자',
+                  label: '페런츠',
                   selected: state.kindFilter == 'parent',
                   color: AppColors.lifetimeGold,
                   onTap: () => state.setKind(

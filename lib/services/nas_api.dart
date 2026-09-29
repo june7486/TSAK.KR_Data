@@ -20,6 +20,7 @@ class NasApi {
       );
 
   String _base;
+
   /// 서버 발급 세션토큰 (로그인 시 설정, 로그아웃/만료 시 비움).
   String sessionId = '';
 
@@ -53,14 +54,18 @@ class NasApi {
   }
 
   /// 도로명주소 검색 (행정안전부 JUSO, 프록시 경유·무인증).
-  Future<List<Map<String, dynamic>>> addrSearch(String q,
-      {int page = 1}) async {
+  Future<List<Map<String, dynamic>>> addrSearch(
+    String q, {
+    int page = 1,
+  }) async {
     if (q.trim().isEmpty) return [];
     try {
       final r = await http
           .get(
-            _uri('/api/address/search?q=${Uri.encodeComponent(q)}'
-                '&page=$page'),
+            _uri(
+              '/api/address/search?q=${Uri.encodeComponent(q)}'
+              '&page=$page',
+            ),
             headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 15));
@@ -207,9 +212,7 @@ class NasApi {
       final out = <String, Map<String, bool>>{};
       raw.forEach((k, v) {
         if (v is Map) {
-          out['$k'] = {
-            for (final e in v.entries) '${e.key}': e.value == true,
-          };
+          out['$k'] = {for (final e in v.entries) '${e.key}': e.value == true};
         }
       });
       return out;
@@ -275,7 +278,9 @@ class NasApi {
   /// 본인(로그인 세션)의 등록요청 이력 조회 — 개인 프로필의 '등록요청'
   /// 상태 표시용. 로그인 회원이면 누구나 조회 가능하다.
   /// [ident] 지정 시(관리자·마스터만) 해당 회원의 이력을 조회한다.
-  Future<List<Map<String, dynamic>>> myMemberRequests({String ident = ''}) async {
+  Future<List<Map<String, dynamic>>> myMemberRequests({
+    String ident = '',
+  }) async {
     final q = ident.trim().isEmpty
         ? ''
         : '?ident=${Uri.encodeComponent(ident.trim())}';
@@ -709,6 +714,30 @@ class NasApi {
   String fileDownloadUrl(String folder, String name) =>
       '$_base/api/files/download?folder=${Uri.encodeComponent(folder)}&name=${Uri.encodeComponent(name)}';
 
+  /// (요구#2) 명단 주소록(엑셀) → 회원정보 반영.
+  ///  기본은 **비파괴**: 빈 필드만 채우고 기존 값은 보존한다.
+  ///  dry=true 면 실제 저장 없이 미리보기(매칭/갱신 예정 건수)만 돌려준다.
+  Future<Map<String, dynamic>> mergeAddressbook(
+    String filename,
+    List<int> bytes, {
+    bool overwrite = false,
+    bool dry = false,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/members/merge-addressbook'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'filename': filename,
+            'data': base64.encode(bytes),
+            'overwrite': overwrite,
+            'dry': dry,
+          }),
+        )
+        .timeout(const Duration(seconds: 180));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   // ---- 행사관리 (행사 사진·동영상 갤러리) ----
   /// 행사관리 폴더의 미디어 목록 (사진/동영상)
   Future<List<Map<String, dynamic>>> eventList() async {
@@ -808,7 +837,12 @@ class NasApi {
   /// 행사 상세
   Future<Map<String, dynamic>> eventGet(String year, String title) async {
     final r = await http
-        .get(_uri('/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}'), headers: _authHeaders)
+        .get(
+          _uri(
+            '/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}',
+          ),
+          headers: _authHeaders,
+        )
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -831,9 +865,11 @@ class NasApi {
   }) async {
     final r = await http
         .get(
-          _uri('/api/event/files?year=${Uri.encodeComponent(year)}'
-              '&title=${Uri.encodeComponent(title)}&key=$key'
-              '&sub=${Uri.encodeComponent(sub)}'),
+          _uri(
+            '/api/event/files?year=${Uri.encodeComponent(year)}'
+            '&title=${Uri.encodeComponent(title)}&key=$key'
+            '&sub=${Uri.encodeComponent(sub)}',
+          ),
         )
         .timeout(const Duration(seconds: 40));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
@@ -974,11 +1010,7 @@ class NasApi {
         .post(
           _uri('/api/event/meta'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({
-            'year': year,
-            'title': title,
-            'customTabs': tabs,
-          }),
+          body: json.encode({'year': year, 'title': title, 'customTabs': tabs}),
         )
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
@@ -986,7 +1018,8 @@ class NasApi {
   }
 
   /// 행사 이름/연도 변경
-  Future<Map<String, dynamic>> eventRename({    required String year,
+  Future<Map<String, dynamic>> eventRename({
+    required String year,
     required String title,
     String? newTitle,
     String? newYear,
@@ -1176,8 +1209,10 @@ class NasApi {
   Future<Map<String, dynamic>> eventFinance(String year, String title) async {
     final r = await http
         .get(
-          _uri('/api/event/finance?year=${Uri.encodeComponent(year)}'
-              '&title=${Uri.encodeComponent(title)}'),
+          _uri(
+            '/api/event/finance?year=${Uri.encodeComponent(year)}'
+            '&title=${Uri.encodeComponent(title)}',
+          ),
         )
         .timeout(const Duration(seconds: 30));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
@@ -1280,14 +1315,13 @@ class NasApi {
   }
 
   /// 참가자 접근 이력 맵 (v표시용)
-  Future<Map<String, dynamic>> eventAccessMap(
-    String year,
-    String title,
-  ) async {
+  Future<Map<String, dynamic>> eventAccessMap(String year, String title) async {
     final r = await http
         .get(
-          _uri('/api/event/access?year=${Uri.encodeComponent(year)}'
-              '&title=${Uri.encodeComponent(title)}'),
+          _uri(
+            '/api/event/access?year=${Uri.encodeComponent(year)}'
+            '&title=${Uri.encodeComponent(title)}',
+          ),
         )
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
@@ -1295,12 +1329,22 @@ class NasApi {
   }
 
   /// 모든 참가자에게 사진 업로드 요청 기록
-  Future<bool> eventRequestPhoto(String year, String title, {String by = '', String message = ''}) async {
+  Future<bool> eventRequestPhoto(
+    String year,
+    String title, {
+    String by = '',
+    String message = '',
+  }) async {
     final r = await http
         .post(
           _uri('/api/event/request-photo'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({'year': year, 'title': title, 'by': by, 'message': message}),
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'by': by,
+            'message': message,
+          }),
         )
         .timeout(const Duration(seconds: 30));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
@@ -1490,8 +1534,10 @@ class NasApi {
   /// 은행거래 종합분석 (캐시) — 관리자·마스터.
   Future<Map<String, dynamic>> financeAnalysis({bool force = false}) async {
     final r = await http
-        .get(_uri('/api/finance/analysis?force=${force ? 1 : 0}'),
-            headers: _authHeaders)
+        .get(
+          _uri('/api/finance/analysis?force=${force ? 1 : 0}'),
+          headers: _authHeaders,
+        )
         .timeout(const Duration(seconds: 90));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     return (j['analysis'] as Map?)?.cast<String, dynamic>() ?? j;
@@ -1544,7 +1590,8 @@ class NasApi {
   ///
   /// [files] 는 `[{'name': 파일명, 'data': base64문자열}]` 형태.
   /// 보낸사람 이메일 또는 동의가 없으면 서버가 400 을 반환한다.
-  Future<Map<String, dynamic>> submitInquiry({    required String name,
+  Future<Map<String, dynamic>> submitInquiry({
+    required String name,
     required String email,
     String phone = '',
     String number = '',
@@ -1582,8 +1629,10 @@ class NasApi {
   Future<Map<String, dynamic>> reviewList(String year, String title) async {
     final r = await http
         .get(
-          _uri('/api/event/review/list?year=${Uri.encodeComponent(year)}'
-              '&title=${Uri.encodeComponent(title)}'),
+          _uri(
+            '/api/event/review/list?year=${Uri.encodeComponent(year)}'
+            '&title=${Uri.encodeComponent(title)}',
+          ),
           headers: _authHeaders,
         )
         .timeout(const Duration(seconds: 40));
@@ -1715,8 +1764,10 @@ class NasApi {
   /// 게시판 글 상세.
   Future<Map<String, dynamic>> boardGet(String id) async {
     final r = await http
-        .get(_uri('/api/board/get?id=${Uri.encodeComponent(id)}'),
-            headers: _authHeaders)
+        .get(
+          _uri('/api/board/get?id=${Uri.encodeComponent(id)}'),
+          headers: _authHeaders,
+        )
         .timeout(const Duration(seconds: 40));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -2017,7 +2068,10 @@ class NasApi {
     final q = <String>['ident=${Uri.encodeComponent(ident)}'];
     if (phone.isNotEmpty) q.add('phone=${Uri.encodeComponent(phone)}');
     final r = await http
-        .get(_uri('/api/merch/enroll-fee?${q.join('&')}'), headers: _authHeaders)
+        .get(
+          _uri('/api/merch/enroll-fee?${q.join('&')}'),
+          headers: _authHeaders,
+        )
         .timeout(const Duration(seconds: 40));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -2116,7 +2170,9 @@ class NasApi {
 
   /// 관리자: 제작자 첨부파일 업로드(base64). 반환: {ok, file, url}
   Future<Map<String, dynamic>> merchMakerUpload(
-      String filename, String dataB64) async {
+    String filename,
+    String dataB64,
+  ) async {
     final r = await http
         .post(
           _uri('/api/merch/maker/upload'),
@@ -2132,7 +2188,9 @@ class NasApi {
 
   /// 관리자: 상품 이미지 업로드 (base64). 반환: {ok, file, url}
   Future<Map<String, dynamic>> merchImageUpload(
-      String filename, String dataB64) async {
+    String filename,
+    String dataB64,
+  ) async {
     final r = await http
         .post(
           _uri('/api/merch/img/upload'),
@@ -2145,7 +2203,8 @@ class NasApi {
 
   /// 관리자: 수품 공여(행사/홍보) 기록.
   Future<Map<String, dynamic>> merchSaveDonation(
-      Map<String, dynamic> data) async {
+    Map<String, dynamic> data,
+  ) async {
     final r = await http
         .post(
           _uri('/api/merch/donation'),
@@ -2157,13 +2216,20 @@ class NasApi {
   }
 
   /// 관리자: 재고 입출고(+/-).
-  Future<Map<String, dynamic>> merchStock(String productId, int delta,
-      {String note = ''}) async {
+  Future<Map<String, dynamic>> merchStock(
+    String productId,
+    int delta, {
+    String note = '',
+  }) async {
     final r = await http
         .post(
           _uri('/api/merch/stock'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({'productId': productId, 'delta': delta, 'note': note}),
+          body: json.encode({
+            'productId': productId,
+            'delta': delta,
+            'note': note,
+          }),
         )
         .timeout(const Duration(seconds: 40));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
@@ -2563,12 +2629,16 @@ class NasApi {
   }
 
   // ---------- 주문 일괄편집 (소프트삭제/복원/순서/합치기/보관) ----------
-  Future<Map<String, dynamic>> _merchPost(String path,
-      Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _merchPost(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final r = await http
-        .post(_uri(path),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: json.encode(body))
+        .post(
+          _uri(path),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode(body),
+        )
         .timeout(const Duration(seconds: 40));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -2590,10 +2660,13 @@ class NasApi {
       _merchPost('/api/merch/orders/order', {'keys': keys});
 
   /// 선택한 주문들을 하나로 합치기(주문번호는 개별 유지).
-  Future<Map<String, dynamic>> merchOrdersMerge(List<String> keys,
-      {String name = ''}) =>
-      _merchPost('/api/merch/orders/merge',
-          {'keys': keys, if (name.isNotEmpty) 'name': name});
+  Future<Map<String, dynamic>> merchOrdersMerge(
+    List<String> keys, {
+    String name = '',
+  }) => _merchPost('/api/merch/orders/merge', {
+    'keys': keys,
+    if (name.isNotEmpty) 'name': name,
+  });
 
   /// 합친 묶음 해제.
   Future<Map<String, dynamic>> merchOrdersUnmerge(String bundleId) =>
@@ -2669,7 +2742,8 @@ class NasApi {
           body: json.encode({
             if (annualFee != null) 'annualFee': annualFee,
             if (salesOpen != null) 'salesOpen': salesOpen,
-            if (annualFeeRequired != null) 'annualFeeRequired': annualFeeRequired,
+            if (annualFeeRequired != null)
+              'annualFeeRequired': annualFeeRequired,
             if (reserveMode != null) 'reserveMode': reserveMode,
             if (notices != null) 'notices': notices,
             if (statuses != null) 'statuses': statuses,

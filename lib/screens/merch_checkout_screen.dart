@@ -481,7 +481,7 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
             const Text(
               '멘토·페런츠 메달은 각인 작업을 위해 수여받는 분의 정보가 반드시 필요합니다.\n'
               '· 멘토 메달: 멘토 대장님의 소속 · 이름 · 연락처\n'
-              '· 페런츠 메달: 페런츠(보호자)의 이름 · 연락처',
+              '· 페런츠 메달: 페런츠의 이름 · 연락처',
               style: TextStyle(fontSize: 12, height: 1.45),
             ),
             for (final e in _medalLines.entries) ...[

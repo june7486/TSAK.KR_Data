@@ -278,6 +278,30 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // (요구#3) 후기 — 위치를 본문 상단으로 옮겨 **모든 회원**이
+                //  관리자 여부와 무관하게 바로 열람·작성할 수 있게 한다.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.scoutGreen,
+                        side: BorderSide(
+                            color: AppColors.scoutGreen.withValues(alpha: 0.5)),
+                        backgroundColor:
+                            AppColors.scoutGreen.withValues(alpha: 0.06),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      ),
+                      onPressed: _openReview,
+                      icon: const Icon(Icons.rate_review_outlined, size: 18),
+                      label: const Text(
+                        '행사 후기 (모든 회원 열람·작성)',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ),
                 // 참가자(개인 접근): 참가비·후원 납부 계좌 3개 + 송금 버튼
                 if (!_fullView)
                   Padding(
@@ -576,7 +600,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                           ),
                           const Expanded(
                             child: Text(
-                              '참가자(보호자 포함)의 초상 활용에 동의하며 게시합니다',
+                              '참가자(페런츠 포함)의 초상 활용에 동의하며 게시합니다',
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
@@ -851,8 +875,6 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               _rosterButton(Icons.sms, '문자', _sendSms),
               const SizedBox(width: 6),
               _rosterButton(Icons.mail, '메일', _sendMail),
-              const SizedBox(width: 6),
-              _rosterButton(Icons.forum_outlined, '후기', _openReview),
               const Spacer(),
               Text(
                 '${_attendees.length}명',
