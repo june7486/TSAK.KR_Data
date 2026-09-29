@@ -236,8 +236,9 @@ class _RosterScreenState extends State<RosterScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '* 기본 저장 위치는 기기 기본 위치입니다. '
-              '[위치 선택]을 누르면 저장 대화상자가 열려 위치를 고를 수 있습니다.',
+              '* 기본 저장 위치는 기기 기본 위치입니다.\n'
+              '· PC: 브라우저 다운로드(Downloads) 폴더\n'
+              '· 스마트폰: [저장] 시 저장 대화상자가 열려 위치를 고를 수 있습니다.',
               style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
           ],
@@ -247,16 +248,13 @@ class _RosterScreenState extends State<RosterScreen> {
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('취소'),
           ),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.folder_open, size: 17),
-            label: const Text('위치 선택'),
-          ),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
             onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.save, size: 17),
-            label: const Text('저장'),
+            icon: const Icon(Icons.save_alt, size: 17),
+            // 네이티브(스마트폰)에서는 file_saver 가 OS 저장 대화상자를 띄워
+            //  사용자가 위치(사진/다운로드 등)를 직접 고를 수 있다.
+            label: Text(isImage ? '사진으로 저장' : '저장'),
           ),
         ],
       ),
