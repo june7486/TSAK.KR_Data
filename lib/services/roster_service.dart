@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'print_doc.dart';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
@@ -84,12 +85,17 @@ class RosterService {
           children: [
             pw.SizedBox(
               width: 44,
-              child: pw.Text(label,
-                  style: pw.TextStyle(font: bold, fontSize: 8.5, color: _gray)),
+              child: pw.Text(
+                label,
+                style: pw.TextStyle(font: bold, fontSize: 8.5, color: _gray),
+              ),
             ),
             pw.Expanded(
-                child: pw.Text(value,
-                    style: pw.TextStyle(font: reg, fontSize: 9.5, color: _ink))),
+              child: pw.Text(
+                value,
+                style: pw.TextStyle(font: reg, fontSize: 9.5, color: _ink),
+              ),
+            ),
           ],
         ),
       );
@@ -141,9 +147,12 @@ class RosterService {
       final a = attendees[i];
       final cells = <pw.Widget>[
         _td('${i + 1}', base, align: pw.TextAlign.center, color: _gray),
-        _td(_access(a) ? 'V' : '', base,
-            align: pw.TextAlign.center,
-            color: _access(a) ? _accent : _gray),
+        _td(
+          _access(a) ? 'V' : '',
+          base,
+          align: pw.TextAlign.center,
+          color: _access(a) ? _accent : _gray,
+        ),
         _td(_number(a), base, align: pw.TextAlign.center),
         _td(_name(a), baseBold),
         _td(_unit(a), base, color: _gray),
@@ -153,19 +162,34 @@ class RosterService {
         _td(_rolesText(a), base),
       ];
       if (showEventFee) {
-        cells.add(_td(_yn(_bool(a, 'eventFee')), base,
+        cells.add(
+          _td(
+            _yn(_bool(a, 'eventFee')),
+            base,
             align: pw.TextAlign.center,
-            color: _bool(a, 'eventFee') ? _accent : _gray));
+            color: _bool(a, 'eventFee') ? _accent : _gray,
+          ),
+        );
       }
       if (showLifetime) {
-        cells.add(_td(_yn(_bool(a, 'lifetime')), base,
+        cells.add(
+          _td(
+            _yn(_bool(a, 'lifetime')),
+            base,
             align: pw.TextAlign.center,
-            color: _bool(a, 'lifetime') ? _accent : _gray));
+            color: _bool(a, 'lifetime') ? _accent : _gray,
+          ),
+        );
       }
       if (showYearFee) {
-        cells.add(_td(_yn(_bool(a, 'yearFee')), base,
+        cells.add(
+          _td(
+            _yn(_bool(a, 'yearFee')),
+            base,
             align: pw.TextAlign.center,
-            color: _bool(a, 'yearFee') ? _accent : _gray));
+            color: _bool(a, 'yearFee') ? _accent : _gray,
+          ),
+        );
       }
       return pw.TableRow(children: cells);
     }
@@ -179,21 +203,28 @@ class RosterService {
           child: pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Text(org,
-                  style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray)),
-              pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
-                  style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray)),
+              pw.Text(
+                org,
+                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
+              ),
+              pw.Text(
+                '${ctx.pageNumber} / ${ctx.pagesCount}',
+                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
+              ),
             ],
           ),
         ),
         build: (ctx) => [
           // ---- 헤더 (MUJI풍: 큰 제목 + 얇은 구분선) ----
-          pw.Text(title,
-              style: pw.TextStyle(
-                  font: bold,
-                  fontSize: 22,
-                  color: _ink,
-                  letterSpacing: -0.4)),
+          pw.Text(
+            title,
+            style: pw.TextStyle(
+              font: bold,
+              fontSize: 22,
+              color: _ink,
+              letterSpacing: -0.4,
+            ),
+          ),
           pw.SizedBox(height: 6),
           pw.Container(width: 46, height: 3, color: _accent),
           pw.SizedBox(height: 16),
@@ -202,8 +233,10 @@ class RosterService {
           metaRow('참가', '${attendees.length}명'),
           if (desc.trim().isNotEmpty) ...[
             pw.SizedBox(height: 6),
-            pw.Text(desc,
-                style: pw.TextStyle(font: reg, fontSize: 9, color: _gray)),
+            pw.Text(
+              desc,
+              style: pw.TextStyle(font: reg, fontSize: 9, color: _gray),
+            ),
           ],
           pw.SizedBox(height: 20),
 
@@ -222,8 +255,10 @@ class RosterService {
             ],
           ),
           pw.SizedBox(height: 14),
-          pw.Text('· 접속 V = 해당 참가자가 사진폴더에 접근한 이력',
-              style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray)),
+          pw.Text(
+            '· 접속 V = 해당 참가자가 사진폴더에 접근한 이력',
+            style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
+          ),
         ],
       ),
     );
@@ -231,25 +266,33 @@ class RosterService {
   }
 
   static pw.Widget _th(String t, pw.Font bold) => pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 3),
-        child: pw.Text(t,
-            style: pw.TextStyle(font: bold, fontSize: 8, color: _accent)),
-      );
+    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 3),
+    child: pw.Text(
+      t,
+      style: pw.TextStyle(font: bold, fontSize: 8, color: _accent),
+    ),
+  );
 
-  static pw.Widget _td(String t, pw.TextStyle style,
-          {pw.TextAlign align = pw.TextAlign.left, PdfColor? color}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 3),
-        child: pw.Text(t,
-            textAlign: align,
-            style: (color == null)
-                ? style
-                : pw.TextStyle(
-                    font: style.font,
-                    fontSize: style.fontSize,
-                    fontWeight: style.fontWeight,
-                    color: color)),
-      );
+  static pw.Widget _td(
+    String t,
+    pw.TextStyle style, {
+    pw.TextAlign align = pw.TextAlign.left,
+    PdfColor? color,
+  }) => pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 3),
+    child: pw.Text(
+      t,
+      textAlign: align,
+      style: (color == null)
+          ? style
+          : pw.TextStyle(
+              font: style.font,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              color: color,
+            ),
+    ),
+  );
 
   /// 명단을 텍스트(TXT)로 변환
   static String buildText({
@@ -316,7 +359,8 @@ class RosterService {
     if (showLifetime) extraHead.write('<th style="text-align:center">평생</th>');
     if (showYearFee) {
       extraHead.write(
-          '<th style="text-align:center">${year.isNotEmpty ? '$year년 ' : ''}연회비</th>');
+        '<th style="text-align:center">${year.isNotEmpty ? '$year년 ' : ''}연회비</th>',
+      );
     }
     final rows = StringBuffer();
     for (var i = 0; i < attendees.length; i++) {
@@ -326,15 +370,18 @@ class RosterService {
       final extra = StringBuffer();
       if (showEventFee) {
         extra.write(
-            '<td class="c ${_bool(a, 'eventFee') ? 'v' : ''}">${_yn(_bool(a, 'eventFee'))}</td>');
+          '<td class="c ${_bool(a, 'eventFee') ? 'v' : ''}">${_yn(_bool(a, 'eventFee'))}</td>',
+        );
       }
       if (showLifetime) {
         extra.write(
-            '<td class="c ${_bool(a, 'lifetime') ? 'v' : ''}">${_yn(_bool(a, 'lifetime'))}</td>');
+          '<td class="c ${_bool(a, 'lifetime') ? 'v' : ''}">${_yn(_bool(a, 'lifetime'))}</td>',
+        );
       }
       if (showYearFee) {
         extra.write(
-            '<td class="c ${_bool(a, 'yearFee') ? 'v' : ''}">${_yn(_bool(a, 'yearFee'))}</td>');
+          '<td class="c ${_bool(a, 'yearFee') ? 'v' : ''}">${_yn(_bool(a, 'yearFee'))}</td>',
+        );
       }
       rows.write('''
     <tr>
@@ -351,7 +398,7 @@ class RosterService {
     }
     return '''<html><head><meta charset="utf-8">
 <style>
-  body { font-family:'Malgun Gothic','Nanum Gothic',sans-serif; color:#1F1A2E; }
+  body { font-family:$kDocFontStack; color:#1F1A2E; }
   h1 { font-size:22pt; margin:0 0 4px; letter-spacing:-0.5px; }
   .bar { width:46px; height:3px; background:#5B2C8D; margin:6px 0 18px; }
   .meta { font-size:10pt; color:#555; margin-bottom:2px; }

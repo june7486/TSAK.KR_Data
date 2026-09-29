@@ -141,14 +141,17 @@ void downloadBytesFile(Uint8List bytes, String filename, String mime) {
       (_document.body as _Body).appendChild(a as _Element);
     } catch (_) {}
     a.click();
-    _setTimeout((() {
-      try {
-        a.remove();
-      } catch (_) {}
-      try {
-        _URL.revokeObjectURL(url);
-      } catch (_) {}
-    }).toJS, 4000);
+    _setTimeout(
+      (() {
+        try {
+          a.remove();
+        } catch (_) {}
+        try {
+          _URL.revokeObjectURL(url);
+        } catch (_) {}
+      }).toJS,
+      4000,
+    );
   } catch (_) {}
 }
 
@@ -185,21 +188,28 @@ extension type _Writable(JSObject _) implements JSObject {
 ///
 /// 반환: true=저장됨, false=취소/미지원(호출부는 기본 다운로드로 폴백).
 Future<bool> saveViaFilePicker(
-    Uint8List bytes, String filename, String mime) async {
+  Uint8List bytes,
+  String filename,
+  String mime,
+) async {
   try {
-    final opts = <String, Object?>{
-      'suggestedName': filename,
-      'types': [
+    final opts =
         <String, Object?>{
-          'description': '파일',
-          'accept': <String, List<String>>{
-            mime.isEmpty ? 'application/octet-stream' : mime: <String>[
-              filename.contains('.') ? '.${filename.split('.').last}' : ''
-            ],
-          },
-        },
-      ],
-    }.jsify()! as JSObject;
+              'suggestedName': filename,
+              'types': [
+                <String, Object?>{
+                  'description': '파일',
+                  'accept': <String, List<String>>{
+                    mime.isEmpty ? 'application/octet-stream' : mime: <String>[
+                      filename.contains('.')
+                          ? '.${filename.split('.').last}'
+                          : '',
+                    ],
+                  },
+                },
+              ],
+            }.jsify()!
+            as JSObject;
     final handle = await _showSaveFilePicker(opts).toDart;
     final writable = await (_FileHandle(handle)).createWritable().toDart;
     await writable.write(bytes.toJS).toDart;
@@ -217,7 +227,7 @@ Future<bool> saveViaFilePicker(
 /// [autoPrint] 가 true 이면 문서 로드 후 자동으로 인쇄(=PDF 저장) 대화상자를
 /// 띄운다. 주문내역 등 **기본 출력 형식이 PDF**인 문서에서 사용한다.
 void openPrintableHtml(String html, {bool autoPrint = false}) {
-  var doc = html;
+  var doc = _withBackButton(html);
   if (autoPrint && !doc.contains('tsak-autoprint')) {
     const script =
         '<script class="tsak-autoprint">window.addEventListener("load",function(){'
@@ -237,10 +247,44 @@ void openPrintableHtml(String html, {bool autoPrint = false}) {
   } catch (_) {
     try {
       _window.open(
-          'data:text/html;charset=utf-8,${Uri.encodeComponent(doc)}',
-          '_blank');
+        'data:text/html;charset=utf-8,${Uri.encodeComponent(doc)}',
+        '_blank',
+      );
     } catch (_) {}
   }
+}
+
+/// 새 창에서 연 모든 출력물(인쇄·PDF·이미지 등)에 **"← 돌아가기" 버튼**을
+/// 자동으로 붙인다. (요구 p.27·p.28: "새창이 열리면 꼭 돌아가기 버튼을 넣도록 해")
+///
+///  · 스마트폰 브라우저에는 뒤로가기 버튼이 없어 새 창에 갇히는 문제를 막는다.
+///  · history 가 있으면 `history.back()`, 없으면 창을 닫고, 그것도 안 되면
+///    원래(앱) URL 로 이동한다 — 어떤 브라우저에서도 빠져나올 수 있게.
+///  · 이미 버튼이 있으면(tsak-backbar) 중복 삽입하지 않는다.
+String _withBackButton(String html) {
+  if (html.contains('tsak-backbar')) return html;
+  const bar = '''
+<style class="tsak-backbar">
+#tsak-backbar{position:fixed;left:12px;top:12px;z-index:2147483647;
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 15px;border-radius:24px;
+  background:#5B2C8D;color:#fff;border:0;cursor:pointer;
+  font:700 14px/1 -apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+  box-shadow:0 3px 12px rgba(0,0,0,.28)}
+#tsak-backbar:hover{background:#46216E}
+@media print{#tsak-backbar{display:none}}
+</style>
+<button id="tsak-backbar" class="tsak-backbar" type="button"
+  onclick="try{if(window.history.length>1){window.history.back();return;}}catch(e){}
+           try{window.close();}catch(e){}
+           setTimeout(function(){try{location.href=document.referrer||'/';}catch(e){}},120);">
+  ← 돌아가기
+</button>
+''';
+  if (html.contains('</body>')) {
+    return html.replaceFirst('</body>', '$bar</body>');
+  }
+  return html + bar;
 }
 
 /// 자동 재로드를 세션당 1회로 제한한다. (허용되면 true)
@@ -363,9 +407,10 @@ Future<String> clearAppCache() async {
   // 0) 아이콘 폰트를 HTTP 캐시까지 무시하고 강제 재다운로드.
   //    → 옛 폰트가 캐시에 남아 픽토그램이 누락되는 문제를 근본 해결.
   try {
-    await _fetch('assets/fonts/MaterialIcons-Regular.otf',
-            _cacheReloadOpts())
-        .toDart;
+    await _fetch(
+      'assets/fonts/MaterialIcons-Regular.otf',
+      _cacheReloadOpts(),
+    ).toDart;
   } catch (_) {}
 
   // 1) Cache Storage 비우기 (서비스워커가 캐싱한 앱 셸/자산)

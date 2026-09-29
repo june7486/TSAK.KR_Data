@@ -9,6 +9,18 @@
 /// 새 출력 기능을 추가할 때도 동일한 헬퍼를 사용한다(신규/수정 공통 규칙).
 library;
 
+/// 출력 HTML 공통 **크로스플랫폼 한글 폰트 스택** (규칙).
+///
+/// ## 왜 필요한가 (요구 p.4·p.5: "출력시 폰트가 깨져")
+/// 그동안 일부 출력이 `'Malgun Gothic'`(윈도우 전용 폰트)만 지정해,
+/// **아이폰(iOS)·안드로이드·맥**에서 한글이 두부(□□□)로 깨졌다.
+/// 폰트는 **각 OS 에 존재하는 시스템 폰트를 우선순위대로** 나열하고,
+/// 마지막에 generic `sans-serif` 로 폴백하면 못 찾아도 기본폰트로 정상 표시된다.
+/// (웹폰트 로딩 없이도 안전 — 미리보기·인쇄·PDF 저장 모두 동일.)
+const String kDocFontStack =
+    "'Malgun Gothic','Apple SD Gothic Neo','NanumGothic','Noto Sans KR',"
+    "system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
+
 /// 무인양품 스타일 저채도 다색 악센트 팔레트(규칙).
 const List<String> kMujiAccents = [
   '#7C6A9C', // 보라
@@ -122,8 +134,9 @@ String buildMujiDoc({
       ? ''
       : '<table>$thead$tbody</table>';
 
-  final sumHtml =
-      summary.trim().isEmpty ? '' : '<div class="sum">$summary</div>';
+  final sumHtml = summary.trim().isEmpty
+      ? ''
+      : '<div class="sum">$summary</div>';
 
   return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>${_esc(meta.title)}</title>
@@ -131,7 +144,7 @@ String buildMujiDoc({
 <style>
  *{box-sizing:border-box}
  @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:14mm}
- body{font-family:'Malgun Gothic','NanumGothic',sans-serif;color:#3A3A3A;
+ body{font-family:$kDocFontStack;color:#3A3A3A;
    padding:30px;max-width:820px;margin:0 auto;background:#fff;font-size:13px}
  .brand{font-size:11px;letter-spacing:3px;color:#9A9388}
  h1{font-size:21px;color:#4A4A48;font-weight:600;margin:4px 0 2px}
@@ -185,13 +198,14 @@ String _stamp() {
 ///
 /// `buildMujiDoc` 를 사용하지 않는 특수 출력(통계 표, 슬라이드형 PPT 등)에서
 /// 재사용한다. 툴바는 인쇄 시 숨겨진다.
-String wrapPrintHtml(String title, String inner, {bool landscape = false}) => '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+String wrapPrintHtml(String title, String inner, {bool landscape = false}) =>
+    '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>${_esc(title)}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
  *{box-sizing:border-box}
  @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:14mm}
- body{font-family:'Malgun Gothic','NanumGothic',sans-serif;color:#2c2c2c;padding:0;margin:0;background:#fff}
+ body{font-family:$kDocFontStack;color:#2c2c2c;padding:0;margin:0;background:#fff}
  .print-body{padding:24px}
  table{border-collapse:collapse;width:100%;font-size:12.5px}
  th,td{border-bottom:1px solid #EDEAE3;padding:8px 10px}

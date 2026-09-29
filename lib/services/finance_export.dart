@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'print_doc.dart';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
@@ -74,8 +75,10 @@ class FinanceTable {
       : (rows.isNotEmpty ? rows.first.length : (totals?.length ?? 0));
 
   /// 모든 행(합계 포함) — 출력용
-  List<List<String>> get allRows =>
-      [...rows, if (totals != null && totals!.isNotEmpty) totals!];
+  List<List<String>> get allRows => [
+    ...rows,
+    if (totals != null && totals!.isNotEmpty) totals!,
+  ];
 }
 
 /// 재무 출력 묶음 (제목 + 여러 표)
@@ -177,9 +180,11 @@ class FinanceExportService {
     pw.Font? bold;
     try {
       base = pw.Font.ttf(
-          await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'));
+        await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
+      );
       bold = pw.Font.ttf(
-          await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'));
+        await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
+      );
     } catch (_) {
       base = null;
       bold = null;
@@ -198,56 +203,73 @@ class FinanceExportService {
         header: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text(d.title,
-                style: pw.TextStyle(
-                    fontSize: 15, fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              d.title,
+              style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+            ),
             if (d.subtitle.isNotEmpty)
               pw.Text(d.subtitle, style: const pw.TextStyle(fontSize: 9)),
             pw.SizedBox(height: 2),
-            pw.Text('출력일: ${_today()}  |  한국범스카우트중앙회',
-                style: const pw.TextStyle(fontSize: 9)),
+            pw.Text(
+              '출력일: ${_today()}  |  한국범스카우트중앙회',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
             pw.Divider(),
           ],
         ),
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
-          child: pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
-              style: const pw.TextStyle(fontSize: 9)),
+          child: pw.Text(
+            '${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
         ),
         build: (ctx) {
           final out = <pw.Widget>[];
           for (final t in tables) {
             out.add(pw.SizedBox(height: 6));
-            out.add(pw.Text(t.title,
-                style:
-                    pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)));
+            out.add(
+              pw.Text(
+                t.title,
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            );
             if (t.note.isNotEmpty) {
-              out.add(pw.Text(t.note,
-                  style: const pw.TextStyle(fontSize: 8)));
+              out.add(pw.Text(t.note, style: const pw.TextStyle(fontSize: 8)));
             }
             out.add(pw.SizedBox(height: 3));
             if (t.headers.isNotEmpty && t.allRows.isNotEmpty) {
-              out.add(pw.TableHelper.fromTextArray(
-                headers: t.headers,
-                data: t.allRows,
-                headerStyle: pw.TextStyle(
-                    fontSize: 8, fontWeight: pw.FontWeight.bold),
-                cellStyle: const pw.TextStyle(fontSize: 7.5),
-                headerDecoration:
-                    const pw.BoxDecoration(color: PdfColors.grey300),
-                cellAlignment: pw.Alignment.centerLeft,
-                cellHeight: 16,
-              ));
+              out.add(
+                pw.TableHelper.fromTextArray(
+                  headers: t.headers,
+                  data: t.allRows,
+                  headerStyle: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                  cellStyle: const pw.TextStyle(fontSize: 7.5),
+                  headerDecoration: const pw.BoxDecoration(
+                    color: PdfColors.grey300,
+                  ),
+                  cellAlignment: pw.Alignment.centerLeft,
+                  cellHeight: 16,
+                ),
+              );
             } else {
-              out.add(pw.Text('(자료 없음)',
-                  style: const pw.TextStyle(fontSize: 8)));
+              out.add(
+                pw.Text('(자료 없음)', style: const pw.TextStyle(fontSize: 8)),
+              );
             }
             out.add(pw.SizedBox(height: 10));
           }
           if (d.footnote.isNotEmpty) {
             out.add(pw.SizedBox(height: 6));
-            out.add(pw.Text(d.footnote,
-                style: const pw.TextStyle(fontSize: 8)));
+            out.add(
+              pw.Text(d.footnote, style: const pw.TextStyle(fontSize: 8)),
+            );
           }
           return out;
         },
@@ -263,20 +285,18 @@ class FinanceExportService {
     final buf = StringBuffer();
     buf.write('<html xmlns:w="urn:schemas-microsoft-com:office:word">');
     buf.write('<head><meta charset="utf-8"></head><body>');
-    buf.write(
-        '<h2 style="font-family:\'Malgun Gothic\'">${_esc(d.title)}</h2>');
+    buf.write('<h2 style="font-family:$kDocFontStack">${_esc(d.title)}</h2>');
     if (d.subtitle.isNotEmpty) {
       buf.write('<p>${_esc(d.subtitle)}</p>');
     }
     buf.write('<p>출력일: ${_today()} | 한국범스카우트중앙회</p>');
     for (final t in d.tables) {
       if (t.isEmpty) continue;
-      buf.write(
-          '<h3 style="font-family:\'Malgun Gothic\'">${_esc(t.title)}</h3>');
+      buf.write('<h3 style="font-family:$kDocFontStack">${_esc(t.title)}</h3>');
       if (t.note.isNotEmpty) buf.write('<p>${_esc(t.note)}</p>');
       buf.write(
         '<table border="1" cellspacing="0" cellpadding="4" '
-        'style="border-collapse:collapse;font-size:10pt;font-family:\'Malgun Gothic\'">',
+        'style="border-collapse:collapse;font-size:10pt;font-family:$kDocFontStack">',
       );
       if (t.headers.isNotEmpty) {
         buf.write('<tr style="background:#5B2C8D;color:#fff">');
@@ -366,11 +386,15 @@ class FinanceExportService {
       buf.writeln(_csvRow([d.footnote]));
     }
     // 엑셀 한글 깨짐 방지 BOM
-    return Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(buf.toString())]);
+    return Uint8List.fromList([
+      0xEF,
+      0xBB,
+      0xBF,
+      ...utf8.encode(buf.toString()),
+    ]);
   }
 
-  static String _csvRow(List<String> cells) =>
-      cells.map(_csvCell).join(',');
+  static String _csvRow(List<String> cells) => cells.map(_csvCell).join(',');
 
   static String _csvCell(String s) {
     final v = s.replaceAll('"', '""');
@@ -400,16 +424,17 @@ class FinanceExportService {
       }
       for (var i = 0; i < body.length; i += rowsPer) {
         final chunk = body.sublist(
-            i, (i + rowsPer > body.length) ? body.length : i + rowsPer);
-        final grid = <List<String>>[
-          if (heads.isNotEmpty) heads,
-          ...chunk,
-        ];
-        slides.add(_SlideSpec(
-          title: t.title,
-          subtitle: i == 0 ? t.note : '${t.title} (계속)',
-          grid: grid,
-        ));
+          i,
+          (i + rowsPer > body.length) ? body.length : i + rowsPer,
+        );
+        final grid = <List<String>>[if (heads.isNotEmpty) heads, ...chunk];
+        slides.add(
+          _SlideSpec(
+            title: t.title,
+            subtitle: i == 0 ? t.note : '${t.title} (계속)',
+            grid: grid,
+          ),
+        );
       }
     }
     return _buildPptx(slides);
@@ -426,16 +451,29 @@ class FinanceExportService {
     // [Content_Types].xml
     final ct = StringBuffer()
       ..write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
-      ..write('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">')
-      ..write('<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>')
+      ..write(
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+      )
+      ..write(
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+      )
       ..write('<Default Extension="xml" ContentType="application/xml"/>')
-      ..write('<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>')
-      ..write('<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>')
-      ..write('<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>')
-      ..write('<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>');
+      ..write(
+        '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
+      )
+      ..write(
+        '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>',
+      )
+      ..write(
+        '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>',
+      )
+      ..write(
+        '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>',
+      );
     for (var i = 0; i < slides.length; i++) {
       ct.write(
-          '<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>');
+        '<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>',
+      );
     }
     ct.write('</Types>');
     buffer.add('[Content_Types].xml', ct.toString());
@@ -443,15 +481,19 @@ class FinanceExportService {
     buffer.add(
       '_rels/.rels',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>'
-      '</Relationships>',
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>'
+          '</Relationships>',
     );
 
     final pres = StringBuffer()
       ..write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
-      ..write('<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">')
-      ..write('<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>')
+      ..write(
+        '<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">',
+      )
+      ..write(
+        '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>',
+      )
       ..write('<p:sldIdLst>');
     for (var i = 0; i < slides.length; i++) {
       pres.write('<p:sldId id="${256 + i}" r:id="rId${i + 2}"/>');
@@ -465,11 +507,16 @@ class FinanceExportService {
 
     final presRels = StringBuffer()
       ..write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
-      ..write('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">')
-      ..write('<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>');
+      ..write(
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+      )
+      ..write(
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>',
+      );
     for (var i = 0; i < slides.length; i++) {
       presRels.write(
-          '<Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>');
+        '<Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>',
+      );
     }
     presRels.write('</Relationships>');
     buffer.add('ppt/_rels/presentation.xml.rels', presRels.toString());
@@ -477,44 +524,44 @@ class FinanceExportService {
     buffer.add(
       'ppt/slideMasters/slideMaster1.xml',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
-      '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>'
-      '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
-      '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>'
-      '</p:sldMaster>',
+          '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+          '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>'
+          '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+          '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>'
+          '</p:sldMaster>',
     );
     buffer.add(
       'ppt/slideMasters/_rels/slideMaster1.xml.rels',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
-      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>'
-      '</Relationships>',
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
+          '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>'
+          '</Relationships>',
     );
     buffer.add(
       'ppt/slideLayouts/slideLayout1.xml',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      '<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">'
-      '<p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>'
-      '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'
-      '</p:sldLayout>',
+          '<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">'
+          '<p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>'
+          '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'
+          '</p:sldLayout>',
     );
     buffer.add(
       'ppt/slideLayouts/_rels/slideLayout1.xml.rels',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>'
-      '</Relationships>',
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>'
+          '</Relationships>',
     );
     buffer.add(
       'ppt/theme/theme1.xml',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office">'
-      '<a:themeElements>'
-      '<a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="5B2C8D"/></a:accent1><a:accent2><a:srgbClr val="D62828"/></a:accent2><a:accent3><a:srgbClr val="2E7D32"/></a:accent3><a:accent4><a:srgbClr val="1B4F9C"/></a:accent4><a:accent5><a:srgbClr val="F2B705"/></a:accent5><a:accent6><a:srgbClr val="7E4FB0"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>'
-      '<a:fontScheme name="Office"><a:majorFont><a:latin typeface="Malgun Gothic"/><a:ea typeface="Malgun Gothic"/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Malgun Gothic"/><a:ea typeface="Malgun Gothic"/><a:cs typeface=""/></a:minorFont></a:fontScheme>'
-      '<a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>'
-      '</a:themeElements></a:theme>',
+          '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office">'
+          '<a:themeElements>'
+          '<a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="5B2C8D"/></a:accent1><a:accent2><a:srgbClr val="D62828"/></a:accent2><a:accent3><a:srgbClr val="2E7D32"/></a:accent3><a:accent4><a:srgbClr val="1B4F9C"/></a:accent4><a:accent5><a:srgbClr val="F2B705"/></a:accent5><a:accent6><a:srgbClr val="7E4FB0"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>'
+          '<a:fontScheme name="Office"><a:majorFont><a:latin typeface="Malgun Gothic"/><a:ea typeface="Malgun Gothic"/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Malgun Gothic"/><a:ea typeface="Malgun Gothic"/><a:cs typeface=""/></a:minorFont></a:fontScheme>'
+          '<a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>'
+          '</a:themeElements></a:theme>',
     );
 
     for (var i = 0; i < slides.length; i++) {
@@ -523,8 +570,17 @@ class FinanceExportService {
       final titleText = s.subtitle.isNotEmpty
           ? '${s.title}  ·  ${s.subtitle}'
           : s.title;
-      spTree.write(_textShape(
-          2, titleText, 500000, 250000, slideW - 1000000, 600000, 2000));
+      spTree.write(
+        _textShape(
+          2,
+          titleText,
+          500000,
+          250000,
+          slideW - 1000000,
+          600000,
+          2000,
+        ),
+      );
       if (s.grid != null && s.grid!.isNotEmpty) {
         final cols = s.grid!.first.length;
         final tableW = (slideW * 0.94).round();
@@ -535,26 +591,33 @@ class FinanceExportService {
       buffer.add(
         'ppt/slides/slide${i + 1}.xml',
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
-        '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
-        '$spTree'
-        '</p:spTree></p:cSld>'
-        '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'
-        '</p:sld>',
+            '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
+            '$spTree'
+            '</p:spTree></p:cSld>'
+            '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'
+            '</p:sld>',
       );
       buffer.add(
         'ppt/slides/_rels/slide${i + 1}.xml.rels',
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
-        '</Relationships>',
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
+            '</Relationships>',
       );
     }
     return buffer.encode();
   }
 
-  static String _textShape(int id, String text, int x, int y, int cx, int cy,
-      int fontSize) {
+  static String _textShape(
+    int id,
+    String text,
+    int x,
+    int y,
+    int cx,
+    int cy,
+    int fontSize,
+  ) {
     return '<p:sp><p:nvSpPr><p:cNvPr id="$id" name="Title $id"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
         '<p:spPr><a:xfrm><a:off x="$x" y="$y"/><a:ext cx="$cx" cy="$cy"/></a:xfrm>'
         '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>'
@@ -564,15 +627,21 @@ class FinanceExportService {
   }
 
   static String _tableShape(
-      int id, int x, int y, int colW, List<List<String>> grid) {
+    int id,
+    int x,
+    int y,
+    int colW,
+    List<List<String>> grid,
+  ) {
     const rowH = 300000;
     final buf = StringBuffer();
     final cols = grid.isEmpty ? 1 : grid.first.length;
     buf.write(
-        '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="$id" name="Table $id"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>'
-        '<p:xfrm><a:off x="$x" y="$y"/><a:ext cx="${colW * cols}" cy="${rowH * grid.length}"/></p:xfrm>'
-        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">'
-        '<a:tbl><a:tblPr firstRow="1"/><a:tblGrid>');
+      '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="$id" name="Table $id"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>'
+      '<p:xfrm><a:off x="$x" y="$y"/><a:ext cx="${colW * cols}" cy="${rowH * grid.length}"/></p:xfrm>'
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">'
+      '<a:tbl><a:tblPr firstRow="1"/><a:tblGrid>',
+    );
     for (var c = 0; c < cols; c++) {
       buf.write('<a:gridCol w="$colW"/>');
     }
@@ -583,10 +652,12 @@ class FinanceExportService {
         final isHead = r == 0;
         buf.write('<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p>');
         buf.write(
-            '<a:r><a:rPr lang="ko-KR" sz="900"${isHead ? ' b="1"' : ''}><a:solidFill><a:srgbClr val="${isHead ? 'FFFFFF' : '1F1A2E'}"/></a:solidFill></a:rPr>');
+          '<a:r><a:rPr lang="ko-KR" sz="900"${isHead ? ' b="1"' : ''}><a:solidFill><a:srgbClr val="${isHead ? 'FFFFFF' : '1F1A2E'}"/></a:solidFill></a:rPr>',
+        );
         buf.write('<a:t>${_esc(grid[r][c])}</a:t></a:r></a:p></a:txBody>');
         buf.write(
-            '<a:tcPr><a:solidFill><a:srgbClr val="${isHead ? '5B2C8D' : 'FFFFFF'}"/></a:solidFill></a:tcPr></a:tc>');
+          '<a:tcPr><a:solidFill><a:srgbClr val="${isHead ? '5B2C8D' : 'FFFFFF'}"/></a:solidFill></a:tcPr></a:tc>',
+        );
       }
       buf.write('</a:tr>');
     }
