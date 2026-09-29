@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/export_save.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
@@ -642,54 +644,78 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     return b.toString();
   }
 
-  String _orderHtml() {
+  /// 주문 내역서 공통 메타(헤더) — HTML/PDF 공용.
+  DocMeta _orderMeta() {
     final h = _head;
-    // 전역 기본 출력 규칙: 무인양품(MUJI) + 다양한 색채, A4 세로.
-    final rows = _items.asMap().entries.map((e) {
-      final o = e.value;
-      final ac = kMujiAccents[e.key % kMujiAccents.length];
-      final opt = [
-        if (_s(o, 'size').isNotEmpty) '사이즈 ${_s(o, 'size')}',
-        if (_s(o, 'option').isNotEmpty) '옵션 ${_s(o, 'option')}',
-      ].join(' · ');
-      return [
-        DocCell(_s(o, 'product'), accent: ac, sub: opt.isEmpty ? null : opt),
-        DocCell('${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')}', align: 'center'),
-        DocCell(_won(_i(o, 'unitPrice')), align: 'right'),
-        DocCell(_won(_i(o, 'total')), align: 'right', bold: true),
-      ];
-    }).toList();
+    return DocMeta(
+      title: '수품 주문 내역서',
+      subtitle: '주문번호 ${widget.groupKey}',
+      author: _s(h, 'buyerName'),
+      extra: {
+        '주문일': _s(h, 'created'),
+        '상태':
+            '${_s(h, 'status')} (${_allPaid ? '입금완료' : '미입금'}'
+            '${_anyReceived ? ' · 수령완료' : ''})',
+        '주문자': '${_s(h, 'buyerName')} (${_s(h, 'buyerNumber')})',
+        '연락처': _s(h, 'phone'),
+        '이메일': _s(h, 'email'),
+        '배송': _s(h, 'shipMethod'),
+        '주소': _s(h, 'address'),
+        if (_s(h, 'invoice').isNotEmpty)
+          '운송장':
+              '${_s(h, 'invoice')}'
+              '${_s(h, 'invoiceCompany').isNotEmpty ? ' (${_s(h, 'invoiceCompany')})' : ''}',
+      },
+    );
+  }
+
+  /// 주문 내역 표 행 — HTML/PDF 공용.
+  List<List<DocCell>> _orderDocRows() => _items.asMap().entries.map((e) {
+    final o = e.value;
+    final ac = kMujiAccents[e.key % kMujiAccents.length];
+    final opt = [
+      if (_s(o, 'size').isNotEmpty) '사이즈 ${_s(o, 'size')}',
+      if (_s(o, 'option').isNotEmpty) '옵션 ${_s(o, 'option')}',
+    ].join(' · ');
+    return [
+      DocCell(_s(o, 'product'), accent: ac, sub: opt.isEmpty ? null : opt),
+      DocCell('${_i(o, 'qty') == 0 ? 1 : _i(o, 'qty')}', align: 'center'),
+      DocCell(_won(_i(o, 'unitPrice')), align: 'right'),
+      DocCell(_won(_i(o, 'total')), align: 'right', bold: true),
+    ];
+  }).toList();
+
+  /// 합계 줄 목록(HTML/PDF 공용).
+  List<String> _orderSummaryLines() {
+    final out = <String>['상품합계 ${_won(_sumTotal)}'];
+    if (_sumFee > 0) out.add('연회비 ${_won(_sumFee)}');
+    if (_sumShip > 0) out.add('배송비 ${_won(_sumShip)}');
+    out.add('총 결제금액 ${_won(_grand)}');
+    return out;
+  }
+
+  String _orderHtml() {
     final summary = StringBuffer('상품합계 ${_won(_sumTotal)}');
     if (_sumFee > 0) summary.write('<br>연회비 ${_won(_sumFee)}');
     if (_sumShip > 0) summary.write('<br>배송비 ${_won(_sumShip)}');
     summary.write('<br>총 결제금액 <span class="g">${_won(_grand)}</span>');
     return buildMujiDoc(
-      meta: DocMeta(
-        title: '수품 주문 내역서',
-        subtitle: '주문번호 ${widget.groupKey}',
-        author: _s(h, 'buyerName'),
-        extra: {
-          '주문일': _s(h, 'created'),
-          '상태':
-              '${_s(h, 'status')} (${_allPaid ? '입금완료' : '미입금'}'
-              '${_anyReceived ? ' · 수령완료' : ''})',
-          '주문자': '${_s(h, 'buyerName')} (${_s(h, 'buyerNumber')})',
-          '연락처': _s(h, 'phone'),
-          '이메일': _s(h, 'email'),
-          '배송': _s(h, 'shipMethod'),
-          '주소': _s(h, 'address'),
-          if (_s(h, 'invoice').isNotEmpty)
-            '운송장':
-                '${_s(h, 'invoice')}'
-                '${_s(h, 'invoiceCompany').isNotEmpty ? ' (${_s(h, 'invoiceCompany')})' : ''}',
-        },
-      ),
+      meta: _orderMeta(),
       columns: const ['상품', '수량', '단가', '금액'],
-      rows: rows,
+      rows: _orderDocRows(),
       summary: summary.toString(),
       footerLeft: '한국범스카우트중앙회 수품 판매',
     );
   }
+
+  /// 실제 **PDF 파일 바이트** 생성 (p.28: 기본 출력을 jpg→pdf 로, 진짜 파일).
+  Future<Uint8List> _orderPdfBytes() => DocPdf.build(
+    meta: _orderMeta(),
+    columns: const ['상품', '수량', '단가', '금액'],
+    rows: _orderDocRows(),
+    summary: _orderSummaryLines(),
+    footerLeft: '한국범스카우트중앙회 수품 판매',
+  );
 
   /// 엑셀(CSV) — UTF-8 BOM 포함(Excel 한글 호환).
   String _orderCsv() {
@@ -772,9 +798,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     return wrapPrintHtml('수품 주문 내역서 (슬라이드)', inner);
   }
 
+  /// 인쇄(용지 출력) — 브라우저 인쇄 대화상자. (새 창에 돌아가기 버튼 포함)
   Future<void> _print() async {
     if (isWebRuntime) {
-      // 기본 출력 형식 = PDF. 새 창에서 자동으로 인쇄(=PDF 저장) 대화상자를 띄운다.
       openPrintableHtml(_orderHtml(), autoPrint: true);
     } else {
       await Clipboard.setData(ClipboardData(text: _orderText()));
@@ -782,15 +808,42 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  /// 저장 — 기본(PDF: 인쇄 대화상자에서 "PDF로 저장") + 기타 포맷 옵션.
+  /// **실제 PDF 파일** 생성·저장 (p.28 기본 출력).
+  ///
+  /// 인쇄창에 의존하지 않고 `pdf` 패키지로 진짜 .pdf 바이트를 만들어
+  /// 사용자 폴더에 바로 저장(다운로드)한다 — 어떤 브라우저에서도 확실히 동작.
+  Future<void> _savePdf() async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: _orderText()));
+      _snack('내역을 복사했습니다(문서에 붙여넣기)');
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final bytes = await _orderPdfBytes();
+      final name = '수품주문내역서_${widget.groupKey}.pdf';
+      final ok = await saveBytesAs(bytes, name, 'application/pdf');
+      if (ok) {
+        _snack('$name 저장을 시작했습니다');
+      } else {
+        _snack('PDF 저장을 시작하지 못했습니다');
+      }
+    } catch (e) {
+      _snack('PDF 생성 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 저장 — 기본 출력은 **PDF 실제 파일**. (p.28: jpg→pdf 로 변경)
   Future<void> _save() async {
-    // 1) 기본값: PDF 저장 확인
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('파일로 저장'),
         content: const Text(
-          '주문내역을 PDF로 저장하시겠습니까?\n(기본: PDF — 인쇄창에서 "PDF로 저장")',
+          '주문내역을 PDF 파일로 저장합니다.\n(다른 형식은 "다른 형식" 버튼)',
           style: TextStyle(fontSize: 13.5),
         ),
         actions: [
@@ -814,7 +867,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       ),
     );
     if (go != true) return;
-    _print();
+    await _savePdf();
   }
 
   /// 다양한 포맷으로 저장 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
@@ -840,7 +893,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 color: AppColors.taegeukRed,
               ),
               title: const Text('PDF (기본 · 추천)'),
-              subtitle: const Text('인쇄화면에서 "PDF로 저장" · 보관/전송용'),
+              subtitle: const Text('실제 PDF 파일로 바로 저장 · 보관/전송용'),
               onTap: () => Navigator.pop(ctx, 'pdf'),
             ),
             ListTile(
@@ -892,28 +945,32 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
     if (fmt == null || !mounted) return;
     switch (fmt) {
-      case 'jpg':
+      // p.28: 기본 출력은 jpg 가 아니라 **실제 PDF 파일**.
       case 'pdf':
+        await _savePdf();
+        break;
+      case 'jpg':
+        // 이미지는 인쇄창의 "이미지로 저장"을 사용한다(브라우저가 JPG 캡처).
         _print();
         break;
       case 'excel':
         await _downloadFile(
           _orderCsv(),
-          '${widget.groupKey}.csv',
+          '수품주문내역서_${widget.groupKey}.csv',
           'text/csv;charset=utf-8',
         );
         break;
       case 'ppt':
         await _downloadFile(
           _orderPpt(),
-          '${widget.groupKey}.ppt',
+          '수품주문내역서_${widget.groupKey}.ppt',
           'application/vnd.ms-powerpoint',
         );
         break;
       case 'word':
         await _downloadFile(
           _orderWord(),
-          '${widget.groupKey}.doc',
+          '수품주문내역서_${widget.groupKey}.doc',
           'application/msword',
         );
         break;
@@ -941,8 +998,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     String mime,
   ) async {
     if (isWebRuntime) {
-      downloadTextFile(content, filename, mime);
-      _snack('$filename 저장을 시작했습니다');
+      final ok = downloadTextFile(content, filename, mime);
+      _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다($filename)');
     } else {
       await Clipboard.setData(ClipboardData(text: content));
       _snack('내용을 복사했습니다($filename 대신 붙여넣기)');
@@ -1978,6 +2035,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: _busy ? null : _savePdf,
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                label: const Text('PDF 저장'),
+              ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
@@ -1992,7 +2057,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 onPressed: () => _downloadFile(
                   _orderCsv(),
-                  '${widget.groupKey}.csv',
+                  '수품주문내역서_${widget.groupKey}.csv',
                   'text/csv;charset=utf-8',
                 ),
                 icon: const Icon(Icons.grid_on, size: 16),
@@ -2004,7 +2069,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 onPressed: () => _downloadFile(
                   _orderWord(),
-                  '${widget.groupKey}.doc',
+                  '수품주문내역서_${widget.groupKey}.doc',
                   'application/msword',
                 ),
                 icon: const Icon(Icons.description_outlined, size: 16),
@@ -2016,7 +2081,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 onPressed: () => _downloadFile(
                   _orderPpt(),
-                  '${widget.groupKey}.ppt',
+                  '수품주문내역서_${widget.groupKey}.ppt',
                   'application/vnd.ms-powerpoint',
                 ),
                 icon: const Icon(Icons.slideshow_outlined, size: 16),

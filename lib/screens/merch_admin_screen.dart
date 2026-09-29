@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/file_pick.dart';
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/export_save.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
@@ -139,12 +141,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   bool get _salesOpen => _config['salesOpen'] != false;
   bool get _feeRequired => _config['annualFeeRequired'] == true;
   bool get _reserveMode => _config['reserveMode'] == true;
+
   /// 견적서/사업자등록증 파일 열람권한 관리자 허용 여부(마스터 전용 설정).
-  bool get _makerFileAdminAllowed =>
-      _config['makerFileAdminAllowed'] == true;
+  bool get _makerFileAdminAllowed => _config['makerFileAdminAllowed'] == true;
+
   /// 견적서 기반 판매상품 세부항목 관리자 노출 허용 여부(마스터 전용 설정).
-  bool get _quoteSpecAdminAllowed =>
-      _config['quoteSpecAdminAllowed'] == true;
+  bool get _quoteSpecAdminAllowed => _config['quoteSpecAdminAllowed'] == true;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
   Map<String, dynamic> get _guide =>
@@ -282,16 +284,18 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   }
 
   Widget _masterOnlyNotice() => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.lock_outline, size: 48, color: AppColors.textGray),
-            const SizedBox(height: 12),
-            const Text('마스터 권한에서만 접근할 수 있는 메뉴입니다',
-                style: TextStyle(color: AppColors.textGray)),
-          ],
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.lock_outline, size: 48, color: AppColors.textGray),
+        const SizedBox(height: 12),
+        const Text(
+          '마스터 권한에서만 접근할 수 있는 메뉴입니다',
+          style: TextStyle(color: AppColors.textGray),
         ),
-      );
+      ],
+    ),
+  );
 
   static const List<String> _tabLabels = [
     '상품관리',
@@ -630,8 +634,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: (isReserve ? Colors.orange : AppColors.purple)
-                .withValues(alpha: 0.30),
+            color: (isReserve ? Colors.orange : AppColors.purple).withValues(
+              alpha: 0.30,
+            ),
           ),
         ),
         child: Column(
@@ -641,7 +646,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             Row(
               children: [
                 Icon(
-                  isReserve ? Icons.bookmark_border : Icons.receipt_long_outlined,
+                  isReserve
+                      ? Icons.bookmark_border
+                      : Icons.receipt_long_outlined,
                   size: 15,
                   color: isReserve ? Colors.orange : AppColors.purple,
                 ),
@@ -693,10 +700,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         borderRadius: BorderRadius.circular(5),
                       ),
                       child: InkWell(
-                        onTap: () =>
-                            _openGroup([o], isReserve: isReserve),
-                        child: const Icon(Icons.edit,
-                            size: 11, color: AppColors.purple),
+                        onTap: () => _openGroup([o], isReserve: isReserve),
+                        child: const Icon(
+                          Icons.edit,
+                          size: 11,
+                          color: AppColors.purple,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -1564,8 +1573,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Widget _productCard(Map<String, dynamic> p, {bool inList = false}) {
     final active = p['active'] != false;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
-    final specList =
-        ((p['specList'] as List?) ?? []).whereType<Map>().toList();
+    final specList = ((p['specList'] as List?) ?? []).whereType<Map>().toList();
     final quoteName = '${p['quoteFileName'] ?? ''}';
     final stock = (p['stock'] as num?)?.toInt() ?? 0;
     final price = (p['price'] as num?)?.toInt() ?? 0;
@@ -1591,180 +1599,189 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         behavior: HitTestBehavior.opaque,
         onTap: () => _editProduct(existing: p),
         child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              width: 56,
-              height: 56,
-              color: Colors.white,
-              child: imgUrl.isEmpty
-                  ? Icon(
-                      active ? Icons.shopping_bag : Icons.visibility_off,
-                      color: active ? AppColors.purple : AppColors.textGray,
-                    )
-                  : Image.network(
-                      imgUrl,
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Icon(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 56,
+                height: 56,
+                color: Colors.white,
+                child: imgUrl.isEmpty
+                    ? Icon(
                         active ? Icons.shopping_bag : Icons.visibility_off,
                         color: active ? AppColors.purple : AppColors.textGray,
+                      )
+                    : Image.network(
+                        imgUrl,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Icon(
+                          active ? Icons.shopping_bag : Icons.visibility_off,
+                          color: active ? AppColors.purple : AppColors.textGray,
+                        ),
                       ),
-                    ),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    // 인가자 전용 상품 — 상품명 말머리 표시
-                    if (credentialOnly) ...[
-                      Container(
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // 인가자 전용 상품 — 상품명 말머리 표시
+                      if (credentialOnly) ...[
+                        Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.scoutGreen,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            '범인가자 전용',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ),
-                        decoration: BoxDecoration(
-                          color: AppColors.scoutGreen,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          '범인가자 전용',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
+                      ],
+                      Expanded(
+                        child: Text(
+                          '${p['name'] ?? ''}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14.5,
                           ),
                         ),
                       ),
                     ],
-                    Expanded(
-                      child: Text(
-                        '${p['name'] ?? ''}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                  ),
+                  // 상태·종류 칩은 별도 줄로 분리(상품명 폭을 잠식해
+                  //  이름이 세로로 깨지던 문제 방지)
+                  if (!active ||
+                      (p['kind'] != null && '${p['kind']}'.isNotEmpty))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          if (!active) _chip('판매중지'),
+                          if (p['kind'] != null && '${p['kind']}'.isNotEmpty)
+                            _chip('${p['kind']}'),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        _won(price),
                         style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.taegeukBlue,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                // 상태·종류 칩은 별도 줄로 분리(상품명 폭을 잠식해
-                //  이름이 세로로 깨지던 문제 방지)
-                if (!active ||
-                    (p['kind'] != null && '${p['kind']}'.isNotEmpty))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: [
-                        if (!active) _chip('판매중지'),
-                        if (p['kind'] != null && '${p['kind']}'.isNotEmpty)
-                          _chip('${p['kind']}'),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      _won(price),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.taegeukBlue,
+                      const SizedBox(width: 10),
+                      Text(
+                        '재고 $stock개',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textGray,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
+                    ],
+                  ),
+                  if (options.isNotEmpty) ...[
+                    const SizedBox(height: 4),
                     Text(
-                      '재고 $stock개',
+                      '옵션: ${options.join(', ')}',
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: AppColors.textGray,
                       ),
                     ),
                   ],
-                ),
-                if (options.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '옵션: ${options.join(', ')}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textGray,
-                    ),
-                  ),
-                ],
-                // 원가·제작일 — 마스터 전용 표시
-                if (context.read<AppState>().isMaster &&
-                    (((p['cost'] as num?)?.toInt() ?? 0) > 0 ||
-                        '${p['madeDate'] ?? ''}'.trim().isNotEmpty)) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.factory_outlined,
-                          size: 13, color: AppColors.lifetimeGold),
-                      const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          [
-                            if (((p['cost'] as num?)?.toInt() ?? 0) > 0)
-                              '원가 ${_won(p['cost'])}',
-                            if ('${p['madeDate'] ?? ''}'.trim().isNotEmpty)
-                              '제작일 ${p['madeDate']}',
-                          ].join('  ·  '),
-                          style: const TextStyle(
+                  // 원가·제작일 — 마스터 전용 표시
+                  if (context.read<AppState>().isMaster &&
+                      (((p['cost'] as num?)?.toInt() ?? 0) > 0 ||
+                          '${p['madeDate'] ?? ''}'.trim().isNotEmpty)) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.factory_outlined,
+                          size: 13,
+                          color: AppColors.lifetimeGold,
+                        ),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            [
+                              if (((p['cost'] as num?)?.toInt() ?? 0) > 0)
+                                '원가 ${_won(p['cost'])}',
+                              if ('${p['madeDate'] ?? ''}'.trim().isNotEmpty)
+                                '제작일 ${p['madeDate']}',
+                            ].join('  ·  '),
+                            style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.lifetimeGold),
+                              color: AppColors.lifetimeGold,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-                // 견적서 기반 세부항목 — 마스터/허용 관리자에게만 수신된 경우 표시
-                if (specList.isNotEmpty || quoteName.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.request_quote_outlined,
-                          size: 13, color: AppColors.tigerGold),
-                      const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          '견적 세부항목 ${specList.length}건'
-                          '${quoteName.isNotEmpty ? ' · $quoteName' : ''}',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.tigerGold),
-                          overflow: TextOverflow.ellipsis,
+                      ],
+                    ),
+                  ],
+                  // 견적서 기반 세부항목 — 마스터/허용 관리자에게만 수신된 경우 표시
+                  if (specList.isNotEmpty || quoteName.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.request_quote_outlined,
+                          size: 13,
+                          color: AppColors.tigerGold,
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            '견적 세부항목 ${specList.length}건'
+                            '${quoteName.isNotEmpty ? ' · $quoteName' : ''}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.tigerGold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'edit') _editProduct(existing: p);
+                if (v == 'del') _deleteProduct(p);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('수정')),
+                PopupMenuItem(value: 'del', child: Text('삭제')),
               ],
             ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'edit') _editProduct(existing: p);
-              if (v == 'del') _deleteProduct(p);
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('수정')),
-              PopupMenuItem(value: 'del', child: Text('삭제')),
-            ],
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -1799,10 +1816,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     String quoteFileName = '${existing?['quoteFileName'] ?? ''}';
     // 원가(선택)·제작일·제작자 — 마스터 전용 금액/제작 정보.
     final cost = TextEditingController(
-        text: (existing?['cost'] ?? 0).toString() == '0'
-            ? ''
-            : '${existing?['cost']}');
-    final madeDate = TextEditingController(text: '${existing?['madeDate'] ?? ''}');
+      text: (existing?['cost'] ?? 0).toString() == '0'
+          ? ''
+          : '${existing?['cost']}',
+    );
+    final madeDate = TextEditingController(
+      text: '${existing?['madeDate'] ?? ''}',
+    );
     String makerId = '${existing?['makerId'] ?? ''}';
 
     Future<void> pickQuote(StateSetter setDlg) async {
@@ -1933,15 +1953,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   const Divider(height: 18),
                   Row(
                     children: [
-                      const Icon(Icons.factory_outlined,
-                          size: 16, color: AppColors.tigerGold),
+                      const Icon(
+                        Icons.factory_outlined,
+                        size: 16,
+                        color: AppColors.tigerGold,
+                      ),
                       const SizedBox(width: 5),
                       const Expanded(
-                        child: Text('제작 정보 (원가·제작일·제작자)',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.purpleDark)),
+                        child: Text(
+                          '제작 정보 (원가·제작일·제작자)',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.purpleDark,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -1950,27 +1976,33 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     style: TextStyle(fontSize: 11, color: AppColors.textGray),
                   ),
                   const SizedBox(height: 6),
-                  Row(children: [
-                    Expanded(
-                      child: _dlgField(cost, '원가 (원, 선택)', number: true),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _dlgField(madeDate, '제작일 (예: 2026.09.23)'),
-                    ),
-                  ]),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _dlgField(cost, '원가 (원, 선택)', number: true),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _dlgField(madeDate, '제작일 (예: 2026.09.23)'),
+                      ),
+                    ],
+                  ),
                   DropdownButtonFormField<String>(
                     initialValue: makerId.isEmpty ? '' : makerId,
                     isExpanded: true,
                     decoration: const InputDecoration(
-                        labelText: '제작자', isDense: true),
+                      labelText: '제작자',
+                      isDense: true,
+                    ),
                     items: [
                       const DropdownMenuItem(value: '', child: Text('미배당')),
                       for (final m in _makers)
                         DropdownMenuItem(
                           value: '${m['id']}',
-                          child: Text('${m['company'] ?? m['name'] ?? m['id']}',
-                              overflow: TextOverflow.ellipsis),
+                          child: Text(
+                            '${m['company'] ?? m['name'] ?? m['id']}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
                     onChanged: (v) => setDlg(() => makerId = v ?? ''),
@@ -1981,22 +2013,35 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   const Divider(height: 18),
                   Row(
                     children: [
-                      const Icon(Icons.request_quote_outlined,
-                          size: 16, color: AppColors.tigerGold),
+                      const Icon(
+                        Icons.request_quote_outlined,
+                        size: 16,
+                        color: AppColors.tigerGold,
+                      ),
                       const SizedBox(width: 5),
                       const Expanded(
-                        child: Text('견적서 기반 세부항목 (사양/옵션)',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.purpleDark)),
+                        child: Text(
+                          '견적서 기반 세부항목 (사양/옵션)',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.purpleDark,
+                          ),
+                        ),
                       ),
                       TextButton.icon(
-                        onPressed: () => setDlg(() => specList.add(
-                            {'label': '', 'value': '', 'note': ''})),
+                        onPressed: () => setDlg(
+                          () => specList.add({
+                            'label': '',
+                            'value': '',
+                            'note': '',
+                          }),
+                        ),
                         icon: const Icon(Icons.add, size: 16),
-                        label: const Text('항목 추가',
-                            style: TextStyle(fontSize: 12)),
+                        label: const Text(
+                          '항목 추가',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
@@ -2016,7 +2061,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                             child: TextFormField(
                               initialValue: specList[i]['label'],
                               decoration: const InputDecoration(
-                                  labelText: '항목', isDense: true),
+                                labelText: '항목',
+                                isDense: true,
+                              ),
                               style: const TextStyle(fontSize: 12.5),
                               onChanged: (v) => specList[i]['label'] = v,
                             ),
@@ -2027,7 +2074,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                             child: TextFormField(
                               initialValue: specList[i]['value'],
                               decoration: const InputDecoration(
-                                  labelText: '사양/값', isDense: true),
+                                labelText: '사양/값',
+                                isDense: true,
+                              ),
                               style: const TextStyle(fontSize: 12.5),
                               onChanged: (v) => specList[i]['value'] = v,
                             ),
@@ -2044,8 +2093,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.attach_file,
-                          size: 15, color: AppColors.tigerGold),
+                      const Icon(
+                        Icons.attach_file,
+                        size: 15,
+                        color: AppColors.tigerGold,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -2053,15 +2105,19 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                               ? '견적서 파일 없음'
                               : '견적서: $quoteFileName',
                           style: const TextStyle(
-                              fontSize: 11.5, color: AppColors.textGray),
+                            fontSize: 11.5,
+                            color: AppColors.textGray,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       TextButton.icon(
                         onPressed: () => pickQuote(setDlg),
                         icon: const Icon(Icons.upload_file, size: 15),
-                        label: const Text('견적서 첨부',
-                            style: TextStyle(fontSize: 12)),
+                        label: const Text(
+                          '견적서 첨부',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                       if (quoteFile.isNotEmpty)
                         IconButton(
@@ -2166,10 +2222,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         madeDate: isMaster ? madeDate.text.trim() : '',
         specList: isMaster
             ? specList
-                .where((e) =>
-                    (e['label'] ?? '').trim().isNotEmpty ||
-                    (e['value'] ?? '').trim().isNotEmpty)
-                .toList()
+                  .where(
+                    (e) =>
+                        (e['label'] ?? '').trim().isNotEmpty ||
+                        (e['value'] ?? '').trim().isNotEmpty,
+                  )
+                  .toList()
             : const [],
         quoteFile: isMaster ? quoteFile : '',
         quoteFileName: isMaster ? quoteFileName : '',
@@ -2340,8 +2398,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
           ),
           const SizedBox(height: 4),
-          const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+          const Text(
+            '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
           const SizedBox(height: 8),
           TsakOutputBar(
             onFormat: (f) => _exportReport(f),
@@ -2383,30 +2443,43 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   Future<void> _exportReport(TsakOutputFormat format) async {
     // 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
-    final html = _reportDocHtml();
-    if (isWebRuntime) {
-      switch (format) {
-        case TsakOutputFormat.pdf:
-        case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _reportCsvText()));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-          await Clipboard.setData(
-              ClipboardData(text: _reportPlainText(format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      await Clipboard.setData(ClipboardData(text: _reportText()));
-      if (mounted) _snack('리포트를 복사했습니다');
+    //  p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**로 변경.
+    final base = '수품_누적판매리포트';
+    Future<void> pdf() async {
+      final bytes = await DocPdf.buildFromText(
+        meta: _reportMeta(),
+        text: _reportText(),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      await _saveBytes(bytes, '$base.pdf');
+    }
+
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        await pdf();
+        return;
+      case TsakOutputFormat.jpg:
+        // 이미지 저장은 브라우저 인쇄창의 "이미지로 저장" 사용.
+        openPrintableHtml(_reportDocHtml());
+        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        return;
+      case TsakOutputFormat.excel:
+        await _saveText(_reportCsvText(), '$base.csv');
+        return;
+      case TsakOutputFormat.ppt:
+        await _saveText(
+          _reportPlainText(format),
+          '$base.ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+        return;
+      case TsakOutputFormat.word:
+        await _saveText(
+          _reportPlainText(format),
+          '$base.doc',
+          mime: 'application/msword',
+        );
+        return;
     }
   }
 
@@ -2433,15 +2506,18 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   /// 누적판매 리포트 → PPT/워드 붙여넣기용 텍스트.
   String _reportPlainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '수품 누적판매 리포트 (슬라이드용)'
-        : '수품 누적판매 리포트 (문서용)');
+    buf.writeln(
+      format == TsakOutputFormat.ppt
+          ? '수품 누적판매 리포트 (슬라이드용)'
+          : '수품 누적판매 리포트 (문서용)',
+    );
     buf.writeln('한국범스카우트중앙회');
     buf.writeln();
     buf.writeln('총 주문: ${_stats['orderCount'] ?? _orders.length}건');
     buf.writeln('총 매출: ${_won((_stats['totalSales'] as num?)?.toInt() ?? 0)}');
     buf.writeln(
-        '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}');
+      '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}',
+    );
     buf.writeln('예약접수: ${_stats['reserveCount'] ?? _reserves.length}건');
     final byProduct = ((_stats['byProduct'] as Map?) ?? {});
     if (byProduct.isNotEmpty) {
@@ -2449,8 +2525,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       buf.writeln('[상품별]');
       for (final e in byProduct.entries) {
         final m = (e.value as Map?) ?? {};
-        buf.writeln('· ${e.key}: ${m['qty'] ?? 0}개 / '
-            '${_won((m['amount'] as num?)?.toInt() ?? 0)}');
+        buf.writeln(
+          '· ${e.key}: ${m['qty'] ?? 0}개 / '
+          '${_won((m['amount'] as num?)?.toInt() ?? 0)}',
+        );
       }
     }
     return buf.toString();
@@ -2460,16 +2538,84 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final buf = StringBuffer();
     buf.writeln('수품 판매 리포트');
     buf.writeln('총 주문: ${_stats['orderCount'] ?? _orders.length}건');
+    buf.writeln('총 매출: ${_won((_stats['totalSales'] as num?)?.toInt() ?? 0)}');
     buf.writeln(
-        '총 매출: ${_won((_stats['totalSales'] as num?)?.toInt() ?? 0)}');
-    buf.writeln(
-        '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}');
+      '연회비: ${_won((_stats['totalAnnualFee'] as num?)?.toInt() ?? 0)}',
+    );
     buf.writeln('예약접수: ${_stats['reserveCount'] ?? _reserves.length}건');
     final byStatus = ((_stats['byStatus'] as Map?) ?? {});
     for (final e in byStatus.entries) {
       buf.writeln('  · ${e.key}: ${e.value}건');
     }
     return buf.toString();
+  }
+
+  /// 누적판매 리포트 MUJI 메타 (HTML/PDF 공용).
+  DocMeta _reportMeta() {
+    final totalSales = (_stats['totalSales'] as num?)?.toInt() ?? 0;
+    final totalFee = (_stats['totalAnnualFee'] as num?)?.toInt() ?? 0;
+    final orderCount =
+        (_stats['orderCount'] as num?)?.toInt() ?? _orders.length;
+    final reserveCount =
+        (_stats['reserveCount'] as num?)?.toInt() ?? _reserves.length;
+    return DocMeta(
+      title: '수품 누적판매 리포트',
+      subtitle: '한국범스카우트중앙회 · 매출/상태 분석',
+      description: '총 주문·매출·연회비·예약 현황과 상품별/상태별/월별 분석입니다.',
+      author: _whoName(),
+      extra: {
+        '총 주문': '$orderCount건',
+        '총 매출': _won(totalSales),
+        '연회비': _won(totalFee),
+        '예약접수': '$reserveCount건',
+      },
+    );
+  }
+
+  /// 바이트를 실제 파일로 저장(웹) / 클립보드 폴백(네이티브).
+  Future<void> _saveBytes(
+    Uint8List bytes,
+    String filename, {
+    String? mime,
+  }) async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: '(바이너리) $filename'));
+      if (mounted) _snack('모바일에서는 파일 저장을 지원하지 않습니다');
+      return;
+    }
+    try {
+      final ok = await saveBytesAs(
+        bytes,
+        filename,
+        mime ?? mimeForFilename(filename),
+      );
+      if (mounted) {
+        _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다');
+      }
+    } catch (e) {
+      if (mounted) _snack('파일 생성 실패: $e');
+    }
+  }
+
+  /// 텍스트(CSV/HTML/문서)를 파일로 저장(웹) / 클립보드 폴백(네이티브).
+  Future<void> _saveText(
+    String content,
+    String filename, {
+    String? mime,
+  }) async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: content));
+      if (mounted) _snack('내용을 복사했습니다($filename 대신 붙여넣기)');
+      return;
+    }
+    final ok = downloadTextFile(
+      content,
+      filename,
+      mime ?? mimeForFilename(filename),
+    );
+    if (mounted) {
+      _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다');
+    }
   }
 
   /// 누적판매 리포트를 MUJI 규칙 문서로 생성.
@@ -2480,17 +2626,22 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         (_stats['orderCount'] as num?)?.toInt() ?? _orders.length;
     final reserveCount =
         (_stats['reserveCount'] as num?)?.toInt() ?? _reserves.length;
-    final byStatus = ((_stats['byStatus'] as Map?) ?? {}).cast<String, dynamic>();
+    final byStatus = ((_stats['byStatus'] as Map?) ?? {})
+        .cast<String, dynamic>();
     final byMonth = ((_stats['byMonth'] as Map?) ?? {}).cast<String, dynamic>();
-    final byProduct =
-        ((_stats['byProduct'] as Map?) ?? {}).cast<String, dynamic>();
+    final byProduct = ((_stats['byProduct'] as Map?) ?? {})
+        .cast<String, dynamic>();
     final rows = <List<DocCell>>[];
     var i = 0;
     for (final e in byProduct.entries) {
       final m = (e.value as Map?)?.cast<String, dynamic>() ?? {};
       rows.add([
         DocCell('${++i}', align: 'center'),
-        DocCell(e.key, accent: kMujiAccents[i % kMujiAccents.length], bold: true),
+        DocCell(
+          e.key,
+          accent: kMujiAccents[i % kMujiAccents.length],
+          bold: true,
+        ),
         DocCell('${m['qty'] ?? 0}개', align: 'center'),
         DocCell(_won((m['amount'] as num?)?.toInt() ?? 0), align: 'right'),
       ]);
@@ -2523,7 +2674,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ),
       columns: const ['번호', '상품', '판매수량', '금액'],
       rows: rows,
-      summary: '총 <b>${byProduct.length}</b>종 상품 · 총 매출 '
+      summary:
+          '총 <b>${byProduct.length}</b>종 상품 · 총 매출 '
           '<span class="g">${_won(totalSales)}</span>',
     );
   }
@@ -2576,30 +2728,38 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       _snack('출력할 판매대장이 없습니다');
       return;
     }
-    final html = _ledgerDocHtml();
-    if (isWebRuntime) {
-      switch (format) {
-        case TsakOutputFormat.pdf:
-        case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _ledgerCsvText()));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-          await Clipboard.setData(
-              ClipboardData(text: _ledgerPlainText(format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      await Clipboard.setData(ClipboardData(text: _ledgerText()));
-      _snack('판매대장을 복사했습니다');
+    // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
+    final base = '수품_판매대장_${_ledgerLabel().replaceAll(' ', '')}';
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        final bytes = await DocPdf.buildFromText(
+          meta: _ledgerMeta(),
+          text: _ledgerText(),
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        await _saveBytes(bytes, '$base.pdf');
+        return;
+      case TsakOutputFormat.jpg:
+        openPrintableHtml(_ledgerDocHtml());
+        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        return;
+      case TsakOutputFormat.excel:
+        await _saveText(_ledgerCsvText(), '$base.csv');
+        return;
+      case TsakOutputFormat.ppt:
+        await _saveText(
+          _ledgerPlainText(format),
+          '$base.ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+        return;
+      case TsakOutputFormat.word:
+        await _saveText(
+          _ledgerPlainText(format),
+          '$base.doc',
+          mime: 'application/msword',
+        );
+        return;
     }
   }
 
@@ -2612,10 +2772,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
       final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
       final paid = row['paid'] == true ? '입금완료' : '미입금';
-      buf.writeln('${i + 1},$kind,${row['orderNo'] ?? ''},'
-          '${row['buyerName'] ?? row['name'] ?? ''},${row['product'] ?? ''},'
-          '${row['qty'] ?? 1},${(amount as num?)?.toInt() ?? 0},'
-          '${row['status'] ?? ''},$paid');
+      buf.writeln(
+        '${i + 1},$kind,${row['orderNo'] ?? ''},'
+        '${row['buyerName'] ?? row['name'] ?? ''},${row['product'] ?? ''},'
+        '${row['qty'] ?? 1},${(amount as num?)?.toInt() ?? 0},'
+        '${row['status'] ?? ''},$paid',
+      );
     }
     return buf.toString();
   }
@@ -2623,9 +2785,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   /// 판매대장 → PPT/워드 붙여넣기용 텍스트.
   String _ledgerPlainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '수품 판매대장 (슬라이드용)'
-        : '수품 판매대장 (문서용)');
+    buf.writeln(
+      format == TsakOutputFormat.ppt ? '수품 판매대장 (슬라이드용)' : '수품 판매대장 (문서용)',
+    );
     buf.writeln('한국범스카우트중앙회 · ${_ledgerLabel()}');
     buf.writeln();
     final amountTotal = (_ledgerSummary['amountTotal'] as num?)?.toInt() ?? 0;
@@ -2633,9 +2795,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       final row = _ledgerRows[i];
       final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
       final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
-      buf.writeln('${i + 1}. [$kind] ${row['orderNo'] ?? ''} '
-          '${row['buyerName'] ?? row['name'] ?? ''} / ${row['product'] ?? ''} '
-          '× ${row['qty'] ?? 1} / ${_won((amount as num?)?.toInt() ?? 0)}');
+      buf.writeln(
+        '${i + 1}. [$kind] ${row['orderNo'] ?? ''} '
+        '${row['buyerName'] ?? row['name'] ?? ''} / ${row['product'] ?? ''} '
+        '× ${row['qty'] ?? 1} / ${_won((amount as num?)?.toInt() ?? 0)}',
+      );
     }
     buf.writeln();
     buf.writeln('합계: ${_won(amountTotal)} · ${_ledgerRows.length}건');
@@ -2656,8 +2820,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const Text(
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 12),
             TsakOutputBar(
               onFormat: (f) {
@@ -2677,7 +2843,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -2711,10 +2879,33 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     for (final row in _ledgerRows) {
       final kind = (row['_kind'] ?? row['kind'] ?? '').toString();
       final amount = (row['grandTotal'] ?? row['total'] ?? row['amount'] ?? 0);
-      b.writeln('$kind | ${row['orderNo'] ?? ''} | ${row['buyerName'] ?? ''} | '
-          '${row['product'] ?? ''} | ${row['qty'] ?? 1} | ${_won((amount as num?)?.toInt() ?? 0)} | ${row['status'] ?? ''}');
+      b.writeln(
+        '$kind | ${row['orderNo'] ?? ''} | ${row['buyerName'] ?? ''} | '
+        '${row['product'] ?? ''} | ${row['qty'] ?? 1} | ${_won((amount as num?)?.toInt() ?? 0)} | ${row['status'] ?? ''}',
+      );
     }
     return b.toString();
+  }
+
+  /// 판매대장 MUJI 메타 (HTML/PDF 공용).
+  DocMeta _ledgerMeta() {
+    final amountTotal = (_ledgerSummary['amountTotal'] as num?)?.toInt() ?? 0;
+    final orderCount = (_ledgerSummary['orderCount'] as num?)?.toInt() ?? 0;
+    final reserveCount = (_ledgerSummary['reserveCount'] as num?)?.toInt() ?? 0;
+    final paidCount = (_ledgerSummary['paidCount'] as num?)?.toInt() ?? 0;
+    final unpaidCount = (_ledgerSummary['unpaidCount'] as num?)?.toInt() ?? 0;
+    return DocMeta(
+      title: '수품 판매대장',
+      subtitle: '한국범스카우트중앙회 · ${_ledgerLabel()}',
+      description: '주문·예약 통합 장부입니다. 상태와 입금 여부를 함께 표기합니다.',
+      author: _whoName(),
+      extra: {
+        '조회기간': _ledgerLabel(),
+        '합계': _won(amountTotal),
+        '주문/예약': '$orderCount / $reserveCount',
+        '입금/미입금': '$paidCount / $unpaidCount',
+      },
+    );
   }
 
   String _ledgerDocHtml() {
@@ -2732,15 +2923,24 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       final paid = row['paid'] == true;
       rows.add([
         DocCell('${i + 1}', align: 'center'),
-        DocCell(kind.isEmpty ? (isOrder ? '주문' : '예약') : kind,
-            accent: kMujiAccents[isOrder ? 0 : 2], align: 'center'),
+        DocCell(
+          kind.isEmpty ? (isOrder ? '주문' : '예약') : kind,
+          accent: kMujiAccents[isOrder ? 0 : 2],
+          align: 'center',
+        ),
         DocCell('${row['orderNo'] ?? ''}'),
         DocCell('${row['buyerName'] ?? row['name'] ?? ''}'),
-        DocCell('${row['product'] ?? ''}',
-            sub: '${row['qty'] ?? 1}개'),
-        DocCell(_won((amount as num?)?.toInt() ?? 0), align: 'right', bold: true),
-        DocCell('${row['status'] ?? ''}', align: 'center',
-            sub: isOrder ? (paid ? '입금완료' : '미입금') : null),
+        DocCell('${row['product'] ?? ''}', sub: '${row['qty'] ?? 1}개'),
+        DocCell(
+          _won((amount as num?)?.toInt() ?? 0),
+          align: 'right',
+          bold: true,
+        ),
+        DocCell(
+          '${row['status'] ?? ''}',
+          align: 'center',
+          sub: isOrder ? (paid ? '입금완료' : '미입금') : null,
+        ),
       ]);
     }
     return buildMujiDoc(
@@ -2758,7 +2958,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ),
       columns: const ['번호', '구분', '주문번호', '주문자', '상품', '금액', '상태'],
       rows: rows,
-      summary: '총 <b>${_ledgerRows.length}</b>건 · 합계 '
+      summary:
+          '총 <b>${_ledgerRows.length}</b>건 · 합계 '
           '<span class="g">${_won(amountTotal)}</span>',
     );
   }
@@ -2909,8 +3110,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),
-                    onPressed:
-                        _ledgerRows.isEmpty ? null : _showLedgerOutputDialog,
+                    onPressed: _ledgerRows.isEmpty
+                        ? null
+                        : _showLedgerOutputDialog,
                     icon: const Icon(Icons.print_outlined, size: 16),
                     label: const Text('출력(형식)'),
                   ),
@@ -3282,15 +3484,20 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
     final total = stock.fold<int>(
-        0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+      0,
+      (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0),
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
       children: [
         Row(
           children: [
             Expanded(
-              child: _subHeader('재고 현황', '${stock.length}종 · 총 재고 $total',
-                  Icons.inventory_2_outlined),
+              child: _subHeader(
+                '재고 현황',
+                '${stock.length}종 · 총 재고 $total',
+                Icons.inventory_2_outlined,
+              ),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
@@ -3321,11 +3528,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           _stockTableHead(),
           for (final s in stock) _stockRow(s),
           const SizedBox(height: 8),
-          Text('총 ${stock.length}종 · 총 재고 $total',
-              style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.purpleDark)),
+          Text(
+            '총 ${stock.length}종 · 총 재고 $total',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.purpleDark,
+            ),
+          ),
         ],
         if (_stockLog.isNotEmpty) ...[
           const SizedBox(height: 14),
@@ -3334,9 +3544,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             child: ExpansionTile(
               tilePadding: EdgeInsets.zero,
               childrenPadding: const EdgeInsets.only(bottom: 8),
-              title: Text('입출고 이력 (${_stockLog.length})',
-                  style: const TextStyle(
-                      fontSize: 13.5, fontWeight: FontWeight.w800)),
+              title: Text(
+                '입출고 이력 (${_stockLog.length})',
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               children: [
                 for (final l in _stockLog.take(30))
                   _kv(
@@ -3355,25 +3569,33 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   Widget _stockTableHead() {
     const style = TextStyle(
-        fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.textDark);
+      fontSize: 11.5,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textDark,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2)),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2),
+        ),
       ),
       child: const Row(
         children: [
           SizedBox(
-              width: 44,
-              child: Text('사진', style: style, textAlign: TextAlign.center)),
+            width: 44,
+            child: Text('사진', style: style, textAlign: TextAlign.center),
+          ),
           Expanded(flex: 5, child: Text('품명', style: style)),
           SizedBox(
-              width: 62,
-              child: Text('재고', style: style, textAlign: TextAlign.center)),
+            width: 62,
+            child: Text('재고', style: style, textAlign: TextAlign.center),
+          ),
           SizedBox(width: 14),
           SizedBox(
-              width: 54,
-              child: Text('판매', style: style, textAlign: TextAlign.center)),
+            width: 54,
+            child: Text('판매', style: style, textAlign: TextAlign.center),
+          ),
           SizedBox(width: 36),
         ],
       ),
@@ -3389,30 +3611,38 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       _snack('인쇄할 재고가 없습니다');
       return;
     }
-    final html = _stockDocHtml(stock);
-    if (isWebRuntime) {
-      switch (format) {
-        case TsakOutputFormat.pdf:
-        case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _stockCsvText(stock)));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-          await Clipboard.setData(
-              ClipboardData(text: _stockPlainText(stock, format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      Clipboard.setData(ClipboardData(text: _stockText(stock)));
-      _snack('재고 내역을 복사했습니다');
+    // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
+    const base = '수품_재고현황표';
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        final bytes = await DocPdf.buildFromText(
+          meta: _stockMeta(stock),
+          text: _stockText(stock),
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        await _saveBytes(bytes, '$base.pdf');
+        return;
+      case TsakOutputFormat.jpg:
+        openPrintableHtml(_stockDocHtml(stock));
+        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        return;
+      case TsakOutputFormat.excel:
+        await _saveText(_stockCsvText(stock), '$base.csv');
+        return;
+      case TsakOutputFormat.ppt:
+        await _saveText(
+          _stockPlainText(stock, format),
+          '$base.ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+        return;
+      case TsakOutputFormat.word:
+        await _saveText(
+          _stockPlainText(stock, format),
+          '$base.doc',
+          mime: 'application/msword',
+        );
+        return;
     }
   }
 
@@ -3430,8 +3660,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const Text(
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 12),
             TsakOutputBar(
               onFormat: (f) {
@@ -3451,7 +3683,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -3463,27 +3697,35 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     buf.writeln('번호,품명,재고,누적판매');
     for (var i = 0; i < stock.length; i++) {
       final s = stock[i];
-      buf.writeln('${i + 1},${s['name'] ?? ''},${s['stock'] ?? 0},'
-          '${s['sold'] ?? 0}');
+      buf.writeln(
+        '${i + 1},${s['name'] ?? ''},${s['stock'] ?? 0},'
+        '${s['sold'] ?? 0}',
+      );
     }
     return buf.toString();
   }
 
   /// 재고 현황표 → PPT/워드 붙여넣기용 텍스트.
   String _stockPlainText(
-      List<Map<String, dynamic>> stock, TsakOutputFormat format) {
-    final total =
-        stock.fold<int>(0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+    List<Map<String, dynamic>> stock,
+    TsakOutputFormat format,
+  ) {
+    final total = stock.fold<int>(
+      0,
+      (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0),
+    );
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '수품 재고 현황표 (슬라이드용)'
-        : '수품 재고 현황표 (문서용)');
+    buf.writeln(
+      format == TsakOutputFormat.ppt ? '수품 재고 현황표 (슬라이드용)' : '수품 재고 현황표 (문서용)',
+    );
     buf.writeln('한국범스카우트중앙회 · 기준일 ${_todayYmd()}');
     buf.writeln();
     for (var i = 0; i < stock.length; i++) {
       final s = stock[i];
-      buf.writeln('${i + 1}. ${s['name'] ?? ''} / 재고 ${s['stock'] ?? 0} '
-          '/ 누적 ${s['sold'] ?? 0}');
+      buf.writeln(
+        '${i + 1}. ${s['name'] ?? ''} / 재고 ${s['stock'] ?? 0} '
+        '/ 누적 ${s['sold'] ?? 0}',
+      );
     }
     buf.writeln();
     buf.writeln('총 ${stock.length}종 · 총 재고 $total');
@@ -3521,18 +3763,38 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     var i = 1;
     for (final s in stock) {
       b.writeln(
-          '${i++}. ${s['name']} | ${s['stock'] ?? 0} | ${s['sold'] ?? 0}');
+        '${i++}. ${s['name']} | ${s['stock'] ?? 0} | ${s['sold'] ?? 0}',
+      );
     }
     final total = stock.fold<int>(
-        0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+      0,
+      (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0),
+    );
     b.writeln('────────────────────────────');
     b.writeln('총 ${stock.length}개 상품 · 총 재고 $total');
     return b.toString();
   }
 
+  /// 재고 현황표 MUJI 메타 (HTML/PDF 공용).
+  DocMeta _stockMeta(List<Map<String, dynamic>> stock) {
+    final total = stock.fold<int>(
+      0,
+      (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0),
+    );
+    return DocMeta(
+      title: '수품 재고 현황표',
+      subtitle: '한국범스카우트중앙회 · 수품 재고 및 누적판매',
+      description: '상품별 현재 재고와 누적판매 수량입니다. 재고 5개 이하는 "재고 부족"으로 표시됩니다.',
+      author: _whoName(),
+      extra: {'총 상품': '${stock.length}종', '총 재고': '$total'},
+    );
+  }
+
   String _stockDocHtml(List<Map<String, dynamic>> stock) {
     final total = stock.fold<int>(
-        0, (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0));
+      0,
+      (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0),
+    );
     final rows = <List<DocCell>>[];
     for (var i = 0; i < stock.length; i++) {
       final s = stock[i];
@@ -3540,12 +3802,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       final low = qty <= 5;
       rows.add([
         DocCell('${i + 1}', align: 'center'),
-        DocCell('${s['name'] ?? ''}',
-            accent: kMujiAccents[i % kMujiAccents.length], bold: true),
-        DocCell('$qty',
-            align: 'center',
-            bold: low,
-            sub: low ? '재고 부족' : null),
+        DocCell(
+          '${s['name'] ?? ''}',
+          accent: kMujiAccents[i % kMujiAccents.length],
+          bold: true,
+        ),
+        DocCell('$qty', align: 'center', bold: low, sub: low ? '재고 부족' : null),
         DocCell('${s['sold'] ?? 0}', align: 'center'),
       ]);
     }
@@ -3559,7 +3821,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ),
       columns: const ['번호', '품명', '재고', '누적판매'],
       rows: rows,
-      summary: '총 <b>${stock.length}</b>종 · 총 재고 '
+      summary:
+          '총 <b>${stock.length}</b>종 · 총 재고 '
           '<span class="g">$total</span>',
     );
   }
@@ -3602,13 +3865,21 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
                   if (low)
-                    const Text('재고 부족',
-                        style: TextStyle(
-                            fontSize: 10.5, color: AppColors.taegeukRed)),
+                    const Text(
+                      '재고 부족',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.taegeukRed,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -3634,12 +3905,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           const SizedBox(width: 14),
           SizedBox(
             width: 54,
-            child: Text('$sold',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textGray)),
+            child: Text(
+              '$sold',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textGray,
+              ),
+            ),
           ),
           SizedBox(
             width: 36,
@@ -3676,8 +3950,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Widget _stockThumb(String image) {
     if (image.isEmpty) {
       return Center(
-        child: Icon(Icons.image_not_supported_outlined,
-            size: 20, color: AppColors.textGray.withValues(alpha: 0.4)),
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: 20,
+          color: AppColors.textGray.withValues(alpha: 0.4),
+        ),
       );
     }
     return ClipRRect(
@@ -3687,8 +3964,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         width: 38,
         height: 38,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined,
-            size: 20, color: AppColors.textGray),
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.broken_image_outlined,
+          size: 20,
+          color: AppColors.textGray,
+        ),
       ),
     );
   }
@@ -3789,8 +4069,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               IconButton(
                 visualDensity: VisualDensity.compact,
                 tooltip: '공여 내역 출력 (PDF·JPG·엑셀·PPT·워드)',
-                onPressed:
-                    _donations.isEmpty ? null : () => _showDonationOutputDialog(),
+                onPressed: _donations.isEmpty
+                    ? null
+                    : () => _showDonationOutputDialog(),
                 icon: const Icon(Icons.print_outlined, size: 20),
               ),
             ],
@@ -3819,30 +4100,38 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       _snack('출력할 공여 내역이 없습니다');
       return;
     }
-    final html = _donationDocHtml();
-    if (isWebRuntime) {
-      switch (format) {
-        case TsakOutputFormat.pdf:
-        case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _donationCsvText()));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-          await Clipboard.setData(
-              ClipboardData(text: _donationPlainText(format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      await Clipboard.setData(ClipboardData(text: _donationText()));
-      _snack('공여 내역을 복사했습니다');
+    // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
+    const base = '수품_공여내역';
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        final bytes = await DocPdf.buildFromText(
+          meta: _donationMeta(),
+          text: _donationText(),
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        await _saveBytes(bytes, '$base.pdf');
+        return;
+      case TsakOutputFormat.jpg:
+        openPrintableHtml(_donationDocHtml());
+        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        return;
+      case TsakOutputFormat.excel:
+        await _saveText(_donationCsvText(), '$base.csv');
+        return;
+      case TsakOutputFormat.ppt:
+        await _saveText(
+          _donationPlainText(format),
+          '$base.ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+        return;
+      case TsakOutputFormat.word:
+        await _saveText(
+          _donationPlainText(format),
+          '$base.doc',
+          mime: 'application/msword',
+        );
+        return;
     }
   }
 
@@ -3860,8 +4149,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const Text(
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 12),
             TsakOutputBar(
               onFormat: (f) {
@@ -3881,7 +4172,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -3894,9 +4187,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     buf.writeln('────────────────────────────');
     for (var i = 0; i < _donations.length; i++) {
       final d = _donations[i];
-      buf.writeln('${i + 1}. ${d['product'] ?? ''} / '
-          '${d['qty'] ?? 0}개 / ${_won((d['amount'] as num?)?.toInt() ?? 0)} / '
-          '${d['date'] ?? d['created'] ?? ''}');
+      buf.writeln(
+        '${i + 1}. ${d['product'] ?? ''} / '
+        '${d['qty'] ?? 0}개 / ${_won((d['amount'] as num?)?.toInt() ?? 0)} / '
+        '${d['date'] ?? d['created'] ?? ''}',
+      );
     }
     return buf.toString();
   }
@@ -3907,11 +4202,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     buf.writeln('번호,품명,구분,수량,금액,수령처,행사,일자,메모');
     for (var i = 0; i < _donations.length; i++) {
       final d = _donations[i];
-      buf.writeln('${i + 1},${d['product'] ?? ''},'
-          '${d['kind'] ?? d['category'] ?? '공여'},${d['qty'] ?? 0},'
-          '${(d['amount'] as num?)?.toInt() ?? 0},${d['recipient'] ?? ''},'
-          '${d['event'] ?? ''},${d['date'] ?? d['created'] ?? ''},'
-          '${d['memo'] ?? ''}');
+      buf.writeln(
+        '${i + 1},${d['product'] ?? ''},'
+        '${d['kind'] ?? d['category'] ?? '공여'},${d['qty'] ?? 0},'
+        '${(d['amount'] as num?)?.toInt() ?? 0},${d['recipient'] ?? ''},'
+        '${d['event'] ?? ''},${d['date'] ?? d['created'] ?? ''},'
+        '${d['memo'] ?? ''}',
+      );
     }
     return buf.toString();
   }
@@ -3919,9 +4216,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   /// 공여 내역 → PPT/워드 붙여넣기용 텍스트.
   String _donationPlainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '수품 공여 내역 (슬라이드용)'
-        : '수품 공여 내역 (문서용)');
+    buf.writeln(
+      format == TsakOutputFormat.ppt ? '수품 공여 내역 (슬라이드용)' : '수품 공여 내역 (문서용)',
+    );
     buf.writeln('한국범스카우트중앙회');
     buf.writeln();
     var total = 0;
@@ -3931,12 +4228,35 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       total += amt;
       final recipient = '${d['recipient'] ?? ''}'.trim();
       final arrow = recipient.isEmpty ? '' : ' → $recipient';
-      buf.writeln('${i + 1}. [${d['kind'] ?? d['category'] ?? '공여'}] '
-          '${d['product'] ?? ''} × ${d['qty'] ?? 0} / ${_won(amt)}$arrow');
+      buf.writeln(
+        '${i + 1}. [${d['kind'] ?? d['category'] ?? '공여'}] '
+        '${d['product'] ?? ''} × ${d['qty'] ?? 0} / ${_won(amt)}$arrow',
+      );
     }
     buf.writeln();
     buf.writeln('총 ${_donations.length}건 · 금액합계 ${_won(total)}');
     return buf.toString();
+  }
+
+  /// 공여 내역 MUJI 메타 (HTML/PDF 공용).
+  DocMeta _donationMeta() {
+    var totalAmt = 0;
+    var totalQty = 0;
+    for (final d in _donations) {
+      totalQty += (d['qty'] as num?)?.toInt() ?? 0;
+      totalAmt += (d['amount'] as num?)?.toInt() ?? 0;
+    }
+    return DocMeta(
+      title: '수품 공여 내역',
+      subtitle: '한국범스카우트중앙회 · 행사·홍보 무상 제공',
+      description: '행사·홍보 목적으로 무상 제공한 수품 내역입니다.',
+      author: _whoName(),
+      extra: {
+        '총 건수': '${_donations.length}건',
+        '총 수량': '$totalQty개',
+        '금액 합계': _won(totalAmt),
+      },
+    );
   }
 
   String _donationDocHtml() {
@@ -3951,8 +4271,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       totalQty += qty;
       rows.add([
         DocCell('${i + 1}', align: 'center'),
-        DocCell('${d['product'] ?? ''}',
-            accent: kMujiAccents[i % kMujiAccents.length], bold: true),
+        DocCell(
+          '${d['product'] ?? ''}',
+          accent: kMujiAccents[i % kMujiAccents.length],
+          bold: true,
+        ),
         DocCell('${d['kind'] ?? d['category'] ?? '공여'}', align: 'center'),
         DocCell('$qty', align: 'center'),
         DocCell(amt > 0 ? _won(amt) : '-', align: 'right'),
@@ -3974,7 +4297,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       ),
       columns: const ['번호', '품명', '구분', '수량', '금액', '수령처/행사', '일자'],
       rows: rows,
-      summary: '총 <b>${_donations.length}</b>건 · 수량 <b>$totalQty</b>개 · '
+      summary:
+          '총 <b>${_donations.length}</b>건 · 수량 <b>$totalQty</b>개 · '
           '금액 <span class="g">${_won(totalAmt)}</span>',
     );
   }
@@ -4161,8 +4485,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final made = _purchases
         .where((p) => '${p['makerId'] ?? ''}' == mid)
         .toList();
-    final madeAmount =
-        made.fold<int>(0, (a, p) => a + ((p['amount'] as num?)?.toInt() ?? 0));
+    final madeAmount = made.fold<int>(
+      0,
+      (a, p) => a + ((p['amount'] as num?)?.toInt() ?? 0),
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -4235,27 +4561,39 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           // ── 제작 수품 내역 (엑셀 이미지·단가·수량·합계·날짜·메모 포함) ──
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined,
-                  size: 15, color: AppColors.purple),
+              const Icon(
+                Icons.inventory_2_outlined,
+                size: 15,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 4),
               const Expanded(
-                child: Text('제작 수품 내역',
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.purpleDark)),
+                child: Text(
+                  '제작 수품 내역',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.purpleDark,
+                  ),
+                ),
               ),
-              Text('${made.length}건 · ${_won(madeAmount)}원',
-                  style: const TextStyle(
-                      fontSize: 11.5, color: AppColors.textGray)),
+              Text(
+                '${made.length}건 · ${_won(madeAmount)}원',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textGray,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
           if (made.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 4),
-              child: Text('배당된 제작 내역이 없습니다 (물건결제 탭에서 배당)',
-                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+              child: Text(
+                '배당된 제작 내역이 없습니다 (물건결제 탭에서 배당)',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
             )
           else
             for (final p in made) _makerMadeRow(p),
@@ -4318,10 +4656,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   /// 제작자별 인보이스(거래명세서) — 레퍼런스 디자인(미니멀·엣지) 요약 보기.
   void _showInvoice(Map<String, dynamic> m, List<Map<String, dynamic>> made) {
-    final madeAmount =
-        made.fold<int>(0, (a, p) => a + ((p['amount'] as num?)?.toInt() ?? 0));
-    final madeQty =
-        made.fold<int>(0, (a, p) => a + ((p['qty'] as num?)?.toInt() ?? 0));
+    final madeAmount = made.fold<int>(
+      0,
+      (a, p) => a + ((p['amount'] as num?)?.toInt() ?? 0),
+    );
+    final madeQty = made.fold<int>(
+      0,
+      (a, p) => a + ((p['qty'] as num?)?.toInt() ?? 0),
+    );
     showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
@@ -4340,37 +4682,61 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       const AppHomeEmblem(size: 20),
                       const SizedBox(width: 8),
                       const Expanded(
-                        child: Text('INVOICE',
-                            style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 2,
-                                color: AppColors.textDark)),
+                        child: Text(
+                          'INVOICE',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2,
+                            color: AppColors.textDark,
+                          ),
+                        ),
                       ),
-                      Text(DateTime.now().toString().substring(0, 10),
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.textGray)),
+                      Text(
+                        DateTime.now().toString().substring(0, 10),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Container(height: 2, color: AppColors.textDark),
                   const SizedBox(height: 10),
-                  Row(children: [
-                    const Icon(Icons.factory_outlined,
-                        size: 15, color: AppColors.purple),
-                    const SizedBox(width: 5),
-                    Text('${m['company'] ?? m['name'] ?? ''}',
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.factory_outlined,
+                        size: 15,
+                        color: AppColors.purple,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        '${m['company'] ?? m['name'] ?? ''}',
                         style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w800)),
-                  ]),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                   if ('${m['bizNumber'] ?? ''}'.isNotEmpty)
-                    Text('사업자등록번호 ${m['bizNumber']}',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray)),
+                    Text(
+                      '사업자등록번호 ${m['bizNumber']}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                   if ('${m['account'] ?? ''}'.isNotEmpty)
-                    Text('계좌 ${m['account']}',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray)),
+                    Text(
+                      '계좌 ${m['account']}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                   const SizedBox(height: 10),
                   // 표 헤더
                   Container(
@@ -4380,25 +4746,42 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         bottom: BorderSide(color: Color(0xFF2A2A2A), width: 1),
                       ),
                     ),
-                    child: const Row(children: [
-                      Expanded(
+                    child: const Row(
+                      children: [
+                        Expanded(
                           flex: 4,
-                          child: Text('Description',
-                              style: TextStyle(
-                                  fontSize: 10.5, fontWeight: FontWeight.w800))),
-                      SizedBox(
+                          child: Text(
+                            'Description',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
                           width: 36,
-                          child: Text('Qty.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 10.5, fontWeight: FontWeight.w800))),
-                      SizedBox(
+                          child: Text(
+                            'Qty.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
                           width: 74,
-                          child: Text('Amount',
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  fontSize: 10.5, fontWeight: FontWeight.w800))),
-                    ]),
+                          child: Text(
+                            'Amount',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   for (final p in made)
                     Container(
@@ -4406,31 +4789,43 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       decoration: const BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
-                              color: Color(0xFFEDEAE3), width: 0.6),
-                        ),
-                      ),
-                      child: Row(children: [
-                        Expanded(
-                          flex: 4,
-                          child: Text(
-                            '${p['category'] ?? p['group'] ?? ''}'
-                            '${'${p['size'] ?? ''}'.trim().isNotEmpty ? ' / ${p['size']}' : ''}'
-                            '${'${p['madeDate'] ?? ''}'.trim().isNotEmpty ? ' · ${p['madeDate']}' : ''}',
-                            style: const TextStyle(fontSize: 11),
+                            color: Color(0xFFEDEAE3),
+                            width: 0.6,
                           ),
                         ),
-                        SizedBox(
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: Text(
+                              '${p['category'] ?? p['group'] ?? ''}'
+                              '${'${p['size'] ?? ''}'.trim().isNotEmpty ? ' / ${p['size']}' : ''}'
+                              '${'${p['madeDate'] ?? ''}'.trim().isNotEmpty ? ' · ${p['madeDate']}' : ''}',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                          SizedBox(
                             width: 36,
-                            child: Text('${p['qty'] ?? 0}',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 11))),
-                        SizedBox(
+                            child: Text(
+                              '${p['qty'] ?? 0}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                          SizedBox(
                             width: 74,
-                            child: Text(_won(p['amount']),
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                    fontSize: 11, fontWeight: FontWeight.w700))),
-                      ]),
+                            child: Text(
+                              _won(p['amount']),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   const SizedBox(height: 10),
                   Container(height: 2, color: AppColors.textDark),
@@ -4438,41 +4833,62 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      const Text('TOTAL  ',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1)),
-                      Text('${_won(madeAmount)}원',
-                          style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.taegeukRed)),
+                      const Text(
+                        'TOTAL  ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      Text(
+                        '${_won(madeAmount)}원',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.taegeukRed,
+                        ),
+                      ),
                     ],
                   ),
-                  Text('총 ${made.length}종 · 수량 $madeQty',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textGray)),
+                  Text(
+                    '총 ${made.length}종 · 수량 $madeQty',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   TsakOutputBar(
-                    onFormat: (f) => _exportMaker(format: f, invoiceMaker: m, invoiceMade: made),
+                    onFormat: (f) => _exportMaker(
+                      format: f,
+                      invoiceMaker: m,
+                      invoiceMade: made,
+                    ),
                     onShareImage: () => _shareInvoiceAsImage(m, made),
-                    onShareLink: () => showLinkShareDialog(context, _invoiceLink(m)),
+                    onShareLink: () =>
+                        showLinkShareDialog(context, _invoiceLink(m)),
                   ),
                   const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _exportMaker(),
-                        icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                        label: const Text('PDF/인쇄'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportMaker(),
+                          icon: const Icon(
+                            Icons.picture_as_pdf_outlined,
+                            size: 16,
+                          ),
+                          label: const Text('PDF/인쇄'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
+                      const SizedBox(width: 8),
+                      FilledButton(
                         onPressed: () => Navigator.pop(ctx),
-                        child: const Text('닫기')),
-                  ]),
+                        child: const Text('닫기'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -4503,32 +4919,44 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   height: 40,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => const SizedBox(
-                      width: 40, height: 40,
-                      child: Icon(Icons.broken_image_outlined,
-                          size: 18, color: AppColors.textGray)),
+                    width: 40,
+                    height: 40,
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      size: 18,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                 ),
               ),
             )
           else
             const SizedBox(
-                width: 40,
-                height: 40,
-                child: Icon(Icons.image_not_supported_outlined,
-                    size: 18, color: AppColors.textGray)),
+              width: 40,
+              height: 40,
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                size: 18,
+                color: AppColors.textGray,
+              ),
+            ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${p['category'] ?? p['group'] ?? ''}',
-                    style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w700)),
+                Text(
+                  '${p['category'] ?? p['group'] ?? ''}',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 Text(
                   [
                     if ('${p['group'] ?? ''}'.trim().isNotEmpty)
                       '${p['group']}',
-                    if ('${p['size'] ?? ''}'.trim().isNotEmpty)
-                      '${p['size']}',
+                    if ('${p['size'] ?? ''}'.trim().isNotEmpty) '${p['size']}',
                     '${p['qty'] ?? 0}개',
                     '단가 ${_won(p['unitPrice'])}',
                     if ('${p['madeDate'] ?? ''}'.trim().isNotEmpty)
@@ -4536,20 +4964,29 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     if (date.isNotEmpty) date,
                   ].join('  ·  '),
                   style: const TextStyle(
-                      fontSize: 10.5, color: AppColors.textGray),
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                  ),
                 ),
                 if (note.isNotEmpty)
-                  Text(note,
-                      style: const TextStyle(
-                          fontSize: 10.5, color: AppColors.scoutGreen)),
+                  Text(
+                    note,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.scoutGreen,
+                    ),
+                  ),
               ],
             ),
           ),
-          Text(_won(p['amount']),
-              style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.taegeukBlue)),
+          Text(
+            _won(p['amount']),
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: AppColors.taegeukBlue,
+            ),
+          ),
         ],
       ),
     );
@@ -4567,13 +5004,19 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child:
-                  Image.network(_nas.merchImageUrl(photo), fit: BoxFit.contain),
+              child: Image.network(
+                _nas.merchImageUrl(photo),
+                fit: BoxFit.contain,
+              ),
             ),
             const SizedBox(height: 8),
-            Text('${p['category'] ?? p['group'] ?? ''}',
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700)),
+            Text(
+              '${p['category'] ?? p['group'] ?? ''}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () => Navigator.pop(ctx),
@@ -4608,7 +5051,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final email = TextEditingController(text: '${existing?['email'] ?? ''}');
     final memo = TextEditingController(text: '${existing?['memo'] ?? ''}');
     // [turn9-5] 제작자 페이지 보강 — 계좌번호·사업자등록증·입금현황 (PDF page28~29 최종 결정).
-    final account = TextEditingController(text: '${existing?['account'] ?? ''}');
+    final account = TextEditingController(
+      text: '${existing?['account'] ?? ''}',
+    );
     final bizNumber = TextEditingController(
       text: '${existing?['bizNumber'] ?? ''}',
     );
@@ -4674,10 +5119,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   Row(
                     children: [
                       const Expanded(
-                        child: Text(
-                          '입금 완료',
-                          style: TextStyle(fontSize: 12),
-                        ),
+                        child: Text('입금 완료', style: TextStyle(fontSize: 12)),
                       ),
                       Switch(
                         value: paid,
@@ -4969,10 +5411,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       if (made.isEmpty) {
         rows.add([
           DocCell('${i + 1}', align: 'center'),
-          DocCell(company,
-              accent: kMujiAccents[i % kMujiAccents.length],
-              bold: true,
-              sub: contact.isEmpty ? null : contact),
+          DocCell(
+            company,
+            accent: kMujiAccents[i % kMujiAccents.length],
+            bold: true,
+            sub: contact.isEmpty ? null : contact,
+          ),
           DocCell('${m['category'] ?? ''}'),
           DocCell('—', align: 'center'),
           DocCell('', align: 'center'),
@@ -4996,85 +5440,103 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         rows.add([
           DocCell('${i + 1}', align: 'center'),
           if (k == 0)
-            DocCell(company,
-                accent: kMujiAccents[i % kMujiAccents.length],
-                bold: true,
-                sub: contact.isEmpty ? null : contact)
+            DocCell(
+              company,
+              accent: kMujiAccents[i % kMujiAccents.length],
+              bold: true,
+              sub: contact.isEmpty ? null : contact,
+            )
           else
             DocCell('↳', align: 'center'),
           DocCell(spec),
           DocCell('${(p['qty'] as num?)?.toInt() ?? 0}', align: 'center'),
-          DocCell(_won((p['unitPrice'] as num?)?.toInt() ?? 0),
-              align: 'right'),
+          DocCell(_won((p['unitPrice'] as num?)?.toInt() ?? 0), align: 'right'),
           DocCell(_won((p['amount'] as num?)?.toInt() ?? 0), align: 'right'),
           DocCell('${p['date'] ?? '-'}', align: 'center'),
           DocCell('${p['note'] ?? ''}'),
         ]);
       }
     }
-    final html = buildMujiDoc(
-      meta: DocMeta(
-        title: '수품 제작 내역서',
-        subtitle: '한국범스카우트중앙회 · 제작자별 제작 수품',
-        description: '제작자(업체)별로 제작한 수품의 규격·수량·단가·합계·제작일 내역입니다. '
-            '(결제·입금 정보 제외)',
-        author: _whoName(),
-        extra: {
-          '제작자': '${_makers.length}곳',
-          '제작 항목': '$madeCount건',
-          '총 수량': '$totalQty개',
-          '총 합계': _won(totalAmt),
-        },
-      ),
-      columns: const [
-        '번호', '제작자/담당', '그룹·분류·규격', '수량', '단가', '합계', '제작일', '메모',
-      ],
-      rows: rows,
-      summary: '총 <b>${_makers.length}</b>곳 · <b>$madeCount</b>건 · '
-          '합계 <span class="g">${_won(totalAmt)}</span>',
+    final meta = DocMeta(
+      title: '수품 제작 내역서',
+      subtitle: '한국범스카우트중앙회 · 제작자별 제작 수품',
+      description:
+          '제작자(업체)별로 제작한 수품의 규격·수량·단가·합계·제작일 내역입니다. '
+          '(결제·입금 정보 제외)',
+      author: _whoName(),
+      extra: {
+        '제작자': '${_makers.length}곳',
+        '제작 항목': '$madeCount건',
+        '총 수량': '$totalQty개',
+        '총 합계': _won(totalAmt),
+      },
     );
-    if (isWebRuntime) {
-      // 규칙(#14): 형식 순서 PDF→JPG→엑셀→PPT→워드.
-      switch (format) {
-        case TsakOutputFormat.pdf:
-        case TsakOutputFormat.jpg:
-          // 브라우저 인쇄창에서 PDF 또는 이미지로 저장.
-          openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
-          return;
-        case TsakOutputFormat.excel:
-          final csv = _makerCsv();
-          await Clipboard.setData(ClipboardData(text: csv));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-          final text = _makerPlainText(format);
-          await Clipboard.setData(ClipboardData(text: text));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      // 네이티브: CSV 텍스트를 클립보드로 (엑셀 붙여넣기)
-      final buf = StringBuffer();
-      buf.writeln('수품 제작 내역서');
-      for (final m in _makers) {
-        final mid = '${m['id'] ?? ''}';
-        final made = _purchases
-            .where((p) => '${p['makerId'] ?? ''}' == mid)
-            .toList();
-        for (final p in made) {
-          buf.writeln(
-            '${m['company'] ?? ''},${p['group'] ?? ''},${p['category'] ?? ''},'
-            '${p['size'] ?? ''},${p['qty'] ?? 0},${p['unitPrice'] ?? 0},'
-            '${p['amount'] ?? 0},${p['date'] ?? ''},${p['note'] ?? ''}',
-          );
-        }
-      }
-      await Clipboard.setData(ClipboardData(text: buf.toString()));
-      if (mounted) _snack('제작 내역을 복사했습니다(엑셀 붙여넣기)');
+    final summaryLine =
+        '총 <b>${_makers.length}</b>곳 · <b>$madeCount</b>건 · '
+        '합계 <span class="g">${_won(totalAmt)}</span>';
+    // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
+    const base = '수품_제작내역서';
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        final bytes = await DocPdf.build(
+          meta: meta,
+          columns: const [
+            '번호',
+            '제작자/담당',
+            '그룹·분류·규격',
+            '수량',
+            '단가',
+            '합계',
+            '제작일',
+            '메모',
+          ],
+          rows: rows,
+          summary: [
+            '총 ${_makers.length}곳 · $madeCount건',
+            '합계 ${_won(totalAmt)}',
+          ],
+          footerLeft: '한국범스카우트중앙회 수품',
+          landscape: true,
+        );
+        await _saveBytes(bytes, '$base.pdf');
+        return;
+      case TsakOutputFormat.jpg:
+        openPrintableHtml(
+          buildMujiDoc(
+            meta: meta,
+            columns: const [
+              '번호',
+              '제작자/담당',
+              '그룹·분류·규격',
+              '수량',
+              '단가',
+              '합계',
+              '제작일',
+              '메모',
+            ],
+            rows: rows,
+            summary: summaryLine,
+          ),
+        );
+        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        return;
+      case TsakOutputFormat.excel:
+        await _saveText(_makerCsv(), '$base.csv');
+        return;
+      case TsakOutputFormat.ppt:
+        await _saveText(
+          _makerPlainText(format),
+          '$base.ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+        return;
+      case TsakOutputFormat.word:
+        await _saveText(
+          _makerPlainText(format),
+          '$base.doc',
+          mime: 'application/msword',
+        );
+        return;
     }
   }
 
@@ -5084,8 +5546,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     buf.writeln('제작자,그룹,분류,규격,수량,단가,금액,제작일,메모');
     for (final m in _makers) {
       final mid = '${m['id'] ?? ''}';
-      final made =
-          _purchases.where((p) => '${p['makerId'] ?? ''}' == mid).toList();
+      final made = _purchases
+          .where((p) => '${p['makerId'] ?? ''}' == mid)
+          .toList();
       for (final p in made) {
         buf.writeln(
           '${m['company'] ?? ''},${p['group'] ?? ''},${p['category'] ?? ''},'
@@ -5100,21 +5563,23 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   /// 제작 내역 → PPT/워드 붙여넣기용 텍스트.
   String _makerPlainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '수품 제작 현황 (슬라이드용)'
-        : '수품 제작 내역서 (문서용)');
+    buf.writeln(
+      format == TsakOutputFormat.ppt ? '수품 제작 현황 (슬라이드용)' : '수품 제작 내역서 (문서용)',
+    );
     buf.writeln('한국범스카우트중앙회 · ${_whoName()}');
     buf.writeln();
     for (final m in _makers) {
       final mid = '${m['id'] ?? ''}';
-      final made =
-          _purchases.where((p) => '${p['makerId'] ?? ''}' == mid).toList();
+      final made = _purchases
+          .where((p) => '${p['makerId'] ?? ''}' == mid)
+          .toList();
       buf.writeln('■ ${m['company'] ?? m['name'] ?? ''}');
       for (final p in made) {
         buf.writeln(
-            '  - ${p['group'] ?? ''} ${p['category'] ?? ''} ${p['size'] ?? ''}'
-            ' / ${p['qty'] ?? 0}개 / ${_won(p['amount'])}'
-            ' / ${p['date'] ?? ''}');
+          '  - ${p['group'] ?? ''} ${p['category'] ?? ''} ${p['size'] ?? ''}'
+          ' / ${p['qty'] ?? 0}개 / ${_won(p['amount'])}'
+          ' / ${p['date'] ?? ''}',
+        );
       }
       buf.writeln();
     }
@@ -5129,10 +5594,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   /// 인보이스를 이미지(PNG)로 저장 — 규칙: 스마트폰은 사진, PC는 다운로드.
   Future<void> _shareInvoiceAsImage(
-      Map<String, dynamic> m, List<Map<String, dynamic>> made) async {
+    Map<String, dynamic> m,
+    List<Map<String, dynamic>> made,
+  ) async {
     _snack('이미지 공유: 브라우저 인쇄창에서 이미지(PNG/JPEG)로 저장하세요.');
     await _exportMaker(
-        format: TsakOutputFormat.jpg, invoiceMaker: m, invoiceMade: made);
+      format: TsakOutputFormat.jpg,
+      invoiceMaker: m,
+      invoiceMade: made,
+    );
   }
 
   // ==================== 6) 설정 탭 ====================
@@ -5240,9 +5710,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     ),
                     if (!isMaster) ...[
                       const SizedBox(width: 6),
-                      const Text('(마스터만 변경 가능)',
-                          style: TextStyle(
-                              fontSize: 11, color: AppColors.textGray)),
+                      const Text(
+                        '(마스터만 변경 가능)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -5732,10 +6206,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final amt = m['paidAmount'] ?? 0;
     final hasData = paid || (amt != null && '$amt' != '0' && '$amt'.isNotEmpty);
     if (!hasData) return const SizedBox.shrink();
-    return _row(
-      '입금현황',
-      '${_won(amt)}원${paid ? ' · 입금완료' : ' · 미완료'}',
-    );
+    return _row('입금현황', '${_won(amt)}원${paid ? ' · 입금완료' : ' · 미완료'}');
   }
 
   /// 제작자 민감파일(견적서/사업자등록증) 열람 — 마스터, 허용된 관리자만 서버가 허용.
@@ -5827,8 +6298,9 @@ class _StockQty extends StatefulWidget {
 }
 
 class _StockQtyState extends State<_StockQty> {
-  late final TextEditingController _ctrl =
-      TextEditingController(text: '${widget.value}');
+  late final TextEditingController _ctrl = TextEditingController(
+    text: '${widget.value}',
+  );
   final _focus = FocusNode();
   bool _editing = false;
 
@@ -5843,8 +6315,10 @@ class _StockQtyState extends State<_StockQty> {
     setState(() {
       _editing = true;
       _ctrl.text = '${widget.value}';
-      _ctrl.selection =
-          TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+      _ctrl.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _ctrl.text.length,
+      );
     });
     _focus.requestFocus();
   }
@@ -5872,14 +6346,18 @@ class _StockQtyState extends State<_StockQty> {
             color: AppColors.taegeukBlue.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: AppColors.taegeukBlue.withValues(alpha: 0.35)),
+              color: AppColors.taegeukBlue.withValues(alpha: 0.35),
+            ),
           ),
           child: Center(
-            child: Text('${widget.value}',
-                style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.taegeukBlue)),
+            child: Text(
+              '${widget.value}',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                color: AppColors.taegeukBlue,
+              ),
+            ),
           ),
         ),
       );
@@ -5893,9 +6371,10 @@ class _StockQtyState extends State<_StockQty> {
         textAlign: TextAlign.center,
         keyboardType: TextInputType.number,
         style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            color: AppColors.taegeukBlue),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          color: AppColors.taegeukBlue,
+        ),
         decoration: const InputDecoration(
           isDense: true,
           contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),

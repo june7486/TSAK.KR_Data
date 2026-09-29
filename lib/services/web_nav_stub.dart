@@ -31,8 +31,9 @@ void reloadPage() {}
 /// 인쇄용 HTML 열기 — 네이티브에서는 no-op(호출부에서 별도 처리).
 void openPrintableHtml(String html, {bool autoPrint = false}) {}
 
-/// 파일 다운로드 — 네이티브에서는 no-op(호출부에서 클립보드 폴백).
-void downloadTextFile(String content, String filename, String mime) {}
+/// 파일 다운로드 — 네이티브에서는 no-op(호출부에서 파일 저장 API 사용).
+/// 반환: 웹과 동일한 시그니처(bool)를 유지해야 컴파일된다.
+bool downloadTextFile(String content, String filename, String mime) => false;
 
 /// 바이너리 파일 다운로드 — 네이티브에서는 no-op.
 void downloadBytesFile(Uint8List bytes, String filename, String mime) {}
@@ -42,8 +43,10 @@ bool get supportsSaveFilePicker => false;
 
 /// 네이티브에서는 대상 아님(항상 false).
 Future<bool> saveViaFilePicker(
-        Uint8List bytes, String filename, String mime) async =>
-    false;
+  Uint8List bytes,
+  String filename,
+  String mime,
+) async => false;
 
 /// 네이티브에는 자동 재로드가 없으므로 항상 허용(사실상 미사용).
 bool guardAutoReloadOnce() => true;

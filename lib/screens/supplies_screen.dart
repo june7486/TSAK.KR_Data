@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/export_save.dart';
 import '../services/file_pick.dart';
-import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
@@ -46,8 +47,9 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  List<Map<String, dynamic>> _list(dynamic v) =>
-      ((v as List?) ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
+  List<Map<String, dynamic>> _list(dynamic v) => ((v as List?) ?? [])
+      .map((e) => (e as Map).cast<String, dynamic>())
+      .toList();
 
   Future<void> _load() async {
     setState(() {
@@ -121,8 +123,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   // ---------- 추가 / 수정 ----------
   Future<void> _edit({Map<String, dynamic>? existing}) async {
     final name = TextEditingController(text: '${existing?['name'] ?? ''}');
-    final qty =
-        TextEditingController(text: '${existing?['qty'] ?? ''}');
+    final qty = TextEditingController(text: '${existing?['qty'] ?? ''}');
     final note = TextEditingController(text: '${existing?['note'] ?? ''}');
     final checked = TextEditingController(
       text: '${existing?['checkedAt'] ?? ''}'.isNotEmpty
@@ -149,14 +150,17 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                         height: 64,
                         color: AppColors.bg,
                         child: photo.trim().isEmpty
-                            ? const Icon(Icons.image_outlined,
-                                color: AppColors.textGray)
+                            ? const Icon(
+                                Icons.image_outlined,
+                                color: AppColors.textGray,
+                              )
                             : Image.network(
                                 _nas.merchImageUrl(photo),
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.broken_image_outlined,
-                                    color: AppColors.textGray),
+                                  Icons.broken_image_outlined,
+                                  color: AppColors.textGray,
+                                ),
                               ),
                       ),
                     ),
@@ -167,7 +171,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                         children: [
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                                visualDensity: VisualDensity.compact),
+                              visualDensity: VisualDensity.compact,
+                            ),
                             onPressed: () async {
                               final f = await _pickPhoto();
                               if (f != null) setDlg(() => photo = f);
@@ -178,10 +183,13 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                           if (photo.trim().isNotEmpty)
                             TextButton(
                               style: TextButton.styleFrom(
-                                  visualDensity: VisualDensity.compact),
+                                visualDensity: VisualDensity.compact,
+                              ),
                               onPressed: () => setDlg(() => photo = ''),
-                              child: const Text('사진 제거',
-                                  style: TextStyle(fontSize: 12)),
+                              child: const Text(
+                                '사진 제거',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                         ],
                       ),
@@ -192,14 +200,18 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                 TextField(
                   controller: name,
                   decoration: const InputDecoration(
-                      labelText: '품명 *', isDense: true),
+                    labelText: '품명 *',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: qty,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                      labelText: '수량', isDense: true),
+                    labelText: '수량',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -207,13 +219,17 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                   maxLines: 2,
                   minLines: 1,
                   decoration: const InputDecoration(
-                      labelText: '비고', isDense: true),
+                    labelText: '비고',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: checked,
                   decoration: const InputDecoration(
-                      labelText: '재고 확인 날짜', isDense: true),
+                    labelText: '재고 확인 날짜',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 Align(
@@ -221,7 +237,9 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                   child: Text(
                     '확인자: #$_whoNumber $_whoName',
                     style: const TextStyle(
-                        fontSize: 12, color: AppColors.textGray),
+                      fontSize: 12,
+                      color: AppColors.textGray,
+                    ),
                   ),
                 ),
               ],
@@ -267,11 +285,13 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         content: Text('"${s['name']}" 항목을 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -296,7 +316,9 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   // ---------- MUJI 문서 ----------
   String _docHtml() {
     final total = _items.fold<int>(
-        0, (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0));
+      0,
+      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
+    );
     final rows = <List<DocCell>>[];
     for (var i = 0; i < _items.length; i++) {
       final s = _items[i];
@@ -308,8 +330,11 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       ].join(' ');
       rows.add([
         DocCell('${i + 1}', align: 'center'),
-        DocCell('${s['name'] ?? ''}',
-            accent: kMujiAccents[i % kMujiAccents.length], bold: true),
+        DocCell(
+          '${s['name'] ?? ''}',
+          accent: kMujiAccents[i % kMujiAccents.length],
+          bold: true,
+        ),
         DocCell('${s['qty'] ?? 0}', align: 'center'),
         DocCell('${s['note'] ?? ''}'),
         DocCell(
@@ -334,49 +359,103 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       ),
       columns: const ['번호', '품명', '수량', '비고', '확인일자 · 확인자'],
       rows: rows,
-      summary: '총 <b>${_items.length}</b>개 항목 · 총 수량 '
+      summary:
+          '총 <b>${_items.length}</b>개 항목 · 총 수량 '
           '<span class="g">$total</span>',
       footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
     );
   }
 
-  Future<void> _print({
-    TsakOutputFormat format = TsakOutputFormat.pdf,
-  }) async {
+  Future<void> _print({TsakOutputFormat format = TsakOutputFormat.pdf}) async {
     if (_items.isEmpty) {
       _snack('인쇄할 항목이 없습니다');
       return;
     }
-    final html = _docHtml();
-    if (isWebRuntime) {
-      // 규칙(#14): 형식 순서 PDF→JPG→엑셀→PPT→워드.
-      switch (format) {
-        case TsakOutputFormat.pdf:
-        case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _csvText()));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-          await Clipboard.setData(ClipboardData(text: _plainText(format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      await saveText(
-        content: html,
-        name: '중앙회_비품_재고_리스트_${_today().replaceAll('.', '')}',
-        ext: 'html',
-        mime: 'text/html;charset=utf-8',
-      );
-      _snack('문서를 저장했습니다');
+    final total = _items.fold<int>(
+      0,
+      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
+    );
+    final meta = DocMeta(
+      title: '중앙회 비품 재고 리스트',
+      subtitle: '한국범스카우트중앙회 · 비품 재고 및 입출고 현황',
+      description: '아래 비품의 수량과 비고를 확인하고, 확인일자·확인자를 함께 기재합니다.',
+      author: _whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '',
+      extra: {
+        '총 항목': '${_items.length}건',
+        '총 수량': '$total',
+        if (_updated.isNotEmpty) '목록 갱신': _updated,
+      },
+    );
+    // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
+    const base = '중앙회_비품_재고_리스트';
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        final bytes = await DocPdf.buildFromText(
+          meta: meta,
+          text: _plainText(TsakOutputFormat.word),
+          footerLeft: '한국범스카우트중앙회',
+        );
+        await _saveBytes(bytes, '$base.pdf');
+        return;
+      case TsakOutputFormat.jpg:
+        openPrintableHtml(_docHtml());
+        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        return;
+      case TsakOutputFormat.excel:
+        await _saveText(_csvText(), '$base.csv');
+        return;
+      case TsakOutputFormat.ppt:
+        await _saveText(
+          _plainText(format),
+          '$base.ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+        return;
+      case TsakOutputFormat.word:
+        await _saveText(
+          _plainText(format),
+          '$base.doc',
+          mime: 'application/msword',
+        );
+        return;
     }
+  }
+
+  /// 바이트 파일 저장(웹) / 스낵바 안내.
+  Future<void> _saveBytes(
+    Uint8List bytes,
+    String filename, {
+    String? mime,
+  }) async {
+    if (!isWebRuntime) {
+      _snack('모바일에서는 파일 저장을 지원하지 않습니다');
+      return;
+    }
+    final ok = await saveBytesAs(
+      bytes,
+      filename,
+      mime ?? mimeForFilename(filename),
+    );
+    _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다');
+  }
+
+  /// 텍스트 파일 저장(웹) / 클립보드 폴백.
+  Future<void> _saveText(
+    String content,
+    String filename, {
+    String? mime,
+  }) async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: content));
+      _snack('내용을 복사했습니다');
+      return;
+    }
+    final ok = downloadTextFile(
+      content,
+      filename,
+      mime ?? mimeForFilename(filename),
+    );
+    _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다');
   }
 
   /// 비품 재고 → CSV(엑셀).
@@ -385,8 +464,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     buf.writeln('번호,품명,수량,비고,확인일자,확인자');
     for (var i = 0; i < _items.length; i++) {
       final p = _items[i];
-      buf.writeln('${i + 1},${p['name'] ?? ''},${p['qty'] ?? 0},'
-          '${p['note'] ?? ''},${p['checked'] ?? ''},${p['whoName'] ?? ''}');
+      buf.writeln(
+        '${i + 1},${p['name'] ?? ''},${p['qty'] ?? 0},'
+        '${p['note'] ?? ''},${p['checked'] ?? ''},${p['whoName'] ?? ''}',
+      );
     }
     return buf.toString();
   }
@@ -394,15 +475,21 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   /// 비품 재고 → PPT/워드 붙여넣기용 텍스트.
   String _plainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '중앙회 비품 재고 (슬라이드용)'
-        : '중앙회 비품 재고 리스트 (문서용)');
-    buf.writeln('한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}');
+    buf.writeln(
+      format == TsakOutputFormat.ppt
+          ? '중앙회 비품 재고 (슬라이드용)'
+          : '중앙회 비품 재고 리스트 (문서용)',
+    );
+    buf.writeln(
+      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}',
+    );
     buf.writeln();
     for (var i = 0; i < _items.length; i++) {
       final p = _items[i];
-      buf.writeln('${i + 1}. ${p['name'] ?? ''} / ${p['qty'] ?? 0}개'
-          '${'${p['note'] ?? ''}'.trim().isEmpty ? '' : ' / ${p['note']}'}');
+      buf.writeln(
+        '${i + 1}. ${p['name'] ?? ''} / ${p['qty'] ?? 0}개'
+        '${'${p['note'] ?? ''}'.trim().isEmpty ? '' : ' / ${p['note']}'}',
+      );
     }
     return buf.toString();
   }
@@ -421,8 +508,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const Text(
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 12),
             TsakOutputBar(
               onFormat: (f) {
@@ -442,7 +531,9 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -454,28 +545,31 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       return;
     }
     final total = _items.fold<int>(
-        0, (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0));
+      0,
+      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
+    );
     final b = StringBuffer();
     b.writeln('중앙회 비품 재고 리스트');
     b.writeln('업데이트: ${_updated.isNotEmpty ? _updated : _today()}');
-    b.writeln(
-        '확인자: ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '-'}');
+    b.writeln('확인자: ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '-'}');
     b.writeln('──────────────────────────────────');
     b.writeln('연번 | 품명 | 수량 | 비고 | 확인일자 | 확인자');
     for (var i = 0; i < _items.length; i++) {
       final s = _items[i];
       final who = [
-        if ('${s['checkedBy'] ?? ''}'.trim().isNotEmpty)
-          '#${s['checkedBy']}',
+        if ('${s['checkedBy'] ?? ''}'.trim().isNotEmpty) '#${s['checkedBy']}',
         if ('${s['checkedByName'] ?? ''}'.trim().isNotEmpty)
           '${s['checkedByName']}',
       ].join(' ');
-      b.writeln('${i + 1}. ${s['name']} | ${s['qty']} | ${s['note'] ?? ''} | '
-          '${'${s['checkedAt'] ?? ''}'.isNotEmpty ? s['checkedAt'] : s['updatedAt'] ?? ''} | $who');
+      b.writeln(
+        '${i + 1}. ${s['name']} | ${s['qty']} | ${s['note'] ?? ''} | '
+        '${'${s['checkedAt'] ?? ''}'.isNotEmpty ? s['checkedAt'] : s['updatedAt'] ?? ''} | $who',
+      );
     }
     b.writeln('──────────────────────────────────');
     b.writeln('총 ${_items.length}개 항목 · 총 수량 $total');
-    final subject = '중앙회 비품 재고 리스트 (${_updated.isNotEmpty ? _updated : _today()})';
+    final subject =
+        '중앙회 비품 재고 리스트 (${_updated.isNotEmpty ? _updated : _today()})';
     final uri =
         'mailto:?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(b.toString())}';
     if (isWebRuntime) {
@@ -493,25 +587,29 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   @override
   Widget build(BuildContext context) {
     final total = _items.fold<int>(
-        0, (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0));
+      0,
+      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
+    );
     final content = _loading
         ? const Center(child: CircularProgressIndicator())
         : _error != null
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 48, color: AppColors.taegeukRed),
-                    const SizedBox(height: 12),
-                    Text(_error!, textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                        onPressed: _load, child: const Text('다시 시도')),
-                  ],
+        ? Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: AppColors.taegeukRed,
                 ),
-              )
-            : _body(total);
+                const SizedBox(height: 12),
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                ElevatedButton(onPressed: _load, child: const Text('다시 시도')),
+              ],
+            ),
+          )
+        : _body(total);
 
     if (widget.embedded) {
       return Stack(
@@ -572,8 +670,11 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         Expanded(
           child: _items.isEmpty
               ? const Center(
-                  child: Text('비품이 없습니다. 아래 + 버튼으로 추가하세요.',
-                      style: TextStyle(color: AppColors.textGray)))
+                  child: Text(
+                    '비품이 없습니다. 아래 + 버튼으로 추가하세요.',
+                    style: TextStyle(color: AppColors.textGray),
+                  ),
+                )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
                   children: [
@@ -604,12 +705,16 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                                     child: Container(
                                       width: 34,
                                       alignment: Alignment.center,
-                                      color: AppColors.purple
-                                          .withValues(alpha: 0.05),
-                                      child: Icon(Icons.drag_indicator,
-                                          size: 18,
-                                          color: AppColors.purple
-                                              .withValues(alpha: 0.7)),
+                                      color: AppColors.purple.withValues(
+                                        alpha: 0.05,
+                                      ),
+                                      child: Icon(
+                                        Icons.drag_indicator,
+                                        size: 18,
+                                        color: AppColors.purple.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -624,9 +729,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                     Text(
                       '총 ${_items.length}개 항목 · 총 수량 $total',
                       style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.purpleDark),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.purpleDark,
+                      ),
                     ),
                   ],
                 ),
@@ -645,17 +751,22 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined,
-                  size: 18, color: AppColors.purple),
+              const Icon(
+                Icons.inventory_2_outlined,
+                size: 18,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 6),
               const Expanded(
-                child: Text('중앙회 비품 재고 리스트',
-                    style: TextStyle(
-                        fontSize: 15.5, fontWeight: FontWeight.w800)),
+                child: Text(
+                  '중앙회 비품 재고 리스트',
+                  style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800),
+                ),
               ),
-              Text('${_items.length}건 · $total개',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textGray)),
+              Text(
+                '${_items.length}건 · $total개',
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
               if (widget.embedded) ...[
                 IconButton(
                   visualDensity: VisualDensity.compact,
@@ -691,23 +802,30 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
 
   Widget _tableHead() {
     const style = TextStyle(
-        fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.textDark);
+      fontSize: 11.5,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textDark,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2)),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2),
+        ),
       ),
       child: const Row(
         children: [
           SizedBox(width: 34),
           SizedBox(width: 30, child: Text('No', style: style)),
           SizedBox(
-              width: 46,
-              child: Text('사진', style: style, textAlign: TextAlign.center)),
+            width: 46,
+            child: Text('사진', style: style, textAlign: TextAlign.center),
+          ),
           Expanded(flex: 4, child: Text('품명', style: style)),
           SizedBox(
-              width: 60,
-              child: Text('수량', style: style, textAlign: TextAlign.center)),
+            width: 60,
+            child: Text('수량', style: style, textAlign: TextAlign.center),
+          ),
           SizedBox(width: 14),
           Expanded(flex: 3, child: Text('비고', style: style)),
           SizedBox(width: 44),
@@ -717,7 +835,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   }
 
   /// 수량 셀 — 화면에서 바로 수정(인라인 편집) 가능.
-  Widget _qtyCell(Map<String, dynamic> s) {    return _InlineQty(
+  Widget _qtyCell(Map<String, dynamic> s) {
+    return _InlineQty(
       value: (s['qty'] as num?)?.toInt() ?? 0,
       onChanged: (v) => _saveQty(s, v),
     );
@@ -760,12 +879,15 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         children: [
           SizedBox(
             width: 30,
-            child: Text('${i + 1}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textGray)),
+            child: Text(
+              '${i + 1}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textGray,
+              ),
+            ),
           ),
           SizedBox(width: 46, child: _photoThumb(s)),
           Expanded(
@@ -776,20 +898,30 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${s['name'] ?? ''}',
-                      style: const TextStyle(
-                          fontSize: 14.5, fontWeight: FontWeight.w700)),
+                  Text(
+                    '${s['name'] ?? ''}',
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   if (checkedAt.isNotEmpty || updatedAt.isNotEmpty)
                     Text(
                       '확인 $checkedAt'
                       '${updatedAt.isNotEmpty ? '  ·  갱신 $updatedAt' : ''}',
                       style: const TextStyle(
-                          fontSize: 10.5, color: AppColors.textGray),
+                        fontSize: 10.5,
+                        color: AppColors.textGray,
+                      ),
                     ),
                   if (who.isNotEmpty)
-                    Text('확인자 $who',
-                        style: const TextStyle(
-                            fontSize: 10.5, color: AppColors.scoutGreen)),
+                    Text(
+                      '확인자 $who',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.scoutGreen,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -798,9 +930,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           const SizedBox(width: 14),
           Expanded(
             flex: 3,
-            child: Text('${s['note'] ?? ''}',
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textGray)),
+            child: Text(
+              '${s['note'] ?? ''}',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
           ),
           SizedBox(
             width: 44,
@@ -827,8 +960,11 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     final photo = '${s['photo'] ?? ''}'.trim();
     if (photo.isEmpty) {
       return Center(
-        child: Icon(Icons.image_not_supported_outlined,
-            size: 20, color: AppColors.textGray.withValues(alpha: 0.4)),
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: 20,
+          color: AppColors.textGray.withValues(alpha: 0.4),
+        ),
       );
     }
     return GestureDetector(
@@ -841,9 +977,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           height: 38,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => const Icon(
-              Icons.broken_image_outlined,
-              size: 20,
-              color: AppColors.textGray),
+            Icons.broken_image_outlined,
+            size: 20,
+            color: AppColors.textGray,
+          ),
         ),
       ),
     );
@@ -861,19 +998,24 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(_nas.merchImageUrl(photo),
-                  fit: BoxFit.contain),
+              child: Image.network(
+                _nas.merchImageUrl(photo),
+                fit: BoxFit.contain,
+              ),
             ),
             const SizedBox(height: 8),
-            Text('${s['name'] ?? ''}',
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700)),
+            Text(
+              '${s['name'] ?? ''}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () => Navigator.pop(ctx),
               icon: const Icon(Icons.close, color: Colors.white),
-              label:
-                  const Text('닫기', style: TextStyle(color: Colors.white)),
+              label: const Text('닫기', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -897,8 +1039,9 @@ class _InlineQty extends StatefulWidget {
 }
 
 class _InlineQtyState extends State<_InlineQty> {
-  late final TextEditingController _ctrl =
-      TextEditingController(text: '${widget.value}');
+  late final TextEditingController _ctrl = TextEditingController(
+    text: '${widget.value}',
+  );
   final _focus = FocusNode();
   bool _editing = false;
 
@@ -913,8 +1056,10 @@ class _InlineQtyState extends State<_InlineQty> {
     setState(() {
       _editing = true;
       _ctrl.text = '${widget.value}';
-      _ctrl.selection =
-          TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+      _ctrl.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _ctrl.text.length,
+      );
     });
     _focus.requestFocus();
   }
@@ -942,14 +1087,18 @@ class _InlineQtyState extends State<_InlineQty> {
             color: AppColors.taegeukBlue.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: AppColors.taegeukBlue.withValues(alpha: 0.35)),
+              color: AppColors.taegeukBlue.withValues(alpha: 0.35),
+            ),
           ),
           child: Center(
-            child: Text('${widget.value}',
-                style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.taegeukBlue)),
+            child: Text(
+              '${widget.value}',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                color: AppColors.taegeukBlue,
+              ),
+            ),
           ),
         ),
       );
@@ -963,9 +1112,10 @@ class _InlineQtyState extends State<_InlineQty> {
         textAlign: TextAlign.center,
         keyboardType: TextInputType.number,
         style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            color: AppColors.taegeukBlue),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          color: AppColors.taegeukBlue,
+        ),
         decoration: const InputDecoration(
           isDense: true,
           contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),

@@ -112,7 +112,14 @@ extension type _Anchor(JSObject _) implements JSObject {
 }
 
 /// 텍스트(HTML/CSV 등)를 파일로 다운로드한다. (Blob + <a download>)
-void downloadTextFile(String content, String filename, String mime) {
+/// 반환: 다운로드를 트리거했으면 true.
+///
+/// ## 버그 수정 (요구 p.28: "파일 생성 자체가 안 됨")
+/// 기존에는 `<a>` 를 **DOM 에 붙이지 않고** `.click()` 만 호출해,
+/// 사파리·파이어폭스·일부 크롬 환경에서 **다운로드가 트리거되지 않았다**
+/// (에러도 조용히 catch 로 삼켜져 "아무 일도 안 일어나는" 증상).
+/// `downloadBytesFile` 과 동일하게 DOM 에 붙인 뒤 클릭하고, 끝나면 정리한다.
+bool downloadTextFile(String content, String filename, String mime) {
   try {
     final parts = <JSAny>[content.toJS].toJS;
     final optMap = <String, String>{'type': mime};
@@ -121,8 +128,23 @@ void downloadTextFile(String content, String filename, String mime) {
     final a = _document.createElement('a') as _Anchor;
     a.href = url;
     a.download = filename;
+    // DOM 에 붙여야 일부 브라우저(사파리/파폭)에서 클릭 다운로드가 동작한다.
+    try {
+      (_document.body as _Body).appendChild(a as _Element);
+    } catch (_) {}
     a.click();
-  } catch (_) {}
+    _setTimeout((() {
+      try {
+        a.remove();
+      } catch (_) {}
+      try {
+        _URL.revokeObjectURL(url);
+      } catch (_) {}
+    }).toJS, 4000);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// 바이너리(엑셀·PDF·이미지 등)를 파일로 다운로드한다.
