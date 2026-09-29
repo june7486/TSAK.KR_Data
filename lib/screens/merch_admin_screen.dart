@@ -1555,7 +1555,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           width: credentialOnly ? 1.6 : 1,
         ),
       ),
-      child: Row(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _editProduct(existing: p),
+        child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
@@ -1730,6 +1733,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ],
           ),
         ],
+        ),
       ),
     );
   }
