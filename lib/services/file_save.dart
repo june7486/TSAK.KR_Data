@@ -50,3 +50,26 @@ Future<void> saveText({
     mimeType: mimeType ?? MimeType.text,
   );
 }
+
+/// 이미지(JPG/PNG) 저장 — 규칙(#14): **기본 저장 위치 = 기기 기본**.
+/// - 스마트폰(안드로이드 등): 사진/갤러리 폴더로 저장.
+/// - PC(웹): 브라우저 기본 다운로드(Downloads) 폴더로 저장.
+/// 사용자가 위치를 바꾸려면 [preferGallery]를 false 로 주거나 OS 저장 대화상자를 쓴다.
+Future<void> saveImageBytes({
+  required Uint8List bytes,
+  required String name,
+  String ext = 'jpg',
+}) async {
+  // 웹은 항상 브라우저 기본(Downloads) 경로로 내려받는다.
+  if (isWebRuntime) {
+    downloadBytesFile(bytes, '$name.$ext', 'image/$ext');
+    return;
+  }
+  // 네이티브는 file_saver 가 OS 저장 대화상자를 띄워 사용자가 위치 선택 가능.
+  await FileSaver.instance.saveFile(
+    name: name,
+    bytes: bytes,
+    ext: ext,
+    mimeType: ext == 'png' ? MimeType.png : MimeType.jpeg,
+  );
+}

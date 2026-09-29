@@ -9,6 +9,7 @@ import '../services/file_pick.dart';
 import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
+import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -3910,6 +3911,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 children: [
                   Row(
                     children: [
+                      const AppHomeEmblem(size: 20),
+                      const SizedBox(width: 8),
                       const Expanded(
                         child: Text('INVOICE',
                             style: TextStyle(
@@ -4025,6 +4028,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       style: const TextStyle(
                           fontSize: 11, color: AppColors.textGray)),
                   const SizedBox(height: 12),
+                  TsakOutputBar(
+                    onFormat: (f) => _exportMaker(format: f, invoiceMaker: m, invoiceMade: made),
+                    onShareImage: () => _shareInvoiceAsImage(m, made),
+                    onShareLink: () => showLinkShareDialog(context, _invoiceLink(m)),
+                  ),
+                  const SizedBox(height: 8),
                   Row(children: [
                     Expanded(
                       child: OutlinedButton.icon(
@@ -4506,7 +4515,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   /// 제작자별 '만든 수품 내역'을 MUJI 규칙 문서(A4 세로)로 인쇄/저장/복사한다.
   /// 결제·입금 관련 항목은 포함하지 않는다(제작 내역 중심).
-  Future<void> _exportMaker() async {
+  Future<void> _exportMaker({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+    Map<String, dynamic>? invoiceMaker,
+    List<Map<String, dynamic>>? invoiceMade,
+  }) async {
     if (_makers.isEmpty) {
       _snack('제작자 목록이 없습니다');
       return;
@@ -4595,7 +4608,28 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           '합계 <span class="g">${_won(totalAmt)}</span>',
     );
     if (isWebRuntime) {
-      openPrintableHtml(html);
+      // 규칙(#14): 형식 순서 PDF→JPG→엑셀→PPT→워드.
+      switch (format) {
+        case TsakOutputFormat.pdf:
+        case TsakOutputFormat.jpg:
+          // 브라우저 인쇄창에서 PDF 또는 이미지로 저장.
+          openPrintableHtml(html);
+          _snack(format == TsakOutputFormat.jpg
+              ? '인쇄창에서 대상=이미지로 저장하세요'
+              : '인쇄창에서 PDF로 저장하세요');
+          return;
+        case TsakOutputFormat.excel:
+          final csv = _makerCsv();
+          await Clipboard.setData(ClipboardData(text: csv));
+          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
+          return;
+        case TsakOutputFormat.ppt:
+        case TsakOutputFormat.word:
+          final text = _makerPlainText(format);
+          await Clipboard.setData(ClipboardData(text: text));
+          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
+          return;
+      }
     } else {
       // 네이티브: CSV 텍스트를 클립보드로 (엑셀 붙여넣기)
       final buf = StringBuffer();
@@ -4616,6 +4650,63 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       await Clipboard.setData(ClipboardData(text: buf.toString()));
       if (mounted) _snack('제작 내역을 복사했습니다(엑셀 붙여넣기)');
     }
+  }
+
+  /// 제작 내역 → CSV(엑셀).
+  String _makerCsv() {
+    final buf = StringBuffer();
+    buf.writeln('제작자,그룹,분류,규격,수량,단가,금액,제작일,메모');
+    for (final m in _makers) {
+      final mid = '${m['id'] ?? ''}';
+      final made =
+          _purchases.where((p) => '${p['makerId'] ?? ''}' == mid).toList();
+      for (final p in made) {
+        buf.writeln(
+          '${m['company'] ?? ''},${p['group'] ?? ''},${p['category'] ?? ''},'
+          '${p['size'] ?? ''},${p['qty'] ?? 0},${p['unitPrice'] ?? 0},'
+          '${p['amount'] ?? 0},${p['date'] ?? ''},${p['note'] ?? ''}',
+        );
+      }
+    }
+    return buf.toString();
+  }
+
+  /// 제작 내역 → PPT/워드 붙여넣기용 텍스트.
+  String _makerPlainText(TsakOutputFormat format) {
+    final buf = StringBuffer();
+    buf.writeln(format == TsakOutputFormat.ppt
+        ? '수품 제작 현황 (슬라이드용)'
+        : '수품 제작 내역서 (문서용)');
+    buf.writeln('한국범스카우트중앙회 · ${_whoName()}');
+    buf.writeln();
+    for (final m in _makers) {
+      final mid = '${m['id'] ?? ''}';
+      final made =
+          _purchases.where((p) => '${p['makerId'] ?? ''}' == mid).toList();
+      buf.writeln('■ ${m['company'] ?? m['name'] ?? ''}');
+      for (final p in made) {
+        buf.writeln(
+            '  - ${p['group'] ?? ''} ${p['category'] ?? ''} ${p['size'] ?? ''}'
+            ' / ${p['qty'] ?? 0}개 / ${_won(p['amount'])}'
+            ' / ${p['date'] ?? ''}');
+      }
+      buf.writeln();
+    }
+    return buf.toString();
+  }
+
+  /// 인보이스 공유용 웹 링크 (게시판형 URL, 로그인 권한자만 열람).
+  String _invoiceLink(Map<String, dynamic> m) {
+    final mid = Uri.encodeComponent('${m['id'] ?? m['company'] ?? ''}');
+    return '${_nas.baseUrl}/#/invoice?maker=$mid';
+  }
+
+  /// 인보이스를 이미지(PNG)로 저장 — 규칙: 스마트폰은 사진, PC는 다운로드.
+  Future<void> _shareInvoiceAsImage(
+      Map<String, dynamic> m, List<Map<String, dynamic>> made) async {
+    _snack('이미지 공유: 브라우저 인쇄창에서 이미지(PNG/JPEG)로 저장하세요.');
+    await _exportMaker(
+        format: TsakOutputFormat.jpg, invoiceMaker: m, invoiceMade: made);
   }
 
   // ==================== 6) 설정 탭 ====================
