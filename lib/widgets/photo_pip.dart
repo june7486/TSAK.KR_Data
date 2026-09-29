@@ -104,10 +104,7 @@ class _PhotoPipState extends State<_PhotoPip> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // 저장될 카드 (캡처 대상)
-            RepaintBoundary(
-              key: _boundaryKey,
-              child: _card(),
-            ),
+            RepaintBoundary(key: _boundaryKey, child: _card()),
             const SizedBox(height: 14),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -152,12 +149,12 @@ class _PhotoPipState extends State<_PhotoPip> {
             aspectRatio: 1,
             child: _hasPhoto
                 ? (_imgBytes != null
-                    ? Image.memory(_imgBytes!, fit: BoxFit.cover)
-                    : Image.network(
-                        widget.photoPath,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _placeholder(),
-                      ))
+                      ? Image.memory(_imgBytes!, fit: BoxFit.cover)
+                      : Image.network(
+                          widget.photoPath,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _placeholder(),
+                        ))
                 : _placeholder(),
           ),
           // 하단 정보 밴드 (보라)
@@ -186,11 +183,14 @@ class _PhotoPipState extends State<_PhotoPip> {
                       Row(
                         children: [
                           if (widget.number.trim().isNotEmpty)
-                            _tag('인가번호 #${widget.number}'),
+                            _tag('인가번호 ${widget.number}'),
                           if (widget.atasNo.trim().isNotEmpty) ...[
                             const SizedBox(width: 6),
-                            _tag('ATAS #${widget.atasNo}',
-                                color: AppColors.tigerGold, dark: true),
+                            _tag(
+                              'ATAS ${widget.atasNo}',
+                              color: AppColors.tigerGold,
+                              dark: true,
+                            ),
                           ],
                         ],
                       ),
@@ -206,11 +206,13 @@ class _PhotoPipState extends State<_PhotoPip> {
                           fontSize: 19,
                         ),
                       ),
-                      if ((widget.unit.isNotEmpty) || (widget.league.isNotEmpty))
+                      if ((widget.unit.isNotEmpty) ||
+                          (widget.league.isNotEmpty))
                         Text(
-                          [widget.league, widget.unit]
-                              .where((e) => e.isNotEmpty)
-                              .join(' · '),
+                          [
+                            widget.league,
+                            widget.unit,
+                          ].where((e) => e.isNotEmpty).join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -251,10 +253,10 @@ class _PhotoPipState extends State<_PhotoPip> {
   }
 
   Widget _placeholder() => Container(
-        color: AppColors.purple.withValues(alpha: 0.15),
-        alignment: Alignment.center,
-        child: const Icon(Icons.person, color: Colors.white24, size: 120),
-      );
+    color: AppColors.purple.withValues(alpha: 0.15),
+    alignment: Alignment.center,
+    child: const Icon(Icons.person, color: Colors.white24, size: 120),
+  );
 
   Widget _btn({
     required IconData icon,
@@ -268,9 +270,7 @@ class _PhotoPipState extends State<_PhotoPip> {
         backgroundColor: bg,
         foregroundColor: fg,
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onPressed: onTap,
       icon: Icon(icon, size: 18),
@@ -282,11 +282,11 @@ class _PhotoPipState extends State<_PhotoPip> {
     setState(() => _busy = true);
     try {
       final boundary =
-          _boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+          _boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
       final ratio = MediaQuery.of(context).devicePixelRatio.clamp(2.0, 4.0);
       final image = await boundary.toImage(pixelRatio: ratio);
-      final byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw '이미지 변환 실패';
       final png = byteData.buffer.asUint8List();
       final fname =
@@ -314,19 +314,18 @@ class _PhotoPipState extends State<_PhotoPip> {
         }
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('저장 완료: $fname.png')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('저장 완료: $fname.png')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('저장 실패: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 }
-

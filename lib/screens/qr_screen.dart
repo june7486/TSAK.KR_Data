@@ -50,16 +50,15 @@ class _QrGenerateView extends StatelessWidget {
   /// 마스터/본인(개인접근)은 바로, 그 외는 로그인 확인 후 이동.
   Future<void> _openEdit(BuildContext context) async {
     final state = context.read<AppState>();
-    final isSelf = (state.isPersonal || state.isMaster) &&
+    final isSelf =
+        (state.isPersonal || state.isMaster) &&
         state.who.replaceAll(RegExp(r'[^0-9]'), '') ==
             member.number.replaceAll(RegExp(r'[^0-9]'), '');
     if (!state.isMaster && !isSelf) {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => _QrLoginDialog(
-          number: member.number,
-          name: member.name,
-        ),
+        builder: (_) =>
+            _QrLoginDialog(number: member.number, name: member.name),
       );
       if (ok != true) return;
     }
@@ -146,7 +145,7 @@ class _QrGenerateView extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '범스카우트인가번호 #${member.number}',
+                        '범스카우트인가번호 ${member.number}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -155,7 +154,7 @@ class _QrGenerateView extends StatelessWidget {
                       ),
                       if (member.atasNo.isNotEmpty)
                         Text(
-                          'ATAS #${member.atasNo}',
+                          'ATAS ${member.atasNo}',
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -189,12 +188,16 @@ class _QrGenerateView extends StatelessWidget {
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.taegeukRed.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: AppColors.taegeukRed.withValues(alpha: 0.4),
+                              color: AppColors.taegeukRed.withValues(
+                                alpha: 0.4,
+                              ),
                             ),
                           ),
                           child: const Text(
@@ -235,7 +238,9 @@ class _QrGenerateView extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.purple,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 22, vertical: 13),
+                    horizontal: 22,
+                    vertical: 13,
+                  ),
                 ),
                 onPressed: () => _openEdit(context),
                 icon: const Icon(Icons.edit_note, size: 20),
@@ -266,8 +271,9 @@ class _QrLoginDialog extends StatefulWidget {
 }
 
 class _QrLoginDialogState extends State<_QrLoginDialog> {
-  late final TextEditingController _idCtrl =
-      TextEditingController(text: widget.number);
+  late final TextEditingController _idCtrl = TextEditingController(
+    text: widget.number,
+  );
   final _pwCtrl = TextEditingController();
   bool _obscure = true;
   bool _busy = false;
@@ -382,16 +388,21 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
                 prefixIcon: const Icon(Icons.password),
                 suffixIcon: IconButton(
                   icon: Icon(
-                      _obscure ? Icons.visibility_off : Icons.visibility),
+                    _obscure ? Icons.visibility_off : Icons.visibility,
+                  ),
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
             ),
             if (_err != null) ...[
               const SizedBox(height: 8),
-              Text(_err!,
-                  style: const TextStyle(
-                      color: AppColors.taegeukRed, fontSize: 12)),
+              Text(
+                _err!,
+                style: const TextStyle(
+                  color: AppColors.taegeukRed,
+                  fontSize: 12,
+                ),
+              ),
             ],
             const SizedBox(height: 8),
             const Text(
@@ -413,7 +424,9 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Text('접속'),
         ),

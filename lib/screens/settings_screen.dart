@@ -81,13 +81,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionTitle('내 정보', Icons.badge_outlined),
             const SizedBox(height: 10),
             _kv('접근 등급', state.isGuest ? '비인가자' : '범스카우트(개인)'),
-            _kv('인가번호', state.who.isEmpty ? '-' : '#${state.who}'),
+            _kv('인가번호', state.who.isEmpty ? '-' : '${state.who}'),
             _kv('버전', state.versionText),
             const SizedBox(height: 10),
             const Text(
               '서버 주소 변경·데이터 저장·QR 공개주소·백업/복원 등 관리자 설정은\n'
               '관리자(인가 담당) 이상만 사용할 수 있습니다.',
-              style: TextStyle(fontSize: 12, color: AppColors.textGray, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textGray,
+                height: 1.5,
+              ),
             ),
           ],
         ),
@@ -198,10 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 12, color: AppColors.textGray),
             ),
             const SizedBox(height: 10),
-            _kv(
-              '설정값',
-              configured.isEmpty ? '(미설정 — 현재 주소 사용)' : configured,
-            ),
+            _kv('설정값', configured.isEmpty ? '(미설정 — 현재 주소 사용)' : configured),
             _kv('현재 QR 기준', effective.isEmpty ? '⚠ 공개 주소 없음' : effective),
             const SizedBox(height: 10),
             Row(
@@ -539,12 +540,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     FilledButton.tonalIcon(
                       style: FilledButton.styleFrom(
-                        backgroundColor:
-                            AppColors.scoutGreen.withValues(alpha: 0.14),
+                        backgroundColor: AppColors.scoutGreen.withValues(
+                          alpha: 0.14,
+                        ),
                         foregroundColor: AppColors.scoutGreen,
                         minimumSize: Size.zero,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       onPressed: () => showTransferSheet(
@@ -564,13 +568,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: const Icon(Icons.copy, size: 18),
                       onPressed: () async {
                         await Clipboard.setData(
-                          ClipboardData(text: '${state.donations[di]['account']}'),
+                          ClipboardData(
+                            text: '${state.donations[di]['account']}',
+                          ),
                         );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                                content: Text(
-                                    '${state.donations[di]['account']} 복사됨')),
+                              content: Text(
+                                '${state.donations[di]['account']} 복사됨',
+                              ),
+                            ),
                           );
                         }
                       },

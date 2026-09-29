@@ -1145,13 +1145,15 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: (v) => state.setQuery(v),
               decoration: InputDecoration(
                 hintText:
-                    '통합검색 (인가번호, 이름, 전화번호, 범위(1-100), 연맹, 지역대, 성별, 평생회원 등)',
+                    '통합검색 (인가번호, 이름, 전화번호, 범위, 연맹, 지역대 등)',
                 hintStyle: const TextStyle(
                   fontSize: 11.5,
                   color: AppColors.textGray,
                   height: 1.2,
                 ),
-                hintMaxLines: 2,
+                hintMaxLines: 1,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 prefixIcon: const Icon(Icons.search, color: AppColors.purple),
                 suffixIcon: _searchCtrl.text.isEmpty
                     ? null
@@ -1550,7 +1552,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         me.isRegular
                             ? '서포터즈'
-                            : '범스카우트 #${me.number.isEmpty ? '-' : me.number}',
+                            : '범스카우트 ${me.number.isEmpty ? '-' : me.number}',
                         style: const TextStyle(
                           color: AppColors.purple,
                           fontWeight: FontWeight.w900,
@@ -1561,7 +1563,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         me.isRegular
                             ? '일반회원 (비인가)'
-                            : 'ATAS #${me.atasNo.isEmpty ? '-' : me.atasNo}',
+                            : 'ATAS ${me.atasNo.isEmpty ? '-' : me.atasNo}',
                         style: const TextStyle(
                           color: AppColors.taegeukBlue,
                           fontWeight: FontWeight.w900,
@@ -1937,10 +1939,8 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Colors.white.withValues(alpha: 0.20),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: n > 0
-                  ? AppColors.tigerGold
-                  : Colors.white.withValues(alpha: 0.5),
-              width: n > 0 ? 1.8 : 1.2,
+              color: n > 0 ? AppColors.tigerGold : Colors.white,
+              width: n > 0 ? 2.0 : 1.5,
             ),
           ),
           child: Row(
@@ -2289,10 +2289,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: selected ? color : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Text(
@@ -2300,7 +2300,7 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(
             color: selected ? Colors.white : color,
             fontWeight: FontWeight.w600,
-            fontSize: 11.5,
+            fontSize: 10.5,
           ),
         ),
       ),

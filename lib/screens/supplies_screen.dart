@@ -926,7 +926,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
             ),
           ),
           SizedBox(width: 60, child: _qtyCell(s)),
-          const SizedBox(width: 14),
+          const SizedBox(width: 22),
           Expanded(
             flex: 3,
             child: Text(
@@ -1077,25 +1077,25 @@ class _InlineQtyState extends State<_InlineQty> {
   @override
   Widget build(BuildContext context) {
     if (!_editing) {
+      // (p.30) 별도 아이콘 없이 숫자만 — 탭하면 즉시 편집(심플).
       return InkWell(
         onTap: _start,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.taegeukBlue.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: AppColors.taegeukBlue.withValues(alpha: 0.35),
-            ),
-          ),
-          child: Center(
-            child: Text(
-              '${widget.value}',
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: AppColors.taegeukBlue,
+        borderRadius: BorderRadius.circular(6),
+        child: Tooltip(
+          message: '탭하여 수량 수정',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Center(
+              child: Text(
+                '${widget.value}',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.taegeukBlue,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppColors.taegeukBlue,
+                  decorationStyle: TextDecorationStyle.dotted,
+                ),
               ),
             ),
           ),
