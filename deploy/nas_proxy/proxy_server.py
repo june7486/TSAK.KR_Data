@@ -2478,6 +2478,9 @@ def _merch_seed_once(doc):
     """기본 수품목록을 시드한다.
     - 시드 전용 상품('seeded':true)은 버전이 바뀌면 새 기본목록으로 교체.
     - 관리자가 직접 추가한 상품('seeded' 없음)은 그대로 보존.
+    - ★중요: 시드 상품이라도 사용자가 편집한 필드(설명·가격·이미지·이름·옵션
+      등)는 이름 기준으로 보존한다. (기본 desc 갱신이 사용자 편집을 덮어써
+      설명이 초기화되던 문제 방지 — turn12 수정)
     실제로 시드/갱신했으면 True 반환.
     """
     cfg = doc.get("config", {})
@@ -2485,18 +2488,37 @@ def _merch_seed_once(doc):
     if cur == MERCH_SEED_VERSION:
         return False
     now = _now_stamp()
-    # 관리자 추가 상품만 남기고 기존 시드분 제거
-    kept = [p for p in doc.get("products", [])
+    prev_products = doc.get("products", [])
+    # 관리자 추가 상품(seeded 아님)은 무조건 보존
+    kept = [p for p in prev_products
             if isinstance(p, dict) and p.get("seeded") is not True]
+    # 기존 시드 상품 → 이름 기준 맵 (사용자 편집 보존용)
+    prev_seeded = {}
+    for p in prev_products:
+        if isinstance(p, dict) and p.get("seeded") is True:
+            nm = str(p.get("name", "") or "").strip()
+            if nm:
+                prev_seeded[nm] = p
     prods = list(kept)
     for base in DEFAULT_MERCH_PRODUCTS:
         p = dict(base)
-        p["id"] = "pr" + _secrets.token_urlsafe(5)
+        nm = str(base.get("name", "") or "").strip()
+        prev = prev_seeded.get(nm)
+        p["id"] = (str(prev.get("id")) if prev and prev.get("id")
+                   else "pr" + _secrets.token_urlsafe(5))
+        # 사용자 편집 가능 필드는 기존 값이 있으면 보존 (덮어쓰기 방지)
+        _preserve = ("desc", "name", "price", "kind", "stock", "options",
+                     "image", "active", "cost", "created", "size",
+                     "makerId", "specList", "quoteFile", "quoteFileName")
+        if prev:
+            for f in _preserve:
+                if f in prev and prev.get(f) not in (None, ""):
+                    p[f] = prev[f]
         p.setdefault("image", "")
         p.setdefault("size", "")
         p.setdefault("makerId", "")
-        p["active"] = True
-        p["created"] = now
+        p.setdefault("active", True)
+        p.setdefault("created", now)
         p["seeded"] = True
         prods.append(p)
     doc["products"] = prods
