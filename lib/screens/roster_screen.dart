@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -123,6 +124,7 @@ class _RosterScreenState extends State<RosterScreen> {
               ),
             ),
             _fmtTile(ctx, 'pdf', Icons.picture_as_pdf, 'PDF 문서', '인쇄·보관용 (권장)'),
+            _fmtTile(ctx, 'jpg', Icons.image_outlined, '이미지 (JPG)', '사진처럼 저장·공유'),
             _fmtTile(ctx, 'word', Icons.description, 'Word 문서', '.doc (편집 가능)'),
             _fmtTile(ctx, 'excel', Icons.table_chart, 'Excel 문서', '.xls (표 데이터)'),
             _fmtTile(ctx, 'txt', Icons.notes, '텍스트', '.txt (간단 목록)'),
@@ -151,7 +153,12 @@ class _RosterScreenState extends State<RosterScreen> {
       Uint8List bytes;
       String ext;
       MimeType mime;
-      if (fmt == 'pdf') {
+      if (fmt == 'jpg') {
+        // (요구 #17) 명단출력 JPG — PDF 첫 페이지를 이미지로 변환.
+        bytes = await _jpgBytes();
+        ext = 'jpg';
+        mime = MimeType.jpeg;
+      } else if (fmt == 'pdf') {
         bytes = await _pdfBytes();
         ext = 'pdf';
         mime = MimeType.pdf;
@@ -186,13 +193,16 @@ class _RosterScreenState extends State<RosterScreen> {
         ext = fmt == 'excel' ? 'xls' : 'doc';
         mime = fmt == 'excel' ? MimeType.microsoftExcel : MimeType.microsoftWord;
       }
+      // (요구 #17) 저장위치 확인 창 — 기본값 안내 후 확인 시 저장.
+      final proceed = await _confirmSaveLocation(fmt);
+      if (proceed != true) return;
       await saveBytes(
         bytes: bytes,
         name: name,
         ext: ext,
         mime: ext == 'xls'
             ? 'application/vnd.ms-excel'
-            : 'application/msword',
+            : (ext == 'doc' ? 'application/msword' : 'image/jpeg'),
         mimeType: mime,
       );
       _snack('저장했습니다 ($name.$ext)');
@@ -201,6 +211,69 @@ class _RosterScreenState extends State<RosterScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// (요구 #17) 저장 위치 확인 창.
+  ///  · 스마트폰: 사진(갤러리) 폴더  · PC: 다운로드 폴더 (기본값).
+  ///  사용자가 [위치 선택]을 누르면 OS 저장 대화상자가 열린다.
+  Future<bool?> _confirmSaveLocation(String fmt) {
+    final isImage = fmt == 'jpg';
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
+        title: const Text('저장 위치'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isImage
+                  ? '스마트폰: 사진(갤러리) 폴더\nPC: 다운로드(Downloads) 폴더'
+                  : '스마트폰·PC: 다운로드(Downloads) 폴더',
+              style: const TextStyle(fontSize: 13.5, height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '* 기본 저장 위치는 기기 기본 위치입니다. '
+              '[위치 선택]을 누르면 저장 대화상자가 열려 위치를 고를 수 있습니다.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.folder_open, size: 17),
+            label: const Text('위치 선택'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.save, size: 17),
+            label: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 명단 PDF 첫 페이지를 JPG 바이트로 변환 (요구 #17).
+  Future<Uint8List> _jpgBytes() async {
+    final pdf = await _pdfBytes();
+    final raster = await Printing.raster(pdf, dpi: 150).first;
+    final rgba = raster.pixels; // RGBA8888
+    final im = img.Image.fromBytes(
+      width: raster.width,
+      height: raster.height,
+      bytes: rgba.buffer,
+      numChannels: 4,
+    );
+    return img.encodeJpg(im, quality: 88);
   }
 
   @override

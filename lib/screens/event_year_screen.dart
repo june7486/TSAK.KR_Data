@@ -44,15 +44,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
     });
     try {
       final ev = await context.read<NasApi>().eventList2();
-      final state = context.read<AppState>();
-      // 참가자(개인/일반)는 본인이 참석한 행사만 노출
-      final visible = _canManage(state)
-          ? ev
-          : ev.where((e) => _isMyEvent(state, e)).toList();
+      // (요구 #12) 행사관리창의 행사는 모든 회원에게 노출된다.
+      //  — 개인/일반회원도 전체 행사 목록을 열람할 수 있다(관리·편집은 권한별 제한).
       setState(() {
-        _events = visible;
+        _events = ev;
         _loading = false;
-        final years = _yearsOf(visible);
+        final years = _yearsOf(ev);
         if (_year.isEmpty || !years.contains(_year)) {
           _year = years.isNotEmpty ? years.first : '${DateTime.now().year}';
         }
@@ -390,6 +387,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final year = '${e['year']}';
     final title = '${e['title']}';
     final defined = e['defined'] != false;
+    final pending = e['pendingPrivate'] == true; // 개인제안 심사중
     final attendeeLen = (e['attendees'] as List?)?.length ?? 0;
     final memberCnt = (e['memberCount'] as num?)?.toInt() ?? 0;
     final count = attendeeLen > 0 ? attendeeLen : memberCnt;
@@ -405,6 +403,11 @@ class _EventYearScreenState extends State<EventYearScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: () async {
+          // (요구 #9) 개인제안 심사중 행사 — 관리자·마스터는 승인/반려 처리.
+          if (pending && _canManage(state)) {
+            await _reviewPrivate(e);
+            return;
+          }
           if (!defined) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -462,7 +465,29 @@ class _EventYearScreenState extends State<EventYearScreen> {
                       ),
                     ),
                   ),
-                  if (!defined)
+                  if (pending)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.tigerGold.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.tigerGold.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: const Text(
+                        '관리목록누락행사-심사중',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.lifetimeGold,
+                        ),
+                      ),
+                    )
+                  else if (!defined)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,
@@ -539,7 +564,17 @@ class _EventYearScreenState extends State<EventYearScreen> {
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       onPressed: () => _renameEvent(e),
                     ),
-                  if (_canManage(state))
+                  if (_canManage(state) && pending)
+                    IconButton(
+                      tooltip: '심사중 제안행사 처리 (승인/반려)',
+                      icon: const Icon(
+                        Icons.rule,
+                        size: 18,
+                        color: AppColors.purple,
+                      ),
+                      onPressed: () => _reviewPrivate(e),
+                    ),
+                  if (_canManage(state) && !pending)
                     IconButton(
                       tooltip: defined ? '삭제 (행사 + 개인프로필)' : '삭제 (개인프로필 행사명)',
                       icon: const Icon(
@@ -778,6 +813,54 @@ class _EventYearScreenState extends State<EventYearScreen> {
     } finally {
       if (mounted) Navigator.pop(context);
     }
+    await _load();
+  }
+
+  /// (요구 #9) 개인제안 심사중 행사 — 관리자·마스터가 승인/반려.
+  Future<void> _reviewPrivate(Map<String, dynamic> e) async {
+    final id = '${e['privateId'] ?? e['id'] ?? ''}';
+    final title = '${e['title']}';
+    if (id.isEmpty) return;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('심사중 제안행사 — $title'),
+        content: Text(
+          '${e['year']}년 · ${e['period'] ?? ''} ${e['place'] ?? ''}\n'
+          '제안자: ${e['createdBy'] ?? ''}\n\n'
+          '승인하면 행사로 등록됩니다. 반려하면 삭제됩니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+                foregroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, 'reject'),
+            child: const Text('반려'),
+          ),
+          FilledButton(
+            style:
+                FilledButton.styleFrom(backgroundColor: AppColors.scoutGreen),
+            onPressed: () => Navigator.pop(ctx, 'approve'),
+            child: const Text('승인'),
+          ),
+        ],
+      ),
+    );
+    if (action == null || !mounted) return;
+    final ok =
+        await context.read<NasApi>().eventPrivateSet(id: id, action: action);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? (action == 'approve' ? '행사로 등록했습니다' : '반려했습니다')
+            : '처리에 실패했습니다'),
+      ),
+    );
     await _load();
   }
 

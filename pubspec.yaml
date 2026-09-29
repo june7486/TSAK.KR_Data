@@ -30,6 +30,8 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.4
   file_saver: ^0.2.14
+  # 이미지 인코딩 (명단출력 JPG 생성용)
+  image: ^4.3.0
 
   # 사진 선택/촬영
   image_picker: ^1.1.2

@@ -37,6 +37,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Set<String> _knownEvents = <String>{};
   bool _knownLoaded = false;
 
+  /// 행사관리 목록 원본(연도별 선택·복수선택용). defined 행사만 담는다.
+  List<Map<String, dynamic>> _knownEventList = [];
+
   /// 마스터 전용 "현재 비밀번호" 조회 future 캐시 (리빌드 시 재조회 방지).
   Future<Map<String, dynamic>?>? _pwFuture;
   String? _pwFutureKey;
@@ -85,14 +88,24 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       final api = context.read<NasApi>();
       final ev = await api.eventList2(media: false);
       final names = <String>{};
+      final list = <Map<String, dynamic>>[];
       for (final e in ev) {
         if (e['defined'] == false) continue;
         final t = '${e['title'] ?? ''}'.trim();
-        if (t.isNotEmpty) names.add(t);
+        if (t.isNotEmpty) {
+          names.add(t);
+          list.add({
+            'title': t,
+            'year': '${e['year'] ?? ''}',
+            'period': '${e['period'] ?? ''}',
+            'place': '${e['place'] ?? ''}',
+          });
+        }
       }
       if (mounted) {
         setState(() {
           _knownEvents = names;
+          _knownEventList = list;
           _knownLoaded = true;
         });
       }
@@ -151,14 +164,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 _quickActions(m),
                 _approvalBanner(m),
-                _depositSection(m),
-                _feeTracker(m),
-                // 등록요청 — 평생회원/연회비 납부/자격 지정 (본인 요청 → 관리자·마스터 승인)
+                // (요구 #4) 편집 화면 최상단: 평생회원 여부 → 연간회비 납부현황
+                //  · 관리자·마스터에게만 노출된다.
+                if (context.watch<AppState>().isApp ||
+                    context.watch<AppState>().isMaster) ...[
+                  _lifetimeSection(m),
+                  _feeTracker(m),
+                ],
+                // (요구 #5) 순서: 연간회비 납부 이력 → 등록요청 → 자격
+                //  등록요청·자격은 MemberRegistrationRequestSection 내부 순서를 따른다.
                 MemberRegistrationRequestSection(
                   member: m,
                   isSelf: context.watch<AppState>().isSelfNumber(m.number),
                 ),
                 _eventSection(m),
+                _depositSection(m),
                 MerchActivitySection(
                   ident: m.number.isNotEmpty ? m.number : m.phone,
                   memberName: m.name,
@@ -673,12 +693,102 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return '${neg ? '-' : ''}$b';
   }
 
+  /// (요구 #4) 평생회원 여부 — 편집 화면 최상단. 관리자·마스터만 노출.
+  ///  마스터는 여기서 평생회원 지정/해제가 가능하다.
+  Widget _lifetimeSection(Member m) {
+    final state = context.watch<AppState>();
+    final canMaster = state.isMaster;
+    return _section(
+      title: '평생회원 여부',
+      icon: Icons.workspace_premium,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: m.lifetimeMember
+                  ? const LinearGradient(
+                      colors: [AppColors.tigerGold, Color(0xFFE09F00)],
+                    )
+                  : null,
+              color: m.lifetimeMember ? null : Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  m.lifetimeMember ? Icons.star : Icons.star_border,
+                  color: m.lifetimeMember ? Colors.white : Colors.grey.shade600,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  m.lifetimeMember
+                      ? (m.lifetimeSince.isNotEmpty
+                          ? '평생회원 (${m.lifetimeSince})'
+                          : '평생회원')
+                      : '평생회원 미등록',
+                  style: TextStyle(
+                    color: m.lifetimeMember
+                        ? Colors.white
+                        : Colors.grey.shade700,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (canMaster)
+            Row(
+              children: [
+                Switch(
+                  value: m.lifetimeMember,
+                  activeThumbColor: AppColors.tigerGold,
+                  onChanged: (v) => context.read<AppState>().save(
+                    m.copyWith(
+                      lifetimeMember: v,
+                      lifetimeSince: v && m.lifetimeSince.isEmpty
+                          ? DateTime.now()
+                              .toIso8601String()
+                              .substring(0, 10)
+                          : m.lifetimeSince,
+                    ),
+                  ),
+                ),
+                const Text(
+                  '평생회원 지정 (마스터)',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 15, color: AppColors.textGray),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '평생회원 지정은 마스터만 가능합니다. '
+                    '개인 프로필의 “등록요청”으로 요청하세요.',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _feeTracker(Member m) {
     final state = context.watch<AppState>();
     // 납부 연도 변경은 관리자·마스터 전용, 평생회원 지정은 마스터 전용이다.
     //  (일반 회원은 '등록요청'으로 요청 → 관리자·마스터 승인)
     final canAdmin = state.isApp || state.isMaster;
-    final canMaster = state.isMaster;
     final years = <String>{
       '2024',
       '2025',
@@ -692,33 +802,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (m.lifetimeMember)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.tigerGold, Color(0xFFE09F00)],
-                ),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.star, color: Colors.white, size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    m.lifetimeSince.isNotEmpty
-                        ? '평생회원 (${m.lifetimeSince})'
-                        : '평생회원',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -763,46 +846,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               );
             }).toList(),
           ),
-          const SizedBox(height: 10),
-          if (canMaster)
-            Row(
-              children: [
-                Switch(
-                  value: m.lifetimeMember,
-                  activeThumbColor: AppColors.tigerGold,
-                  onChanged: (v) => context.read<AppState>().save(
-                    m.copyWith(
-                      lifetimeMember: v,
-                      lifetimeSince: v && m.lifetimeSince.isEmpty
-                          ? DateTime.now()
-                              .toIso8601String()
-                              .substring(0, 10)
-                          : m.lifetimeSince,
-                    ),
-                  ),
-                ),
-                const Text(
-                  '평생회원 지정 (마스터)',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            )
-          else
-            Row(
-              children: [
-                const Icon(Icons.info_outline,
-                    size: 15, color: AppColors.textGray),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '평생회원 지정은 마스터만 가능합니다. '
-                    '개인 프로필의 “등록요청”으로 요청하세요.',
-                    style: TextStyle(
-                        fontSize: 11.5, color: AppColors.textGray),
-                  ),
-                ),
-              ],
-            ),
+          const SizedBox(height: 8),
           Text(
             canAdmin
                 ? '* 연도를 눌러 납부 여부를 변경할 수 있습니다.'
@@ -870,11 +914,61 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         return b.compareTo(a);
       });
     final attendedCount = events.length;
+    // 본인이 제안했으나 아직 승인 전(심사중)인 행사 — '관리목록누락행사-심사중'
+    final pending = m.pendingEventNames
+        .where((e) => e.trim().isNotEmpty && !events.contains(e))
+        .toList();
     return _section(
-      title: '행사참가',
+      title: '행사참가 이력',
       icon: Icons.event,
-      child: events.isEmpty
-          ? Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (pending.isNotEmpty) ...[
+            for (final p in pending)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.hourglass_top,
+                        size: 15, color: AppColors.tigerGold),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        p,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.tigerGold.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.tigerGold.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: const Text(
+                        '관리목록누락행사-심사중',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.lifetimeGold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 4),
+          ],
+          if (events.isEmpty && pending.isEmpty)
+            Row(
               children: [
                 Flexible(
                   child: Text(
@@ -890,7 +984,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
               ],
             )
-          : Column(
+          else
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -1006,6 +1101,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
               ],
             ),
+        ],
+      ),
     );
   }
 
@@ -1041,69 +1138,257 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (mounted) setState(() {});
   }
 
+  /// (요구 #8·#10) 행사 추가 — '행사관리'의 행사만들기와 동일한 형식.
+  ///  · 연도를 선택하면 해당 연도 행사리스트 중에서 고를 수 있고 복수선택도 가능.
+  ///  · 목록에 없는 새 행사는 직접 만들어 등록요청(관리자·마스터 승인 후 등록).
   Future<void> _addEvent(Member m) async {
-    final ctrl = TextEditingController();
-    // 행사관리 목록에 있는 행사를 우선 선택하도록 제안 (관리목록누락 예방)
-    final suggestions = _knownEvents.toList()..sort();
-    final name = await showDialog<String>(
+    final state = context.read<AppState>();
+    final isAdmin = state.isApp || state.isMaster;
+    // 연도 집합 (행사관리 목록 기준 + 올해)
+    final years = <String>{
+      ..._knownEventList.map((e) => '${e['year'] ?? ''}'.trim()),
+      '${DateTime.now().year}',
+    }.where((y) => y.isNotEmpty).toList()
+      ..sort((a, b) => b.compareTo(a));
+    String year = years.isNotEmpty ? years.first : '${DateTime.now().year}';
+    final selected = <String>{}; // 복수선택
+    final titleCtrl = TextEditingController();
+    final periodCtrl = TextEditingController();
+    final placeCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    bool addNew = false;
+
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('행사 추가'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (suggestions.isNotEmpty) ...[
-              const Text(
-                '행사관리 목록에서 선택',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          final inYear = _knownEventList
+              .where((e) => '${e['year']}'.trim() == year)
+              .toList()
+            ..sort((a, b) => '${a['title']}'.compareTo('${b['title']}'));
+          return AlertDialog(
+            title: const Text('행사 추가'),
+            content: SizedBox(
+              width: 400,
+              height: 460,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final s in suggestions)
-                    ActionChip(
-                      label: Text(s, style: const TextStyle(fontSize: 12)),
-                      onPressed: () => Navigator.pop(ctx, s),
+                  // 연도 선택 (요구 #10)
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today,
+                          size: 16, color: AppColors.purple),
+                      const SizedBox(width: 6),
+                      const Text('연도 선택',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: year,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding:
+                                EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          items: years
+                              .map((y) => DropdownMenuItem(
+                                  value: y, child: Text('$y년')))
+                              .toList(),
+                          onChanged: (v) => setD(() {
+                            year = v ?? year;
+                            selected.clear();
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('해당 연도 행사 — 복수선택 가능',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: inYear.isEmpty
+                        ? const Center(
+                            child: Text('이 연도에 등록된 행사가 없습니다',
+                                style: TextStyle(
+                                    color: AppColors.textGray, fontSize: 12.5)),
+                          )
+                        : ListView.builder(
+                            itemCount: inYear.length,
+                            itemBuilder: (_, i) {
+                              final e = inYear[i];
+                              final t = '${e['title']}';
+                              final chk = selected.contains(t);
+                              return CheckboxListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                value: chk,
+                                activeColor: AppColors.purple,
+                                title: Text(t,
+                                    style:
+                                        const TextStyle(fontSize: 13.5)),
+                                subtitle: [
+                                      if ('${e['period']}'.trim().isNotEmpty)
+                                        '${e['period']}',
+                                      if ('${e['place']}'.trim().isNotEmpty)
+                                        '${e['place']}',
+                                    ].join(' · ').isEmpty
+                                    ? null
+                                    : Text(
+                                        [
+                                          if ('${e['period']}'
+                                              .trim()
+                                              .isNotEmpty)
+                                            '${e['period']}',
+                                          if ('${e['place']}'
+                                              .trim()
+                                              .isNotEmpty)
+                                            '${e['place']}',
+                                        ].join(' · '),
+                                        style: const TextStyle(fontSize: 11)),
+                                onChanged: (v) => setD(() {
+                                  if (v == true) {
+                                    selected.add(t);
+                                  } else {
+                                    selected.remove(t);
+                                  }
+                                }),
+                              );
+                            },
+                          ),
+                  ),
+                  // 새 행사 직접 만들기 (요구 #8) — 관리자/마스터가 아니면 승인 요청.
+                  const Divider(height: 18),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: addNew,
+                        onChanged: (v) => setD(() => addNew = v == true),
+                      ),
+                      Expanded(
+                        child: Text(
+                          isAdmin
+                              ? '새 행사 직접 만들기 (즉시 등록)'
+                              : '새 행사 직접 만들기 (관리자 승인 후 등록)',
+                          style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (addNew) ...[
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(
+                          labelText: '행사명 *', isDense: true),
                     ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: periodCtrl,
+                      decoration: const InputDecoration(
+                          labelText: '행사기간 (예: 2026.03.14~15)',
+                          isDense: true),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: placeCtrl,
+                      decoration: const InputDecoration(
+                          labelText: '장소', isDense: true),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                          labelText: '행사 소개/개요', isDense: true),
+                    ),
+                  ],
                 ],
               ),
-              const SizedBox(height: 12),
-              const Text(
-                '또는 새 이름 직접 입력',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-            ],
-            TextField(
-              controller: ctrl,
-              autofocus: suggestions.isEmpty,
-              decoration: const InputDecoration(
-                hintText: '예: 2026 정기총회 / 하계캠프',
-              ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('추가'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(addNew ? '등록' : '추가 (${selected.length})'),
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (name != null && name.isNotEmpty && mounted) {
-      final map = Map<String, bool>.from(m.eventAttend);
-      map[name] = true;
-      await context.read<AppState>().save(m.copyWith(eventAttend: map));
+    if (confirmed != true || !mounted) return;
+
+    // ── 새 행사 직접 만들기 ──
+    if (addNew) {
+      final title = titleCtrl.text.trim();
+      if (title.isEmpty) {
+        _snack('행사명을 입력하세요');
+        return;
+      }
+      if (isAdmin) {
+        // 관리자·마스터는 즉시 행사로 등록 (행사관리 '행사만들기'와 동일).
+        try {
+          await context.read<NasApi>().eventCreate(
+                year: year,
+                title: title,
+                period: periodCtrl.text.trim(),
+                place: placeCtrl.text.trim(),
+                desc: descCtrl.text.trim(),
+                by: state.who.isNotEmpty
+                    ? state.who
+                    : (state.isMaster ? '마스터' : '관리자'),
+              );
+          await _loadKnownEvents();
+          _snack('행사를 만들고 참가 이력에 추가했습니다');
+        } catch (e) {
+          _snack('행사 생성 실패: $e');
+          return;
+        }
+        final map = Map<String, bool>.from(m.eventAttend);
+        map[title] = true;
+        await context.read<AppState>().save(m.copyWith(eventAttend: map));
+      } else {
+        // 개인은 제안 → 관리자·마스터 승인 후 등록(심사중으로 표시).
+        try {
+          await context.read<NasApi>().eventPrivateCreate(
+                year: year,
+                title: title,
+                period: periodCtrl.text.trim(),
+                place: placeCtrl.text.trim(),
+                desc: descCtrl.text.trim(),
+              );
+          state.refresh();
+          _snack('‘$title’ 행사를 등록요청했습니다 (관리자 승인 대기)');
+        } catch (e) {
+          _snack('행사 등록요청 실패: $e');
+        }
+      }
       if (mounted) setState(() {});
+      return;
     }
+
+    // ── 기존 행사 복수 추가 ──
+    if (selected.isEmpty) {
+      _snack('추가할 행사를 선택하세요');
+      return;
+    }
+    final map = Map<String, bool>.from(m.eventAttend);
+    for (final s in selected) {
+      map[s] = true;
+    }
+    await context.read<AppState>().save(m.copyWith(eventAttend: map));
+    _snack('${selected.length}건의 행사를 추가했습니다');
+    if (mounted) setState(() {});
   }
 
   /// 미승인(승인 대기/보류) 일반회원 안내 배너. 관리자·마스터는 즉시 처리 가능.

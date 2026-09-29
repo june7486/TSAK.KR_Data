@@ -16,6 +16,7 @@ import '../widgets/donation_accounts.dart';
 import '../widgets/hscroll_menu.dart';
 import 'roster_screen.dart';
 import 'event_review_screen.dart';
+import 'member_detail_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
 ///
@@ -41,6 +42,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Map<String, dynamic> _event = {};
   bool _loading = true;
   TabController? _tab;
+
+  /// (요구 #14) 행사 스텝(STAFF) 여부 — 지정자는 해당 행사 전체 게시판이 노출된다.
+  bool _isStaff = false;
+  List<Map<String, dynamic>> _staff = [];
+
+  /// (요구 #14) 스텝 포함 전체 게시판 노출 여부.
+  bool get _fullView => widget.canManage || _isStaff;
 
   List<Map<String, dynamic>> _plan = [];
   List<Map<String, dynamic>> _media = [];
@@ -113,12 +121,32 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             .toList();
       }
       if (!mounted) return;
+      // (요구 #14) 스텝 여부 판정 — 지정자는 전체 게시판 노출.
+      final s = context.read<AppState>();
+      final staffList = ((e['staff'] as List?) ?? [])
+          .map((x) => (x as Map).cast<String, dynamic>())
+          .toList();
+      final myIdent = s.who.replaceAll(RegExp(r'[^0-9]'), '');
+      bool isStaff = false;
+      if (myIdent.isNotEmpty) {
+        for (final a in staffList) {
+          final id = '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
+              .replaceAll(RegExp(r'[^0-9]'), '');
+          if (id.isNotEmpty && id == myIdent) {
+            isStaff = true;
+            break;
+          }
+        }
+      }
+      final fullView = widget.canManage || isStaff;
       setState(() {
         _event = e;
         _plan = plan;
         _media = media;
         _access = access;
         _attendees = atts;
+        _isStaff = isStaff;
+        _staff = staffList;
         _fees = fees;
         _expenses = exps;
         _customTabs = ((e['customTabs'] as List?) ?? [])
@@ -127,7 +155,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _loading = false;
         // 기본 탭(고정) + 사용자 정의 '메뉴추가' 탭(PDF page9 최종 결정).
         final customCount = _customTabs.length;
-        final len = (widget.canManage ? 5 : 1) + (widget.canManage ? customCount : 0);
+        final len = (fullView ? 5 : 1) + (fullView ? customCount : 0);
         // ⚠️ 버그 수정: _load() 마다 TabController 를 새로 만들면 index 가 0
         // (참가자 탭)으로 되돌아가, 사진+동영상 하위폴더에 진입해도 다시
         // 사진 탭으로 돌아가 버렸다. 현재 탭 인덱스를 보존한다.
@@ -140,7 +168,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             initialIndex: prevIndex.clamp(0, len - 1),
           );
         }
-        if (!widget.canManage) _tab!.index = 0;
+        if (!fullView) _tab!.index = 0;
       });
     } catch (err) {
       if (!mounted) return;
@@ -160,7 +188,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   @override
   Widget build(BuildContext context) {
     final baseTabs = const ['참가자', '사진+동영상', '기획서', '참가비·후원금', '행사비지출'];
-    final tabs = widget.canManage
+    final tabs = _fullView
         ? <String>[...baseTabs, ..._customTabs.map((e) => '${e['name'] ?? ''}')]
         : const <String>['사진+동영상'];
     return Scaffold(
@@ -227,6 +255,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   case 'qr':
                     _showEventQr();
                     break;
+                  case 'staff':
+                    _manageStaff();
+                    break;
                   case 'addmenu':
                     _addCustomTab();
                     break;
@@ -236,6 +267,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 PopupMenuItem(value: 'qr', child: Text('행사 QR 코드 (참가 등록)')),
                 PopupMenuItem(value: 'zip', child: Text('사진 전체 ZIP 다운로드')),
                 PopupMenuItem(value: 'request', child: Text('전체 참가자 사진 업로드 요청')),
+                PopupMenuItem(value: 'staff', child: Text('행사 스텝(STAFF) 등록')),
                 PopupMenuItem(value: 'addmenu', child: Text('메뉴 추가 (사용자 정의 탭)')),
               ],
             ),
@@ -246,7 +278,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           : Column(
               children: [
                 // 참가자(개인 접근): 참가비·후원 납부 계좌 3개 + 송금 버튼
-                if (!widget.canManage)
+                if (!_fullView)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
                     child: DonationAccounts(
@@ -257,7 +289,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 Expanded(
                   child: TabBarView(
                     controller: _tab,
-                    children: widget.canManage
+                    children: _fullView
                         ? [
                             _attendeeTab(),
                             _mediaTab(),
@@ -770,31 +802,41 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   // ============================ 참석자 ============================
   Widget _attendeeTab() {    return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.purple,
+        // (요구 #13) 참가자 등록은 관리자·마스터만 가능하다.
+        if (widget.canManage)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.purple,
+                    ),
+                    onPressed: _searchAndAddAttendee,
+                    icon: const Icon(Icons.search),
+                    label: const Text('인가자 검색'),
                   ),
-                  onPressed: _searchAndAddAttendee,
-                  icon: const Icon(Icons.search),
-                  label: const Text('인가자 검색'),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _manualAddAttendee,
-                  icon: const Icon(Icons.edit_note),
-                  label: const Text('수동 입력'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _manualAddAttendee,
+                    icon: const Icon(Icons.edit_note),
+                    label: const Text('수동 입력'),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        if (_isStaff && !widget.canManage)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: Text(
+              '행사 스텝으로 등록되어 참가자 명단을 열람합니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
@@ -872,68 +914,83 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         .replaceAll(RegExp(r'[^0-9]'), '');
     final visited = ident.isNotEmpty && _access.containsKey(ident);
     final roles = (a['roles'] as List?) ?? [];
+    // (요구 #15) STAFF 여부 — 인가번호 옆 STAFF 단추.
+    final isStaff = _staff.any((s) =>
+        '${s['number'] ?? s['ident'] ?? s['phone'] ?? ''}'
+            .replaceAll(RegExp(r'[^0-9]'), '') ==
+        ident && ident.isNotEmpty);
+    final canManage = widget.canManage;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      child: ListTile(
-        leading: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 22,
-              height: 22,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: visited
-                    ? AppColors.scoutGreen
-                    : Colors.transparent,
-                border: Border.all(
+      child: InkWell(
+        // (요구 #16) 참가자 명단 클릭 → 해당 회원 관리페이지(관리자·마스터만).
+        onTap: canManage ? () => _openMemberPage(a) : null,
+        child: ListTile(
+          leading: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
                   color: visited
                       ? AppColors.scoutGreen
-                      : Colors.grey.shade300,
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: visited
+                        ? AppColors.scoutGreen
+                        : Colors.grey.shade300,
+                  ),
+                  borderRadius: BorderRadius.circular(5),
                 ),
-                borderRadius: BorderRadius.circular(5),
+                child: visited
+                    ? const Text(
+                        'V',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      )
+                    : null,
               ),
-              child: visited
-                  ? const Text(
-                      'V',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '접속',
-              style: TextStyle(
-                fontSize: 9,
-                color: visited
-                    ? AppColors.scoutGreen
-                    : AppColors.textGray,
-              ),
-            ),
-          ],
-        ),
-        title: Row(
-          children: [
-            Text(
-              '${a['name'] ?? ''}',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            if (ident.isNotEmpty) ...[
-              const SizedBox(width: 6),
+              const SizedBox(height: 2),
               Text(
-                '#$ident',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textGray,
+                '접속',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: visited
+                      ? AppColors.scoutGreen
+                      : AppColors.textGray,
                 ),
               ),
             ],
-          ],
-        ),
+          ),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  '${a['name'] ?? ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (ident.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '#$ident',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
+              // (요구 #15) 인가번호 옆 STAFF 단추. 관리자·마스터가 토글.
+              const SizedBox(width: 6),
+              _staffButton(a, ident, isStaff),
+            ],
+          ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -973,22 +1030,238 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ),
           ],
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) async {
-            if (v == 'edit') {
-              await _manualAddAttendee(editIndex: i);
-            } else if (v == 'del') {
-              setState(() => _attendees.removeAt(i));
-              await _saveAttendees();
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('수정')),
-            PopupMenuItem(value: 'del', child: Text('삭제')),
-          ],
+        trailing: widget.canManage
+            ? PopupMenuButton<String>(
+                onSelected: (v) async {
+                  if (v == 'edit') {
+                    await _manualAddAttendee(editIndex: i);
+                  } else if (v == 'del') {
+                    setState(() => _attendees.removeAt(i));
+                    await _saveAttendees();
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('수정')),
+                  PopupMenuItem(value: 'del', child: Text('삭제')),
+                ],
+              )
+            : const Icon(Icons.chevron_right, color: AppColors.textGray),
         ),
       ),
     );
+  }
+
+  /// (요구 #15) 인가번호 옆 STAFF 단추 — 관리자·마스터만 토글 가능.
+  Widget _staffButton(Map<String, dynamic> a, String ident, bool isStaff) {
+    final enabled = widget.canManage && ident.isNotEmpty;
+    return GestureDetector(
+      onTap: enabled ? () => _toggleStaff(a, ident, isStaff) : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: isStaff
+              ? AppColors.tigerGold
+              : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isStaff
+                ? AppColors.lifetimeGold
+                : Colors.grey.shade400,
+          ),
+        ),
+        child: Text(
+          'STAFF',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: isStaff ? Colors.white : Colors.grey.shade600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleStaff(
+      Map<String, dynamic> a, String ident, bool isStaff) async {
+    if (!widget.canManage) return;
+    try {
+      final list = isStaff
+          ? await _nas.eventStaffRemove(
+              year: widget.year, title: widget.title, number: ident)
+          : await _nas.eventStaffAdd(
+              year: widget.year, title: widget.title, number: ident);
+      if (!mounted) return;
+      setState(() => _staff = list);
+      _snack(isStaff ? '스텝에서 해제했습니다' : '행사 스텝(STAFF)으로 등록했습니다');
+    } catch (e) {
+      _snack('처리 실패: $e');
+    }
+  }
+
+  /// (요구 #16) 참가자 명단 클릭 → 해당 회원 관리페이지(관리자·마스터만).
+  Future<void> _openMemberPage(Map<String, dynamic> a) async {
+    if (!widget.canManage) return;
+    final s = context.read<AppState>();
+    final ident = '${a['number'] ?? a['phone'] ?? a['loginId'] ?? ''}'
+        .replaceAll(RegExp(r'[^0-9]'), '');
+    final m = ident.isEmpty ? null : s.byNumber(ident);
+    if (m == null) {
+      _snack('등록된 회원 정보가 없습니다 (비인가/미등록)');
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
+    );
+    if (mounted) _load();
+  }
+
+  /// (요구 #14) 행사 스텝(STAFF) 등록 — 관리자·마스터만. 인가자 검색 후 스텝 등록.
+  Future<void> _manageStaff() async {
+    if (!widget.canManage) return;
+    final ctrl = TextEditingController();
+    List<Map<String, dynamic>> results = [];
+    bool loading = false;
+    String errMsg = '';
+    List<Map<String, dynamic>> staff = List.from(_staff);
+
+    Future<void> doSearch(StateSetter setD) async {
+      setD(() => loading = true);
+      try {
+        results = await _nas.eventSearchMember(ctrl.text.trim(), limit: 60);
+        errMsg = '';
+      } catch (e) {
+        errMsg = '검색 실패: $e';
+      }
+      setD(() => loading = false);
+    }
+
+    if (mounted) setState(() => _loading); // no-op 유지
+    if (mounted) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setD) {
+            doSearch(setD);
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.engineering, color: AppColors.purple),
+                  SizedBox(width: 8),
+                  Text('행사 스텝(STAFF) 등록'),
+                ],
+              ),
+              content: SizedBox(
+                width: 400,
+                height: 480,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '스텝으로 등록하면 해당 행사의 모든 게시판이 노출됩니다.',
+                      style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: ctrl,
+                      decoration: const InputDecoration(
+                        labelText: '인가번호 / 이름 / 소속',
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => doSearch(setD),
+                    ),
+                    const SizedBox(height: 6),
+                    if (staff.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final s in staff)
+                            Chip(
+                              avatar: const Icon(Icons.engineering, size: 15),
+                              label: Text(
+                                '${s['name'] ?? ''} #${s['number'] ?? s['ident'] ?? ''}',
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onDeleted: () async {
+                                final list = await _nas.eventStaffRemove(
+                                  year: widget.year,
+                                  title: widget.title,
+                                  number: '${s['number'] ?? s['ident'] ?? ''}',
+                                );
+                                setD(() => staff = List.from(list));
+                                if (mounted) setState(() => _staff = list);
+                              },
+                            ),
+                        ],
+                      ),
+                    const Divider(height: 16),
+                    if (errMsg.isNotEmpty)
+                      Text(errMsg,
+                          style: const TextStyle(
+                              color: Colors.red, fontSize: 12)),
+                    Expanded(
+                      child: loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : ListView.builder(
+                              itemCount: results.length,
+                              itemBuilder: (_, i) {
+                                final r = results[i];
+                                final num = '${r['number'] ?? ''}'
+                                    .replaceAll(RegExp(r'[^0-9]'), '');
+                                final already = staff.any((s) =>
+                                    '${s['number'] ?? s['ident'] ?? ''}'
+                                        .replaceAll(RegExp(r'[^0-9]'), '') ==
+                                    num);
+                                return ListTile(
+                                  dense: true,
+                                  leading: const Icon(Icons.person_outline),
+                                  title: Text(
+                                      '${r['name']} · #${r['number']}'),
+                                  subtitle: Text('${r['unit'] ?? ''}',
+                                      style:
+                                          const TextStyle(fontSize: 11)),
+                                  trailing: already
+                                      ? const Text('등록됨',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.scoutGreen))
+                                      : const Icon(Icons.add_circle_outline,
+                                          color: AppColors.purple),
+                                  onTap: already
+                                      ? null
+                                      : () async {
+                                          final list =
+                                              await _nas.eventStaffAdd(
+                                            year: widget.year,
+                                            title: widget.title,
+                                            number: '${r['number']}',
+                                          );
+                                          setD(() =>
+                                              staff = List.from(list));
+                                          if (mounted) {
+                                            setState(() => _staff = list);
+                                          }
+                                        },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('닫기'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (mounted) _load();
+    }
   }
 
   Future<void> _saveAttendees() async {

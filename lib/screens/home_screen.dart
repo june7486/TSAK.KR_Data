@@ -913,6 +913,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// (요구#1) 개인 로그인 하단 표시용 — 해당 아이디(본인) 계정 라벨.
+  ///  본인 1건만 노출되므로 개인정보 보호 요건을 만족한다.
+  String _selfAccountLabel(AppState state) {
+    final me = state.who.isNotEmpty
+        ? state.byNumber(state.who)
+        : (state.members.isNotEmpty ? state.members.first : null);
+    if (me == null) {
+      return state.who.isEmpty ? '본인 계정' : '내 계정 · ${state.who}';
+    }
+    final no = me.number.isEmpty ? '-' : me.number;
+    final name = me.name.isEmpty ? '(이름없음)' : me.name;
+    return '내 계정 · $name ($no)';
+  }
+
   /// 하단: 명단 크기 조절 + 초소형 버전(최종 수정 일시)
   Widget _bottomBar(BuildContext context, AppState state) {
     return Material(
@@ -1014,12 +1028,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            // 초소형 버전(최종 업데이트 일시) — 서버 동기화 상태
+            // (요구#1) 개인 로그인 시 하단에 '해당 아이디 계정만' 노출 + 초소형 버전
             Padding(
-              padding: const EdgeInsets.only(bottom: 3, right: 8),
+              padding: const EdgeInsets.only(bottom: 3, left: 8, right: 8),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (state.isSelfAccess) ...[
+                    const Icon(Icons.account_circle,
+                        size: 12, color: AppColors.purple),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        _selfAccountLabel(state),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.purple,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
                   _syncDot(state),
                   const SizedBox(width: 4),
                   Text(

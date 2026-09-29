@@ -42,10 +42,11 @@ class _MemberRegistrationRequestSectionState
   ];
 
   /// 등록요청(승인 필요) 유형 정의.
+  ///  · 평생회비 등록요청 / 연간회비 등록요청 (요구 #6: '행사참가 요청' 버튼 삭제)
+  ///  · 자격(훈련현황)은 셀프 선택 항목이지만, 필요 시 자격 지정 요청도 승인 큐로 보낼 수 있다.
   static const _types = <_ReqType>[
-    _ReqType('lifetime', '평생회원 등록', Icons.star, AppColors.lifetimeGold),
-    _ReqType('fee', '연회비 납부', Icons.card_membership, AppColors.scoutGreen),
-    _ReqType('event', '행사 참가 등록', Icons.event_available, AppColors.taegeukBlue),
+    _ReqType('lifetime', '평생회비 등록요청', Icons.star, AppColors.lifetimeGold),
+    _ReqType('fee', '연간회비 등록요청', Icons.card_membership, AppColors.scoutGreen),
   ];
 
   @override
@@ -55,9 +56,11 @@ class _MemberRegistrationRequestSectionState
   }
 
   Future<void> _load() async {
-    if (!widget.isSelf) return;
     final state = context.read<AppState>();
     if (!state.repo.isNasMode) return;
+    // 본인 또는 관리자·마스터(타인 프로필 열람)일 때 내역을 불러온다.
+    final canView = widget.isSelf || state.isApp || state.isMaster;
+    if (!canView) return;
     setState(() => _loading = true);
     final list = await state.fetchMyMemberRequests(ident: _ident);
     if (!mounted) return;
@@ -73,14 +76,21 @@ class _MemberRegistrationRequestSectionState
   @override
   Widget build(BuildContext context) {
     final m = widget.member;
+    final state = context.watch<AppState>();
     final canRequest = widget.isSelf;
+    // 내역(등록요청 이력)을 볼 수 있는 대상:
+    //  · 요구 #11: 관리자·마스터는 모든 회원의 등록요청 내역을 볼 수 있다(삭제 가능).
+    //  · 본인은 자기 내역을 볼 수 있다.
+    final canViewHistory = state.isApp || state.isMaster || widget.isSelf;
 
+    // 순서(요구 #5): 등록요청 창 → 자격(훈련현황) 페이지
     return Column(
       children: [
-        // 1) 자격(훈련현황) — 셀프 선택(즉시 반영)
+        // 1) 등록요청 — 평생회비 / 연간회비 (요구 #6: 행사참가 요청 삭제)
+        //  본인은 요청 제출 가능, 관리자·마스터는 내역 열람/삭제 가능.
+        if (canViewHistory) _requestSection(m, canSubmit: canRequest),
+        // 2) 자격(훈련현황) — 셀프 선택(즉시 반영)
         _trainingSection(m),
-        // 2) 등록요청 — 평생회원 / 연회비 / 행사 (승인 필요)
-        if (canRequest) _requestSection(m),
       ],
     );
   }
@@ -181,8 +191,10 @@ class _MemberRegistrationRequestSectionState
     );
   }
 
-  // ---------------- 2) 등록요청 (평생·연회비·행사) ----------------
-  Widget _requestSection(Member m) {
+  // ---------------- 2) 등록요청 (평생회비·연간회비) ----------------
+  Widget _requestSection(Member m, {required bool canSubmit}) {
+    final state = context.watch<AppState>();
+    final isAdmin = state.isApp || state.isMaster;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Padding(
@@ -197,7 +209,7 @@ class _MemberRegistrationRequestSectionState
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    '등록요청 (평생·연회비·행사)',
+                    '등록요청 (평생회비·연간회비)',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 15,
@@ -205,25 +217,29 @@ class _MemberRegistrationRequestSectionState
                     ),
                   ),
                 ),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.purple,
-                    visualDensity: VisualDensity.compact,
+                // 요구 #6: 본인만 요청 제출 가능(행사참가 요청 버튼은 삭제)
+                if (canSubmit)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.purple,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _openRequestSheet(),
+                    icon: const Icon(Icons.edit_document, size: 16),
+                    label: const Text('등록요청',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
                   ),
-                  onPressed: () => _openRequestSheet(),
-                  icon: const Icon(Icons.edit_document, size: 16),
-                  label: const Text('등록요청',
-                      style: TextStyle(fontWeight: FontWeight.w800)),
-                ),
               ],
             ),
             const SizedBox(height: 12),
             _statusRow(m),
             const SizedBox(height: 6),
-            const Text(
-              '* 등록요청을 제출하면 관리자·마스터가 확인 후 승인합니다. '
-              '승인되면 아래 상태에 반영됩니다.',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+            Text(
+              canSubmit
+                  ? '* 등록요청을 제출하면 관리자·마스터가 확인 후 승인합니다. '
+                    '승인 시 연간회비 납부 이력과 연동됩니다.'
+                  : '* 관리자·마스터는 아래 내역에서 요청을 확인하거나 삭제할 수 있습니다.',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
             ),
             if (_loading)
               const Padding(
@@ -236,7 +252,7 @@ class _MemberRegistrationRequestSectionState
               )
             else if (_requests.isNotEmpty) ...[
               const SizedBox(height: 10),
-              _requestHistory(),
+              _requestHistory(m, isAdmin: isAdmin),
             ],
           ],
         ),
@@ -263,12 +279,6 @@ class _MemberRegistrationRequestSectionState
           value: latestPaid == null ? '납부내역 없음' : '$latestPaid 납부',
           on: latestPaid != null,
           color: AppColors.scoutGreen,
-        ),
-        _statusChip(
-          label: '행사참가',
-          value: m.attendedEvents.isEmpty ? '참가내역 없음' : '${m.attendedEvents.length}건',
-          on: m.attendedEvents.isNotEmpty,
-          color: AppColors.taegeukBlue,
         ),
       ],
     );
@@ -313,14 +323,23 @@ class _MemberRegistrationRequestSectionState
     );
   }
 
-  Widget _requestHistory() {
+  Widget _requestHistory(Member m, {required bool isAdmin}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('내 등록요청 내역',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+        Row(
+          children: [
+            Icon(isAdmin ? Icons.history : Icons.receipt_long,
+                size: 15, color: AppColors.purple),
+            const SizedBox(width: 5),
+            Text(
+              isAdmin ? '${m.name} 님의 등록요청 내역' : '내 등록요청 내역',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
         const SizedBox(height: 6),
-        ..._requests.take(8).map((r) {
+        ..._requests.take(12).map((r) {
           final t = '${r['type'] ?? ''}';
           final label = MemberRequestLabels.label(t);
           final icon = MemberRequestLabels.icon(t);
@@ -359,6 +378,18 @@ class _MemberRegistrationRequestSectionState
                       style: TextStyle(
                           fontSize: 11, fontWeight: FontWeight.w800, color: col)),
                 ),
+                // 요구 #11: 관리자·마스터만 삭제 아이콘 노출(내역 제거).
+                if (isAdmin)
+                  IconButton(
+                    tooltip: '내역 삭제',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 30, minHeight: 30),
+                    icon: const Icon(Icons.delete_outline,
+                        size: 17, color: AppColors.taegeukRed),
+                    onPressed: () => _deleteRequest(r),
+                  ),
               ],
             ),
           );
@@ -367,21 +398,52 @@ class _MemberRegistrationRequestSectionState
     );
   }
 
+  /// 등록요청 내역 삭제(관리자·마스터) — 목록에서 제거.
+  Future<void> _deleteRequest(Map<String, dynamic> r) async {
+    final id = '${r['id'] ?? ''}';
+    if (id.isEmpty) return;
+    final label = MemberRequestLabels.label('${r['type'] ?? ''}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('등록요청 내역 삭제'),
+        content: Text('“$label” 요청 내역을 삭제할까요?\n이 작업은 되돌릴 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style:
+                FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final done = await context.read<AppState>().nas.memberRequestDelete(id);
+    if (!mounted) return;
+    if (done) {
+      setState(() => _requests.removeWhere((x) => '${x['id']}' == id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('내역을 삭제했습니다')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('삭제에 실패했습니다')),
+      );
+    }
+  }
+
   // ---------------- 등록요청 제출 시트 ----------------
   Future<void> _openRequestSheet() async {
     final m = widget.member;
     final state = context.read<AppState>();
     String type = 'lifetime';
     String year = '${DateTime.now().year}';
-    String eventName = '';
     final dateCtrl = TextEditingController(text: _today());
-
-    // 행사 목록(선택용) — 실패해도 시트는 뜬다.
-    List<String> events = [];
-    try {
-      events = await state.getAllEvents();
-    } catch (_) {}
-    if (!mounted) return;
 
     final submit = await showModalBottomSheet<bool>(
       context: context,
@@ -468,29 +530,6 @@ class _MemberRegistrationRequestSectionState
                     border: OutlineInputBorder(),
                   ),
                 ),
-              if (type == 'event')
-                events.isEmpty
-                    ? const Text(
-                        '선택할 수 있는 행사가 없습니다. 관리자에게 문의하세요.',
-                        style: TextStyle(
-                            fontSize: 12.5, color: AppColors.textGray),
-                      )
-                    : DropdownButtonFormField<String>(
-                        initialValue: eventName.isEmpty ? null : eventName,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '참가할 행사',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: events
-                            .map((e) => DropdownMenuItem(
-                                value: e,
-                                child: Text(e,
-                                    overflow: TextOverflow.ellipsis)))
-                            .toList(),
-                        onChanged: (v) =>
-                            setSheet(() => eventName = v ?? eventName),
-                      ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -499,15 +538,7 @@ class _MemberRegistrationRequestSectionState
                     backgroundColor: AppColors.purple,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
-                  onPressed: () {
-                    if (type == 'event' && eventName.isEmpty) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('참가할 행사를 선택하세요')),
-                      );
-                      return;
-                    }
-                    Navigator.pop(ctx, true);
-                  },
+                  onPressed: () => Navigator.pop(ctx, true),
                   icon: const Icon(Icons.send, size: 18),
                   label: const Text('등록요청 제출',
                       style: TextStyle(fontWeight: FontWeight.w800)),
@@ -524,7 +555,6 @@ class _MemberRegistrationRequestSectionState
       type: type,
       year: type == 'fee' ? year : '',
       date: type == 'lifetime' ? dateCtrl.text.trim() : '',
-      event: type == 'event' ? eventName : '',
       note: '',
     );
     if (!mounted) return;

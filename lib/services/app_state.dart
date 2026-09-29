@@ -835,7 +835,7 @@ class AppState extends ChangeNotifier {
     final id = ident.trim().isNotEmpty ? ident : who;
     if (id.trim().isEmpty) return [];
     try {
-      return await nas.myMemberRequests();
+      return await nas.myMemberRequests(ident: id);
     } catch (_) {
       return [];
     }

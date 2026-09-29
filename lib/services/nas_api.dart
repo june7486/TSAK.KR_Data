@@ -274,9 +274,13 @@ class NasApi {
 
   /// 본인(로그인 세션)의 등록요청 이력 조회 — 개인 프로필의 '등록요청'
   /// 상태 표시용. 로그인 회원이면 누구나 조회 가능하다.
-  Future<List<Map<String, dynamic>>> myMemberRequests() async {
+  /// [ident] 지정 시(관리자·마스터만) 해당 회원의 이력을 조회한다.
+  Future<List<Map<String, dynamic>>> myMemberRequests({String ident = ''}) async {
+    final q = ident.trim().isEmpty
+        ? ''
+        : '?ident=${Uri.encodeComponent(ident.trim())}';
     final r = await http
-        .get(_uri('/api/member/request/mine'), headers: _authHeaders)
+        .get(_uri('/api/member/request/mine$q'), headers: _authHeaders)
         .timeout(const Duration(seconds: 20));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return ((j['items'] as List?) ?? [])
