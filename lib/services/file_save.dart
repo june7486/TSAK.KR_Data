@@ -18,8 +18,16 @@ Future<void> saveBytes({
   required String ext,
   required String mime,
   MimeType? mimeType,
+  bool preferPicker = false,
 }) async {
   if (isWebRuntime) {
+    // (요구: 폴더 변경 옵션) preferPicker=true 이면 저장 폴더/위치를
+    //  사용자가 직접 고르는 File System Access API 를 먼저 시도한다.
+    //  지원하지 않거나 취소하면 기본 다운로드(Blob)로 폴백한다.
+    if (preferPicker && supportsSaveFilePicker) {
+      final saved = await saveViaFilePicker(bytes, '$name.$ext', mime);
+      if (saved) return;
+    }
     downloadBytesFile(bytes, '$name.$ext', mime);
     return;
   }

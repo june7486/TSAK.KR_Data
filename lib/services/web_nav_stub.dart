@@ -37,6 +37,14 @@ void downloadTextFile(String content, String filename, String mime) {}
 /// 바이너리 파일 다운로드 — 네이티브에서는 no-op.
 void downloadBytesFile(Uint8List bytes, String filename, String mime) {}
 
+/// 네이티브는 OS 저장 대화상자를 file_saver 가 처리하므로 위치 선택 불필요.
+bool get supportsSaveFilePicker => false;
+
+/// 네이티브에서는 대상 아님(항상 false).
+Future<bool> saveViaFilePicker(
+        Uint8List bytes, String filename, String mime) async =>
+    false;
+
 /// 네이티브에는 자동 재로드가 없으므로 항상 허용(사실상 미사용).
 bool guardAutoReloadOnce() => true;
 

@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../services/file_save.dart';
 import '../services/roster_service.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
@@ -195,8 +196,9 @@ class _RosterScreenState extends State<RosterScreen> {
         mime = fmt == 'excel' ? MimeType.microsoftExcel : MimeType.microsoftWord;
       }
       // (요구 #17) 저장위치 확인 창 — 기본값 안내 후 확인 시 저장.
-      final proceed = await _confirmSaveLocation(fmt);
-      if (proceed != true) return;
+      //  'choose' 선택 시 저장 폴더/위치를 직접 고른다(PC Chromium).
+      final choice = await _confirmSaveLocation(fmt);
+      if (choice == null) return;
       await saveBytes(
         bytes: bytes,
         name: name,
@@ -205,6 +207,7 @@ class _RosterScreenState extends State<RosterScreen> {
             ? 'application/vnd.ms-excel'
             : (ext == 'doc' ? 'application/msword' : 'image/jpeg'),
         mimeType: mime,
+        preferPicker: choice == 'choose',
       );
       _snack('저장했습니다 ($name.$ext)');
     } catch (e) {
@@ -214,12 +217,15 @@ class _RosterScreenState extends State<RosterScreen> {
     }
   }
 
-  /// (요구 #17) 저장 위치 확인 창.
-  ///  · 스마트폰: 사진(갤러리) 폴더  · PC: 다운로드 폴더 (기본값).
-  ///  사용자가 [위치 선택]을 누르면 OS 저장 대화상자가 열린다.
-  Future<bool?> _confirmSaveLocation(String fmt) {
+  /// (요구 #17·저장 폴더 변경) 저장 위치 확인 창.
+  ///  반환: 'default'(기본 폴더) | 'choose'(폴더 직접 선택) | null(취소).
+  ///  · 스마트폰: OS 저장 대화상자가 위치를 고르게 한다.
+  ///  · PC(크롬·엣지): [폴더 선택] 시 저장 폴더·파일명을 직접 지정할 수 있다.
+  Future<String?> _confirmSaveLocation(String fmt) {
     final isImage = fmt == 'jpg';
-    return showDialog<bool>(
+    // PC 웹에서만 '폴더 선택' 노출 (File System Access API 지원 시).
+    final canPick = isWebRuntime && supportsSaveFilePicker;
+    return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
@@ -235,22 +241,31 @@ class _RosterScreenState extends State<RosterScreen> {
               style: const TextStyle(fontSize: 13.5, height: 1.5),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '* 기본 저장 위치는 기기 기본 위치입니다.\n'
-              '· PC: 브라우저 다운로드(Downloads) 폴더\n'
-              '· 스마트폰: [저장] 시 저장 대화상자가 열려 위치를 고를 수 있습니다.',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            Text(
+              canPick
+                  ? '* 기본값: 브라우저 다운로드(Downloads) 폴더\n'
+                      '  [폴더 선택]을 누르면 원하는 폴더·파일명을 직접 지정합니다.'
+                  : '* 기본 저장 위치는 기기 기본 위치입니다.\n'
+                      '· PC: 브라우저 다운로드(Downloads) 폴더\n'
+                      '· 스마트폰: [저장] 시 저장 대화상자가 열려 위치를 고를 수 있습니다.',
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx, null),
             child: const Text('취소'),
           ),
+          if (canPick)
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(ctx, 'choose'),
+              icon: const Icon(Icons.folder_open, size: 17),
+              label: const Text('폴더 선택'),
+            ),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(ctx, 'default'),
             icon: const Icon(Icons.save_alt, size: 17),
             // 네이티브(스마트폰)에서는 file_saver 가 OS 저장 대화상자를 띄워
             //  사용자가 위치(사진/다운로드 등)를 직접 고를 수 있다.

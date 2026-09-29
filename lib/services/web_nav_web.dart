@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 // 전역 document / location / 브라우저 캐시 API.
@@ -149,6 +150,65 @@ void downloadBytesFile(Uint8List bytes, String filename, String mime) {
       } catch (_) {}
     }).toJS, 4000);
   } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────────
+// File System Access API — 저장 폴더/위치를 사용자가 직접 선택.
+//  (Chromium 계열 브라우저: 크롬·엣지·웨일 등)
+//  지원하지 않는 브라우저(사파리/파폭)와 사용자 취소 시 null 을 반환하여
+//  호출부가 기존 기본 다운로드(Blob) 방식으로 폴백하게 한다.
+// ─────────────────────────────────────────────────────────────
+
+@JS('showSaveFilePicker')
+external JSPromise<JSObject> _showSaveFilePicker(JSObject options);
+
+/// 이 브라우저가 '저장 위치 선택'을 지원하는지 (함수 존재 여부).
+bool get supportsSaveFilePicker {
+  try {
+    final v = globalContext.getProperty('showSaveFilePicker'.toJS);
+    return v.isA<JSFunction>();
+  } catch (_) {
+    return false;
+  }
+}
+
+extension type _FileHandle(JSObject _) implements JSObject {
+  external JSPromise<_Writable> createWritable();
+}
+
+extension type _Writable(JSObject _) implements JSObject {
+  external JSPromise<JSAny?> write(JSAny data);
+  external JSPromise<JSAny?> close();
+}
+
+/// [showSaveFilePicker] 로 저장 위치를 **사용자가 직접 고르게** 한 뒤 저장한다.
+///
+/// 반환: true=저장됨, false=취소/미지원(호출부는 기본 다운로드로 폴백).
+Future<bool> saveViaFilePicker(
+    Uint8List bytes, String filename, String mime) async {
+  try {
+    final opts = <String, Object?>{
+      'suggestedName': filename,
+      'types': [
+        <String, Object?>{
+          'description': '파일',
+          'accept': <String, List<String>>{
+            mime.isEmpty ? 'application/octet-stream' : mime: <String>[
+              filename.contains('.') ? '.${filename.split('.').last}' : ''
+            ],
+          },
+        },
+      ],
+    }.jsify()! as JSObject;
+    final handle = await _showSaveFilePicker(opts).toDart;
+    final writable = await (_FileHandle(handle)).createWritable().toDart;
+    await writable.write(bytes.toJS).toDart;
+    await writable.close().toDart;
+    return true;
+  } catch (e) {
+    // AbortError(사용자 취소) / 지원 안 함 → false (폴백)
+    return false;
+  }
 }
 
 /// 인쇄용 HTML 문서를 새 탭/창에서 열어 사용자가 인쇄 또는 PDF 저장할 수
