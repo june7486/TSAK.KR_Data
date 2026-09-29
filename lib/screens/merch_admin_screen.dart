@@ -1669,6 +1669,33 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     ),
                   ),
                 ],
+                // 원가·제작일 — 마스터 전용 표시
+                if (context.read<AppState>().isMaster &&
+                    (((p['cost'] as num?)?.toInt() ?? 0) > 0 ||
+                        '${p['madeDate'] ?? ''}'.trim().isNotEmpty)) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.factory_outlined,
+                          size: 13, color: AppColors.lifetimeGold),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          [
+                            if (((p['cost'] as num?)?.toInt() ?? 0) > 0)
+                              '원가 ${_won(p['cost'])}',
+                            if ('${p['madeDate'] ?? ''}'.trim().isNotEmpty)
+                              '제작일 ${p['madeDate']}',
+                          ].join('  ·  '),
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.lifetimeGold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 // 견적서 기반 세부항목 — 마스터/허용 관리자에게만 수신된 경우 표시
                 if (specList.isNotEmpty || quoteName.isNotEmpty) ...[
                   const SizedBox(height: 4),
@@ -1734,6 +1761,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
     String quoteFile = '${existing?['quoteFile'] ?? ''}';
     String quoteFileName = '${existing?['quoteFileName'] ?? ''}';
+    // 원가(선택)·제작일·제작자 — 마스터 전용 금액/제작 정보.
+    final cost = TextEditingController(
+        text: (existing?['cost'] ?? 0).toString() == '0'
+            ? ''
+            : '${existing?['cost']}');
+    final madeDate = TextEditingController(text: '${existing?['madeDate'] ?? ''}');
+    String makerId = '${existing?['makerId'] ?? ''}';
 
     Future<void> pickQuote(StateSetter setDlg) async {
       try {
@@ -1858,6 +1892,54 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L / 58,60)'),
                 _dlgField(size, '사이즈 안내 (자유 텍스트)'),
                 _dlgField(desc, '설명'),
+                // ── 제작 정보 (원가·제작일·제작자, 마스터 전용) ──
+                if (isMaster) ...[
+                  const Divider(height: 18),
+                  Row(
+                    children: [
+                      const Icon(Icons.factory_outlined,
+                          size: 16, color: AppColors.tigerGold),
+                      const SizedBox(width: 5),
+                      const Expanded(
+                        child: Text('제작 정보 (원가·제작일·제작자)',
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.purpleDark)),
+                      ),
+                    ],
+                  ),
+                  const Text(
+                    '원가는 선택 입력입니다. 원가·금액 정보는 마스터만 확인할 수 있습니다.',
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Expanded(
+                      child: _dlgField(cost, '원가 (원, 선택)', number: true),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _dlgField(madeDate, '제작일 (예: 2026.09.23)'),
+                    ),
+                  ]),
+                  DropdownButtonFormField<String>(
+                    initialValue: makerId.isEmpty ? '' : makerId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: '제작자', isDense: true),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('미배당')),
+                      for (final m in _makers)
+                        DropdownMenuItem(
+                          value: '${m['id']}',
+                          child: Text('${m['company'] ?? m['name'] ?? m['id']}',
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (v) => setDlg(() => makerId = v ?? ''),
+                  ),
+                ],
                 // ── 견적서 기반 세부항목 (마스터 전용 관리) ──
                 if (isMaster) ...[
                   const Divider(height: 18),
@@ -2041,6 +2123,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         size: size.text.trim(),
         image: image.trim(),
         desc: desc.text.trim(),
+        makerId: isMaster ? makerId : '${existing?['makerId'] ?? ''}',
+        cost: isMaster
+            ? (int.tryParse(cost.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+            : (existing?['cost'] as int? ?? 0),
+        madeDate: isMaster ? madeDate.text.trim() : '',
         specList: isMaster
             ? specList
                 .where((e) =>

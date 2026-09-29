@@ -127,6 +127,7 @@ class NasApi {
     String id = '',
     String? master,
     String? app,
+    bool log = false,
   }) async {
     try {
       final r = await http
@@ -138,6 +139,7 @@ class NasApi {
               'id': id,
               if (master != null) 'master': master,
               if (app != null) 'app': app,
+              if (log) 'log': true,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -1752,6 +1754,8 @@ class NasApi {
     String desc = '',
     String size = '',
     String makerId = '',
+    int cost = 0,
+    String madeDate = '',
     List<Map<String, String>> specList = const [],
     String quoteFile = '',
     String quoteFileName = '',
@@ -1773,6 +1777,8 @@ class NasApi {
             'desc': desc,
             'size': size,
             'makerId': makerId,
+            'cost': cost,
+            'madeDate': madeDate,
             'specList': specList,
             'quoteFile': quoteFile,
             'quoteFileName': quoteFileName,
@@ -1865,6 +1871,8 @@ class NasApi {
     String photo = '',
     String date = '',
     String makerId = '',
+    int cost = 0,
+    String madeDate = '',
     String whoName = '',
   }) async {
     final r = await http
@@ -1883,6 +1891,8 @@ class NasApi {
             'photo': photo,
             'date': date,
             'makerId': makerId,
+            'cost': cost,
+            'madeDate': madeDate,
             if (whoName.isNotEmpty) 'whoName': whoName,
           }),
         )

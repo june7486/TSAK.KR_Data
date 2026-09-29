@@ -5988,11 +5988,25 @@ class Handler(BaseHTTPRequestHandler):
                 spec_ok = self._auth_ok("master") or (
                     cfgd.get("quoteSpecAdminAllowed") is True)
                 prods_out = _merch_products_sorted(doc)
+                # 원가·제작일은 마스터 전용 — 비마스터 응답에서는 제거한다.
+                if not self._auth_ok("master"):
+                    prods_out = [
+                        {k: v for k, v in pr.items()
+                         if k not in ("cost",)}
+                        for pr in prods_out
+                    ]
                 if not spec_ok:
                     prods_out = [
                         {k: v for k, v in pr.items()
                          if k not in ("specList", "quoteFile", "quoteFileName")}
                         for pr in prods_out
+                    ]
+                # 물건결제 원가(cost)도 마스터 전용 — 비마스터 응답에서 제거.
+                purchases_out = _merch_purchases_sorted(doc)
+                if not self._auth_ok("master"):
+                    purchases_out = [
+                        {k: v for k, v in pc.items() if k != "cost"}
+                        for pc in purchases_out
                     ]
                 return self._json({
                     "ok": True,
@@ -6003,7 +6017,7 @@ class Handler(BaseHTTPRequestHandler):
                     "donations": doc.get("donations", []),
                     "stockLog": doc.get("stockLog", []),
                     "supplies": _merch_supplies_sorted(doc),
-                    "purchases": _merch_purchases_sorted(doc),
+                    "purchases": purchases_out,
                     "plans": _merch_plans_sorted(doc),
                     "config": doc.get("config", {}),
                     "orderOrder": doc.get("orderOrder", []),
@@ -6521,6 +6535,20 @@ class Handler(BaseHTTPRequestHandler):
                     sid = _sess_new("guest", ident)
                 else:
                     return self._json({"ok": False, "error": "tier"}, 400)
+                # [수정] 앱은 개인/마스터 로그인을 로컬에서 검증하고 세션만
+                #  grant 받는 경우가 많아 접속 로그가 남지 않았다. 실제 로그인
+                #  (=세션 복원이 아닌 최초 인증)일 때 클라이언트가 log=true 를
+                #  보내면 여기서도 로그인 이력을 기록한다.
+                if bool(d.get("log")):
+                    _ua = self.headers.get("User-Agent", "")
+                    _ip = self.client_address[0] if self.client_address else ""
+                    _role = {"master": "master", "app": "app",
+                             "personal": "personal", "guest": "일반회원"}.get(
+                        tier, tier)
+                    try:
+                        _log_access_login(tier, _role, ident, ident, _ua, _ip)
+                    except Exception as _e:
+                        print("session grant log fail", _e)
                 self._set_sid_cookie(sid)
                 return self._json({"ok": True, "sid": sid, "tier": tier})
             # ============ 전역 인증 게이트 (F01/F02) ============
@@ -7370,6 +7398,11 @@ class Handler(BaseHTTPRequestHandler):
                     "desc": str(d.get("desc", "") or "")[:400],
                     "size": str(d.get("size", "") or "")[:80],
                     "makerId": str(d.get("makerId", "") or "")[:40],
+                    # 원가(선택) · 제작일 — 마스터 전용 금액/제작 정보.
+                    "cost": int(d.get("cost", (existing or {}).get("cost", 0)) or 0),
+                    "madeDate": str(
+                        d.get("madeDate", (existing or {}).get("madeDate", ""))
+                        or "")[:40],
                     # 견적서 기반 세부항목(사양/옵션) — 마스터 전용 관리, 관리자 노출은
                     #  설정(quoteSpecAdminAllowed)에 따른다. [{label, value, note}]
                     "specList": _norm_spec_list(
@@ -7452,6 +7485,8 @@ class Handler(BaseHTTPRequestHandler):
                         "photo": str(d.get("photo", "") or "")[:300],
                         "date": str(d.get("date", "") or "")[:40],
                         "makerId": str(d.get("makerId", "") or "")[:40],
+                        "cost": _pint(d.get("cost", 0)),
+                        "madeDate": str(d.get("madeDate", "") or "")[:40],
                         "created": now,
                         "updatedAt": now,
                         "updatedBy": who,
@@ -7461,10 +7496,10 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     for k, ln in (("group", 40), ("category", 60), ("size", 40),
                                   ("note", 400), ("photo", 300), ("date", 40),
-                                  ("makerId", 40)):
+                                  ("makerId", 40), ("madeDate", 40)):
                         if k in d:
                             existing[k] = str(d.get(k, "") or "")[:ln]
-                    for k in ("qty", "unitPrice", "amount"):
+                    for k in ("qty", "unitPrice", "amount", "cost"):
                         if k in d:
                             existing[k] = _pint(d.get(k, 0))
                     existing["updatedAt"] = now

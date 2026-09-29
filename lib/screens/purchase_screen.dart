@@ -33,6 +33,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   String? _error;
   String _updated = '';
 
+  // 보기 모드: true=제작자별 구분 / false=전체보기(전체 항목 한번에)
+  bool _byMaker = true;
+  // 다중 선택(취합·이동) 모드
+  bool _selectMode = false;
+  final Set<String> _selected = {};
+
   NasApi get _nas => context.read<NasApi>();
 
   @override
@@ -146,6 +152,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final amount = TextEditingController(text: '${existing?['amount'] ?? ''}');
     final note = TextEditingController(text: '${existing?['note'] ?? ''}');
     final date = TextEditingController(text: '${existing?['date'] ?? ''}');
+    final cost = TextEditingController(
+        text: (existing?['cost'] ?? 0).toString() == '0'
+            ? ''
+            : '${existing?['cost']}');
+    final madeDate =
+        TextEditingController(text: '${existing?['madeDate'] ?? ''}');
     String photo = '${existing?['photo'] ?? ''}';
     String makerId = '${existing?['makerId'] ?? ''}';
 
@@ -285,6 +297,28 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   decoration: const InputDecoration(
                       labelText: '날짜 (예: 2026.09.23)', isDense: true),
                 ),
+                // 원가(선택)·제작일 — 마스터 전용 금액/제작 정보
+                if (context.read<AppState>().isMaster) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: cost,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: '원가 (원, 선택)', isDense: true),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: madeDate,
+                        decoration: const InputDecoration(
+                            labelText: '제작일', isDense: true),
+                      ),
+                    ),
+                  ]),
+                ],
               ],
             ),
           ),
@@ -323,6 +357,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       photo: photo.trim(),
       date: date.text.trim(),
       makerId: makerId,
+      cost: int.tryParse(cost.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
+      madeDate: madeDate.text.trim(),
       whoName: _whoName,
     );
     if (!mounted) return;
@@ -486,28 +522,338 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     return Column(
       children: [
         _headerBox(),
+        _viewToolbar(),
         Expanded(
           child: _items.isEmpty
               ? const Center(
                   child: Text('물건 결제 내역이 없습니다. 아래 + 버튼으로 추가하세요.',
                       style: TextStyle(color: AppColors.textGray)))
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
-                  children: [
-                    _tableHead(),
-                    for (var i = 0; i < _items.length; i++) _row(_items[i], i),
-                    const SizedBox(height: 8),
-                    Text('총 ${_items.length}개 항목 · 총 수량 $_totalQty · '
-                        '총 금액 ${_won(_total)}원',
-                        style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.purpleDark)),
-                  ],
-                ),
+              : _byMaker
+                  ? _byMakerList()
+                  : _flatList(),
         ),
       ],
     );
+  }
+
+  /// 제작자별 그룹핑 결과: [{makerId, label, items}]
+  List<Map<String, dynamic>> _groups() {
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final p in _items) {
+      final mid = '${p['makerId'] ?? ''}'.trim();
+      map.putIfAbsent(mid, () => []).add(p);
+    }
+    final keys = map.keys.toList()
+      ..sort((a, b) {
+        // 미배당은 항상 맨 아래.
+        if (a.isEmpty) return 1;
+        if (b.isEmpty) return -1;
+        return _makerLabel(a).compareTo(_makerLabel(b));
+      });
+    return [
+      for (final k in keys)
+        {'makerId': k, 'label': _makerLabel(k), 'items': map[k]!}
+    ];
+  }
+
+  Widget _byMakerList() {
+    final groups = _groups();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
+      children: [
+        for (final g in groups) _makerGroupCard(g),
+        const SizedBox(height: 8),
+        _totalLine(),
+      ],
+    );
+  }
+
+  Widget _makerGroupCard(Map<String, dynamic> g) {
+    final items = (g['items'] as List).cast<Map<String, dynamic>>();
+    final sum = items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
+    final qty = items.fold<int>(0, (a, e) => a + _wonInt(e['qty']));
+    final isNone = '${g['makerId']}'.isEmpty;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 그룹 헤더
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+            decoration: BoxDecoration(
+              color: isNone
+                  ? AppColors.textGray.withValues(alpha: 0.08)
+                  : AppColors.purple.withValues(alpha: 0.07),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: Row(
+              children: [
+                Icon(isNone ? Icons.help_outline : Icons.factory_outlined,
+                    size: 17,
+                    color: isNone ? AppColors.textGray : AppColors.purple),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text('${g['label']}',
+                      style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w900,
+                          color: isNone
+                              ? AppColors.textGray
+                              : AppColors.purpleDark)),
+                ),
+                Text('${items.length}종 · ${_won(sum)}원',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textGray)),
+              ],
+            ),
+          ),
+          // 항목 목록
+          for (var i = 0; i < items.length; i++)
+            _row(items[i], i, allowDrag: false),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+            child: Text('소계  수량 $qty · 금액 ${_won(sum)}원',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.taegeukBlue)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _flatList() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
+      children: [
+        _tableHead(),
+        for (var i = 0; i < _items.length; i++) _row(_items[i], i),
+        const SizedBox(height: 8),
+        _totalLine(),
+      ],
+    );
+  }
+
+  Widget _totalLine() => Text(
+      '총 ${_items.length}개 항목 · 총 수량 $_totalQty · 총 금액 ${_won(_total)}원',
+      style: const TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w700,
+          color: AppColors.purpleDark));
+
+  /// 보기 모드 / 전체보기 / 선택(취합·이동) 툴바.
+  Widget _viewToolbar() {
+    final canMove = context.read<AppState>().isMaster;
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                  value: true,
+                  label: Text('제작자별', style: TextStyle(fontSize: 12)),
+                  icon: Icon(Icons.factory_outlined, size: 15)),
+              ButtonSegment(
+                  value: false,
+                  label: Text('전체보기', style: TextStyle(fontSize: 12)),
+                  icon: Icon(Icons.view_list_outlined, size: 15)),
+            ],
+            selected: {_byMaker},
+            onSelectionChanged: (s) =>
+                setState(() => _byMaker = s.first),
+            style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+          ),
+          if (_selectMode) ...[
+            Text('선택 ${_selected.length}',
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700)),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact),
+              onPressed: _selected.length < 2 ? null : _mergeSelected,
+              icon: const Icon(Icons.call_merge, size: 15),
+              label: const Text('취합'),
+            ),
+            if (canMove)
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact),
+                onPressed: _selected.isEmpty ? null : _moveSelected,
+                icon: const Icon(Icons.drive_file_move_outline, size: 15),
+                label: const Text('이동'),
+              ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact),
+              onPressed: () => setState(() {
+                _selectMode = false;
+                _selected.clear();
+              }),
+              child: const Text('선택 해제', style: TextStyle(fontSize: 12)),
+            ),
+          ] else
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact),
+              onPressed: _items.isEmpty
+                  ? null
+                  : () => setState(() => _selectMode = true),
+              icon: const Icon(Icons.checklist, size: 15),
+              label: const Text('선택(취합·이동)'),
+            ),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact),
+            onPressed: () => _edit(),
+            icon: const Icon(Icons.add, size: 15),
+            label: const Text('항목 추가'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------- 취합(merge) ----------
+  Future<void> _mergeSelected() async {
+    final sel = _items
+        .where((p) => _selected.contains('${p['id']}'))
+        .toList();
+    if (sel.length < 2) return;
+    // 제작자가 다르면 취합 거부(안전).
+    final mids = sel.map((e) => '${e['makerId'] ?? ''}').toSet();
+    if (mids.length > 1) {
+      _snack('제작자가 다른 항목은 취합할 수 없습니다');
+      return;
+    }
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('취합(합치기)'),
+        content: Text('선택한 ${sel.length}개 항목을 하나로 합칠까요?\n'
+            '수량·금액은 합산되고, 대표 항목 외 나머지는 삭제됩니다.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('취합')),
+        ],
+      ),
+    );
+    if (yes != true) return;
+    final head = sel.first;
+    final sumQty = sel.fold<int>(0, (a, e) => a + _wonInt(e['qty']));
+    final sumAmt = sel.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
+    final note = sel
+        .map((e) => '${e['note'] ?? ''}'.trim())
+        .where((s) => s.isNotEmpty)
+        .join(' / ');
+    // 대표 항목을 합산값으로 갱신.
+    await _nas.merchSavePurchase(
+      id: '${head['id']}',
+      group: '${head['group'] ?? ''}',
+      category: '${head['category'] ?? ''}',
+      size: '${head['size'] ?? ''}',
+      qty: sumQty,
+      unitPrice: _wonInt(head['unitPrice']),
+      amount: sumAmt,
+      note: note.length > 400 ? note.substring(0, 400) : note,
+      photo: '${head['photo'] ?? ''}',
+      date: '${head['date'] ?? ''}',
+      makerId: '${head['makerId'] ?? ''}',
+      cost: _wonInt(head['cost']),
+      madeDate: '${head['madeDate'] ?? ''}',
+      whoName: _whoName,
+    );
+    // 나머지 삭제.
+    for (final e in sel.skip(1)) {
+      await _nas.merchDeletePurchase('${e['id']}');
+    }
+    if (!mounted) return;
+    setState(() {
+      _selectMode = false;
+      _selected.clear();
+    });
+    _snack('${sel.length}개 항목을 취합했습니다');
+    _load();
+  }
+
+  // ---------- 이동(제작자 재배당) ----------
+  Future<void> _moveSelected() async {
+    String target = '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: Text('이동 (제작자 재배당) · ${_selected.length}건'),
+          content: DropdownButtonFormField<String>(
+            initialValue: target,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: '이동할 제작자'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('미배당')),
+              for (final m in _makers)
+                DropdownMenuItem(
+                  value: '${m['id']}',
+                  child: Text('${m['company'] ?? m['name'] ?? m['id']}',
+                      overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (v) => setDlg(() => target = v ?? ''),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('이동')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final sel = _items.where((p) => _selected.contains('${p['id']}')).toList();
+    for (final p in sel) {
+      await _nas.merchSavePurchase(
+        id: '${p['id']}',
+        group: '${p['group'] ?? ''}',
+        category: '${p['category'] ?? ''}',
+        size: '${p['size'] ?? ''}',
+        qty: _wonInt(p['qty']),
+        unitPrice: _wonInt(p['unitPrice']),
+        amount: _wonInt(p['amount']),
+        note: '${p['note'] ?? ''}',
+        photo: '${p['photo'] ?? ''}',
+        date: '${p['date'] ?? ''}',
+        makerId: target,
+        whoName: _whoName,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _selectMode = false;
+      _selected.clear();
+    });
+    _snack('${sel.length}개 항목을 ${_makerLabel(target)}(으)로 이동했습니다');
+    _load();
   }
 
   Widget _headerBox() {
@@ -584,8 +930,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     );
   }
 
-  Widget _row(Map<String, dynamic> p, int i) {
+  Widget _row(Map<String, dynamic> p, int i, {bool allowDrag = true}) {
     final note = '${p['note'] ?? ''}'.trim();
+    final id = '${p['id']}';
+    final checked = _selected.contains(id);
     return Container(
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Color(0xFFEDEAE3))),
@@ -594,15 +942,31 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 30,
-            child: Text('${i + 1}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textGray)),
-          ),
+          if (_selectMode)
+            SizedBox(
+              width: 34,
+              child: Checkbox(
+                value: checked,
+                visualDensity: VisualDensity.compact,
+                onChanged: (v) => setState(() {
+                  if (v == true) {
+                    _selected.add(id);
+                  } else {
+                    _selected.remove(id);
+                  }
+                }),
+              ),
+            )
+          else
+            SizedBox(
+              width: 30,
+              child: Text('${i + 1}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textGray)),
+            ),
           SizedBox(width: 46, child: _photoThumb(p)),
           Expanded(
             flex: 4,
@@ -625,6 +989,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                       '제작 ${_makerLabel('${p['makerId'] ?? ''}')}',
                       if ('${p['date'] ?? ''}'.trim().isNotEmpty)
                         '${p['date']}',
+                      if (context.read<AppState>().isMaster &&
+                          ((p['cost'] as num?)?.toInt() ?? 0) > 0)
+                        '원가 ${_won(p['cost'])}',
+                      if (context.read<AppState>().isMaster &&
+                          '${p['madeDate'] ?? ''}'.trim().isNotEmpty)
+                        '제작일 ${p['madeDate']}',
                     ].join('  ·  '),
                     style: const TextStyle(
                         fontSize: 10.5, color: AppColors.textGray),
@@ -663,17 +1033,152 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               icon: const Icon(Icons.more_vert, size: 18),
               onSelected: (v) {
                 if (v == 'edit') _edit(existing: p);
+                if (v == 'amount') _editAmount(p);
+                if (v == 'add') _edit(); // 신규 추가
+                if (v == 'copy') _duplicate(p); // 이 항목 복사(추가)
+                if (v == 'move') _moveOne(p);
                 if (v == 'del') _delete(p);
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('수정')),
-                PopupMenuItem(value: 'del', child: Text('삭제')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'amount', child: Text('금액 수정')),
+                const PopupMenuItem(value: 'edit', child: Text('전체 수정')),
+                const PopupMenuItem(value: 'add', child: Text('추가 (신규)')),
+                const PopupMenuItem(value: 'copy', child: Text('복사 (이 항목)')),
+                const PopupMenuItem(value: 'move', child: Text('이동 (제작자)')),
+                const PopupMenuItem(value: 'del', child: Text('삭제')),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  // ---------- 항목별 금액수정(빠른 편집) ----------
+  Future<void> _editAmount(Map<String, dynamic> p) async {
+    final c = TextEditingController(
+        text: _wonInt(p['amount']) == 0 ? '' : '${_wonInt(p['amount'])}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('금액 수정 · ${p['category'] ?? p['group'] ?? ''}'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+              labelText: '금액 (원)', isDense: true),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('저장')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final amt = int.tryParse(c.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final r = await _nas.merchSavePurchase(
+      id: '${p['id']}',
+      group: '${p['group'] ?? ''}',
+      category: '${p['category'] ?? ''}',
+      size: '${p['size'] ?? ''}',
+      qty: _wonInt(p['qty']),
+      unitPrice: _wonInt(p['unitPrice']),
+      amount: amt,
+      note: '${p['note'] ?? ''}',
+      photo: '${p['photo'] ?? ''}',
+      date: '${p['date'] ?? ''}',
+      makerId: '${p['makerId'] ?? ''}',
+      cost: _wonInt(p['cost']),
+      madeDate: '${p['madeDate'] ?? ''}',
+      whoName: _whoName,
+    );
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '금액을 수정했습니다' : '수정 실패');
+    if (r['ok'] == true) _load();
+  }
+
+  // ---------- 복사(추가) ----------
+  Future<void> _duplicate(Map<String, dynamic> p) async {
+    final r = await _nas.merchSavePurchase(
+      id: '', // 새 항목
+      group: '${p['group'] ?? ''}',
+      category: '${p['category'] ?? ''}',
+      size: '${p['size'] ?? ''}',
+      qty: _wonInt(p['qty']),
+      unitPrice: _wonInt(p['unitPrice']),
+      amount: _wonInt(p['amount']),
+      note: '${p['note'] ?? ''}',
+      photo: '${p['photo'] ?? ''}',
+      date: '${p['date'] ?? ''}',
+      makerId: '${p['makerId'] ?? ''}',
+      cost: _wonInt(p['cost']),
+      madeDate: '${p['madeDate'] ?? ''}',
+      whoName: _whoName,
+    );
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '복사했습니다' : '복사 실패');
+    if (r['ok'] == true) _load();
+  }
+
+  // ---------- 단건 이동(제작자 재배당) ----------
+  Future<void> _moveOne(Map<String, dynamic> p) async {
+    String target = '${p['makerId'] ?? ''}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('이동 (제작자 재배당)'),
+          content: DropdownButtonFormField<String>(
+            initialValue: target,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: '이동할 제작자'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('미배당')),
+              for (final m in _makers)
+                DropdownMenuItem(
+                  value: '${m['id']}',
+                  child: Text('${m['company'] ?? m['name'] ?? m['id']}',
+                      overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (v) => setDlg(() => target = v ?? ''),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('이동')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final r = await _nas.merchSavePurchase(
+      id: '${p['id']}',
+      group: '${p['group'] ?? ''}',
+      category: '${p['category'] ?? ''}',
+      size: '${p['size'] ?? ''}',
+      qty: _wonInt(p['qty']),
+      unitPrice: _wonInt(p['unitPrice']),
+      amount: _wonInt(p['amount']),
+      note: '${p['note'] ?? ''}',
+      photo: '${p['photo'] ?? ''}',
+      date: '${p['date'] ?? ''}',
+      makerId: target,
+      cost: _wonInt(p['cost']),
+      madeDate: '${p['madeDate'] ?? ''}',
+      whoName: _whoName,
+    );
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '${_makerLabel(target)}(으)로 이동했습니다' : '이동 실패');
+    if (r['ok'] == true) _load();
   }
 
   Widget _photoThumb(Map<String, dynamic> p) {

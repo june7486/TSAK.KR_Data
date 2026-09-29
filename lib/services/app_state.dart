@@ -220,7 +220,7 @@ class AppState extends ChangeNotifier {
       if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
         for (final c in candidates) {
           try {
-            final r = await nas.login('personal', c);
+            final r = await nas.login('personal', c, id: personalNo);
             if (r['ok'] == true) {
               ok = true;
               break;
@@ -249,13 +249,13 @@ class AppState extends ChangeNotifier {
         try {
           if (finalTier == 'master') {
             await nas.grantSession('master', id: personalNo,
-                master: AppConfig.masterPassword);
+                master: AppConfig.masterPassword, log: true);
           } else if (finalTier == 'app') {
             await nas.grantSession('app'
-                , master: AppConfig.masterPassword);
+                , master: AppConfig.masterPassword, log: true);
           } else if (tier == 'personal' || tier == 'guest') {
             await nas.grantSession(
-                tier, id: personalNo.isNotEmpty ? personalNo : id);
+                tier, id: personalNo.isNotEmpty ? personalNo : id, log: true);
           }
         } catch (_) {}
       }
