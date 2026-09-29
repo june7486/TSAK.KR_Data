@@ -285,7 +285,7 @@ class NasApi {
   }
 
   /// 통합 승인 대시보드(관리자·마스터) — 승인 대기 큐 목록.
-  /// 반환: {'ok':true,'queues':[...],'total':N}
+  /// 반환: {'ok':true,'queues':[...],'total':N,'unread':M}
   Future<Map<String, dynamic>> approvalOverview() async {
     final r = await http
         .get(_uri('/api/approval/overview'), headers: _authHeaders)
@@ -300,6 +300,36 @@ class NasApi {
       return (j['total'] as num?)?.toInt() ?? 0;
     } catch (_) {
       return 0;
+    }
+  }
+
+  /// 해당 아이디가 아직 확인하지 않은 승인 대기 건수(배지용, 관리자·마스터).
+  /// = 전체 대기 건수 − 이미 열어 '확인'한 워터마크 이전 건수.
+  Future<int> approvalUnread() async {
+    try {
+      final j = await approvalOverview();
+      return (j['unread'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// 배지 '확인(읽음)' 처리(관리자·마스터).
+  /// [kind] = 'approval'(통합 승인) | 'board'(게시판) | 'all'.
+  /// 해당 아이디 기준으로 지금까지의 항목을 '확인함'으로 기록한다.
+  Future<bool> badgeSeen({String kind = 'all'}) async {
+    try {
+      final r = await http
+          .post(
+            _uri('/api/badge/seen'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({'kind': kind}),
+          )
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j['ok'] == true;
+    } catch (_) {
+      return false;
     }
   }
 

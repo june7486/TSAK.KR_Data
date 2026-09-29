@@ -74,6 +74,7 @@ class _BoardScreenState extends State<BoardScreen> {
   NasApi get _nas => context.read<NasApi>();
 
   Future<void> _load() async {
+    final state = context.read<AppState>();
     setState(() {
       _loading = true;
       _error = null;
@@ -89,6 +90,11 @@ class _BoardScreenState extends State<BoardScreen> {
         _loading = false;
       });
       _maybeScrollToDeepLink();
+      // 게시판을 열어 확인했으므로 '해당 아이디 기준'으로 읽음 처리한다.
+      //  → 홈 화면 게시판 배지에서 확인한 만큼 차감된다.
+      try {
+        await state.markBadgeSeen(kind: 'board');
+      } catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {

@@ -98,11 +98,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 승인관리 대기 총 건수 배지 로드(관리자·마스터).
+  /// 해당 아이디가 '확인'하지 않은 항목만 배지로 표시한다.
   Future<void> _loadApprovalBadge() async {
     final state = context.read<AppState>();
     if (!(state.isApp || state.isMaster)) return;
     try {
-      final n = await state.fetchApprovalPendingTotal();
+      final n = await state.fetchApprovalUnread();
       if (!mounted) return;
       setState(() => _approvalUnread = n);
     } catch (_) {}
@@ -416,10 +417,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Icon(Icons.forum_outlined),
                 ),
                 onPressed: () async {
+                  final st = context.read<AppState>();
                   await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const BoardScreen()),
                   );
+                  // 게시판을 확인했으므로 해당 아이디 기준 읽음 처리 → 배지 차감.
+                  await st.markBadgeSeen(kind: 'board');
                   _loadBoardUnread();
                 },
               ),
@@ -434,11 +438,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Icon(Icons.how_to_reg),
                 ),
                 onPressed: () async {
+                  final st = context.read<AppState>();
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const MemberRequestScreen()),
                   );
+                  // 화면을 열어 확인했으므로 해당 아이디 기준 확인 처리 →
+                  // 배지에서 이미 확인한 건수만큼 차감된다.
+                  await st.markBadgeSeen(kind: 'approval');
                   _loadApprovalBadge();
                 },
               ),

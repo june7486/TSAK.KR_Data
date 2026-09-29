@@ -864,6 +864,28 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 해당 아이디가 아직 '확인'하지 않은 승인 대기 건수(배지 표시용).
+  /// 승인화면을 열어 확인하면 0 으로 차감된다.
+  Future<int> fetchApprovalUnread() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return 0;
+    try {
+      return await nas.approvalUnread();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// 배지 '확인(읽음)' 처리 — 해당 아이디 기준으로 지금까지 항목을 확인 처리.
+  /// [kind] = 'approval' | 'board' | 'all'
+  Future<bool> markBadgeSeen({String kind = 'all'}) async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return false;
+    try {
+      return await nas.badgeSeen(kind: kind);
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 등록 가능한 행사명 목록(선택용) — 서버 events + 개인 프로필 참가행사.
   Future<List<String>> getAllEvents() async {
     final set = <String>{};

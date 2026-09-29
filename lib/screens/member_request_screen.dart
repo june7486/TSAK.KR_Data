@@ -54,6 +54,9 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
         _selected.clear();
         _loading = false;
       });
+      // 목록을 열어 확인했으므로 '해당 아이디 기준'으로 확인 처리한다.
+      //  → 홈 화면 배지에서 확인한 만큼 차감된다(이후 새 항목만 다시 표시).
+      await state.markBadgeSeen(kind: 'approval');
     } catch (e) {
       if (!mounted) return;
       setState(() {
