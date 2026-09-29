@@ -490,7 +490,7 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
             ),
             const SizedBox(height: 4),
             const Text(
-              '인쇄(PDF) · 엑셀(CSV) · 워드(텍스트) · 이미지(JPG: 인쇄 후 저장) · 메일 · 링크 공유',
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드 (+ 메일 · 링크 공유)',
               style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
             const SizedBox(height: 10),
@@ -498,11 +498,11 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _expBtn(Icons.print_outlined, '인쇄 / PDF', _print),
+                _expBtn(Icons.print_outlined, 'PDF / 인쇄', _print),
+                _expBtn(Icons.image_outlined, 'JPG (이미지)', () => _print()),
                 _expBtn(Icons.grid_on_outlined, '엑셀 (CSV)', _copyCsv),
+                _expBtn(Icons.slideshow_outlined, 'PPT (텍스트)', _copyText),
                 _expBtn(Icons.description_outlined, '워드 (텍스트)', _copyText),
-                _expBtn(Icons.image_outlined, '이미지 (JPG)',
-                    () => _print()),
                 _expBtn(Icons.mail_outline, '메일 발송', _mail),
                 _expBtn(Icons.link, '공유 링크', _share),
               ],

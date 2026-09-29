@@ -9,6 +9,7 @@ import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
+import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -754,7 +755,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     _print();
   }
 
-  /// 다양한 포맷으로 저장(추천 옵션).
+  /// 다양한 포맷으로 저장 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
   Future<void> _pickFormat() async {
     final fmt = await showModalBottomSheet<String>(
       context: context,
@@ -766,8 +767,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(18, 4, 18, 8),
-              child: Text('저장 형식 선택 (추천)',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              child: Text('저장 형식 선택 · 규칙순서 PDF→JPG→엑셀→PPT→워드',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
             ),
             ListTile(
               leading: const Icon(Icons.picture_as_pdf, color: AppColors.taegeukRed),
@@ -788,16 +789,29 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               onTap: () => Navigator.pop(ctx, 'excel'),
             ),
             ListTile(
+              leading: const Icon(Icons.slideshow, color: AppColors.lifetimeGold),
+              title: const Text('PPT (파워포인트)'),
+              subtitle: const Text('슬라이드 · 회의 보고용 (.ppt)'),
+              onTap: () => Navigator.pop(ctx, 'ppt'),
+            ),
+            ListTile(
               leading: const Icon(Icons.description, color: AppColors.taegeukBlue),
               title: const Text('워드 (Word)'),
               subtitle: const Text('문서 편집용 (.doc)'),
               onTap: () => Navigator.pop(ctx, 'word'),
             ),
+            const Divider(height: 1),
             ListTile(
-              leading: const Icon(Icons.slideshow, color: AppColors.lifetimeGold),
-              title: const Text('PPT (파워포인트)'),
-              subtitle: const Text('슬라이드 · 회의 보고용 (.ppt)'),
-              onTap: () => Navigator.pop(ctx, 'ppt'),
+              leading: const Icon(Icons.ios_share, color: AppColors.purple),
+              title: const Text('이미지 공유 (JPG)'),
+              subtitle: const Text('이미지로 저장 후 사진/메신저로 공유'),
+              onTap: () => Navigator.pop(ctx, 'jpg'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.link, color: AppColors.taegeukBlue),
+              title: const Text('링크 공유'),
+              subtitle: const Text('로그인한 권한자만 열람 가능한 링크 복사'),
+              onTap: () => Navigator.pop(ctx, 'link'),
             ),
           ],
         ),
@@ -813,14 +827,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         await _downloadFile(_orderCsv(), '${widget.groupKey}.csv',
             'text/csv;charset=utf-8');
         break;
-      case 'word':
-        await _downloadFile(_orderWord(), '${widget.groupKey}.doc',
-            'application/msword');
-        break;
       case 'ppt':
         await _downloadFile(_orderPpt(), '${widget.groupKey}.ppt',
             'application/vnd.ms-powerpoint');
         break;
+      case 'word':
+        await _downloadFile(_orderWord(), '${widget.groupKey}.doc',
+            'application/msword');
+        break;
+      case 'link':
+        await showLinkShareDialog(context,
+            '${_nasBase()}/#/order?id=${Uri.encodeComponent(widget.groupKey)}');
+        break;
+    }
+  }
+
+  String _nasBase() {
+    try {
+      return context.read<NasApi>().baseUrl;
+    } catch (_) {
+      return '';
     }
   }
 
