@@ -42,6 +42,7 @@ class Member {
     this.linkApprovedBy = '',
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
+    List<String>? pendingEventNames,
     this.sample = false,
     this.nameVisible = true,
     this.gender = '',
@@ -50,7 +51,8 @@ class Member {
   }) : mentors = mentors ?? <String>[],
        parents = parents ?? <String>[],
        feeYears = feeYears ?? <String, bool>{},
-       eventAttend = eventAttend ?? <String, bool>{};
+       eventAttend = eventAttend ?? <String, bool>{},
+       pendingEventNames = pendingEventNames ?? <String>[];
 
   /// 내부 고유 ID
   String id;
@@ -175,6 +177,10 @@ class Member {
   /// 행사 참가 여부: {"2024 정기총회": true, ...}
   Map<String, bool> eventAttend;
 
+  /// 본인이 제안했으나 아직 관리자·마스터 승인 전인 행사명 목록.
+  /// 프로필에서 '관리목록누락행사-심사중'으로 표시된다.
+  List<String> pendingEventNames;
+
   /// 샘플(예시) 회원 여부 — 모든 회원에게 노출된다.
   bool sample;
 
@@ -280,6 +286,7 @@ class Member {
     'linkApprovedBy': linkApprovedBy,
     'feeYears': feeYears,
     'eventAttend': eventAttend,
+    'pendingEventNames': pendingEventNames,
     'sample': sample,
     'nameVisible': nameVisible,
     'gender': gender,
@@ -344,6 +351,7 @@ class Member {
       linkApprovedBy: '${map['linkApprovedBy'] ?? ''}',
       feeYears: castBoolMap(map['feeYears']),
       eventAttend: castBoolMap(map['eventAttend']),
+      pendingEventNames: castStrList(map['pendingEventNames']),
       sample: map['sample'] == true,
       nameVisible: map['nameVisible'] != false,
       gender: '${map['gender'] ?? ''}',

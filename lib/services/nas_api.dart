@@ -349,6 +349,109 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 등록요청 삭제(관리자·마스터) — 내역 목록에서 제거.
+  Future<bool> memberRequestDelete(String id) =>
+      memberRequestSet(id: id, action: 'delete');
+
+  // ---- 개인 제안 행사(심사중) ----
+  /// 개인프로필에서 새 행사를 제안(관리자·마스터 승인 전 '심사중').
+  Future<Map<String, dynamic>> eventPrivateCreate({
+    required String year,
+    required String title,
+    String period = '',
+    String place = '',
+    String desc = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/private/create'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': year,
+            'title': title,
+            'period': period,
+            'place': place,
+            'desc': desc,
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 본인이 제안한 심사중 행사 목록.
+  Future<List<Map<String, dynamic>>> eventPrivateMine() async {
+    try {
+      final r = await http
+          .get(_uri('/api/event/private/mine'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return ((j['items'] as List?) ?? [])
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 심사중 제안 행사 승인/반려/삭제(관리자·마스터).
+  Future<bool> eventPrivateSet({
+    required String id,
+    required String action,
+  }) async {
+    try {
+      final r = await http
+          .post(
+            _uri('/api/event/private/set'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({'id': id, 'action': action}),
+          )
+          .timeout(const Duration(seconds: 25));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ---- 행사 스텝(STAFF) ----
+  /// 행사 스텝 등록(관리자·마스터) — 지정자는 행사 전체 게시판 노출.
+  Future<List<Map<String, dynamic>>> eventStaffAdd({
+    required String year,
+    required String title,
+    required String number,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/staff/add'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'year': year, 'title': title, 'number': number}),
+        )
+        .timeout(const Duration(seconds: 25));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['staff'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 행사 스텝 해제(관리자·마스터).
+  Future<List<Map<String, dynamic>>> eventStaffRemove({
+    required String year,
+    required String title,
+    required String number,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/staff/remove'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'year': year, 'title': title, 'number': number}),
+        )
+        .timeout(const Duration(seconds: 25));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['staff'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
   // ---- Members ----
   Future<List<Member>> fetchMembers() async {
     final r = await http
