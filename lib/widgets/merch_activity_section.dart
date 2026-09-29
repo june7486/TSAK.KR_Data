@@ -70,15 +70,12 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
   Widget build(BuildContext context) {
     final isSelf = context.read<AppState>().isSelfAccess;
     final memo = widget.memo.trim();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
-      ),
-      child: Column(
+    // 다른 섹션(_section: Card + 12px 여백)과 동일한 박스 크기로 맞춘다.
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -188,6 +185,7 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
               ),
           ],
         ],
+        ),
       ),
     );
   }

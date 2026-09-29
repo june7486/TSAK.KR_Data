@@ -76,6 +76,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showMainHome = false;
   // 게시판/주문 등 관리자 이상 알림 배지
   int _boardUnread = 0;
+  // 승인관리 대기 배지(비인가회원·행사·연회비·평생 등 통합)
+  int _approvalUnread = 0;
 
   @override
   void initState() {
@@ -91,6 +93,19 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPendingApprovals());
     // 게시판 새 글 알림 배지 로드(관리자 이상).
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBoardUnread());
+    // 승인관리 대기 배지 로드(관리자 이상).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadApprovalBadge());
+  }
+
+  /// 승인관리 대기 총 건수 배지 로드(관리자·마스터).
+  Future<void> _loadApprovalBadge() async {
+    final state = context.read<AppState>();
+    if (!(state.isApp || state.isMaster)) return;
+    try {
+      final n = await state.fetchApprovalPendingTotal();
+      if (!mounted) return;
+      setState(() => _approvalUnread = n);
+    } catch (_) {}
   }
 
   /// 관리자 이상 알림(게시판 새 글 등) 미확인 건수 로드.
@@ -406,6 +421,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     MaterialPageRoute(builder: (_) => const BoardScreen()),
                   );
                   _loadBoardUnread();
+                },
+              ),
+            // 승인관리 — 대기 항목 배지 표시(비인가회원·행사·연회비·평생 등)
+            if (state.isApp || state.isMaster)
+              IconButton(
+                tooltip: '승인관리',
+                icon: Badge(
+                  isLabelVisible: _approvalUnread > 0,
+                  label: Text('$_approvalUnread'),
+                  backgroundColor: AppColors.tigerGold,
+                  child: const Icon(Icons.how_to_reg),
+                ),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const MemberRequestScreen()),
+                  );
+                  _loadApprovalBadge();
                 },
               ),
             if (personaForPersonal(state) && !_showMainHome)

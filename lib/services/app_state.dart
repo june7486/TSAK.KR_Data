@@ -796,6 +796,7 @@ class AppState extends ChangeNotifier {
     String date = '',
     String note = '',
     String newNumber = '',
+    String event = '',
   }) async {
     if (!repo.isNasMode) return '서버 연결이 필요합니다';
     try {
@@ -806,6 +807,7 @@ class AppState extends ChangeNotifier {
         date: date,
         note: note,
         newNumber: newNumber,
+        event: event,
       );
       if (r['ok'] == true) return null;
       return '${r['error'] ?? '요청 실패'}';
@@ -837,6 +839,54 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       return [];
     }
+  }
+
+  /// 통합 승인 대시보드(관리자·마스터) — 승인 대기 큐 목록.
+  Future<List<Map<String, dynamic>>> fetchApprovalOverview() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return [];
+    try {
+      final j = await nas.approvalOverview();
+      return ((j['queues'] as List?) ?? [])
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 승인 대기 총 건수(배지용, 관리자·마스터).
+  Future<int> fetchApprovalPendingTotal() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return 0;
+    try {
+      return await nas.approvalPendingTotal();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// 등록 가능한 행사명 목록(선택용) — 서버 events + 개인 프로필 참가행사.
+  Future<List<String>> getAllEvents() async {
+    final set = <String>{};
+    try {
+      if (repo.isNasMode) {
+        final ev = await nas.eventList2(media: false);
+        for (final e in ev) {
+          if (e['defined'] == false) continue;
+          final t = '${e['title'] ?? ''}'.trim();
+          if (t.isNotEmpty) set.add(t);
+        }
+      }
+    } catch (_) {}
+    for (final m in repo.allUnscoped()) {
+      set.addAll(m.eventAttend.keys.where((e) => e.trim().isNotEmpty));
+    }
+    final list = set.toList()..sort((a, b) {
+        final ya = RegExp(r'\d{4}').firstMatch(a)?.group(0) ?? '0000';
+        final yb = RegExp(r'\d{4}').firstMatch(b)?.group(0) ?? '0000';
+        if (ya != yb) return yb.compareTo(ya);
+        return b.compareTo(a);
+      });
+    return list;
   }
 
   /// 등록요청 승인/반려 처리 후 로컬 캐시 갱신.

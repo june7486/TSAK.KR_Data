@@ -241,6 +241,7 @@ class NasApi {
     String date = '',
     String note = '',
     String newNumber = '',
+    String event = '',
   }) async {
     final r = await http
         .post(
@@ -253,6 +254,7 @@ class NasApi {
             if (date.isNotEmpty) 'date': date,
             if (note.isNotEmpty) 'note': note,
             if (newNumber.isNotEmpty) 'newNumber': newNumber,
+            if (event.isNotEmpty) 'event': event,
           }),
         )
         .timeout(const Duration(seconds: 20));
@@ -280,6 +282,25 @@ class NasApi {
     return ((j['items'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
+  }
+
+  /// 통합 승인 대시보드(관리자·마스터) — 승인 대기 큐 목록.
+  /// 반환: {'ok':true,'queues':[...],'total':N}
+  Future<Map<String, dynamic>> approvalOverview() async {
+    final r = await http
+        .get(_uri('/api/approval/overview'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 25));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 승인 대기 총 건수 배지용(관리자·마스터).
+  Future<int> approvalPendingTotal() async {
+    try {
+      final j = await approvalOverview();
+      return (j['total'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// 등록요청 승인/반려(관리자·마스터). action: approve | reject

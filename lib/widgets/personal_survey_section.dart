@@ -74,15 +74,16 @@ class _PersonalSurveySectionState extends State<PersonalSurveySection> {
     // 로딩 중이거나 진행중 수요조사가 없으면 아무것도 표시하지 않는다.
     if (_loading || _surveys.isEmpty) return const SizedBox.shrink();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.35)),
-      ),
-      child: Column(
+    // 신청한 사람의 프로필에만 노출한다 — 본인이 신청한(순번>0) 항목만 남긴다.
+    final mine = _surveys.where((s) => _mySeq(s) > 0).toList();
+    if (mine.isEmpty) return const SizedBox.shrink();
+
+    // 다른 섹션(_section: Card + 12px 여백)과 동일한 박스 크기로 맞춘다.
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -90,12 +91,13 @@ class _PersonalSurveySectionState extends State<PersonalSurveySection> {
               const Icon(Icons.campaign_outlined,
                   size: 18, color: AppColors.tigerGold),
               const SizedBox(width: 6),
-              const Text('수요 대기 (사전신청 순번)',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                      color: AppColors.purpleDark)),
-              const Spacer(),
+              const Expanded(
+                child: Text('수품 사전 신청 현황',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: AppColors.purpleDark)),
+              ),
               IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh,
@@ -106,11 +108,12 @@ class _PersonalSurveySectionState extends State<PersonalSurveySection> {
           ),
           const SizedBox(height: 2),
           const Text(
-            '제작 착수 전 수요조사 단계입니다. 최소 제작 착수 수량 달성 시 제작이 진행됩니다.',
+            '회원님이 신청한 수품 사전신청(수요조사) 현황입니다. '
+            '최소 제작 착수 수량 달성 시 제작이 진행됩니다.',
             style: TextStyle(fontSize: 11.5, color: AppColors.textGray, height: 1.4),
           ),
           const SizedBox(height: 8),
-          for (final s in _surveys) _row(s),
+          for (final s in mine) _row(s),
           const SizedBox(height: 8),
           const Divider(height: 1),
           const SizedBox(height: 8),
@@ -129,11 +132,12 @@ class _PersonalSurveySectionState extends State<PersonalSurveySection> {
                     builder: (_) => const MerchShopScreen()),
               ).then((_) => _load()),
               icon: const Icon(Icons.add_shopping_cart, size: 17),
-              label: const Text('수요조사 신청하기 (수품구매)',
+              label: const Text('수품 사전신청 추가 (수품구매)',
                   style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ),
         ],
+        ),
       ),
     );
   }
