@@ -169,6 +169,8 @@ def _sess_del(sid):
 # ============================================================================
 _ACCESS_LOG_MAX = 2000            # 파일에 보관하는 최대 로그 수(최신 우선)
 _ACCESS_LOG_LOCK = threading.Lock()
+_BOARD_WRITE_LOCK = threading.Lock()   # 게시판 쓰기 직렬화(후기 연동 포함)
+_REVIEW_WRITE_LOCK = threading.Lock()  # 행사 후기 쓰기 직렬화(게시판 연동 포함)
 
 
 def _ua_device_name(ua):
@@ -1903,6 +1905,52 @@ def _review_save_posts(year, title, posts):
     _review_save(doc)
 
 
+def _review_sync_from_board(post):
+    """게시판 '후기' 글 수정 → 행사 후기로 역연동(서로 연동)."""
+    rid = str((post or {}).get("sourceReview", "") or "")
+    year = str((post or {}).get("year", "") or "")
+    title = str((post or {}).get("eventTitle", "") or "")
+    if not rid or not year or not title:
+        return
+    try:
+        with _REVIEW_WRITE_LOCK:
+            doc = _review_doc()
+            eid = _ev_id(year, title)
+            posts = doc.get("events", {}).get(eid, {}).get("posts", [])
+            tgt = next((x for x in posts if str(x.get("id")) == rid), None)
+            if not tgt:
+                return
+            tgt["body"] = str((post or {}).get("body", "") or "")
+            tgt["author"] = str((post or {}).get("author", "") or "")[:40]
+            tgt["number"] = str((post or {}).get("number", "") or "")[:20]
+            # 댓글/첨부/좋아요는 후기 원본을 유지(게시판 측 데이터로 덮어쓰지 않음)
+            tgt["updated"] = _now_stamp()
+            doc.setdefault("events", {}).setdefault(eid, {})["posts"] = posts
+            _review_save(doc)
+    except Exception:
+        pass
+
+
+def _review_delete_by_board(post):
+    """게시판 '후기' 글 삭제 → 행사 후기도 함께 삭제(서로 연동)."""
+    rid = str((post or {}).get("sourceReview", "") or "")
+    year = str((post or {}).get("year", "") or "")
+    title = str((post or {}).get("eventTitle", "") or "")
+    if not rid or not year or not title:
+        return
+    try:
+        with _REVIEW_WRITE_LOCK:
+            doc = _review_doc()
+            eid = _ev_id(year, title)
+            posts = doc.get("events", {}).get(eid, {}).get("posts", [])
+            keep = [x for x in posts if str(x.get("id")) != rid]
+            if len(keep) != len(posts):
+                doc.setdefault("events", {}).setdefault(eid, {})["posts"] = keep
+                _review_save(doc)
+    except Exception:
+        pass
+
+
 def _pwd_hash(pw):
     import hashlib
     return hashlib.sha256(("tsak$" + str(pw)).encode("utf-8")).hexdigest()
@@ -1926,6 +1974,77 @@ def _now_ymd(o):
 # ===================== 행사 + 수품판매 게시판 (#12) =====================
 def _board_doc():
     return _load_json(BOARD_FILE, {"posts": []})
+
+
+def _board_sync_review(year, title, post):
+    """행사 후기를 게시판 '후기' 카테고리 글과 연동(생성/수정).
+    같은 후기 id 를 sourceReview 로 갖는 게시판 글을 찾아 갱신하거나 새로 만든다.
+    """
+    try:
+        with _BOARD_WRITE_LOCK:
+            doc = _load_json(BOARD_FILE, {"posts": []})
+            posts = doc.get("posts", [])
+            rid = str((post or {}).get("id", "") or "")
+            if not rid:
+                return
+            bid = next((str(x.get("id")) for x in posts
+                        if str(x.get("sourceReview", "")) == rid), "")
+            existing = next((x for x in posts
+                             if str(x.get("id")) == bid), None)
+            title_txt = f"[후기] {str(title or '').strip()}"
+            new_post = {
+                "id": bid or ("bd" + _secrets.token_urlsafe(6)),
+                "category": "후기",
+                "title": title_txt[:120],
+                "body": str((post or {}).get("body", "") or ""),
+                "author": str((post or {}).get("author", "") or "")[:40],
+                "number": str((post or {}).get("number", "") or "")[:20],
+                "created": existing.get("created") if existing else _now_stamp(),
+                "updated": _now_stamp(),
+                "likes": int((post or {}).get("likes", 0) or 0),
+                "views": int(existing.get("views", 0) or 0) if existing else 0,
+                "comments": ((post or {}).get("comments", []) or [])
+                            if not existing else (existing.get("comments") or []),
+                "attachments": (post or {}).get("attachments", []) or [],
+                "media": (existing or {}).get("media", []),
+                "links": (existing or {}).get("links", []),
+                "hidden": bool(existing.get("hidden", False)) if existing else False,
+                "device": str((post or {}).get("device", "") or "")[:120],
+                "ip": str((post or {}).get("ip", "") or ""),
+                "sourceReview": rid,
+                "year": str(year or ""),
+                "eventTitle": str(title or ""),
+            }
+            if existing:
+                posts[posts.index(existing)] = new_post
+            else:
+                posts.append(new_post)
+                try:
+                    _board_notify(new_post)
+                except Exception:
+                    pass
+            doc["posts"] = posts
+            _save_json(BOARD_FILE, doc)
+    except Exception:
+        pass
+
+
+def _board_delete_review(rid):
+    """후기 삭제 시 연동된 게시판 '후기' 글도 함께 제거."""
+    try:
+        rid = str(rid or "")
+        if not rid:
+            return
+        with _BOARD_WRITE_LOCK:
+            doc = _load_json(BOARD_FILE, {"posts": []})
+            posts = doc.get("posts", [])
+            keep = [x for x in posts if str(x.get("sourceReview", "")) != rid]
+            if len(keep) != len(posts):
+                doc["posts"] = keep
+                _save_json(BOARD_FILE, doc)
+    except Exception:
+        pass
+
 
 
 def _board_save(doc):
@@ -7155,6 +7274,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     posts.append(new_post)
                 _review_save_posts(year, title, posts)
+                # 게시판 '후기' 카테고리와 자동 연동(생성/수정)
+                if not new_post.get("draft"):
+                    _board_sync_review(year, title, new_post)
                 return self._json({"ok": True, "id": pid})
             if p == "/api/event/review/comment":
                 if not self._require():
@@ -7183,6 +7305,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 post.setdefault("comments", []).append(cm)
                 _review_save_posts(year, title, posts)
+                _board_sync_review(year, title, post)
                 return self._json({"ok": True, "id": cm["id"]})
             if p == "/api/event/review/like":
                 if not self._require():
@@ -7198,6 +7321,7 @@ class Handler(BaseHTTPRequestHandler):
                 cur = int(post.get("likes", 0) or 0)
                 post["likes"] = max(0, cur + (1 if on else -1))
                 _review_save_posts(year, title, posts)
+                _board_sync_review(year, title, post)
                 return self._json({"ok": True, "likes": post["likes"]})
             if p == "/api/event/review/delete":
                 if not self._require():
@@ -7223,6 +7347,8 @@ class Handler(BaseHTTPRequestHandler):
                             return self._json({"ok": False, "error": "password"}, 403)
                     posts.remove(post)
                     _review_save_posts(year, title, posts)
+                    # 연동된 게시판 '후기' 글도 함께 삭제
+                    _board_delete_review(pid)
                 return self._json({"ok": True})
             # ---------- 행사 + 수품판매 게시판 (#12) POST ----------
             if p == "/api/board/post":
@@ -7261,6 +7387,11 @@ class Handler(BaseHTTPRequestHandler):
                     "device": str(d.get("device", "") or "")[:120],
                     "ip": self.client_address[0] if self.client_address else "",
                 }
+                # 후기 연동 메타 보존(게시판 '후기' → 행사 후기 역연동용)
+                if existing:
+                    for _k in ("sourceReview", "year", "eventTitle"):
+                        if existing.get(_k) is not None:
+                            new_post[_k] = existing.get(_k)
                 pw = str(d.get("password", "") or "")
                 if pw:
                     new_post["password"] = _pwd_hash(pw)
@@ -7279,6 +7410,9 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 doc["posts"] = posts
                 _board_save(doc)
+                # '후기' 카테고리 글이면 행사 후기로 역연동(편집 반영)
+                if existing and str(new_post.get("category", "")) == "후기":
+                    _review_sync_from_board(new_post)
                 return self._json({"ok": True, "id": bid})
             if p == "/api/board/comment":
                 if not self._require():
@@ -7346,6 +7480,9 @@ class Handler(BaseHTTPRequestHandler):
                                 return self._json({"ok": False, "error": "password"}, 403)
                     posts.remove(post)
                     _board_save(doc)
+                    # '후기' 카테고리 글이면 행사 후기도 함께 삭제(역연동)
+                    if str(post.get("category", "")) == "후기":
+                        _review_delete_by_board(post)
                 return self._json({"ok": True})
             if p == "/api/board/hide":
                 if not self._require("admin"):

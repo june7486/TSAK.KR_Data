@@ -28,6 +28,8 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   String? _error;
   List<Map<String, dynamic>> _posts = [];
   bool _isAdmin = false;
+  /// 펼쳐서 내용을 보여줄 후기 id 집합 (기본은 접힌 요약 카드).
+  final Set<String> _expanded = {};
 
   @override
   void initState() {
@@ -159,6 +161,39 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
       );
 
   Widget _postCard(Map<String, dynamic> p, AppState state) {
+    final id = '${p['id']}';
+    final bool isOpen = _expanded.contains(id);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => setState(() {
+          if (isOpen) {
+            _expanded.remove(id);
+          } else {
+            _expanded.add(id);
+          }
+        }),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _reviewSummaryRow(p, isOpen),
+            if (isOpen) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: _reviewDetail(p, state),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 목록용 요약 행 — 제목(후기)·글쓴이·날짜·공감·댓글.
+  Widget _reviewSummaryRow(Map<String, dynamic> p, bool isOpen) {
     final author = '${p['author'] ?? ''}';
     final number = '${p['number'] ?? ''}';
     final body = '${p['body'] ?? ''}';
@@ -166,7 +201,105 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
     final updated = '${p['updated'] ?? ''}';
     final draft = p['draft'] == true;
     final locked = p['locked'] == true;
+    final likes = (p['likes'] as num?)?.toInt() ?? 0;
+    final comments = ((p['comments'] as List?) ?? []).length;
+    final attachments = ((p['attachments'] as List?) ?? []).length;
+    // 본문 첫 줄을 제목처럼 사용한다.
+    final title = body.split('\n').first.trim();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 11, 8, 11),
+      child: Row(
+        children: [
+          Icon(isOpen ? Icons.expand_less : Icons.expand_more,
+              size: 18, color: AppColors.textGray),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (draft) ...[
+                      _chip('임시저장', AppColors.tigerGold),
+                      const SizedBox(width: 5),
+                    ],
+                    if (locked) ...[
+                      _chip('비밀글', AppColors.taegeukBlue),
+                      const SizedBox(width: 5),
+                    ],
+                    Expanded(
+                      child: Text(
+                        title.isEmpty ? '(내용 없음)' : title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark),
+                      ),
+                    ),
+                    if (attachments > 0) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.attach_file,
+                          size: 13, color: AppColors.textGray),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Text(author.isEmpty ? '익명' : author,
+                        style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark)),
+                    if (number.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Text('($number)',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.textGray)),
+                    ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        updated.isNotEmpty && updated != created
+                            ? '$created (수정)'
+                            : created,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray),
+                      ),
+                    ),
+                    Icon(Icons.favorite_border,
+                        size: 12, color: AppColors.textGray),
+                    const SizedBox(width: 3),
+                    Text('$likes',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.mode_comment_outlined,
+                        size: 12, color: AppColors.textGray),
+                    const SizedBox(width: 3),
+                    Text('$comments',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewDetail(Map<String, dynamic> p, AppState state) {
+    final author = '${p['author'] ?? ''}';
+    final body = '${p['body'] ?? ''}';
     final pwdHint = '${p['pwdHint'] ?? ''}';
+    final locked = p['locked'] == true;
     final likes = (p['likes'] as num?)?.toInt() ?? 0;
     final comments = ((p['comments'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
@@ -177,86 +310,52 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
     final device = '${p['device'] ?? ''}';
     final ip = '${p['ip'] ?? ''}';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor: AppColors.purple.withValues(alpha: 0.15),
-                  child: Text(
-                    author.isNotEmpty ? author.characters.first : '?',
-                    style: const TextStyle(
-                        color: AppColors.purple, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            author.isEmpty ? '익명' : author,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 14),
-                          ),
-                          if (number.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Text('인가 $number',
-                                style: const TextStyle(
-                                    fontSize: 11, color: AppColors.textGray)),
-                          ],
-                          if (draft) ...[
-                            const SizedBox(width: 6),
-                            _chip('임시저장', AppColors.tigerGold),
-                          ],
-                          if (locked) ...[
-                            const SizedBox(width: 6),
-                            _chip('비밀글', AppColors.taegeukBlue),
-                          ],
-                        ],
-                      ),
-                      Text(
-                        updated.isNotEmpty && updated != created
-                            ? '$created  (수정 $updated)'
-                            : created,
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (v) {
-                    if (v == 'edit') {
-                      _editPost(existing: p);
-                    } else if (v == 'delete') {
-                      _deletePost(p);
-                    } else if (v == 'copy') {
-                      _copyToClipboard(body);
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'edit', child: Text('수정')),
-                    const PopupMenuItem(value: 'delete', child: Text('삭제')),
-                    const PopupMenuItem(value: 'copy', child: Text('본문 복사')),
-                  ],
-                ),
+            CircleAvatar(
+              radius: 15,
+              backgroundColor: AppColors.purple.withValues(alpha: 0.15),
+              child: Text(
+                author.isNotEmpty ? author.characters.first : '?',
+                style: const TextStyle(
+                    color: AppColors.purple, fontWeight: FontWeight.w800),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                author.isEmpty ? '익명' : author,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 14),
+              ),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'edit') {
+                  _editPost(existing: p);
+                } else if (v == 'delete') {
+                  _deletePost(p);
+                } else if (v == 'copy') {
+                  _copyToClipboard(body);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('수정')),
+                PopupMenuItem(value: 'delete', child: Text('삭제')),
+                PopupMenuItem(value: 'copy', child: Text('본문 복사')),
               ],
             ),
-            const SizedBox(height: 10),
-            SelectableText(
-              body,
-              style: const TextStyle(
-                  fontSize: 14, height: 1.5, color: AppColors.textDark),
-            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SelectableText(
+          body,
+          style: const TextStyle(
+              fontSize: 14, height: 1.5, color: AppColors.textDark),
+        ),
             if (locked && pwdHint.isNotEmpty) ...[
               const SizedBox(height: 6),
               Row(
@@ -353,9 +452,7 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
               const Divider(height: 18),
               for (final c in comments) _commentTile(p, c),
             ],
-          ],
-        ),
-      ),
+      ],
     );
   }
 
@@ -492,14 +589,21 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   Future<void> _editPost({Map<String, dynamic>? existing}) async {
     final state = context.read<AppState>();
     final bodyCtrl = TextEditingController(text: '${existing?['body'] ?? ''}');
+    // 작성자: 로그인 시 이름 자동입력, 비회원이면 저장된 값/빈칸.
     final authorCtrl = TextEditingController(
         text: '${existing?['author'] ?? (state.who.isNotEmpty ? state.who : '')}');
-    final numberCtrl = TextEditingController(text: '${existing?['number'] ?? ''}');
+    // 인가번호: 로그인 시 인가번호 자동입력, 비회원은 전화번호 뒷자리(직접 입력).
+    final numberCtrl = TextEditingController(
+        text: '${existing?['number'] ?? (state.who.isNotEmpty ? state.who : '')}');
     final pwCtrl = TextEditingController();
     final hintCtrl = TextEditingController(text: '${existing?['pwdHint'] ?? ''}');
     final attachments = ((existing?['attachments'] as List?) ?? [])
         .map((e) => '$e')
         .toList();
+
+    // 등록 활성 조건: 후기 내용이 한 글자라도 채워지면 즉시 활성화.
+    //  로그인 시 작성자·인가번호는 자동입력되어 별도 입력이 불필요하다.
+    bool canSubmit() => bodyCtrl.text.trim().isNotEmpty;
 
     final res = await showDialog<String>(
       context: context,
@@ -518,17 +622,23 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                       Expanded(
                         child: TextField(
                           controller: authorCtrl,
-                          decoration:
-                              const InputDecoration(labelText: '작성자'),
+                          onChanged: (_) => setD(() {}),
+                          decoration: const InputDecoration(
+                            labelText: '작성자',
+                            helperText: '로그인 시 자동입력',
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       SizedBox(
-                        width: 120,
+                        width: 130,
                         child: TextField(
                           controller: numberCtrl,
-                          decoration:
-                              const InputDecoration(labelText: '인가번호'),
+                          onChanged: (_) => setD(() {}),
+                          decoration: const InputDecoration(
+                            labelText: '인가번호',
+                            helperText: '비회원은 전화 뒷자리',
+                          ),
                         ),
                       ),
                     ],
@@ -538,6 +648,8 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                     controller: bodyCtrl,
                     maxLines: 6,
                     minLines: 3,
+                    autofocus: true,
+                    onChanged: (_) => setD(() {}),
                     decoration: const InputDecoration(
                       labelText: '후기 내용',
                       alignLabelWithHint: true,
@@ -631,9 +743,9 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-              onPressed: bodyCtrl.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(ctx, 'publish'),
+              onPressed: canSubmit()
+                  ? () => Navigator.pop(ctx, 'publish')
+                  : null,
               child: const Text('등록'),
             ),
           ],

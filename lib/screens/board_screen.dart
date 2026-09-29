@@ -32,8 +32,10 @@ class _BoardScreenState extends State<BoardScreen> {
   bool _isAdmin = false;
   String _filter = '전체';
   final Set<String> _liked = {};
+  /// 펼쳐서 내용을 보여줄 게시글 id 집합 (기본은 접힌 요약 카드).
+  final Set<String> _expanded = {};
 
-  static const _categories = ['전체', '공지', '행사', '수품', '일반'];
+  static const _categories = ['전체', '공지', '행사', '수품', '후기', '일반'];
 
   @override
   void initState() {
@@ -185,10 +187,161 @@ class _BoardScreenState extends State<BoardScreen> {
   Widget _postCard(Map<String, dynamic> p) {
     final state = context.watch<AppState>();
     final id = '${p['id']}';
+    final bool isOpen = _expanded.contains(id);
+    // 목록 카드에는 요약(제목/글쓴이/날짜/조회/좋아요/댓글)만 보여주고,
+    // 내용은 클릭해 펼쳤을 때만 노출한다.
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => setState(() {
+          if (isOpen) {
+            _expanded.remove(id);
+          } else {
+            _expanded.add(id);
+          }
+        }),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _postSummaryRow(p, isOpen),
+            if (isOpen) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: _postDetail(p, state),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 목록용 요약 행 — 제목 / 인가번호·글쓴이·날짜·조회·좋아요·댓글.
+  Widget _postSummaryRow(Map<String, dynamic> p, bool isOpen) {
     final author = '${p['author'] ?? ''}';
     final number = '${p['number'] ?? ''}';
     final title = '${p['title'] ?? ''}';
     final category = '${p['category'] ?? '일반'}';
+    final created = '${p['created'] ?? ''}';
+    final updated = '${p['updated'] ?? ''}';
+    final hasPassword = p['hasPassword'] == true;
+    final likes = (p['likes'] as num?)?.toInt() ?? 0;
+    final views = (p['views'] as num?)?.toInt() ?? 0;
+    final hidden = p['hidden'] == true;
+    final comments = ((p['comments'] as List?) ?? []).length;
+    final attachments = ((p['attachments'] as List?) ?? []).length;
+    final hasMedia = ((p['media'] as List?) ?? []).isNotEmpty;
+
+    Color catColor = AppColors.purple;
+    if (category == '공지') catColor = AppColors.taegeukRed;
+    if (category == '후기') catColor = AppColors.scoutGreen;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 11, 8, 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 펼침/접힘 표시
+          Icon(isOpen ? Icons.expand_less : Icons.expand_more,
+              size: 18, color: AppColors.textGray),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _chip(category, catColor),
+                    if (hasPassword) ...[
+                      const SizedBox(width: 5),
+                      _chip('비밀글', AppColors.taegeukBlue),
+                    ],
+                    if (hidden && _isAdmin) ...[
+                      const SizedBox(width: 5),
+                      _chip('비노출', AppColors.taegeukRed),
+                    ],
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        title.isEmpty ? '(제목 없음)' : title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark),
+                      ),
+                    ),
+                    if (attachments > 0 || hasMedia) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.attach_file,
+                          size: 13, color: AppColors.textGray),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Text(author.isEmpty ? '익명' : author,
+                        style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark)),
+                    if (number.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Text('($number)',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.textGray)),
+                    ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        updated.isNotEmpty && updated != created
+                            ? '$created (수정)'
+                            : created,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray),
+                      ),
+                    ),
+                    const Icon(Icons.visibility,
+                        size: 12, color: AppColors.textGray),
+                    const SizedBox(width: 3),
+                    Text('$views',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                    const SizedBox(width: 8),
+                    Icon(Icons.favorite_border,
+                        size: 12, color: AppColors.textGray),
+                    const SizedBox(width: 3),
+                    Text('$likes',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.mode_comment_outlined,
+                        size: 12, color: AppColors.textGray),
+                    const SizedBox(width: 3),
+                    Text('$comments',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 펼친 카드의 상세 내용(본문·첨부·링크·IP·반응·댓글).
+  Widget _postDetail(Map<String, dynamic> p, AppState state) {
+    final id = '${p['id']}';
+    final author = '${p['author'] ?? ''}';
+    final title = '${p['title'] ?? ''}';
     final body = '${p['body'] ?? ''}';
     final created = '${p['created'] ?? ''}';
     final updated = '${p['updated'] ?? ''}';
@@ -209,123 +362,99 @@ class _BoardScreenState extends State<BoardScreen> {
     final ip = '${p['ip'] ?? ''}';
     final mine = state.who.isNotEmpty && author == state.who;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor: AppColors.purple.withValues(alpha: 0.15),
-                  child: Text(
-                    author.isNotEmpty ? author.characters.first : '?',
+            CircleAvatar(
+              radius: 15,
+              backgroundColor: AppColors.purple.withValues(alpha: 0.15),
+              child: Text(
+                author.isNotEmpty ? author.characters.first : '?',
+                style: const TextStyle(
+                    color: AppColors.purple, fontWeight: FontWeight.w800),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    author.isEmpty ? '익명' : author,
                     style: const TextStyle(
-                        color: AppColors.purple, fontWeight: FontWeight.w800),
+                        fontWeight: FontWeight.w800, fontSize: 14),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            author.isEmpty ? '익명' : author,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 14),
-                          ),
-                          if (number.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Text(number,
-                                style: const TextStyle(
-                                    fontSize: 11, color: AppColors.textGray)),
-                          ],
-                          const SizedBox(width: 6),
-                          _chip(category, AppColors.purple),
-                          if (hasPassword) ...[
-                            const SizedBox(width: 6),
-                            _chip('비밀글', AppColors.taegeukBlue),
-                          ],
-                          if (hidden && _isAdmin) ...[
-                            const SizedBox(width: 6),
-                            _chip('비노출', AppColors.taegeukRed),
-                          ],
-                        ],
-                      ),
-                      Text(
-                        updated.isNotEmpty && updated != created
-                            ? '$created  (수정 $updated)  ·  조회 $views'
-                            : '$created  ·  조회 $views',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray),
-                      ),
-                    ],
+                  Text(
+                    updated.isNotEmpty && updated != created
+                        ? '$created  (수정 $updated)  ·  조회 $views'
+                        : '$created  ·  조회 $views',
+                    style:
+                        const TextStyle(fontSize: 11, color: AppColors.textGray),
                   ),
+                ],
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // URL 생성 — 이 게시글의 전체 주소를 바로 생성/복사 (외부에 노출된 버튼)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: AppColors.purple,
+                    side: BorderSide(
+                        color: AppColors.purple.withValues(alpha: 0.5)),
+                  ),
+                  icon: const Icon(Icons.link, size: 16),
+                  label: const Text('URL', style: TextStyle(fontSize: 12.5)),
+                  onPressed: () => _shareLink(id),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // URL 생성 — 이 게시글의 전체 주소를 바로 생성/복사 (외부에 노출된 버튼)
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        minimumSize: const Size(0, 30),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: AppColors.purple,
-                        side: BorderSide(
-                            color: AppColors.purple.withValues(alpha: 0.5)),
-                      ),
-                      icon: const Icon(Icons.link, size: 16),
-                      label: const Text('URL', style: TextStyle(fontSize: 12.5)),
-                      onPressed: () => _shareLink(id),
-                    ),
-                    PopupMenuButton<String>(
-                      onSelected: (v) {
-                        if (v == 'edit') {
-                          _editPost(existing: p);
-                        } else if (v == 'delete') {
-                          _deletePost(p);
-                        } else if (v == 'share') {
-                          _shareLink(id);
-                        } else if (v == 'hide') {
-                          _toggleHide(p, !hidden);
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        if (_isAdmin || mine)
-                          const PopupMenuItem(value: 'edit', child: Text('수정')),
-                        if (_isAdmin || mine)
-                          const PopupMenuItem(value: 'delete', child: Text('삭제')),
-                        const PopupMenuItem(value: 'share', child: Text('URL 생성')),
-                        if (_isAdmin)
-                          PopupMenuItem(
-                              value: 'hide',
-                              child: Text(hidden ? '비노출 해제' : '비노출')),
-                      ],
-                    ),
+                PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'edit') {
+                      _editPost(existing: p);
+                    } else if (v == 'delete') {
+                      _deletePost(p);
+                    } else if (v == 'share') {
+                      _shareLink(id);
+                    } else if (v == 'hide') {
+                      _toggleHide(p, !hidden);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    if (_isAdmin || mine)
+                      const PopupMenuItem(value: 'edit', child: Text('수정')),
+                    if (_isAdmin || mine)
+                      const PopupMenuItem(value: 'delete', child: Text('삭제')),
+                    const PopupMenuItem(value: 'share', child: Text('URL 생성')),
+                    if (_isAdmin)
+                      PopupMenuItem(
+                          value: 'hide',
+                          child: Text(hidden ? '비노출 해제' : '비노출')),
                   ],
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark)),
-            const SizedBox(height: 4),
-            SelectableText(
-              body,
-              style: const TextStyle(
-                  fontSize: 14, height: 1.5, color: AppColors.textDark),
-            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark)),
+        const SizedBox(height: 4),
+        SelectableText(
+          body,
+          style: const TextStyle(
+              fontSize: 14, height: 1.5, color: AppColors.textDark),
+        ),
             if (hasPassword && pwdHint.isNotEmpty) ...[
               const SizedBox(height: 6),
               Row(
@@ -435,9 +564,7 @@ class _BoardScreenState extends State<BoardScreen> {
               const Divider(height: 18),
               for (final c in comments) _commentTile(p, c),
             ],
-          ],
-        ),
-      ),
+      ],
     );
   }
 
