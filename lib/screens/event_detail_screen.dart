@@ -199,6 +199,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ),
         actions: [
           const AppHomeEmblem(size: 22),
+          // 후기 게시판 — 개인(범스카우트·일반회원)도 행사 후기를 열람/작성한다.
+          IconButton(
+            tooltip: '행사 후기 게시판',
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: _openReview,
+          ),
           IconButton(
             tooltip: '새로고침',
             onPressed: _load,

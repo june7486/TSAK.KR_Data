@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/hscroll_menu.dart';
 import 'all_photos_screen.dart';
+import 'board_screen.dart';
 import 'event_detail_screen.dart';
 
 /// 행사관리 — 연도별 탭 + 행사 목록/생성
@@ -188,6 +189,15 @@ class _EventYearScreenState extends State<EventYearScreen> {
         title: const Text('행사관리'),
         actions: [
           const AppHomeEmblem(size: 22),
+          // 행사+수품 게시판 — 개인(범스카우트·일반회원)도 모든 글을 열람한다.
+          IconButton(
+            tooltip: '게시판 (행사·수품 소식·후기)',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BoardScreen()),
+            ),
+            icon: const Icon(Icons.forum_outlined),
+          ),
           IconButton(
             tooltip: '모든 사진 보기 (행사 순서)',
             onPressed: () => Navigator.push(

@@ -1592,7 +1592,41 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // 노출순서(고정): 내 행사 관리 → 수품 구매 → 후원 계좌.
+          // 게시판(행사+수품) — 개인(범스카우트·일반회원)도 모든 글을 열람한다.
+          //  개인 첫화면에서 곧바로 진입할 수 있게 한다(요구).
+          if (state.can('board'))
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BoardScreen()),
+              ),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.tigerGold, width: 2),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.forum_outlined, size: 18, color: AppColors.purple),
+                    SizedBox(width: 6),
+                    Text(
+                      '게시판 (행사·수품 소식·후기)',
+                      style: TextStyle(
+                        color: AppColors.purple,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          // 노출순서(고정): 내 행사 관리 → 수품 구매 → 게시판 → 후원 계좌.
           // ※ 수요조사(수요 대기) 진행정보는 개인프로필 첫 화면에 노출하지 않는다.
           //    → 개인 상세 정보창(MemberDetailScreen)에서 '수품 구매'와 함께 노출.
           // 중앙회 계좌 3개 + 바로 송금 (참가비·후원 등)
