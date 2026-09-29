@@ -10,6 +10,7 @@ import '../services/file_save.dart';
 import '../services/roster_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/scroll_arrows.dart';
 
 /// 행사 참가자 명단 — 앱 내부에서 열리는 MUJI풍 미리보기 + 출력/공유.
@@ -280,7 +281,7 @@ class _RosterScreenState extends State<RosterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F7),
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: '뒤로',

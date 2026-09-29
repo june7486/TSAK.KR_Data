@@ -7,6 +7,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 마스터 전용 — 앱 관리
 ///  1) 앱 접근 비밀번호 변경
@@ -40,7 +41,7 @@ class _AdminScreenState extends State<AdminScreen> {
       return const Scaffold(body: Center(child: Text('마스터만 접근할 수 있습니다')));
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('앱 관리 (마스터)'),

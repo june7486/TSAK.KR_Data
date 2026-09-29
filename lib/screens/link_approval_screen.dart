@@ -6,6 +6,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 멘토·페런츠(보호자) 연결 승인 관리 — (관리자·마스터 전용)
 ///
@@ -138,7 +139,7 @@ class _LinkApprovalScreenState extends State<LinkApprovalScreen> {
     final state = context.watch<AppState>();
     if (!(state.isApp || state.isMaster)) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: TsakAppBar(
           leading: const AppBackButton(label: '뒤로'),
           leadingWidth: 84,
           title: const Text('멘토·페런츠 연결 승인'),
@@ -147,7 +148,7 @@ class _LinkApprovalScreenState extends State<LinkApprovalScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('멘토·페런츠 연결 승인'),

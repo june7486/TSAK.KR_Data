@@ -9,6 +9,7 @@ import '../services/contact_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 단체 소식 / 단체 문자
 class BulkScreen extends StatefulWidget {
@@ -39,7 +40,7 @@ class _BulkScreenState extends State<BulkScreen> {
     final mailCount = ContactService.emails(recipients).length;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('단체 소식 / 문자'),

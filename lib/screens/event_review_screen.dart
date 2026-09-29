@@ -6,6 +6,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 행사 후기 게시판 — 댓글·첨부·비밀번호 보호·임시저장·좋아요(공감).
 /// 관리자·마스터는 작성자 기기·IP를 함께 본다.
@@ -73,7 +74,7 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
     final state = context.watch<AppState>();
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F7),
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('행사 후기'),
         actions: [
           const AppHomeEmblem(size: 22),

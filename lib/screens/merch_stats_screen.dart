@@ -8,6 +8,7 @@ import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import 'order_detail_screen.dart';
 
@@ -149,7 +150,7 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('수품 통계·현황'),
         actions: [
           const AppHomeEmblem(size: 22),

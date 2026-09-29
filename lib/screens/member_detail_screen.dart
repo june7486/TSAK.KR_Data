@@ -224,6 +224,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // (요구#2) 모든 창 상단에 중앙회 브랜드 동일 노출
+                const Text(
+                  '한국 범스카우트중앙회',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
                 // 원형 대신 각진 박스로 인가번호 표시
                 Container(
                   padding: const EdgeInsets.symmetric(

@@ -11,6 +11,7 @@ import '../services/import_parser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/member_avatar.dart';
 
@@ -39,7 +40,7 @@ class _ImportScreenState extends State<ImportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('자료 가져오기 (AI 인식)'),

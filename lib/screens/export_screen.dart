@@ -12,6 +12,7 @@ import '../services/export_service.dart';
 import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/member_card.dart';
 
@@ -73,7 +74,7 @@ class _ExportScreenState extends State<ExportScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: Text(widget.title, style: const TextStyle(fontSize: 16)),
         actions: const [AppHomeEmblem(size: 24)],
         bottom: PreferredSize(

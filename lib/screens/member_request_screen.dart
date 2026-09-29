@@ -5,6 +5,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_registration_request_section.dart' show MemberRequestLabels;
 
 /// 통합 승인 관리 — (관리자·마스터 전용)
@@ -133,7 +134,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     final state = context.watch<AppState>();
     if (!(state.isApp || state.isMaster)) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: TsakAppBar(
           leading: const AppBackButton(label: '뒤로'),
           leadingWidth: 84,
           title: const Text('승인 관리'),
@@ -142,7 +143,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('승인 관리 (통합)'),

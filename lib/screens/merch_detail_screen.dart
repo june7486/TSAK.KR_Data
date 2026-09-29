@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 수품(상품·기획사전신청) 확대 이미지 + 상세 설명 화면.
 ///
@@ -72,7 +73,7 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         // 항상 뒤로가기 버튼(에러 시에도 이전 창으로 안전 복귀).
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

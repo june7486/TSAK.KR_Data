@@ -9,6 +9,7 @@ import '../services/finance_service.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/finance_export_sheet.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
@@ -65,7 +66,7 @@ class _FinanceScreenState extends State<FinanceScreen>
     final state = context.watch<AppState>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.maybePop(context),

@@ -5,6 +5,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import 'finance_analysis_screen.dart';
 
@@ -53,7 +54,7 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.maybePop(context),

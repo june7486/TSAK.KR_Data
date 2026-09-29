@@ -12,6 +12,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import 'member_edit_screen.dart';
 
 /// 인가자 QR코드 생성 + 스캔 화면
@@ -72,7 +73,7 @@ class _QrGenerateView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: Text('#${member.number} ${member.name} QR'),
@@ -545,7 +546,7 @@ class _QrScanViewState extends State<_QrScanView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('QR 코드 스캔 → 수정'),

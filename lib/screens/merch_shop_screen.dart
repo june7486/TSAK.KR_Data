@@ -6,6 +6,8 @@ import '../services/nas_api.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/personal_quick_actions.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import 'merch_checkout_screen.dart';
 import 'merch_detail_screen.dart';
@@ -132,7 +134,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('수품구매'),
         actions: [
           const AppHomeEmblem(size: 22),
@@ -143,11 +145,19 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorView()
-              : _body(),
+      body: Column(
+        children: [
+          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+          const PersonalQuickActions(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _errorView()
+                    : _body(),
+          ),
+        ],
+      ),
       // 안전영역 + 키보드 대응: 하단바가 항상 보이도록 SafeArea 로 감싼다.
       bottomNavigationBar:
           _loading || _error != null ? null : SafeArea(top: false, child: _cartBar()),

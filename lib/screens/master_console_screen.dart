@@ -7,6 +7,7 @@ import '../services/build_info.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/inquiry_sheet.dart';
 import 'admin_screen.dart';
 import 'board_screen.dart';
@@ -78,14 +79,14 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
     final state = context.watch<AppState>();
     if (!state.isMaster) {
       return Scaffold(
-        appBar: AppBar(title: const Text('마스터 관리창')),
+        appBar: TsakAppBar(title: const Text('마스터 관리창')),
         body: const Center(child: Text('마스터 권한이 필요합니다')),
       );
     }
     final paused = state.adminState['serverPaused'] == true;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('마스터 관리창'),
         actions: [
           const AppHomeEmblem(size: 22),

@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 수품 주문/예약 전용 화면 — 팝업(다이얼로그) 대신 전체 페이지로 구현하여
 /// 모든 브라우저/모바일에서 오류 없이 동작하도록 한다.
@@ -121,7 +122,7 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(
+        appBar: TsakAppBar(
           title: Text(_isReserve ? '수품 예약 (수요조사)' : '수품 주문 / 결제'),
           actions: const [AppHomeEmblem(size: 22)],
         ),

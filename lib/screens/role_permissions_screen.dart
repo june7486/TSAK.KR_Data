@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 메뉴 접근권한 관리 (마스터 전용).
 ///
@@ -91,14 +92,14 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
     final state = context.watch<AppState>();
     if (!state.isMaster) {
       return Scaffold(
-        appBar: AppBar(title: const Text('메뉴 접근권한 관리')),
+        appBar: TsakAppBar(title: const Text('메뉴 접근권한 관리')),
         body: const Center(child: Text('마스터 권한이 필요합니다')),
       );
     }
     final perms = state.perms;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('메뉴 접근권한 관리'),
         actions: [
           const AppHomeEmblem(size: 22),

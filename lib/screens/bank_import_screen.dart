@@ -9,6 +9,7 @@ import '../services/finance_service.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 은행거래파일 → 자동 이름별 분류 → 검토 → 저장
 class BankImportScreen extends StatefulWidget {
@@ -30,7 +31,7 @@ class _BankImportScreenState extends State<BankImportScreen> {
     final matched = _rows.where((r) => r.matched).length;
     final total = _rows.fold<int>(0, (s, r) => s + r.amount);
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.maybePop(context),

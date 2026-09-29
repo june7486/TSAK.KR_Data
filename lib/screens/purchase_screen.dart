@@ -12,6 +12,7 @@ import '../services/print_doc.dart';
 import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 중앙회 물건 결제 리스트 — 표 형식 관리 화면.
 ///
@@ -589,7 +590,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('중앙회 물건 결제'),
         actions: [
           IconButton(

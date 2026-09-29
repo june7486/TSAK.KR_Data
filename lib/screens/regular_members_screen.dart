@@ -6,6 +6,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
 import 'member_detail_screen.dart';
 
@@ -51,7 +52,7 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
     final state = context.watch<AppState>();
     if (!(state.isApp || state.isMaster)) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: TsakAppBar(
           leading: const AppBackButton(label: '뒤로'),
           leadingWidth: 84,
           title: const Text('일반회원 관리'),
@@ -61,7 +62,7 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
     }
     final list = _filtered(state);
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: Text('일반회원 관리 · ${state.regularCount}명'),

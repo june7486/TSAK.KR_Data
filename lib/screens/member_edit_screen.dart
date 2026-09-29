@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/unsaved_guard.dart';
@@ -153,7 +154,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         return true;
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: TsakAppBar(
           leading: AppBackButton(
             label: '뒤로',
             onTap: () async {

@@ -11,6 +11,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/hscroll_menu.dart';
@@ -192,7 +193,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         ? <String>[...baseTabs, ..._customTabs.map((e) => '${e['name'] ?? ''}')]
         : const <String>['사진+동영상'];
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: Row(
           children: [
             Flexible(
@@ -2981,7 +2982,7 @@ class _MediaViewerState extends State<_MediaViewer> {
     final uploader = '${_cur['uploader'] ?? ''}';
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(

@@ -9,6 +9,8 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/personal_quick_actions.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 게시판 (#12).
 /// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호.
@@ -115,7 +117,7 @@ class _BoardScreenState extends State<BoardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F7),
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('게시판'),
         actions: [
           const AppHomeEmblem(size: 22),
@@ -132,25 +134,33 @@ class _BoardScreenState extends State<BoardScreen> {
         icon: const Icon(Icons.edit),
         label: const Text('글쓰기'),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorView()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    controller: _scroll,
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    children: [
-                      _categoryBar(),
-                      const SizedBox(height: 8),
-                      if (_visible.isEmpty)
-                        _emptyView()
-                      else
-                        for (final p in _visible) _postCard(p),
-                    ],
-                  ),
-                ),
+      body: Column(
+        children: [
+          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+          const PersonalQuickActions(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _errorView()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        child: ListView(
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                          children: [
+                            _categoryBar(),
+                            const SizedBox(height: 8),
+                            if (_visible.isEmpty)
+                              _emptyView()
+                            else
+                              for (final p in _visible) _postCard(p),
+                          ],
+                        ),
+                      ),
+          ),
+        ],
+      ),
     );
   }
 

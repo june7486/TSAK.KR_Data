@@ -13,6 +13,7 @@ import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 주문(그룹) 상세 — **장바구니 형식**.
 ///
@@ -903,7 +904,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       onPopInvokedWithResult: (didPop, _) {},
       child: Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(
+        appBar: TsakAppBar(
           title: Text(widget.isReserve ? '예약 상세' : '주문 상세'),
           actions: [const AppHomeEmblem(size: 22)],
         ),

@@ -13,6 +13,7 @@ import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
@@ -194,7 +195,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('수품 판매관리'),
         actions: [
           const AppHomeEmblem(size: 22),

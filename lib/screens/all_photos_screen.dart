@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/personal_quick_actions.dart';
+import '../widgets/tsak_app_bar.dart';
 import 'package:provider/provider.dart';
 
 /// 모든 사진 보기 — 행사 순서(최신순)대로 사진을 모아 보여준다.
@@ -56,7 +58,7 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F7),
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('모든 사진 보기'),
         actions: [
           IconButton(
@@ -75,30 +77,39 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorView()
-              : _events.isEmpty
-                  ? _emptyView()
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 60),
-                        children: [
-                          _summary(),
-                          for (var i = 0; i < _events.length; i++) ...[
-                            _eventGroupHeader(_events[i]),
-                            _eventGrid(_events[i]),
-                            // ---- 행사별 구분선(다음 행사와 명확히 분리) ----
-                            if (i != _events.length - 1)
-                              const _EventDivider()
-                            else
-                              const SizedBox(height: 12),
-                          ],
-                        ],
-                      ),
-                    ),
+      body: Column(
+        children: [
+          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+          const PersonalQuickActions(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _errorView()
+                    : _events.isEmpty
+                        ? _emptyView()
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: ListView(
+                              padding:
+                                  const EdgeInsets.fromLTRB(12, 10, 12, 60),
+                              children: [
+                                _summary(),
+                                for (var i = 0; i < _events.length; i++) ...[
+                                  _eventGroupHeader(_events[i]),
+                                  _eventGrid(_events[i]),
+                                  // ---- 행사별 구분선(다음 행사와 명확히 분리) ----
+                                  if (i != _events.length - 1)
+                                    const _EventDivider()
+                                  else
+                                    const SizedBox(height: 12),
+                                ],
+                              ],
+                            ),
+                          ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -395,7 +406,7 @@ class _AllPhotosViewerState extends State<_AllPhotosViewer> {
     final name = '${p['name']}';
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(

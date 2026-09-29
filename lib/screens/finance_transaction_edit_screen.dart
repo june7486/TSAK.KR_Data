@@ -5,6 +5,7 @@ import '../models/member.dart';
 import '../services/finance_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 입금/지출 직접 입력·수정 화면
 class FinanceTransactionEditScreen extends StatefulWidget {
@@ -76,7 +77,7 @@ class _FinanceTransactionEditScreenState
         ? widget.finance.expenseCategories
         : widget.finance.incomeCategories;
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.maybePop(context),

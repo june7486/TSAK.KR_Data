@@ -13,6 +13,7 @@ import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 
 /// 중앙회 비품 재고 리스트 — 표 형식 관리 화면.
 ///
@@ -533,7 +534,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('중앙회 비품 재고'),
         actions: [
           const AppHomeEmblem(size: 22),

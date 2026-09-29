@@ -9,6 +9,7 @@ import '../services/build_info.g.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/transfer_sheet.dart';
 
 /// 설정 · 백업/복원 · 후원 · 개발자 정보
@@ -30,7 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     //   관리자 이메일 변경 / DB 백업·복원은 관리자(app)·마스터만 노출한다.
     final canAdmin = state.isApp || state.isMaster;
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('설정 · 백업/복원'),

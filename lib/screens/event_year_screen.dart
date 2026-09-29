@@ -5,6 +5,8 @@ import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/personal_quick_actions.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import 'all_photos_screen.dart';
 import 'board_screen.dart';
@@ -182,7 +184,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
       });
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         title: const Text('행사관리'),
         actions: [
           const AppHomeEmblem(size: 22),
@@ -231,7 +233,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
               label: const Text('행사 만들기'),
             )
           : null,
-      body: _loading
+      body: Column(
+        children: [
+          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+          const PersonalQuickActions(),
+          Expanded(
+            child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? _errorView()
@@ -265,6 +272,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 

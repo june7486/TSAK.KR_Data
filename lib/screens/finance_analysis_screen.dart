@@ -12,6 +12,7 @@ import '../services/finance_report.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
 
@@ -163,7 +164,7 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
     final state = context.watch<AppState>();
     if (!(state.isApp || state.isMaster)) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: TsakAppBar(
           leading: const AppBackButton(label: '뒤로'),
           leadingWidth: 84,
           title: const Text('은행거래 종합분석'),
@@ -172,7 +173,7 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
         title: const Text('은행거래 종합분석'),
