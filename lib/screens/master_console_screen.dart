@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/app_config.dart';
+import '../services/build_info.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/inquiry_sheet.dart';
 import 'admin_screen.dart';
 import 'approval_screen.dart';
 import 'board_screen.dart';
@@ -149,6 +152,18 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                         title: '전체 명단 출력'))),
                 _tile('로그 확인', Icons.history, AppColors.textGray,
                     () => _pushTab(const MerchAdminScreen(), 10)),
+              ]),
+              _section('앱 · 문의', [
+                _tile('문의글 확인 · 답변', Icons.help_outline,
+                    AppColors.taegeukBlue, () => showInquirySheet(context)),
+                _tile('첫 화면 표시글 확인 · 변경', Icons.push_pin_outlined,
+                    AppColors.tigerGold, () => _editHomeNotice()),
+                _tile('버전 확인', Icons.info_outline, AppColors.textGray,
+                    () => _showVersion()),
+                _tile('관리자 계정 관리', Icons.vpn_key, AppColors.taegeukRed,
+                    () => _push(const AdminScreen())),
+                _tile('메뉴별 접근권한 관리', Icons.tune, AppColors.purple,
+                    () => _push(const AdminScreen())),
               ]),
               _section('알림', [
                 if (_notifies.isEmpty)
@@ -323,6 +338,27 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
 
   void _pushTab(Widget w, int tab) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => w));
+  }
+
+  /// 첫 화면 표시글(홈 공지) 확인·변경 — 수품 판매관리 설정 탭의 공지 편집으로 연결.
+  void _editHomeNotice() {
+    _pushTab(const MerchAdminScreen(), 0);
+    _snack('상품관리 탭 상단의 공지 편집기에서 첫 화면 표시글을 변경할 수 있습니다');
+  }
+
+  void _showVersion() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('버전 정보'),
+        content: Text('앱 버전: v${AppConfig.appVersion}\n'
+            '빌드: $kBuildDisplay'),
+        actions: [
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+        ],
+      ),
+    );
   }
 
   void _snack(String m) {
