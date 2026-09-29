@@ -201,10 +201,29 @@ class AppState extends ChangeNotifier {
 
   /// 개인 접근 시 본인 정보만 열람·수정 가능하도록 저장소 제한을 갱신
   void _applyAccessScope() {
-    if (isSelfAccess && _who.isNotEmpty) {
+    // 개인 접근이라도 HOME(메인 홈)으로 들어가 권한 범위 열람 중이면
+    //  제한을 풀어 서버가 내려준(권한 범위) 명단을 보여준다.
+    if (isSelfAccess && _who.isNotEmpty && !_personalBrowse) {
       repo.restrictedNumber = _who;
     } else {
       repo.restrictedNumber = null;
+    }
+  }
+
+  /// 개인 접근에서 HOME(메인 홈)을 눌러 권한 범위를 열람 중인지.
+  bool _personalBrowse = false;
+  bool get personalBrowse => _personalBrowse;
+
+  /// HOME / 개인 화면 전환 — 저장소 접근 범위를 즉시 갱신한다.
+  void setPersonalBrowse(bool v) {
+    if (_personalBrowse == v) return;
+    _personalBrowse = v;
+    _applyAccessScope();
+    refresh();
+    notifyListeners();
+    // HOME(권한 범위) 진입 시 서버에서 권한 범위 명단을 다시 받아 채운다.
+    if (v && repo.isNasMode) {
+      unawaited(repo.syncFromNas().then((_) => refresh()));
     }
   }
 
@@ -387,6 +406,7 @@ class AppState extends ChangeNotifier {
       // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
       _who = (tier == 'personal' || tier == 'guest') ? personalNo : '';
       _sessionStart = DateTime.now();
+      _personalBrowse = false;
       _applyAccessScope();
       _persistSession();
       notifyListeners();
@@ -432,6 +452,9 @@ class AppState extends ChangeNotifier {
     _who = '';
     _sessionStart = null;
     _grantedAdmin = false;
+    _isSupporter = false;
+    _personalBrowse = false;
+    _perms = {};
     repo.restrictedNumber = null;
     // [보안] 서버측 세션도 폐기 (세션토큰 탈취 재사용 방지)
     try {

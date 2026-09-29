@@ -16,6 +16,7 @@ import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'merch_admin_screen.dart';
 import 'regular_members_screen.dart';
+import 'role_permissions_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 
@@ -121,6 +122,8 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                     AppColors.purple, () => _push(const SettingsScreen())),
               ]),
               _section('회원 · 권한', [
+                _tile('메뉴별 접근권한 관리', Icons.tune, AppColors.purple,
+                    () => _push(const RolePermissionsScreen())),
                 _tile('관리자 권한 선정 · 관리', Icons.verified_user,
                     AppColors.taegeukBlue, () => _push(const AdminScreen())),
                 _tile('회원관리 (인가자)', Icons.people_alt,
@@ -161,8 +164,6 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                 _tile('버전 확인', Icons.info_outline, AppColors.textGray,
                     () => _showVersion()),
                 _tile('관리자 계정 관리', Icons.vpn_key, AppColors.taegeukRed,
-                    () => _push(const AdminScreen())),
-                _tile('메뉴별 접근권한 관리', Icons.tune, AppColors.purple,
                     () => _push(const AdminScreen())),
               ]),
               _section('알림', [

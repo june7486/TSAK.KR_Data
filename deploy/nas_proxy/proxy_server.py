@@ -5955,26 +5955,6 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require():
                     return
                 return self._json({"ok": True, "perms": _role_perms()})
-            if p == "/api/perms/set":
-                if not self._require("master"):
-                    return
-                d = json.loads(self._body() or b"{}")
-                role = str(d.get("role", "")).strip()
-                if role not in _default_role_perms():
-                    return self._json({"ok": False, "error": "bad role"}, 400)
-                updates = d.get("updates", d.get("perms", {})) or {}
-                if not isinstance(updates, dict):
-                    updates = {}
-                cfg = _load_json(CFG_FILE, _default_config())
-                rp = cfg.get("rolePermissions") or _default_role_perms()
-                cur = dict(rp.get(role) or _default_role_perms()[role])
-                for k, v in updates.items():
-                    if str(k) in cur:
-                        cur[str(k)] = bool(v)
-                rp[role] = cur
-                cfg["rolePermissions"] = rp
-                _save_json(CFG_FILE, cfg)
-                return self._json({"ok": True, "role": role, "perms": cur})
             # ---- 재무 (F02: 관리자·마스터 전용) ----
             if p == "/api/finance":
                 if not self._require("admin"):
@@ -6772,6 +6752,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
         try:
+            if p == "/api/perms/set":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                role = str(d.get("role", "")).strip()
+                if role not in _default_role_perms():
+                    return self._json({"ok": False, "error": "bad role"}, 400)
+                updates = d.get("updates", d.get("perms", {})) or {}
+                if not isinstance(updates, dict):
+                    updates = {}
+                cfg = _load_json(CFG_FILE, _default_config())
+                rp = cfg.get("rolePermissions") or _default_role_perms()
+                cur = dict(rp.get(role) or _default_role_perms()[role])
+                for k, v in updates.items():
+                    if str(k) in cur:
+                        cur[str(k)] = bool(v)
+                rp[role] = cur
+                cfg["rolePermissions"] = rp
+                _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "role": role, "perms": cur})
             if p == "/api/admin/grant":
                 d = json.loads(self._body() or b"{}")
                 if not _is_master_val(d.get("master")):

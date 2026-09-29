@@ -70,6 +70,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _selectMode = false;
   final Set<String> _selected = {};
   bool _deepLinkHandled = false;
+  /// 범스카우트/개인 접근에서 HOME 버튼을 눌러 메인 홈을 볼 때 true.
+  /// (권한이 허용하는 범위까지만 노출된다.)
+  bool _showMainHome = false;
   // 게시판/주문 등 관리자 이상 알림 배지
   int _boardUnread = 0;
 
@@ -230,6 +233,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final members = state.members;
+    // 개인/비인가(본인) 화면을 첫 화면으로 보여준다. HOME 버튼을 누르면
+    //  _showMainHome=true 가 되어 권한 허용 범위의 메인 홈이 나타난다.
+    final selfView = state.isSelfAccess && !_showMainHome;
+    final personalMain = state.isSelfAccess && _showMainHome;
+    // 개인 첫 화면에서는 '본인' 1건만 노출(나머지는 HOME 후 권한 범위로).
+    final selfMembers = selfView
+        ? members.where((m) => state.isSelfNumber(m.number)).toList()
+        : members;
 
     return Scaffold(
       appBar: AppBar(
@@ -353,8 +364,8 @@ class _HomeScreenState extends State<HomeScreen> {
               }),
             ),
           ] else ...[
-            // 개인/비인가자(본인) 접근: 본인 정보만 → 단체문자/통계/재무 메뉴 숨김
-            if (!state.isSelfAccess) ...[
+            // 권한이 허용하는 메뉴만 아이콘으로 노출한다.
+            if (state.can('bulk'))
               IconButton(
                 tooltip: '단체 소식/문자',
                 icon: const Icon(Icons.campaign),
@@ -363,6 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(builder: (_) => const BulkScreen()),
                 ),
               ),
+            if (state.can('stats'))
               IconButton(
                 tooltip: '통계',
                 icon: const Icon(Icons.insights),
@@ -371,13 +383,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(builder: (_) => const StatsScreen()),
                 ),
               ),
-              // 명단 선택 (일괄작업) — 통계 아이콘 옆에 배치
+            // 명단 선택 (일괄작업) — 관리자 이상
+            if (state.can('bulk'))
               IconButton(
                 tooltip: '명단 선택 (일괄작업)',
                 icon: const Icon(Icons.checklist),
                 onPressed: () => setState(() => _selectMode = true),
               ),
-              // 게시판 — 새 글 알림 배지 표시(관리자 이상)
+            // 게시판 — 새 글 알림 배지 표시
+            if (state.can('board'))
               IconButton(
                 tooltip: '게시판',
                 icon: Badge(
@@ -393,8 +407,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   _loadBoardUnread();
                 },
               ),
-            ],
-            if (state.isSelfAccess)
+            if (personaForPersonal(state) && !_showMainHome)
+              IconButton(
+                tooltip: '메인 홈으로',
+                icon: const Icon(Icons.home_filled),
+                onPressed: () {
+                  state.setPersonalBrowse(true);
+                  setState(() => _showMainHome = true);
+                },
+              ),
+            if (state.isSelfAccess && !_showMainHome)
               IconButton(
                 tooltip: '내 QR',
                 icon: const Icon(Icons.qr_code_2),
@@ -609,12 +631,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          if (!state.isSelfAccess) _header(state),
-          // 개인/비인가자(본인 1인) 접근에서는 검색·필터를 숨겨 다른 회원 열람 차단
-          if (!state.isSelfAccess) _filterBar(state),
+          if (!selfView) _header(state, personalMain: personalMain),
+          // 검색·필터는 명단검색 권한이 있을 때만 노출(개인정보 보호)
+          if (!selfView && state.can('memberSearch')) _filterBar(state),
           const SizedBox(height: 4),
           Expanded(
-            child: state.isSelfAccess
+            child: selfView
                 // 개인 페이지: 헤더(개인정보·바로가기)를 함께 스크롤에 포함해
                 // 화면이 잘리지 않고 아래로 스크롤되도록 한다.
                 ? ScrollDownHint(
@@ -625,13 +647,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     slivers: [
                       SliverToBoxAdapter(child: _personalHeader(state)),
                       const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                      if (members.isEmpty)
+                      if (selfMembers.isEmpty)
                         const SliverToBoxAdapter(child: SizedBox(height: 8))
                       else
                         SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, i) {
-                              final m = members[i];
+                              final m = selfMembers[i];
                               return MemberCard(
                                 member: m,
                                 scale: state.listScale,
@@ -644,7 +666,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onEdit: () => _openEdit(m),
                               );
                             },
-                            childCount: members.length,
+                            childCount: selfMembers.length,
                           ),
                         ),
                       const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -668,6 +690,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 selected: _selected.contains(m.id),
                                 canSeeRealName: state.isApp ||
                                     state.isMaster ||
+                                    state.can('memberSearch') ||
                                     state.who.replaceAll(
                                             RegExp(r'[^0-9]'), '') ==
                                         m.number
@@ -693,11 +716,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                           ),
           ),
-          if (state.isSelfAccess) _personalActionBar(state),
+          if (selfView) _personalActionBar(state),
           _bottomBar(context, state),
         ],
       ),
-      floatingActionButton: state.isSelfAccess
+      floatingActionButton: (selfView || !state.can('memberAdd'))
           ? null
           : (_selectMode
                 ? FloatingActionButton.extended(
@@ -716,6 +739,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   )),
     );
   }
+
+  /// 개인 접근(personal/guest) 여부 — 메뉴 노출 판정용.
+  bool personaForPersonal(AppState state) => state.isSelfAccess;
 
   /// 개인 접근 전용 — 명단 아래 "개인정보 수정" 액션 바
   Widget _personalActionBar(AppState state) {
@@ -982,38 +1008,41 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Widget _header(AppState state) {
+  Widget _header(AppState state, {bool personalMain = false}) {
     // 개인/비인가자(본인) 접근: 본인 정보만 표시하는 간소 헤더
-    if (state.isSelfAccess) return _personalHeader(state);
+    if (state.isSelfAccess && !personalMain) return _personalHeader(state);
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         children: [
-          TextField(
-            controller: _searchCtrl,
-            onChanged: (v) => state.setQuery(v),
-            decoration: InputDecoration(
-              hintText: '통합검색 (인가번호, 이름, 전화번호, 범위(1-100), 연맹, 지역대, 성별, 평생회원 등)',
-              hintStyle: const TextStyle(
-                  fontSize: 11.5, color: AppColors.textGray, height: 1.2),
-              hintMaxLines: 2,
-              prefixIcon: const Icon(Icons.search, color: AppColors.purple),
-              suffixIcon: _searchCtrl.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchCtrl.clear();
-                        state.setQuery('');
-                      },
-                    ),
+          // 검색창은 명단검색 권한이 있을 때만 (개인정보 보호)
+          if (state.can('memberSearch'))
+            TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => state.setQuery(v),
+              decoration: InputDecoration(
+                hintText: '통합검색 (인가번호, 이름, 전화번호, 범위(1-100), 연맹, 지역대, 성별, 평생회원 등)',
+                hintStyle: const TextStyle(
+                    fontSize: 11.5, color: AppColors.textGray, height: 1.2),
+                hintMaxLines: 2,
+                prefixIcon: const Icon(Icons.search, color: AppColors.purple),
+                suffixIcon: _searchCtrl.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          state.setQuery('');
+                        },
+                      ),
+              ),
             ),
-          ),
           const SizedBox(height: 6),
           // AI 자연어 검색 예시 칩 — 누르면 바로 검색 실행
-          HScrollMenu(
+          if (state.can('memberSearch'))
+            HScrollMenu(
             height: 30,
             child: Row(
               children: [
@@ -1060,18 +1089,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              _statChip('전체', '${state.total}명', Icons.groups),
-              const SizedBox(width: 6),
-              _statChip('검색결과', '${state.members.length}명', Icons.search),
-              const SizedBox(width: 6),
-              _statChip('평생회원', '${state.lifetimeCount}명', Icons.star),
-            ],
-          ),
+          if (state.can('memberSearch'))
+            Row(
+              children: [
+                _statChip('전체', '${state.total}명', Icons.groups),
+                const SizedBox(width: 6),
+                _statChip('검색결과', '${state.members.length}명', Icons.search),
+                const SizedBox(width: 6),
+                _statChip('평생회원', '${state.lifetimeCount}명', Icons.star),
+              ],
+            ),
           const SizedBox(height: 6),
           // 연회비 연도별 납부 인원 (작게)
-          HScrollMenu(
+          if (state.can('memberSearch'))
+            HScrollMenu(
             height: 18,
             child: Row(
               children: [
@@ -1110,9 +1141,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               children: [
                 // (0) 행사+수품판매 게시판 — 행사관리 앞에 배치(요구 #12)
-                _boardButton(),
+                if (state.can('board')) _boardButton(),
                 // (1) 행사관리 — 가장 자주 쓰는 진입점
-                _eventButton(),
+                if (state.can('events')) _eventButton(),
                 if (state.isApp || state.isMaster) ...[
                   _approvalButton(),
                   // (2-1) 멘토·페런츠 연결 승인 (관리자·마스터)
@@ -1120,14 +1151,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   // (3) 일반회원 (관리자·마스터)
                   _regularMembersButton(),
                 ],
-                // (4) 수품 구매 — 모든 사용자에게 노출
-                _finButton(
-                  '수품 구매',
-                  Icons.shopping_cart_checkout,
-                  const Color(0xFF6D4C41),
-                  -4,
-                ),
-                if (state.isApp || state.isMaster) ...[
+                // (4) 수품 구매 — 권한 허용 시 노출
+                if (state.can('merchBuy'))
+                  _finButton(
+                    '수품 구매',
+                    Icons.shopping_cart_checkout,
+                    const Color(0xFF6D4C41),
+                    -4,
+                  ),
+                if (state.can('merchMgmt')) ...[
                   // (5) 수품판매관리
                   _finButton(
                     '수품판매관리',
@@ -1142,6 +1174,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Color(0xFF6A1B9A),
                     -3,
                   ),
+                ],
+                if (state.can('finance')) ...[
                   // (7) 참가비
                   _finButton(
                     '참가비',
@@ -1175,7 +1209,39 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          _donationBanner(state),
+          if (state.can('memberSearch')) _donationBanner(state),
+          // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
+          if (personalMain)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline,
+                      color: Colors.white70, size: 14),
+                  const SizedBox(width: 4),
+                  const Expanded(
+                    child: Text(
+                      '마스터가 설정한 권한 범위의 메뉴만 보입니다.',
+                      style: TextStyle(color: Colors.white70, fontSize: 10.5),
+                    ),
+                  ),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 30),
+                    ),
+                    onPressed: () {
+                      context.read<AppState>().setPersonalBrowse(false);
+                      setState(() => _showMainHome = false);
+                    },
+                    icon: const Icon(Icons.arrow_back, size: 15),
+                    label: const Text('개인 화면으로',
+                        style: TextStyle(fontSize: 11.5)),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1253,6 +1319,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Spacer(),
+              // HOME — 메인 홈(권한 허용 범위)으로 이동
+              Material(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () {
+                    context.read<AppState>().setPersonalBrowse(true);
+                    setState(() => _showMainHome = true);
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.home_filled,
+                            color: AppColors.purple, size: 16),
+                        SizedBox(width: 4),
+                        Text(
+                          'HOME',
+                          style: TextStyle(
+                            color: AppColors.purple,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               // V 표시 영역 — 누르면 본인 정보 편집(수정/저장) 시트 열림
               if (me != null)
                 Material(

@@ -309,7 +309,9 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
           if (noneAtAll) ...[
             const SizedBox(height: 6),
             const Text(
-              '비인가자 로그인 화면에서 신규회원을 생성할 수 있습니다',
+              '범스카우트 인가자 생성은 관리자 이상만 가능하며,\n'
+              '신규 일반 아이디는 서포터즈 권한으로 등록됩니다.',
+              textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textGray, fontSize: 11.5),
             ),
           ],
