@@ -379,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               // 게시판 — 새 글 알림 배지 표시(관리자 이상)
               IconButton(
-                tooltip: '행사·수품판매 게시판',
+                tooltip: '게시판',
                 icon: Badge(
                   isLabelVisible: _boardUnread > 0,
                   label: Text('$_boardUnread'),
@@ -1572,7 +1572,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Icon(Icons.forum_outlined, size: 14, color: Colors.white),
               SizedBox(width: 4),
               Text(
-                '행사·수품 게시판',
+                '게시판',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 11.5,
@@ -2217,7 +2217,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Text(
               '비밀번호를 분실한 경우 관리자에게 문의하세요.\n\n'
-              '· 관리자(마스터)가 인가번호 기준으로\n'
+              '· 관리자(마스터)가 인가띸가번호 기준으로\n'
               '  비밀번호를 초기화하거나 재설정할 수 있습니다.\n'
               '· 초기화 시 기본값은 「본인 인가번호!@@」 입니다.',
               textAlign: TextAlign.center,
