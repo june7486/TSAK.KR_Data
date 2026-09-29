@@ -5,15 +5,13 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 
-/// 등록요청 섹션 — 개인 프로필(MemberDetailScreen)에 노출.
+/// 등록 · 자격 관리 섹션 — 개인 프로필(MemberDetailScreen)에 노출.
 ///
 /// 요구사항:
-///   · 평생회원 / 연회비 납부 / 자격 지정 여부는 **개인 프로필 창**에서
-///     '등록요청' 버튼으로 요청하고, **관리자·마스터가 승인**하면 반영된다.
-///
-/// 동작:
-///   · [isSelf] 가 true(본인 프로필)이면 '등록요청' 버튼을 노출한다.
-///   · 본인의 진행중/처리된 요청 내역을 함께 보여준다(서버 조회).
+///   · **자격(훈련현황)은 셀프 선택** — 본인이 직접 선택하면 즉시 반영된다.
+///   · 평생회원 / 연회비 납부 / 행사 참가 등록은 개인 프로필에서 '등록요청' →
+///     관리자·마스터가 승인하면 반영된다.
+///   · (향후 추가되는 승인 항목도 통합 승인 창에서 처리)
 class MemberRegistrationRequestSection extends StatefulWidget {
   const MemberRegistrationRequestSection({
     super.key,
@@ -34,12 +32,20 @@ class _MemberRegistrationRequestSectionState
   List<Map<String, dynamic>> _requests = [];
   bool _loading = false;
 
-  /// 등록요청 가능한 유형 정의 (value, 라벨, 아이콘, 색).
+  /// 훈련자격(자격) 선택 항목 — 셀프 선택.
+  static const List<String> _trainingOptions = [
+    '중급',
+    '상급',
+    '커미셔너과정',
+    '부교수',
+    '교수',
+  ];
+
+  /// 등록요청(승인 필요) 유형 정의.
   static const _types = <_ReqType>[
     _ReqType('lifetime', '평생회원 등록', Icons.star, AppColors.lifetimeGold),
     _ReqType('fee', '연회비 납부', Icons.card_membership, AppColors.scoutGreen),
-    _ReqType('qualification', '자격 지정', Icons.workspace_premium,
-        AppColors.purple),
+    _ReqType('event', '행사 참가 등록', Icons.event_available, AppColors.taegeukBlue),
   ];
 
   @override
@@ -67,9 +73,116 @@ class _MemberRegistrationRequestSectionState
   @override
   Widget build(BuildContext context) {
     final m = widget.member;
-    // 본인도 관리자/마스터도 아니면 요청 상태가 의미 없으므로 최소 노출.
     final canRequest = widget.isSelf;
 
+    return Column(
+      children: [
+        // 1) 자격(훈련현황) — 셀프 선택(즉시 반영)
+        _trainingSection(m),
+        // 2) 등록요청 — 평생회원 / 연회비 / 행사 (승인 필요)
+        if (canRequest) _requestSection(m),
+      ],
+    );
+  }
+
+  // ---------------- 1) 자격(훈련현황) 셀프 선택 ----------------
+  Widget _trainingSection(Member m) {
+    final state = context.watch<AppState>();
+    final selected = m.trainingStatus
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    // 본인이거나 관리자·마스터만 편집 가능
+    final editable = widget.isSelf || state.isApp || state.isMaster;
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.school, color: AppColors.purple, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '자격 (훈련현황)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('셀프 선택',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.purple)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '이수한 훈련 과정을 직접 선택하세요 (복수 선택 가능 · 즉시 반영)',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final t in _trainingOptions)
+                  FilterChip(
+                    label: Text(t),
+                    selected: selected.contains(t),
+                    showCheckmark: editable,
+                    checkmarkColor: Colors.white,
+                    selectedColor: AppColors.purple,
+                    labelStyle: TextStyle(
+                      color: selected.contains(t)
+                          ? Colors.white
+                          : AppColors.textDark,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                    onSelected: editable
+                        ? (on) {
+                            final next = Set<String>.from(selected);
+                            if (on) {
+                              next.add(t);
+                            } else {
+                              next.remove(t);
+                            }
+                            final joined = _trainingOptions
+                                .where((o) => next.contains(o))
+                                .join(', ');
+                            context
+                                .read<AppState>()
+                                .save(m.copyWith(trainingStatus: joined));
+                          }
+                        : null,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------- 2) 등록요청 (평생·연회비·행사) ----------------
+  Widget _requestSection(Member m) {
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Padding(
@@ -84,7 +197,7 @@ class _MemberRegistrationRequestSectionState
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    '평생회원 · 연회비 · 자격 지정',
+                    '등록요청 (평생·연회비·행사)',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 15,
@@ -92,41 +205,38 @@ class _MemberRegistrationRequestSectionState
                     ),
                   ),
                 ),
-                if (canRequest)
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.purple,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: () => _openRequestSheet(),
-                    icon: const Icon(Icons.edit_document, size: 16),
-                    label: const Text('등록요청',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                    visualDensity: VisualDensity.compact,
                   ),
+                  onPressed: () => _openRequestSheet(),
+                  icon: const Icon(Icons.edit_document, size: 16),
+                  label: const Text('등록요청',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
               ],
             ),
             const SizedBox(height: 12),
             _statusRow(m),
-            if (canRequest) ...[
-              const SizedBox(height: 6),
-              const Text(
-                '* 등록요청을 제출하면 관리자·마스터가 확인 후 승인합니다. '
-                '승인되면 아래 상태에 반영됩니다.',
-                style: TextStyle(fontSize: 11, color: AppColors.textGray),
-              ),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: SizedBox(
-                    height: 16,
-                    width: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else if (_requests.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _requestHistory(),
-              ],
+            const SizedBox(height: 6),
+            const Text(
+              '* 등록요청을 제출하면 관리자·마스터가 확인 후 승인합니다. '
+              '승인되면 아래 상태에 반영됩니다.',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (_requests.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _requestHistory(),
             ],
           ],
         ),
@@ -155,10 +265,10 @@ class _MemberRegistrationRequestSectionState
           color: AppColors.scoutGreen,
         ),
         _statusChip(
-          label: '자격 지정',
-          value: m.qualificationApproved ? '지정됨' : '미지정',
-          on: m.qualificationApproved,
-          color: AppColors.purple,
+          label: '행사참가',
+          value: m.attendedEvents.isEmpty ? '참가내역 없음' : '${m.attendedEvents.length}건',
+          on: m.attendedEvents.isNotEmpty,
+          color: AppColors.taegeukBlue,
         ),
       ],
     );
@@ -210,12 +320,10 @@ class _MemberRegistrationRequestSectionState
         const Text('내 등록요청 내역',
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
         const SizedBox(height: 6),
-        ..._requests.take(6).map((r) {
+        ..._requests.take(8).map((r) {
           final t = '${r['type'] ?? ''}';
-          final label = _types
-              .firstWhere((e) => e.value == t,
-                  orElse: () => _ReqType(t, t, Icons.info, AppColors.textGray))
-              .label;
+          final label = MemberRequestLabels.label(t);
+          final icon = MemberRequestLabels.icon(t);
           final status = '${r['status'] ?? ''}';
           final (txt, col) = switch (status) {
             'approved' => ('승인됨', AppColors.scoutGreen),
@@ -224,12 +332,15 @@ class _MemberRegistrationRequestSectionState
           };
           final detail = [
             if ('${r['year'] ?? ''}'.isNotEmpty) '${r['year']}년',
+            if ('${r['event'] ?? ''}'.isNotEmpty) '${r['event']}',
             if ('${r['date'] ?? ''}'.isNotEmpty) '${r['date']}',
           ].join(' · ');
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               children: [
+                Icon(icon, size: 13, color: AppColors.textGray),
+                const SizedBox(width: 5),
                 Expanded(
                   child: Text(
                     '$label${detail.isNotEmpty ? ' ($detail)' : ''}',
@@ -259,10 +370,18 @@ class _MemberRegistrationRequestSectionState
   // ---------------- 등록요청 제출 시트 ----------------
   Future<void> _openRequestSheet() async {
     final m = widget.member;
+    final state = context.read<AppState>();
     String type = 'lifetime';
     String year = '${DateTime.now().year}';
+    String eventName = '';
     final dateCtrl = TextEditingController(text: _today());
-    final noteCtrl = TextEditingController();
+
+    // 행사 목록(선택용) — 실패해도 시트는 뜬다.
+    List<String> events = [];
+    try {
+      events = await state.getAllEvents();
+    } catch (_) {}
+    if (!mounted) return;
 
     final submit = await showModalBottomSheet<bool>(
       context: context,
@@ -304,7 +423,6 @@ class _MemberRegistrationRequestSectionState
                 style: TextStyle(fontSize: 12, color: AppColors.textGray),
               ),
               const SizedBox(height: 12),
-              // 유형 선택
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -350,16 +468,29 @@ class _MemberRegistrationRequestSectionState
                     border: OutlineInputBorder(),
                   ),
                 ),
-              if (type == 'qualification')
-                TextField(
-                  controller: noteCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '자격 지정 사유·요청 내용',
-                    hintText: '예: 지도자 자격 과정 이수, 멘토 지정 요청 등',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+              if (type == 'event')
+                events.isEmpty
+                    ? const Text(
+                        '선택할 수 있는 행사가 없습니다. 관리자에게 문의하세요.',
+                        style: TextStyle(
+                            fontSize: 12.5, color: AppColors.textGray),
+                      )
+                    : DropdownButtonFormField<String>(
+                        initialValue: eventName.isEmpty ? null : eventName,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '참가할 행사',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: events
+                            .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e,
+                                    overflow: TextOverflow.ellipsis)))
+                            .toList(),
+                        onChanged: (v) =>
+                            setSheet(() => eventName = v ?? eventName),
+                      ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -368,7 +499,15 @@ class _MemberRegistrationRequestSectionState
                     backgroundColor: AppColors.purple,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
-                  onPressed: () => Navigator.pop(ctx, true),
+                  onPressed: () {
+                    if (type == 'event' && eventName.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('참가할 행사를 선택하세요')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(ctx, true);
+                  },
                   icon: const Icon(Icons.send, size: 18),
                   label: const Text('등록요청 제출',
                       style: TextStyle(fontWeight: FontWeight.w800)),
@@ -381,17 +520,19 @@ class _MemberRegistrationRequestSectionState
     );
 
     if (submit != true || !mounted) return;
-    final state = context.read<AppState>();
     final err = await state.submitMemberRequest(
       type: type,
       year: type == 'fee' ? year : '',
       date: type == 'lifetime' ? dateCtrl.text.trim() : '',
-      note: type == 'qualification' ? noteCtrl.text.trim() : '',
+      event: type == 'event' ? eventName : '',
+      note: '',
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(err == null ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청 실패: $err'),
+        content: Text(err == null
+            ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.'
+            : '요청 실패: $err'),
       ),
     );
     if (err == null) _load();
@@ -402,6 +543,36 @@ class _MemberRegistrationRequestSectionState
     String two(int v) => v.toString().padLeft(2, '0');
     return '${n.year}-${two(n.month)}-${two(n.day)}';
   }
+}
+
+/// 등록요청 유형 라벨/아이콘 — 위젯·화면 공용.
+class MemberRequestLabels {
+  static String label(String t) => switch (t) {
+        'lifetime' => '평생회원 등록',
+        'fee' => '연회비 납부',
+        'event' => '행사 참가 등록',
+        'regular' => '비인가회원 등록',
+        'qualification' => '자격 지정',
+        _ => t,
+      };
+
+  static IconData icon(String t) => switch (t) {
+        'lifetime' => Icons.star,
+        'fee' => Icons.card_membership,
+        'event' => Icons.event_available,
+        'regular' => Icons.person_add,
+        'qualification' => Icons.workspace_premium,
+        _ => Icons.rule,
+      };
+
+  static Color color(String t) => switch (t) {
+        'lifetime' => AppColors.lifetimeGold,
+        'fee' => AppColors.scoutGreen,
+        'event' => AppColors.taegeukBlue,
+        'regular' => AppColors.purple,
+        'qualification' => AppColors.purple,
+        _ => AppColors.textGray,
+      };
 }
 
 class _ReqType {
