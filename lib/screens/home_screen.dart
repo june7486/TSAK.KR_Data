@@ -495,6 +495,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.admin_panel_settings,
                       label: '앱 관리 — 앱접근 비번 변경/정지/복구',
                       color: AppColors.taegeukRed,
+                      role: '마스터',
                     ),
                   ),
                 if (state.isMaster)
@@ -503,7 +504,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: _MenuItem(
                       icon: Icons.workspace_premium,
                       label: '마스터 관리창 — 백업/회원/권한/로그/재무',
-                      color: AppColors.tigerGold,
+                      color: AppColors.lifetimeGold,
+                      role: '마스터',
                     ),
                   ),
                 if (!state.isSelfAccess) ...[
@@ -513,6 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.account_balance_wallet,
                       label: '재무 관리 (후원·수품·참가비)',
                       color: AppColors.taegeukBlue,
+                      role: '관리자',
                     ),
                   ),
                   const PopupMenuItem(
@@ -521,6 +524,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.folder_special,
                       label: '기본자료 폴더 (첨부·자동분석)',
                       color: AppColors.taegeukBlue,
+                      role: '관리자',
                     ),
                   ),
                   const PopupMenuItem(
@@ -529,6 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.auto_awesome,
                       label: '자료 가져오기 (AI 인식)',
                       color: AppColors.taegeukBlue,
+                      role: '관리자',
                     ),
                   ),
                 ],
@@ -547,6 +552,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.cloud_download,
                       label: 'NAS 최신 데이터 불러오기',
                       color: AppColors.taegeukBlue,
+                      role: '관리자',
                     ),
                   ),
                   const PopupMenuItem(
@@ -555,6 +561,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.checklist,
                       label: '명단 선택 (일괄작업)',
                       color: AppColors.taegeukBlue,
+                      role: '관리자',
                     ),
                   ),
                 ],
@@ -2543,11 +2550,15 @@ class _MenuItem extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.color,
+    this.role,
   });
 
   final IconData icon;
   final String label;
   final Color color;
+
+  /// 권한 배지 — '관리자' 또는 '마스터'. null이면 배지 없음.
+  final String? role;
 
   @override
   Widget build(BuildContext context) {
@@ -2565,7 +2576,48 @@ class _MenuItem extends StatelessWidget {
             ),
           ),
         ),
+        if (role != null) ...[
+          const SizedBox(width: 6),
+          _RoleBadge(role: role!),
+        ],
       ],
+    );
+  }
+}
+
+/// 권한 구분용 작은 원형 배지 — 관리자(파랑) / 마스터(빨강).
+class _RoleBadge extends StatelessWidget {
+  const _RoleBadge({required this.role});
+
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    final isMaster = role == '마스터';
+    final bg = isMaster ? AppColors.taegeukRed : AppColors.taegeukBlue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: bg.withValues(alpha: 0.35),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Text(
+        role,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          height: 1.25,
+          letterSpacing: -0.2,
+        ),
+      ),
     );
   }
 }
