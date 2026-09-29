@@ -3831,13 +3831,188 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                 ),
+                onPressed: () => _duplicateMaker(m),
+                icon: const Icon(Icons.copy_all_outlined, size: 15),
+                label: const Text('복사'),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
                 onPressed: _exportMaker,
                 icon: const Icon(Icons.print_outlined, size: 15),
                 label: const Text('인쇄/저장'),
               ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: AppColors.taegeukBlue,
+                ),
+                onPressed: () => _showInvoice(m, made),
+                icon: const Icon(Icons.receipt_long_outlined, size: 15),
+                label: const Text('인보이스 보기'),
+              ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// 제작자별 인보이스(거래명세서) — 레퍼런스 디자인(미니멀·엣지) 요약 보기.
+  void _showInvoice(Map<String, dynamic> m, List<Map<String, dynamic>> made) {
+    final madeAmount =
+        made.fold<int>(0, (a, p) => a + ((p['amount'] as num?)?.toInt() ?? 0));
+    final madeQty =
+        made.fold<int>(0, (a, p) => a + ((p['qty'] as num?)?.toInt() ?? 0));
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text('INVOICE',
+                            style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 2,
+                                color: AppColors.textDark)),
+                      ),
+                      Text(DateTime.now().toString().substring(0, 10),
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.textGray)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Container(height: 2, color: AppColors.textDark),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    const Icon(Icons.factory_outlined,
+                        size: 15, color: AppColors.purple),
+                    const SizedBox(width: 5),
+                    Text('${m['company'] ?? m['name'] ?? ''}',
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w800)),
+                  ]),
+                  if ('${m['bizNumber'] ?? ''}'.isNotEmpty)
+                    Text('사업자등록번호 ${m['bizNumber']}',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                  if ('${m['account'] ?? ''}'.isNotEmpty)
+                    Text('계좌 ${m['account']}',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.textGray)),
+                  const SizedBox(height: 10),
+                  // 표 헤더
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: Color(0xFF2A2A2A), width: 1),
+                      ),
+                    ),
+                    child: const Row(children: [
+                      Expanded(
+                          flex: 4,
+                          child: Text('Description',
+                              style: TextStyle(
+                                  fontSize: 10.5, fontWeight: FontWeight.w800))),
+                      SizedBox(
+                          width: 36,
+                          child: Text('Qty.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 10.5, fontWeight: FontWeight.w800))),
+                      SizedBox(
+                          width: 74,
+                          child: Text('Amount',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 10.5, fontWeight: FontWeight.w800))),
+                    ]),
+                  ),
+                  for (final p in made)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                              color: Color(0xFFEDEAE3), width: 0.6),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Expanded(
+                          flex: 4,
+                          child: Text(
+                            '${p['category'] ?? p['group'] ?? ''}'
+                            '${'${p['size'] ?? ''}'.trim().isNotEmpty ? ' / ${p['size']}' : ''}'
+                            '${'${p['madeDate'] ?? ''}'.trim().isNotEmpty ? ' · ${p['madeDate']}' : ''}',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        SizedBox(
+                            width: 36,
+                            child: Text('${p['qty'] ?? 0}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 11))),
+                        SizedBox(
+                            width: 74,
+                            child: Text(_won(p['amount']),
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w700))),
+                      ]),
+                    ),
+                  const SizedBox(height: 10),
+                  Container(height: 2, color: AppColors.textDark),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('TOTAL  ',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1)),
+                      Text('${_won(madeAmount)}원',
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.taegeukRed)),
+                    ],
+                  ),
+                  Text('총 ${made.length}종 · 수량 $madeQty',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textGray)),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _exportMaker(),
+                        icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                        label: const Text('PDF/인쇄'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('닫기')),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -3891,6 +4066,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       '${p['size']}',
                     '${p['qty'] ?? 0}개',
                     '단가 ${_won(p['unitPrice'])}',
+                    if ('${p['madeDate'] ?? ''}'.trim().isNotEmpty)
+                      '제작일 ${p['madeDate']}',
                     if (date.isNotEmpty) date,
                   ].join('  ·  '),
                   style: const TextStyle(
@@ -4275,6 +4452,26 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     if (!mounted) return;
     _snack(ok ? '삭제했습니다' : '삭제 실패');
     if (ok) _load();
+  }
+
+  /// 제작자 복사 — 기존 제작자 정보를 복제해 새 제작자로 등록(이름 뒤 "(복사)").
+  Future<void> _duplicateMaker(Map<String, dynamic> m) async {
+    final r = await _nas.merchSaveMaker({
+      'id': '',
+      'company': '${m['company'] ?? m['name'] ?? ''}(복사)',
+      'category': '${m['category'] ?? ''}',
+      'ceo': '${m['ceo'] ?? ''}',
+      'manager': '${m['manager'] ?? ''}',
+      'phone': '${m['phone'] ?? ''}',
+      'email': '${m['email'] ?? ''}',
+      'account': '${m['account'] ?? ''}',
+      'bizNumber': '${m['bizNumber'] ?? ''}',
+      'bizLicenseFile': '${m['bizLicenseFile'] ?? ''}',
+      'memo': '${m['memo'] ?? ''}',
+    });
+    if (!mounted) return;
+    _snack(r['ok'] == true ? '제작자를 복사했습니다' : '복사 실패: ${r['error']}');
+    if (r['ok'] == true) _load();
   }
 
   /// 제작자별 '만든 수품 내역'을 MUJI 규칙 문서(A4 세로)로 인쇄/저장/복사한다.

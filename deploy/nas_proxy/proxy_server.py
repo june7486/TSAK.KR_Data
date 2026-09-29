@@ -52,6 +52,7 @@ INQUIRY_DIR = BASE + "/문의첨부"             # 문의 첨부파일 저장 �
 ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인 이력)
 FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거래 종합분석 캐시
 REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
+BOARD_FILE = BASE + "/db/board.json"            # 행사+수품판매 게시판(글/댓글/좋아요/첨부/비밀번호/비노출)
 MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
 MERCH_MAKER_DIR = BASE + "/수품제작자"           # 수품 제작자 첨부파일 저장 폴더
 MERCH_IMG_UPLOAD_DIR = HERE + "/merch_img_upload"  # 관리자 업로드 상품 이미지 폴더
