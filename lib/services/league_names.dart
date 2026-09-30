@@ -123,6 +123,7 @@ const Map<String, String> kRegionMap = {
   '대전': '대전·충남·세종',
   '충남': '대전·충남·세종',
   '충남·세종': '대전·충남·세종',
+  '대전·충남·세종': '대전·충남·세종',
   // ── 충북 ──
   '충북': '충북',
   // ── 광주·전남 ──
@@ -145,11 +146,23 @@ String leagueRegion(String? league) {
   return kRegionMap[n] ?? n;
 }
 
-/// 가나다순 정렬용 비교자 — '(미지정)'은 항상 마지막.
-/// (한글 음절 U+AC00~U+D7A3 은 코드포인트 순서가 곧 가나다 순서다.)
+/// 가나다순 정렬용 비교자.
+///  · 종교 연맹(가톨릭 → 원불교 → 기독교)은 지정된 순서대로 **맨 뒤**에 배치한다.
+///  · '(미지정)'은 항상 마지막.
+///  · 그 외는 한글 음절(U+AC00~U+D7A3) 코드포인트 순서 = 가나다 순서.
 int compareLeagueName(String a, String b) {
   const last = '(미지정)';
+  // 종교 연맹 후순위(가톨릭 1 → 원불교 2 → 기독교 3), 그 외는 0.
+  int relig(String s) => s == '가톨릭'
+      ? 1
+      : s == '원불교'
+          ? 2
+          : s == '기독교'
+              ? 3
+              : 0;
   if (a == last && b != last) return 1;
   if (b == last && a != last) return -1;
+  final ra = relig(a), rb = relig(b);
+  if (ra != rb) return ra.compareTo(rb);
   return a.compareTo(b);
 }

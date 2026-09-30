@@ -1234,6 +1234,10 @@ class AppState extends ChangeNotifier {
   String _kindFilter = '';
 
   List<Member> get members => _members;
+
+  /// 필터와 무관한 전체 회원 목록(통계 산출용).
+  List<Member> get allMembers => repo.all();
+
   String get query => _query;
   String get leagueFilter => _leagueFilter;
   String get yearFilter => _yearFilter;
