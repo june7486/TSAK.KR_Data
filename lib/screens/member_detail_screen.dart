@@ -13,6 +13,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/member_access_log.dart';
+import '../widgets/link_code_field.dart';
 import '../widgets/member_registration_request_section.dart';
 import '../widgets/merch_activity_section.dart';
 import '../widgets/personal_survey_section.dart';
@@ -1730,7 +1731,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// ② 범인가 정보 카드 — 인가 당시 정보를 한 번에 표시.
   ///   · 소속연맹·등록단위대·인가일·멘토대장·페런츠 (범인가자 통계의 근거).
   ///   · 멘토·페런츠는 **등록현황**으로서 값이 없어도 "미등록"을 항상 노출한다.
+  ///   · 편집 권한(본인 또는 관리자·마스터)이 있으면 **그 자리에서 입력·수정**
+  ///     할 수 있는 입력창(LinkCodeField)을 함께 노출한다.
+  ///     (편집 화면과 동일한 기준: 멘티 인가번호 + 멘토/페런츠 인적사항)
   Widget _credentialCard(Member m) {
+    final state = context.watch<AppState>();
+    final canEdit = state.isApp || state.isMaster || state.isSelfNumber(m.number);
     // 멘토: 코드는 멘티(본인) 범인가자번호 → 표시는 "멘토이름 (멘티 #번호)".
     final mentorLabels =
         m.mentors.map((e) => _linkNameLabel(e, numberKind: 'mentor')).join(', ');
@@ -1748,9 +1754,80 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _regRow('멘토대장',
               mentorLabels.isEmpty ? '' : '$mentorLabels${_linkBadge(m)}'),
           _regRow('페런츠', parentLabels),
+          // (복원) 편집 권한자에게는 그 자리에서 입력하는 멘토·페런츠 입력창을 노출.
+          if (canEdit) ...[
+            const Divider(height: 22),
+            _linkEditor(m),
+          ],
         ],
       ),
     );
+  }
+
+  /// 멘토·페런츠 **입력창 복원** — 개인정보(상세)창에서 직접 등록/수정.
+  ///   · 편집 화면(member_edit_screen)과 완전히 동일한 위젯/기준을 사용한다.
+  ///   · 변경 즉시 회원 데이터에 반영하고 저장(연결 승인 상태는 pending 으로 전환).
+  Widget _linkEditor(Member m) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '멘토·페런츠 등록 (복수 입력 가능)',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textGray,
+          ),
+        ),
+        const SizedBox(height: 6),
+        LinkCodeField(
+          label: '멘토',
+          icon: Icons.supervisor_account,
+          kind: 'mentor',
+          codes: m.mentors,
+          menteeNumber: m.number.trim(),
+          editable: true,
+          onChanged: (v) => _saveLinks(m, mentors: v),
+        ),
+        LinkCodeField(
+          label: '페런츠',
+          icon: Icons.family_restroom,
+          kind: 'parent',
+          codes: m.parents,
+          editable: true,
+          onChanged: (v) => _saveLinks(m, parents: v),
+        ),
+      ],
+    );
+  }
+
+  /// 멘토·페런츠 연결 저장 — 회원 데이터 반영 + 서버 저장.
+  ///   · 대상이 바뀌면 연결 승인 상태를 'pending'(미승인)으로 전환한다
+  ///     (편집 화면과 동일 정책).
+  Future<void> _saveLinks(
+    Member m, {
+    List<String>? mentors,
+    List<String>? parents,
+  }) async {
+    final state = context.read<AppState>();
+    final nextMentors = mentors ?? List<String>.from(m.mentors);
+    final nextParents = parents ?? List<String>.from(m.parents);
+    final hasLinks = nextMentors.isNotEmpty || nextParents.isNotEmpty;
+    final updated = m.copyWith(
+      mentors: nextMentors,
+      parents: nextParents,
+      linkApprovalStatus: hasLinks ? 'pending' : '',
+      linkApprovalNote: hasLinks ? m.linkApprovalNote : '',
+    );
+    try {
+      await state.save(updated);
+      if (!mounted) return;
+      await _loadLinkProfiles();
+      _snack('멘토·페런츠 등록을 저장했습니다 (관리자 승인 대기)');
+    } catch (_) {
+      if (!mounted) return;
+      _snack('저장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   /// 등록현황 행 — 값이 없어도 항상 표시("미등록"). (멘토·페런츠 등록현황)
