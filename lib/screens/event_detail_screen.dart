@@ -1034,94 +1034,79 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   /// 참가자 타일 좌측(leading).
-  ///  - 관리자·마스터: 좌측 체크박스로 STAFF(스텝) 지정 여부를 결정한다.
-  ///  - 그 외: 접속 여부(V) 표시.
+  ///  - 접속 여부(V)는 항상 표시(접속기록 유지).
+  ///  - 관리자·마스터에게는 그 위에 STAFF 지정 체크박스를 추가로 노출한다.
   Widget _attendeeLeading(
       Map<String, dynamic> a, String ident, bool visited, bool isStaff) {
-    if (widget.canManage && ident.isNotEmpty) {
-      return SizedBox(
-        width: 34,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // STAFF 지정 여부 체크박스 (마스터·관리자 전용)
+    final canStaff = widget.canManage && ident.isNotEmpty;
+    return SizedBox(
+      width: 34,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (canStaff) ...[
+            // STAFF 지정 체크박스 (마스터·관리자 전용) — 보라색 마크
             GestureDetector(
               onTap: () => _toggleStaff(a, ident, isStaff),
               behavior: HitTestBehavior.opaque,
               child: Container(
-                width: 22,
-                height: 22,
+                width: 20,
+                height: 20,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: isStaff ? AppColors.tigerGold : Colors.white,
+                  color: isStaff ? AppColors.purple : Colors.white,
                   border: Border.all(
                     color: isStaff
-                        ? AppColors.lifetimeGold
+                        ? AppColors.purple
                         : Colors.grey.shade400,
                     width: isStaff ? 2 : 1.4,
                   ),
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: isStaff
-                    ? const Icon(Icons.check,
-                        size: 15, color: Colors.white)
+                    ? const Icon(Icons.check, size: 14, color: Colors.white)
                     : null,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              'STAFF',
-              style: TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.w800,
-                color: isStaff
-                    ? AppColors.lifetimeGold
-                    : AppColors.textGray,
-              ),
-            ),
+            const SizedBox(height: 1),
           ],
-        ),
-      );
-    }
-    // 일반 열람: 접속 여부만 표시
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: visited ? AppColors.scoutGreen : Colors.transparent,
-            border: Border.all(
-              color: visited ? AppColors.scoutGreen : Colors.grey.shade300,
+          // 접속 여부(V) — 삭제하지 않고 항상 유지
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: visited ? AppColors.scoutGreen : Colors.transparent,
+              border: Border.all(
+                color: visited ? AppColors.scoutGreen : Colors.grey.shade300,
+              ),
+              borderRadius: BorderRadius.circular(5),
             ),
-            borderRadius: BorderRadius.circular(5),
+            child: visited
+                ? const Text(
+                    'V',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
+                    ),
+                  )
+                : null,
           ),
-          child: visited
-              ? const Text(
-                  'V',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                )
-              : null,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          '접속',
-          style: TextStyle(
-            fontSize: 9,
-            color: visited ? AppColors.scoutGreen : AppColors.textGray,
+          const SizedBox(height: 1),
+          Text(
+            '접속',
+            style: TextStyle(
+              fontSize: 8.5,
+              color: visited ? AppColors.scoutGreen : AppColors.textGray,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  /// STAFF(스텝)로 지정된 사람에게 부여되는 색상 단추.
+  /// STAFF(스텝)로 지정된 사람에게 부여되는 색상 단추(작게).
   ///  - 관리자·마스터: 눌러서 해제 가능.
   ///  - 그 외: 지정 사실만 표시(비활성).
   Widget _staffButton(Map<String, dynamic> a, String ident, bool isStaff) {
@@ -1129,25 +1114,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     return GestureDetector(
       onTap: canToggle ? () => _toggleStaff(a, ident, isStaff) : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [AppColors.tigerGold, AppColors.lifetimeGold],
+            colors: [AppColors.purple, AppColors.purpleDark],
           ),
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: AppColors.lifetimeGold),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.tigerGold.withValues(alpha: 0.35),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: AppColors.purpleDark),
         ),
         child: const Text(
           '스텝',
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 8.5,
+            height: 1.1,
             fontWeight: FontWeight.w900,
             color: Colors.white,
           ),
