@@ -11,6 +11,7 @@ import '../services/output_formats.dart';
 import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
+import '../widgets/busy_overlay.dart';
 import 'merch_detail_screen.dart';
 
 /// 기획실 — 신규 수품 아이템 기획 관리 화면(관리자·마스터 전용, 탭 내장형).
@@ -428,7 +429,6 @@ class _PlansTabState extends State<PlansTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
         child: Column(
@@ -553,6 +553,15 @@ class _PlansTabState extends State<PlansTab> {
             icon: const Icon(Icons.add),
             label: const Text('기획 아이템 추가'),
           ),
+        ),
+        BusyOverlay(
+          visible: _loading,
+          title: '기획안을 불러오는 중입니다',
+          lines: const [
+            '기획실 자료를 확인하고 있습니다...',
+            '수요조사 현황을 집계하는 중...',
+            '잠시만 기다려 주세요...',
+          ],
         ),
       ],
     );

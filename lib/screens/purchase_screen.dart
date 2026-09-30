@@ -12,6 +12,7 @@ import '../services/print_doc.dart';
 import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 중앙회 물건 결제 리스트 — 표 형식 관리 화면.
@@ -550,9 +551,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final content = _loading
-        ? const Center(child: CircularProgressIndicator())
-        : _error != null
+    final content = Stack(
+      children: [
+        _loading
+            ? const SizedBox.shrink()
+            : _error != null
             ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -567,7 +570,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   ],
                 ),
               )
-            : _body();
+            : _body(),
+        BusyOverlay(
+          visible: _loading,
+          title: '물건 결제 내역을 불러오는 중입니다',
+          lines: const [
+            'NAS 서버에서 결제 내역을 가져오는 중...',
+            '항목별 합계를 집계하는 중...',
+            '잠시만 기다려 주세요...',
+          ],
+        ),
+      ],
+    );
 
     if (widget.embedded) {
       return Stack(

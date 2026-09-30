@@ -12,6 +12,7 @@ import '../services/finance_report.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
@@ -191,7 +192,17 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
       body: Stack(
         children: [
           _body(),
-          if (_working || _building) _overlay(),
+          BusyOverlay(
+            visible: _loading || _working || _building,
+            title: _building
+                ? '보고서를 생성하는 중입니다'
+                : '재무 데이터를 분석하는 중입니다',
+            lines: [
+              if (_building) '선택한 조건으로 출력물을 만들고 있습니다...',
+              if (!_building && _workingMsg.isNotEmpty) _workingMsg,
+              '잠시만 기다려 주세요...',
+            ],
+          ),
         ],
       ),
       bottomNavigationBar: (_a.isEmpty || _loading) ? null : _bottomBar(),
@@ -709,42 +720,6 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
               icon: const Icon(Icons.download),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _overlay() {
-    return Container(
-      color: Colors.black.withValues(alpha: 0.45),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          margin: const EdgeInsets.symmetric(horizontal: 40),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 44,
-                height: 44,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
-              const SizedBox(height: 16),
-              Text(_building ? '보고서를 생성하는 중…' : _workingMsg,
-                  style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 4),
-              const Text('잠시만 기다려 주세요',
-                  style: TextStyle(fontSize: 11, color: AppColors.textGray)),
-            ],
-          ),
         ),
       ),
     );

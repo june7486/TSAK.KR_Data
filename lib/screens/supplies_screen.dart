@@ -15,6 +15,7 @@ import '../services/output_formats.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 중앙회 비품 재고 리스트 — 표 형식 관리 화면.
@@ -591,26 +592,40 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       0,
       (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
     );
-    final content = _loading
-        ? const Center(child: CircularProgressIndicator())
-        : _error != null
-        ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: AppColors.taegeukRed,
+    final content = Stack(
+      children: [
+        _loading
+            ? const SizedBox.shrink()
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: AppColors.taegeukRed,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                        onPressed: _load, child: const Text('다시 시도')),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                Text(_error!, textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                ElevatedButton(onPressed: _load, child: const Text('다시 시도')),
-              ],
-            ),
-          )
-        : _body(total);
+              )
+            : _body(total),
+        BusyOverlay(
+          visible: _loading,
+          title: '비품 재고를 불러오는 중입니다',
+          lines: const [
+            'NAS 서버에서 비품 목록을 가져오는 중...',
+            '재고 수량을 집계하는 중...',
+            '잠시만 기다려 주세요...',
+          ],
+        ),
+      ],
+    );
 
     if (widget.embedded) {
       return Stack(
