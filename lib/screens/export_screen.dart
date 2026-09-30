@@ -96,211 +96,255 @@ class _ExportScreenState extends State<ExportScreen>
   // ---------------- 내보내기 ----------------
   Widget _exportTab() {
     return ListView(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
       children: [
-        _countBanner(),
-        const SizedBox(height: 12),
-        const Text(
-          '출력 형식 선택',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-        ),
-        const SizedBox(height: 10),
+        _summaryRow(),
+        const SizedBox(height: 18),
+        _sectionTitle('출력 형식'),
+        const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: ExportFormat.values.map((f) {
-            final sel = _format == f;
-            return ChoiceChip(
-              label: Text(f.label),
-              selected: sel,
-              selectedColor: AppColors.purple,
-              labelStyle: TextStyle(
-                color: sel ? Colors.white : AppColors.textDark,
-                fontWeight: FontWeight.w600,
-              ),
-              onSelected: (_) => setState(() => _format = f),
-            );
+            return _chip(f.label, _format == f, () {
+              setState(() => _format = f);
+            });
           }).toList(),
         ),
-        const SizedBox(height: 14),
-        _fieldSelector(),
-        const SizedBox(height: 14),
-        Card(
-          child: SwitchListTile(
-            value: _chunk100,
-            activeThumbColor: AppColors.purple,
-            title: const Text(
-              '100명 단위로 분할 출력',
-              style: TextStyle(fontWeight: FontWeight.w700),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            _sectionTitle('출력할 항목'),
+            const Spacer(),
+            Text(
+              '${_selectedFields.length}/${kExportFields.length}',
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textGray,
+                  fontWeight: FontWeight.w700),
             ),
-            subtitle: Text(
-              _chunk100 ? '${_chunks.length}개 파일로 나누어 저장합니다' : '하나의 파일로 저장합니다',
-            ),
-            onChanged: (v) => setState(() => _chunk100 = v),
-          ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 4),
+        const Text(
+          '선택한 항목만 명단(모든 형식)에 포함됩니다.',
+          style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            _miniTextButton('전체', () => setState(() =>
+                _selectedFields.addAll(kExportFields.map((e) => e.key)))),
+            _miniTextButton('기본값',
+                () => setState(() => _selectedFields.addAll(kDefaultFieldKeys))),
+            _miniTextButton('해제', () => setState(() => _selectedFields.clear())),
+          ],
+        ),
+        const SizedBox(height: 6),
+        _fieldGroups(),
+        const SizedBox(height: 20),
+        _chunkSwitch(),
+        const SizedBox(height: 18),
         FilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.purple,
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
           ),
           onPressed: _busy ? null : _doExport,
           icon: _busy
               ? const SizedBox(
-                  width: 18,
-                  height: 18,
+                  width: 16,
+                  height: 16,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
+                      strokeWidth: 2, color: Colors.white),
                 )
-              : const Icon(Icons.download),
-          label: Text(_busy ? '생성 중...' : '내보내기 실행'),
+              : const Icon(Icons.download, size: 19),
+          label: Text(_busy ? '생성 중...' : '내보내기 실행',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
         ),
-        const SizedBox(height: 10),
-        if (_format == ExportFormat.pdf)
+        if (_format == ExportFormat.pdf) ...[
+          const SizedBox(height: 8),
           OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
             onPressed: _busy ? null : _previewPdf,
-            icon: const Icon(Icons.print),
+            icon: const Icon(Icons.print, size: 18),
             label: const Text('PDF 미리보기 / 인쇄'),
           ),
-        const SizedBox(height: 20),
-        const Text(
-          '미리보기 (상위 30명)',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-        ),
-        const SizedBox(height: 6),
+        ],
+        const SizedBox(height: 26),
+        _sectionTitle('미리보기 (상위 30명)'),
+        const SizedBox(height: 8),
         ...widget.members.take(30).map((m) => MemberCard(member: m)),
         if (widget.members.length > 30)
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
               '외 ${widget.members.length - 30}명...',
-              style: const TextStyle(color: AppColors.textGray),
+              style: const TextStyle(color: AppColors.textGray, fontSize: 12),
             ),
           ),
       ],
     );
   }
 
-  /// 개인정보 출력 항목 선택 UI (명단에 넣을 항목을 골라서 출력)
-  Widget _fieldSelector() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.checklist, color: AppColors.purple, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  '출력할 개인정보 항목',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                ),
-                const Spacer(),
-                Text(
-                  '${_selectedFields.length}/${kExportFields.length}',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textGray,
-                      fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              '선택한 항목만 명단(모든 형식)에 포함됩니다.',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final f in kExportFields)
-                  FilterChip(
-                    label: Text(f.label),
-                    selected: _selectedFields.contains(f.key),
-                    selectedColor: AppColors.purple,
-                    checkmarkColor: Colors.white,
-                    labelStyle: TextStyle(
-                      color: _selectedFields.contains(f.key)
-                          ? Colors.white
-                          : AppColors.textDark,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                    onSelected: (v) => setState(() {
-                      if (v) {
-                        _selectedFields.add(f.key);
-                      } else {
-                        _selectedFields.remove(f.key);
-                      }
-                    }),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () => setState(
-                      () => _selectedFields.addAll(kExportFields.map((e) => e.key))),
-                  child: const Text('전체 선택'),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      setState(() => _selectedFields.addAll(kDefaultFieldKeys)),
-                  child: const Text('기본값'),
-                ),
-              ],
-            ),
-          ],
+  /// 최소한의 선택 칩 — 선택 시 보라 채움, 미선택 시 흰 배경 + 얇은 테두리.
+  Widget _chip(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.purple : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected
+                ? AppColors.purple
+                : AppColors.purple.withValues(alpha: 0.22),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppColors.textDark,
+          ),
         ),
       ),
     );
   }
 
-  Widget _countBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.purple, AppColors.purpleLight],
+  Widget _miniTextButton(String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: TextButton(
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 30),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          visualDensity: VisualDensity.compact,
+          foregroundColor: AppColors.purple,
         ),
-        borderRadius: BorderRadius.circular(14),
+        onPressed: onTap,
+        child: Text(label, style: const TextStyle(fontSize: 12.5)),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String t) => Text(
+        t,
+        style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textGray,
+            letterSpacing: 0.2),
+      );
+
+  /// 항목을 그룹별로 나누어 간결하게 표시.
+  Widget _fieldGroups() {
+    const order = ['기본', '연락', '주소', '자격', '회비', '기타'];
+    final groups = <String, List<ExportField>>{};
+    for (final f in kExportFields) {
+      groups.putIfAbsent(f.group, () => []).add(f);
+    }
+    final keys = order.where(groups.containsKey).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final g in keys) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 5),
+            child: Text(
+              g,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.purple),
+            ),
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final f in groups[g]!)
+                _chip(
+                  f.label,
+                  _selectedFields.contains(f.key),
+                  () => setState(() {
+                    if (_selectedFields.contains(f.key)) {
+                      _selectedFields.remove(f.key);
+                    } else {
+                      _selectedFields.add(f.key);
+                    }
+                  }),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 선택 인원 요약 — 그라데이션 배너 대신 한 줄 요약.
+  Widget _summaryRow() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.checklist, color: Colors.white),
-          const SizedBox(width: 10),
+          const Icon(Icons.checklist, color: AppColors.purple, size: 18),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
               '선택된 인가자 ${widget.members.length}명',
               style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-              ),
+                  color: AppColors.purpleDark,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14),
             ),
           ),
           if (_chunk100)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${_chunks.length}개 파일',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
+            Text(
+              '${_chunks.length}개 파일',
+              style: const TextStyle(
+                  color: AppColors.purple,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _chunkSwitch() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: SwitchListTile(
+        value: _chunk100,
+        activeThumbColor: AppColors.purple,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+        title: const Text('100명 단위로 분할 출력',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+        subtitle: Text(
+          _chunk100 ? '${_chunks.length}개 파일로 나누어 저장합니다' : '하나의 파일로 저장합니다',
+          style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+        ),
+        onChanged: (v) => setState(() => _chunk100 = v),
       ),
     );
   }
@@ -423,7 +467,7 @@ class _ExportScreenState extends State<ExportScreen>
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
-        _countBanner(),
+        _summaryRow(),
         const SizedBox(height: 12),
         Card(
           child: Padding(
@@ -502,7 +546,7 @@ class _ExportScreenState extends State<ExportScreen>
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
-        _countBanner(),
+        _summaryRow(),
         const SizedBox(height: 12),
         Card(
           child: Padding(

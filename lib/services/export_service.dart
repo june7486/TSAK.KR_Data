@@ -65,30 +65,55 @@ extension ExportFormatX on ExportFormat {
 
 /// 내보낼 개인정보 항목 정의 (선택 가능)
 class ExportField {
-  const ExportField(this.key, this.label);
+  const ExportField(this.key, this.label, [this.group = '기타']);
   final String key;
   final String label;
+
+  /// 묶음 구분(화면 그룹핑용) — '기본' | '연락' | '주소' | '자격' | '회비' | '기타'
+  final String group;
 }
 
-/// 내보내기에서 선택할 수 있는 전체 개인정보 항목
+/// 내보내기에서 선택할 수 있는 전체 개인정보 항목 (회원 모델의 모든 필드).
+/// 그룹 순서대로 화면에 표시된다.
 const List<ExportField> kExportFields = [
-  ExportField('number', '인가번호'),
-  ExportField('name', '성명'),
-  ExportField('league', '연맹'),
-  ExportField('unit', '소속대'),
-  ExportField('date', '인가일'),
-  ExportField('phone', '핸드폰'),
-  ExportField('email', '이메일'),
-  ExportField('address', '주소'),
-  ExportField('birthday', '생일'),
-  ExportField('anniversary', '기념일'),
-  ExportField('trainingStatus', '훈련현황'),
-  ExportField('atasNo', 'ATAS'),
-  ExportField('activity', '활동'),
-  ExportField('memo', '메모'),
-  ExportField('lifetime', '평생회원'),
-  ExportField('feeYears', '회비연도'),
-  ExportField('events', '행사참가'),
+  // ---- 기본 정보 ----
+  ExportField('number', '인가번호', '기본'),
+  ExportField('scoutNo', 'Scout 회원번호', '기본'),
+  ExportField('atasNo', 'ATAS 인가번호', '기본'),
+  ExportField('name', '성명', '기본'),
+  ExportField('gender', '성별', '기본'),
+  ExportField('league', '연맹', '기본'),
+  ExportField('unit', '소속대', '기본'),
+  ExportField('regLeague', '등록연맹', '기본'),
+  ExportField('regUnit', '등록단위대', '기본'),
+  ExportField('date', '인가일', '기본'),
+  ExportField('birthday', '생일', '기본'),
+  ExportField('anniversary', '기념일', '기본'),
+  // ---- 연락 ----
+  ExportField('phone', '핸드폰', '연락'),
+  ExportField('tel', '연락처', '연락'),
+  ExportField('email', '이메일', '연락'),
+  // ---- 주소 ----
+  ExportField('zipCode', '우편번호', '주소'),
+  ExportField('address', '주소', '주소'),
+  ExportField('residentNo', '주민등록번호', '주소'),
+  // ---- 자격 · 활동 ----
+  ExportField('trainingStatus', '훈련현황', '자격'),
+  ExportField('qualificationStatus', '자격지정', '자격'),
+  ExportField('activity', '활동', '자격'),
+  ExportField('awards', '포상', '자격'),
+  ExportField('specialtyCourses', '전문과정', '자격'),
+  ExportField('purchases', '수품구매현황', '자격'),
+  // ---- 회비 · 행사 ----
+  ExportField('lifetime', '평생회원', '회비'),
+  ExportField('feeYears', '회비연도', '회비'),
+  ExportField('events', '행사참가', '회비'),
+  // ---- 기타 ----
+  ExportField('mentors', '멘토', '기타'),
+  ExportField('parents', '페런츠', '기타'),
+  ExportField('approvalStatus', '승인상태', '기타'),
+  ExportField('memo', '메모', '기타'),
+  ExportField('bio', '비고', '기타'),
 ];
 
 /// 기본 선택 항목 (기존 명단 표와 동일 구성)
@@ -114,38 +139,79 @@ String exportValueOf(Member m, String key) {
   switch (key) {
     case 'number':
       return m.number;
+    case 'scoutNo':
+      return m.scoutNo;
     case 'name':
       return m.name;
+    case 'gender':
+      return m.gender;
     case 'league':
       return m.league;
     case 'unit':
       return m.unit;
+    case 'regLeague':
+      return m.regLeague;
+    case 'regUnit':
+      return m.regUnit;
     case 'date':
       return m.date;
     case 'phone':
       return m.phone;
+    case 'tel':
+      return m.tel;
     case 'email':
       return m.email;
     case 'address':
       return m.address;
+    case 'zipCode':
+      return m.zipCode;
+    case 'residentNo':
+      return m.residentNo;
+    case 'bio':
+      return m.bio;
     case 'birthday':
       return m.birthday;
     case 'anniversary':
       return m.anniversary;
     case 'trainingStatus':
       return m.trainingStatus;
+    case 'qualificationStatus':
+      return m.qualificationApproved ? '승인' : '';
     case 'atasNo':
       return m.atasNo;
     case 'activity':
       return m.activity;
+    case 'awards':
+      return m.awards;
+    case 'specialtyCourses':
+      return m.specialtyCourses;
+    case 'purchases':
+      return m.purchases;
     case 'memo':
       return m.memo;
     case 'lifetime':
       return m.lifetimeMember ? 'O' : '';
+    case 'lifetimeSince':
+      return m.lifetimeSince;
     case 'feeYears':
       return m.paidYears.join(', ');
     case 'events':
       return m.attendedEvents.join(', ');
+    case 'mentors':
+      return m.mentors.join(', ');
+    case 'parents':
+      return m.parents.join(', ');
+    case 'approvalStatus':
+      switch (m.approvalStatus) {
+        case 'approved':
+          return '승인';
+        case 'pending':
+          return '미승인';
+        case 'held':
+          return '보류';
+        default:
+          return '';
+      }
     default:
       return '';
   }
