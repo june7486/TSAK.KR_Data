@@ -2113,19 +2113,77 @@ def _ev_load_stats():
     }
 
 
+# 행사별 미디어(사진/동영상) 개수 캐시 — 목록 조회 때 행사마다 NAS 를 왕복하면
+#  56개 행사 기준 30초+ 걸린다. 개수는 자주 변하지 않으므로 TTL 캐시하고,
+#  업로드/삭제 시 해당 행사만 무효화한다.
+_EV_MEDIA_COUNT_CACHE = {}          # (year,title) -> (ts, {photo,video})
+_EV_MEDIA_COUNT_TTL = 300.0         # 초
+_EV_MEDIA_COUNT_LOCK = threading.Lock()
+
+
+def _ev_media_counts_invalidate(year, title):
+    with _EV_MEDIA_COUNT_LOCK:
+        _EV_MEDIA_COUNT_CACHE.pop((str(year), str(title)), None)
+
+
 def _ev_media_counts(year, title):
-    """행사 '사진+동영상' 폴더의 이미지/동영상 개수(재귀)."""
+    """행사 '사진+동영상' 폴더의 이미지/동영상 개수(재귀) — TTL 캐시 사용.
+
+    NAS 왕복을 최소화한다: media 폴더만 list(폴더면 재귀)로 순회하고,
+    exists 선검사는 생략한다(없는 폴더는 list 가 ok=False 반환).
+    """
+    key = (str(year), str(title))
+    now = time.time()
+    with _EV_MEDIA_COUNT_LOCK:
+        c = _EV_MEDIA_COUNT_CACHE.get(key)
+        if c and (now - c[0]) < _EV_MEDIA_COUNT_TTL:
+            return c[1]
     d = _ev_sub_dir(year, title, "media")
-    if not d or not NAS.exists(d):
-        return {"photo": 0, "video": 0}
     photo = video = 0
-    for it in _ev_collect_under(d):
-        k = _kind_of(str(it["rel"]).rsplit("/", 1)[-1])
-        if k == "image":
-            photo += 1
-        elif k == "video":
-            video += 1
-    return {"photo": photo, "video": video}
+    if d:
+        stack = [d]
+        while stack:
+            cur = stack.pop()
+            try:
+                r = NAS.list(cur)
+            except Exception:
+                continue
+            if not r.get("ok"):
+                continue
+            for f in r.get("files") or []:
+                nm = f.get("name", "")
+                if not nm or nm.startswith("."):
+                    continue
+                if f.get("isdir"):
+                    stack.append(f"{cur}/{nm}")
+                else:
+                    k = _kind_of(nm)
+                    if k == "image":
+                        photo += 1
+                    elif k == "video":
+                        video += 1
+    out = {"photo": photo, "video": video}
+    with _EV_MEDIA_COUNT_LOCK:
+        _EV_MEDIA_COUNT_CACHE[key] = (now, out)
+    return out
+
+
+def _ev_media_counts_warm(force=False):
+    """모든 정의 행사의 미디어 개수를 미리 계산해 캐시를 채운다(부팅 시 백그라운드)."""
+    try:
+        doc = _ev_doc()
+    except Exception:
+        return 0
+    n = 0
+    for e in doc.get("events", {}).values():
+        y, t = str(e.get("year", "")), str(e.get("title", ""))
+        if not y or not t:
+            continue
+        if force:
+            _ev_media_counts_invalidate(y, t)
+        _ev_media_counts(y, t)
+        n += 1
+    return n
 
 
 def _ev_known_names():
@@ -10589,6 +10647,8 @@ class Handler(BaseHTTPRequestHandler):
                         if key == "media" and uploader:
                             e.setdefault("participantsUploaded", {})[ukey] = uploader
                         _ev_save(doc)
+                if key == "media":
+                    _ev_media_counts_invalidate(year, title)
                 try:
                     os.unlink(tmp_path)
                 except Exception:
@@ -10634,6 +10694,7 @@ class Handler(BaseHTTPRequestHandler):
                         NAS.delete(_ev_thumb_path(year, title, name, sub))
                     except Exception:
                         pass
+                    _ev_media_counts_invalidate(year, title)
                 ukey = f"{_ev_sub_safe(sub)}/{name}" if _ev_sub_safe(sub) else name
                 with LOCK:
                     doc = _ev_doc()
@@ -10890,6 +10951,12 @@ if __name__ == "__main__":
             print("NAS connection warmed")
         except Exception as e:
             print("NAS warm skipped:", e)
+        # 행사 미디어 개수 캐시 예열 → 첫 행사관리 진입이 즉시 뜬다.
+        try:
+            n = _ev_media_counts_warm()
+            print(f"event media counts warmed: {n}")
+        except Exception as e:
+            print("event media warm skipped:", e)
         # 정적 자산 사전 압축(첫 사용자 지연 제거)
         _precompress_static()
     threading.Thread(target=_warm_bg, daemon=True).start()
