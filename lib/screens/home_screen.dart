@@ -2154,11 +2154,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _filterBar(AppState state) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Column(
         children: [
           HScrollMenu(
-            height: 34,
+            height: 30,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2168,7 +2168,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.purple,
                   onTap: () => state.setKind(''),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 _filterChip(
                   label: '인가자',
                   selected: state.kindFilter == 'credential',
@@ -2177,7 +2177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     state.kindFilter == 'credential' ? '' : 'credential',
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 _filterChip(
                   label: '일반회원',
                   selected: state.kindFilter == 'regular',
@@ -2186,7 +2186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     state.kindFilter == 'regular' ? '' : 'regular',
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 _filterChip(
                   label: '멘토',
                   selected: state.kindFilter == 'mentor',
@@ -2195,7 +2195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     state.kindFilter == 'mentor' ? '' : 'mentor',
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 _filterChip(
                   label: '페런츠',
                   selected: state.kindFilter == 'parent',
@@ -2207,9 +2207,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 3),
           HScrollMenu(
-            height: 34,
+            height: 30,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2219,10 +2219,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.lifetimeGold,
                   onTap: () => state.setOnlyLifetime(!state.onlyLifetime),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 for (final y in state.feeYears.take(4))
                   Padding(
-                    padding: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.only(right: 5),
                     child: _filterChip(
                       label: '$y 회비',
                       selected: state.yearFilter == y,
@@ -2247,9 +2247,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 3),
           HScrollMenu(
-            height: 34,
+            height: 30,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2259,10 +2259,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.purple,
                   onTap: () => state.setLeague(''),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 for (final entry in state.leagues.entries)
                   Padding(
-                    padding: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.only(right: 5),
                     child: _filterChip(
                       label: '${entry.key} ${entry.value}',
                       selected: state.leagueFilter == entry.key,
