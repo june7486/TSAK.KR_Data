@@ -284,14 +284,16 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
       final name =
           '회원접속기록_${DateTime.now().toString().substring(0, 10)}';
       final bytes = utf8.encode('\uFEFF${b.toString()}');
-      await saveBytes(
+      final choose = await askSaveLocation(context, info: '접속기록 (CSV)');
+      if (choose == null) return;
+      final ok = await saveFileNamed(
         bytes: Uint8List.fromList(bytes),
-        name: name,
-        ext: 'csv',
+        filename: '$name.csv',
         mime: 'text/csv;charset=utf-8',
         mimeType: MimeType.csv,
+        choose: choose,
       );
-      if (mounted) _snack('CSV 파일로 내보냈습니다');
+      if (mounted) _snack(ok ? 'CSV 파일로 내보냈습니다' : '저장이 취소되었습니다');
     } catch (e) {
       _snack('내보내기 실패: $e');
     } finally {

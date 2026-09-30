@@ -134,19 +134,21 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
 
   Future<void> _save() async {
     if (_a.isEmpty) return;
+    final choose = await askSaveLocation(context, info: '재무 보고서 (PDF)');
+    if (choose == null) return; // 취소
     setState(() => _building = true);
     try {
       final bytes = await FinanceReportService.build(_a);
       if (!mounted) return;
       setState(() => _building = false);
-      await saveBytes(
+      final ok = await saveFileNamed(
         bytes: Uint8List.fromList(bytes),
-        name: FinanceReportService.fileName(),
-        ext: 'pdf',
+        filename: '${FinanceReportService.fileName()}.pdf',
         mime: 'application/pdf',
         mimeType: MimeType.pdf,
+        choose: choose,
       );
-      _snack('보고서를 저장했습니다.');
+      _snack(ok ? '보고서를 저장했습니다.' : '저장이 취소되었습니다.');
     } catch (e) {
       if (!mounted) return;
       setState(() => _building = false);

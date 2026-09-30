@@ -2,7 +2,9 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:file_saver/file_saver.dart';
+import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import 'web_nav.dart';
 
 /// 파일 저장 공용 헬퍼.
@@ -47,6 +49,96 @@ Future<void> saveBytes({
 /// - **안드로이드·아이폰(iOS)·데스크톱 네이티브**: OS 저장 대화상자 → true
 bool get supportsLocationPicker =>
     isWebRuntime ? supportsSaveFilePicker : true;
+
+/// 확장자 포함 파일명으로 저장한다 (PC·**모든 모바일(안드로이드·아이폰)** 공통).
+///
+/// [choose]=true 이고 위치 선택이 가능하면 저장 위치/앱을 사용자가 직접 고른다.
+/// 모바일 네이티브(안드로이드·아이폰)에서는 시스템 저장 대화상자가 뜬다.
+/// [choose]=false 이면 기기 기본(다운로드) 폴더에 바로 저장한다.
+Future<bool> saveFileNamed({
+  required Uint8List bytes,
+  required String filename,
+  required String mime,
+  MimeType? mimeType,
+  bool choose = false,
+}) {
+  final i = filename.lastIndexOf('.');
+  final hasExt = i > 0;
+  final base = hasExt ? filename.substring(0, i) : filename;
+  final ext = hasExt ? filename.substring(i + 1) : 'dat';
+  return saveBytesChoose(
+    bytes: bytes,
+    name: base,
+    ext: ext,
+    mime: mime,
+    mimeType: mimeType,
+    choose: choose,
+  );
+}
+
+/// 저장 방법·위치 선택 창 (PC·안드로이드·아이폰 공통).
+///
+/// 반환: false=기본 폴더로 저장 / true=위치 직접 선택 / null=취소.
+/// 위치 선택 미지원(사파리·파폭)이면 안내 문구를 띄우고 기본 저장만 제안한다.
+Future<bool?> askSaveLocation(
+  BuildContext context, {
+  String? info,
+}) async {
+  final canPick = supportsLocationPicker;
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
+      title: const Text('저장 방법 선택'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (info != null && info.isNotEmpty) ...[
+            Text(
+              info,
+              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+          ],
+          const Text(
+            '저장 위치를 직접 고르거나, 기기 기본 폴더에 바로 저장할 수 있습니다.',
+            style: TextStyle(fontSize: 12.5, height: 1.5),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            canPick
+                ? '* [위치 직접 선택] → 저장 위치·앱을 고를 수 있습니다.\n'
+                    '  · PC: 폴더·파일명 지정\n'
+                    '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
+                    '* [기본 폴더에 저장] → 다운로드(Downloads) 폴더에 바로 저장.'
+                : '* 이 브라우저는 위치 선택을 지원하지 않아\n'
+                    '  다운로드(Downloads) 폴더에 저장됩니다.',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, null),
+          child: const Text('취소'),
+        ),
+        if (canPick)
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.folder_open, size: 17),
+            label: const Text('위치 직접 선택'),
+          ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+          onPressed: () => Navigator.pop(ctx, false),
+          icon: const Icon(Icons.download, size: 17),
+          label: const Text('기본 폴더에 저장'),
+        ),
+      ],
+    ),
+  );
+}
 
 /// 저장 방법을 지정해 저장한다 (PC·**모든 모바일(안드로이드·아이폰)** 공통).
 ///

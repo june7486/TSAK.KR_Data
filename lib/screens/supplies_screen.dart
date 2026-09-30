@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/doc_pdf.dart';
 import '../services/export_save.dart';
+import '../services/file_save.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../services/print_doc.dart';
@@ -426,17 +427,17 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     Uint8List bytes,
     String filename, {
     String? mime,
+    bool ask = true,
   }) async {
-    if (!isWebRuntime) {
-      _snack('모바일에서는 파일 저장을 지원하지 않습니다');
-      return;
-    }
-    final ok = await saveBytesAs(
-      bytes,
-      filename,
-      mime ?? mimeForFilename(filename),
+    final choose = ask ? await askSaveLocation(context) : false;
+    if (choose == null) return; // 취소
+    final ok = await saveFileNamed(
+      bytes: bytes,
+      filename: filename,
+      mime: mime ?? mimeForFilename(filename),
+      choose: choose,
     );
-    _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다');
+    _snack(ok ? '$filename 저장을 시작했습니다' : '저장이 취소되었습니다');
   }
 
   /// 텍스트 파일 저장(웹) / 클립보드 폴백.

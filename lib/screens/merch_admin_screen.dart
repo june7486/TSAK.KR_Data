@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/file_save.dart';
 import '../services/file_pick.dart';
 import '../services/app_state.dart';
 import '../services/doc_pdf.dart';
@@ -2587,23 +2588,23 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     Uint8List bytes,
     String filename, {
     String? mime,
+    bool ask = true,
   }) async {
-    if (!isWebRuntime) {
-      await Clipboard.setData(ClipboardData(text: '(바이너리) $filename'));
-      if (mounted) _snack('모바일에서는 파일 저장을 지원하지 않습니다');
-      return;
-    }
+    // 저장 방법·위치 선택 (PC + 모든 모바일/아이폰). ask=false 면 바로 저장.
+    final choose = ask ? await askSaveLocation(context) : false;
+    if (choose == null) return; // 취소
     try {
-      final ok = await saveBytesAs(
-        bytes,
-        filename,
-        mime ?? mimeForFilename(filename),
+      final ok = await saveFileNamed(
+        bytes: bytes,
+        filename: filename,
+        mime: mime ?? mimeForFilename(filename),
+        choose: choose,
       );
       if (mounted) {
-        _snack(ok ? '$filename 저장을 시작했습니다' : '파일 저장에 실패했습니다');
+        _snack(ok ? '$filename 저장을 시작했습니다' : '저장이 취소되었습니다');
       }
     } catch (e) {
-      if (mounted) _snack('파일 생성 실패: $e');
+      if (mounted) _snack('파일 저장 실패: $e');
     }
   }
 
