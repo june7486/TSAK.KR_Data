@@ -1867,20 +1867,26 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Widget _infoCard(Member m) {
     final state = context.watch<AppState>();
     final admin = state.isApp || state.isMaster; // 관리자·마스터: 전체 열람
-    final isMaster = state.isMaster; // 마스터: 노출관리(체크박스)까지
-    final isSelf = state.isSelfNumber(m.number); // 본인: 전체 열람
+    final isMaster = state.isMaster; // 마스터: 노출관리(체크박스)·비노출 열람까지
+    final isSelf = state.isSelfNumber(m.number); // 본인: 노출 항목 전체 열람
 
     // 표시할 값 계산 — 회원별 노출권한 반영.
-    //  관리자·본인은 값 전체 + 권한 상태 태그, 타인은 '노출'일 때만 값.
+    //  · '비노출(hidden)' : **마스터에게만** 값 표시. 나머지(관리자·본인·타인)는 완전 숨김.
+    //  · '관리자 노출(admin)': 관리자·마스터에게 표시. 본인·타인은 숨김.
+    //  · '노출(public)'   : 모두 표시.
     String disp(String key, String value) {
       if (value.trim().isEmpty) return '';
       final p = state.permFor(m, key);
-      if (admin || isSelf) {
-        if (p == AppState.permHidden) return '$value   (비노출)';
-        if (p == AppState.permAdmin) return '$value   (관리자 노출)';
-        return value;
+      if (p == AppState.permHidden) {
+        // 비노출: 마스터만 값을 본다. 관리자·본인·타인에게는 어떤 형태로도 노출 금지.
+        return isMaster ? '$value   (비노출)' : '';
       }
-      return p == AppState.permPublic ? value : '';
+      if (p == AppState.permAdmin) {
+        // 관리자 노출: 관리자·마스터만 본다.
+        if (admin) return '$value   (관리자 노출)';
+        return '';
+      }
+      return value; // public — 모두 표시
     }
 
     // (라벨, 키, 값) — 항목별 노출관리 대상.
@@ -1913,7 +1919,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       final hasPerm = m.fieldPerms.containsKey(key);
       if (raw.trim().isEmpty && !hasPerm) continue; // 값·설정 모두 없으면 숨김
       final shown = disp(key, raw);
-      if (shown.isEmpty && !isMaster) continue; // 비노출 항목은 마스터만 관리
+      // 값이 비면(비노출을 볼 권한 없음 포함) 마스터가 아닌 한 행 자체를 만들지 않는다.
+      if (shown.isEmpty && !isMaster) continue;
       children.add(_infoFieldRow(state, m, label, key, shown, isMaster));
     }
     // 멘토·페런츠 등록현황은 '범인가 정보' 카드에서 표시한다(여기서는 제외).

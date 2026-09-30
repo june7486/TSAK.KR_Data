@@ -1588,6 +1588,29 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 명부관리: 멘토/페런츠 프로필의 '받는분의 범인가번호'만 저장(관리자·마스터).
+  Future<Map<String, dynamic>> linkProfileSetReceiver({
+    required String number,
+    required String receiverNo,
+  }) async {
+    try {
+      final r = await http
+          .post(
+            _uri('/api/link/profiles'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({
+              'action': 'receiver',
+              'number': number,
+              'receiverNo': receiverNo,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
   /// 개인프로필 연동 — 해당 인가번호의 각인 메달 수상(받은)/수여(해준) 기록.
   Future<Map<String, dynamic>> memberMedals({String number = ''}) async {
     try {

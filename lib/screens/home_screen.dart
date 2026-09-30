@@ -34,6 +34,7 @@ import 'qr_screen.dart';
 import 'regular_members_screen.dart';
 import 'approval_screen.dart';
 import 'link_approval_screen.dart';
+import 'roster_admin_screen.dart';
 import 'member_request_screen.dart';
 import 'settings_screen.dart';
 import 'master_console_screen.dart';
@@ -1281,6 +1282,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   _linkApprovalButton(),
                   // (3) 일반회원 (관리자·마스터)
                   _regularMembersButton(),
+                  // (3-1) 명부관리 (관리자·마스터, 관리자 명부는 마스터 전용) — 별도 창
+                  _rosterAdminButton(),
                 ],
                 // (4) 수품 구매 — 권한 허용 시 노출
                 if (state.can('merchBuy'))
@@ -2042,6 +2045,40 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 '일반회원 ${state.regularCount}',
                 style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rosterAdminButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const RosterAdminScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.assignment_ind_outlined, size: 15, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '명부관리',
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,

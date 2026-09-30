@@ -1255,17 +1255,61 @@ def _crop_and_encode(im, box, w, h, src_path=None):
     return out.getvalue()
 
 
+# ---- NAS JSON 메모리 캐시 ---------------------------------------------------
+#  · NAS(FileStation) 원격 호출은 1건당 약 0.24초가 걸린다(exists+read ≈ 0.5초).
+#    작은 config.json 조차 매 요청마다 읽으면 모든 API 가 고정 0.5초 지연을 겪는다.
+#  · 파일별로 (파싱값, 저장시각) 을 메모리에 캐시해 TTL 내에서는 NAS 호출을 0회로
+#    줄인다. 이 서버가 _save_json 으로 쓰면 즉시 캐시를 갱신(핫패스 일관성).
+#  · 외부(다른 기기/사람)에서 NAS 파일을 직접 고친 경우를 위해 짧은 TTL 후
+#    1회 재조회하여 최신값을 반영한다.
+_JSON_CACHE = {}                 # path -> (data, ts)
+_JSON_CACHE_LOCK = threading.Lock()
+_JSON_TTL_DEFAULT = 8.0
+_JSON_TTL_BY_NAME = {
+    "config.json": 15.0,   # 자주 읽히고 자주 안 바뀜.
+    "members.json": 4.0,   # 다른 창/기기 갱신 반영 여유.
+}
+
+
+def _json_ttl_for(path):
+    base = path.rsplit("/", 1)[-1]
+    return _JSON_TTL_BY_NAME.get(base, _JSON_TTL_DEFAULT)
+
+
 def _load_json(path, default):
+    now = time.time()
+    with _JSON_CACHE_LOCK:
+        ent = _JSON_CACHE.get(path)
+        if ent is not None and (now - ent[1]) < _json_ttl_for(path):
+            return ent[0]
     try:
         if NAS.exists(path):
-            return json.loads(NAS.read(path))
+            data = json.loads(NAS.read(path))
+        else:
+            data = default
+        with _JSON_CACHE_LOCK:
+            _JSON_CACHE[path] = (data, now)
+        return data
     except Exception as e:
         print("load fail", path, e)
+    # 실패 시 캐시본이 있으면 그대로 사용(가용성 우선).
+    if ent is not None:
+        return ent[0]
     return default
 
 
 def _save_json(path, obj):
     NAS.write(path, json.dumps(obj, ensure_ascii=False, indent=1).encode("utf-8"))
+    # 서버가 쓴 값은 즉시 캐시에 반영(다음 읽기 일관성 + 재조회 비용 제거).
+    with _JSON_CACHE_LOCK:
+        _JSON_CACHE[path] = (obj, time.time())
+
+
+def _invalidate_json(path):
+    """외부 변경 강제 반영이 필요할 때 캐시 무효화."""
+    with _JSON_CACHE_LOCK:
+        _JSON_CACHE.pop(path, None)
+
 
 
 def _send_inquiry_mail(rec):
@@ -7013,14 +7057,28 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 admins = sorted(_granted_admins())
                 # 후보: 전체 인가자(관리자 후보) 이름/번호 힌트
+                cfg = _load_json(CFG_FILE, _default_config())
+                ga = cfg.get("adminGrantedAt")
+                if not isinstance(ga, dict):
+                    ga = {}
                 members = _load_json(DB_FILE, [])
-                name_of = {}
+                info = {}
                 for m in members:
                     no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
                     if no:
-                        name_of[no] = str(m.get("name", ""))
-                rows = [{"number": n, "name": name_of.get(n, "")}
-                        for n in admins]
+                        info[no] = m
+                rows = []
+                for n in admins:
+                    m = info.get(n) or {}
+                    rows.append({
+                        "number": n,
+                        "name": str(m.get("name", "")),
+                        "atasNo": str(m.get("atasNo", "")),
+                        "phone": str(m.get("phone", "")),
+                        "league": str(m.get("league", "")),
+                        "unit": str(m.get("unit", "")),
+                        "grantedAt": str(ga.get(n, "")),
+                    })
                 return self._json({"ok": True, "admins": rows,
                                    "count": len(rows)})
             if p == "/api/members":
@@ -8234,6 +8292,14 @@ class Handler(BaseHTTPRequestHandler):
                         lst.append(no)
                     cfg["admins"] = sorted(
                         set(re.sub(r"[^0-9]", "", str(x)) for x in lst if x))
+                    # 관리자 권한 부여일 기록(명부관리 — 마스터 전용 열람).
+                    ga = cfg.get("adminGrantedAt")
+                    if not isinstance(ga, dict):
+                        ga = {}
+                    if not ga.get(no):
+                        ga[no] = datetime.datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S")
+                    cfg["adminGrantedAt"] = ga
                     _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "admins": cfg["admins"],
                                    "number": no,
@@ -8255,6 +8321,11 @@ class Handler(BaseHTTPRequestHandler):
                             if re.sub(r"[^0-9]", "", str(x)) != no]
                     else:
                         cfg["admins"] = []
+                    # 회수 시 부여일 기록도 제거.
+                    ga = cfg.get("adminGrantedAt")
+                    if isinstance(ga, dict):
+                        ga.pop(no, None)
+                        cfg["adminGrantedAt"] = ga
                     _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "admins": cfg["admins"],
                                    "number": no})
@@ -8616,6 +8687,23 @@ class Handler(BaseHTTPRequestHandler):
                         with LOCK:
                             _link_profiles_save(profs)
                     return self._json({"ok": True, "deleted": key})
+                # 명부관리 — '받는분의 범인가번호'만 인라인 수정(관리자·마스터).
+                #   멘토/페런츠 명부에서 값을 직접 입력·수정할 수 있게 한다.
+                if action in ("receiver", "set-receiver"):
+                    if not is_admin:
+                        return self._json({"ok": False,
+                                           "error": "권한이 없습니다."}, 403)
+                    key = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                    val = re.sub(r"[^0-9]", "", str(d.get("receiverNo", "") or ""))[:12]
+                    if not key or key not in profs:
+                        return self._json({"ok": False,
+                                           "error": "not found"}, 404)
+                    profs[key]["receiverNo"] = val
+                    profs[key]["updatedAt"] = _now_stamp()
+                    with LOCK:
+                        _link_profiles_save(profs)
+                    return self._json({"ok": True, "number": key,
+                                       "receiverNo": val})
                 # 저장
                 p = _link_profile_sanitize(d.get("profile") or d)
                 if not p.get("number") or not p.get("name"):
@@ -8632,6 +8720,10 @@ class Handler(BaseHTTPRequestHandler):
                             {"ok": False,
                              "error": "본인 멘토·페런츠 인가번호만 등록할 수 있습니다."},
                             403)
+                # 기존 프로필의 '받는분 인가번호'는 입력이 없으면 보존한다.
+                prev = profs.get(p["number"]) if isinstance(profs.get(p["number"]), dict) else None
+                if prev and not p.get("receiverNo"):
+                    p["receiverNo"] = str(prev.get("receiverNo", "") or "")
                 login_id, pw = _gen_profile_credentials(p.get("phone"), p.get("name"))
                 p["loginId"] = login_id
                 p["password"] = pw          # 관리자·본인에게만 반환/표시용
@@ -8713,10 +8805,15 @@ class Handler(BaseHTTPRequestHandler):
                     found = False
                     for i, m in enumerate(members):
                         if str(m.get("id", "")) == mid:
+                            # 아이디(계정) 생성년월 보존 — 명부관리 '아이디생성년월'용.
+                            if not mem.get("createdAt") and m.get("createdAt"):
+                                mem["createdAt"] = m.get("createdAt")
                             members[i] = mem
                             found = True
                             break
                     if not found:
+                        if not mem.get("createdAt"):
+                            mem["createdAt"] = _now_stamp()
                         members.append(mem)
                     if NAS.exists(DB_FILE):
                         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -11349,6 +11446,17 @@ if __name__ == "__main__":
             print("event media warm skipped:", e)
         # 정적 자산 사전 압축(첫 사용자 지연 제거)
         _precompress_static()
+        # JSON 캐시 예열 — 자주 읽는 파일을 미리 메모리에 적재하여
+        #  첫 요청의 NAS 왕복(콜드 스타트 ~0.5초)까지 제거한다.
+        try:
+            for _f in (CFG_FILE, DB_FILE, MERCH_FILE, EVENTS_FILE):
+                try:
+                    _load_json(_f, None)
+                except Exception:
+                    pass
+            print("json cache warmed")
+        except Exception as e:
+            print("json warm skipped:", e)
     threading.Thread(target=_warm_bg, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"TSAK NAS proxy on 0.0.0.0:{port}")
