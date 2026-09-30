@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
 import '../services/league_names.dart';
+import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
@@ -27,6 +28,41 @@ class _StatsScreenState extends State<StatsScreen> {
   /// 집계 기준 — 0 = 인가시(범인가 정보), 1 = 현재활동.
   ///   현재활동 데이터가 없으면 인가시 정보로 자동 폴백한다.
   int _basis = 0;
+
+  /// 멘토 인적사항(소속연맹·소속단위대) — 통계용. 인가번호 → 프로필.
+  Map<String, dynamic> _linkProfiles = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfiles());
+  }
+
+  Future<void> _loadProfiles() async {
+    try {
+      final p = await context.read<NasApi>().linkProfiles();
+      if (!mounted) return;
+      setState(() => _linkProfiles = p);
+    } catch (_) {
+      // 통계는 프로필 없이도 동작(멘토 연맹 섹션만 생략).
+    }
+  }
+
+  /// 멘토 프로필을 기준으로 소속연맹별 멘토 인원 분포(통계).
+  ///  · 멘토 코드 = 멘티(본인) 범인가자번호 → 프로필에서 멘토 소속연맹을 읽는다.
+  Map<String, int> _mentorLeagueCounts() {
+    final map = <String, int>{};
+    for (final prof in _linkProfiles.values) {
+      final p = (prof as Map?)?.cast<String, dynamic>();
+      if (p == null) continue;
+      if ('${p['kind'] ?? ''}' != 'mentor') continue;
+      final lg = normalizeLeague('${p['league'] ?? ''}');
+      final k = lg.isEmpty ? '(미지정)' : lg;
+      map[k] = (map[k] ?? 0) + 1;
+    }
+    final e = map.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    return {for (final x in e) x.key: x.value};
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +126,21 @@ class _StatsScreenState extends State<StatsScreen> {
               },
             ),
           const SizedBox(height: 16),
+          if (_mentorLeagueCounts().isNotEmpty) ...[
+            _sectionTitle('멘토 소속연맹 분포'),
+            ..._mentorLeagueCounts().entries.map(
+              (e) => _barRow(
+                context: context,
+                label: e.key,
+                value: e.value,
+                max: _mentorLeagueCounts()
+                    .values
+                    .reduce((a, b) => a > b ? a : b),
+                color: AppColors.purpleLight,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (state.positions.isNotEmpty) ...[
             _sectionTitle('직위 분포 (현재활동)'),
             ...state.positions.entries.map(

@@ -774,12 +774,15 @@ def _link_pending_members():
                 p = profs.get(key) or profs.get(str(c)) or {}
                 nm = str(p.get("name", "") or "")
                 ph = str(p.get("phone", "") or "")
+                lg = str(p.get("league", "") or "")
                 un = str(p.get("unit", "") or "")
+                # 멘토: "이름(#멘티번호) · 소속연맹 소속단위대 · 전화"
                 label = ("#%s" % key)
                 if nm:
                     label += " %s" % nm
-                if un:
-                    label = "%s · %s" % (un, label)
+                loc = " ".join([x for x in (lg, un) if x])
+                if loc:
+                    label = "%s · %s" % (loc, label)
                 if ph:
                     label += " (%s)" % ph
                 out2.append(label)
@@ -938,9 +941,12 @@ def _link_profile_sanitize(raw):
     if not isinstance(raw, dict):
         return {}
     return {
+        # number: 멘토=멘티(범인가자)번호 / 페런츠=인가번호
         "number": re.sub(r"[^0-9]", "", str(raw.get("number", "") or ""))[:12],
         "name": str(raw.get("name", "") or "").strip()[:40],
         "phone": str(raw.get("phone", "") or "").strip()[:20],
+        # league: (멘토) 소속연맹 — 통계 산출용
+        "league": str(raw.get("league", "") or "").strip()[:60],
         "unit": str(raw.get("unit", "") or "").strip()[:80],
         "kind": "parent" if str(raw.get("kind", "")) == "parent" else "mentor",
     }

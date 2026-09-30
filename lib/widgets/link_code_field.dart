@@ -4,12 +4,16 @@ import 'package:provider/provider.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 
-/// 멘토·페런츠 인가번호 필드 — 인적사항(이름·전화·소속) 입력 지원.
+/// 멘토·페런츠 인적사항 입력 필드.
 ///
 /// ## 요구사항
 ///  · "멘토 및 페런츠를 수동으로 입력할 경우 인적사항 넣도록 할 것"
 ///  · "각각 전화번호로 아이디 패스워드 이름 생성할 것"
 ///    → 아이디: 전화번호(숫자) / 비밀번호: 뒤 4자리 + '!@@'
+///  · (인적사항 항목 변경 — 통계용)
+///    멘토: 범인가자번호(멘티) · 이름(멘토) · 전화번호(멘토)
+///          · 소속연맹(멘토) · 소속단위대(멘토)
+///    페런츠: 인가번호 · 이름 · 전화번호 · 소속(선택)
 ///
 /// ## 동작
 ///  · 인가번호를 추가하면 **인적사항 입력 다이얼로그**가 뜬다(이름·전화 필수).
@@ -25,14 +29,18 @@ class LinkCodeField extends StatefulWidget {
     required this.codes,
     required this.onChanged,
     this.editable = true,
+    this.menteeNumber = '',
   });
 
   final String label; // '멘토' | '페런츠'
   final IconData icon;
   final String kind; // 'mentor' | 'parent'
-  final List<String> codes; // 인가번호 목록
+  final List<String> codes; // 인가번호(멘토: 멘티 인가번호) 목록
   final ValueChanged<List<String>> onChanged;
   final bool editable;
+
+  /// 멘토 등록 시 기본값으로 채워지는 멘티(본인)의 범인가자번호.
+  final String menteeNumber;
 
   @override
   State<LinkCodeField> createState() => _LinkCodeFieldState();
@@ -93,9 +101,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 ),
               ),
               const SizedBox(width: 6),
-              const Text(
-                '인가번호 · 인적사항',
-                style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+              Text(
+                widget.kind == 'mentor' ? '인가번호(멘티) · 인적사항(멘토)' : '인가번호 · 인적사항',
+                style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
               ),
               const Spacer(),
               if (widget.editable)
@@ -131,7 +139,8 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final p = _profileOf(code);
     final nm = '${p['name'] ?? ''}'.trim();
     final hasProfile = nm.isNotEmpty || '${p['phone'] ?? ''}'.trim().isNotEmpty;
-    final label = hasProfile ? '$nm  #$code' : '#$code';
+    final noLabel = widget.kind == 'mentor' ? '멘티 #$code' : '#$code';
+    final label = hasProfile ? '$nm  $noLabel' : noLabel;
     return InputChip(
       avatar: hasProfile
           ? Icon(Icons.verified_user,
@@ -158,9 +167,14 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
   /// 인가번호 + 인적사항 입력/수정 다이얼로그.
   Future<void> _edit(String? existing) async {
     final prof = existing != null ? _profileOf(existing) : {};
-    final noCtrl = TextEditingController(text: existing ?? '');
+    final isMentor = widget.kind == 'mentor';
+    // 멘토 신규 등록 시 멘티(본인) 범인가자번호를 기본값으로 채운다.
+    final noCtrl = TextEditingController(
+      text: existing ?? (isMentor ? widget.menteeNumber : ''),
+    );
     final nameCtrl = TextEditingController(text: '${prof['name'] ?? ''}');
     final phoneCtrl = TextEditingController(text: '${prof['phone'] ?? ''}');
+    final leagueCtrl = TextEditingController(text: '${prof['league'] ?? ''}');
     final unitCtrl = TextEditingController(text: '${prof['unit'] ?? ''}');
 
     final saved = await showDialog<bool>(
@@ -172,7 +186,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             final previewPhone = phoneCtrl.text;
             final (pid, ppw) = _genCred(previewPhone);
             return AlertDialog(
-              title: Text('${widget.label} 인가번호 · 인적사항'),
+              title: Text(
+                isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인가번호 · 인적사항',
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -182,16 +198,16 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       controller: noCtrl,
                       enabled: !isEdit,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '인가번호 *',
+                      decoration: InputDecoration(
+                        labelText: isMentor ? '범인가자번호 (멘티) *' : '인가번호 *',
                         isDense: true,
                       ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '이름 *',
+                      decoration: InputDecoration(
+                        labelText: isMentor ? '이름 (멘토) *' : '이름 *',
                         isDense: true,
                       ),
                     ),
@@ -200,22 +216,43 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       controller: phoneCtrl,
                       keyboardType: TextInputType.phone,
                       onChanged: (_) => setDlg(() {}),
-                      decoration: const InputDecoration(
-                        labelText: '전화번호 *',
+                      decoration: InputDecoration(
+                        labelText: isMentor ? '전화번호 (멘토) *' : '전화번호 *',
                         hintText: '010-0000-0000',
                         isDense: true,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: unitCtrl,
-                      decoration: InputDecoration(
-                        labelText:
-                            widget.kind == 'mentor' ? '소속(단위대)' : '소속(선택)',
-                        hintText: '예: 서울남부',
-                        isDense: true,
+                    // 멘토: 소속연맹·소속단위대 (통계 산출용)
+                    if (isMentor) ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: leagueCtrl,
+                        decoration: const InputDecoration(
+                          labelText: '소속연맹 (멘토)',
+                          hintText: '예: 서울남부 / 인천',
+                          isDense: true,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: unitCtrl,
+                        decoration: const InputDecoration(
+                          labelText: '소속단위대 (멘토)',
+                          hintText: '예: 샘물지역대',
+                          isDense: true,
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: unitCtrl,
+                        decoration: const InputDecoration(
+                          labelText: '소속(선택)',
+                          hintText: '예: 제405단 샘물지역대',
+                          isDense: true,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
@@ -290,6 +327,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
           'number': code,
           'name': nm,
           'phone': ph,
+          'league': leagueCtrl.text.trim(),
           'unit': unitCtrl.text.trim(),
           'kind': widget.kind,
         });

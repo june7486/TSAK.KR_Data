@@ -1584,12 +1584,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   /// 멘토·페런츠 인가번호 라벨 — 인적사항이 있으면 "이름 #번호" 로 표시한다.
   ///   (요구: 개인프로필에 멘토·페런츠 메달 수여자 이름도 함께 표시)
-  String _linkNameLabel(String code) {
+  ///   · memberNoKind == 'mentor' 이면 표시 번호는 **멘티(본인) 범인가자번호**.
+  String _linkNameLabel(String code, {String numberKind = 'parent'}) {
     final p = _profileOf(code);
     final nm = '${p['name'] ?? ''}'.trim();
     final no = code.replaceAll(RegExp(r'[^0-9]'), '');
-    if (nm.isEmpty) return '#$code';
-    return '$nm #$no';
+    if (nm.isEmpty) {
+      return numberKind == 'mentor' ? '멘티 #$code' : '#$code';
+    }
+    return numberKind == 'mentor' ? '$nm (멘티 #$no)' : '$nm #$no';
   }
 
   /// 각인 메달(멘토·페런츠) 수상/수여 기록 — 개인프로필 연동.
@@ -1725,7 +1728,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   ///   · 소속연맹·등록단위대·인가일·멘토대장·페런츠 (범인가자 통계의 근거).
   ///   · 멘토·페런츠는 **등록현황**으로서 값이 없어도 "미등록"을 항상 노출한다.
   Widget _credentialCard(Member m) {
-    final mentorLabels = m.mentors.map((e) => _linkNameLabel(e)).join(', ');
+    // 멘토: 코드는 멘티(본인) 범인가자번호 → 표시는 "멘토이름 (멘티 #번호)".
+    final mentorLabels =
+        m.mentors.map((e) => _linkNameLabel(e, numberKind: 'mentor')).join(', ');
     final parentLabels = m.parents.map((e) => _linkNameLabel(e)).join(', ');
     return _section(
       title: '범스카우트 인가 정보 (인가 당시 정보)',

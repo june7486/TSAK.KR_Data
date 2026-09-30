@@ -348,6 +348,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.supervisor_account,
                 kind: 'mentor',
                 codes: _mentors,
+                menteeNumber: _number.text.trim(),
                 onChanged: (v) => setState(() => _mentors = v),
                 editable: _canEditLinks,
               ),
