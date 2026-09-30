@@ -11,7 +11,6 @@ import '../models/member.dart';
 import '../services/contact_service.dart';
 import '../services/export_service.dart';
 import '../services/file_save.dart';
-import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
@@ -356,11 +355,17 @@ class _ExportScreenState extends State<ExportScreen>
       _snack('선택된 인가자가 없습니다');
       return;
     }
+    // ① 저장 방법·위치 선택 창 (PC·모든 모바일 공통)
+    final choice = await _askSaveMethod();
+    if (choice == null) return; // 취소
+    final choose = choice == 'choose';
+
     setState(() => _busy = true);
     try {
       final chunks = _chunks;
       final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
-      final baseName = 'TSAK_인가자명단_${DateTime.now().millisecondsSinceEpoch}';
+      final baseName = _baseName();
+      var saved = 0;
       for (var i = 0; i < chunks.length; i++) {
         final list = chunks[i];
         final suffix = chunks.length > 1 ? '_${i + 1}' : '';
@@ -387,32 +392,115 @@ class _ExportScreenState extends State<ExportScreen>
             break;
         }
         if (_format == ExportFormat.jpg) {
-          // JPG는 첫 페이지를 이미지로 저장
-          final img = await Printing.raster(bytes, dpi: 150).first;
-          final png = await img.toPng();
-          await saveBytes(
-            bytes: png,
-            name: name,
-            ext: 'png',
-            mime: 'image/png',
-            mimeType: MimeType.png,
+          // JPG — 첫 페이지를 이미지로 변환해 저장.
+          final raster = await Printing.raster(bytes, dpi: 150).first;
+          final im = img.Image.fromBytes(
+            width: raster.width,
+            height: raster.height,
+            bytes: raster.pixels.buffer,
+            numChannels: 4,
           );
+          final jpg = img.encodeJpg(im, quality: 88);
+          final ok = await saveBytesChoose(
+            bytes: jpg,
+            name: name,
+            ext: 'jpg',
+            mime: 'image/jpeg',
+            mimeType: MimeType.jpeg,
+            choose: choose,
+          );
+          if (ok) saved++;
         } else {
-          await saveBytes(
+          final ok = await saveBytesChoose(
             bytes: bytes,
             name: name,
             ext: _format.extension,
             mime: _mimeStr(_format),
             mimeType: _mimeOf(_format),
+            choose: choose,
           );
+          if (ok) saved++;
         }
       }
-      _snack('내보내기 완료 (${chunks.length}개 파일)');
+      if (saved == 0) {
+        _snack('저장이 취소되었습니다');
+      } else {
+        _snack('내보내기 완료 ($saved개 파일 · ${_format.label})');
+      }
     } catch (e) {
       _snack('내보내기 실패: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 파일명 기본값 — 제목에 숫자가 많으면(특정월 명단 등) 시각 대신 제목 사용.
+  String _baseName() {
+    final t = widget.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final base = t.isEmpty ? 'TSAK_인가자명단' : 'TSAK_$t';
+    return '${base}_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// ② 저장 방법·위치 선택 창.
+  ///
+  /// 반환: 'default'(기본 폴더) | 'choose'(위치 직접 선택) | null(취소).
+  ///  · PC(크롬·엣지·웨일): [위치 선택] → 저장 폴더·파일명 지정.
+  ///  · 안드로이드·아이폰: [위치 선택] → 시스템 저장 대화상자(파일 앱·드라이브).
+  Future<String?> _askSaveMethod() {
+    final canPick = supportsLocationPicker; // 모바일이면 항상 true
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
+        title: const Text('저장 방법 선택'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_format.label} · ${widget.members.length}명'
+              '${_chunk100 ? ' · ${_chunks.length}개 파일' : ''}',
+              style: const TextStyle(
+                  fontSize: 13.5, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '저장 위치를 직접 고르거나, 기기 기본 폴더에 바로 저장할 수 있습니다.',
+              style: TextStyle(fontSize: 12.5, height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              canPick
+                  ? '* [위치 직접 선택] 을 누르면 저장 위치·앱을 고를 수 있습니다.\n'
+                      '  · PC: 폴더·파일명 지정\n'
+                      '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
+                      '* [기본 폴더에 저장] 은 다운로드(Downloads) 폴더에 바로 저장합니다.'
+                  : '* 이 브라우저는 위치 선택을 지원하지 않아\n'
+                      '  다운로드(Downloads) 폴더에 저장됩니다.',
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('취소'),
+          ),
+          if (canPick)
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(ctx, 'choose'),
+              icon: const Icon(Icons.folder_open, size: 17),
+              label: const Text('위치 직접 선택'),
+            ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+            onPressed: () => Navigator.pop(ctx, 'default'),
+            icon: const Icon(Icons.download, size: 17),
+            label: const Text('기본 폴더에 저장'),
+          ),
+        ],
+      ),
+    );
   }
 
   MimeType _mimeOf(ExportFormat f) {

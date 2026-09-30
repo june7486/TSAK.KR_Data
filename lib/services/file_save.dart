@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:file_saver/file_saver.dart';
 
 import 'web_nav.dart';
@@ -37,6 +38,62 @@ Future<void> saveBytes({
     ext: ext,
     mimeType: mimeType ?? MimeType.other,
   );
+}
+
+/// 이 환경이 '저장 위치 직접 선택'을 지원하는지.
+///
+/// - **웹(크롬·엣지·웨일 등 Chromium)**: File System Access API → true
+/// - **웹(사파리·파이어폭스)**: 미지원 → false (기본 다운로드만 가능)
+/// - **안드로이드·아이폰(iOS)·데스크톱 네이티브**: OS 저장 대화상자 → true
+bool get supportsLocationPicker =>
+    isWebRuntime ? supportsSaveFilePicker : true;
+
+/// 저장 방법을 지정해 저장한다 (PC·**모든 모바일(안드로이드·아이폰)** 공통).
+///
+/// - [choose]=false → 기기 기본(다운로드) 폴더로 저장.
+/// - [choose]=true  → 사용자가 저장 위치/앱을 직접 선택.
+///   · 웹(크롬·엣지·웨일): 폴더·파일명 선택창(File System Access API)
+///   · 안드로이드·아이폰: 시스템 저장 대화상자(파일 앱/드라이브 등 선택)
+///
+/// 반환: 저장(트리거)되면 true, 사용자가 취소하면 false.
+Future<bool> saveBytesChoose({
+  required Uint8List bytes,
+  required String name,
+  required String ext,
+  required String mime,
+  MimeType? mimeType,
+  bool choose = false,
+}) async {
+  if (isWebRuntime) {
+    if (choose && supportsSaveFilePicker) {
+      // 취소 시 false 를 그대로 반환(의도적 취소 → 다운로드 폴백 안 함).
+      return await saveViaFilePicker(bytes, '$name.$ext', mime);
+    }
+    downloadBytesFile(bytes, '$name.$ext', mime);
+    return true;
+  }
+  // 네이티브(안드로이드·아이폰·데스크톱) — 시스템 저장 대화상자.
+  if (choose) {
+    try {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: '저장 위치 선택',
+        fileName: '$name.$ext',
+        bytes: bytes,
+        type: FileType.any,
+      );
+      // path != null 이면 저장 완료(네이티브가 파일 기록까지 수행), null 이면 취소.
+      return path != null;
+    } catch (_) {
+      // saveFile 미지원 플랫폼 → 아래 기본 저장으로 폴백.
+    }
+  }
+  await FileSaver.instance.saveFile(
+    name: name,
+    bytes: bytes,
+    ext: ext,
+    mimeType: mimeType ?? MimeType.other,
+  );
+  return true;
 }
 
 /// 문자열(CSV·TXT·HTML) 저장 — 웹에서 확실히 동작.
