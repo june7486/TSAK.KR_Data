@@ -9,9 +9,10 @@ import '../widgets/tsak_app_bar.dart';
 
 /// 통계 대시보드 — 연맹별/연도별 인가자 분포, 회비 현황
 ///
-/// 연맹 분포 상단 탭:
-///   1) 가나다 — 연맹명 가나다순 (동아리 명부 느낌)
-///   2) 권역통합 — 광역 권역으로 묶어 인가자 많은 순
+/// 연맹 분포 상단 탭 (3종):
+///   1) 인원수별 — 개별 연맹, 인가자 많은 순 (★ 당초 기본 뷰)
+///   2) 가나다  — 연맹명 가나다순 (명부 느낌)
+///   3) 권역통합 — 광역 권역으로 묶어 인가자 많은 순
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
@@ -20,14 +21,18 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
-  /// 0 = 가나다순, 1 = 권역통합(인원순)
+  /// 0 = 인원수별(당초 기본), 1 = 가나다순, 2 = 권역통합(인원순)
   int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final baseLeagues = state.leagues; // 정규화 + 인원 내림차순 (미지정 마지막)
-    final leagues = _tab == 0 ? _sortByName(baseLeagues) : _groupByRegion(baseLeagues);
+    final leagues = switch (_tab) {
+      1 => _sortByName(baseLeagues),
+      2 => _groupByRegion(baseLeagues),
+      _ => baseLeagues, // 0: 인원수별(기본) — 정규화 + 인원 내림차순
+    };
     final years = state.yearDistribution;
     final feeYears = state.feeYears;
 
@@ -138,7 +143,8 @@ class _StatsScreenState extends State<StatsScreen> {
     return out;
   }
 
-  /// 가나다 / 권역통합 전환 탭.
+  /// 인원수별 / 가나다 / 권역통합 전환 탭 (3종).
+  ///   당초 기본 뷰(개별 연맹 인원수별)를 유지하고, 가나다·권역통합을 추가한다.
   Widget _leagueTabs() {
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 6),
@@ -148,19 +154,27 @@ class _StatsScreenState extends State<StatsScreen> {
           segments: const [
             ButtonSegment(
               value: 0,
-              icon: Icon(Icons.sort_by_alpha, size: 17),
-              label: Text('가나다'),
+              icon: Icon(Icons.leaderboard, size: 16),
+              label: Text('인원수별', style: TextStyle(fontSize: 12.5)),
             ),
             ButtonSegment(
               value: 1,
-              icon: Icon(Icons.apartment, size: 17),
-              label: Text('권역통합 (인원순)'),
+              icon: Icon(Icons.sort_by_alpha, size: 16),
+              label: Text('가나다', style: TextStyle(fontSize: 12.5)),
+            ),
+            ButtonSegment(
+              value: 2,
+              icon: Icon(Icons.apartment, size: 16),
+              label: Text('권역통합', style: TextStyle(fontSize: 12.5)),
             ),
           ],
           selected: {_tab},
           showSelectedIcon: false,
           style: const ButtonStyle(
-            visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+            visualDensity: VisualDensity(horizontal: -3, vertical: -2),
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 4),
+            ),
           ),
           onSelectionChanged: (s) => setState(() => _tab = s.first),
         ),
