@@ -386,8 +386,69 @@ class _StatsScreenState extends State<StatsScreen> {
               AppColors.tigerGold,
               Icons.star,
             ),
+            const Divider(height: 24),
+            const Row(
+              children: [
+                Icon(Icons.verified_user, size: 16, color: AppColors.scoutGreen),
+                SizedBox(width: 6),
+                Text(
+                  '연결 승인 현황',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // 승인 상태별 요약 칩 — 승인/미승인(승인요청)/보류/미설정
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _statusChip('승인', state.linkApprovedCount, AppColors.scoutGreen),
+                _statusChip('미승인', state.linkPendingCount, AppColors.taegeukRed),
+                _statusChip('보류', state.linkHeldCount, AppColors.tigerGold),
+                _statusChip('미설정', state.linkUnsetCount, AppColors.textGray),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 승인 상태 요약 칩.
+  Widget _statusChip(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -843,6 +843,8 @@ def _medal_awards_for(number):
     for o in (doc.get("orders") or []):
         if not isinstance(o, dict):
             continue
+        if o.get("deleted") is True:
+            continue
         kind = str(o.get("recipientKind") or "")
         if kind not in ("mentor", "parent"):
             continue
@@ -890,6 +892,8 @@ def _medal_awards_granted_by(number):
     out = []
     for o in (doc.get("orders") or []):
         if not isinstance(o, dict):
+            continue
+        if o.get("deleted") is True:
             continue
         kind = str(o.get("recipientKind") or "")
         if kind not in ("mentor", "parent"):

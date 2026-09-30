@@ -1540,6 +1540,28 @@ class AppState extends ChangeNotifier {
       repo.all().where((m) => m.mentors.isNotEmpty).length;
   int get parentLinkedCount =>
       repo.all().where((m) => m.parents.isNotEmpty).length;
+
+  /// 멘토·페런츠 연결 승인 현황 (요구: 통계에 포함 — 승인 워크플로)
+  ///   · approved : 승인된 연결
+  ///   · pending  : 미승인(승인요청됨)
+  ///   · held     : 보류
+  int _linkStatusCount(String status) => repo
+      .all()
+      .where((m) =>
+          (m.mentors.isNotEmpty || m.parents.isNotEmpty) &&
+          m.linkApprovalStatus == status)
+      .length;
+  int get linkApprovedCount => _linkStatusCount('approved');
+  int get linkPendingCount => _linkStatusCount('pending');
+  int get linkHeldCount => _linkStatusCount('held');
+  /// 연결은 있으나 승인 상태가 없는(레거시) 회원 수.
+  int get linkUnsetCount => repo
+      .all()
+      .where((m) =>
+          (m.mentors.isNotEmpty || m.parents.isNotEmpty) &&
+          m.linkApprovalStatus.isEmpty)
+      .length;
+
   int get regularCount => repo.all().where((m) => m.isRegular).length;
   int get credentialCount => repo.all().where((m) => !m.isRegular).length;
 

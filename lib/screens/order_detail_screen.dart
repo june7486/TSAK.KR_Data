@@ -1645,6 +1645,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                   '소속 ${r['unit']}',
                                 if ('${r['name'] ?? ''}'.trim().isNotEmpty)
                                   '${r['name']}',
+                                if ('${r['number'] ?? ''}'.trim().isNotEmpty)
+                                  '#${r['number']}',
                                 if ('${r['phone'] ?? ''}'.trim().isNotEmpty)
                                   '${r['phone']}',
                               ].join(' · '),
