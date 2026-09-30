@@ -210,9 +210,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   PersonalSurveySection(
                     ident: m.number.isNotEmpty ? m.number : m.phone,
                   ),
-                  // 정보 구분: ① 현재활동 ② 범인가 정보(인가 당시) ③ 상세 정보
-                  _currentActivityCard(m),
+                  // 정보 구분: ① 범스카우트 인가 정보(인가 당시) ② 현재 활동 등록 정보 ③ 상세 정보
                   _credentialCard(m),
+                  _currentActivityCard(m),
                   _infoCard(m),
                   _medalSection(m),
                   _membershipSection(m),
@@ -1715,7 +1715,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     rows.removeWhere((w) => w is SizedBox);
     if (rows.isEmpty) return const SizedBox.shrink();
     return _section(
-      title: '현재활동',
+      title: '현재 활동 등록 정보',
       icon: Icons.play_circle_outline,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
     );
@@ -1728,7 +1728,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final mentorLabels = m.mentors.map((e) => _linkNameLabel(e)).join(', ');
     final parentLabels = m.parents.map((e) => _linkNameLabel(e)).join(', ');
     return _section(
-      title: '범인가 정보 (인가 당시)',
+      title: '범스카우트 인가 정보 (인가 당시 정보)',
       icon: Icons.verified_user,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
