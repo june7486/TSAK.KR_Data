@@ -466,6 +466,13 @@ class _StatsScreenState extends State<StatsScreen> {
     ),
   );
 
+  /// 라벨 칸 너비 — **탭/행과 무관하게 항상 고정**.
+  ///   가나다·권역통합 어느 쪽이든 막대(차트) 시작 x좌표가 동일해진다.
+  static const double _labelW = 100;
+
+  /// 라벨 + 막대 + 수치 한 줄.
+  ///   - 라벨은 [_labelW] 고정 폭 → 탭 전환 시 차트 위치 불변.
+  ///   - 구성 연맹 등 작은 글씨(subLabel)는 막대 **아래**에 표기 → 차트 폭에 영향 없음.
   Widget _barRow({
     required BuildContext context,
     required String label,
@@ -476,57 +483,63 @@ class _StatsScreenState extends State<StatsScreen> {
   }) {
     final ratio = max == 0 ? 0.0 : value / max;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: subLabel == null ? 84 : 132,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
+          Row(
+            children: [
+              SizedBox(
+                width: _labelW,
+                child: Text(
                   label,
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (subLabel != null)
-                  Text(
-                    subLabel,
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      color: AppColors.textGray,
-                      height: 1.1,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+              ),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 20,
+                    backgroundColor: color.withValues(alpha: 0.12),
+                    valueColor: AlwaysStoppedAnimation(color),
                   ),
-              ],
-            ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 48,
+                child: Text(
+                  '$value명',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: ratio,
-                minHeight: 20,
-                backgroundColor: color.withValues(alpha: 0.12),
-                valueColor: AlwaysStoppedAnimation(color),
+          if (subLabel != null)
+            Padding(
+              padding: const EdgeInsets.only(left: _labelW - 8, top: 2),
+              child: Text(
+                subLabel,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppColors.textGray,
+                  height: 1.15,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 44,
-            child: Text(
-              '$value명',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              textAlign: TextAlign.right,
-            ),
-          ),
         ],
       ),
     );
