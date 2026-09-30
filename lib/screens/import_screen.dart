@@ -11,6 +11,7 @@ import '../services/import_parser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/member_avatar.dart';
@@ -46,14 +47,28 @@ class _ImportScreenState extends State<ImportScreen> {
         title: const Text('자료 가져오기 (AI 인식)'),
         actions: const [AppHomeEmblem(size: 26)],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _sourceBar(),
-          if (_recognized.isNotEmpty) _recognizedHeader(),
-          Expanded(
-            child: _recognized.isEmpty ? _intro() : _list(),
+          Column(
+            children: [
+              _sourceBar(),
+              if (_recognized.isNotEmpty) _recognizedHeader(),
+              Expanded(
+                child: _recognized.isEmpty ? _intro() : _list(),
+              ),
+              if (_recognized.isNotEmpty) _saveBar(),
+            ],
           ),
-          if (_recognized.isNotEmpty) _saveBar(),
+          // 자료 가져오기(AI 인식)·저장 대기 — 멈춘 것이 아님을 안내.
+          BusyOverlay(
+            visible: _busy,
+            title: '자료를 처리하는 중입니다',
+            lines: const [
+              '업로드한 자료를 AI가 인식하고 있습니다...',
+              '회원 정보를 추출하여 정리하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
         ],
       ),
     );

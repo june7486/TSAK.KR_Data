@@ -9,6 +9,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 
@@ -134,30 +135,44 @@ class _BoardScreenState extends State<BoardScreen> {
         icon: const Icon(Icons.edit),
         label: const Text('글쓰기'),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
-          const PersonalQuickActions(),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _errorView()
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        child: ListView(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                          children: [
-                            _categoryBar(),
-                            const SizedBox(height: 8),
-                            if (_visible.isEmpty)
-                              _emptyView()
-                            else
-                              for (final p in _visible) _postCard(p),
-                          ],
-                        ),
-                      ),
+          Column(
+            children: [
+              // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+              const PersonalQuickActions(),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                        ? _errorView()
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: ListView(
+                              controller: _scroll,
+                              padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                              children: [
+                                _categoryBar(),
+                                const SizedBox(height: 8),
+                                if (_visible.isEmpty)
+                                  _emptyView()
+                                else
+                                  for (final p in _visible) _postCard(p),
+                              ],
+                            ),
+                          ),
+              ),
+            ],
+          ),
+          // 게시글 불러오기 대기 — 멈춘 것이 아님을 안내.
+          BusyOverlay(
+            visible: _loading,
+            title: '게시글을 불러오는 중입니다',
+            lines: const [
+              'NAS 서버에서 게시글을 가져오는 중...',
+              '최신 글로 정리하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
           ),
         ],
       ),

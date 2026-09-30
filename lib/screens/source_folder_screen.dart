@@ -6,6 +6,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/hscroll_menu.dart';
 import 'finance_analysis_screen.dart';
 
@@ -98,11 +99,13 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
             : const Icon(Icons.attach_file),
         label: const Text('파일 첨부'),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 8),
+          Column(
+            children: [
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 8),
             child: HScrollMenu(
               height: 40,
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -162,16 +165,33 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
               ],
             ),
           ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _files.isEmpty
-                ? _empty()
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _files.length,
-                    itemBuilder: (_, i) => _fileTile(_files[i]),
-                  ),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _files.isEmpty
+                    ? _empty()
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _files.length,
+                        itemBuilder: (_, i) => _fileTile(_files[i]),
+                      ),
+              ),
+            ],
+          ),
+          BusyOverlay(
+            visible: _loading || _busy,
+            title: _busy ? '파일을 처리하는 중입니다' : '기본자료를 불러오는 중입니다',
+            lines: _busy
+                ? const [
+                    'NAS 서버에 파일을 저장하고 있습니다...',
+                    '자동 분석하여 반영하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ]
+                : const [
+                    'NAS 서버에서 폴더 목록을 가져오는 중...',
+                    '파일 목록을 정리하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ],
           ),
         ],
       ),

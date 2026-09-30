@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 메뉴 접근권한 관리 (마스터 전용).
@@ -120,13 +121,15 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
               for (final r in _roles) _roleCard(state, perms, r),
             ],
           ),
-          if (_busy)
-            Container(
-              color: Colors.black.withValues(alpha: 0.25),
-              child: const Center(
-                child: CircularProgressIndicator(color: AppColors.purple),
-              ),
-            ),
+          BusyOverlay(
+            visible: _busy,
+            title: '접근권한을 반영하는 중입니다',
+            lines: const [
+              'NAS 서버에 권한 설정을 저장하고 있습니다...',
+              '화면을 갱신하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
         ],
       ),
     );

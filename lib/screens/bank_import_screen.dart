@@ -9,6 +9,7 @@ import '../services/finance_service.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 은행거래파일 → 자동 이름별 분류 → 검토 → 저장
@@ -40,41 +41,55 @@ class _BankImportScreenState extends State<BankImportScreen> {
         titleSpacing: 0,
         actions: const [AppHomeEmblem(size: 24)],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _infoCard(),
-          if (_rows.isNotEmpty)
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Text('전체 ${_rows.length}건 · 매칭 $matched건',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                          color: AppColors.textDark)),
-                  const Spacer(),
-                  Text('합계 ${_won(total)}원',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                          color: AppColors.purple)),
-                ],
+          Column(
+            children: [
+              _infoCard(),
+              if (_rows.isNotEmpty)
+                Container(
+                  color: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      Text('전체 ${_rows.length}건 · 매칭 $matched건',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12.5,
+                              color: AppColors.textDark)),
+                      const Spacer(),
+                      Text('합계 ${_won(total)}원',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              color: AppColors.purple)),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: _busy
+                    ? const Center(child: CircularProgressIndicator())
+                    : _rows.isEmpty
+                        ? _empty()
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(10),
+                            itemCount: _rows.length,
+                            itemBuilder: (_, i) => _rowTile(_rows[i], i),
+                          ),
               ),
-            ),
-          Expanded(
-            child: _busy
-                ? const Center(child: CircularProgressIndicator())
-                : _rows.isEmpty
-                    ? _empty()
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(10),
-                        itemCount: _rows.length,
-                        itemBuilder: (_, i) => _rowTile(_rows[i], i),
-                      ),
+              if (_rows.isNotEmpty) _bottom(),
+            ],
           ),
-          if (_rows.isNotEmpty) _bottom(),
+          BusyOverlay(
+            visible: _busy,
+            title: '은행거래를 분석하는 중입니다',
+            lines: const [
+              '업로드한 거래내역을 읽고 있습니다...',
+              'AI가 항목을 자동 분류하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
         ],
       ),
     );

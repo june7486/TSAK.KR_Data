@@ -15,6 +15,7 @@ import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 로그 확인 — 전체 회원 접속·열람 기록 (마스터 전용).
@@ -326,27 +327,46 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _header(),
-          _filters(),
-          if (_selectMode) _selectBar(filtered),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : filtered.isEmpty
-                    ? const Center(
-                        child: Text('접속 기록이 없습니다',
-                            style: TextStyle(color: AppColors.textGray)),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 40),
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) => _logTile(filtered[i], i),
-                        ),
-                      ),
+          Column(
+            children: [
+              _header(),
+              _filters(),
+              if (_selectMode) _selectBar(filtered),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : filtered.isEmpty
+                        ? const Center(
+                            child: Text('접속 기록이 없습니다',
+                                style: TextStyle(color: AppColors.textGray)),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 40),
+                              itemCount: filtered.length,
+                              itemBuilder: (_, i) => _logTile(filtered[i], i),
+                            ),
+                          ),
+              ),
+            ],
+          ),
+          BusyOverlay(
+            visible: _loading || _busy,
+            title: _busy ? '문서를 만드는 중입니다' : '접속기록을 불러오는 중입니다',
+            lines: _busy
+                ? const [
+                    '선택한 접속기록으로 문서를 생성하고 있습니다...',
+                    'PDF·엑셀 파일로 만드는 중...',
+                    '저장·공유 준비 중...',
+                  ]
+                : const [
+                    'NAS 서버에서 접속 기록을 가져오는 중...',
+                    '최신 기록으로 정리하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ],
           ),
         ],
       ),

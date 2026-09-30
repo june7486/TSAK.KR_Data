@@ -8,6 +8,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
+import '../widgets/busy_overlay.dart';
 import 'all_photos_screen.dart';
 import 'board_screen.dart';
 import 'event_detail_screen.dart';
@@ -233,45 +234,59 @@ class _EventYearScreenState extends State<EventYearScreen> {
               label: const Text('행사 만들기'),
             )
           : null,
-      body: Column(
+      body: Stack(
         children: [
-          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
-          const PersonalQuickActions(),
-          Expanded(
-            child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? _errorView()
-          : Column(
-              children: [
-                _viewToggle(),
-                if (!_recentMode) _yearTabs(years),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _load,
-                    child: _recentMode
-                        ? (recent.isEmpty
-                            ? _emptyView()
-                            : ListView.builder(
-                                padding:
-                                    const EdgeInsets.fromLTRB(14, 10, 14, 90),
-                                itemCount: recent.length,
-                                itemBuilder: (_, i) =>
-                                    _eventCard(state, recent[i]),
-                              ))
-                        : (inYear.isEmpty
-                            ? _emptyView()
-                            : ListView.builder(
-                                padding:
-                                    const EdgeInsets.fromLTRB(14, 10, 14, 90),
-                                itemCount: inYear.length,
-                                itemBuilder: (_, i) =>
-                                    _eventCard(state, inYear[i]),
-                              )),
-                  ),
+          Column(
+            children: [
+              // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+              const PersonalQuickActions(),
+              Expanded(
+                child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? _errorView()
+              : Column(
+                  children: [
+                    _viewToggle(),
+                    if (!_recentMode) _yearTabs(years),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _load,
+                        child: _recentMode
+                            ? (recent.isEmpty
+                                ? _emptyView()
+                                : ListView.builder(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(14, 10, 14, 90),
+                                    itemCount: recent.length,
+                                    itemBuilder: (_, i) =>
+                                        _eventCard(state, recent[i]),
+                                  ))
+                            : (inYear.isEmpty
+                                ? _emptyView()
+                                : ListView.builder(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(14, 10, 14, 90),
+                                    itemCount: inYear.length,
+                                    itemBuilder: (_, i) =>
+                                        _eventCard(state, inYear[i]),
+                                  )),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
+          // 행사 목록 불러오기 대기 — 멈춘 것이 아님을 안내.
+          BusyOverlay(
+            visible: _loading,
+            title: '행사 목록을 불러오는 중입니다',
+            lines: const [
+              'NAS 서버에서 행사 정보를 가져오는 중...',
+              '연도별로 정리하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
           ),
         ],
       ),

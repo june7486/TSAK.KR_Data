@@ -6,6 +6,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 행사 후기 게시판 — 댓글·첨부·비밀번호 보호·임시저장·좋아요(공감).
@@ -91,24 +92,37 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
         icon: const Icon(Icons.edit),
         label: const Text('후기 쓰기'),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorView()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    children: [
-                      _headerCard(state),
-                      const SizedBox(height: 8),
-                      if (_posts.isEmpty)
-                        _emptyView()
-                      else
-                        for (final p in _posts) _postCard(p, state),
-                    ],
-                  ),
-                ),
+      body: Stack(
+        children: [
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? _errorView()
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                        children: [
+                          _headerCard(state),
+                          const SizedBox(height: 8),
+                          if (_posts.isEmpty)
+                            _emptyView()
+                          else
+                            for (final p in _posts) _postCard(p, state),
+                        ],
+                      ),
+                    ),
+          BusyOverlay(
+            visible: _loading,
+            title: '행사 후기를 불러오는 중입니다',
+            lines: const [
+              'NAS 서버에서 후기 목록을 가져오는 중...',
+              '사진·내용을 정리하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
+        ],
+      ),
     );
   }
 

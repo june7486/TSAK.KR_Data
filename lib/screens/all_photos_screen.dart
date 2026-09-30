@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 import 'package:provider/provider.dart';
@@ -77,18 +78,20 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
-          const PersonalQuickActions(),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _errorView()
-                    : _events.isEmpty
-                        ? _emptyView()
-                        : RefreshIndicator(
+          Column(
+            children: [
+              // (요구#3) 개인아이디 접속 화면에도 HOME·본인정보편집 동일 배치
+              const PersonalQuickActions(),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                        ? _errorView()
+                        : _events.isEmpty
+                            ? _emptyView()
+                            : RefreshIndicator(
                             onRefresh: _load,
                             child: ListView(
                               padding:
@@ -107,6 +110,18 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
                               ],
                             ),
                           ),
+              ),
+            ],
+          ),
+          // 모든 사진 불러오기 대기 — 멈춘 것이 아님을 안내.
+          BusyOverlay(
+            visible: _loading,
+            title: '사진을 불러오는 중입니다',
+            lines: const [
+              'NAS 서버에서 행사별 사진 목록을 가져오는 중...',
+              '썸네일을 준비하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
           ),
         ],
       ),

@@ -22,6 +22,7 @@ import 'member_field_visibility_screen.dart';
 import 'regular_members_screen.dart';
 import 'role_permissions_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/busy_overlay.dart';
 import 'stats_screen.dart';
 
 /// 마스터 전용 관리창 (#11 / #13b).
@@ -298,20 +299,15 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
               ]),
             ],
           ),
-          if (_busy)
-            Container(
-              color: Colors.black.withValues(alpha: 0.35),
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Colors.white),
-                    SizedBox(height: 12),
-                    Text('처리 중입니다...', style: TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
-            ),
+          BusyOverlay(
+            visible: _busy,
+            title: '작업을 처리하는 중입니다',
+            lines: const [
+              'NAS 서버에 요청을 전달하고 있습니다...',
+              '결과를 반영하는 중...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
         ],
       ),
     );

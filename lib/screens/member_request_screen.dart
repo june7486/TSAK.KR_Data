@@ -5,6 +5,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_registration_request_section.dart' show MemberRequestLabels;
 
@@ -156,25 +157,44 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
           const AppHomeEmblem(size: 24),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _summary(),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _errorBox()
-                    : _queues.isEmpty
-                        ? _empty()
-                        : RefreshIndicator(
-                            onRefresh: _refresh,
-                            child: ListView(
-                              padding: const EdgeInsets.only(bottom: 90),
-                              children: [
-                                for (final q in _queues) _queueSection(q),
-                              ],
-                            ),
-                          ),
+          Column(
+            children: [
+              _summary(),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                        ? _errorBox()
+                        : _queues.isEmpty
+                            ? _empty()
+                            : RefreshIndicator(
+                                onRefresh: _refresh,
+                                child: ListView(
+                                  padding: const EdgeInsets.only(bottom: 90),
+                                  children: [
+                                    for (final q in _queues) _queueSection(q),
+                                  ],
+                                ),
+                              ),
+              ),
+            ],
+          ),
+          BusyOverlay(
+            visible: _loading || _busy,
+            title: _busy ? '요청을 처리하는 중입니다' : '승인 요청을 불러오는 중입니다',
+            lines: _busy
+                ? const [
+                    'NAS 서버에 처리 결과를 반영하고 있습니다...',
+                    '요청 목록을 갱신하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ]
+                : const [
+                    'NAS 서버에서 승인 요청을 가져오는 중...',
+                    '회원 요청을 정리하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ],
           ),
         ],
       ),

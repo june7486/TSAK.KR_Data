@@ -10,6 +10,7 @@ import '../services/file_save.dart';
 import '../services/roster_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/scroll_arrows.dart';
 
@@ -341,11 +342,14 @@ class _RosterScreenState extends State<RosterScreen> {
             ],
           ),
           if (_busy)
-            const Positioned.fill(
-              child: ColoredBox(
-                color: Colors.black26,
-                child: Center(child: CircularProgressIndicator()),
-              ),
+            BusyOverlay(
+              visible: _busy,
+              title: '명단을 처리하는 중입니다',
+              lines: const [
+                '선택한 항목으로 명단을 구성하고 있습니다...',
+                'PDF·이미지로 만드는 중...',
+                '저장/공유 준비 중...',
+              ],
             ),
         ],
       ),

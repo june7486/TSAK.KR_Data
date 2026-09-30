@@ -6,6 +6,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 멘토·페런츠(보호자) 연결 승인 관리 — (관리자·마스터 전용)
@@ -161,22 +162,41 @@ class _LinkApprovalScreenState extends State<LinkApprovalScreen> {
           const AppHomeEmblem(size: 24),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _summary(),
-          if (_pending.isNotEmpty) _bulkBar(),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _errorBox()
-                    : _pending.isEmpty
-                        ? _empty()
-                        : ListView.builder(
-                            padding: const EdgeInsets.only(bottom: 90),
-                            itemCount: _pending.length,
-                            itemBuilder: (_, i) => _card(_pending[i]),
-                          ),
+          Column(
+            children: [
+              _summary(),
+              if (_pending.isNotEmpty) _bulkBar(),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                        ? _errorBox()
+                        : _pending.isEmpty
+                            ? _empty()
+                            : ListView.builder(
+                                padding: const EdgeInsets.only(bottom: 90),
+                                itemCount: _pending.length,
+                                itemBuilder: (_, i) => _card(_pending[i]),
+                              ),
+              ),
+            ],
+          ),
+          BusyOverlay(
+            visible: _loading || _busy,
+            title: _busy ? '연결 요청을 처리하는 중입니다' : '연결 요청을 불러오는 중입니다',
+            lines: _busy
+                ? const [
+                    'NAS 서버에 처리 결과를 반영하고 있습니다...',
+                    '목록을 갱신하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ]
+                : const [
+                    'NAS 서버에서 연결 요청을 가져오는 중...',
+                    '멘토·페런츠 정보를 정리하는 중...',
+                    '잠시만 기다려 주세요...',
+                  ],
           ),
         ],
       ),
