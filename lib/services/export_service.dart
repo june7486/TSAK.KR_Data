@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -219,6 +221,21 @@ String exportValueOf(Member m, String key) {
 
 /// 명단 내보내기 서비스
 class ExportService {
+  // ── PDF 한글 폰트(나눔고딕) 캐시 ──────────────────────────────
+  // 폰트를 임베딩하지 않으면 pdf 패키지 기본 Helvetica 로 출력되어
+  // 한글이 전부 □(두부)로 깨진다. 최초 1회 로드 후 재사용한다.
+  static pw.Font? _pdfReg;
+  static pw.Font? _pdfBold;
+
+  static Future<void> _ensurePdfFonts() async {
+    _pdfReg ??= pw.Font.ttf(
+      await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
+    );
+    _pdfBold ??= pw.Font.ttf(
+      await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
+    );
+  }
+
   static const headers = [
     '인가번호',
     '성명',
@@ -249,67 +266,256 @@ class ExportService {
   static List<String> rowFor(Member m, List<String> keys) =>
       keys.map((k) => exportValueOf(m, k)).toList();
 
-  /// 엑셀 XLSX 바이트 생성
+  /// 엑셀 XLSX 바이트 생성 — 표 폼 디자인(테마 색) + 상단 필터 + 머리글 고정.
   static Uint8List buildExcel(List<Member> members,
-      {List<String>? fieldKeys}) {
+      {List<String>? fieldKeys, String title = '인가자 명단'}) {
     final keys = fieldKeys ?? kDefaultFieldKeys;
+    final heads = headersFor(keys);
+    final cols = heads.length;
     final excel = Excel.createExcel();
     final sheetName = excel.getDefaultSheet() ?? 'Sheet1';
     final sheet = excel[sheetName];
 
-    sheet.appendRow(headersFor(keys).map((h) => TextCellValue(h)).toList());
-    for (final m in members) {
-      sheet.appendRow(
-          rowFor(m, keys).map((v) => TextCellValue(v)).toList());
+    // ── 표 폼 스타일 ──
+    final headFill = ExcelColor.fromHexString('FF5B2C8D'); // 브랜드 퍼플
+    final headText = ExcelColor.fromHexString('FFFFFFFF');
+    final zebra = ExcelColor.fromHexString('FFF3EFF9'); // 아주 옅은 보라
+    final lineColor = ExcelColor.fromHexString('FFD9D2E6');
+    Border b(String? hint) => Border(
+        borderStyle: BorderStyle.Thin,
+        borderColorHex: hint == null
+            ? lineColor
+            : ExcelColor.fromHexString('FF$hint'));
+
+    final headStyle = CellStyle(
+      backgroundColorHex: headFill,
+      fontColorHex: headText,
+      bold: true,
+      fontSize: 10,
+      horizontalAlign: HorizontalAlign.Center,
+      verticalAlign: VerticalAlign.Center,
+      textWrapping: TextWrapping.WrapText,
+      leftBorder: b(null),
+      rightBorder: b(null),
+      topBorder: b(null),
+      bottomBorder: b(null),
+    );
+    CellStyle bodyStyle(int r) => CellStyle(
+          backgroundColorHex: r.isEven ? ExcelColor.none : zebra,
+          fontSize: 9,
+          verticalAlign: VerticalAlign.Center,
+          leftBorder: b(null),
+          rightBorder: b(null),
+          topBorder: b(null),
+          bottomBorder: b(null),
+        );
+
+    // 헤더
+    final headerRow = <CellValue>[
+      for (final h in heads) TextCellValue(h),
+    ];
+    sheet.appendRow(headerRow);
+    for (var c = 0; c < cols; c++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
+          .cellStyle = headStyle;
     }
+
+    // 본문
+    var rowIndex = 1;
+    for (final m in members) {
+      sheet.appendRow(rowFor(m, keys).map((v) => TextCellValue(v)).toList());
+      final st = bodyStyle(rowIndex);
+      for (var c = 0; c < cols; c++) {
+        sheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex))
+            .cellStyle = st;
+      }
+      rowIndex++;
+    }
+
+    // 열 너비 자동(항목별 적정) + 머리글 행 높이
+    for (var c = 0; c < cols; c++) {
+      final w = _excelColWidth(heads[c]);
+      sheet.setColumnWidth(c, w);
+    }
+    sheet.setRowHeight(0, 26);
+    sheet.setDefaultRowHeight(18);
+
     final bytes = excel.encode();
-    return Uint8List.fromList(bytes ?? []);
+    if (bytes == null) return Uint8List(0);
+    // 상단 자동 필터 + 항목(머리글) 고정
+    return _augmentSheetXml(Uint8List.fromList(bytes), cols);
   }
 
-  /// PDF 바이트 생성 (표 형식)
+  /// 항목명 길이에 따른 엑셀 열 너비.
+  static double _excelColWidth(String label) {
+    const wide = <String, double>{
+      '주소': 34,
+      '이메일': 26,
+      '비고': 22,
+      '메모': 22,
+      '수품구매현황': 24,
+      '행사참가': 24,
+      '멘토': 22,
+      '페런츠': 22,
+      '전문과정': 22,
+      '포상': 20,
+    };
+    const mid = <String, double>{
+      '성명': 12,
+      '연맹': 16,
+      '소속대': 16,
+      '등록연맹': 12,
+      '등록단위대': 12,
+      '생일': 12,
+      '기념일': 12,
+      '핸드폰': 15,
+      '연락처': 15,
+      '우편번호': 9,
+      '주민등록번호': 16,
+      '훈련현황': 12,
+      '자격지정': 12,
+      '활동': 10,
+      '평생회원': 10,
+      '회비연도': 16,
+      '승인상태': 10,
+      'Scout 회원번호': 14,
+      'ATAS 인가번호': 14,
+      '인가번호': 10,
+      '인가일': 12,
+    };
+    if (wide.containsKey(label)) return wide[label]!;
+    if (mid.containsKey(label)) return mid[label]!;
+    return 12.0;
+  }
+
+  /// 엑셀 시트 XML 에 `<autoFilter>`(상단 필터) 와 `<pane>`(머리글 고정)를 주입한다.
+  ///
+  /// excel 4.0.6 이 두 기능을 지원하지 않아, 생성된 XLSX(ZIP)의
+  /// `xl/worksheets/sheet1.xml` 만 문자열 후처리한다.
+  static Uint8List _augmentSheetXml(Uint8List xlsx, int cols) {
+    try {
+      final archive = ZipDecoder().decodeBytes(xlsx);
+      final out = Archive();
+      final lastCol = _colLetter(cols - 1);
+      for (final f in archive.files) {
+        if (f.name == 'xl/worksheets/sheet1.xml') {
+          var xml = utf8.decode(f.content as List<int>);
+          final lastRow = _maxRow(xml);
+          // 머리글 고정 + 상단 필터 보기
+          xml = xml.replaceFirst(
+            '<sheetView workbookViewId="0"/>',
+            '<sheetView workbookViewId="0">'
+                '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+                '</sheetView>',
+          );
+          // 상단 항목 자동 필터(autoFilter) — 머리글 행 기준
+          xml = xml.replaceFirst(
+            '<drawing ',
+            '<autoFilter ref="A1:$lastCol$lastRow"/>'
+                '<drawing ',
+          );
+          out.addFile(ArchiveFile(
+              f.name, utf8.encode(xml).length, utf8.encode(xml)));
+        } else {
+          out.addFile(ArchiveFile(f.name, f.size, f.content as List<int>));
+        }
+      }
+      return Uint8List.fromList(ZipEncoder().encode(out)!);
+    } catch (_) {
+      return xlsx; // 후처리 실패 시 원본 반환(기능 손실 없음 — 필터/고정만 빠짐)
+    }
+  }
+
+  /// 시트 XML 에서 마지막 행 번호를 찾는다(필터 범위 계산용).
+  static int _maxRow(String xml) {
+    var max = 1;
+    for (final m in RegExp(r'<row r="(\d+)"').allMatches(xml)) {
+      final n = int.tryParse(m.group(1)!) ?? 0;
+      if (n > max) max = n;
+    }
+    return max;
+  }
+
+  /// 0-based 열 인덱스 → 엑셀 열 문자(A, B, ..., Z, AA...).
+  static String _colLetter(int c) {
+    var i = c;
+    final sb = StringBuffer();
+    while (i >= 0) {
+      sb.write(String.fromCharCode(65 + (i % 26)));
+      i = (i ~/ 26) - 1;
+    }
+    return sb.toString().split('').reversed.join();
+  }
+
+  /// PDF 바이트 생성 (표 형식) — **한글 폰트(나눔고딕) 임베딩 필수**.
+  ///
+  /// 폰트를 지정하지 않으면 기본 Helvetica 로 출력되어 한글이 □ 로 깨진다.
   static Future<Uint8List> buildPdf(
     List<Member> members, {
     String title = '한국범스카우트 중앙회 인가자 명단',
     List<String>? fieldKeys,
   }) async {
+    await _ensurePdfFonts();
+    final reg = _pdfReg!;
+    final bold = _pdfBold!;
     final keys = fieldKeys ?? kDefaultFieldKeys;
+    final heads = headersFor(keys);
     final doc = pw.Document();
+    // 본문 스타일 (규칙: 브랜드 퍼플 + 얇은 테두리, 저채도)
+    final titleStyle =
+        pw.TextStyle(font: bold, fontSize: 14, color: PdfColor.fromInt(0xFF3D1B63));
+    final metaStyle =
+        pw.TextStyle(font: reg, fontSize: 9, color: PdfColor.fromInt(0xFF6E6A7C));
+    final headStyle = pw.TextStyle(
+        font: bold, fontSize: 8, color: PdfColors.white);
+    final cellStyle = pw.TextStyle(font: reg, fontSize: 7.2);
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(20),
+        margin: const pw.EdgeInsets.all(18),
         header: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
+            pw.Text(title, style: titleStyle),
+            pw.SizedBox(height: 3),
             pw.Text(
-              title,
-              style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+              '총 ${members.length}명  ·  출력일: ${_today()}',
+              style: metaStyle,
             ),
-            pw.SizedBox(height: 4),
-            pw.Text(
-              '총 ${members.length}명  |  출력일: ${_today()}',
-              style: const pw.TextStyle(fontSize: 9),
-            ),
-            pw.Divider(),
+            pw.SizedBox(height: 5),
+            pw.Divider(color: PdfColor.fromInt(0xFFD9D2E6), thickness: 0.8),
           ],
         ),
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
-            '${ctx.pageNumber} / ${ctx.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9),
+            '한국범스카우트중앙회   ·   ${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: pw.TextStyle(font: reg, fontSize: 8, color: PdfColor.fromInt(0xFF8C877E)),
           ),
         ),
         build: (ctx) => [
           pw.TableHelper.fromTextArray(
-            headers: headersFor(keys),
-            headerStyle: pw.TextStyle(
-              fontSize: 8,
-              fontWeight: pw.FontWeight.bold,
+            headers: heads,
+            headerStyle: headStyle,
+            headerDecoration: pw.BoxDecoration(
+              color: PdfColor.fromInt(0xFF5B2C8D),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
             ),
-            cellStyle: const pw.TextStyle(fontSize: 7),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
-            data: members.map((m) => rowFor(m, keys)).toList(),
+            headerAlignment: pw.Alignment.center,
+            cellStyle: cellStyle,
+            cellAlignment: pw.Alignment.centerLeft,
+            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            border: pw.TableBorder.all(
+              color: PdfColor.fromInt(0xFFD9D2E6),
+              width: 0.5,
+            ),
+            oddRowDecoration:
+                pw.BoxDecoration(color: PdfColor.fromInt(0xFFF3EFF9)),
+            data: members
+                .map((m) => rowFor(m, keys).map((v) => pw.Text(v, style: cellStyle)).toList())
+                .toList(),
           ),
         ],
       ),
