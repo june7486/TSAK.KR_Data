@@ -481,7 +481,8 @@ class _HomeScreenState extends State<HomeScreen> {
             if (state.isSelfAccess && !_showMainHome)
               IconButton(
                 tooltip: '본인 정보 편집',
-                icon: const Icon(Icons.verified, color: AppColors.scoutGreen),
+                // 흰색 연필 — 보라 앱바 배경에 자연스럽게 어울리도록 복원.
+                icon: const Icon(Icons.edit, color: Colors.white),
                 onPressed: () => _openMyEdit(state),
               ),
             if (state.isSelfAccess && !_showMainHome)
