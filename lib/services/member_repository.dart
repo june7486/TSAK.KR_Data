@@ -330,10 +330,17 @@ class MemberRepository {
     return list;
   }
 
-  Map<String, int> leaguesWithCount() {
+  /// 연맹별 인가자 수.
+  ///   [currentActivity] 가 true 이면 **현재활동 소속연맹**(regLeague, 없으면
+  ///   인가시 연맹 league 로 폴백) 기준으로 집계한다.
+  ///   false(기본)이면 **범인가시 소속연맹**(league) 기준.
+  Map<String, int> leaguesWithCount({bool currentActivity = false}) {
     final map = <String, int>{};
     for (final m in all()) {
-      final key = normalizeLeague(m.league);
+      final raw = currentActivity
+          ? (m.regLeague.trim().isNotEmpty ? m.regLeague : m.league)
+          : m.league;
+      final key = normalizeLeague(raw);
       final k = key.isEmpty ? '(미지정)' : key;
       map[k] = (map[k] ?? 0) + 1;
     }
@@ -346,6 +353,26 @@ class MemberRepository {
     }
     if (map.containsKey('(미지정)')) fixed['(미지정)'] = map['(미지정)']!;
     return fixed;
+  }
+
+  /// 현재활동 기준으로 별도 통계 산출 가능한지(= 현재활동 연맹/단위대·직위 중
+  /// 하나라도 입력된 회원이 있는지) 여부.
+  bool hasCurrentActivityData() => all().any((m) =>
+      m.regLeague.trim().isNotEmpty ||
+      m.regUnit.trim().isNotEmpty ||
+      m.position.trim().isNotEmpty);
+
+  /// 직위(현재활동) 분포.
+  Map<String, int> positionsWithCount() {
+    final map = <String, int>{};
+    for (final m in all()) {
+      final p = m.position.trim();
+      if (p.isEmpty) continue;
+      map[p] = (map[p] ?? 0) + 1;
+    }
+    final entries = map.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return {for (final e in entries) e.key: e.value};
   }
 
   List<String> feeYearOptions() {

@@ -80,7 +80,7 @@ class ExportField {
 const List<ExportField> kExportFields = [
   // ---- 기본 정보 ----
   ExportField('number', '인가번호', '기본'),
-  ExportField('scoutNo', 'Scout 회원번호', '기본'),
+  ExportField('scoutNo', '스카우트 고유번호', '기본'),
   ExportField('atasNo', 'ATAS 인가번호', '기본'),
   ExportField('name', '성명', '기본'),
   ExportField('gender', '성별', '기본'),
@@ -103,6 +103,7 @@ const List<ExportField> kExportFields = [
   ExportField('trainingStatus', '훈련현황', '자격'),
   ExportField('qualificationStatus', '자격지정', '자격'),
   ExportField('activity', '활동', '자격'),
+  ExportField('position', '직위(현재활동)', '자격'),
   ExportField('awards', '포상', '자격'),
   ExportField('specialtyCourses', '전문과정', '자격'),
   ExportField('purchases', '수품구매현황', '자격'),
@@ -183,6 +184,8 @@ String exportValueOf(Member m, String key) {
       return m.atasNo;
     case 'activity':
       return m.activity;
+    case 'position':
+      return m.position;
     case 'awards':
       return m.awards;
     case 'specialtyCourses':

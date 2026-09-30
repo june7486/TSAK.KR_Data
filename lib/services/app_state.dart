@@ -625,8 +625,10 @@ class AppState extends ChangeNotifier {
   String get appAccessUrl => '${_config['appAccessUrl'] ?? ''}';
 
   // ---------- 회원정보 항목별 노출 설정 (마스터) ----------
-  /// 민감정보로 취급되는 필드 키 — 설정이 없으면 비노출.
+  /// 민감정보로 취급되는 필드 키 — 설정이 없으면 기본 **비노출**.
+  ///   · 스카우트 고유번호(scoutNo)·주민등록번호(residentNo)는 비노출이 기본값.
   static const Set<String> sensitiveFields = {
+    'scoutNo',
     'residentNo',
     'tel',
     'phone',
@@ -1239,6 +1241,18 @@ class AppState extends ChangeNotifier {
   String get kindFilter => _kindFilter;
 
   Map<String, int> get leagues => repo.leaguesWithCount();
+
+  /// 현재활동(재적) 소속연맹 기준 연맹별 인가자 수.
+  ///   regLeague(현재활동 연맹)가 없으면 인가시 연맹(league)으로 폴백한다.
+  Map<String, int> get leaguesCurrentActivity =>
+      repo.leaguesWithCount(currentActivity: true);
+
+  /// 현재활동 항목(연맹/단위대/직위) 데이터가 하나라도 있는지.
+  bool get hasCurrentActivity => repo.hasCurrentActivityData();
+
+  /// 직위(현재활동) 분포.
+  Map<String, int> get positions => repo.positionsWithCount();
+
   List<String> get feeYears => repo.feeYearOptions();
   List<String> get events => repo.eventOptions();
   List<MapEntry<String, int>> get feeCounts => repo.feeCountsByYear();

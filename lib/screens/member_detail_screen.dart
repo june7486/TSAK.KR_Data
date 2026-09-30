@@ -210,6 +210,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   PersonalSurveySection(
                     ident: m.number.isNotEmpty ? m.number : m.phone,
                   ),
+                  // 정보 구분: ① 현재활동 ② 범인가 정보(인가 당시) ③ 상세 정보
+                  _currentActivityCard(m),
+                  _credentialCard(m),
                   _infoCard(m),
                   _medalSection(m),
                   _membershipSection(m),
@@ -298,9 +301,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
+                // 범인가시(인가 당시) 소속 — 현재활동과 구분.
                 if (m.league.isNotEmpty || m.unit.isNotEmpty)
                   Text(
-                    [m.league, m.unit].where((e) => e.isNotEmpty).join(' · '),
+                    '인가시: ${[m.league, m.unit].where((e) => e.isNotEmpty).join(' · ')}',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -308,12 +312,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
+                // 현재활동 소속 — 인가시와 다르거나 값이 있으면 노출.
                 if ((m.regLeague.isNotEmpty && m.regLeague != m.league) ||
-                    (m.regUnit.isNotEmpty && m.regUnit != m.unit))
+                    (m.regUnit.isNotEmpty && m.regUnit != m.unit) ||
+                    m.position.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      '재적: ${[m.regLeague, m.regUnit].where((e) => e.isNotEmpty).join(' · ')}',
+                      '현재활동: ${[
+                        if (m.regLeague.isNotEmpty) m.regLeague,
+                        if (m.regUnit.isNotEmpty) m.regUnit,
+                        if (m.position.isNotEmpty) m.position,
+                      ].join(' · ')}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11.5,
@@ -1681,6 +1691,94 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// ① 현재활동 카드 — 소속연맹·등록단위대·직위.
+  ///   · 현재활동(reg*) 값이 없으면 인가시 값을 "(인가시)" 표기로 폴백 노출.
+  ///   · 이 데이터는 '현재활동기준' 통계의 근거가 된다.
+  Widget _currentActivityCard(Member m) {
+    final regL = m.regLeague.trim();
+    final regU = m.regUnit.trim();
+    final rows = <Widget>[
+      _plainRow(
+        '소속 연맹',
+        regL.isNotEmpty
+            ? regL
+            : (m.league.trim().isEmpty ? '' : '${m.league} (인가시)'),
+      ),
+      _plainRow(
+        '등록 단위대',
+        regU.isNotEmpty
+            ? regU
+            : (m.unit.trim().isEmpty ? '' : '${m.unit} (인가시)'),
+      ),
+      _plainRow('직위', m.position),
+    ];
+    rows.removeWhere((w) => w is SizedBox);
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return _section(
+      title: '현재활동',
+      icon: Icons.play_circle_outline,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
+    );
+  }
+
+  /// ② 범인가 정보 카드 — 인가 당시 정보를 한 번에 표시.
+  ///   · 소속연맹·등록단위대·인가일·멘토대장·페런츠 (범인가자 통계의 근거).
+  ///   · 멘토·페런츠는 **등록현황**으로서 값이 없어도 "미등록"을 항상 노출한다.
+  Widget _credentialCard(Member m) {
+    final mentorLabels = m.mentors.map((e) => _linkNameLabel(e)).join(', ');
+    final parentLabels = m.parents.map((e) => _linkNameLabel(e)).join(', ');
+    return _section(
+      title: '범인가 정보 (인가 당시)',
+      icon: Icons.verified_user,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _plainRow('소속 연맹', m.league),
+          _plainRow('등록 단위대', m.unit),
+          _plainRow('인가일', m.date),
+          // 멘토대장·페런츠 등록현황 — 미등록도 표시(누락 방지).
+          _regRow('멘토대장',
+              mentorLabels.isEmpty ? '' : '$mentorLabels${_linkBadge(m)}'),
+          _regRow('페런츠', parentLabels),
+        ],
+      ),
+    );
+  }
+
+  /// 등록현황 행 — 값이 없어도 항상 표시("미등록"). (멘토·페런츠 등록현황)
+  Widget _regRow(String label, String value) {
+    final empty = value.trim().isEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textGray,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              empty ? '미등록' : value,
+              style: TextStyle(
+                color: empty ? AppColors.textGray : AppColors.textDark,
+                fontSize: 13.5,
+                fontStyle: empty ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _infoCard(Member m) {
     final state = context.watch<AppState>();
     final admin = state.isApp || state.isMaster; // 관리자·마스터: 전체 열람
@@ -1701,13 +1799,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
 
     // (라벨, 키, 값) — 항목별 노출관리 대상.
+    //  ※ 소속연맹/단위대/인가일은 위의 [현재활동]/[범인가 정보] 카드에서 다룬다.
     final fields = <List<String>>[
-      ['소속 연맹', 'league', m.league],
-      ['등록 연맹', 'regLeague', m.regLeague],
-      ['소속 단위대', 'unit', m.unit],
-      ['등록 단위대', 'regUnit', m.regUnit],
-      ['인가일', 'date', m.date],
-      ['Scout 회원번호', 'scoutNo', m.scoutNo],
+      ['Scout 고유번호', 'scoutNo', m.scoutNo],
       ['주민등록번호', 'residentNo', m.residentNo],
       ['생일', 'birthday', m.birthday],
       ['성별', 'gender', m.gender],
@@ -1737,17 +1831,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       if (shown.isEmpty && !isMaster) continue; // 비노출 항목은 마스터만 관리
       children.add(_infoFieldRow(state, m, label, key, shown, isMaster));
     }
-    // 멘토·페런츠 (구조 항목 — 노출관리 제외)
-    children.add(
-      _plainRow(
-        '멘토',
-        '${m.mentors.map((e) => _linkNameLabel(e)).join(', ')}${_linkBadge(m)}',
-      ),
-    );
-    children.add(_plainRow(
-      '페런츠',
-      m.parents.map((e) => _linkNameLabel(e)).join(', '),
-    ));
+    // 멘토·페런츠 등록현황은 '범인가 정보' 카드에서 표시한다(여기서는 제외).
     children.add(
       _plainRow(
         '개인정보 동의',
@@ -1759,7 +1843,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     children.removeWhere((w) => w is SizedBox);
 
     return _section(
-      title: '인가 정보',
+      title: '상세 정보',
       icon: Icons.badge,
       child: children.isEmpty
           ? Text(

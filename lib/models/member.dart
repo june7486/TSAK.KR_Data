@@ -23,6 +23,7 @@ class Member {
     this.date = '',
     this.atasNo = '',
     this.activity = '',
+    this.position = '',
     this.memo = '',
     this.birthday = '',
     this.anniversary = '',
@@ -116,6 +117,10 @@ class Member {
 
   /// 활동 내용
   String activity;
+
+  /// 직위 (현재활동) — 예: "지역대장", "부장", "교수", "스텝" 등.
+  ///   현재활동 통계(활동기준) 산출에 사용한다.
+  String position;
 
   /// 메모
   String memo;
@@ -237,7 +242,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $position $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
           .toLowerCase();
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
@@ -293,6 +298,7 @@ class Member {
     'date': date,
     'atasNo': atasNo,
     'activity': activity,
+    'position': position,
     'memo': memo,
     'birthday': birthday,
     'anniversary': anniversary,
@@ -365,6 +371,7 @@ class Member {
       date: '${map['date'] ?? ''}',
       atasNo: '${map['atasNo'] ?? ''}',
       activity: '${map['activity'] ?? ''}',
+      position: '${map['position'] ?? ''}',
       memo: '${map['memo'] ?? ''}',
       birthday: '${map['birthday'] ?? ''}',
       anniversary: '${map['anniversary'] ?? ''}',
@@ -428,6 +435,7 @@ class Member {
     String? date,
     String? atasNo,
     String? activity,
+    String? position,
     String? memo,
     String? birthday,
     String? anniversary,
@@ -480,6 +488,7 @@ class Member {
       date: date ?? this.date,
       atasNo: atasNo ?? this.atasNo,
       activity: activity ?? this.activity,
+      position: position ?? this.position,
       memo: memo ?? this.memo,
       birthday: birthday ?? this.birthday,
       anniversary: anniversary ?? this.anniversary,

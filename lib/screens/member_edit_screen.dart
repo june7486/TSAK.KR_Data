@@ -46,6 +46,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _date,
       _atas,
       _activity,
+      _position,
       _bio,
       _memo,
       _birthday,
@@ -107,6 +108,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _date = TextEditingController(text: m?.date ?? '');
     _atas = TextEditingController(text: m?.atasNo ?? '');
     _activity = TextEditingController(text: m?.activity ?? '');
+    _position = TextEditingController(text: m?.position ?? '');
     _bio = TextEditingController(text: m?.bio ?? '');
     _memo = TextEditingController(text: m?.memo ?? '');
     _birthday = TextEditingController(text: m?.birthday ?? '');
@@ -145,6 +147,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       _date,
       _atas,
       _activity,
+      _position,
       _bio,
       _memo,
       _birthday,
@@ -235,17 +238,40 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.groups,
               ),
               _field('소속 단위대', _unit, hint: '예: 제405단 샘물지역대', icon: Icons.flag),
+              const SizedBox(height: 4),
+              _subHead('현재활동', Icons.play_circle_outline, AppColors.taegeukBlue),
               _field(
-                '등록 연맹 (현재)',
+                '현재 소속 연맹',
                 _regLeague,
-                hint: '현재 등록된 연맹 (부여 연맹과 다를 수 있음)',
+                hint: '현재 활동 중인 연맹 (인가시 연맹과 다를 수 있음)',
                 icon: Icons.groups_2,
               ),
               _field(
-                '등록 단위대 (현재)',
+                '현재 등록 단위대',
                 _regUnit,
-                hint: '현재 등록된 단위대',
+                hint: '현재 활동 중인 단위대',
                 icon: Icons.flag_circle,
+              ),
+              _field(
+                '직위',
+                _position,
+                hint: '예: 지역대장 / 부장 / 교수 / 스텝',
+                icon: Icons.badge_outlined,
+              ),
+              const SizedBox(height: 4),
+              _subHead('범인가시 (인가 당시 정보)', Icons.verified_user,
+                  AppColors.purple),
+              _field(
+                '범인가시 소속 연맹',
+                _league,
+                hint: '예: 제주 / 광주 / 서울남부 (인가 당시 연맹)',
+                icon: Icons.groups,
+              ),
+              _field(
+                '범인가시 등록 단위대',
+                _unit,
+                hint: '예: 제405단 샘물지역대 (인가 당시 단위대)',
+                icon: Icons.flag,
               ),
               _field(
                 '인가일',
@@ -447,6 +473,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _date.text.trim() != m.date ||
         _atas.text.trim() != m.atasNo ||
         _activity.text.trim() != m.activity ||
+        _position.text.trim() != m.position ||
         _bio.text.trim() != m.bio ||
         _memo.text.trim() != m.memo ||
         _birthday.text.trim() != m.birthday ||
@@ -759,6 +786,29 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     );
   }
 
+  /// 구획 소제목 — 현재활동 / 범인가시 등 정보 그룹 구분용.
+  Widget _subHead(String title, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 10, 2, 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 6),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Divider(color: color.withValues(alpha: 0.25))),
+        ],
+      ),
+    );
+  }
+
   Widget _field(
     String label,
     TextEditingController ctrl, {
@@ -1051,6 +1101,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       date: _date.text.trim(),
       atasNo: _atas.text.trim(),
       activity: _activity.text.trim(),
+      position: _position.text.trim(),
       memo: _memo.text.trim(),
       birthday: _birthday.text.trim(),
       anniversary: _anniversary.text.trim(),

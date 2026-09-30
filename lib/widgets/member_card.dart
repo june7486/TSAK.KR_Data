@@ -237,7 +237,7 @@ class MemberCard extends StatelessWidget {
                         if (member.regLeague.isNotEmpty &&
                             member.regLeague != member.league) ...[
                           SizedBox(width: 6 * s),
-                          _badge('재적 ${member.regLeague}', AppColors.taegeukBlue, s),
+                          _badge('현재 ${member.regLeague}', AppColors.taegeukBlue, s),
                         ],
                         if (member.regUnit.isNotEmpty &&
                             member.regUnit != member.unit) ...[

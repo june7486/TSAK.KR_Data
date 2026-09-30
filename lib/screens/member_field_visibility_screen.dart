@@ -25,7 +25,8 @@ class _MemberFieldVisibilityScreenState
 
   /// (key, 라벨, 민감여부) — 서버 FIELD_SPECS 와 동일한 순서/키를 사용한다.
   static const List<(String, String, bool)> _specs = [
-    ('residentNo', '주민번호(회원번호)', true),
+    ('scoutNo', '스카우트 고유번호', true),
+    ('residentNo', '주민등록번호', true),
     ('tel', '연락처', true),
     ('phone', '핸드폰', true),
     ('email', '이메일', true),
@@ -33,8 +34,13 @@ class _MemberFieldVisibilityScreenState
     ('zipCode', '우편번호', true),
     ('birthday', '생일', true),
     ('bio', '비고/한줄소개', false),
-    ('league', '소속 연맹', false),
-    ('unit', '소속 단위대', false),
+    // 현재활동 — 별도 통계 산출 대상.
+    ('regLeague', '현재 소속 연맹', false),
+    ('regUnit', '현재 등록 단위대', false),
+    ('position', '직위(현재활동)', false),
+    // 범인가시(인가 당시) 정보.
+    ('league', '범인가시 소속 연맹', false),
+    ('unit', '범인가시 등록 단위대', false),
     ('date', '인가일', false),
     ('atasNo', 'ATAS 인가번호', false),
     ('activity', '활동', false),

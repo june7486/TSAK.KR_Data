@@ -1386,8 +1386,8 @@ def _default_field_visibility():
     기본 정책: 일반 항목은 노출(None=미지정 시 노출), 민감 항목은 비노출(False).
     """
     return {
-        "scoutNo": True,       # Scout 회원번호(인가번호) — 공개
-        "residentNo": False,   # 주민등록번호 — 민감
+        "scoutNo": False,      # 스카우트 고유번호 — 비노출(기본)
+        "residentNo": False,   # 주민등록번호 — 민감(비노출)
         "tel": False,          # 연락처(유선) — 민감
         "phone": False,        # 핸드폰 — 민감
         "email": False,        # 이메일 — 민감
@@ -1407,7 +1407,7 @@ def _default_field_visibility():
 
 # 민감정보 필드 정의(앱 UI에서 재사용). key → (라벨, 민감여부)
 FIELD_SPECS = [
-    ("scoutNo", "Scout 회원번호", False),
+    ("scoutNo", "스카우트 고유번호", True),
     ("residentNo", "주민등록번호", True),
     ("tel", "연락처", True),
     ("phone", "핸드폰", True),
@@ -1416,8 +1416,11 @@ FIELD_SPECS = [
     ("zipCode", "우편번호", True),
     ("birthday", "생일", True),
     ("bio", "비고/한줄소개", False),
-    ("league", "소속 연맹", False),
-    ("unit", "소속 단위대", False),
+    ("regLeague", "현재 소속 연맹", False),
+    ("regUnit", "현재 등록 단위대", False),
+    ("position", "직위(현재활동)", False),
+    ("league", "범인가시 소속 연맹", False),
+    ("unit", "범인가시 등록 단위대", False),
     ("date", "인가일", False),
     ("atasNo", "ATAS 인가번호", False),
     ("activity", "활동", False),

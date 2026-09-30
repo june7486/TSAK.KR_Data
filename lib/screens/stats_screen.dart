@@ -24,10 +24,16 @@ class _StatsScreenState extends State<StatsScreen> {
   /// 0 = 인원수별(당초 기본), 1 = 가나다순, 2 = 권역통합(인원순)
   int _tab = 0;
 
+  /// 집계 기준 — 0 = 인가시(범인가 정보), 1 = 현재활동.
+  ///   현재활동 데이터가 없으면 인가시 정보로 자동 폴백한다.
+  int _basis = 0;
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final baseLeagues = state.leagues; // 정규화 + 인원 내림차순 (미지정 마지막)
+    final baseLeagues = _basis == 1
+        ? state.leaguesCurrentActivity // 현재활동 연맹(없으면 인가시 연맹 폴백)
+        : state.leagues; // 인가시(범인가 정보) 연맹
     final leagues = switch (_tab) {
       1 => _sortByName(baseLeagues),
       2 => _groupByRegion(baseLeagues),
@@ -58,6 +64,7 @@ class _StatsScreenState extends State<StatsScreen> {
           _linkStatus(state),
           const SizedBox(height: 12),
           _sectionTitle('연맹별 인가자 분포'),
+          _basisTabs(state),
           _leagueTabs(),
           const SizedBox(height: 4),
           if (leagues.isEmpty)
@@ -83,6 +90,19 @@ class _StatsScreenState extends State<StatsScreen> {
               },
             ),
           const SizedBox(height: 16),
+          if (state.positions.isNotEmpty) ...[
+            _sectionTitle('직위 분포 (현재활동)'),
+            ...state.positions.entries.map(
+              (e) => _barRow(
+                context: context,
+                label: e.key,
+                value: e.value,
+                max: state.positions.values.reduce((a, b) => a > b ? a : b),
+                color: AppColors.purple,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           _sectionTitle('연간회비 납부 현황'),
           ...feeYears.map((y) {
             final paid = state.members
@@ -141,6 +161,51 @@ class _StatsScreenState extends State<StatsScreen> {
     }
     if (hasUnassigned) out['(미지정)'] = src['(미지정)']!;
     return out;
+  }
+
+  /// 집계 기준 전환 탭 — 인가시(범인가 정보) / 현재활동.
+  ///   현재활동 데이터가 없으면 자동으로 인가시 정보로 폴백됨을 안내한다.
+  Widget _basisTabs(AppState state) {
+    final noCurrent = !state.hasCurrentActivity;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(
+                  value: 0,
+                  icon: Icon(Icons.badge_outlined, size: 15),
+                  label: Text('인가시 기준', style: TextStyle(fontSize: 12)),
+                ),
+                ButtonSegment(
+                  value: 1,
+                  icon: Icon(Icons.play_circle_outline, size: 15),
+                  label: Text('현재활동 기준', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+              selected: {_basis},
+              showSelectedIcon: false,
+              style: const ButtonStyle(
+                visualDensity: VisualDensity(horizontal: -3, vertical: -2),
+              ),
+              onSelectionChanged: (s) => setState(() => _basis = s.first),
+            ),
+          ),
+          if (_basis == 1 && noCurrent)
+            const Padding(
+              padding: EdgeInsets.only(top: 4, left: 4),
+              child: Text(
+                '※ 현재활동 데이터가 없어 인가시 정보를 기준으로 집계했습니다.',
+                style: TextStyle(fontSize: 11, color: AppColors.textGray),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   /// 인원수별 / 가나다 / 권역통합 전환 탭 (3종).
