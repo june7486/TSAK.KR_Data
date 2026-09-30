@@ -13,6 +13,7 @@ import '../services/export_service.dart';
 import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/member_card.dart';
@@ -87,9 +88,23 @@ class _ExportScreenState extends State<ExportScreen>
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [_exportTab(), _smsTab(), _mailTab()],
+      body: Stack(
+        children: [
+          TabBarView(
+            controller: _tab,
+            children: [_exportTab(), _smsTab(), _mailTab()],
+          ),
+          // 출력/내보내기 대기 — 멈춘 것이 아님을 안내(공통 작업중 오버레이).
+          BusyOverlay(
+            visible: _busy,
+            title: '출력물을 만드는 중입니다',
+            lines: const [
+              '선택한 인가자 정보로 문서를 생성하고 있습니다...',
+              '파일로 저장하는 중입니다...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
+        ],
       ),
     );
   }

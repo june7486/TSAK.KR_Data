@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,6 +8,7 @@ import '../services/app_state.dart';
 import '../services/build_info.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/privacy_consent.dart';
 import 'merch_shop_screen.dart';
 
@@ -41,6 +44,9 @@ class _LockScreenState extends State<LockScreen> {
       TextEditingController(text: widget.initialId);
   bool _obscure = true;
   bool _busy = false;
+  /// 로그인 진행 단계(작업중 오버레이 진행문구 갱신용).
+  int _busyStep = 0;
+  Timer? _busyTimer;
   bool _cacheBusy = false;
   bool _verBusy = false;
   bool _updating = false;
@@ -87,9 +93,38 @@ class _LockScreenState extends State<LockScreen> {
 
   @override
   void dispose() {
+    _busyTimer?.cancel();
     _ctrl.dispose();
     _idCtrl.dispose();
     super.dispose();
+  }
+
+  /// 로그인 대기 중 보여줄 진행 안내 문구(2~3줄).
+  List<String> get _loginBusyLines {
+    const steps = [
+      '비밀번호를 확인하고 있습니다...',
+      '서버(NAS)에 접속하여 인증하는 중...',
+      '회원 정보와 권한을 불러오는 중...',
+      '화면을 준비하고 있습니다...',
+    ];
+    final n = _busyStep.clamp(0, steps.length - 1);
+    return steps.sublist(0, n + 1);
+  }
+
+  /// 로그인 대기 시작 — 오버레이를 띄우고 단계 문구를 자동 진행시킨다.
+  void _startLoginBusy() {
+    _busyStep = 0;
+    _busyTimer?.cancel();
+    _busyTimer = Timer.periodic(const Duration(milliseconds: 900), (_) {
+      if (!mounted || !_busy) return;
+      if (_busyStep < 3) setState(() => _busyStep++);
+    });
+  }
+
+  void _stopLoginBusy() {
+    _busyTimer?.cancel();
+    _busyTimer = null;
+    _busyStep = 0;
   }
 
   Future<void> _submit() async {
@@ -106,11 +141,13 @@ class _LockScreenState extends State<LockScreen> {
       _busy = true;
       _error = null;
     });
+    _startLoginBusy();
     final state = context.read<AppState>();
     // 관리자는 ID 고정(TSAK), 그 외는 입력값 사용
     final idInput = _tier == 'app' ? 'TSAK' : _idCtrl.text.trim();
     final ok = await state.login(_tier, v, id: idInput);
     if (!mounted) return;
+    _stopLoginBusy();
     setState(() => _busy = false);
     if (ok) {
       widget.onUnlocked?.call();
@@ -194,10 +231,12 @@ class _LockScreenState extends State<LockScreen> {
       _busy = true;
       _error = null;
     });
+    _startLoginBusy();
     final state = context.read<AppState>();
     final m = await state.createRegularMember(name, phone);
     if (!mounted) return;
     if (m == null) {
+      _stopLoginBusy();
       setState(() {
         _busy = false;
         _error = '이미 등록된 번호이거나 입력이 올바르지 않습니다';
@@ -207,6 +246,7 @@ class _LockScreenState extends State<LockScreen> {
     // 생성된 비밀번호 = 뒤 4자리
     final ok = await state.login('guest', m.phoneLast4, id: m.loginId);
     if (!mounted) return;
+    _stopLoginBusy();
     setState(() => _busy = false);
     if (ok) {
       widget.onUnlocked?.call();
@@ -310,7 +350,9 @@ class _LockScreenState extends State<LockScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
+      body: Stack(
+        children: [
+        Container(
         decoration: const BoxDecoration(gradient: AppColors.brandGradient),
         child: SafeArea(
           child: Center(
@@ -604,6 +646,14 @@ class _LockScreenState extends State<LockScreen> {
             ),
           ),
         ),
+        ),
+        // 로그인/회원생성 대기 — 멈춘 것이 아님을 보여주는 공통 작업중 오버레이
+        BusyOverlay(
+          visible: _busy,
+          title: _tier == 'guest' ? '회원 확인 중입니다' : '로그인 중입니다',
+          lines: _loginBusyLines,
+        ),
+        ],
       ),
     );
   }

@@ -2534,14 +2534,19 @@ def _ev_files(year, title, key, sub=""):
         if f.get("isdir"):
             # 하위폴더 항목
             try:
-                cnt = len([x for x in (NAS.list(f"{fp}/{nm}").get("files") or [])
-                           if not x["name"].startswith(".")])
+                sub_files = [x for x in (NAS.list(f"{fp}/{nm}").get("files") or [])
+                             if not x["name"].startswith(".")]
+                cnt = len(sub_files)
+                size_total = sum(int(x.get("size", 0) or 0)
+                                 for x in sub_files if not x.get("isdir"))
             except Exception:
                 cnt = 0
+                size_total = 0
             out.append({
                 "name": nm,
                 "isdir": True,
                 "size": 0,
+                "sizeTotal": size_total,
                 "ext": "",
                 "kind": "folder",
                 "count": cnt,
@@ -4321,6 +4326,88 @@ def _ev_start_thumb_backfill(max_side=480, force=False):
         daemon=True,
     )
     t.start()
+    return True
+
+
+# ============ 폴더 진입 시 예열(on-demand warm) ============
+# 요구: "썸네일을 해당 폴더에 저장해 로딩속도를 획기적으로 개선하고, 최적화
+# 폴더(.views)를 실시간으로 만들어 최적화 해상도 이미지를 자동 생성·저장한 뒤
+# 그 내용을 불러온다." → 목록 응답 직후, 열려 있는 폴더의 파일들에 대해
+# 백그라운드로 (썸네일 + 최적화본)을 미리 생성해 두어 첫 화면 로딩을 단축한다.
+_EV_WARM = {"running": False, "total": 0, "done": 0, "thumbs": 0,
+            "views": 0, "skipped": 0, "failed": 0, "key": ""}
+_EV_WARM_LOCK = threading.Lock()
+
+
+def _ev_warm_reset(total, key):
+    with _EV_WARM_LOCK:
+        _EV_WARM.update({"running": True, "total": total, "done": 0,
+                         "thumbs": 0, "views": 0, "skipped": 0, "failed": 0,
+                         "key": key})
+
+
+def _ev_warm_inc(field):
+    with _EV_WARM_LOCK:
+        _EV_WARM["done"] = int(_EV_WARM.get("done", 0)) + 1
+        _EV_WARM[field] = int(_EV_WARM.get(field, 0)) + 1
+
+
+def _ev_warm_state():
+    with _EV_WARM_LOCK:
+        return dict(_EV_WARM)
+
+
+def _ev_warm_worker(year, title, key, jobs, make_views):
+    """열린 폴더의 파일들에 대해 썸네일(+최적화본)을 미리 생성한다."""
+    try:
+        for (nm, sub, kind) in jobs:
+            try:
+                res = _ev_spot_thumb(year, title, nm, sub, kind, 480)
+                if res in ("image", "video"):
+                    _ev_warm_inc("thumbs")
+                elif res == "skip":
+                    _ev_warm_inc("skipped")
+                else:
+                    _ev_warm_inc("failed")
+                # 최적화(1600px) 본은 이미지만, 없을 때만 생성.
+                if make_views and kind == "image":
+                    try:
+                        vp = _ev_view_path(year, title, nm, sub)
+                        if not NAS.exists(vp):
+                            orig = _ev_find_file(year, title, "media", nm, sub)
+                            if orig:
+                                _make_image_view2(
+                                    NAS.read_bytes(orig), year, title, nm, sub)
+                                _ev_warm_inc("views")
+                    except Exception:
+                        pass
+            except Exception as e:
+                print("warm item fail", nm, e)
+                _ev_warm_inc("failed")
+        print("warm done", _ev_warm_state())
+    except Exception as e:
+        print("warm worker fail", e)
+    finally:
+        with _EV_WARM_LOCK:
+            _EV_WARM["running"] = False
+
+
+def _ev_warm_folder(year, title, key, sub, make_views=True):
+    """열린 폴더(하위폴더 포함)의 이미지/동영상 예열을 백그라운드로 시작."""
+    with _EV_WARM_LOCK:
+        if _EV_WARM.get("running"):
+            return False
+    jobs = []
+    for nm, s in _ev_media_files_with_meta(year, title, key, sub):
+        k = _kind_of(nm)
+        if k in ("image", "video"):
+            jobs.append((nm, s, k))
+    if not jobs:
+        return False
+    _ev_warm_reset(len(jobs), key)
+    threading.Thread(target=_ev_warm_worker,
+                     args=(year, title, key, jobs, make_views),
+                     daemon=True).start()
     return True
 
 
@@ -6957,6 +7044,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require("admin"):
                     return
                 return self._json({"ok": True, "job": _ev_thumb_job_state()})
+            # ---- 행사 폴더 예열(warm) 진행상황 (로그인 사용자) ----
+            if p == "/api/event/warm/status":
+                if not self._require():
+                    return
+                return self._json({"ok": True, "warm": _ev_warm_state()})
             # ---- 행사관리: 썸네일 ----
             if p == "/api/event/thumb":
                 if not self._require():
@@ -7414,7 +7506,15 @@ class Handler(BaseHTTPRequestHandler):
                 title = q.get("title", [""])[0]
                 key = q.get("key", [""])[0]
                 sub = q.get("sub", [""])[0]
-                return self._json({"ok": True, "files": _ev_files(year, title, key, sub)})
+                files = _ev_files(year, title, key, sub)
+                # 목록 응답 직후, 열린 폴더의 썸네일(+최적화본)을 백그라운드 예열.
+                #  → 다음 진입/새로고침 시 로딩이 즉시 끝난다(응답은 지연되지 않음).
+                if key == "media":
+                    try:
+                        _ev_warm_folder(year, title, key, sub, make_views=True)
+                    except Exception:
+                        pass
+                return self._json({"ok": True, "files": files})
             if p == "/api/event/thumb2":
                 if not self._require():
                     return

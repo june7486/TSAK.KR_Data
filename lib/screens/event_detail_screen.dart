@@ -11,6 +11,7 @@ import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
@@ -178,6 +179,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         SnackBar(content: Text('불러오기 실패: $err')),
       );
     }
+    if (mounted) hideBusy();
   }
 
   @override
@@ -489,29 +491,25 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     if (picked.isEmpty) return;
     var done = 0;
+    // 공통 "작업중" 오버레이 — 멈춘 것이 아님을 보여준다(업로드 진행률 포함).
+    showBusy(
+      context,
+      title: '사진·동영상 업로드 중입니다',
+      lines: [
+        'NAS 서버로 파일을 전송하고 있습니다...',
+        '총 ${picked.length}개 중 0개 완료',
+        '창을 닫지 마세요. 잠시만 기다려 주세요...',
+      ],
+    );
     for (final p in picked) {
       try {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => Center(
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 12),
-                  Text('업로드 중... (${done + 1}/${picked.length})'),
-                  Text(p.name, style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-            ),
-          ),
+        updateBusy(
+          lines: [
+            '전송 중: ${p.name}',
+            '총 ${picked.length}개 중 ${done + 1}개 진행 중',
+            '완료 $done개 · 남은 ${picked.length - done - 1}개',
+          ],
+          progress: picked.isEmpty ? null : (done / picked.length),
         );
         await _nas.eventUpload2(
           widget.year,
@@ -523,13 +521,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           uploader: upName,
           sub: sub,
         );
-        if (mounted) Navigator.pop(context);
         done++;
       } catch (e) {
-        if (mounted) Navigator.pop(context);
         _snack('업로드 실패: ${p.name} ($e)');
       }
     }
+    hideBusy();
     onDone?.call();
     await _load();
   }
@@ -1984,7 +1981,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       _mediaPath = [..._mediaPath, name];
       _mediaSel.clear();
     });
+    // 폴더 진입: 썸네일·최적화본을 미리 만들며 불러오는 중임을 안내.
+    _showMediaBusy('사진 폴더를 여는 중입니다');
     _load();
+  }
+
+  /// 사진/동영상 목록 로딩 중 공통 오버레이(멈춤 아님 안내).
+  void _showMediaBusy(String title) {
+    if (!mounted) return;
+    showBusy(
+      context,
+      title: title,
+      lines: [
+        'NAS 서버에서 목록을 불러오고 있습니다...',
+        '썸네일·최적화 이미지를 준비하는 중...',
+        '잠시만 기다려 주세요...',
+      ],
+    );
   }
 
   /// 선택 항목 토큰 ('현재폴더 파일'=name, '하위폴더 파일'=segSub:name)
@@ -2109,6 +2122,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     color: AppColors.textGray,
                   ),
                 ),
+                if (((m['sizeTotal'] as num?)?.toInt() ?? 0) > 0)
+                  Text(
+                    _fmtSize((m['sizeTotal'] as num).toInt()),
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: AppColors.purple.withValues(alpha: 0.75),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 const SizedBox(height: 2),
                 Text(
                   _uploaderLabel('${m['uploader'] ?? ''}'),
@@ -2241,6 +2263,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 fontWeight: FontWeight.w600,
               ),
             ),
+            // 사진·동영상 용량(사용자가 열어볼지 결정하는 데 도움)
+            Builder(builder: (_) {
+              final sz = (m['size'] as num?)?.toInt() ?? 0;
+              if (sz <= 0) return const SizedBox.shrink();
+              return Text(
+                _fmtSize(sz),
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 9.5,
+                  color: AppColors.purple.withValues(alpha: 0.75),
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -3126,7 +3163,7 @@ class _MediaViewerState extends State<_MediaViewer> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
-              '$name  ·  업로드: ${uploader.trim().isEmpty ? '415호' : uploader.trim()}',
+              '$name  ·  ${_fmtSizeV((_cur['size'] as num?)?.toInt() ?? 0)}업로드: ${uploader.trim().isEmpty ? '415호' : uploader.trim()}',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
               textAlign: TextAlign.center,
             ),
@@ -3134,6 +3171,17 @@ class _MediaViewerState extends State<_MediaViewer> {
         ],
       ),
     );
+  }
+
+  /// 표시용 용량 문자열(0이면 빈 문자열).
+  String _fmtSizeV(int b) {
+    if (b <= 0) return '';
+    if (b < 1024) return '$b B  ·  ';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} KB  ·  ';
+    if (b < 1024 * 1024 * 1024) {
+      return '${(b / 1024 / 1024).toStringAsFixed(1)} MB  ·  ';
+    }
+    return '${(b / 1024 / 1024 / 1024).toStringAsFixed(2)} GB  ·  ';
   }
 
   Future<void> _delete() async {
