@@ -946,47 +946,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         // (요구 #16) 참가자 명단 클릭 → 해당 회원 관리페이지(관리자·마스터만).
         onTap: canManage ? () => _openMemberPage(a) : null,
         child: ListTile(
-          leading: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 22,
-                height: 22,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: visited
-                      ? AppColors.scoutGreen
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: visited
-                        ? AppColors.scoutGreen
-                        : Colors.grey.shade300,
-                  ),
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: visited
-                    ? const Text(
-                        'V',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '접속',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: visited
-                      ? AppColors.scoutGreen
-                      : AppColors.textGray,
-                ),
-              ),
-            ],
-          ),
+          leading: _attendeeLeading(a, ident, visited, isStaff),
           title: Row(
             children: [
               Flexible(
@@ -1006,9 +966,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                 ),
               ],
-              // (요구 #15) 인가번호 옆 STAFF 단추. 관리자·마스터가 토글.
-              const SizedBox(width: 6),
-              _staffButton(a, ident, isStaff),
+              // STAFF로 지정된 사람만 '스텝' 단추를 부여한다(색상 단추).
+              if (isStaff) ...[
+                const SizedBox(width: 6),
+                _staffButton(a, ident, isStaff),
+              ],
             ],
           ),
         subtitle: Column(
@@ -1071,30 +1033,123 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
   }
 
-  /// (요구 #15) 인가번호 옆 STAFF 단추 — 관리자·마스터만 토글 가능.
-  Widget _staffButton(Map<String, dynamic> a, String ident, bool isStaff) {
-    final enabled = widget.canManage && ident.isNotEmpty;
-    return GestureDetector(
-      onTap: enabled ? () => _toggleStaff(a, ident, isStaff) : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        decoration: BoxDecoration(
-          color: isStaff
-              ? AppColors.tigerGold
-              : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: isStaff
-                ? AppColors.lifetimeGold
-                : Colors.grey.shade400,
+  /// 참가자 타일 좌측(leading).
+  ///  - 관리자·마스터: 좌측 체크박스로 STAFF(스텝) 지정 여부를 결정한다.
+  ///  - 그 외: 접속 여부(V) 표시.
+  Widget _attendeeLeading(
+      Map<String, dynamic> a, String ident, bool visited, bool isStaff) {
+    if (widget.canManage && ident.isNotEmpty) {
+      return SizedBox(
+        width: 34,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // STAFF 지정 여부 체크박스 (마스터·관리자 전용)
+            GestureDetector(
+              onTap: () => _toggleStaff(a, ident, isStaff),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: isStaff ? AppColors.tigerGold : Colors.white,
+                  border: Border.all(
+                    color: isStaff
+                        ? AppColors.lifetimeGold
+                        : Colors.grey.shade400,
+                    width: isStaff ? 2 : 1.4,
+                  ),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: isStaff
+                    ? const Icon(Icons.check,
+                        size: 15, color: Colors.white)
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'STAFF',
+              style: TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w800,
+                color: isStaff
+                    ? AppColors.lifetimeGold
+                    : AppColors.textGray,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    // 일반 열람: 접속 여부만 표시
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: visited ? AppColors.scoutGreen : Colors.transparent,
+            border: Border.all(
+              color: visited ? AppColors.scoutGreen : Colors.grey.shade300,
+            ),
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: visited
+              ? const Text(
+                  'V',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                )
+              : null,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '접속',
+          style: TextStyle(
+            fontSize: 9,
+            color: visited ? AppColors.scoutGreen : AppColors.textGray,
           ),
         ),
-        child: Text(
-          'STAFF',
+      ],
+    );
+  }
+
+  /// STAFF(스텝)로 지정된 사람에게 부여되는 색상 단추.
+  ///  - 관리자·마스터: 눌러서 해제 가능.
+  ///  - 그 외: 지정 사실만 표시(비활성).
+  Widget _staffButton(Map<String, dynamic> a, String ident, bool isStaff) {
+    final canToggle = widget.canManage && ident.isNotEmpty;
+    return GestureDetector(
+      onTap: canToggle ? () => _toggleStaff(a, ident, isStaff) : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [AppColors.tigerGold, AppColors.lifetimeGold],
+          ),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: AppColors.lifetimeGold),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.tigerGold.withValues(alpha: 0.35),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: const Text(
+          '스텝',
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 10.5,
             fontWeight: FontWeight.w900,
-            color: isStaff ? Colors.white : Colors.grey.shade600,
+            color: Colors.white,
           ),
         ),
       ),
