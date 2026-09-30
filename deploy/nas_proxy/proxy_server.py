@@ -4958,6 +4958,51 @@ def _ev_backup_members():
 
 
 # ============ 명단 주소록(엑셀) → 회원정보 반영 (요구#2) ============
+# 연맹명(league) 정규화 — 통계/프로필 표기 불일치 근본 해결.
+#   '광주연맹'→'광주', '인천→서울북부'→'인천', '연맹' 접미사 제거 등.
+_LEAGUE_ALIAS = {
+    "광주연맹": "광주", "경기북부연맹": "경기북부", "인천연맹": "인천",
+    "부산연맹": "부산", "서울남부연맹": "서울남부", "경남연맹": "경남",
+    "기독교연맹": "기독교",
+    "인천→서울북부": "인천", "인천->서울북부": "인천", "인천~서울북부": "인천",
+    "인천 ∼ 서울북부": "인천",
+    "충남·세종": "충남·세종", "충남.세종": "충남·세종", "충남 세종": "충남·세종",
+}
+
+
+def _normalize_league_one(s):
+    """단일 연맹 문자열 정규화(복수 표기 분해 후 내부에서 사용)."""
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    if not s:
+        return ""
+    s = s.replace("->", "→").replace("∼", "→").replace("~", "→")
+    s = re.sub(r"\s*→\s*", "→", s)
+    if s in _LEAGUE_ALIAS:
+        return _LEAGUE_ALIAS[s]
+    if s.endswith("연맹") and len(s) > 2:
+        s2 = s[:-2].strip()
+        if s2 in _LEAGUE_ALIAS:
+            return _LEAGUE_ALIAS[s2]
+        return s2
+    return s
+
+
+def _normalize_league(raw):
+    """원본 연맹 문자열 → 표준 연맹명(Flutter league_names.dart 와 동일 규칙)."""
+    s = re.sub(r"\s+", " ", str(raw or "")).strip()
+    if not s:
+        return ""
+    # 복수 연맹 표기(예: '서울남부연맹, 인천연맹, 제주') → 각 토큰 정규화 후 병기.
+    if re.search(r"[,、]", s):
+        parts = []
+        for t in re.split(r"[,、]", s):
+            n = _normalize_league_one(t)
+            if n and n not in parts:
+                parts.append(n)
+        return ", ".join(parts)
+    return _normalize_league_one(s)
+
+
 def _addr_num(v):
     """인가번호 셀 정규화: '1.0' → '1', 앞뒤 공백/기호 제거."""
     s = str(v or "").strip()
@@ -5097,6 +5142,8 @@ def _merge_addrbook(members, rows, *, overwrite=False):
         changed = False
         for src, dst in mapping:
             val = _addr_clean(x.get(src))
+            if val and dst == "league":
+                val = _normalize_league(val)
             if val and _put(m, dst, val):
                 changed = True
         # Scout 회원번호 = 인가번호(number). 비어있을 때만 채운다.
@@ -8351,6 +8398,11 @@ class Handler(BaseHTTPRequestHandler):
                 mem = d.get("member")
                 if not isinstance(mem, dict):
                     return self._json({"ok": False, "error": "member"}, 400)
+                # 연맹명 정규화(표기 불일치 방지)
+                if "league" in mem:
+                    mem["league"] = _normalize_league(mem.get("league", ""))
+                if "regLeague" in mem:
+                    mem["regLeague"] = _normalize_league(mem.get("regLeague", ""))
                 mid = str(mem.get("id", ""))
                 with LOCK:
                     members = _load_json(DB_FILE, [])
@@ -8372,6 +8424,13 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/members":
                 d = json.loads(self._body() or b"{}")
                 members = d.get("members", [])
+                # 연맹명 정규화(저장 시 일괄)
+                for _m in members:
+                    if isinstance(_m, dict):
+                        if "league" in _m:
+                            _m["league"] = _normalize_league(_m.get("league", ""))
+                        if "regLeague" in _m:
+                            _m["regLeague"] = _normalize_league(_m.get("regLeague", ""))
                 with LOCK:
                     # backup before overwrite
                     if NAS.exists(DB_FILE):
@@ -8381,6 +8440,33 @@ class Handler(BaseHTTPRequestHandler):
                     _save_json(DB_FILE, members)
                     meta = _touch_meta({"count": len(members), "updatedBy": d.get("by", "app")})
                 return self._json({"ok": True, "meta": meta})
+            if p == "/api/members/league-normalize":
+                # 연맹명 일괄 정규화(1회 마이그레이션) — 관리자·마스터 전용.
+                #   '광주연맹'→'광주', '인천→서울북부'→'인천' 등 표기 통일.
+                if not self._require("admin"):
+                    return
+                with LOCK:
+                    members = _load_json(DB_FILE, [])
+                    changed = 0
+                    samples = {}
+                    for m in members:
+                        for f in ("league", "regLeague"):
+                            cur = str(m.get(f, "") or "")
+                            new = _normalize_league(cur)
+                            if new != cur:
+                                samples.setdefault(cur, new)
+                                m[f] = new
+                                changed += 1
+                    if changed and NAS.exists(DB_FILE):
+                        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        NAS.write(f"{BASE}/backups/members_{stamp}.json",
+                                  NAS.read(DB_FILE).encode("utf-8"))
+                    if changed:
+                        _save_json(DB_FILE, members)
+                        _touch_meta({"count": len(members),
+                                     "updatedBy": "league-normalize"})
+                return self._json({"ok": True, "changed": changed,
+                                   "map": samples})
             if p == "/api/members/merge-addressbook":
                 # (요구#2) 회원정보 업데이트 — 명단 주소록(엑셀) 반영.
                 #  관리자·마스터 전용. 파일(base64) 또는 서버 경로(path)로 업로드.

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/member.dart';
+import 'league_names.dart';
 import 'nas_api.dart';
 
 /// 인가자 데이터 저장소
@@ -166,7 +167,7 @@ class MemberRepository {
           id: '${m['id']}',
           number: '${m['number'] ?? ''}',
           name: '${m['name'] ?? ''}',
-          league: '${m['league'] ?? ''}',
+          league: normalizeLeague('${m['league'] ?? ''}'),
           unit: '${m['unit'] ?? ''}',
           address: '${m['address'] ?? ''}',
           phone: '${m['phone'] ?? ''}',
@@ -318,7 +319,7 @@ class MemberRepository {
     final q = query.trim().toLowerCase();
     var list = all();
     if (league != null && league.isNotEmpty) {
-      list = list.where((m) => m.league == league).toList();
+      list = list.where((m) => sameLeague(m.league, league)).toList();
     }
     if (year != null && year.isNotEmpty) {
       list = list.where((m) => m.feeYears[year] == true).toList();
@@ -332,8 +333,9 @@ class MemberRepository {
   Map<String, int> leaguesWithCount() {
     final map = <String, int>{};
     for (final m in all()) {
-      final key = m.league.trim().isEmpty ? '(미지정)' : m.league.trim();
-      map[key] = (map[key] ?? 0) + 1;
+      final key = normalizeLeague(m.league);
+      final k = key.isEmpty ? '(미지정)' : key;
+      map[k] = (map[k] ?? 0) + 1;
     }
     final entries = map.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));

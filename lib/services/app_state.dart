@@ -6,6 +6,7 @@ import '../models/member.dart';
 import 'ai_query.dart';
 import 'app_config.dart';
 import 'finance_service.dart';
+import 'league_names.dart';
 import 'member_repository.dart';
 import 'nas_api.dart';
 import 'web_nav.dart';
@@ -1258,7 +1259,7 @@ class AppState extends ChangeNotifier {
       if (_leagueFilter == '(미지정)') {
         list = list.where((m) => m.league.trim().isEmpty).toList();
       } else {
-        list = list.where((m) => m.league == _leagueFilter).toList();
+        list = list.where((m) => sameLeague(m.league, _leagueFilter)).toList();
       }
     }
     if (_yearFilter.isNotEmpty) {

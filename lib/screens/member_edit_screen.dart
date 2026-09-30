@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/league_names.dart';
 import '../services/phone_format.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -1031,9 +1032,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       id: id,
       number: _number.text.trim(),
       name: _name.text.trim(),
-      league: _league.text.trim(),
+      league: normalizeLeague(_league.text),
       unit: _unit.text.trim(),
-      regLeague: _regLeague.text.trim(),
+      regLeague: normalizeLeague(_regLeague.text),
       regUnit: _regUnit.text.trim(),
       address: _address.text.trim(),
       zipCode: _zipCode.text.trim(),

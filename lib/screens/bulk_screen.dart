@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/contact_service.dart';
+import '../services/league_names.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
@@ -201,7 +202,7 @@ class _BulkScreenState extends State<BulkScreen> {
 
   List<Member> _recipients(AppState state) {
     if (_scope == '연맹' && _league != null) {
-      return state.members.where((m) => m.league == _league).toList();
+      return state.members.where((m) => sameLeague(m.league, _league)).toList();
     }
     return state.members;
   }

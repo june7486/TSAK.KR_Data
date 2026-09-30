@@ -1,3 +1,5 @@
+import '../services/league_names.dart';
+
 /// 한국범스카우트 중앙회 인가자(회원) 모델
 /// 요구사항: 인가번호, 이름, 주소, 단위대, 소속연맹, 활동, 메모,
 ///           사진, QR, 메일, 연간회비(평생/연도별), 행사참가, ATAS 인가번호, 인가일
@@ -348,9 +350,9 @@ class Member {
       id: '${map['id'] ?? ''}',
       number: '${map['number'] ?? ''}',
       name: '${map['name'] ?? ''}',
-      league: '${map['league'] ?? ''}',
+      league: normalizeLeague('${map['league'] ?? ''}'),
       unit: '${map['unit'] ?? ''}',
-      regLeague: '${map['regLeague'] ?? ''}',
+      regLeague: normalizeLeague('${map['regLeague'] ?? ''}'),
       regUnit: '${map['regUnit'] ?? ''}',
       address: '${map['address'] ?? ''}',
       zipCode: '${map['zipCode'] ?? ''}',
