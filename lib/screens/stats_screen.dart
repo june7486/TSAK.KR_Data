@@ -20,10 +20,11 @@ import '../widgets/tsak_app_bar.dart';
 ///   · (인가시 기준)  : 범인가시 소속연맹(league)
 ///   · (현재활동 기준): 현재 소속연맹(regLeague, 없으면 league 로 폴백)
 ///
-/// ## 추가 분포 (2026년 이후 집계)
-///   · 연맹별 멘토 대장 분포   (멘토 인적사항의 소속연맹)
-///   · 연맹별 페런츠 분포
-///   · 연맹별 서포터즈-일반 분포
+/// ## 추가 분포 (2026년 이후 집계, **인가일 기준**)
+///   · 연맹별 멘토 대장 분포   (멘토 **본인 소속연맹** 기준 / 2026년 이후 = 멘티 인가일)
+///   · 연맹별 페런츠 분포      (인가일 2026년 이후)
+///   · 연맹별 서포터즈-일반 분포 (인가일 2026년 이후)
+///   → 세 분포 모두 "인가일 2026년 이후" 로 통일한다.
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
@@ -146,14 +147,22 @@ class _StatsScreenState extends State<StatsScreen> {
     return _finalize(map);
   }
 
-  /// 멘토 대장 분포. [cutoff2026] 이면 프로필 등록연도 2026년 이후만.
+  /// 멘토 대장 분포 — **멘토 본인 소속연맹** 기준(소속연맹 기준 확정).
+  ///   · [cutoff2026] 이면 **멘티(연결 회원)의 인가일** 2026년 이후만 집계.
+  ///     (페런츠·서포터즈와 동일하게 "인가일 기준"으로 통일)
+  ///   · 멘토 프로필의 number = 멘티(연결 회원) 범인가자번호.
   Map<String, int> _mentorCounts(AppState state, {bool cutoff2026 = false}) {
     final map = <String, int>{};
     for (final prof in _linkProfiles.values) {
       final p = (prof as Map?)?.cast<String, dynamic>();
       if (p == null) continue;
       if ('${p['kind'] ?? ''}' != 'mentor') continue;
-      if (cutoff2026 && _yearOf('${p['updatedAt'] ?? ''}') < 2026) continue;
+      if (cutoff2026) {
+        // 멘티(연결 회원)의 인가일 기준 — 멘티를 찾을 수 없으면 제외.
+        final mentee = state.byNumber('${p['number'] ?? ''}');
+        if (mentee == null) continue;
+        if (_yearOf(mentee.date) < 2026) continue;
+      }
       final k = normalizeLeague('${p['league'] ?? ''}');
       final key = k.isEmpty ? '(미지정)' : k;
       map[key] = (map[key] ?? 0) + 1;
@@ -242,15 +251,15 @@ class _StatsScreenState extends State<StatsScreen> {
 
           // ---- 추가: 멘토 대장 / 페런츠 / 서포터즈-일반 (2026년 이후) ----
           const SizedBox(height: 16),
-          _sectionTitle('연맹별 멘토 대장 분포 (2026년 이후 집계)'),
+          _sectionTitle('연맹별 멘토 대장 분포 (2026년 이후 인가 기준)'),
           _distTabs('mentor'),
           _distRows(mentorSrc),
           const SizedBox(height: 16),
-          _sectionTitle('연맹별 페런츠 분포 (2026년 이후 집계)'),
+          _sectionTitle('연맹별 페런츠 분포 (2026년 이후 인가 기준)'),
           _distTabs('parent'),
           _distRows(parentSrc),
           const SizedBox(height: 16),
-          _sectionTitle('연맹별 서포터즈-일반 분포 (2026년 이후 집계)'),
+          _sectionTitle('연맹별 서포터즈-일반 분포 (2026년 이후 인가 기준)'),
           _distTabs('supporter'),
           _distRows(supporterSrc),
 
