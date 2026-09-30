@@ -181,6 +181,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 children: [
                   _quickActions(m),
                   _approvalBanner(m),
+                  // (요구) 인가정보·활동정보 위치 변경 — 개인 상세페이지 **최상단** 배치.
+                  //   ① 범스카우트 인가 정보(인가 당시 정보) ② 현재 활동 등록 정보
+                  //   · 관리자·본인·타인 모두에게 가장 먼저 보이도록 최상단에 노출한다.
+                  _credentialCard(m),
+                  _currentActivityCard(m),
                   // (요구 #4) 편집 화면 최상단: 평생회원 여부 → 연간회비 납부현황
                   //  · 관리자·마스터에게만 노출된다.
                   if (context.watch<AppState>().isApp ||
@@ -210,9 +215,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   PersonalSurveySection(
                     ident: m.number.isNotEmpty ? m.number : m.phone,
                   ),
-                  // 정보 구분: ① 범스카우트 인가 정보(인가 당시) ② 현재 활동 등록 정보 ③ 상세 정보
-                  _credentialCard(m),
-                  _currentActivityCard(m),
+                  // 정보 구분: 상세 정보 (인가·활동 정보는 상단으로 이동)
                   _infoCard(m),
                   _medalSection(m),
                   _membershipSection(m),
