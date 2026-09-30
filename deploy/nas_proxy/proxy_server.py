@@ -765,6 +765,26 @@ def _link_pending_members():
             continue
         if _link_of(m) != "pending":
             continue
+        profs = _link_profiles_load()
+
+        def _enrich(codes):
+            out2 = []
+            for c in codes:
+                key = re.sub(r"[^0-9]", "", str(c))
+                p = profs.get(key) or profs.get(str(c)) or {}
+                nm = str(p.get("name", "") or "")
+                ph = str(p.get("phone", "") or "")
+                un = str(p.get("unit", "") or "")
+                label = ("#%s" % key)
+                if nm:
+                    label += " %s" % nm
+                if un:
+                    label = "%s · %s" % (un, label)
+                if ph:
+                    label += " (%s)" % ph
+                out2.append(label)
+            return out2
+
         out.append({
             "id": str(m.get("id", "")),
             "number": str(m.get("number", "")),
@@ -774,10 +794,153 @@ def _link_pending_members():
             "league": str(m.get("league", "")),
             "mentors": [str(x) for x in mentors],
             "parents": [str(x) for x in parents],
+            "mentorLabels": _enrich(mentors),
+            "parentLabels": _enrich(parents),
             "note": str(m.get("linkApprovalNote", "")),
             "linkApprovalStatus": "pending",
         })
     return out
+
+
+# ==========================================================================
+# 멘토·페런츠 수동 등록 인적사항(linkProfiles) — 요구:
+#   "멘토 및 페런츠를 수동으로 입력할 경우 멘토, 페런츠 인적사항 넣도록 할것
+#    (그리고 통계에 포함하고, 각각 전화번호로 아이디 패스워드 이름 생성할 것)"
+#   → 개별 메달링 수령인(수동 등록)의 인적사항을 저장/조회/삭제한다.
+# ==========================================================================
+def _link_profiles_file():
+    return BASE + "/db/link_profiles.json"
+
+
+def _link_profiles_load():
+    d = _load_json(_link_profiles_file(), {})
+    if not isinstance(d, dict):
+        d = {}
+    # 하위 호환: 프로필 목록이 리스트면 dict 로 승격
+    for linked, prof in list(d.items()):
+        if not isinstance(prof, dict):
+            d[linked] = {}
+    return d
+
+
+def _link_profiles_save(d):
+    _save_json(_link_profiles_file(), d)
+
+
+# ==========================================================================
+# 각인 메달 주문 → 개인프로필 연동(수상 기록) — 요구:
+#   "수품주문시 멘토메달, 페런츠 메달 넣을 경우 각인해야 하므로
+#    그 인가번호 기준으로 개인페이지에 연동해서 이름과 인가번호 추가할 것"
+#   수상자(구매자/회원) 기준으로 받은 메달(멘토·페런츠) 이력을 모은다.
+# ==========================================================================
+def _medal_awards_for(number):
+    """해당 인가번호가 받은 각인 메달(멘토/페런츠) 수상 기록 목록."""
+    d = re.sub(r"[^0-9]", "", str(number or ""))
+    if not d:
+        return []
+    doc = _load_json(MERCH_FILE, {}) or {}
+    out = []
+    for o in (doc.get("orders") or []):
+        if not isinstance(o, dict):
+            continue
+        kind = str(o.get("recipientKind") or "")
+        if kind not in ("mentor", "parent"):
+            continue
+        # 수상자 결정: 수령인 각인에 인가번호가 적혀 있으면 그 번호,
+        # 아니면 구매자(buyerNumber) 본인 기준.
+        recips = o.get("recipients")
+        if not isinstance(recips, list):
+            recips = [o.get("recipient")] if isinstance(o.get("recipient"), dict) else []
+        owner = ""
+        label = ""
+        for r in recips:
+            if not isinstance(r, dict):
+                continue
+            rno = re.sub(r"[^0-9]", "", str(r.get("number", "") or ""))
+            if rno:
+                owner = rno
+            if not label:
+                label = (str(r.get("unit", "")).strip()
+                         or str(r.get("name", "")).strip())
+        if not owner:
+            owner = re.sub(r"[^0-9]", "", str(o.get("buyerNumber", "") or ""))
+        if owner != d:
+            continue
+        out.append({
+            "orderId": str(o.get("id", "")),
+            "orderNo": str(o.get("orderNo", "")),
+            "product": str(o.get("product", "")),
+            "kind": kind,
+            "kindLabel": "멘토 메달" if kind == "mentor" else "페런츠 메달",
+            "recipient": (recips[0] if recips else {}),
+            "created": str(o.get("created", "")),
+            "status": str(o.get("status", "")),
+        })
+    out.sort(key=lambda x: x.get("created", ""), reverse=True)
+    return out
+
+
+def _medal_awards_granted_by(number):
+    """해당 인가번호(멘토/페런츠 본인)가 **수여한** 메달 기록 —
+    각인 내용에 이 사람의 인가번호가 들어간 주문."""
+    d = re.sub(r"[^0-9]", "", str(number or ""))
+    if not d:
+        return []
+    doc = _load_json(MERCH_FILE, {}) or {}
+    out = []
+    for o in (doc.get("orders") or []):
+        if not isinstance(o, dict):
+            continue
+        kind = str(o.get("recipientKind") or "")
+        if kind not in ("mentor", "parent"):
+            continue
+        recips = o.get("recipients")
+        if not isinstance(recips, list):
+            recips = [o.get("recipient")] if isinstance(o.get("recipient"), dict) else []
+        for r in recips:
+            if not isinstance(r, dict):
+                continue
+            rno = re.sub(r"[^0-9]", "", str(r.get("number", "") or ""))
+            if rno and rno == d:
+                out.append({
+                    "orderId": str(o.get("id", "")),
+                    "orderNo": str(o.get("orderNo", "")),
+                    "product": str(o.get("product", "")),
+                    "kind": kind,
+                    "kindLabel": "멘토 메달" if kind == "mentor" else "페런츠 메달",
+                    "buyerName": str(o.get("buyerName", "")),
+                    "buyerNumber": str(o.get("buyerNumber", "")),
+                    "created": str(o.get("created", "")),
+                    "status": str(o.get("status", "")),
+                })
+                break
+    out.sort(key=lambda x: x.get("created", ""), reverse=True)
+    return out
+
+
+def _gen_profile_credentials(phone, name):
+    """전화번호 기반 아이디/비밀번호 생성(요구).
+      - 아이디(loginId) : 전화번호 숫자만 (예: 01012345678)
+      - 비밀번호        : 뒤 4자리 + '!@@' (예: 5678!@@)
+    """
+    ph = re.sub(r"[^0-9]", "", str(phone or ""))
+    login_id = ph
+    last4 = ph[-4:] if len(ph) >= 4 else ph
+    pw = (last4 + "!@@") if last4 else ""
+    return login_id, pw
+
+
+def _link_profile_sanitize(raw):
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "number": re.sub(r"[^0-9]", "", str(raw.get("number", "") or ""))[:12],
+        "name": str(raw.get("name", "") or "").strip()[:40],
+        "phone": str(raw.get("phone", "") or "").strip()[:20],
+        "unit": str(raw.get("unit", "") or "").strip()[:80],
+        "kind": "parent" if str(raw.get("kind", "")) == "parent" else "mentor",
+    }
+
 
 
 def _set_member_link(ident, status, note=""):
@@ -3908,6 +4071,7 @@ def _medal_recipient_clean(rcp):
     return {
         "unit": str(rcp.get("unit", "") or "")[:80],
         "name": str(rcp.get("name", "") or "")[:40],
+        "number": re.sub(r"[^0-9]", "", str(rcp.get("number", "") or ""))[:12],
         "phone": str(rcp.get("phone", "") or "")[:20],
     }
 
@@ -6516,6 +6680,25 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _my_member(self):
+        """현재 세션의 '본인' 회원 dict(없으면 {}).
+        세션 who(인가번호/전화) 또는 tier=personal 의 인가번호로 조회한다."""
+        s = self._sess() or {}
+        cand = []
+        cand.append(re.sub(r"[^0-9]", "", str(s.get("who", "") or "")))
+        cand.append(re.sub(r"[^0-9]", "", str(s.get("number", "") or "")))
+        cand.append(re.sub(r"[^0-9]", "", str(s.get("ident", "") or "")))
+        cand = [c for c in cand if c]
+        if not cand:
+            return {}
+        for m in _ev_members():
+            no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            ph = re.sub(r"[^0-9]", "",
+                        str(m.get("accessPhone") or m.get("phone") or ""))
+            if no in cand or ph in cand:
+                return m
+        return {}
+
     def _set_sid_cookie(self, sid):
         self._pending_sid = sid
 
@@ -6997,6 +7180,16 @@ class Handler(BaseHTTPRequestHandler):
                                    "title": "기타 등록요청 (%s)" % t,
                                    "kind": "request",
                                    "count": len(sub), "items": sub})
+                # 3) 멘토·페런츠 연결 승인 대기 (요구: 승인 시 배지 숫자 연동 — 모든 승인 공통)
+                try:
+                    q3 = _link_pending_members()
+                except Exception:
+                    q3 = []
+                if q3:
+                    queues.append({
+                        "key": "link", "title": "멘토·페런츠 연결",
+                        "kind": "link", "count": len(q3), "items": q3,
+                    })
                 total = sum(int(q.get("count", 0)) for q in queues)
                 # 해당 아이디가 아직 확인하지 않은(미확인) 건수 — 배지용.
                 owner = _owner_key(self._sess())
@@ -7010,6 +7203,36 @@ class Handler(BaseHTTPRequestHandler):
                 pending = _link_pending_members()
                 return self._json({"ok": True, "pending": pending,
                                    "count": len(pending)})
+            if p == "/api/link/profiles":
+                # 멘토·페런츠(수동 등록) 인적사항 조회.
+                #   관리자·마스터: 전체 프로필
+                #   개인(로그인): 본인 연결(멘토/페런츠)의 프로필만
+                if not self._require():
+                    return
+                if self._auth_ok("admin"):
+                    return self._json({"ok": True,
+                                       "profiles": _link_profiles_load()})
+                me = self._my_member()
+                linked = [str(x) for x in (list(me.get("mentors") or [])
+                                           + list(me.get("parents") or []))]
+                allp = _link_profiles_load()
+                out = {k: v for k, v in allp.items() if str(k) in linked}
+                return self._json({"ok": True, "profiles": out})
+            if p == "/api/member/medals":
+                # 개인프로필 연동 — 해당 인가번호가 받은/수여한 각인 메달 기록.
+                #   ?number=  (없으면 본인)
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                number = str((q.get("number", [""])[0] or "")).strip()
+                if not number:
+                    me = self._my_member()
+                    number = str(me.get("number", ""))
+                return self._json({
+                    "ok": True, "number": number,
+                    "awards": _medal_awards_for(number),
+                    "granted": _medal_awards_granted_by(number),
+                })
             # ---- Phase4: 은행거래 종합분석 (캐시 우선, 관리자·마스터) ----
             if p == "/api/finance/analysis":
                 if not self._require("admin"):
@@ -8365,6 +8588,74 @@ class Handler(BaseHTTPRequestHandler):
                     if ok:
                         done += 1
                 return self._json({"ok": True, "done": done})
+            if p == "/api/link/profiles":
+                # 멘토·페런츠(수동 등록) 인적사항 저장/삭제 + 아이디·비번 생성.
+                if not self._require():
+                    return
+                is_admin = self._auth_ok("admin")
+                d = json.loads(self._body() or b"{}")
+                action = str(d.get("action", "save") or "save")
+                profs = _link_profiles_load()
+                if action in ("delete", "remove"):
+                    key = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                    if key and key in profs:
+                        del profs[key]
+                        with LOCK:
+                            _link_profiles_save(profs)
+                    return self._json({"ok": True, "deleted": key})
+                # 저장
+                p = _link_profile_sanitize(d.get("profile") or d)
+                if not p.get("number") or not p.get("name"):
+                    return self._json(
+                        {"ok": False, "error": "인가번호·이름은 필수입니다."}, 400)
+                # 개인(비관리자)은 본인 연결(멘토/페런츠)의 프로필만 저장 가능.
+                if not is_admin:
+                    me = self._my_member()
+                    linked = [re.sub(r"[^0-9]", "", str(x)) for x in
+                              (list(me.get("mentors") or [])
+                               + list(me.get("parents") or []))]
+                    if p["number"] not in linked:
+                        return self._json(
+                            {"ok": False,
+                             "error": "본인 멘토·페런츠 인가번호만 등록할 수 있습니다."},
+                            403)
+                login_id, pw = _gen_profile_credentials(p.get("phone"), p.get("name"))
+                p["loginId"] = login_id
+                p["password"] = pw          # 관리자·본인에게만 반환/표시용
+                p["updatedAt"] = _now_stamp()
+                profs[p["number"]] = p
+                with LOCK:
+                    _link_profiles_save(profs)
+                return self._json({"ok": True, "profile": p,
+                                   "loginId": login_id, "password": pw})
+            if p == "/api/member/link-request":
+                # 승인 요청 — 회원(본인)/관리자가 멘토·페런츠 연결을 승인요청 상태로.
+                #   → 관리자·마스터 배지(승인관리)에 즉시 반영된다.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                ident = str(d.get("number", "") or "")
+                if not ident and not self._auth_ok("admin"):
+                    me = self._my_member()
+                    ident = str(me.get("number", ""))
+                ident = re.sub(r"[^0-9]", "", ident)
+                if not ident:
+                    # 전화번호로 조회 폴백
+                    ident = re.sub(r"[^0-9]", "", str(d.get("ident", "")))
+                    if ident:
+                        for m in _ev_members():
+                            ph = re.sub(r"[^0-9]", "", str(
+                                m.get("accessPhone") or m.get("phone") or ""))
+                            if ph == ident:
+                                ident = re.sub(r"[^0-9]", "",
+                                               str(m.get("number", "")))
+                                break
+                if not ident:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                note = str(d.get("note", "") or "")
+                ok, nm = _set_member_link(ident, "pending", note)
+                return self._json({"ok": ok, "number": ident, "name": nm,
+                                   "status": "pending"})
             if p == "/api/personal/password":
                 d = json.loads(self._body() or b"{}")
                 no = re.sub(r"[^0-9]", "", str(d.get("number", "")))

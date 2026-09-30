@@ -14,6 +14,7 @@ import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/link_code_field.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/unsaved_guard.dart';
 
@@ -320,18 +321,23 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.shopping_bag,
                 maxLines: 2,
               ),
-              _codeListField(
+              LinkCodeField(
                 label: '멘토',
                 icon: Icons.supervisor_account,
-                list: _mentors,
+                kind: 'mentor',
+                codes: _mentors,
                 onChanged: (v) => setState(() => _mentors = v),
+                editable: _canEditLinks,
               ),
-              _codeListField(
+              LinkCodeField(
                 label: '페런츠',
                 icon: Icons.family_restroom,
-                list: _parents,
+                kind: 'parent',
+                codes: _parents,
                 onChanged: (v) => setState(() => _parents = v),
+                editable: _canEditLinks,
               ),
+              _linkApprovalBar(),
               _field(
                 '이메일',
                 _email,
@@ -454,6 +460,104 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         _mentors.join(',') != m.mentors.join(',') ||
         _parents.join(',') != m.parents.join(',') ||
         _privacyAgreed != m.privacyAgreed;
+  }
+
+  /// 멘토·페런츠 연결 편집 가능 여부 — 본인 또는 관리자·마스터.
+  bool get _canEditLinks {
+    final state = context.read<AppState>();
+    return state.isApp || state.isMaster || state.isSelfAccess;
+  }
+
+  /// 멘토·페런츠 연결 승인 상태 바 — 미승인 라벨 + 승인요청 버튼.
+  ///   · 연결이 없으면 아무것도 표시하지 않는다.
+  ///   · 'pending' 이면 [미승인] 단추 + [승인요청] 버튼.
+  ///   · 'approved' 이면 [승인됨], 'held' 이면 [보류].
+  Widget _linkApprovalBar() {
+    final hasLinks = _mentors.isNotEmpty || _parents.isNotEmpty;
+    if (!hasLinks) return const SizedBox.shrink();
+    final status = _existing?.linkApprovalStatus ?? '';
+    final (label, color, icon) = switch (status) {
+      'approved' => ('승인됨', AppColors.scoutGreen, Icons.verified),
+      'held' => ('보류', AppColors.tigerGold, Icons.pause_circle_filled),
+      _ => ('미승인', AppColors.taegeukRed, Icons.gpp_maybe),
+    };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                status == 'approved'
+                    ? '멘토·페런츠 연결이 승인되었습니다.'
+                    : '관리자·마스터의 승인 후 확정됩니다.',
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textGray),
+              ),
+            ),
+            if (status != 'approved')
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: _requestLinkApproval,
+                icon: const Icon(Icons.send, size: 15),
+                label: const Text('승인요청', style: TextStyle(fontSize: 12)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 승인요청 — 저장 후 관리자·마스터 승인 큐(배지)로 전송.
+  Future<void> _requestLinkApproval() async {
+    // 인적사항이 저장되도록 먼저 저장 수행.
+    await _saveInternal();
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final no = _number.text.trim();
+    try {
+      final r = await state.nas.linkRequest(number: no, note: '');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(r['ok'] == true
+              ? '승인요청을 보냈습니다. 관리자·마스터 승인 후 확정됩니다.'
+              : '승인요청 실패 — 잠시 후 다시 시도하세요'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('승인요청 오류: $e')),
+      );
+    }
   }
 
   /// 개인정보 동의 상태 안내 배너 (상단)
@@ -770,106 +874,6 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         ],
       ),
     );
-  }
-
-  /// 멘토/페런츠 등 인가번호 목록 입력 필드 (복수)
-  Widget _codeListField({
-    required String label,
-    required IconData icon,
-    required List<String> list,
-    required ValueChanged<List<String>> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: AppColors.purple),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: () => _addCode(label, list, onChanged),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('추가', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          if (list.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(left: 24, bottom: 4),
-              child: Text(
-                '등록된 인가번호 없음 (복수 입력 가능)',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray),
-              ),
-            )
-          else
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final code in list)
-                  Chip(
-                    label: Text('#$code'),
-                    backgroundColor: AppColors.purple.withValues(alpha: 0.08),
-                    labelStyle: const TextStyle(
-                      color: AppColors.purple,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    deleteIcon: const Icon(Icons.close, size: 16),
-                    onDeleted: () {
-                      final next = List<String>.from(list)..remove(code);
-                      onChanged(next);
-                    },
-                  ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _addCode(
-    String label,
-    List<String> list,
-    ValueChanged<List<String>> onChanged,
-  ) async {
-    final ctrl = TextEditingController();
-    final code = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('$label 인가번호 추가'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: '인가번호'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('추가'),
-          ),
-        ],
-      ),
-    );
-    final c = (code ?? '').replaceAll(RegExp(r'[^0-9]'), '');
-    if (c.isEmpty) return;
-    if (list.contains(c)) return;
-    onChanged([...list, c]);
   }
 
   /// 현재 시각 문자열 (예: "2025.09.24 10:30")

@@ -284,8 +284,17 @@ class _LinkApprovalScreenState extends State<LinkApprovalScreen> {
   Widget _card(Map<String, dynamic> m) {
     final id = '${m['id']}';
     final sel = _selected.contains(id);
-    final mentors = ((m['mentors'] as List?) ?? []).map((e) => '$e').toList();
-    final parents = ((m['parents'] as List?) ?? []).map((e) => '$e').toList();
+    // 백엔드가 인적사항 라벨(이름·인가번호·전화)을 주면 우선 사용, 없으면 인가번호만.
+    final mentors = ((m['mentorLabels'] as List?) ??
+            (m['mentors'] as List?) ??
+            [])
+        .map((e) => '$e')
+        .toList();
+    final parents = ((m['parentLabels'] as List?) ??
+            (m['parents'] as List?) ??
+            [])
+        .map((e) => '$e')
+        .toList();
     final note = '${m['note'] ?? ''}'.trim();
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -436,7 +445,7 @@ class _LinkApprovalScreenState extends State<LinkApprovalScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      _nameOf(c),
+                      _displayLabel(c),
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -449,6 +458,18 @@ class _LinkApprovalScreenState extends State<LinkApprovalScreen> {
         ],
       ),
     );
+  }
+
+  /// 라벨 표시 — 백엔드가 인적사항까지 담은 라벨("소속 · #번호 이름 (전화)")은
+  /// 그대로 쓰고, 순수 인가번호만 온 경우에만 이름을 조회해 붙인다.
+  String _displayLabel(String c) {
+    final t = c.trim();
+    final digits = t.replaceAll(RegExp(r'[^0-9]'), '');
+    // 순수 인가번호(또는 #번호)만 온 경우 → 이름 조회.
+    if (RegExp(r'^#?\d+$').hasMatch(t) && digits.isNotEmpty) {
+      return _nameOf(digits);
+    }
+    return t;
   }
 
   Widget _empty() {

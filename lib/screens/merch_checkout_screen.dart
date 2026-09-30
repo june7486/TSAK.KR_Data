@@ -545,6 +545,17 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
             decoration: InputDecoration(
                 labelText: '${isMentor ? '멘토' : '페런츠'} 연락처 *', isDense: true),
           ),
+          const SizedBox(height: 8),
+          TextFormField(
+            key: ValueKey('rcp-number-$idx'),
+            controller: c.number,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: '${isMentor ? '멘토' : '페런츠'} 인가번호 (선택)',
+              hintText: '입력 시 해당 회원 개인프로필에 메달 수상 연동',
+              isDense: true,
+            ),
+          ),
         ],
       ),
     );
@@ -723,6 +734,7 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
                 {
                   'unit': _recips[i]?.unit.text.trim() ?? '',
                   'name': _recips[i]?.name.text.trim() ?? '',
+                  'number': _recips[i]?.number.text.trim() ?? '',
                   'phone': _recips[i]?.phone.text.trim() ?? '',
                 }
               ],
@@ -935,11 +947,13 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
 class _RecipientCtl {
   final unit = TextEditingController();
   final name = TextEditingController();
+  final number = TextEditingController(); // 수령인 인가번호(개인프로필 연동)
   final phone = TextEditingController();
 
   void dispose() {
     unit.dispose();
     name.dispose();
+    number.dispose();
     phone.dispose();
   }
 }

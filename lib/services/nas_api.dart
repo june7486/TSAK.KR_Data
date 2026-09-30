@@ -1546,6 +1546,77 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 멘토·페런츠(수동 등록) 인적사항 조회.
+  ///   관리자·마스터: 전체, 개인(로그인): 본인 연결만.
+  Future<Map<String, dynamic>> linkProfiles() async {
+    try {
+      final r = await http
+          .get(_uri('/api/link/profiles'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 15));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      return (j['profiles'] as Map?)?.cast<String, dynamic>() ?? {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 멘토·페런츠(수동 등록) 인적사항 저장/삭제 —
+  ///   전화번호 기반 아이디/비번을 서버가 생성해 돌려준다.
+  ///   action: 'save'(기본) | 'delete'
+  Future<Map<String, dynamic>> linkProfileSave({
+    required Map<String, dynamic> profile,
+    String action = 'save',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/link/profiles'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'action': action, 'profile': profile}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> linkProfileDelete(String number) async {
+    final r = await http
+        .post(
+          _uri('/api/link/profiles'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'action': 'delete', 'number': number}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 개인프로필 연동 — 해당 인가번호의 각인 메달 수상(받은)/수여(해준) 기록.
+  Future<Map<String, dynamic>> memberMedals({String number = ''}) async {
+    try {
+      final q = number.isNotEmpty ? '?number=${Uri.encodeComponent(number)}' : '';
+      final r = await http
+          .get(_uri('/api/member/medals$q'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 15));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false, 'awards': [], 'granted': []};
+    }
+  }
+
+  /// 멘토·페런츠 연결 승인요청 — 회원(본인) 또는 관리자·마스터.
+  ///   성공 시 관리자·마스터의 승인관리 배지에 반영된다.
+  Future<Map<String, dynamic>> linkRequest({
+    String number = '',
+    String note = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member/link-request'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'number': number, 'note': note}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 은행거래 종합분석 (캐시) — 관리자·마스터.
   Future<Map<String, dynamic>> financeAnalysis({bool force = false}) async {
     final r = await http

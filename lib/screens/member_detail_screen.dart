@@ -47,11 +47,28 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// 이름 공개/비공개 서버 저장 진행 중 여부(연타 방지).
   bool _nameBusy = false;
 
+  /// 멘토·페런츠 인적사항·메달 연동 캐시 (인가번호 → 데이터).
+  Map<String, dynamic> _linkProfilesCache = {};
+  final Map<String, Future<Map<String, dynamic>>> _medalFuture = {};
+
+  Map<String, dynamic> _profileOf(String code) {
+    final key = code.replaceAll(RegExp(r'[^0-9]'), '');
+    return (_linkProfilesCache[key] as Map?)?.cast<String, dynamic>() ??
+        (_linkProfilesCache[code] as Map?)?.cast<String, dynamic>() ??
+        {};
+  }
+
+  Future<void> _loadLinkProfiles() async {
+    final p = await context.read<NasApi>().linkProfiles();
+    if (mounted) setState(() => _linkProfilesCache = p);
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadKnownEvents();
+      _loadLinkProfiles();
       _logView();
     });
   }
@@ -194,6 +211,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ident: m.number.isNotEmpty ? m.number : m.phone,
                   ),
                   _infoCard(m),
+                  _medalSection(m),
                   _membershipSection(m),
                   _passwordSection(m),
                   MemberAccessLogSection(
@@ -1554,6 +1572,115 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
   }
 
+  /// 멘토·페런츠 인가번호 라벨 — 인적사항이 있으면 "이름 #번호" 로 표시한다.
+  ///   (요구: 개인프로필에 멘토·페런츠 메달 수여자 이름도 함께 표시)
+  String _linkNameLabel(String code) {
+    final p = _profileOf(code);
+    final nm = '${p['name'] ?? ''}'.trim();
+    final no = code.replaceAll(RegExp(r'[^0-9]'), '');
+    if (nm.isEmpty) return '#$code';
+    return '$nm #$no';
+  }
+
+  /// 각인 메달(멘토·페런츠) 수상/수여 기록 — 개인프로필 연동.
+  ///   · 받은 메달(awards) : 본인이 수여받은 각인 메달
+  ///   · 수여한 메달(granted): 본인 이름·인가번호가 각인돼 남에게 준 메달
+  Widget _medalSection(Member m) {
+    final ident = m.number.isNotEmpty ? m.number : m.phone;
+    if (ident.trim().isEmpty) return const SizedBox.shrink();
+    final fut = _medalFuture.putIfAbsent(
+      ident,
+      () => context.read<NasApi>().memberMedals(number: ident),
+    );
+    return FutureBuilder<Map<String, dynamic>>(
+      future: fut,
+      builder: (context, snap) {
+        final d = snap.data;
+        if (d == null) return const SizedBox.shrink();
+        final awards = ((d['awards'] as List?) ?? [])
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+        final granted = ((d['granted'] as List?) ?? [])
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+        if (awards.isEmpty && granted.isEmpty) return const SizedBox.shrink();
+        return _section(
+          title: '각인 메달 (멘토·페런츠)',
+          icon: Icons.workspace_premium,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (awards.isNotEmpty) ...[
+                const Text('받은 메달',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark)),
+                const SizedBox(height: 4),
+                for (final a in awards) _medalRow(a, '받음'),
+              ],
+              if (awards.isNotEmpty && granted.isNotEmpty)
+                const SizedBox(height: 8),
+              if (granted.isNotEmpty) ...[
+                const Text('수여한 메달 (이름·인가번호 각인)',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark)),
+                const SizedBox(height: 4),
+                for (final a in granted) _medalRow(a, '수여'),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _medalRow(Map<String, dynamic> a, String mode) {
+    final kind = '${a['kindLabel'] ?? a['kind'] ?? ''}';
+    final product = '${a['product'] ?? ''}';
+    final created = '${a['created'] ?? ''}';
+    final color =
+        '${a['kind']}' == 'parent' ? AppColors.taegeukBlue : AppColors.purple;
+    // 받은 메달: 이름 각인(누가 줬는지 표시 어려움) / 수여: 상대 이름
+    final rcp = (a['recipient'] as Map?)?.cast<String, dynamic>();
+    final detail = mode == '받음'
+        ? (rcp != null ? '${rcp['unit'] ?? ''} ${rcp['name'] ?? ''}'.trim() : '')
+        : '${a['buyerName'] ?? ''}'.trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(Icons.workspace_premium, size: 15, color: color),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(kind,
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              [product, if (detail.isNotEmpty) detail]
+                  .where((s) => s.isNotEmpty)
+                  .join(' · '),
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textDark),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(created,
+              style: const TextStyle(fontSize: 10, color: AppColors.textGray)),
+        ],
+      ),
+    );
+  }
+
   Widget _infoCard(Member m) {
     final state = context.watch<AppState>();
     final admin = state.isApp || state.isMaster; // 관리자·마스터: 전체 열람
@@ -1614,10 +1741,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     children.add(
       _plainRow(
         '멘토',
-        '${m.mentors.map((e) => '#$e').join(', ')}${_linkBadge(m)}',
+        '${m.mentors.map((e) => _linkNameLabel(e)).join(', ')}${_linkBadge(m)}',
       ),
     );
-    children.add(_plainRow('페런츠', m.parents.map((e) => '#$e').join(', ')));
+    children.add(_plainRow(
+      '페런츠',
+      m.parents.map((e) => _linkNameLabel(e)).join(', '),
+    ));
     children.add(
       _plainRow(
         '개인정보 동의',
