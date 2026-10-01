@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
+import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -3120,6 +3121,49 @@ class _MediaViewerState extends State<_MediaViewer> {
     return '${_cur['uploader'] ?? ''}' == widget.myName;
   }
 
+  /// 사진/동영상 원본을 **저장 위치를 골라** 저장한다(요구).
+  ///
+  /// · [askSaveLocation] 로 위치 선택창을 먼저 띄우고,
+  /// · 파일 바이트를 직접 받아 [saveFileNamed] 로 저장한다.
+  /// · 바이트 수신·저장이 실패하면 기존 방식(외부 앱으로 열기)으로 폴백한다.
+  Future<void> _saveMediaToChoosen(String url, String name, String kind) async {
+    final ext = name.contains('.')
+        ? name.split('.').last.toLowerCase()
+        : (kind == 'video' ? 'mp4' : 'jpg');
+    final mime = kind == 'video'
+        ? 'video/$ext'
+        : (ext == 'png' ? 'image/png' : 'image/jpeg');
+    final choose = await askSaveLocation(context, info: name);
+    if (choose == null) return; // 사용자 취소
+    try {
+      final (bytes, ct) = await _nas.fetchBytes(url);
+      if (!mounted) return;
+      final ok = await saveFileNamed(
+        bytes: bytes,
+        filename: name,
+        mime: ct.startsWith('image/') || ct.startsWith('video/') ? ct : mime,
+        choose: choose,
+      );
+      if (!mounted) return;
+      if (ok) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$name 저장을 시작했습니다')));
+      }
+    } catch (e) {
+      // 폴백: 프록시가 외부 다운로드를 처리하도록 기존 방식으로 연다.
+      try {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('다운로드 실패: $e')));
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = '${_cur['name']}';
@@ -3147,28 +3191,19 @@ class _MediaViewerState extends State<_MediaViewer> {
             tooltip: '다운로드',
             icon: const Icon(Icons.download),
             onPressed: () async {
-              final url = kind == 'video'
-                  ? _nas.eventFile2Url(
-                      widget.year,
-                      widget.title,
-                      'media',
-                      name,
-                      download: true,
-                      sub: widget.sub,
-                    )
-                  // 이미지: 원본 화질로 다운로드 (크롭/축소 없음)
-                  : _nas.eventFile2Url(
-                      widget.year,
-                      widget.title,
-                      'media',
-                      name,
-                      download: true,
-                      sub: widget.sub,
-                    );
-              await launchUrl(
-                Uri.parse(url),
-                mode: LaunchMode.externalApplication,
+              // 이미지·동영상 원본 화질로 다운로드 (크롭/축소 없음).
+              final url = _nas.eventFile2Url(
+                widget.year,
+                widget.title,
+                'media',
+                name,
+                download: true,
+                sub: widget.sub,
               );
+              // 요구: "사진 저장위치 선택창이 안나오니 이것도 조정해줘요".
+              //  · 위치 선택창을 띄운 뒤, 바이트를 직접 받아 지정 위치/기본 폴더에 저장.
+              //  · 실패하면 기존 방식(외부 앱 다운로드)으로 폴백.
+              await _saveMediaToChoosen(url, name, kind);
             },
           ),
           if (_canDelete)

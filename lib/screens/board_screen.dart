@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
+import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../services/output_formats.dart';
 import '../services/table_export.dart';
@@ -234,7 +235,8 @@ class _BoardScreenState extends State<BoardScreen> {
         '${((p['attachments'] as List?) ?? []).length}',
       ]);
     }
-    final title = '게시판'
+    final title =
+        '게시판'
         '${_filter == '전체' ? ' 전체' : ' · $_filter'} (${posts.length}건)';
     await showTsakOutputSheet(
       context,
@@ -1615,6 +1617,17 @@ class _BoardScreenState extends State<BoardScreen> {
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.pop(ctx),
               ),
+              actions: [
+                // 요구: 첨부도 **저장 위치를 골라** 저장(위치 선택창 노출).
+                IconButton(
+                  tooltip: '저장',
+                  icon: const Icon(Icons.download),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _saveAttachment(url, name, isImg: isImg);
+                  },
+                ),
+              ],
             ),
             Flexible(
               child: isImg
@@ -1657,6 +1670,40 @@ class _BoardScreenState extends State<BoardScreen> {
         ),
       ),
     );
+  }
+
+  /// 첨부 파일을 저장 위치를 골라 저장한다(요구: 위치 선택창 노출).
+  Future<void> _saveAttachment(
+    String url,
+    String name, {
+    required bool isImg,
+  }) async {
+    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : 'bin';
+    const imgMimes = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    };
+    final mime = isImg
+        ? (imgMimes[ext] ?? 'image/jpeg')
+        : 'application/octet-stream';
+    final choose = await askSaveLocation(context, info: name);
+    if (choose == null) return; // 취소
+    try {
+      final (bytes, ct) = await context.read<NasApi>().fetchBytes(url);
+      if (!mounted) return;
+      final ok = await saveFileNamed(
+        bytes: bytes,
+        filename: name,
+        mime: ct.isNotEmpty && ct != 'application/octet-stream' ? ct : mime,
+        choose: choose,
+      );
+      if (mounted && ok) _snack('$name 저장을 시작했습니다');
+    } catch (e) {
+      if (mounted) _snack('저장 실패: $e');
+    }
   }
 
   /// 이 게시글의 "전체 주소"를 만든다.

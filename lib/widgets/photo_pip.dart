@@ -293,14 +293,22 @@ class _PhotoPipState extends State<_PhotoPip> {
           'TSAK_${widget.number.isNotEmpty ? widget.number : widget.name}';
       if (!mounted) return;
 
-      // 웹: 다운로드 / 모바일: 저장(실패 시 공유 시트)
+      // 저장 위치·방법을 먼저 묻는다(공용 규칙) —
+      //   요구: "사진 저장위치 선택창이 안나오니 이것도 조정해줘요".
+      //   · [위치 직접 선택] → 폴더/파일명 지정(크롬·엣지·안드로이드·아이폰)
+      //   · [기본 폴더에 저장] → 다운로드(Downloads) 폴더로 바로 저장
+      final choose = await askSaveLocation(context, info: '$fname.png');
+      if (choose == null) return; // 사용자 취소
+      if (!mounted) return;
+
+      // 웹: 선택한 위치/기본 폴더로 저장 / 모바일: 시스템 저장(실패 시 공유 시트)
       try {
-        await saveBytes(
+        await saveFileNamed(
           bytes: png,
-          name: fname,
-          ext: 'png',
+          filename: '$fname.png',
           mime: 'image/png',
           mimeType: MimeType.png,
+          choose: choose,
         );
       } catch (_) {
         // 폴백: 임시 파일로 저장 후 공유 시트

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -635,6 +636,22 @@ class NasApi {
   }
 
   String photoUrl(String number) => '$_base/api/photo/$number';
+
+  /// 사진/동영상/첨부 파일의 실제 바이트를 프록시에서 받아온다.
+  ///   · 인증 쿠키가 유지되므로 launchUrl(externalApplication) 없이
+  ///     파일을 **직접 저장**(저장 위치 선택창 연동)할 수 있다.
+  ///   · 반환: (bytes, contentType) — 실패 시 예외.
+  Future<(Uint8List, String)> fetchBytes(String url) async {
+    final r = await http
+        .get(Uri.parse(url), headers: _authHeaders)
+        .timeout(const Duration(seconds: 120));
+    if (r.statusCode != 200 || r.bodyBytes.isEmpty) {
+      throw '다운로드 실패 (HTTP ${r.statusCode})';
+    }
+    var ct = r.headers['content-type'] ?? '';
+    if (ct.isEmpty) ct = 'application/octet-stream';
+    return (r.bodyBytes, ct);
+  }
 
   // ---- 재무 (Finance) ----
   Future<Map<String, dynamic>> fetchFinance() async {
