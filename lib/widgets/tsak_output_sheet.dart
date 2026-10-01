@@ -42,82 +42,102 @@ Future<void> showTsakOutputSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.ios_share, size: 18, color: AppColors.purple),
-                const SizedBox(width: 7),
-                Expanded(
+    builder: (ctx) {
+      // 시트를 먼저 닫은 뒤 동작을 실행한다(진행창·위치창을 가리지 않게).
+      void fire(VoidCallback? cb) {
+        Navigator.of(ctx).pop();
+        if (cb != null) cb();
+      }
+
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.ios_share,
+                    size: 18,
+                    color: AppColors.purple,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purpleDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (subtitle.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3, left: 25),
                   child: Text(
-                    title,
+                    subtitle,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.purpleDark,
+                      fontSize: 11.5,
+                      color: AppColors.textGray,
                     ),
                   ),
                 ),
-              ],
-            ),
-            if (subtitle.trim().isNotEmpty)
+              const SizedBox(height: 8),
               Padding(
-                padding: const EdgeInsets.only(top: 3, left: 25),
+                padding: const EdgeInsets.only(left: 25),
                 child: Text(
-                  subtitle,
+                  kTsakOutputRule,
                   style: const TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 10.5,
                     color: AppColors.textGray,
                   ),
                 ),
               ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 25),
-              child: Text(
-                kTsakOutputRule,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: AppColors.textGray,
+              const SizedBox(height: 12),
+              // ── 형식 카드(규칙 순서 고정) ──
+              if (onPick != null)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final f in kTsakOutputOrder)
+                      _FmtCard(f: f, onTap: () => fire(() => onPick(f))),
+                  ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // ── 형식 카드(규칙 순서 고정) ──
-            if (onPick != null)
+              const SizedBox(height: 14),
+              const Divider(height: 1),
+              const SizedBox(height: 10),
+              // ── 부가 동작: 인쇄 · 이메일 · 공유 ──
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final f in kTsakOutputOrder)
-                    _FmtCard(f: f, onTap: () => onPick(f)),
+                  if (onPrint != null)
+                    _act(Icons.print_outlined, '프린트', () => fire(onPrint)),
+                  if (onEmail != null)
+                    _act(Icons.email_outlined, '이메일', () => fire(onEmail)),
+                  if (onTxt != null)
+                    _act(Icons.notes_outlined, 'TXT', () => fire(onTxt)),
+                  if (onShareImage != null)
+                    _act(
+                      Icons.image_outlined,
+                      '이미지 공유',
+                      () => fire(onShareImage),
+                    ),
+                  if (onShareLink != null)
+                    _act(Icons.link, '링크 공유', () => fire(onShareLink)),
                 ],
               ),
-            const SizedBox(height: 14),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            // ── 부가 동작: 인쇄 · 이메일 · 공유 ──
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (onPrint != null) _act(Icons.print_outlined, '프린트', onPrint),
-                if (onEmail != null) _act(Icons.email_outlined, '이메일', onEmail),
-                if (onTxt != null) _act(Icons.notes_outlined, 'TXT', onTxt),
-                if (onShareImage != null)
-                  _act(Icons.image_outlined, '이미지 공유', onShareImage),
-                if (onShareLink != null) _act(Icons.link, '링크 공유', onShareLink),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
