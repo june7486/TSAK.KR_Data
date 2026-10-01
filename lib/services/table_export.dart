@@ -123,6 +123,14 @@ class TsakTableDoc {
   }
 }
 
+/// 저장 위치를 묻는다(호출부 공용).
+///
+/// 반환: false=기본 폴더 / true=위치 직접 선택 / null=취소.
+/// 진행 대기창을 열기 **이전**에 호출해서, 위치를 먼저 확정하도록 한다
+/// (요구: "저장위치 선택창이 안나오니 이것도 조정해줘요").
+Future<bool?> askTsakSaveLocation(BuildContext context, {String? info}) =>
+    askSaveLocation(context, info: info);
+
 /// 사용자에게 저장 방법(기본 폴더 / 위치 직접 선택)을 물어본 뒤 지정 형식으로 저장.
 ///
 /// 반환: 저장을 시작했으면 true, 취소했으면 false.
@@ -133,13 +141,40 @@ Future<bool> saveTsakTable(
   bool askLocation = true,
   VoidCallback? onStep,
 }) async {
-  bool? choose;
   if (askLocation) {
-    choose = await askSaveLocation(context);
+    final choose = await askSaveLocation(context);
     if (choose == null) return false; // 취소
-  } else {
-    choose = false;
+    if (!context.mounted) return false;
+    return saveTsakTableChosen(
+      context,
+      doc,
+      format,
+      choose: choose,
+      onStep: onStep,
+    );
   }
+  return saveTsakTableChosen(
+    context,
+    doc,
+    format,
+    choose: false,
+    onStep: onStep,
+  );
+}
+
+/// 저장 위치([choose])를 **이미 정한 상태**에서 문서를 만들어 저장한다.
+///
+/// 진행 대기창(task 콜백) **내부**에서 호출하기 좋다. 위치 선택창은 밖에서
+/// 미리 물어본다([askTsakSaveLocation]).
+/// - [choose]=false → 기기 기본(다운로드) 폴더로 저장.
+/// - [choose]=true  → 사용자가 고른 위치/앱으로 저장.
+Future<bool> saveTsakTableChosen(
+  BuildContext context,
+  TsakTableDoc doc,
+  TsakOutputFormat format, {
+  required bool choose,
+  VoidCallback? onStep,
+}) async {
   onStep?.call();
   final base = doc.baseName();
   switch (format) {
@@ -167,12 +202,9 @@ Future<bool> saveTsakTable(
       await _save(jpg, base, 'jpg', 'image/jpeg', choose);
       return true;
     case TsakOutputFormat.excel:
-      await saveText(
-        content: doc.toCsv(),
-        name: base,
-        ext: 'csv',
-        mime: 'text/csv',
-      );
+      // 규칙: excel 은 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 한다.
+      // 위치(choose)도 반드시 반영한다(기존 saveText 는 위치 무시 버그).
+      await _save(_csvBytes(doc.toCsv()), base, 'csv', 'text/csv', choose);
       return true;
     case TsakOutputFormat.ppt:
       await _save(
@@ -193,12 +225,8 @@ Future<bool> saveTsakTable(
       );
       return true;
     case TsakOutputFormat.txt:
-      await saveText(
-        content: doc.toPlainText(),
-        name: base,
-        ext: 'txt',
-        mime: 'text/plain',
-      );
+      // 위치(choose) 반영(기존 saveText 는 위치 무시 버그).
+      await _save(_bytes(doc.toPlainText()), base, 'txt', 'text/plain', choose);
       return true;
   }
 }
@@ -248,6 +276,10 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
 
 // ── 내부 헬퍼 ──
 Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
+
+/// CSV 는 맨 앞에 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 저장한다.
+Uint8List _csvBytes(String s) =>
+    Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(s)]);
 
 Future<void> _save(
   Uint8List bytes,

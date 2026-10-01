@@ -727,6 +727,22 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     );
     setState(() => _busyBuilding = true);
     try {
+      // 1) 저장 위치를 **진행창 이전에** 먼저 확정한다.
+      //    (요구: "저장위치 선택창이 안나오니 이것도 조정해줘요")
+      var choose = false;
+      if (!justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info: '$title · ${rows.length}명 · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return; // 취소 → 진행창을 열지 않는다
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      // 2) 진행창을 열고(최소 표시시간 보장) 파일을 만든다.
       await runWithTsakProgress(
         context,
         title: justPrint ? '명부 프린트 준비' : '명부 ${format.label} 생성',
@@ -747,7 +763,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
             message: '${format.label} 생성 중…',
             stepIndex: 1,
           );
-          await saveTsakTable(context, doc, format, askLocation: false);
+          await saveTsakTableChosen(context, doc, format, choose: choose);
           ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
         },
       );

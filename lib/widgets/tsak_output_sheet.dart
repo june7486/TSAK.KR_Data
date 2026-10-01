@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/output_formats.dart';
@@ -226,6 +228,10 @@ class TsakProgressController {
 /// [steps] 를 주면 체크리스트로 각 단계 완료를 표시하고, [task] 안에서
 /// [TsakProgressController.update] 로 진행률·메시지를 갱신한다.
 ///
+/// 창이 **반드시 눈에 보이도록** 두 가지를 보장한다:
+/// 1. 다이얼로그가 실제로 그려진 뒤에 [task] 를 시작한다.
+/// 2. [minDuration] 동안은 닫히지 않는다(빠른 작업에서도 창이 깜빡하고 사라지지 않음).
+///
 /// ```dart
 /// await runWithTsakProgress(
 ///   context,
@@ -242,6 +248,7 @@ Future<void> runWithTsakProgress(
   required String title,
   String note = '',
   List<String> steps = const [],
+  Duration minDuration = const Duration(milliseconds: 900),
   required Future<void> Function(TsakProgressController ctl) task,
 }) async {
   final notifier = ValueNotifier<TsakProgressState>(
@@ -249,21 +256,38 @@ Future<void> runWithTsakProgress(
   );
   final ctl = TsakProgressController._(notifier);
 
+  // 1) 창을 띄우고, 실제로 첫 프레임이 그려졌는지 확인할 때까지 기다린다.
+  final shown = Completer<void>();
   showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _ProgressDialog(
-      title: title,
-      note: note,
-      steps: steps,
-      notifier: notifier,
-    ),
+    builder: (_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!shown.isCompleted) shown.complete();
+      });
+      return _ProgressDialog(
+        title: title,
+        note: note,
+        steps: steps,
+        notifier: notifier,
+      );
+    },
   );
+  // 첫 프레임이 그려지면 진행(짧은 작업이라도 창이 화면에 뜬 뒤 실행되도록).
+  await shown.future.timeout(const Duration(seconds: 2), onTimeout: () {});
 
+  final started = DateTime.now();
   try {
     await task(ctl);
   } finally {
-    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    // 2) 최소 표시 시간을 보장한다(빠른 작업에서 창이 사라지기 전에 닫히지 않게).
+    final elapsed = DateTime.now().difference(started);
+    if (elapsed < minDuration) {
+      await Future<void>.delayed(minDuration - elapsed);
+    }
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
     notifier.dispose();
   }
 }

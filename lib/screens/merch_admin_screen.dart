@@ -3391,7 +3391,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     bool selectedOnly = false,
     bool justPrint = false,
   }) async {
-    setState(() => _ledgerBusy = true);
     final meta = _ledgerMeta();
     final doc = TsakTableDoc(
       title: justPrint ? '수품 판매대장' : '수품 판매대장${selectedOnly ? ' (선택)' : ''}',
@@ -3430,10 +3429,29 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       footerLeft: '한국범스카우트중앙회 수품',
       landscape: true,
     );
+    setState(() => _ledgerBusy = true);
     try {
+      // 1) 저장 위치를 **진행창 이전에** 먼저 확정한다.
+      //    (요구: "저장위치 선택창이 안나오니 이것도 조정해줘요")
+      var choose = false;
+      if (!justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info:
+              '수품 판매대장 · ${selectedOnly ? '선택 ${rows.length}건' : '전체 ${rows.length}건'} · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return; // 취소 → 진행창을 열지 않는다
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      // 2) 진행창을 열고(최소 표시시간 보장) 파일을 만든다.
       await runWithTsakProgress(
         context,
         title: justPrint ? '판매대장 프린트 준비' : '판매대장 ${format.label} 파일 생성',
+        note: '${rows.length}건을 처리합니다.',
         steps: justPrint
             ? const ['문서 구성', '인쇄 창 열기']
             : ['문서 구성', '${format.label} 생성', '파일 저장'],
@@ -3450,11 +3468,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             message: '${format.label} 생성 중…',
             stepIndex: 1,
           );
-          final saved = await saveTsakTable(
+          final saved = await saveTsakTableChosen(
             context,
             doc,
             format,
-            askLocation: false,
+            choose: choose,
           );
           if (saved) {
             ctl.update(progress: 1.0, message: '파일을 저장했습니다', stepIndex: 2);
