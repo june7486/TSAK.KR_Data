@@ -747,25 +747,18 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   Widget _tierTabs() {
-    // (요구#5) 첫 화면 로그인 위치 이동 — 사용 빈도순으로 재배치하여
-    //  관리자 로그인 탭을 맨 앞에서 뒤쪽으로 옮긴다.
-    //  범스카우트(다수) → 은하스카우트 → 비인가자 → 관리자 → 마스터(최소)
-    final row1 = [
+    // 첫 화면 로그인 위치 — 사용 빈도순으로 재배치하여 관리자 로그인 탭을
+    //  맨 앞에서 뒤쪽으로 옮긴다.
+    //  범스카우트(다수) → 비인가자 → 관리자 → 마스터(최소)  ※ 4개 버튼 단일 행.
+    //  ※ 은하스카우트는 **첫 화면 버튼에서 제외**한다(요구) — 관리자·마스터는
+    //     마스터 관리창 > '은하스카우트' 메뉴에서 별도 진입한다.
+    final tabs = [
       ('personal', '범스카우트', Icons.person),
-      ('eunha', '은하스카우트', Icons.groups),
-    ];
-    final row2 = [
       ('guest', '비인가자', Icons.person_outline),
       ('app', '관리자', Icons.admin_panel_settings),
       ('master', '마스터', Icons.workspace_premium),
     ];
-    return Column(
-      children: [
-        Row(children: [for (final t in row1) _tierChip(t)]),
-        const SizedBox(height: 6),
-        Row(children: [for (final t in row2) _tierChip(t)]),
-      ],
-    );
+    return Row(children: [for (final t in tabs) _tierChip(t)]);
   }
 
   Widget _tierChip((String, String, IconData) t) {
