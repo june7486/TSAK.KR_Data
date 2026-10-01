@@ -546,6 +546,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           return;
         case TsakOutputFormat.ppt:
         case TsakOutputFormat.word:
+        case TsakOutputFormat.txt:
           await Clipboard.setData(ClipboardData(text: _plainText(format)));
           _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
           return;

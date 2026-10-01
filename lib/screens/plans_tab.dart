@@ -969,6 +969,7 @@ class _PlansTabState extends State<PlansTab> {
           return;
         case TsakOutputFormat.ppt:
         case TsakOutputFormat.word:
+        case TsakOutputFormat.txt:
           await Clipboard.setData(ClipboardData(text: _plansPlainText(format)));
           _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
           return;

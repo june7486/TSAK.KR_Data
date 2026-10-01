@@ -431,6 +431,13 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           mime: 'application/msword',
         );
         return;
+      case TsakOutputFormat.txt:
+        await _saveText(
+          _plainText(TsakOutputFormat.txt),
+          '$base.txt',
+          mime: 'text/plain',
+        );
+        return;
     }
   }
 

@@ -14,11 +14,13 @@ import '../services/nas_api.dart';
 import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
+import '../services/table_export.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
+import '../widgets/tsak_output_sheet.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
 import 'supplies_screen.dart';
@@ -92,6 +94,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   String _ledgerMonth = '';
   String _ledgerKind = '';
   bool _ledgerLoading = false;
+  // 판매대장 복수선택 — 좌측 선택창에서 고른 행 그룹키
+  bool _ledgerSelMode = false;
+  final Set<String> _ledgerSel = {};
+  bool _ledgerBusy = false;
   late final TextEditingController _ledgerYearCtl = TextEditingController(
     text: _ledgerYear,
   );
@@ -2943,6 +2949,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           mime: 'application/msword',
         );
         return;
+      case TsakOutputFormat.txt:
+        await _saveText(_reportText(), '$base.txt', mime: 'text/plain');
+        return;
     }
   }
 
@@ -3285,6 +3294,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           mime: 'application/msword',
         );
         return;
+      case TsakOutputFormat.txt:
+        await _saveText(_ledgerText(), '$base.txt', mime: 'text/plain');
+        return;
     }
   }
 
@@ -3331,49 +3343,176 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     return buf.toString();
   }
 
-  /// 판매대장 출력 형식 선택 다이얼로그 (#14 규칙).
-  Future<void> _showLedgerOutputDialog() async {
-    if (_ledgerRows.isEmpty) {
-      _snack('출력할 판매대장이 없습니다');
+  /// 판매대장 출력 — 공용 깔끔 출력 시트(규칙 #14: PDF→JPG→엑셀→PPT→워드→TXT)
+  /// + 프린트 · 이메일 · 이미지 공유 · 링크 공유.
+  ///
+  /// [selectedOnly]=true 이면 좌측 선택창에서 고른 행만 출력한다.
+  Future<void> _showLedgerOutputSheet({bool selectedOnly = false}) async {
+    final rows = selectedOnly
+        ? _ledgerRows
+              .where((r) => _ledgerSel.contains(_ledgerRowKey(r)))
+              .toList()
+        : _ledgerRows;
+    if (rows.isEmpty) {
+      _snack(selectedOnly ? '선택된 항목이 없습니다' : '출력할 판매대장이 없습니다');
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('판매대장 출력 형식'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 12),
-            TsakOutputBar(
-              onFormat: (f) {
-                Navigator.pop(ctx);
-                _printLedger(format: f);
-              },
-              onShareImage: () {
-                Navigator.pop(ctx);
-                _printLedger(format: TsakOutputFormat.jpg);
-              },
-              onShareLink: () {
-                Navigator.pop(ctx);
-                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
+    final label = selectedOnly
+        ? '${_ledgerLabel()} · 선택 ${rows.length}건'
+        : '${_ledgerLabel()} · ${rows.length}건';
+    final title = selectedOnly ? '판매대장 (선택 출력)' : '수품 판매대장';
+    await showTsakOutputSheet(
+      context,
+      title: title,
+      subtitle: label,
+      onPick: (f) =>
+          _runLedgerOutput(f, rows: rows, selectedOnly: selectedOnly),
+      onPrint: () => _runLedgerOutput(
+        TsakOutputFormat.pdf,
+        rows: rows,
+        selectedOnly: selectedOnly,
+        justPrint: true,
       ),
+      onEmail: () => _emailLedgerRows(rows),
+      onShareImage: () => _runLedgerOutput(
+        TsakOutputFormat.jpg,
+        rows: rows,
+        selectedOnly: selectedOnly,
+      ),
+      onShareLink: () =>
+          showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
+  }
+
+  /// 판매대장을 지정 형식으로 출력(선택/전체 공용) — 실시간 진행 대기창 포함.
+  Future<void> _runLedgerOutput(
+    TsakOutputFormat format, {
+    required List<Map<String, dynamic>> rows,
+    bool selectedOnly = false,
+    bool justPrint = false,
+  }) async {
+    setState(() => _ledgerBusy = true);
+    final meta = _ledgerMeta();
+    final doc = TsakTableDoc(
+      title: justPrint ? '수품 판매대장' : '수품 판매대장${selectedOnly ? ' (선택)' : ''}',
+      subtitle: '한국범스카우트중앙회 · ${_ledgerLabel()}',
+      description: '주문·예약 통합 장부입니다. 상태와 입금 여부를 함께 표기합니다.',
+      author: _whoName(),
+      extra: {
+        '조회기간': _ledgerLabel(),
+        '대상': selectedOnly ? '선택 ${rows.length}건' : '전체 ${rows.length}건',
+        if (meta.extra['주문/예약'] != null) '주문/예약': meta.extra['주문/예약']!,
+      },
+      columns: const ['#', '구분', '주문번호', '주문자', '상품', '수량', '금액', '상태', '입금'],
+      rows: [
+        for (var i = 0; i < rows.length; i++)
+          [
+            '${i + 1}',
+            (rows[i]['_kind'] ?? rows[i]['kind'] ?? '').toString(),
+            (rows[i]['orderNo'] ?? '').toString(),
+            (rows[i]['buyerName'] ?? rows[i]['name'] ?? '').toString(),
+            (rows[i]['product'] ?? '').toString(),
+            '${(rows[i]['qty'] as num?)?.toInt() ?? 1}',
+            _won(
+              ((rows[i]['grandTotal'] ??
+                              rows[i]['total'] ??
+                              rows[i]['amount'] ??
+                              0)
+                          as num?)
+                      ?.toInt() ??
+                  0,
+            ),
+            (rows[i]['status'] ?? '').toString(),
+            rows[i]['paid'] == true ? '입금완료' : '미입금',
+          ],
+      ],
+      summary: _ledgerSummaryLines(rows),
+      footerLeft: '한국범스카우트중앙회 수품',
+      landscape: true,
+    );
+    try {
+      await runWithTsakProgress(
+        context,
+        title: justPrint ? '판매대장 프린트 준비' : '판매대장 ${format.label} 파일 생성',
+        steps: justPrint
+            ? const ['문서 구성', '인쇄 창 열기']
+            : ['문서 구성', '${format.label} 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(progress: 0.15, message: '문서를 구성하는 중…', stepIndex: 0);
+          if (justPrint) {
+            ctl.update(progress: 0.6, message: '인쇄 창을 여는 중…', stepIndex: 1);
+            await printTsakTable(doc);
+            ctl.update(progress: 1.0, stepIndex: 2);
+            return;
+          }
+          ctl.update(
+            progress: 0.5,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
+          final saved = await saveTsakTable(
+            context,
+            doc,
+            format,
+            askLocation: false,
+          );
+          if (saved) {
+            ctl.update(progress: 1.0, message: '파일을 저장했습니다', stepIndex: 2);
+          } else {
+            ctl.update(progress: 1.0, message: '저장이 취소되었습니다', stepIndex: 2);
+          }
+        },
+      );
+      if (mounted)
+        _snack(justPrint ? '인쇄 창을 열었습니다' : '${format.label} 저장을 시작했습니다');
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _ledgerBusy = false);
+    }
+  }
+
+  List<String> _ledgerSummaryLines(List<Map<String, dynamic>> rows) {
+    int amt(Map<String, dynamic> x) =>
+        (x['grandTotal'] ?? x['total'] ?? x['amount'] ?? 0) is num
+        ? ((x['grandTotal'] ?? x['total'] ?? x['amount'] ?? 0) as num).toInt()
+        : 0;
+    final total = rows.fold<int>(0, (p, r) => p + amt(r));
+    final order = rows.where((r) => (r['_kind'] ?? '') == '주문').length;
+    final reserve = rows.where((r) => (r['_kind'] ?? '') == '예약').length;
+    final paid = rows.where((r) => r['paid'] == true).length;
+    return [
+      '합계 ${_won(total)}',
+      '주문 $order · 예약 $reserve',
+      '입금 $paid / 미입금 ${order - paid}',
+    ];
+  }
+
+  /// 판매대장을 메일 본문으로(선택/전체 일반화).
+  Future<void> _emailLedgerRows(List<Map<String, dynamic>> rows) async {
+    final doc = TsakTableDoc(
+      title: '수품 판매대장 (${_ledgerLabel()})',
+      subtitle: '한국범스카우트중앙회',
+      columns: const ['#', '구분', '주문번호', '주문자', '상품', '금액', '상태'],
+      rows: [
+        for (var i = 0; i < rows.length; i++)
+          [
+            '${i + 1}',
+            (rows[i]['_kind'] ?? '').toString(),
+            (rows[i]['orderNo'] ?? '').toString(),
+            (rows[i]['buyerName'] ?? '').toString(),
+            (rows[i]['product'] ?? '').toString(),
+            _won(
+              ((rows[i]['grandTotal'] ?? rows[i]['total'] ?? 0) as num?)
+                      ?.toInt() ??
+                  0,
+            ),
+            (rows[i]['status'] ?? '').toString(),
+          ],
+      ],
+      summary: _ledgerSummaryLines(rows),
+    );
+    await emailTsakTable(context, doc);
   }
 
   /// 판매대장을 메일로 발송.
@@ -3637,7 +3776,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     ),
                     onPressed: _ledgerRows.isEmpty
                         ? null
-                        : _showLedgerOutputDialog,
+                        : () => _showLedgerOutputSheet(selectedOnly: false),
                     icon: const Icon(Icons.print_outlined, size: 16),
                     label: const Text('출력(형식)'),
                   ),
@@ -3678,19 +3817,264 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
-        else if (_ledgerRows.isEmpty)
-          _sectionBox('판매대장', [
-            const Text(
-              '조회된 내역이 없습니다.',
-              style: TextStyle(color: AppColors.textGray),
-            ),
-          ])
         else
-          _sectionBox('판매대장 (${_ledgerRows.length}건)', [
-            for (final row in _ledgerRows) _ledgerRow(row),
-          ]),
+          LayoutBuilder(
+            builder: (ctx, c) {
+              final wide = c.maxWidth >= 720;
+              final left = _ledgerSelectPanel();
+              final right = _ledgerListPanel();
+              if (wide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(width: 260, child: left),
+                    const SizedBox(width: 12),
+                    Expanded(child: right),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [left, const SizedBox(height: 12), right],
+              );
+            },
+          ),
       ],
     );
+  }
+
+  /// 판매대장 그룹키 — 주문/예약 항목의 표시 그룹(합쳐진 주문은 번들키).
+  String _ledgerRowKey(Map<String, dynamic> row) => _groupKeyOf(row);
+
+  /// 좌측 「선택 창」 — 판매대장 복수선택 + 일괄 삭제 + 선택/모두 출력.
+  Widget _ledgerSelectPanel() {
+    final orderCnt = _ledgerRows
+        .where((r) => (r['_kind'] ?? '') == '주문')
+        .length;
+    final resCnt = _ledgerRows.where((r) => (r['_kind'] ?? '') == '예약').length;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.checklist, size: 16, color: AppColors.purple),
+              const SizedBox(width: 5),
+              const Text(
+                '선택 창',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: AppColors.purpleDark,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_ledgerSel.length}건 선택',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purpleDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '주문 $orderCnt · 예약 $resCnt',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+              Switch.adaptive(
+                value: _ledgerSelMode,
+                onChanged: (v) => setState(() {
+                  _ledgerSelMode = v;
+                  if (!v) _ledgerSel.clear();
+                }),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          Row(
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                onPressed: _ledgerRows.isEmpty
+                    ? null
+                    : () => setState(() {
+                        _ledgerSelMode = true;
+                        _ledgerSel
+                          ..clear()
+                          ..addAll(_ledgerRows.map(_ledgerRowKey));
+                      }),
+                child: const Text('전체선택', style: TextStyle(fontSize: 11.5)),
+              ),
+              const Spacer(),
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                onPressed: _ledgerSel.isEmpty
+                    ? null
+                    : () => setState(_ledgerSel.clear),
+                child: const Text('선택 해제', style: TextStyle(fontSize: 11.5)),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          // ── 일괄 실행: 삭제 / 선택 출력 / 모두 출력 ──
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: (_ledgerSel.isEmpty || _ledgerBusy)
+                  ? null
+                  : _ledgerDeleteSelected,
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text(
+                '선택 삭제',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.purpleDark,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                side: BorderSide(
+                  color: AppColors.purple.withValues(alpha: 0.35),
+                ),
+              ),
+              onPressed: (_ledgerSel.isEmpty || _ledgerBusy)
+                  ? null
+                  : () => _showLedgerOutputSheet(selectedOnly: true),
+              icon: const Icon(Icons.print_outlined, size: 16),
+              label: const Text(
+                '선택 명단 출력',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.purple,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: (_ledgerRows.isEmpty || _ledgerBusy)
+                  ? null
+                  : () => _showLedgerOutputSheet(selectedOnly: false),
+              icon: const Icon(Icons.ios_share, size: 16),
+              label: const Text(
+                '모두 출력 (형식)',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          if (_ledgerBusy) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(),
+            const SizedBox(height: 4),
+            const Text(
+              '처리 중입니다…',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.purpleDark,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 우측 — 판매대장 목록(선택 모드면 체크박스 노출).
+  Widget _ledgerListPanel() {
+    if (_ledgerRows.isEmpty) {
+      return _sectionBox('판매대장', [
+        const Text(
+          '조회된 내역이 없습니다.',
+          style: TextStyle(color: AppColors.textGray),
+        ),
+      ]);
+    }
+    return _sectionBox('판매대장 (${_ledgerRows.length}건)', [
+      for (final row in _ledgerRows)
+        if (!_ledgerSelMode)
+          _ledgerRow(row)
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Checkbox(
+                  value: _ledgerSel.contains(_ledgerRowKey(row)),
+                  visualDensity: VisualDensity.compact,
+                  onChanged: (_) => setState(() {
+                    final k = _ledgerRowKey(row);
+                    if (_ledgerSel.contains(k)) {
+                      _ledgerSel.remove(k);
+                    } else {
+                      _ledgerSel.add(k);
+                    }
+                  }),
+                ),
+              ),
+              Expanded(child: _ledgerRow(row)),
+            ],
+          ),
+    ]);
+  }
+
+  /// 판매대장 선택분 일괄 삭제(소프트삭제 → 삭제주문 탭에서 복원 가능).
+  Future<void> _ledgerDeleteSelected() async {
+    if (_ledgerSel.isEmpty) return;
+    final yes = await _confirm(
+      '판매대장 삭제',
+      '선택한 ${_ledgerSel.length}건을 삭제할까요?\n'
+          '삭제 후 30일간 보관되며 「삭제주문」 탭에서 복원할 수 있습니다.',
+    );
+    if (yes != true) return;
+    setState(() => _ledgerBusy = true);
+    try {
+      final r = await _nas.merchOrdersDelete(_ledgerSel.toList());
+      if (!mounted) return;
+      if (r['ok'] == true) {
+        _snack('${r['count']}항목을 삭제했습니다 (30일 보관)');
+        setState(() => _ledgerSel.clear());
+        await _loadLedger();
+      } else {
+        _snack('삭제 실패: ${r['error']}');
+      }
+    } finally {
+      if (mounted) setState(() => _ledgerBusy = false);
+    }
   }
 
   Widget _ledgerRow(Map<String, dynamic> row) {
@@ -4164,6 +4548,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           _stockPlainText(stock, format),
           '$base.doc',
           mime: 'application/msword',
+        );
+        return;
+      case TsakOutputFormat.txt:
+        await _saveText(
+          _stockPlainText(stock, TsakOutputFormat.txt),
+          '$base.txt',
+          mime: 'text/plain',
         );
         return;
     }
@@ -4642,6 +5033,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           _donationPlainText(format),
           '$base.doc',
           mime: 'application/msword',
+        );
+        return;
+      case TsakOutputFormat.txt:
+        await _saveText(
+          _donationPlainText(TsakOutputFormat.txt),
+          '$base.txt',
+          mime: 'text/plain',
         );
         return;
     }
@@ -6046,6 +6444,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           _makerPlainText(format),
           '$base.doc',
           mime: 'application/msword',
+        );
+        return;
+      case TsakOutputFormat.txt:
+        await _saveText(
+          _makerPlainText(TsakOutputFormat.txt),
+          '$base.txt',
+          mime: 'text/plain',
         );
         return;
     }

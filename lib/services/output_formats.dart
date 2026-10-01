@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 
-/// 출력 형식 — 프로젝트 규칙(#14): **PDF → JPG → 엑셀 → PPT → 워드** 순서.
-enum TsakOutputFormat { pdf, jpg, excel, ppt, word }
+/// 출력 형식 — 프로젝트 규칙(#14): **PDF → JPG → 엑셀 → PPT → 워드 → TXT** 순서.
+enum TsakOutputFormat { pdf, jpg, excel, ppt, word, txt }
 
 extension TsakOutputFormatX on TsakOutputFormat {
   String get label => switch (this) {
@@ -13,6 +13,7 @@ extension TsakOutputFormatX on TsakOutputFormat {
     TsakOutputFormat.excel => '엑셀',
     TsakOutputFormat.ppt => 'PPT',
     TsakOutputFormat.word => '워드',
+    TsakOutputFormat.txt => 'TXT',
   };
 
   IconData get icon => switch (this) {
@@ -21,17 +22,32 @@ extension TsakOutputFormatX on TsakOutputFormat {
     TsakOutputFormat.excel => Icons.grid_on_outlined,
     TsakOutputFormat.ppt => Icons.slideshow_outlined,
     TsakOutputFormat.word => Icons.description_outlined,
+    TsakOutputFormat.txt => Icons.notes_outlined,
+  };
+
+  /// 저장 파일 확장자(엑셀은 범용 호환 위해 CSV, 워드는 DOC).
+  String get ext => switch (this) {
+    TsakOutputFormat.pdf => 'pdf',
+    TsakOutputFormat.jpg => 'jpg',
+    TsakOutputFormat.excel => 'csv',
+    TsakOutputFormat.ppt => 'ppt',
+    TsakOutputFormat.word => 'doc',
+    TsakOutputFormat.txt => 'txt',
   };
 }
 
-/// 규칙 순서(고정): pdf → jpg → 엑셀 → ppt → 워드.
+/// 규칙 순서(고정): pdf → jpg → 엑셀 → ppt → 워드 → txt.
 const List<TsakOutputFormat> kTsakOutputOrder = [
   TsakOutputFormat.pdf,
   TsakOutputFormat.jpg,
   TsakOutputFormat.excel,
   TsakOutputFormat.ppt,
   TsakOutputFormat.word,
+  TsakOutputFormat.txt,
 ];
+
+/// 규칙 순서 안내 문구(모든 출력 다이얼로그 공통).
+const String kTsakOutputRule = '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드 → TXT';
 
 /// 출력 형식 버튼 바 — 모든 출력 화면 우측/하단에 동일 규칙으로 배치.
 /// 마지막에 '이미지 공유'·'링크 공유'를 함께 제공한다.
