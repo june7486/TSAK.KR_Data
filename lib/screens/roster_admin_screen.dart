@@ -468,15 +468,18 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   // ---- 2/3. 멘토 대장 · 페런츠 명부 ----
   Widget _linkTable(AppState state, String kind) {
     final list = _linkProfiles(kind);
-    final headers = ['#', '범인가번호', '이름', '연락처', '소속'];
+    final headers = ['#', '범인가번호', '이름', '연락처', '아이디', '소속'];
     final rows = <List<Widget>>[];
     for (var i = 0; i < list.length; i++) {
       final prof = list[i].value;
+      // 자동생성 아이디(수품구매시 입력한 인적사항의 전화번호 기반).
+      final loginId = '${prof['loginId'] ?? ''}'.trim();
       rows.add([
         _t('${i + 1}'),
         _receiverCell(prof),
         _t('${prof['name'] ?? ''}', bold: true),
         _t('${prof['phone'] ?? ''}'),
+        _t(loginId.isEmpty ? '—' : loginId),
         _t(_org('${prof['league'] ?? ''}', '${prof['unit'] ?? ''}')),
       ]);
     }

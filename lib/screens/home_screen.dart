@@ -82,6 +82,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // 승인관리 대기 배지(비인가회원·행사·연회비·평생 등 통합)
   int _approvalUnread = 0;
 
+  /// 승인 대기 **총 건수** — 요구: "승인대기중인 사람들이 있을 경우 원형단추 숫자".
+  /// 이미 승인화면을 열어 확인했더라도, 대기자가 남아 있으면 숫자를 유지한다.
+  int _approvalTotal = 0;
+
   /// 승인요청 실시간 감시 타이머 — 승인 요청이 오면 원형 숫자 배지를
   /// 자동 갱신한다(관리자·마스터). (요구: "승인 요청이 오면 원형단추 숫자로 표시")
   Timer? _approvalTimer;
@@ -122,12 +126,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 승인관리 대기 총 건수 배지 로드(관리자·마스터).
-  /// 해당 아이디가 '확인'하지 않은 항목만 배지로 표시한다.
+  /// 배지 숫자 = **대기 총건수**(미확인 건수가 있으면 그 값 우선).
+  ///  · 요구: "승인대기중인 사람들이 있을 경우 원형단추 숫자" → 대기자가 있으면 유지.
+  ///  · 새 요청 도착 감지는 미확인(unread) 증가로 판단해 스낵바로 안내한다.
   Future<void> _loadApprovalBadge({bool poll = false}) async {
     final state = context.read<AppState>();
     if (!(state.isApp || state.isMaster)) return;
     try {
       final n = await state.fetchApprovalUnread();
+      final total = await state.fetchApprovalPendingTotal();
       if (!mounted) return;
       // 새 승인요청 도착 → 조용히 안내(팝업 대신 스낵바).
       if (poll && n > _prevApprovalUnread && _prevApprovalUnread >= 0) {
@@ -143,10 +150,15 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       setState(() {
         _approvalUnread = n;
+        _approvalTotal = total;
         _prevApprovalUnread = n;
       });
     } catch (_) {}
   }
+
+  /// 배지에 표시할 숫자 — 대기 총건수(미확인 우선).
+  int get _approvalBadgeCount =>
+      _approvalUnread > 0 ? _approvalUnread : _approvalTotal;
 
   /// 관리자 이상 알림(게시판 새 글 등) 미확인 건수 로드.
   Future<void> _loadBoardUnread() async {
@@ -1950,8 +1962,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 9 이상이면 '9+'. 탭하면 통합승인관리 화면으로 이동한다.
   Widget _approvalBadgeDot({double size = 18}) {
     final state = context.watch<AppState>();
-    final n = _approvalUnread > 0
-        ? _approvalUnread
+    final n = _approvalBadgeCount > 0
+        ? _approvalBadgeCount
         : state.pendingApprovalCount;
     if (n <= 0) return const SizedBox.shrink();
     return Positioned(
@@ -2006,8 +2018,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _approvalButton() {
     final state = context.watch<AppState>();
-    final n = _approvalUnread > 0
-        ? _approvalUnread
+    final n = _approvalBadgeCount > 0
+        ? _approvalBadgeCount
         : state.pendingApprovalCount;
     return Padding(
       padding: const EdgeInsets.only(right: 6),
@@ -2050,8 +2062,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 우상단 붉은 원형 숫자 배지 포함(관리자·마스터).
   Widget _linkApprovalButton() {
     final state = context.watch<AppState>();
-    final n = _approvalUnread > 0
-        ? _approvalUnread
+    final n = _approvalBadgeCount > 0
+        ? _approvalBadgeCount
         : state.pendingApprovalCount;
     return Padding(
       padding: const EdgeInsets.only(right: 6),
