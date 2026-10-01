@@ -13,7 +13,9 @@ import '../widgets/tsak_app_bar.dart';
 /// ## 연맹별 분포 (신분 탭)
 ///   상단 버튼으로 신분 전환: (범스카우트) / (멘토) / (멘티) / (서포터즈-일반)
 ///   모든 분포는 **동일한 정렬 기준**을 사용한다:
-///     ① 인가자순  ② 권역통합  ③ 가나다
+///     ① 인가자순  ② 광역통합  ③ 광역대통합  ④ 가나다
+///   광역통합   = 도·광역시 단위(서울/광주/전남/부산/울산/경남/인천/경기/…)
+///   광역대통합 = 인접 광역 통합(서울/경기/인천/부산·울산·경남/대구·경북/…)
 ///   가나다 정렬은 종교 연맹(가톨릭 → 원불교 → 기독교)을 지정 순서대로 맨 뒤에 둔다.
 ///
 /// ## 집계 기준
@@ -40,7 +42,7 @@ class _StatsScreenState extends State<StatsScreen> {
   ///   현재활동 데이터가 없으면 인가시 정보로 자동 폴백한다.
   int _basis = 0;
 
-  /// 분포별 정렬 모드: 0=인가자순, 1=권역통합, 2=가나다.
+  /// 분포별 정렬 모드: 0=인가자순, 1=광역통합, 2=광역대통합, 3=가나다.
   ///   key: gap0..gap3(신분 탭), mentor, parent, supporter.
   final Map<String, int> _sortMode = {
     'gap0': 0,
@@ -183,12 +185,14 @@ class _StatsScreenState extends State<StatsScreen> {
     return _finalize(map);
   }
 
-  /// 정렬 적용 — 0=인가자순(그대로) / 1=권역통합 / 2=가나다(종교연맹 후순위).
+  /// 정렬 적용 — 0=인가자순(그대로) / 1=광역통합 / 2=광역대통합 / 3=가나다.
   Map<String, int> _sortDist(Map<String, int> src, int mode) {
     switch (mode) {
       case 1:
-        return _groupByRegion(src);
+        return _groupByRegion(src, RegionScope.integrated);
       case 2:
+        return _groupByRegion(src, RegionScope.grand);
+      case 3:
         return _sortByName(src);
       default:
         return src;
@@ -279,8 +283,9 @@ class _StatsScreenState extends State<StatsScreen> {
           ],
           _sectionTitle('연간회비 납부 현황'),
           ...feeYears.map((y) {
-            final paid =
-                state.members.where((m) => m.feeYears[y] == true).length;
+            final paid = state.members
+                .where((m) => m.feeYears[y] == true)
+                .length;
             final total = state.total;
             return _feeRow(y, paid, total);
           }),
@@ -310,26 +315,40 @@ class _StatsScreenState extends State<StatsScreen> {
     return {for (final e in entries) e.key: e.value};
   }
 
-  /// 권역(광역) 통합 → 인원 많은 순.
+  /// 광역(권역) 통합 — 요구 표기 순서(지리 권역 먼저, 종교 연맹은 맨 뒤).
   ///   라벨은 "권역명\n(구성 연맹 나열)" 형식. '(미지정)'은 항상 마지막.
-  Map<String, int> _groupByRegion(Map<String, int> src) {
+  ///   [scope] = integrated(도·광역시 단위) | grand(인접 광역 통합).
+  Map<String, int> _groupByRegion(Map<String, int> src, RegionScope scope) {
     final sums = <String, int>{};
     final parts = <String, List<String>>{};
     for (final e in src.entries) {
       if (e.key == '(미지정)') continue;
-      final region = leagueRegion(e.key).isEmpty ? e.key : leagueRegion(e.key);
-      sums[region] = (sums[region] ?? 0) + e.value;
-      final list = parts.putIfAbsent(region, () => []);
+      final region = leagueRegion(e.key, scope: scope);
+      final r = region.isEmpty ? e.key : region;
+      sums[r] = (sums[r] ?? 0) + e.value;
+      final list = parts.putIfAbsent(r, () => []);
       if (!list.contains(e.key)) list.add(e.key);
     }
+    // 구성 연맹명도 인원 많은 순으로 정렬해 라벨 가독성 확보.
+    for (final list in parts.values) {
+      list.sort((a, b) => (src[b] ?? 0).compareTo(src[a] ?? 0));
+    }
     final hasUnassigned = src.containsKey('(미지정)');
-    final ordered = sums.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    // 요구 표기 순서 기준 정렬(순서 목록에 없으면 인원 많은 순 → 이름순).
+    final ordered = sums.keys.toList()
+      ..sort((a, b) {
+        final ia = regionOrderIndex(a, scope);
+        final ib = regionOrderIndex(b, scope);
+        if (ia != ib) return ia.compareTo(ib);
+        final ca = sums[a] ?? 0, cb = sums[b] ?? 0;
+        if (ca != cb) return cb.compareTo(ca);
+        return a.compareTo(b);
+      });
     final out = <String, int>{};
-    for (final e in ordered) {
-      final ps = parts[e.key] ?? const [];
+    for (final region in ordered) {
+      final ps = parts[region] ?? const [];
       final sub = ps.length > 1 ? '(${ps.join(' + ')})' : null;
-      out[sub == null ? e.key : '${e.key}\n$sub'] = e.value;
+      out[sub == null ? region : '$region\n$sub'] = sums[region]!;
     }
     if (hasUnassigned) out['(미지정)'] = src['(미지정)']!;
     return out;
@@ -364,7 +383,9 @@ class _StatsScreenState extends State<StatsScreen> {
           showSelectedIcon: false,
           style: const ButtonStyle(
             visualDensity: VisualDensity(horizontal: -3, vertical: -2),
-            padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 2)),
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 2),
+            ),
           ),
           onSelectionChanged: (s) => setState(() => _gap = s.first),
         ),
@@ -416,7 +437,8 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  /// 정렬 탭 — 인가자순 / 권역통합 / 가나다. [key]별로 독립적으로 유지된다.
+  /// 정렬 탭 — 인가자순 / 광역통합 / 광역대통합 / 가나다.
+  /// [key]별로 독립적으로 유지된다.
   Widget _distTabs(String key) {
     final cur = _sortMode[key] ?? 0;
     return Padding(
@@ -427,24 +449,30 @@ class _StatsScreenState extends State<StatsScreen> {
           segments: const [
             ButtonSegment(
               value: 0,
-              label: Text('인가자순', style: TextStyle(fontSize: 12.5)),
+              label: Text('인가자순', style: TextStyle(fontSize: 11.5)),
             ),
             ButtonSegment(
               value: 1,
-              label: Text('권역통합', style: TextStyle(fontSize: 12.5)),
+              label: Text('광역통합', style: TextStyle(fontSize: 11.5)),
             ),
             ButtonSegment(
               value: 2,
-              label: Text('가나다', style: TextStyle(fontSize: 12.5)),
+              label: Text('광역대통합', style: TextStyle(fontSize: 11.5)),
+            ),
+            ButtonSegment(
+              value: 3,
+              label: Text('가나다', style: TextStyle(fontSize: 11.5)),
             ),
           ],
           selected: {cur},
           showSelectedIcon: false,
           style: const ButtonStyle(
             visualDensity: VisualDensity(horizontal: -3, vertical: -2),
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 2),
+            ),
           ),
-          onSelectionChanged: (s) =>
-              setState(() => _sortMode[key] = s.first),
+          onSelectionChanged: (s) => setState(() => _sortMode[key] = s.first),
         ),
       ),
     );
@@ -556,8 +584,11 @@ class _StatsScreenState extends State<StatsScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.privacy_tip,
-                        color: AppColors.purple, size: 18),
+                    const Icon(
+                      Icons.privacy_tip,
+                      color: AppColors.purple,
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     const Text(
                       '개인정보 동의 현황',
@@ -595,8 +626,9 @@ class _StatsScreenState extends State<StatsScreen> {
                   minHeight: 8,
                   borderRadius: BorderRadius.circular(6),
                   backgroundColor: AppColors.taegeukRed.withValues(alpha: 0.15),
-                  valueColor:
-                      const AlwaysStoppedAnimation(AppColors.scoutGreen),
+                  valueColor: const AlwaysStoppedAnimation(
+                    AppColors.scoutGreen,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -687,7 +719,11 @@ class _StatsScreenState extends State<StatsScreen> {
             const Divider(height: 24),
             const Row(
               children: [
-                Icon(Icons.verified_user, size: 16, color: AppColors.scoutGreen),
+                Icon(
+                  Icons.verified_user,
+                  size: 16,
+                  color: AppColors.scoutGreen,
+                ),
                 SizedBox(width: 6),
                 Text(
                   '연결 승인 현황',
@@ -705,8 +741,16 @@ class _StatsScreenState extends State<StatsScreen> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                _statusChip('승인', state.linkApprovedCount, AppColors.scoutGreen),
-                _statusChip('미승인', state.linkPendingCount, AppColors.taegeukRed),
+                _statusChip(
+                  '승인',
+                  state.linkApprovedCount,
+                  AppColors.scoutGreen,
+                ),
+                _statusChip(
+                  '미승인',
+                  state.linkPendingCount,
+                  AppColors.taegeukRed,
+                ),
                 _statusChip('보류', state.linkHeldCount, AppColors.tigerGold),
                 _statusChip('미설정', state.linkUnsetCount, AppColors.textGray),
               ],
@@ -828,16 +872,16 @@ class _StatsScreenState extends State<StatsScreen> {
       Container(width: 1, height: 46, color: Colors.grey.shade200);
 
   Widget _sectionTitle(String t) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-        child: Text(
-          t,
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: AppColors.textDark,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+    child: Text(
+      t,
+      style: const TextStyle(
+        fontWeight: FontWeight.w800,
+        fontSize: 15,
+        color: AppColors.textDark,
+      ),
+    ),
+  );
 
   /// 라벨 칸 너비 — **탭/행과 무관하게 항상 고정**.
   ///   정렬(인가자순·권역통합·가나다) 전환 시에도 막대 시작 x좌표가 동일해진다.
