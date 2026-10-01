@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 
 import '../models/member.dart';
+import 'xls_format_reader.dart';
 import 'xlsx_reader.dart';
 
 /// 문서(엑셀/CSV/TSV/텍스트/JSON) → 인가자 목록 자동 인식 파서
@@ -44,9 +45,8 @@ class ImportParser {
   static List<Member> parse(String filename, Uint8List bytes) {
     final lower = filename.toLowerCase();
     if (lower.endsWith('.json')) return _parseJson(bytes);
-    if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
-      return _parseExcel(bytes);
-    }
+    if (lower.endsWith('.xlsx')) return _parseXlsx(bytes);
+    if (lower.endsWith('.xls')) return _parseXls(bytes);
     // csv / tsv / txt
     return _parseText(bytes, tsv: lower.endsWith('.tsv'));
   }
@@ -69,7 +69,7 @@ class ImportParser {
     }
   }
 
-  static List<Member> _parseExcel(Uint8List bytes) {
+  static List<Member> _parseXlsx(Uint8List bytes) {
     // 1) 견고한 자체 파서(archive+xml) 우선 — 절대경로 rels 를 쓰는 정상 xlsx 도 처리.
     final sheets = XlsxReader.read(bytes);
     if (sheets != null && sheets.isNotEmpty) {
@@ -95,6 +95,25 @@ class ImportParser {
     } catch (_) {
       return [];
     }
+  }
+
+  /// 구형 .xls(BIFF8) — 벤더링한 OLE2/BIFF 리더로 파싱.
+  ///
+  /// 실패 시 대비: 확장자만 .xls 인 xlsx/텍스트(웹 내보내기 등)도 처리한다.
+  static List<Member> _parseXls(Uint8List bytes) {
+    final sheets = XlsFormatReader.read(bytes);
+    if (sheets != null && sheets.isNotEmpty) {
+      final out = <Member>[];
+      for (final sheet in sheets) {
+        out.addAll(_rowsToMembers(sheet.rows));
+      }
+      if (out.isNotEmpty) return out;
+    }
+    // 대체 1: 실제로는 xlsx(zip)인 경우.
+    final xlsx = _parseXlsx(bytes);
+    if (xlsx.isNotEmpty) return xlsx;
+    // 대체 2: 실제로는 구분자 텍스트인 경우.
+    return _parseText(bytes);
   }
 
   /// 2차원 문자열 격자 → 인가자 목록(헤더 추론 + 관례 순서 폴백).

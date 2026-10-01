@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsak_credential_manager/services/import_parser.dart';
+import 'package:tsak_credential_manager/services/xls_format_reader.dart';
 import 'package:tsak_credential_manager/services/xlsx_reader.dart';
 
 /// 회귀 테스트 — "엑셀파일을 첨부하면 인식을 못함" 재발 방지.
@@ -58,5 +59,21 @@ void main() {
     expect(parsed.length, 1);
     expect(parsed.first.number, '2186');
     expect(parsed.first.name, '홍길동');
+  });
+
+  test('구형 .xls(BIFF8) 도 인식한다', () {
+    final bytes = File('test/fixtures/members.xls').readAsBytesSync();
+    final sheets = XlsFormatReader.read(bytes);
+    expect(sheets, isNotNull);
+    expect(sheets!.first.rows.length, greaterThanOrEqualTo(3));
+
+    final parsed = ImportParser.parse('members.xls', bytes);
+    expect(parsed.length, 2);
+    expect(parsed.first.number, '2186');
+    expect(parsed.first.name, '홍길동');
+    expect(parsed.first.league, '제주');
+    expect(parsed.first.unit, '제405단');
+    expect(parsed.first.phone, '010-1111-2222');
+    expect(parsed.first.atasNo, 'A123');
   });
 }

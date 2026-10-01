@@ -278,15 +278,10 @@ class _ImportScreenState extends State<ImportScreen> {
           _busy = false;
         });
         if (parsed.isEmpty) {
-          final lower = file.name.toLowerCase();
-          if (lower.endsWith('.xls')) {
-            _snack('구형 .xls 형식은 지원하지 않습니다. 엑셀에서 .xlsx 로 저장해 주세요.');
-          } else {
-            _snack(
-              '자료에서 인가자 항목을 찾지 못했습니다.\n'
-              '첫 줄에 "이름/성명, 인가번호, 연맹, 단위대" 등의 열 제목이 있는지 확인해 주세요.',
-            );
-          }
+          _snack(
+            '자료에서 인가자 항목을 찾지 못했습니다.\n'
+            '첫 줄에 "이름/성명, 인가번호, 연맹, 단위대" 등의 열 제목이 있는지 확인해 주세요.',
+          );
         }
       }
     } catch (e) {
