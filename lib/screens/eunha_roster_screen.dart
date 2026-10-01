@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/file_save.dart';
 import '../services/output_formats.dart';
+import '../services/print_doc.dart';
 import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -188,8 +191,71 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         justPrint: true,
       ),
       onEmail: () => _emailOutput(title, headers, rows),
+      onOnePage: () =>
+          _runOnePage(context.read<AppState>().eunhaMembers),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
+  }
+
+  /// 은하스카우트 명부 **전원을 A4 한 장**에 담아 PDF로 저장/인쇄한다.
+  ///
+  /// 요구: "은하스카우트 명부 모두 출력 a4한장에".
+  ///  · 열 수·글자 크기를 자동 계산해 165명 전원을 1페이지에 담는다.
+  ///  · 검색 중이어도 **전체 명단**을 대상으로 한다.
+  Future<void> _runOnePage(List<Member> members) async {
+    if (members.isEmpty) {
+      _snack('출력할 은하스카우트 명부가 없습니다');
+      return;
+    }
+    setState(() => _busyBuilding = true);
+    try {
+      final loc = await askTsakSaveLocation(
+        context,
+        info: '은하스카우트 명부 · 전원 ${members.length}명 · A4 1장 PDF',
+      );
+      if (loc == null) {
+        if (mounted) _snack('저장을 취소했습니다');
+        return;
+      }
+      if (!mounted) return;
+      await runWithTsakProgress(
+        context,
+        title: '은하스카우트 명부 A4 한 장 생성',
+        note: '전원 ${members.length}명을 한 장에 맞춥니다.',
+        steps: const ['레이아웃 계산', 'PDF 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '열·글자 크기를 계산하는 중…', stepIndex: 0);
+          final pdf = await DocPdf.buildRosterOnePage(
+            meta: const DocMeta(
+              title: '은하스카우트 명부',
+              subtitle: '소속 은하스카우트',
+            ),
+            rows: [
+              for (final m in members) ['은하${m.number}', m.name],
+            ],
+            footerLeft: '한국범스카우트중앙회 · 은하스카우트',
+          );
+          ctl.update(progress: 0.7, message: 'PDF를 저장하는 중…', stepIndex: 1);
+          final cols = DocPdf.lastRosterCols;
+          final name = 'TSAK_은하스카우트_명부_A4한장_$cols열_전원${members.length}명';
+          await saveBytesChoose(
+            bytes: pdf,
+            name: name,
+            ext: 'pdf',
+            mime: 'application/pdf',
+            choose: loc,
+          );
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+      if (mounted) {
+        _snack('A4 한 장 PDF 저장을 시작했습니다 (전원 ${members.length}명)');
+      }
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
   }
 
   Future<void> _runOutput(

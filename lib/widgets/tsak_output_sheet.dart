@@ -33,6 +33,7 @@ Future<void> showTsakOutputSheet(
   VoidCallback? onShareImage,
   VoidCallback? onShareLink,
   VoidCallback? onTxt,
+  VoidCallback? onOnePage,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -99,6 +100,28 @@ Future<void> showTsakOutputSheet(
                 ),
               ),
               const SizedBox(height: 12),
+              // ── '명부 A4 한 장' 강조 버튼(명단 화면 전용) ──
+              if (onOnePage != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () => fire(onOnePage),
+                    icon: const Icon(Icons.article_outlined, size: 18),
+                    label: const Text(
+                      '명부 A4 한 장 (전원 1페이지)',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               // ── 형식 카드(규칙 순서 고정) ──
               if (onPick != null)
                 Wrap(
