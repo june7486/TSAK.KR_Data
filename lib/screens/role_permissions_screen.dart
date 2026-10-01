@@ -63,7 +63,7 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
     {
       'key': 'finance',
       'label': '재무관리',
-      'desc': '참가비·지출·결산·기본자료',
+      'desc': '참가비·지출·결산 (기본자료는 마스터 전용)',
       'icon': Icons.account_balance_wallet,
     },
     {
