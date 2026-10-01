@@ -282,7 +282,10 @@ class AppState extends ChangeNotifier {
       {String id = '', String corps = 'tsak'}) async {
     bool ok;
     // 로그인 소속(범스카우트/은하스카우트) — 별도 관리.
-    _corps = (corps == 'eunha') ? 'eunha' : 'tsak';
+    //  · 명시 corps 우선. 단, ID 가 '은하N' 형식이면 항상 은하스카우트.
+    //    (요구: id='은하43' → 은하 43호 방재호. 범 43호 전종찬과 명확히 구분)
+    final idSaysEunha = id.contains('은하');
+    _corps = (corps == 'eunha' || idSaysEunha) ? 'eunha' : 'tsak';
     // 개인 접근에서 입력된 인가번호 (ID 필드)
     String personalNo = '';
     if (tier == 'master') {

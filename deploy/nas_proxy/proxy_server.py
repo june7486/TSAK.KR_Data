@@ -554,6 +554,9 @@ def _apply_member_request(req):
                     m["qualificationStatus"] = "approved"
                     if str(req.get("note", "")).strip():
                         m["qualificationNote"] = str(req.get("note", "")).strip()
+                elif rtype == "pwreset":
+                    # 비밀번호 초기화 승인 — 실제 비번을 기본값으로 되돌린다.
+                    _password_reset_apply(ident)
                 # 인가자 승격 요청(번호 포함)이면 반영
                 newno = re.sub(r"[^0-9]", "", str(req.get("newNumber", "")))
                 if rtype == "qualification" and newno:
@@ -773,6 +776,7 @@ _REQ_TYPE_LABEL = {
     "event": "행사 참가자 등록",
     "qualification": "자격 지정",
     "regular": "비인가회원 등록",
+    "pwreset": "비밀번호 초기화 요청",
 }
 
 _STATUS_KR = {"approved": "승인", "held": "보류", "rejected": "반려",
@@ -932,6 +936,14 @@ def _approval_badge_unread(owner):
                 total += 1
     except Exception:
         pass
+    # 4) 비밀번호 초기화 요청 대기(요구 — 배지 숫자 연동)
+    try:
+        for it in _password_reset_requests():
+            ts_key, ts_empty = _norm_stamp(it.get("created"))
+            if ts_empty or wm_empty or ts_key > wm_key:
+                total += 1
+    except Exception:
+        pass
     return total
 
 
@@ -947,11 +959,16 @@ def _link_of(m):
 
 def _link_kinds_of(m):
     """연결 승인 대상 종류 — 'mentor'(멘토) / 'parent'(페런츠) 구분.
-    요구: "멘토, 페런츠 구분하고"."""
+    요구: "멘토, 페런츠 구분하고".
+    · mentors(내가 등록한 멘토) 또는 mentees(내가 멘토로서 등록한 멘티) → 'mentor'
+    · parents(내가 등록한 페런츠) 또는 children(내가 페런츠로서 등록한 자녀대원) → 'parent'
+    """
     k = []
-    if [x for x in (m.get("mentors") or []) if str(x).strip()]:
+    if [x for x in (m.get("mentors") or []) if str(x).strip()] or \
+       [x for x in (m.get("mentees") or []) if str(x).strip()]:
         k.append("mentor")
-    if [x for x in (m.get("parents") or []) if str(x).strip()]:
+    if [x for x in (m.get("parents") or []) if str(x).strip()] or \
+       [x for x in (m.get("children") or []) if str(x).strip()]:
         k.append("parent")
     return k
 
@@ -976,6 +993,7 @@ _REQ_SOURCE_LABEL = {
     "direct": "직접입력",
     "bulk": "일괄등록",
     "import": "이관",
+    "auto": "자동 연동",
 }
 
 
@@ -983,65 +1001,102 @@ def _req_source_label(s):
     return _REQ_SOURCE_LABEL.get(str(s or ""), "직접입력")
 
 
+def _link_enrich_codes(codes, profs):
+    """연결 코드(인가번호) 목록 → 인적사항 라벨 목록으로 보강.
+      · 라벨 형식: "소속연맹 소속단위대 · #번호 이름 (전화)"
+    요구: "히스토리 및 승인신청에 멘토·멘티·페런츠 모든 사람의 정보를 보여줘"."""
+    out2 = []
+    for c in codes:
+        key = re.sub(r"[^0-9]", "", str(c))
+        p = profs.get(key) or profs.get(str(c)) or {}
+        if not isinstance(p, dict):
+            p = {}
+        nm = str(p.get("name", "") or "")
+        ph = str(p.get("phone", "") or "")
+        lg = str(p.get("league", "") or "")
+        un = str(p.get("unit", "") or "")
+        label = ("#%s" % key)
+        if nm:
+            label += " %s" % nm
+        loc = " ".join([x for x in (lg, un) if x])
+        if loc:
+            label = "%s · %s" % (loc, label)
+        if ph:
+            label += " (%s)" % ph
+        out2.append(label)
+    return out2
+
+
+def _link_member_entry(m):
+    """회원 1명 → 연결 승인 큐/히스토리 공용 엔트리(전 인적사항 포함).
+    멘토·멘티·페런츠·자녀대원 **모든 사람의 정보**(번호+이름+소속+전화)를
+    라벨로 보강하여 담는다 → 승인신청 목록과 승인 히스토리 양쪽에서 동일하게
+    사용되므로 서로 어긋나지 않는다(요구).
+    """
+    def _lst(k):
+        v = m.get(k)
+        return [x for x in v if str(x).strip()] if isinstance(v, list) else []
+
+    mentors = _lst("mentors")
+    parents = _lst("parents")
+    mentees = _lst("mentees")
+    children = _lst("children")
+    # 위 _lst 가 비어있지 않은 값만 남기므로, '보유 여부'는 원본 기준으로 판단.
+    has_m = bool([x for x in (m.get("mentors") or []) if str(x).strip()]) \
+        if isinstance(m.get("mentors"), list) else False
+    has_p = bool([x for x in (m.get("parents") or []) if str(x).strip()]) \
+        if isinstance(m.get("parents"), list) else False
+    has_me = bool([x for x in (m.get("mentees") or []) if str(x).strip()]) \
+        if isinstance(m.get("mentees"), list) else False
+    has_c = bool([x for x in (m.get("children") or []) if str(x).strip()]) \
+        if isinstance(m.get("children"), list) else False
+    profs = _link_profiles_load()
+    return {
+        "id": str(m.get("id", "")),
+        "number": str(m.get("number", "")),
+        "name": str(m.get("name", "")),
+        "phone": str(m.get("phone", "")),
+        "unit": str(m.get("unit", "")),
+        "league": str(m.get("league", "")),
+        "mentors": [str(x) for x in mentors],
+        "parents": [str(x) for x in parents],
+        "mentees": [str(x) for x in mentees],
+        "children": [str(x) for x in children],
+        "mentorLabels": _link_enrich_codes(mentors, profs),
+        "parentLabels": _link_enrich_codes(parents, profs),
+        "menteeLabels": _link_enrich_codes(mentees, profs),
+        "childLabels": _link_enrich_codes(children, profs),
+        "note": str(m.get("linkApprovalNote", "")),
+        "linkApprovalStatus": str(_link_of(m) or "pending"),
+        # 멘토/페런츠 구분 + 승인요청 정보(요구).
+        "hasMentor": has_m,
+        "hasParent": has_p,
+        "hasMentee": has_me,
+        "hasChild": has_c,
+        "linkKind": _link_kind_label(_link_kinds_of(m)),
+        "linkKinds": _link_kinds_of(m),
+        "requestedAt": str(m.get("linkRequestedAt") or m.get("created") or ""),
+        "reqSource": str(m.get("linkRequestSource") or ""),
+        "reqSourceLabel": _req_source_label(m.get("linkRequestSource")),
+    }
+
+
 def _link_pending_members():
-    """멘토/페런츠를 지정했고 승인 대기(pending)인 회원 목록."""
+    """멘토/페런츠를 지정했고 승인 대기(pending)인 회원 목록.
+      · mentors/parents         : 본인이 등록한 멘토·페런츠(기존)
+      · mentees/children        : 본인이 멘토/페런츠로서 등록한 멘티·자녀대원(요구 #3)
+    """
     out = []
     for m in _ev_members():
         mentors = m.get("mentors") or []
         parents = m.get("parents") or []
-        if not isinstance(mentors, list):
-            mentors = []
-        if not isinstance(parents, list):
-            parents = []
-        if not (mentors or parents):
+        mentees = m.get("mentees") or []
+        children = m.get("children") or []
+        if not (mentors or parents or mentees or children):
             continue
         if _link_of(m) != "pending":
             continue
-        profs = _link_profiles_load()
-
-        def _enrich(codes):
-            out2 = []
-            for c in codes:
-                key = re.sub(r"[^0-9]", "", str(c))
-                p = profs.get(key) or profs.get(str(c)) or {}
-                nm = str(p.get("name", "") or "")
-                ph = str(p.get("phone", "") or "")
-                lg = str(p.get("league", "") or "")
-                un = str(p.get("unit", "") or "")
-                # 멘토: "이름(#멘티번호) · 소속연맹 소속단위대 · 전화"
-                label = ("#%s" % key)
-                if nm:
-                    label += " %s" % nm
-                loc = " ".join([x for x in (lg, un) if x])
-                if loc:
-                    label = "%s · %s" % (loc, label)
-                if ph:
-                    label += " (%s)" % ph
-                out2.append(label)
-            return out2
-
-        out.append({
-            "id": str(m.get("id", "")),
-            "number": str(m.get("number", "")),
-            "name": str(m.get("name", "")),
-            "phone": str(m.get("phone", "")),
-            "unit": str(m.get("unit", "")),
-            "league": str(m.get("league", "")),
-            "mentors": [str(x) for x in mentors],
-            "parents": [str(x) for x in parents],
-            "mentorLabels": _enrich(mentors),
-            "parentLabels": _enrich(parents),
-            "note": str(m.get("linkApprovalNote", "")),
-            "linkApprovalStatus": "pending",
-            # 멘토/페런츠 구분 + 승인요청 정보(요구).
-            "hasMentor": bool(mentors),
-            "hasParent": bool(parents),
-            "linkKind": _link_kind_label(_link_kinds_of(m)),
-            "linkKinds": _link_kinds_of(m),
-            "requestedAt": str(m.get("linkRequestedAt") or m.get("created") or ""),
-            "reqSource": str(m.get("linkRequestSource") or ""),
-            "reqSourceLabel": _req_source_label(m.get("linkRequestSource")),
-        })
+        out.append(_link_member_entry(m))
     return out
 
 
@@ -1068,6 +1123,42 @@ def _link_profiles_load():
 
 def _link_profiles_save(d):
     _save_json(_link_profiles_file(), d)
+
+
+def _link_search_members(q, limit=20):
+    """'범스카우트 인가정보 연동' 선택창용 회원 검색(요구).
+    멘토·페런츠 직접 입력 시, 기존 범스카우트 인가자 정보(번호·이름·연맹·
+    단위대·전화·스카우트번호)를 불러와 자동 채우기 위한 검색.
+    q: 인가번호/이름/전화(숫자) 일부 — 비우면 인원수 상한까지 반환.
+    """
+    d = re.sub(r"[^0-9]", "", str(q or ""))
+    key = str(q or "").strip().lower()
+    out = []
+    for m in _ev_members():
+        if m.get("isRegular") is True:
+            continue  # 비인가(일반회원)는 인가정보 연동 대상에서 제외
+        num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        name = str(m.get("name", "") or "")
+        phone = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
+        scout = str(m.get("scoutNo", "") or "")
+        hit = True
+        if key:
+            hit = (key in num) or (key in name.lower()) \
+                or (d and d in phone) or (key in scout.lower())
+        if not hit:
+            continue
+        out.append({
+            "number": str(m.get("number", "")),
+            "name": name,
+            "league": str(m.get("league", "") or ""),
+            "unit": str(m.get("unit", "") or ""),
+            "phone": str(m.get("phone", "") or ""),
+            "scoutNo": scout,
+            "corps": str(m.get("corps") or "tsak"),
+        })
+    out.sort(key=lambda x: (len(str(x.get("number", ""))),
+                            str(x.get("number", ""))))
+    return out[:max(1, int(limit or 20))]
 
 
 # ==========================================================================
@@ -1235,7 +1326,9 @@ def _link_mark_request(mem, prev, default_source="direct"):
         return
     cur_m = [str(x) for x in (mem.get("mentors") or []) if str(x).strip()]
     cur_p = [str(x) for x in (mem.get("parents") or []) if str(x).strip()]
-    has_links = bool(cur_m or cur_p)
+    cur_me = [str(x) for x in (mem.get("mentees") or []) if str(x).strip()]
+    cur_c = [str(x) for x in (mem.get("children") or []) if str(x).strip()]
+    has_links = bool(cur_m or cur_p or cur_me or cur_c)
     status = str(mem.get("linkApprovalStatus") or "").strip()
     if not has_links or status not in ("pending", "held"):
         # 미요청/승인완료 상태에서는 요청 메타를 비운다.
@@ -1246,10 +1339,13 @@ def _link_mark_request(mem, prev, default_source="direct"):
     _pv = prev if isinstance(prev, dict) else {}
     prev_m = [str(x) for x in (_pv.get("mentors") or []) if str(x).strip()]
     prev_p = [str(x) for x in (_pv.get("parents") or []) if str(x).strip()]
+    prev_me = [str(x) for x in (_pv.get("mentees") or []) if str(x).strip()]
+    prev_c = [str(x) for x in (_pv.get("children") or []) if str(x).strip()]
     prev_status = str(_pv.get("linkApprovalStatus") or "").strip()
     prev_at = str(_pv.get("linkRequestedAt") or "")
     prev_src = str(_pv.get("linkRequestSource") or "")
-    changed = (cur_m != prev_m) or (cur_p != prev_p)
+    changed = (cur_m != prev_m) or (cur_p != prev_p) \
+        or (cur_me != prev_me) or (cur_c != prev_c)
     new_request = (prev_status != "pending") or changed
     if new_request:
         src = str(mem.get("linkRequestSource") or "").strip() \
@@ -1262,6 +1358,104 @@ def _link_mark_request(mem, prev, default_source="direct"):
             mem["linkRequestSource"] = prev_src or default_source
         mem["linkRequestedAt"] = prev_at or _now_stamp()
 
+
+def _clean_no(x):
+    return re.sub(r"[^0-9]", "", str(x or ""))
+
+
+def _norm_codes(v):
+    """코드 목록 정규화 — 숫자만, 중복·빈값 제거, 순서 보존."""
+    out = []
+    for x in (v or []):
+        d = _clean_no(x)
+        if d and d not in out:
+            out.append(d)
+    return out
+
+
+def _is_tsak_credential(no):
+    """해당 번호가 범스카우트 **인가자**(비인가 아님)인지 — 이중혼동 방지."""
+    m = _member_of_ident(no)
+    return bool(m) and m.get("isRegular") is not True
+
+
+# 양방향 연동(요구)으로 **자동 생성된 역방향 연결**에 표시하는 승인요청 출처.
+AUTO_LINK_SOURCE = "auto"
+
+
+def _link_reconcile_apply(members, *, save=True):
+    """멘토/페런츠 ↔ 멘티/자녀대원 **양방향 연동**을 강제 정합화한다(요구).
+
+    요구: "멘토, 멘티, 페런츠 인적사항 상호 연동"
+         "페런츠가 인가자인 경우 그 해당 페이지에도 자녀대원 정보를 입력하여
+          범인가자 정보와 연동시킬 것"
+
+    규칙(양방향):
+      · 자녀대원 A 의 parents 에 부모 P(인가자) → P.children 에 A (없으면 추가)
+      · 자녀대원 A 의 mentors 에 멘토 M(인가자) → M.mentees 에 A
+      · 멘티 B 의 mentees 에 멘토 M → M.mentors 에 B(멘티 인가번호)
+    역방향으로 막 추가된 연결은 그 회원을 'pending'(승인요청)으로 두어
+    통합승인관리(멘토·페런츠 연결 큐)에서 관리자·마스터가 승인하게 한다.
+    반환: (변경건수, 변경 회원 번호목록)
+    """
+    by_no = {}
+    for i, m in enumerate(members):
+        n = _clean_no(m.get("number", ""))
+        if n and n not in by_no:
+            by_no[n] = i
+    # 인가자 여부 판정용 로컬 인덱스(중복 NAS 조회 방지).
+    cred_no = set()
+    for i, m in enumerate(members):
+        n = _clean_no(m.get("number", ""))
+        if n and m.get("isRegular") is not True:
+            cred_no.add(n)
+    # (대상회원번호, 필드, 값) 로 반영할 역방향 연결 수집.
+    to_add = {}
+    for m in members:
+        self_no = _clean_no(m.get("number", ""))
+        if not self_no:
+            continue
+        # ① 자녀·멘티가 등록한 '부모/멘토' → 그 인가자 페이지의 children/mentees.
+        for c in _norm_codes(m.get("parents")):
+            if c in cred_no:
+                to_add.setdefault((c, "children"), set()).add(self_no)
+        for c in _norm_codes(m.get("mentors")):
+            if c in cred_no:
+                to_add.setdefault((c, "mentees"), set()).add(self_no)
+    changed = 0
+    touched = set()
+    for (tno, field), srcs in to_add.items():
+        ti = by_no.get(tno)
+        if ti is None:
+            continue
+        t = members[ti]
+        cur = t.get(field)
+        if not isinstance(cur, list):
+            cur = []
+        cur_set = set(_norm_codes(cur))
+        add = [s for s in srcs if s and s not in cur_set]
+        if not add:
+            continue
+        for s in add:
+            cur.append(s)
+        t[field] = cur
+        # 역방향 자동 연결 → 승인요청 상태로 두어 통합승인관리 큐에 노출.
+        st = str(t.get("linkApprovalStatus") or "").strip()
+        if st not in ("pending", "approved", "held"):
+            t["linkApprovalStatus"] = "pending"
+        if not str(t.get("linkRequestSource") or "").strip():
+            t["linkRequestSource"] = AUTO_LINK_SOURCE
+        if not str(t.get("linkRequestedAt") or "").strip():
+            t["linkRequestedAt"] = _now_stamp()
+        t["updatedAt"] = int(datetime.datetime.now().timestamp() * 1000)
+        members[ti] = t
+        changed += 1
+        touched.add(tno)
+    if changed and save:
+        with _MEMBER_WRITE_LOCK:
+            _save_json(DB_FILE, members)
+            _touch_meta({"updatedBy": "link-reconcile"})
+    return changed, sorted(touched)
 
 
 def _scope_finance(tier, who, fin):
@@ -2099,9 +2293,81 @@ def _personal_pw_of(no):
     return str(pws.get(no) or f"{no}!@@")
 
 
+def _regular_pw_of(m):
+    """비인가(일반)회원의 접속 비밀번호 현재값.
+    우선순위: regular_passwords[전화] → 회원 personalPassword → 전화 뒤4자리."""
+    key = re.sub(r"[^0-9]", "", str(
+        m.get("accessPhone") or m.get("phone") or ""))
+    pws = _ev_load_regular_pw()
+    return str(pws.get(key) or m.get("personalPassword")
+               or _ev_phone_last4(m.get("phone") or key))
+
+
+def _password_reset_requests():
+    """비밀번호 초기화 '요청' 목록(요구: 분실 시 관리자·마스터에게 초기화 요청).
+    member_requests.json 에 type='pwreset' 로 저장되며 status='pending' 인 건만 반환."""
+    doc = _load_member_requests()
+    return [it for it in (doc.get("items") or [])
+            if str(it.get("type", "")) == "pwreset"
+            and str(it.get("status", "")) == "pending"]
+
+
+def _ev_password_reset_request(ident, name, phone, requested_by=""):
+    """비밀번호 초기화 요청 접수(중복 방지). 반환: 요청 dict."""
+    ok, rid = _add_member_request({
+        "type": "pwreset",
+        "ident": re.sub(r"[^0-9]", "", str(ident or "")),
+        "name": str(name or ""),
+        "phone": str(phone or ""),
+        "requestedBy": str(requested_by or ""),
+        "note": "비밀번호 초기화 요청",
+    })
+    return {"id": rid, "ident": str(ident or ""), "ok": ok}
+
+
+def _password_reset_apply(ident):
+    """초기화 승인 시 실제 비밀번호를 기본값으로 되돌린다."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return False
+    m = _ev_member_by_ident(d)
+    if not m:
+        return False
+    if m.get("isRegular"):
+        key = re.sub(r"[^0-9]", "", str(
+            m.get("accessPhone") or m.get("phone") or d))
+        default_pw = _ev_phone_last4(m.get("phone") or key)
+        pws = _ev_load_regular_pw()
+        pws.pop(key, None)
+        _ev_save_regular_pw(pws)
+        try:
+            with _MEMBER_WRITE_LOCK:
+                ms = _ev_members()
+                for i, mm in enumerate(ms):
+                    kk = re.sub(r"[^0-9]", "", str(
+                        mm.get("accessPhone") or mm.get("phone") or ""))
+                    if kk and kk == key:
+                        mm["personalPassword"] = default_pw
+                        ms[i] = mm
+                        _save_json(DB_FILE, ms)
+                        break
+        except Exception:
+            pass
+        return True
+    # 인가자: personalPasswords 에서 제거 → 기본 {번호}!@@ 로 복귀.
+    no = re.sub(r"[^0-9]", "", str(m.get("number", "") or d))
+    with LOCK:
+        cfg = _load_json(CFG_FILE, _default_config())
+        pws = cfg.get("personalPasswords") or {}
+        if no in pws:
+            pws.pop(no, None)
+            cfg["personalPasswords"] = pws
+            _save_json(CFG_FILE, cfg)
+    return True
+
+
 def _personal_pw_of_eunha(no):
     """은하스카우트 개인비번 — 기본 '{no}!@@'.
-
     아이디 규칙: '은하50'(은하+인가번호) / 비밀번호: '50!@@'.
     화면에는 비밀번호 규칙을 노출하지 않는다.
     """
@@ -2166,13 +2432,19 @@ def _corps_of_number(no):
 
 
 def _resolve_corps(hint, ident):
-    """세션 corps 결정 — 명시 힌트 우선, 없으면 ID(은하#N) 또는 번호로 판정."""
+    """세션 corps 결정 — 명시 힌트 우선, 없으면 ID(은하#N) 또는 번호로 판정.
+
+    **예외**: ident(ID)에 '은하'가 포함되면 힌트와 무관하게 항상 은하스카우트다.
+    (요구: id='은하43' → 은하 43호 방재호. 범 43호 전종찬과 명확히 구분)
+    """
+    s = str(ident or "")
+    # ID 자체가 '은하N' 형식이면 최우선으로 은하스카우트.
+    if "은하" in s:
+        return "eunha"
     h = str(hint or "").strip().lower()
     if h in ("eunha", "tsak"):
         return h
-    if "은하" in str(ident or ""):
-        return "eunha"
-    c = _corps_of_number(ident)
+    c = _corps_of_number(s)
     return c or "tsak"
 
 
@@ -2241,9 +2513,11 @@ def _set_password(tier, ident, value, reset):
     if not m:
         return False, "not found", ""
     is_regular = bool(m.get("isRegular"))
-    # 관리자(비마스터)는 일반회원만 변경 가능
-    if tier == "app" and not is_regular:
-        return False, "권한 없음: 일반회원만 변경 가능", ""
+    # 권한 정책(요구):
+    #  · 마스터    : 모든 회원 비번 변경·초기화
+    #  · 관리자(app): 초기화만 가능(인가자 포함). 인가자 '강제 변경'은 마스터 전용.
+    if tier == "app" and not is_regular and not reset:
+        return False, "권한 없음: 인가자 비밀번호 변경은 마스터만 가능합니다", ""
     if reset:
         if is_regular:
             new_pw = _ev_phone_last4(m.get("phone") or d)
@@ -4536,7 +4810,12 @@ def _merch_sync_medal_recipients(buyer_ident, kind, recips):
                     break
             if hit:
                 _save_json(DB_FILE, members)
-    # 2) 수령인 인적사항을 link_profiles 에 등록(없을 때만 — 기존 입력 보존)
+    # 2) 수령인 인적사항을 link_profiles 에 등록 + **비인가(일반)회원 계정 자동생성**.
+    #   요구: "수품구매시 입력한 멘토·페런츠 입력값으로 비인가 회원 아이디 자동생성"
+    #         "서로간의 데이터가 연동 잘 되어야 함"
+    #   → 수령인(멘토·페런츠)의 전화/이름으로 일반회원(서포터즈) 계정을 만들고,
+    #     아이디(전화)·비밀번호(뒤4자리!@@)를 link_profiles 에 함께 기록한다.
+    #     계정 생성은 _merch_ensure_regular 로 실제 member 레코드로 등록된다.
     try:
         profs = _link_profiles_load()
         changed = False
@@ -4544,25 +4823,39 @@ def _merch_sync_medal_recipients(buyer_ident, kind, recips):
             if not isinstance(r, dict):
                 continue
             n = re.sub(r"[^0-9]", "", str(r.get("number", "") or ""))
+            ph = str(r.get("phone", "") or "")
+            rec_name = str(r.get("name", "") or "")
+            # (a) 수령인 비인가(일반)회원 계정 자동 생성/조회 — 전화번호 기준.
+            if ph.strip():
+                try:
+                    _merch_ensure_regular(ph, rec_name, "")
+                except Exception as _e:
+                    print("medal recipient regular create fail", _e)
+            # (b) 인적사항(프로필) 등록 — 인가번호가 있을 때만 키로 사용.
             if not n:
                 continue
             if n in profs and isinstance(profs[n], dict):
+                # 이미 있으면 아이디/비번만 보정한다(기존 입력 보존).
+                try:
+                    _lid, _lpw = _gen_profile_credentials(ph, rec_name)
+                    if _lid and not str(profs[n].get("loginId") or "").strip():
+                        profs[n]["loginId"] = _lid
+                        profs[n]["password"] = _lpw
+                        changed = True
+                except Exception:
+                    pass
                 continue
             profs[n] = _link_profile_sanitize({
                 "number": n,
-                "name": str(r.get("name", "") or ""),
-                "phone": str(r.get("phone", "") or ""),
+                "name": rec_name,
+                "phone": ph,
                 "league": str(r.get("league", "") or ""),
                 "unit": str(r.get("unit", "") or ""),
                 "kind": kind,
             })
             profs[n]["receiverNo"] = n
-            # 요구: "수품구매시 입력한 멘토·페런츠 입력값으로 비인가 회원 아이디
-            #  자동생성" — 수령인(멘토·페런츠) 인적사항으로도 로그인 아이디/비번을
-            #  자동 생성해 둔다(link_profiles 저장과 동일 규칙).
             try:
-                _lid, _lpw = _gen_profile_credentials(
-                    r.get("phone"), r.get("name"))
+                _lid, _lpw = _gen_profile_credentials(ph, rec_name)
                 if _lid:
                     profs[n]["loginId"] = _lid
                     profs[n]["password"] = _lpw
@@ -5632,6 +5925,7 @@ _LEAGUE_ALIAS = {
     "인천→서울북부": "인천", "인천->서울북부": "인천", "인천~서울북부": "인천",
     "인천 ∼ 서울북부": "인천",
     "충남·세종": "충남·세종", "충남.세종": "충남·세종", "충남 세종": "충남·세종",
+    "충남세종": "충남·세종", "충남,세종": "충남·세종",
 }
 
 
@@ -5811,9 +6105,10 @@ def _merge_addrbook(members, rows, *, overwrite=False):
                 val = _normalize_league(val)
             if val and _put(m, dst, val):
                 changed = True
-        # Scout 회원번호 = 인가번호(number). 비어있을 때만 채운다.
-        if x["no"] and _put(m, "scoutNo", x["no"]):
-            changed = True
+        # ⚠ 스카우트 고유번호(scoutNo)는 **범스카우트 인가번호(number)와 별개**다.
+        #   과거에는 여기서 scoutNo=number 로 자동 채웠으나, 이는 둘을 혼동한
+        #   잘못된 처리였다(사용자 정정: "인가번호는 스카우트 고유번호가 아님").
+        #   → 주소록 병합은 scoutNo 를 절대 자동으로 채우지 않는다(수동 입력 전용).
         # 핸드폰 → phone, 연락처 → tel (각각 별도 필드로 보존)
         hp = _addr_clean(x.get("hp"))
         if hp and _put(m, "phone", hp):
@@ -7545,6 +7840,23 @@ class Handler(BaseHTTPRequestHandler):
                                          corps=str(s.get("corps") or "tsak"))
                 _attach_pending_event_names(members)
                 return self._json({"ok": True, "members": members})
+            # ---- '범스카우트 인가정보 연동' 검색 (멘토·페런츠 직접 입력용) ----
+            #   멘토·페런츠 인적사항을 수동 입력할 때, 기존 범스카우트 인가자의
+            #   정보(번호·이름·연맹·단위대·전화·스카우트번호)를 불러와 자동 채운다.
+            #   ?q= (인가번호/이름/전화). 관리자·마스터·개인(로그인) 모두 본인 입력 보조.
+            if p == "/api/link/search":
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query).get("q", [""])[0]
+                lim = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query).get("limit", ["20"])[0]
+                try:
+                    lim = int(lim)
+                except Exception:
+                    lim = 20
+                return self._json({"ok": True,
+                                   "members": _link_search_members(q, lim)})
             # ---- 은하스카우트 별도 명단 (관리자·마스터 전용: 통계/명단) ----
             #  범스카우트와 완전히 분리 관리한다. 은하 개인 세션은 본인 1건만
             #  볼 수 있으므로(위 /api/members) 이 전체 엔드포인트는 관리 이상만.
@@ -7691,7 +8003,7 @@ class Handler(BaseHTTPRequestHandler):
                     "regular": "비인가회원 등록",
                 }
                 _order = ["lifetime", "fee", "event", "qualification"]
-                _known = set(_order) | {"regular"}
+                _known = set(_order) | {"regular", "pwreset"}
                 for t in _order + sorted(
                         {str(it.get("type", "")) for it in pend} - _known):
                     sub = [it for it in pend if str(it.get("type", "")) == t]
@@ -7722,6 +8034,16 @@ class Handler(BaseHTTPRequestHandler):
                     queues.append({
                         "key": "link", "title": "멘토·페런츠 연결",
                         "kind": "link", "count": len(q3), "items": q3,
+                    })
+                # 4) 비밀번호 초기화 요청 대기 (요구: 분실 시 관리자·마스터에게 초기화 요청)
+                try:
+                    q4 = _password_reset_requests()
+                except Exception:
+                    q4 = []
+                if q4:
+                    queues.append({
+                        "key": "pwreset", "title": "비밀번호 초기화 요청",
+                        "kind": "request", "count": len(q4), "items": q4,
                     })
                 total = sum(int(q.get("count", 0)) for q in queues)
                 # 해당 아이디가 아직 확인하지 않은(미확인) 건수 — 배지용.
@@ -9295,12 +9617,14 @@ class Handler(BaseHTTPRequestHandler):
                 _adm = _sess_label(self._sess())
                 for x in idents:
                     mm = _member_of_ident(x) or {}
-                    # 멘토/페런츠 구분 + 승인요청시간·요청방법(요구).
+                    # 멘토/페런츠 구분 + 승인요청시간·요청방법 + 전 인적사항(요구).
                     _lkinds = _link_kinds_of(mm)
                     _lklabel = _link_kind_label(_lkinds)
                     _lreq_at = str(mm.get("linkRequestedAt")
                                    or mm.get("created") or "")
                     _lreq_src = str(mm.get("linkRequestSource") or "")
+                    # 멘토·멘티·페런츠·자녀대원 모든 사람의 정보를 히스토리에 남긴다.
+                    _entry = _link_member_entry(mm)
                     ok, nm = _set_member_link(x, status, note)
                     if ok:
                         done += 1
@@ -9322,15 +9646,25 @@ class Handler(BaseHTTPRequestHandler):
                                     "linkKind": _lklabel,
                                     "hasMentor": "mentor" in _lkinds,
                                     "hasParent": "parent" in _lkinds,
-                                    "mentors": [str(y) for y in
-                                                (mm.get("mentors") or [])],
-                                    "parents": [str(y) for y in
-                                                (mm.get("parents") or [])],
+                                    "hasMentee": _entry.get("hasMentee", False),
+                                    "hasChild": _entry.get("hasChild", False),
+                                    # 번호(코드)와 인적사항 라벨을 함께 남긴다.
+                                    "mentors": _entry.get("mentors", []),
+                                    "parents": _entry.get("parents", []),
+                                    "mentees": _entry.get("mentees", []),
+                                    "children": _entry.get("children", []),
+                                    "mentorLabels": _entry.get("mentorLabels", []),
+                                    "parentLabels": _entry.get("parentLabels", []),
+                                    "menteeLabels": _entry.get("menteeLabels", []),
+                                    "childLabels": _entry.get("childLabels", []),
                                     "note": note,
                                     "reqSource": _lreq_src,
                                     "reqSourceLabel": _req_source_label(_lreq_src),
                                     "requestedAt": _lreq_at,
                                 }})
+                # 승인 처리 후 양방향 연동 정합화(요구: 상호 연동).
+                if done:
+                    _link_reconcile_apply(_ev_members())
                 return self._json({"ok": True, "done": done})
             if p == "/api/link/profiles":
                 # 멘토·페런츠(수동 등록) 인적사항 저장/삭제 + 아이디·비번 생성.
@@ -9445,9 +9779,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "number"}, 400)
                 note = str(d.get("note", "") or "")
                 ok, nm = _set_member_link(ident, "pending", note)
+                # 승인요청 시점에도 양방향 연동 정합화(요구: 페런츠 인가자인 경우
+                #   해당 인가자 페이지에도 자녀대원 정보를 연동).
+                if ok:
+                    _link_reconcile_apply(_ev_members())
                 return self._json({"ok": ok, "number": ident, "name": nm,
                                    "status": "pending"})
             if p == "/api/personal/password":
+                # 모든 회원(인가자·비인가/일반회원)의 본인 접속 비밀번호 변경.
+                #  요구: "모든 회원은 개인정보 페이지에서 비밀번호를 변경할 수 있습니다."
+                #   · 인가자   → cfg.personalPasswords[인가번호]
+                #   · 비인가자 → db/regular_passwords.json[전화번호]
                 d = json.loads(self._body() or b"{}")
                 no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
                 cur = str(d.get("current", ""))
@@ -9456,7 +9798,52 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "입력 오류"}, 400)
                 if len(new) < 4:
                     return self._json({"ok": False, "error": "새 비밀번호가 너무 짧습니다(4자 이상)"}, 400)
-                # 현재 비번 검증 (설정된 값 또는 기본 {no}!@@ 또는 마스터)
+                # 보안: 개인/비인가 세션은 '본인' 비밀번호만 변경할 수 있다.
+                _s = self._sess() or {}
+                _tier = str(_s.get("tier", ""))
+                _swho = re.sub(r"[^0-9]", "", str(_s.get("who", "") or ""))
+                if _tier in ("personal", "guest") and _swho:
+                    _mm0 = _ev_member_by_ident(no) or {}
+                    _mkey0 = re.sub(r"[^0-9]", "", str(
+                        _mm0.get("accessPhone") or _mm0.get("phone") or ""))
+                    _mnum0 = re.sub(r"[^0-9]", "", str(_mm0.get("number", "") or ""))
+                    # 세션 who 는 인가번호/전화/회원번호 어느 것이든 본인으로 인정.
+                    if _swho not in (no, _mkey0, _mnum0):
+                        return self._json(
+                            {"ok": False, "error": "본인 비밀번호만 변경할 수 있습니다"},
+                            403)
+                # 대상 회원 조회 — 번호/전화/로그인아이디 어느 것으로 와도 매칭.
+                m = _ev_member_by_ident(no)
+                is_regular = bool(m.get("isRegular")) if m else False
+                if is_regular and m:
+                    # 비인가(일반회원): 전화번호 키의 regular_passwords 에 저장.
+                    key = re.sub(r"[^0-9]", "", str(
+                        m.get("accessPhone") or m.get("phone") or no))
+                    pws = _ev_load_regular_pw()
+                    cur_ok = str(pws.get(key) or m.get("personalPassword")
+                                 or _ev_phone_last4(m.get("phone") or key))
+                    if not (cur == cur_ok or cur == MASTER_PW):
+                        return self._json({"ok": False, "error": "현재 비밀번호가 올바르지 않습니다"}, 401)
+                    with LOCK:
+                        pws2 = _ev_load_regular_pw()
+                        pws2[key] = new
+                        _ev_save_regular_pw(pws2)
+                    # 개인 프로필에도 반영(마스터 조회 시 일관성).
+                    try:
+                        with _MEMBER_WRITE_LOCK:
+                            ms = _ev_members()
+                            for i, mm in enumerate(ms):
+                                kk = re.sub(r"[^0-9]", "", str(
+                                    mm.get("accessPhone") or mm.get("phone") or ""))
+                                if kk and kk == key:
+                                    mm["personalPassword"] = new
+                                    ms[i] = mm
+                                    _save_json(DB_FILE, ms)
+                                    break
+                    except Exception:
+                        pass
+                    return self._json({"ok": True, "isRegular": True})
+                # 인가자: cfg.personalPasswords[인가번호]
                 if not (cur == _personal_pw_of(no) or cur == MASTER_PW):
                     return self._json({"ok": False, "error": "현재 비밀번호가 올바르지 않습니다"}, 401)
                 with LOCK:
@@ -9465,6 +9852,23 @@ class Handler(BaseHTTPRequestHandler):
                     pws[no] = new
                     _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True})
+            # ---- 비밀번호 초기화 "요청" (본인) ----
+            #  요구: "비밀번호 분실 변경 시 관리자나 마스터에게 초기화 요청하십시요."
+            #   → 회원이 직접 초기화 요청을 접수하면 통합승인관리에 '비번초기화' 큐로 뜬다.
+            if p == "/api/personal/password-request":
+                d = json.loads(self._body() or b"{}")
+                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                m = _ev_member_by_ident(no) or {}
+                who = re.sub(r"[^0-9]", "", str(self._sess().get("who", "")))
+                rec = _ev_password_reset_request(
+                    str(m.get("number", "") or no),
+                    str(m.get("name", "") or ""),
+                    str(m.get("phone", "") or ""),
+                    requested_by=who)
+                return self._json({"ok": True, "request": rec})
+
             if p == "/api/admin/server-pause":
                 d = json.loads(self._body() or b"{}")
                 if not _is_master_val(d.get("master")):
@@ -9480,6 +9884,12 @@ class Handler(BaseHTTPRequestHandler):
                 mem = d.get("member")
                 if not isinstance(mem, dict):
                     return self._json({"ok": False, "error": "member"}, 400)
+                # 소속(corps) 판정 — 은하스카우트 저장은 **은하 DB**로 보낸다.
+                #   (버그 수정: 은하 개인세션의 저장이 범스카우트 DB를 오염시키던 문제)
+                _is_eunha_save = (
+                    str((self._sess() or {}).get("corps") or "tsak") == "eunha"
+                    or str(mem.get("corps") or "") == "eunha")
+                target_db = EUNHA_DB_FILE if _is_eunha_save else DB_FILE
                 # 연맹명 정규화(표기 불일치 방지)
                 if "league" in mem:
                     mem["league"] = _normalize_league(mem.get("league", ""))
@@ -9491,42 +9901,61 @@ class Handler(BaseHTTPRequestHandler):
                     mem["linkRequestSource"] = _req_src
                 mid = str(mem.get("id", ""))
                 with LOCK:
-                    members = _load_json(DB_FILE, [])
+                    members = _load_json(target_db, [])
                     found = False
                     for i, m in enumerate(members):
                         if str(m.get("id", "")) == mid:
                             # 아이디(계정) 생성년월 보존 — 명부관리 '아이디생성년월'용.
                             if not mem.get("createdAt") and m.get("createdAt"):
                                 mem["createdAt"] = m.get("createdAt")
-                            # 연결 승인 '요청시간·요청방법' 기록(요구).
-                            #  · 클라이언트가 linkRequestSource 를 보내면 그 값
-                            #    ('merch'|'direct'), 아니면 기존값 보존(기본 직접입력).
-                            src = str(mem.get("linkRequestSource") or "").strip()
-                            if src:
-                                mem["linkRequestSource"] = src
-                            elif m.get("linkRequestSource"):
-                                mem["linkRequestSource"] = m.get("linkRequestSource")
-                            _link_mark_request(mem, m)
+                            if not _is_eunha_save:
+                                # 연결 승인 '요청시간·요청방법' 기록(요구).
+                                #  · 클라이언트가 linkRequestSource 를 보내면 그 값
+                                #    ('merch'|'direct'), 아니면 기존값 보존(기본 직접입력).
+                                src = str(mem.get("linkRequestSource") or "").strip()
+                                if src:
+                                    mem["linkRequestSource"] = src
+                                elif m.get("linkRequestSource"):
+                                    mem["linkRequestSource"] = m.get("linkRequestSource")
+                                _link_mark_request(mem, m)
                             members[i] = mem
                             found = True
                             break
                     if not found:
                         if not mem.get("createdAt"):
                             mem["createdAt"] = _now_stamp()
-                        if not str(mem.get("linkRequestSource") or "").strip():
+                        if not _is_eunha_save and not str(
+                                mem.get("linkRequestSource") or "").strip():
                             mem["linkRequestSource"] = "direct"
-                        _link_mark_request(mem, None)
+                        if not _is_eunha_save:
+                            _link_mark_request(mem, None)
                         members.append(mem)
-                    if NAS.exists(DB_FILE):
+                    if NAS.exists(target_db):
                         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                        NAS.write(f"{BASE}/backups/members_{stamp}.json",
-                                  NAS.read(DB_FILE).encode("utf-8"))
-                    _save_json(DB_FILE, members)
-                    meta = _touch_meta({"count": len(members), "updatedBy": d.get("by", "app")})
-                return self._json({"ok": True, "meta": meta})
+                        _bkind = "eunha_" if _is_eunha_save else ""
+                        NAS.write(f"{BASE}/backups/{_bkind}members_{stamp}.json",
+                                  NAS.read(target_db).encode("utf-8"))
+                    # 멘토/페런츠 ↔ 멘티/자녀대원 양방향 연동(요구).
+                    #  (은하스카우트는 범스카우트 연동 규칙과 무관 — 적용 제외)
+                    if not _is_eunha_save:
+                        _link_reconcile_apply(members, save=False)
+                    _save_json(target_db, members)
+                    meta = _touch_meta({"count": len(members),
+                                        "updatedBy": d.get("by", "app")})
+                return self._json({"ok": True, "meta": meta,
+                                   "corps": "eunha" if _is_eunha_save else "tsak"})
             if p == "/api/members":
                 d = json.loads(self._body() or b"{}")
                 members = d.get("members", [])
+                # 소속(corps) 판정 — 은하스카우트 전체 저장은 **은하 DB**로 보낸다.
+                #  (세션 corps 우선, 없으면 payload 의 corps 로 판정)
+                _is_eunha_save = (
+                    str((self._sess() or {}).get("corps") or "tsak") == "eunha")
+                if (not _is_eunha_save and members
+                        and isinstance(members[0], dict)
+                        and str(members[0].get("corps") or "") == "eunha"):
+                    _is_eunha_save = True
+                target_db = EUNHA_DB_FILE if _is_eunha_save else DB_FILE
                 # 연맹명 정규화(저장 시 일괄)
                 for _m in members:
                     if isinstance(_m, dict):
@@ -9536,13 +9965,19 @@ class Handler(BaseHTTPRequestHandler):
                             _m["regLeague"] = _normalize_league(_m.get("regLeague", ""))
                 with LOCK:
                     # backup before overwrite
-                    if NAS.exists(DB_FILE):
+                    if NAS.exists(target_db):
                         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                        old = NAS.read(DB_FILE)
-                        NAS.write(f"{BASE}/backups/members_{stamp}.json", old.encode("utf-8"))
-                    _save_json(DB_FILE, members)
+                        old = NAS.read(target_db)
+                        NAS.write(f"{BASE}/backups/{'eunha_' if _is_eunha_save else ''}members_{stamp}.json",
+                                  old.encode("utf-8"))
+                    # 멘토/페런츠 ↔ 멘티/자녀대원 양방향 연동(요구).
+                    #  (은하스카우트는 범스카우트 연동 규칙과 무관 — 적용 제외)
+                    if not _is_eunha_save:
+                        _link_reconcile_apply(members, save=False)
+                    _save_json(target_db, members)
                     meta = _touch_meta({"count": len(members), "updatedBy": d.get("by", "app")})
-                return self._json({"ok": True, "meta": meta})
+                return self._json({"ok": True, "meta": meta,
+                                   "corps": "eunha" if _is_eunha_save else "tsak"})
             if p == "/api/members/league-normalize":
                 # 연맹명 일괄 정규화(1회 마이그레이션) — 관리자·마스터 전용.
                 #   '광주연맹'→'광주', '인천→서울북부'→'인천' 등 표기 통일.
@@ -9602,6 +10037,8 @@ class Handler(BaseHTTPRequestHandler):
                     summary = _merge_addrbook(members, rows, overwrite=overwrite)
                     if not dry and summary["updated"] > 0:
                         _ev_backup_members()
+                        # 멘토/페런츠 ↔ 멘티/자녀대원 양방향 연동(요구).
+                        _link_reconcile_apply(members, save=False)
                         _save_json(DB_FILE, members)
                         _touch_meta({"count": len(members),
                                      "updatedBy": "addressbook"})
