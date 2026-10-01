@@ -839,13 +839,31 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: (selfView || !state.can('memberAdd'))
           ? null
           : (_selectMode
-                ? FloatingActionButton.extended(
-                    backgroundColor: AppColors.purple,
-                    onPressed: _selected.isEmpty
-                        ? null
-                        : () => _openExport(state, members),
-                    icon: const Icon(Icons.ios_share),
-                    label: Text('내보내기 (${_selected.length})'),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 마스터 전용 — 선택 계정 완전 삭제
+                      if (state.isMaster)
+                        FloatingActionButton.extended(
+                          heroTag: 'delSel',
+                          backgroundColor: AppColors.taegeukRed,
+                          onPressed: _selected.isEmpty
+                              ? null
+                              : () => _deleteSelected(state, members),
+                          icon: const Icon(Icons.delete_forever),
+                          label: Text('삭제 (${_selected.length})'),
+                        ),
+                      if (state.isMaster) const SizedBox(width: 10),
+                      FloatingActionButton.extended(
+                        heroTag: 'expSel',
+                        backgroundColor: AppColors.purple,
+                        onPressed: _selected.isEmpty
+                            ? null
+                            : () => _openExport(state, members),
+                        icon: const Icon(Icons.ios_share),
+                        label: Text('내보내기 (${_selected.length})'),
+                      ),
+                    ],
                   )
                 : FloatingActionButton.small(
                     backgroundColor: AppColors.taegeukRed,
@@ -2512,6 +2530,66 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// (마스터) 명단선택 창에서 선택한 계정을 **완전 삭제**.
+  ///  · 범스카우트(스포츠): 로컬 목록에서 제거 → 전체 저장 시 NAS 에서도 삭제.
+  ///  · 은하스카우트: 서버 별도 명단(/api/member/delete)에서 삭제.
+  ///  삭제는 되돌릴 수 없으므로 삭제 대상을 명시한 확인창을 거친다.
+  Future<void> _deleteSelected(AppState state, List<Member> all) async {
+    final selected = all.where((m) => _selected.contains(m.id)).toList();
+    if (selected.isEmpty) return;
+    final preview = StringBuffer();
+    for (final m in selected.take(10)) {
+      final label = m.corps == 'eunha' ? '은하${m.number}' : '인가 ${m.number}';
+      preview.writeln('· $label ${m.name}');
+    }
+    if (selected.length > 10) {
+      preview.writeln('… 외 ${selected.length - 10}명');
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('선택한 ${selected.length}명 계정 삭제'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('아래 계정을 완전히 삭제합니다.',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(preview.toString(),
+                style: const TextStyle(fontSize: 12.5)),
+            const SizedBox(height: 12),
+            const Text(
+              '※ 삭제한 계정은 복구할 수 없습니다 (서버 백업은 자동 생성).',
+              style: TextStyle(fontSize: 12, color: AppColors.taegeukRed),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final n = await state.deleteMembers(selected);
+    if (!mounted) return;
+    setState(() {
+      _selectMode = false;
+      _selected.clear();
+    });
+    _snack(n > 0 ? '$n명 계정을 삭제했습니다' : '삭제에 실패했습니다');
   }
 
   void _openExport(AppState state, List<Member> all) {

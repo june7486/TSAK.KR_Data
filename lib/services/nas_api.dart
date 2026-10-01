@@ -530,6 +530,21 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 선택 계정 완전 삭제(마스터 전용). [corps] 로 소속 명단을 지정한다.
+  Future<Map<String, dynamic>> deleteMembers(
+    List<String> ids, {
+    String corps = 'tsak',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/member/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ids': ids, 'corps': corps}),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   // ---- Meta / Config ----
   Future<Map<String, dynamic>> fetchMeta() async {
     final r = await http

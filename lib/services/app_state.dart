@@ -1746,6 +1746,32 @@ class AppState extends ChangeNotifier {
 
   Future<int> nextNumber() => repo.nextNumber();
 
+  /// 선택 계정 완전 삭제(마스터 전용). 삭제 성공 건수를 반환한다.
+  ///  · 스포츠(범스카우트): 전체 저장 시 고아 삭제가 함께 반영된다.
+  ///  · 은하스카우트: 서버 별도 명단에서 삭제 후 재조회한다.
+  Future<int> deleteMembers(List<Member> members) async {
+    if (members.isEmpty) return 0;
+    final isE = members.first.corps == 'eunha';
+    final ids = members.map((m) => m.id).toList();
+    if (repo.isNasMode) {
+      try {
+        final res = await nas.deleteMembers(ids, corps: isE ? 'eunha' : 'tsak');
+        if (res['ok'] != true) return 0;
+      } catch (_) {
+        return 0;
+      }
+    }
+    if (isE) {
+      await loadEunhaMembers();
+    } else {
+      for (final m in members) {
+        await repo.delete(m.id);
+      }
+    }
+    refresh();
+    return ids.length;
+  }
+
   Map<int, int> get yearDistribution {
     final map = <int, int>{};
     for (final m in repo.all()) {

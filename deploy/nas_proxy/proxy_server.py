@@ -9393,6 +9393,32 @@ class Handler(BaseHTTPRequestHandler):
                     _link_profiles_save(profs)
                 return self._json({"ok": True, "profile": p,
                                    "loginId": login_id, "password": pw})
+            if p == "/api/member/delete":
+                # 선택 계정 완전 삭제(마스터 전용) — 스포츠/은하 모두 지원.
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                ids = d.get("ids")
+                if not isinstance(ids, list):
+                    ids = [d.get("id", "")] if d.get("id") else []
+                ids = {str(x) for x in ids if str(x).strip()}
+                if not ids:
+                    return self._json({"ok": False, "error": "ids"}, 400)
+                corps = _resolve_corps(d.get("corps", ""), "")
+                target = EUNHA_DB_FILE if corps == "eunha" else DB_FILE
+                with LOCK:
+                    members = _load_json(target, [])
+                    keep = [m for m in members if str(m.get("id", "")) not in ids]
+                    removed = len(members) - len(keep)
+                    if removed and NAS.exists(target):
+                        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        NAS.write(f"{BASE}/backups/{target.rsplit('/', 1)[-1].replace('.json','')}_{stamp}.json",
+                                  NAS.read(target).encode("utf-8"))
+                    _save_json(target, keep)
+                    meta = _touch_meta({"count": len(keep),
+                                        "updatedBy": "delete:%d" % removed})
+                return self._json({"ok": True, "removed": removed,
+                                   "count": len(keep), "meta": meta})
             if p == "/api/member/link-request":
                 # 승인 요청 — 회원(본인)/관리자가 멘토·페런츠 연결을 승인요청 상태로.
                 #   → 관리자·마스터 배지(승인관리)에 즉시 반영된다.
