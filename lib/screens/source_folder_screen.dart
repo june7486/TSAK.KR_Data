@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
@@ -54,6 +55,30 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 기본자료 폴더는 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음").
+    if (!context.watch<AppState>().isMaster) {
+      return Scaffold(
+        appBar: TsakAppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          title: const Text('기본자료 폴더'),
+          titleSpacing: 0,
+          actions: const [AppHomeEmblem(size: 24)],
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              '기본자료 폴더는 마스터만 볼 수 있습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: TsakAppBar(
         leading: IconButton(

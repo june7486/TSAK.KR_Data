@@ -169,14 +169,15 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    if (!(state.isApp || state.isMaster)) {
+    // 기본자료 폴더 소속 분석 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음").
+    if (!state.isMaster) {
       return Scaffold(
         appBar: TsakAppBar(
           leading: const AppBackButton(label: '뒤로'),
           leadingWidth: 84,
           title: const Text('은행거래 종합분석'),
         ),
-        body: const Center(child: Text('관리자 권한이 필요합니다')),
+        body: const Center(child: Text('기본자료는 마스터만 볼 수 있습니다')),
       );
     }
     return Scaffold(

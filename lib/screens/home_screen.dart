@@ -649,15 +649,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const PopupMenuItem(
-                    value: 'source',
-                    child: _MenuItem(
-                      icon: Icons.folder_special,
-                      label: '기본자료 폴더 (첨부·자동분석)',
-                      color: AppColors.taegeukBlue,
-                      role: '관리자',
-                    ),
-                  ),
-                  const PopupMenuItem(
                     value: 'import',
                     child: _MenuItem(
                       icon: Icons.auto_awesome,
@@ -667,6 +658,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ],
+                // 기본자료 폴더 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
+                if (state.isMaster)
+                  const PopupMenuItem(
+                    value: 'source',
+                    child: _MenuItem(
+                      icon: Icons.folder_special,
+                      label: '기본자료 폴더 (첨부·자동분석)',
+                      color: AppColors.taegeukRed,
+                      role: '마스터',
+                    ),
+                  ),
                 if (state.isMaster)
                   const PopupMenuItem(
                     value: 'settings',
@@ -1346,9 +1348,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   // (9) 결산
                   _finButton('결산', Icons.calculate, AppColors.scoutGreen, 5),
-                  // (10) 기본자료
-                  _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
                 ],
+                // (10) 기본자료 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
+                if (state.isMaster)
+                  _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
               ],
             ),
           ),

@@ -7690,7 +7690,7 @@ class Handler(BaseHTTPRequestHandler):
                 })
             # ---- Phase4: 은행거래 종합분석 (캐시 우선, 관리자·마스터) ----
             if p == "/api/finance/analysis":
-                if not self._require("admin"):
+                if not self._require("master"):
                     return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 force = (q.get("force", ["0"])[0] or "0") in ("1", "true", "yes")
@@ -7706,7 +7706,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "cached": False, "analysis": data})
             if p == "/api/finance/analysis/fresh":
                 # 항상 최신 폴더 기준으로 재분석(작업중 화면용 - 동기 실행)
-                if not self._require("admin"):
+                if not self._require("master"):
                     return
                 data = _finance_analyze_all(force=True)
                 try:
@@ -7753,9 +7753,9 @@ class Handler(BaseHTTPRequestHandler):
                 members = _load_json(DB_FILE, [])
                 fin = _load_json(FIN_FILE, _default_finance())
                 return self._json({"ok": True, "stats": _compute_stats(fin, members)})
-            # ---- 기본자료 파일 목록 (관리자·마스터 전용) ----
+            # ---- 기본자료 파일 목록 (마스터 전용) ----
             if p == "/api/files":
-                if not self._require("admin"):
+                if not self._require("master"):
                     return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 folder = (q.get("folder", [""])[0] or "").strip()
@@ -7772,6 +7772,9 @@ class Handler(BaseHTTPRequestHandler):
                 files.sort(key=lambda x: x["name"], reverse=True)
                 return self._json({"ok": True, "folder": sub, "files": files})
             if p == "/api/files/download":
+                # 기본자료 다운로드 — 마스터 전용(웹은 쿠키 tsak_sid 로 인증).
+                if not self._require("master"):
+                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 folder = SUB_FOLDERS.get(q.get("folder", [""])[0], q.get("folder", [""])[0])
                 name = q.get("name", [""])[0]
@@ -9640,8 +9643,10 @@ class Handler(BaseHTTPRequestHandler):
                 members = _load_json(DB_FILE, [])
                 fin = _load_json(FIN_FILE, _default_finance())
                 return self._json({"ok": True, "stats": _compute_stats(fin, members)})
-            # ---- 기본자료 파일 업로드(base64) + 자동분석 ----
+            # ---- 기본자료 파일 업로드(base64) + 자동분석 (마스터 전용) ----
             if p == "/api/files":
+                if not self._require("master"):
+                    return
                 d = json.loads(self._body() or b"{}")
                 folder = SUB_FOLDERS.get(d.get("folder", ""), d.get("folder", "")) or "기타"
                 name = d.get("name", "file")
