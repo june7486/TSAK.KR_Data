@@ -9,7 +9,7 @@ import '../widgets/tsak_app_bar.dart';
 
 /// 은하스카우트 명단 — 범스카우트와 **분리 관리**되는 별도 명단.
 ///
-/// 관리자·마스터 전용. 항목: 인가번호(은하#N) · 성명 · 생년월일 · 소속 · 인가년월일.
+/// 관리자·마스터 전용. 항목: 인가번호(은하N) · 성명 · 생년월일 · 소속 · 인가년월일.
 class EunhaRosterScreen extends StatefulWidget {
   const EunhaRosterScreen({super.key});
 
@@ -41,7 +41,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
     return ms
         .where((m) =>
             m.searchText.contains(q) ||
-            '은하#${m.number}'.contains(q) ||
+            '은하${m.number}'.contains(q) ||
             m.name.contains(q))
         .toList();
   }
@@ -68,7 +68,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
                     controller: _searchCtrl,
                     onChanged: (v) => setState(() => _q = v),
                     decoration: InputDecoration(
-                      hintText: '이름 · 은하#번호 · 소속 검색',
+                      hintText: '이름 · 은하번호 · 소속 검색',
                       prefixIcon: const Icon(Icons.search, size: 20),
                       isDense: true,
                       suffixIcon: _q.isEmpty
@@ -146,7 +146,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
       title: Row(
         children: [
           Text(
-            '은하#${m.number}',
+            '은하${m.number}',
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,

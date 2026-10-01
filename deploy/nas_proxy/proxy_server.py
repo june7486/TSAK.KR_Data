@@ -2100,13 +2100,14 @@ def _personal_pw_of(no):
 
 
 def _personal_pw_of_eunha(no):
-    """은하스카우트 개인비번 — 기본 '은하#{no}!@@'.
+    """은하스카우트 개인비번 — 기본 '{no}!@@'.
 
-    범스카우트({no}!@@)와 규칙이 다르며, 화면에 규칙을 노출하지 않는다.
+    아이디 규칙: '은하50'(은하+인가번호) / 비밀번호: '50!@@'.
+    화면에는 비밀번호 규칙을 노출하지 않는다.
     """
     no = re.sub(r"[^0-9]", "", str(no))
     pws = _cfg_value("eunhaPasswords", {}) or {}
-    return str(pws.get(no) or f"은하#{no}!@@")
+    return str(pws.get(no) or f"{no}!@@")
 
 
 def _granted_admins():
