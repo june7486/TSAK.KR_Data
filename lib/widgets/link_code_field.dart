@@ -200,7 +200,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             final previewPhone = phoneCtrl.text;
             final (pid, ppw) = _genCred(previewPhone);
             return AlertDialog(
-              title: Text(isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인가번호 · 인적사항'),
+              title: Text(isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인적사항'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -211,7 +211,11 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       enabled: !isEdit,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        labelText: isMentor ? '범인가자번호 (멘티) *' : '인가번호 *',
+                        labelText: isMentor
+                            ? '범인가자번호 (멘티) *'
+                            // 요구: 페런츠가 범스카우트 인가자인 경우에만 입력(선택).
+                            : '인가번호 (페런츠가 범스카우트일 경우 입력) (선택)',
+                        hintText: isMentor ? null : '모르면 비워두세요 (선택사항)',
                         isDense: true,
                       ),
                     ),
@@ -290,36 +294,53 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.scoutGreen.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '전화번호로 아이디·비밀번호 자동 생성',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.scoutGreen,
-                            ),
+                    // 요구: 페런츠가 범스카우트 인가자인 경우 그 페이지(자녀대원)와
+                    //   연동됨을 안내. 인가번호 입력은 **선택사항**이다.
+                    if (!isMentor)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.tigerGold.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.tigerGold.withValues(alpha: 0.5),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '아이디 : ${pid.isEmpty ? '(전화번호 입력)' : pid}\n'
-                            '비밀번호 : ${ppw.isEmpty ? '(전화번호 입력)' : ppw}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              color: AppColors.textDark,
-                            ),
+                        ),
+                        child: const Text(
+                          '인가번호는 페런츠가 범스카우트 인가자일 때 입력합니다(선택).\n'
+                          '인가번호를 입력하면 그 인가자 페이지의 [자녀대원 등록정보]에 '
+                          '이 대원이 자동 연동됩니다.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.4,
+                            color: AppColors.textDark,
                           ),
-                        ],
+                        ),
                       ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '전화번호로 아이디·비밀번호 자동 생성',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.scoutGreen,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '아이디 : ${pid.isEmpty ? '(전화번호 입력)' : pid}\n'
+                          '비밀번호 : ${ppw.isEmpty ? '(전화번호 입력)' : ppw}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -354,9 +375,11 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     if (saved != true || !mounted) return;
 
     final code = _clean(noCtrl.text);
-    if (code.isEmpty) return;
     final nm = nameCtrl.text.trim();
     final ph = phoneCtrl.text.trim();
+    // 페런츠 인가번호는 **선택** — 비어 있어도 인적사항을 저장한다(요구).
+    //  · 멘토: 인가번호(멘티=본인)는 필수 → 비면 저장하지 않음.
+    if (isMentor && code.isEmpty) return;
     // 인적사항을 입력했으면 프로필 저장(아이디·비번 생성).
     if (nm.isNotEmpty || ph.isNotEmpty) {
       if (nm.isEmpty || ph.isEmpty) {
@@ -372,7 +395,10 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
         }
         final r = await _nas.linkProfileSave(
           profile: {
-            'number': code,
+            // 페런츠 인가번호가 없으면 이름 기반 임시 코드(9000xx)로 저장.
+            'number': code.isNotEmpty
+                ? code
+                : (900000 + (nm.hashCode.abs() % 99999)).toString(),
             'name': nm,
             'phone': ph,
             'league': lg,
@@ -384,14 +410,15 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
           final p =
               (r['profile'] as Map?)?.cast<String, dynamic>() ??
               {'number': code, 'name': nm, 'phone': ph};
-          setState(() => _profiles[code] = p);
+          final key = '${p['number'] ?? code}';
+          setState(() => _profiles[key] = p);
         } else {
           _snack('인적사항 저장 실패: ${r['error'] ?? ''}');
         }
       }
     }
-    // 목록에 인가번호 반영.
-    if (!widget.codes.contains(code)) {
+    // 목록에 인가번호 반영 — 페런츠 인가번호가 있을 때만.
+    if (code.isNotEmpty && !widget.codes.contains(code)) {
       widget.onChanged([...widget.codes, code]);
     }
   }

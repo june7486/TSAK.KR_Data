@@ -48,8 +48,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
   IconData get _icon =>
       _isMentee ? Icons.supervisor_account : Icons.family_restroom;
   String get _title => _isMentee ? '멘티 등록정보' : '자녀대원 등록정보';
-  String get _codeLabel =>
-      _isMentee ? '멘티대원 인가번호' : '자녀대원 인가번호';
+  String get _codeLabel => _isMentee ? '멘티대원 인가번호' : '자녀대원 인가번호';
 
   String _nameOf(String code) {
     final d = code.replaceAll(RegExp(r'[^0-9]'), '');
@@ -57,6 +56,18 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
     final byNo = state.byNumber(d);
     if (byNo != null && byNo.name.trim().isNotEmpty) return byNo.name.trim();
     return '';
+  }
+
+  /// 자녀대원/멘티대원의 **인가정보(연맹·단위대)** — 회원 명단에서 조회.
+  String _infoOf(String code) {
+    final d = code.replaceAll(RegExp(r'[^0-9]'), '');
+    final state = context.watch<AppState>();
+    final m = state.byNumber(d);
+    if (m == null) return '';
+    final parts = <String>[];
+    if (m.league.trim().isNotEmpty) parts.add(m.league.trim());
+    if (m.unit.trim().isNotEmpty) parts.add(m.unit.trim());
+    return parts.join(' · ');
   }
 
   @override
@@ -78,11 +89,8 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
             ),
             const SizedBox(width: 6),
             Text(
-              '($_codeLabel · 이름)',
-              style: const TextStyle(
-                fontSize: 10.5,
-                color: AppColors.textGray,
-              ),
+              _isMentee ? '($_codeLabel · 이름)' : '($_codeLabel · 이름 · 인가정보)',
+              style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
             ),
             const Spacer(),
             if (widget.canEdit)
@@ -103,9 +111,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
           Padding(
             padding: const EdgeInsets.only(left: 20, top: 2, bottom: 2),
             child: Text(
-              _isMentee
-                  ? '등록된 멘티대원 없음 (복수 등록 가능)'
-                  : '등록된 자녀대원 없음 (복수 등록 가능)',
+              _isMentee ? '등록된 멘티대원 없음 (복수 등록 가능)' : '등록된 자녀대원 없음 (복수 등록 가능)',
               style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
           )
@@ -114,9 +120,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
             padding: const EdgeInsets.only(top: 2),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final code in widget.codes) _row(code),
-              ],
+              children: [for (final code in widget.codes) _row(code)],
             ),
           ),
       ],
@@ -126,9 +130,11 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
   Widget _row(String code) {
     final d = code.replaceAll(RegExp(r'[^0-9]'), '');
     final nm = _nameOf(code);
+    final info = _infoOf(code);
     return Padding(
       padding: const EdgeInsets.only(left: 20, top: 3, bottom: 3),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -147,21 +153,42 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
           ),
           const SizedBox(width: 7),
           Expanded(
-            child: Text(
-              nm.isEmpty ? '(이름 미확인)' : nm,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: nm.isEmpty ? AppColors.textGray : AppColors.textDark,
-                fontStyle: nm.isEmpty ? FontStyle.italic : FontStyle.normal,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nm.isEmpty ? '(이름 미확인)' : nm,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: nm.isEmpty ? AppColors.textGray : AppColors.textDark,
+                    fontStyle: nm.isEmpty ? FontStyle.italic : FontStyle.normal,
+                  ),
+                ),
+                if (info.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      info,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.textGray,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           if (widget.canEdit)
             IconButton(
               tooltip: '삭제',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.close, size: 16, color: AppColors.textGray),
+              icon: const Icon(
+                Icons.close,
+                size: 16,
+                color: AppColors.textGray,
+              ),
               onPressed: () {
                 final next = List<String>.from(widget.codes)..remove(code);
                 widget.onChanged(next);
@@ -176,6 +203,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
   Future<void> _edit() async {
     final noCtrl = TextEditingController();
     String resolved = '';
+    String resolvedInfo = '';
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -205,9 +233,18 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
                     onChanged: (v) {
                       final d = v.replaceAll(RegExp(r'[^0-9]'), '');
                       final found = context.read<AppState>().byNumber(d);
-                      setDlg(
-                        () => resolved = found?.name.trim() ?? '',
-                      );
+                      final nm2 = found?.name.trim() ?? '';
+                      final infoParts = <String>[];
+                      if ((found?.league.trim() ?? '').isNotEmpty) {
+                        infoParts.add(found!.league.trim());
+                      }
+                      if ((found?.unit.trim() ?? '').isNotEmpty) {
+                        infoParts.add(found!.unit.trim());
+                      }
+                      setDlg(() {
+                        resolved = nm2;
+                        resolvedInfo = infoParts.join(' · ');
+                      });
                     },
                     decoration: InputDecoration(
                       labelText: '$_codeLabel *',
@@ -226,6 +263,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
                           resolved.isNotEmpty
@@ -241,7 +279,8 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
                           child: Text(
                             resolved.isNotEmpty
                                 ? '이름 : $resolved (명단에서 확인됨)'
-                                : '인가번호를 입력하면 이름이 자동으로 채워집니다.',
+                                      '${resolvedInfo.isEmpty ? '' : '\n인가정보 : $resolvedInfo'}'
+                                : '인가번호를 입력하면 이름·인가정보(연맹·단위대)가 자동으로 채워집니다.',
                             style: const TextStyle(
                               fontSize: 11.5,
                               height: 1.4,

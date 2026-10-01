@@ -1564,6 +1564,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       eventAttend: _existing?.eventAttend ?? {},
       mentors: List<String>.from(_mentors),
       parents: List<String>.from(_parents),
+      // ⚠ 이 화면은 멘토·페런츠만 편집한다. 멘티·자녀대원 등록정보는 상세화면에서
+      //   별도 저장되므로 **기존값을 반드시 보존**해야 데이터 손실을 막을 수 있다.
+      mentees: List<String>.from(_existing?.mentees ?? const []),
+      children: List<String>.from(_existing?.children ?? const []),
       linkApprovalStatus: linkStatus,
       linkApprovalNote: linkNote,
       linkApprovedAt: _existing?.linkApprovedAt ?? '',
