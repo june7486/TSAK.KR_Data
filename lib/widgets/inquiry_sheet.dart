@@ -88,7 +88,10 @@ class _InquirySheetState extends State<_InquirySheet> {
   }
 
   Future<void> _pickFiles() async {
-    final res = await pickDataFiles(allowMultiple: true, dialogTitle: '문의 첨부파일 선택');
+    final res = await pickDataFiles(
+      allowMultiple: true,
+      dialogTitle: '문의 첨부파일 선택',
+    );
     if (res.isEmpty) return;
     setState(() {
       for (final f in res) {
@@ -107,8 +110,12 @@ class _InquirySheetState extends State<_InquirySheet> {
     final b = StringBuffer();
     b.writeln('[TSAK 문의]');
     b.writeln('이름(실명): ${_name.text.trim()}');
-    b.writeln('인가번호: ${_number.text.trim().isEmpty ? '(미입력)' : _number.text.trim()}');
-    b.writeln('휴대폰: ${_phone.text.trim().isEmpty ? '(미입력)' : _phone.text.trim()}');
+    b.writeln(
+      '인가번호: ${_number.text.trim().isEmpty ? '(미입력)' : _number.text.trim()}',
+    );
+    b.writeln(
+      '휴대폰: ${_phone.text.trim().isEmpty ? '(미입력)' : _phone.text.trim()}',
+    );
     b.writeln('개인정보 활용(사진 포함) 동의: 동의함');
     b.writeln('첨부파일: ${_files.map((f) => f.name).join(', ')}');
     b.writeln('----------');
@@ -146,7 +153,8 @@ class _InquirySheetState extends State<_InquirySheet> {
     // 서버 접수(기록) 먼저 — 작성창 취소해도 문의가 남도록.
     if (!_recorded) _record();
     final to = _toEmail;
-    final subject = '[TSAK 문의] ${_subject.text.trim().isEmpty ? '문의' : _subject.text.trim()} — ${_name.text.trim()}';
+    final subject =
+        '[TSAK 문의] ${_subject.text.trim().isEmpty ? '문의' : _subject.text.trim()} — ${_name.text.trim()}';
 
     // 네이버/지메일 선택 (아이디 있는 서비스로 보낸사람 고정).
     final provider = await showModalBottomSheet<String>(
@@ -165,16 +173,19 @@ class _InquirySheetState extends State<_InquirySheet> {
                 children: [
                   Icon(Icons.outgoing_mail, size: 18, color: AppColors.purple),
                   SizedBox(width: 6),
-                  Text('내 메일로 보내기',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                  Text(
+                    '내 메일로 보내기',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+                  ),
                 ],
               ),
             ),
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text('평소 쓰는 메일을 골라 작성창을 여세요 (보낸사람=본인)',
-                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+              child: Text(
+                '평소 쓰는 메일을 골라 작성창을 여세요 (보낸사람=본인)',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.mail_outline, color: Color(0xFF34A853)),
@@ -206,10 +217,12 @@ class _InquirySheetState extends State<_InquirySheet> {
     final Uri uri;
     if (provider == 'gmail') {
       uri = Uri.parse(
-          'https://mail.google.com/mail/?view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(_mailBody)}');
+        'https://mail.google.com/mail/?view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(_mailBody)}',
+      );
     } else if (provider == 'naver') {
       uri = Uri.parse(
-          'https://mail.naver.com/write/popup?to=${enc(to)}&subject=${enc(subject)}&body=${enc(_mailBody)}');
+        'https://mail.naver.com/write/popup?to=${enc(to)}&subject=${enc(subject)}&body=${enc(_mailBody)}',
+      );
     } else {
       uri = Uri(
         scheme: 'mailto',
@@ -246,15 +259,15 @@ class _InquirySheetState extends State<_InquirySheet> {
         files.add({'name': f.name, 'data': base64Encode(f.bytes)});
       }
       final res = await context.read<AppState>().nas.submitInquiry(
-            name: _name.text.trim(),
-            email: _email.text.trim(),
-            phone: _phone.text.trim(),
-            number: _number.text.trim(),
-            subject: _subject.text.trim(),
-            message: _message.text.trim(),
-            agreed: _agreed,
-            files: files,
-          );
+        name: _name.text.trim(),
+        email: _email.text.trim(),
+        phone: _phone.text.trim(),
+        number: _number.text.trim(),
+        subject: _subject.text.trim(),
+        message: _message.text.trim(),
+        agreed: _agreed,
+        files: files,
+      );
       if (res['ok'] == true) {
         _recorded = true;
         return true;
@@ -338,18 +351,29 @@ class _InquirySheetState extends State<_InquirySheet> {
                   ),
                   const Row(
                     children: [
-                      Icon(Icons.mark_email_read_rounded,
-                          color: AppColors.purple, size: 22),
+                      Icon(
+                        Icons.mark_email_read_rounded,
+                        color: AppColors.purple,
+                        size: 22,
+                      ),
                       SizedBox(width: 8),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('문의하기',
-                              style: TextStyle(
-                                  fontSize: 17, fontWeight: FontWeight.w900)),
-                          Text('문의는 이메일로 접수됩니다',
-                              style: TextStyle(
-                                  fontSize: 11.5, color: AppColors.textGray)),
+                          Text(
+                            '문의하기',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '문의는 이메일로 접수됩니다',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -361,8 +385,12 @@ class _InquirySheetState extends State<_InquirySheet> {
                   const SizedBox(height: 10),
                   _field(_phone, '휴대폰번호', keyboard: TextInputType.phone),
                   const SizedBox(height: 10),
-                  _field(_email, '보낸사람 이메일 (필수)',
-                      keyboard: TextInputType.emailAddress, required: true),
+                  _field(
+                    _email,
+                    '보낸사람 이메일 (필수)',
+                    keyboard: TextInputType.emailAddress,
+                    required: true,
+                  ),
                   const SizedBox(height: 10),
                   _field(_subject, '제목 (선택)'),
                   const SizedBox(height: 10),
@@ -386,7 +414,9 @@ class _InquirySheetState extends State<_InquirySheet> {
                     label: const Text(
                       '내 메일로 보내기 (작성창 열기)',
                       style: TextStyle(
-                          fontWeight: FontWeight.w900, fontSize: 15),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -405,13 +435,17 @@ class _InquirySheetState extends State<_InquirySheet> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.purple),
+                              strokeWidth: 2,
+                              color: AppColors.purple,
+                            ),
                           )
                         : const Icon(Icons.save_alt, size: 18),
                     label: Text(
                       _sending ? '전송 중…' : '서버에만 접수 (기록)',
                       style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 14),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -421,7 +455,10 @@ class _InquirySheetState extends State<_InquirySheet> {
                     '보낸사람 이메일이 없거나 개인정보 활용에 동의하지 않으면 발송할 수 없습니다.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 11, color: AppColors.textGray, height: 1.4),
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -466,8 +503,10 @@ class _InquirySheetState extends State<_InquirySheet> {
             children: [
               const Icon(Icons.attach_file, size: 16, color: AppColors.purple),
               const SizedBox(width: 6),
-              const Text('파일 첨부',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+              const Text(
+                '파일 첨부',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
               const Spacer(),
               TextButton.icon(
                 onPressed: _sending ? null : _pickFiles,
@@ -479,8 +518,10 @@ class _InquirySheetState extends State<_InquirySheet> {
           if (_files.isEmpty)
             const Padding(
               padding: EdgeInsets.only(left: 2, top: 2),
-              child: Text('첨부된 파일이 없습니다. (파일당 최대 5MB)',
-                  style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+              child: Text(
+                '첨부된 파일이 없습니다. (파일당 최대 5MB)',
+                style: TextStyle(fontSize: 11, color: AppColors.textGray),
+              ),
             )
           else
             Wrap(
@@ -542,9 +583,13 @@ class _InquirySheetState extends State<_InquirySheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('개인정보 수집·이용 및 사진 활용 동의 (필수)',
-                      style: TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w800)),
+                  const Text(
+                    '개인정보 수집·이용 및 사진 활용 동의 (필수)',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     '· 수집 항목: 이름(실명), 인가번호(선택), 휴대폰번호, 이메일, 문의 내용, 첨부파일\n'
@@ -555,9 +600,7 @@ class _InquirySheetState extends State<_InquirySheet> {
                     style: TextStyle(
                       fontSize: 11,
                       height: 1.5,
-                      color: _agreed
-                          ? AppColors.textDark
-                          : AppColors.textGray,
+                      color: _agreed ? AppColors.textDark : AppColors.textGray,
                     ),
                   ),
                 ],

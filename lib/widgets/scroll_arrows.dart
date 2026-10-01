@@ -57,8 +57,10 @@ class _ScrollArrowsState extends State<ScrollArrows> {
 
   void _nudge(double delta) {
     if (!_ctrl.hasClients) return;
-    final target = (_ctrl.offset + delta)
-        .clamp(0.0, _ctrl.position.maxScrollExtent);
+    final target = (_ctrl.offset + delta).clamp(
+      0.0,
+      _ctrl.position.maxScrollExtent,
+    );
     _ctrl.animateTo(
       target,
       duration: const Duration(milliseconds: 260),

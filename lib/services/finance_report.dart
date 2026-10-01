@@ -57,9 +57,11 @@ class FinanceReportService {
     pw.Font? bold;
     try {
       base = pw.Font.ttf(
-          await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'));
+        await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
+      );
       bold = pw.Font.ttf(
-          await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'));
+        await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
+      );
     } catch (_) {
       base = null;
       bold = null;
@@ -82,8 +84,7 @@ class FinanceReportService {
     final events = (a['events'] as Map?)?.cast<String, dynamic>() ?? {};
     final files = (a['files'] as List?) ?? [];
 
-    final yearKeys = years.keys.toList()
-      ..sort((x, y) => y.compareTo(x)); // 최신순
+    final yearKeys = years.keys.toList()..sort((x, y) => y.compareTo(x)); // 최신순
 
     final doc = pw.Document(
       title: '한국범스카우트중앙회 재무 분석 보고서',
@@ -106,41 +107,77 @@ class FinanceReportService {
               pw.Center(child: pw.Image(emblem, height: 96, width: 96)),
             pw.SizedBox(height: 22),
             pw.Center(
-              child: pw.Column(children: [
-                pw.Text('한국범스카우트중앙회',
-                    style: pw.TextStyle(fontSize: 13, letterSpacing: 4, color: _sub)),
-                pw.SizedBox(height: 4),
-                pw.Text('TSAK',
-                    style: pw.TextStyle(fontSize: 10, letterSpacing: 6, color: _gold)),
-              ]),
+              child: pw.Column(
+                children: [
+                  pw.Text(
+                    '한국범스카우트중앙회',
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      letterSpacing: 4,
+                      color: _sub,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'TSAK',
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 6,
+                      color: _gold,
+                    ),
+                  ),
+                ],
+              ),
             ),
             pw.SizedBox(height: 60),
             pw.Container(width: 40, height: 2, color: _accent),
             pw.SizedBox(height: 16),
-            pw.Text('은행거래내역 종합분석 보고서',
-                style: pw.TextStyle(
-                    fontSize: 26, fontWeight: pw.FontWeight.bold,
-                    color: _ink, lineSpacing: 1.3)),
+            pw.Text(
+              '은행거래내역 종합분석 보고서',
+              style: pw.TextStyle(
+                fontSize: 26,
+                fontWeight: pw.FontWeight.bold,
+                color: _ink,
+                lineSpacing: 1.3,
+              ),
+            ),
             pw.SizedBox(height: 8),
-            pw.Text('2013 – ${t['to'] ?? ''}  ·  후원 · 수품 · 지출 · 행사',
-                style: const pw.TextStyle(fontSize: 11, color: _sub)),
+            pw.Text(
+              '2013 – ${t['to'] ?? ''}  ·  후원 · 수품 · 지출 · 행사',
+              style: const pw.TextStyle(fontSize: 11, color: _sub),
+            ),
             pw.SizedBox(height: 40),
             pw.Divider(color: _line, thickness: 0.8),
             pw.SizedBox(height: 16),
-            _coverRow('분석 기간', '${t['from'] ?? ''} – ${t['to'] ?? ''}년 (${t['yearCount'] ?? 0}개 연도)'),
+            _coverRow(
+              '분석 기간',
+              '${t['from'] ?? ''} – ${t['to'] ?? ''}년 (${t['yearCount'] ?? 0}개 연도)',
+            ),
             _coverRow('분석 건수', '${t['rows'] ?? 0}건 · 원본파일 ${files.length}개'),
-            _coverRow('총 수입', '${_won((t['income'] ?? 0) as num)}원  (${_short((t['income'] ?? 0) as num)}원)'),
-            _coverRow('총 지출', '${_won((t['expense'] ?? 0) as num)}원  (${_short((t['expense'] ?? 0) as num)}원)'),
+            _coverRow(
+              '총 수입',
+              '${_won((t['income'] ?? 0) as num)}원  (${_short((t['income'] ?? 0) as num)}원)',
+            ),
+            _coverRow(
+              '총 지출',
+              '${_won((t['expense'] ?? 0) as num)}원  (${_short((t['expense'] ?? 0) as num)}원)',
+            ),
             _coverRow('순액', '${_won((t['net'] ?? 0) as num)}원'),
             pw.SizedBox(height: 30),
             pw.Divider(color: _line, thickness: 0.8),
             pw.SizedBox(height: 8),
-            pw.Text('출력일 ${_today()}',
-                style: const pw.TextStyle(fontSize: 9, color: _sub)),
+            pw.Text(
+              '출력일 ${_today()}',
+              style: const pw.TextStyle(fontSize: 9, color: _sub),
+            ),
             pw.SizedBox(height: 2),
             pw.Text(
               '※ 본 보고서는 중앙회 기본자료 은행거래내역 폴더의 최신 파일을 기준으로 자동 생성되었습니다.',
-              style: const pw.TextStyle(fontSize: 7.5, color: _sub, lineSpacing: 1.4),
+              style: const pw.TextStyle(
+                fontSize: 7.5,
+                color: _sub,
+                lineSpacing: 1.4,
+              ),
             ),
           ],
         ),
@@ -160,8 +197,14 @@ class FinanceReportService {
         footer: _pageFooter,
         build: (ctx) => [
           pw.SizedBox(height: 6),
-          pw.Text('연도별 수입·지출 추이 (2013–${t['to'] ?? ''})',
-              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _ink)),
+          pw.Text(
+            '연도별 수입·지출 추이 (2013–${t['to'] ?? ''})',
+            style: pw.TextStyle(
+              fontSize: 12,
+              fontWeight: pw.FontWeight.bold,
+              color: _ink,
+            ),
+          ),
           pw.SizedBox(height: 10),
           _barChart(trendYears, years, width: 500, height: 150),
           pw.SizedBox(height: 18),
@@ -169,7 +212,11 @@ class FinanceReportService {
           pw.SizedBox(height: 16),
           pw.Text(
             '· 수입은 후원·수품구매·참가비·연회비·평생회비·기타를 포함하며, 지출은 행사비·운영비·수품구매·후원금집행을 포함합니다.',
-            style: const pw.TextStyle(fontSize: 7.5, color: _sub, lineSpacing: 1.5),
+            style: const pw.TextStyle(
+              fontSize: 7.5,
+              color: _sub,
+              lineSpacing: 1.5,
+            ),
           ),
         ],
       ),
@@ -187,12 +234,22 @@ class FinanceReportService {
         footer: _pageFooter,
         build: (ctx) {
           final out = <pw.Widget>[
-            pw.Text('월별 수입·지출 히트맵 (최근 연도)',
-                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _ink)),
+            pw.Text(
+              '월별 수입·지출 히트맵 (최근 연도)',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: _ink,
+              ),
+            ),
             pw.SizedBox(height: 6),
             pw.Text(
               '· 진한 색일수록 해당 월의 거래 규모가 큽니다. 연말·행사 시즌 편중을 파악할 수 있습니다.',
-              style: const pw.TextStyle(fontSize: 7.5, color: _sub, lineSpacing: 1.5),
+              style: const pw.TextStyle(
+                fontSize: 7.5,
+                color: _sub,
+                lineSpacing: 1.5,
+              ),
             ),
             pw.SizedBox(height: 12),
           ];
@@ -223,10 +280,16 @@ class FinanceReportService {
             out.add(_yearCategoryBlock(y, b));
             out.add(pw.SizedBox(height: 16));
           }
-          out.add(pw.Text(
-            '· 카테고리 별칭/규칙에 따라 입금자를 자동 분류한 결과입니다. 미분류 항목은 별도 검토가 필요합니다.',
-            style: const pw.TextStyle(fontSize: 7.5, color: _sub, lineSpacing: 1.5),
-          ));
+          out.add(
+            pw.Text(
+              '· 카테고리 별칭/규칙에 따라 입금자를 자동 분류한 결과입니다. 미분류 항목은 별도 검토가 필요합니다.',
+              style: const pw.TextStyle(
+                fontSize: 7.5,
+                color: _sub,
+                lineSpacing: 1.5,
+              ),
+            ),
+          );
           return out;
         },
       ),
@@ -236,8 +299,11 @@ class FinanceReportService {
     //  행사별 분석
     // ----------------------------------------------------------------------
     final eventList = events.values.toList();
-    eventList.sort((x, y) => ((y['income'] as num) + (y['expense'] as num))
-        .compareTo((x['income'] as num) + (x['expense'] as num)));
+    eventList.sort(
+      (x, y) => ((y['income'] as num) + (y['expense'] as num)).compareTo(
+        (x['income'] as num) + (x['expense'] as num),
+      ),
+    );
     doc.addPage(
       pw.MultiPage(
         theme: theme,
@@ -247,8 +313,14 @@ class FinanceReportService {
         footer: _pageFooter,
         build: (ctx) {
           final out = <pw.Widget>[
-            pw.Text('행사별 재무 규모 (수입+지출 상위)',
-                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _ink)),
+            pw.Text(
+              '행사별 재무 규모 (수입+지출 상위)',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: _ink,
+              ),
+            ),
             pw.SizedBox(height: 10),
           ];
           final rows = <List<String>>[];
@@ -264,16 +336,30 @@ class FinanceReportService {
               '${(e['count'] ?? 0)}',
             ]);
           }
-          out.add(_table(
-            ['행사명', '수입', '지출', '합계', '건수'],
-            rows,
-            aligns: const [pw.Alignment.centerLeft, pw.Alignment.centerRight, pw.Alignment.centerRight, pw.Alignment.centerRight, pw.Alignment.centerRight],
-          ));
+          out.add(
+            _table(
+              ['행사명', '수입', '지출', '합계', '건수'],
+              rows,
+              aligns: const [
+                pw.Alignment.centerLeft,
+                pw.Alignment.centerRight,
+                pw.Alignment.centerRight,
+                pw.Alignment.centerRight,
+                pw.Alignment.centerRight,
+              ],
+            ),
+          );
           out.add(pw.SizedBox(height: 14));
-          out.add(pw.Text(
-            '· 행사명이 거래 기재내용에 명시된 경우에만 행사로 귀속됩니다.',
-            style: const pw.TextStyle(fontSize: 7.5, color: _sub, lineSpacing: 1.5),
-          ));
+          out.add(
+            pw.Text(
+              '· 행사명이 거래 기재내용에 명시된 경우에만 행사로 귀속됩니다.',
+              style: const pw.TextStyle(
+                fontSize: 7.5,
+                color: _sub,
+                lineSpacing: 1.5,
+              ),
+            ),
+          );
           return out;
         },
       ),
@@ -306,8 +392,12 @@ class FinanceReportService {
             }
           }
           out.add(pw.SizedBox(height: 8));
-          out.add(pw.Text('· 이상 $shown건 (최신순). 자세한 전체 내역은 첨부 엑셀을 참조하세요.',
-              style: const pw.TextStyle(fontSize: 7.5, color: _sub)));
+          out.add(
+            pw.Text(
+              '· 이상 $shown건 (최신순). 자세한 전체 내역은 첨부 엑셀을 참조하세요.',
+              style: const pw.TextStyle(fontSize: 7.5, color: _sub),
+            ),
+          );
           return out;
         },
       ),
@@ -320,24 +410,33 @@ class FinanceReportService {
   //  구성 요소
   // --------------------------------------------------------------------------
   static pw.Widget _coverRow(String k, String v) => pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 5),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.SizedBox(
-                width: 78,
-                child: pw.Text(k,
-                    style: const pw.TextStyle(fontSize: 10, color: _sub))),
-            pw.Expanded(
-              child: pw.Text(v,
-                  style: pw.TextStyle(
-                      fontSize: 11.5, color: _ink, fontWeight: pw.FontWeight.bold)),
-            ),
-          ],
+    padding: const pw.EdgeInsets.symmetric(vertical: 5),
+    child: pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(
+          width: 78,
+          child: pw.Text(
+            k,
+            style: const pw.TextStyle(fontSize: 10, color: _sub),
+          ),
         ),
-      );
+        pw.Expanded(
+          child: pw.Text(
+            v,
+            style: pw.TextStyle(
+              fontSize: 11.5,
+              color: _ink,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
-  static pw.Widget _pageHeader(String title, pw.MemoryImage? emblem) => pw.Column(
+  static pw.Widget _pageHeader(String title, pw.MemoryImage? emblem) =>
+      pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Row(
@@ -345,12 +444,23 @@ class FinanceReportService {
             children: [
               if (emblem != null) pw.Image(emblem, height: 18, width: 18),
               if (emblem != null) pw.SizedBox(width: 6),
-              pw.Text(title,
-                  style: pw.TextStyle(
-                      fontSize: 11, fontWeight: pw.FontWeight.bold, color: _ink)),
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _ink,
+                ),
+              ),
               pw.Spacer(),
-              pw.Text('한국범스카우트중앙회 · TSAK',
-                  style: const pw.TextStyle(fontSize: 7.5, color: _sub, letterSpacing: 1)),
+              pw.Text(
+                '한국범스카우트중앙회 · TSAK',
+                style: const pw.TextStyle(
+                  fontSize: 7.5,
+                  color: _sub,
+                  letterSpacing: 1,
+                ),
+              ),
             ],
           ),
           pw.SizedBox(height: 4),
@@ -359,20 +469,24 @@ class FinanceReportService {
       );
 
   static pw.Widget _pageFooter(pw.Context ctx) => pw.Column(
+    children: [
+      pw.Divider(color: _line, thickness: 0.6),
+      pw.SizedBox(height: 3),
+      pw.Row(
         children: [
-          pw.Divider(color: _line, thickness: 0.6),
-          pw.SizedBox(height: 3),
-          pw.Row(
-            children: [
-              pw.Text('은행거래내역 종합분석 · 생성 ${_today()}',
-                  style: const pw.TextStyle(fontSize: 7, color: _sub)),
-              pw.Spacer(),
-              pw.Text('${ctx.pageNumber} / ${ctx.pagesCount}',
-                  style: const pw.TextStyle(fontSize: 7, color: _sub)),
-            ],
+          pw.Text(
+            '은행거래내역 종합분석 · 생성 ${_today()}',
+            style: const pw.TextStyle(fontSize: 7, color: _sub),
+          ),
+          pw.Spacer(),
+          pw.Text(
+            '${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 7, color: _sub),
           ),
         ],
-      );
+      ),
+    ],
+  );
 
   /// 연도별 막대 차트 (수입/지출 그룹)
   static pw.Widget _barChart(
@@ -405,19 +519,23 @@ class FinanceReportService {
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
                 pw.Container(
-                    width: barW,
-                    height: (vals[0] / maxV * height),
-                    color: _income),
+                  width: barW,
+                  height: (vals[0] / maxV * height),
+                  color: _income,
+                ),
                 pw.SizedBox(width: 1),
                 pw.Container(
-                    width: barW,
-                    height: (vals[1] / maxV * height),
-                    color: _expense),
+                  width: barW,
+                  height: (vals[1] / maxV * height),
+                  color: _expense,
+                ),
               ],
             ),
             pw.SizedBox(height: 3),
-            pw.Text(label.length > 4 ? label.substring(2) : label,
-                style: const pw.TextStyle(fontSize: 6.5, color: _sub)),
+            pw.Text(
+              label.length > 4 ? label.substring(2) : label,
+              style: const pw.TextStyle(fontSize: 6.5, color: _sub),
+            ),
           ],
         ),
       );
@@ -426,14 +544,18 @@ class FinanceReportService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Row(children: [
-          _legendDot(_income, '수입'),
-          pw.SizedBox(width: 10),
-          _legendDot(_expense, '지출'),
-          pw.Spacer(),
-          pw.Text('단위: 원 (최대 ${_short(maxV)}원)',
-              style: const pw.TextStyle(fontSize: 6.5, color: _sub)),
-        ]),
+        pw.Row(
+          children: [
+            _legendDot(_income, '수입'),
+            pw.SizedBox(width: 10),
+            _legendDot(_expense, '지출'),
+            pw.Spacer(),
+            pw.Text(
+              '단위: 원 (최대 ${_short(maxV)}원)',
+              style: const pw.TextStyle(fontSize: 6.5, color: _sub),
+            ),
+          ],
+        ),
         pw.SizedBox(height: 6),
         pw.Container(
           height: height + 14,
@@ -442,25 +564,31 @@ class FinanceReportService {
           ),
           child: pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: yearKeys
-                .map((y) {
-                  final b = (years[y] as Map).cast<String, dynamic>();
-                  return col(y, [(b['income'] ?? 0) as num, (b['expense'] ?? 0) as num]);
-                })
-                .toList(),
+            children: yearKeys.map((y) {
+              final b = (years[y] as Map).cast<String, dynamic>();
+              return col(y, [
+                (b['income'] ?? 0) as num,
+                (b['expense'] ?? 0) as num,
+              ]);
+            }).toList(),
           ),
         ),
       ],
     );
   }
 
-  static pw.Widget _legendDot(PdfColor c, String label) => pw.Row(children: [
-        pw.Container(width: 7, height: 7, color: c),
-        pw.SizedBox(width: 3),
-        pw.Text(label, style: const pw.TextStyle(fontSize: 7, color: _sub)),
-      ]);
+  static pw.Widget _legendDot(PdfColor c, String label) => pw.Row(
+    children: [
+      pw.Container(width: 7, height: 7, color: c),
+      pw.SizedBox(width: 3),
+      pw.Text(label, style: const pw.TextStyle(fontSize: 7, color: _sub)),
+    ],
+  );
 
-  static pw.Widget _yearTable(List<String> yearKeys, Map<String, dynamic> years) {
+  static pw.Widget _yearTable(
+    List<String> yearKeys,
+    Map<String, dynamic> years,
+  ) {
     final rows = <List<String>>[];
     num ti = 0, te = 0;
     for (final y in yearKeys) {
@@ -469,13 +597,25 @@ class FinanceReportService {
       final exp = (b['expense'] as num?) ?? 0;
       ti += inc;
       te += exp;
-      rows.add([y, _won(inc), _won(exp), _won(inc - exp), '${b['count'] ?? 0}']);
+      rows.add([
+        y,
+        _won(inc),
+        _won(exp),
+        _won(inc - exp),
+        '${b['count'] ?? 0}',
+      ]);
     }
     rows.add(['합계', _won(ti), _won(te), _won(ti - te), '']);
     return _table(
       ['연도', '수입(원)', '지출(원)', '순액(원)', '건수'],
       rows,
-      aligns: const [pw.Alignment.centerLeft, pw.Alignment.centerRight, pw.Alignment.centerRight, pw.Alignment.centerRight, pw.Alignment.centerRight],
+      aligns: const [
+        pw.Alignment.centerLeft,
+        pw.Alignment.centerRight,
+        pw.Alignment.centerRight,
+        pw.Alignment.centerRight,
+        pw.Alignment.centerRight,
+      ],
       boldLast: true,
     );
   }
@@ -509,47 +649,67 @@ class FinanceReportService {
           margin: const pw.EdgeInsets.all(0.6),
           alignment: pw.Alignment.center,
           decoration: pw.BoxDecoration(color: heat(v, base)),
-          child: pw.Text(_short(v),
-              style: const pw.TextStyle(fontSize: 5.5, color: _ink)),
+          child: pw.Text(
+            _short(v),
+            style: const pw.TextStyle(fontSize: 5.5, color: _ink),
+          ),
         ),
       );
     }
 
     List<pw.Widget> row(num Function(int) pick, PdfColor base) {
-      final cells = <pw.Widget>[
-        pw.SizedBox(width: 20),
-      ];
+      final cells = <pw.Widget>[pw.SizedBox(width: 20)];
       for (int i = 1; i <= 12; i++) {
         final m = (byMonth['$i'] as Map?)?.cast<String, dynamic>() ?? {};
-        cells.add(cell(pick(i) == 0 ? (m['income'] ?? 0) as num : (m['expense'] ?? 0) as num, base));
+        cells.add(
+          cell(
+            pick(i) == 0
+                ? (m['income'] ?? 0) as num
+                : (m['expense'] ?? 0) as num,
+            base,
+          ),
+        );
       }
       return cells;
     }
 
-    final header = <pw.Widget>[
-      pw.SizedBox(width: 20),
-    ];
+    final header = <pw.Widget>[pw.SizedBox(width: 20)];
     for (int i = 1; i <= 12; i++) {
-      header.add(pw.Expanded(
-        child: pw.Container(
-          alignment: pw.Alignment.center,
-          child: pw.Text('$i월', style: const pw.TextStyle(fontSize: 5.5, color: _sub)),
+      header.add(
+        pw.Expanded(
+          child: pw.Container(
+            alignment: pw.Alignment.center,
+            child: pw.Text(
+              '$i월',
+              style: const pw.TextStyle(fontSize: 5.5, color: _sub),
+            ),
+          ),
         ),
-      ));
+      );
     }
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Row(children: [
-          pw.Container(width: 3, height: 12, color: _gold),
-          pw.SizedBox(width: 6),
-          pw.Text('$y년',
-              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: _ink)),
-          pw.SizedBox(width: 8),
-          pw.Text('수입 ${_short((b['income'] ?? 0) as num)} · 지출 ${_short((b['expense'] ?? 0) as num)}',
-              style: const pw.TextStyle(fontSize: 7.5, color: _sub)),
-        ]),
+        pw.Row(
+          children: [
+            pw.Container(width: 3, height: 12, color: _gold),
+            pw.SizedBox(width: 6),
+            pw.Text(
+              '$y년',
+              style: pw.TextStyle(
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+                color: _ink,
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Text(
+              '수입 ${_short((b['income'] ?? 0) as num)} · 지출 ${_short((b['expense'] ?? 0) as num)}',
+              style: const pw.TextStyle(fontSize: 7.5, color: _sub),
+            ),
+          ],
+        ),
         pw.SizedBox(height: 4),
         pw.Row(children: header),
         pw.Row(children: row((i) => 0, _income)),
@@ -571,18 +731,35 @@ class FinanceReportService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Row(children: [
-          pw.Container(width: 3, height: 13, color: _gold),
-          pw.SizedBox(width: 6),
-          pw.Text('$y년',
-              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _ink)),
-          pw.SizedBox(width: 8),
-          pw.Text('수입 ${_short((b['income'] ?? 0) as num)} · 지출 ${_short((b['expense'] ?? 0) as num)} · 순액 ${_short((b['net'] ?? 0) as num)}',
-              style: const pw.TextStyle(fontSize: 8, color: _sub)),
-        ]),
+        pw.Row(
+          children: [
+            pw.Container(width: 3, height: 13, color: _gold),
+            pw.SizedBox(width: 6),
+            pw.Text(
+              '$y년',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: _ink,
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Text(
+              '수입 ${_short((b['income'] ?? 0) as num)} · 지출 ${_short((b['expense'] ?? 0) as num)} · 순액 ${_short((b['net'] ?? 0) as num)}',
+              style: const pw.TextStyle(fontSize: 8, color: _sub),
+            ),
+          ],
+        ),
         pw.SizedBox(height: 5),
-        _table(['구분', '항목', '금액(원)'], rows,
-            aligns: const [pw.Alignment.centerLeft, pw.Alignment.centerLeft, pw.Alignment.centerRight]),
+        _table(
+          ['구분', '항목', '금액(원)'],
+          rows,
+          aligns: const [
+            pw.Alignment.centerLeft,
+            pw.Alignment.centerLeft,
+            pw.Alignment.centerRight,
+          ],
+        ),
       ],
     );
   }
@@ -591,19 +768,28 @@ class FinanceReportService {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 3.5),
       decoration: pw.BoxDecoration(
-          border: pw.Border(bottom: pw.BorderSide(color: _line, width: 0.4))),
+        border: pw.Border(bottom: pw.BorderSide(color: _line, width: 0.4)),
+      ),
       child: pw.Row(
         children: [
           pw.SizedBox(
-              width: 52,
-              child: pw.Text('${r['date'] ?? ''}',
-                  style: const pw.TextStyle(fontSize: 7.5, color: _sub))),
+            width: 52,
+            child: pw.Text(
+              '${r['date'] ?? ''}',
+              style: const pw.TextStyle(fontSize: 7.5, color: _sub),
+            ),
+          ),
           pw.SizedBox(
-              width: 22,
-              child: pw.Text(isExp ? '지출' : '수입',
-                  style: pw.TextStyle(fontSize: 7.5,
-                      color: isExp ? _expense : _income,
-                      fontWeight: pw.FontWeight.bold))),
+            width: 22,
+            child: pw.Text(
+              isExp ? '지출' : '수입',
+              style: pw.TextStyle(
+                fontSize: 7.5,
+                color: isExp ? _expense : _income,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
           pw.Expanded(
             child: pw.Text(
               '${nm.isEmpty ? (r['payer'] ?? '') : nm}'
@@ -613,11 +799,14 @@ class FinanceReportService {
               maxLines: 1,
             ),
           ),
-          pw.Text(_won((r['amount'] ?? 0) as num),
-              style: pw.TextStyle(
-                  fontSize: 7.5,
-                  color: isExp ? _expense : _income,
-                  fontWeight: pw.FontWeight.bold)),
+          pw.Text(
+            _won((r['amount'] ?? 0) as num),
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              color: isExp ? _expense : _income,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -642,14 +831,25 @@ class FinanceReportService {
       children: [
         pw.TableRow(
           decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: _ink, width: 0.8))),
+            border: pw.Border(bottom: pw.BorderSide(color: _ink, width: 0.8)),
+          ),
           children: headers
-              .map((h) => pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 3),
-                    child: pw.Text(h,
-                        style: pw.TextStyle(
-                            fontSize: 8, fontWeight: pw.FontWeight.bold, color: _ink)),
-                  ))
+              .map(
+                (h) => pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 3,
+                  ),
+                  child: pw.Text(
+                    h,
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _ink,
+                    ),
+                  ),
+                ),
+              )
               .toList(),
         ),
         ...rows.asMap().entries.map((entry) {
@@ -661,12 +861,20 @@ class FinanceReportService {
                   : pw.Alignment.centerLeft;
               return pw.Container(
                 alignment: align,
-                padding: const pw.EdgeInsets.symmetric(vertical: 3.5, horizontal: 3),
-                child: pw.Text(c.value,
-                    style: pw.TextStyle(
-                        fontSize: 7.8,
-                        color: _ink,
-                        fontWeight: last ? pw.FontWeight.bold : pw.FontWeight.normal)),
+                padding: const pw.EdgeInsets.symmetric(
+                  vertical: 3.5,
+                  horizontal: 3,
+                ),
+                child: pw.Text(
+                  c.value,
+                  style: pw.TextStyle(
+                    fontSize: 7.8,
+                    color: _ink,
+                    fontWeight: last
+                        ? pw.FontWeight.bold
+                        : pw.FontWeight.normal,
+                  ),
+                ),
               );
             }).toList(),
           );

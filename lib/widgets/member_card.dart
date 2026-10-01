@@ -182,12 +182,14 @@ class MemberCard extends StatelessWidget {
                               vertical: 2 * s,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.scoutGreen
-                                  .withValues(alpha: 0.14),
+                              color: AppColors.scoutGreen.withValues(
+                                alpha: 0.14,
+                              ),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: AppColors.scoutGreen
-                                    .withValues(alpha: 0.35),
+                                color: AppColors.scoutGreen.withValues(
+                                  alpha: 0.35,
+                                ),
                               ),
                             ),
                             child: Text(
@@ -237,7 +239,11 @@ class MemberCard extends StatelessWidget {
                         if (member.regLeague.isNotEmpty &&
                             member.regLeague != member.league) ...[
                           SizedBox(width: 6 * s),
-                          _badge('현재 ${member.regLeague}', AppColors.taegeukBlue, s),
+                          _badge(
+                            '현재 ${member.regLeague}',
+                            AppColors.taegeukBlue,
+                            s,
+                          ),
                         ],
                         if (member.regUnit.isNotEmpty &&
                             member.regUnit != member.unit) ...[
@@ -260,8 +266,9 @@ class MemberCard extends StatelessWidget {
                             child: Text(
                               '인가 ${member.date}',
                               style: TextStyle(
-                                color: AppColors.textGray
-                                    .withValues(alpha: 0.85),
+                                color: AppColors.textGray.withValues(
+                                  alpha: 0.85,
+                                ),
                                 fontSize: 11 * s,
                               ),
                               overflow: TextOverflow.ellipsis,

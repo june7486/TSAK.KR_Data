@@ -49,21 +49,29 @@ class _BankImportScreenState extends State<BankImportScreen> {
               if (_rows.isNotEmpty)
                 Container(
                   color: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Row(
                     children: [
-                      Text('전체 ${_rows.length}건 · 매칭 $matched건',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12.5,
-                              color: AppColors.textDark)),
+                      Text(
+                        '전체 ${_rows.length}건 · 매칭 $matched건',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                          color: AppColors.textDark,
+                        ),
+                      ),
                       const Spacer(),
-                      Text('합계 ${_won(total)}원',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                              color: AppColors.purple)),
+                      Text(
+                        '합계 ${_won(total)}원',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: AppColors.purple,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -71,12 +79,12 @@ class _BankImportScreenState extends State<BankImportScreen> {
                 child: _busy
                     ? const Center(child: CircularProgressIndicator())
                     : _rows.isEmpty
-                        ? _empty()
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(10),
-                            itemCount: _rows.length,
-                            itemBuilder: (_, i) => _rowTile(_rows[i], i),
-                          ),
+                    ? _empty()
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(10),
+                        itemCount: _rows.length,
+                        itemBuilder: (_, i) => _rowTile(_rows[i], i),
+                      ),
               ),
               if (_rows.isNotEmpty) _bottom(),
             ],
@@ -126,9 +134,10 @@ class _BankImportScreenState extends State<BankImportScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                    '파일: $_fileName'
-                    '${_usedServer ? (_usedOcr ? ' · 서버 OCR 자동분류' : ' · 서버 자동분류') : ' · 로컬 자동분류'}',
-                    style: const TextStyle(fontSize: 11, color: AppColors.purple)),
+                  '파일: $_fileName'
+                  '${_usedServer ? (_usedOcr ? ' · 서버 OCR 자동분류' : ' · 서버 자동분류') : ' · 로컬 자동분류'}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.purple),
+                ),
               ),
           ],
         ),
@@ -137,17 +146,22 @@ class _BankImportScreenState extends State<BankImportScreen> {
   }
 
   Widget _empty() => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.account_balance,
-                size: 56, color: AppColors.textGray.withValues(alpha: 0.4)),
-            const SizedBox(height: 10),
-            const Text('거래파일을 선택하면 자동분류 결과가 여기에 표시됩니다',
-                style: TextStyle(color: AppColors.textGray, fontSize: 13)),
-          ],
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.account_balance,
+          size: 56,
+          color: AppColors.textGray.withValues(alpha: 0.4),
         ),
-      );
+        const SizedBox(height: 10),
+        const Text(
+          '거래파일을 선택하면 자동분류 결과가 여기에 표시됩니다',
+          style: TextStyle(color: AppColors.textGray, fontSize: 13),
+        ),
+      ],
+    ),
+  );
 
   Widget _rowTile(ClassifiedRow r, int i) {
     final color = r.matched ? AppColors.scoutGreen : AppColors.taegeukRed;
@@ -161,7 +175,9 @@ class _BankImportScreenState extends State<BankImportScreen> {
               width: 4,
               height: 42,
               decoration: BoxDecoration(
-                  color: color, borderRadius: BorderRadius.circular(2)),
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -170,83 +186,121 @@ class _BankImportScreenState extends State<BankImportScreen> {
                 children: [
                   Row(
                     children: [
-                      Text(r.date,
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.textGray)),
+                      Text(
+                        r.date,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text(r.matched ? '매칭' : '미매칭',
-                            style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w800,
-                                color: color)),
+                        child: Text(
+                          r.matched ? '매칭' : '미매칭',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: color,
+                          ),
+                        ),
                       ),
                       if (r.isExpense) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.taegeukRed.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text('지출',
-                              style: TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.taegeukRed)),
+                          child: const Text(
+                            '지출',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.taegeukRed,
+                            ),
+                          ),
                         ),
                       ],
                       if (r.sheet.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.tigerGold.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text('탭:${r.sheet}',
-                              style: const TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textDark)),
+                          child: Text(
+                            '탭:${r.sheet}',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text('원문: ${r.payer}',
-                      style: const TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  Text(
+                    '원문: ${r.payer}',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   if (r.number.isNotEmpty)
-                    Text('→ ${r.matchedName} (#${r.number})',
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.scoutGreen,
-                            fontWeight: FontWeight.w700)),
-                  if (r.context.isNotEmpty)
-                    Text('인식: ${r.context}',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.purple)),
-                  Text('${r.category}${r.memo.isNotEmpty ? ' · ${r.memo}' : ''}',
+                    Text(
+                      '→ ${r.matchedName} (#${r.number})',
                       style: const TextStyle(
-                          fontSize: 11, color: AppColors.textGray)),
+                        fontSize: 12,
+                        color: AppColors.scoutGreen,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  if (r.context.isNotEmpty)
+                    Text(
+                      '인식: ${r.context}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.purple,
+                      ),
+                    ),
+                  Text(
+                    '${r.category}${r.memo.isNotEmpty ? ' · ${r.memo}' : ''}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                 ],
               ),
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text('${_won(r.amount)}원',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900, fontSize: 13)),
+                Text(
+                  '${_won(r.amount)}원',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
                 Row(
                   children: [
                     IconButton(
@@ -287,7 +341,8 @@ class _BankImportScreenState extends State<BankImportScreen> {
               Expanded(
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.scoutGreen),
+                    backgroundColor: AppColors.scoutGreen,
+                  ),
                   onPressed: _commit,
                   icon: const Icon(Icons.save, size: 18),
                   label: Text('DB에 저장 (${_rows.length}건)'),
@@ -304,8 +359,17 @@ class _BankImportScreenState extends State<BankImportScreen> {
     final nas = context.read<NasApi>();
     final res = await pickDataFiles(
       allowedExtensions: [
-        'xlsx', 'xls', 'csv', 'txt',
-        'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'pdf',
+        'xlsx',
+        'xls',
+        'csv',
+        'txt',
+        'png',
+        'jpg',
+        'jpeg',
+        'webp',
+        'gif',
+        'bmp',
+        'pdf',
       ],
     );
     if (res.isEmpty) return;
@@ -314,7 +378,8 @@ class _BankImportScreenState extends State<BankImportScreen> {
     if (bytes.isEmpty) return;
     if (!mounted) return;
     final low = f.name.toLowerCase();
-    final isImageOrPdf = low.endsWith('.pdf') ||
+    final isImageOrPdf =
+        low.endsWith('.pdf') ||
         low.endsWith('.png') ||
         low.endsWith('.jpg') ||
         low.endsWith('.jpeg') ||
@@ -335,7 +400,9 @@ class _BankImportScreenState extends State<BankImportScreen> {
         _usedServer = true;
         _usedOcr = '${j['engine']}' == 'ocr';
         rows = ((j['rows'] as List?) ?? [])
-            .map((e) => ClassifiedRow.fromMap((e as Map).cast<String, dynamic>()))
+            .map(
+              (e) => ClassifiedRow.fromMap((e as Map).cast<String, dynamic>()),
+            )
             .toList();
       }
     } catch (_) {
@@ -357,9 +424,11 @@ class _BankImportScreenState extends State<BankImportScreen> {
     if (rows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isImageOrPdf
-              ? '이미지/PDF에서 거래내역을 인식하지 못했습니다. 선명한 원본을 사용해 주세요.'
-              : '거래내역을 찾지 못했습니다. 파일 형식을 확인해 주세요.'),
+          content: Text(
+            isImageOrPdf
+                ? '이미지/PDF에서 거래내역을 인식하지 못했습니다. 선명한 원본을 사용해 주세요.'
+                : '거래내역을 찾지 못했습니다. 파일 형식을 확인해 주세요.',
+          ),
           backgroundColor: AppColors.tigerGold,
         ),
       );
@@ -372,15 +441,22 @@ class _BankImportScreenState extends State<BankImportScreen> {
     final state = context.read<AppState>();
     final members = state.repo.all();
     final text = utf8.decode(bytes, allowMalformed: true);
-    final lines = text.split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty);
+    final lines = text
+        .split(RegExp(r'\r?\n'))
+        .where((l) => l.trim().isNotEmpty);
     final out = <ClassifiedRow>[];
     var first = true;
     for (final line in lines) {
       if (line.trim().isEmpty) continue;
-      final parts = line.split(RegExp(r'[,\t]')).map((e) => e.trim().replaceAll('"', '')).toList();
+      final parts = line
+          .split(RegExp(r'[,\t]'))
+          .map((e) => e.trim().replaceAll('"', ''))
+          .toList();
       if (first) {
         first = false;
-        if (parts.any((p) => p.contains('입금') || p.contains('이름') || p.contains('금액'))) {
+        if (parts.any(
+          (p) => p.contains('입금') || p.contains('이름') || p.contains('금액'),
+        )) {
           continue; // header
         }
       }
@@ -440,9 +516,11 @@ class _BankImportScreenState extends State<BankImportScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok
-            ? '${added.length}건을 DB에 저장했습니다'
-            : '${added.length}건 메모리 반영(서버 저장 실패 — 오프라인)'),
+        content: Text(
+          ok
+              ? '${added.length}건을 DB에 저장했습니다'
+              : '${added.length}건 메모리 반영(서버 저장 실패 — 오프라인)',
+        ),
         backgroundColor: ok ? AppColors.scoutGreen : AppColors.tigerGold,
       ),
     );

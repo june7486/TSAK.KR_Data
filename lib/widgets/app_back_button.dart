@@ -19,9 +19,9 @@ class AppBackButton extends StatelessWidget {
         } else if (canPop) {
           Navigator.of(context).maybePop();
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('첫 화면입니다')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('첫 화면입니다')));
         }
       },
       icon: const Icon(Icons.arrow_back_ios_new, size: 16, color: Colors.white),

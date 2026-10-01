@@ -84,59 +84,74 @@ class _PersonalSurveySectionState extends State<PersonalSurveySection> {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.campaign_outlined,
-                  size: 18, color: AppColors.tigerGold),
-              const SizedBox(width: 6),
-              const Expanded(
-                child: Text('수품 사전 신청 현황',
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.campaign_outlined,
+                  size: 18,
+                  color: AppColors.tigerGold,
+                ),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    '수품 사전 신청 현황',
                     style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                        color: AppColors.purpleDark)),
-              ),
-              IconButton(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh,
-                    size: 18, color: AppColors.textGray),
-                tooltip: '새로고침',
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            '회원님이 신청한 수품 사전신청(수요조사) 현황입니다. '
-            '최소 제작 착수 수량 달성 시 제작이 진행됩니다.',
-            style: TextStyle(fontSize: 11.5, color: AppColors.textGray, height: 1.4),
-          ),
-          const SizedBox(height: 8),
-          for (final s in mine) _row(s),
-          const SizedBox(height: 8),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.purple,
-                visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const MerchShopScreen()),
-              ).then((_) => _load()),
-              icon: const Icon(Icons.add_shopping_cart, size: 17),
-              label: const Text('수품 사전신청 추가 (수품구매)',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: AppColors.purpleDark,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _load,
+                  icon: const Icon(
+                    Icons.refresh,
+                    size: 18,
+                    color: AppColors.textGray,
+                  ),
+                  tooltip: '새로고침',
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 2),
+            const Text(
+              '회원님이 신청한 수품 사전신청(수요조사) 현황입니다. '
+              '최소 제작 착수 수량 달성 시 제작이 진행됩니다.',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: AppColors.textGray,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final s in mine) _row(s),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.purple,
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MerchShopScreen()),
+                ).then((_) => _load()),
+                icon: const Icon(Icons.add_shopping_cart, size: 17),
+                label: const Text(
+                  '수품 사전신청 추가 (수품구매)',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -159,50 +174,64 @@ class _PersonalSurveySectionState extends State<PersonalSurveySection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(name.isEmpty ? '수품' : name,
-              style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark)),
+          Text(
+            name.isEmpty ? '수품' : name,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+            ),
+          ),
           const SizedBox(height: 5),
           Row(
             children: [
               if (mySeq > 0)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.tigerGold.withValues(alpha: 0.22),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text('$mySeq번째 신청자',
-                      style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.purpleDark)),
+                  child: Text(
+                    '$mySeq번째 신청자',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purpleDark,
+                    ),
+                  ),
                 )
               else
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.textGray.withValues(alpha: 0.13),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text('아직 미신청',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textGray)),
+                  child: const Text(
+                    '아직 미신청',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                 ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '/ $count명 신청 (최소 $minQty명)',
                   style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.purple),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.purple,
+                  ),
                 ),
               ),
             ],

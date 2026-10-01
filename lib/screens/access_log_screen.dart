@@ -39,8 +39,10 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
 
   /// 이벤트 필터: '' 전체 | 'login' 로그인 | 'view' 열람.
   String _eventFilter = '';
+
   /// 역할 필터: '' 전체 | master/app/personal/guest.
   String _tierFilter = '';
+
   /// 검색어(이름·신원·기기·IP).
   final TextEditingController _qCtl = TextEditingController();
 
@@ -72,8 +74,13 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
       if (_tierFilter.isNotEmpty && tier != _tierFilter) return false;
       if (q.isNotEmpty) {
         final hay = [
-          l['name'], l['who'], l['ident'], l['viewer'],
-          l['device'], l['ip'], l['role'],
+          l['name'],
+          l['who'],
+          l['ident'],
+          l['viewer'],
+          l['device'],
+          l['ip'],
+          l['role'],
         ].map((e) => '${e ?? ''}').join(' ').toLowerCase();
         if (!hay.contains(q)) return false;
       }
@@ -102,10 +109,10 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
     final ok = await _confirm('이 기록 1건을 삭제할까요?');
     if (ok != true) return;
     final done = await context.read<AppState>().deleteMemberAccessLog(
-          mode: 'one',
-          ts: '${log['ts'] ?? ''}',
-          number: '${log['ident'] ?? ''}',
-        );
+      mode: 'one',
+      ts: '${log['ts'] ?? ''}',
+      number: '${log['ident'] ?? ''}',
+    );
     if (!mounted) return;
     _snack(done ? '삭제했습니다' : '삭제 실패');
     if (done) await _load();
@@ -122,9 +129,9 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
       }
     }
     final done = await context.read<AppState>().deleteMemberAccessLog(
-          mode: 'bulk',
-          items: items,
-        );
+      mode: 'bulk',
+      items: items,
+    );
     if (!mounted) return;
     _snack(done ? '선택한 ${items.length}건을 삭제했습니다' : '삭제 실패');
     if (done) {
@@ -139,31 +146,32 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
   Future<void> _deleteAll() async {
     final ok = await _confirm('전체 접속 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.');
     if (ok != true) return;
-    final done = await context.read<AppState>().deleteMemberAccessLog(mode: 'all');
+    final done = await context.read<AppState>().deleteMemberAccessLog(
+      mode: 'all',
+    );
     if (!mounted) return;
     _snack(done ? '전체 접속 기록을 삭제했습니다' : '삭제 실패');
     if (done) await _load();
   }
 
   Future<bool?> _confirm(String msg) => showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('접속 기록 삭제'),
-          content: Text(msg, style: const TextStyle(fontSize: 13)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              style:
-                  FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('삭제'),
-            ),
-          ],
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('접속 기록 삭제'),
+      content: Text(msg, style: const TextStyle(fontSize: 13)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('취소'),
         ),
-      );
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('삭제'),
+        ),
+      ],
+    ),
+  );
 
   void _snack(String m) {
     if (!mounted) return;
@@ -176,24 +184,26 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
 
   Future<void> _ensureFonts() async {
     _reg ??= pw.Font.ttf(
-        await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'));
+      await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
+    );
     _bold ??= pw.Font.ttf(
-        await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'));
+      await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
+    );
   }
 
   List<List<String>> _rows() => [
-        for (final l in _filtered)
-          [
-            '${l['ts'] ?? ''}',
-            l['self'] == true ? '본인' : '타인',
-            '${l['event'] ?? ''}' == 'view' ? '열람' : '로그인',
-            '${l['role'] ?? l['tier'] ?? ''}',
-            '${l['name'] ?? ''}',
-            '${l['viewer'] ?? ''}',
-            '${l['device'] ?? ''}',
-            '${l['ip'] ?? ''}',
-          ],
-      ];
+    for (final l in _filtered)
+      [
+        '${l['ts'] ?? ''}',
+        l['self'] == true ? '본인' : '타인',
+        '${l['event'] ?? ''}' == 'view' ? '열람' : '로그인',
+        '${l['role'] ?? l['tier'] ?? ''}',
+        '${l['name'] ?? ''}',
+        '${l['viewer'] ?? ''}',
+        '${l['device'] ?? ''}',
+        '${l['ip'] ?? ''}',
+      ],
+  ];
 
   Future<Uint8List> _pdf() async {
     await _ensureFonts();
@@ -209,34 +219,49 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(24),
         build: (ctx) => [
-          pw.Text('TSAK 회원 접속·열람 기록',
-              style: pw.TextStyle(font: bold, fontSize: 16, color: accent)),
+          pw.Text(
+            'TSAK 회원 접속·열람 기록',
+            style: pw.TextStyle(font: bold, fontSize: 16, color: accent),
+          ),
           pw.SizedBox(height: 2),
-          pw.Text('한국범스카우트중앙회 · 마스터 전용',
-              style: pw.TextStyle(font: reg, fontSize: 8, color: gray)),
+          pw.Text(
+            '한국범스카우트중앙회 · 마스터 전용',
+            style: pw.TextStyle(font: reg, fontSize: 8, color: gray),
+          ),
           pw.SizedBox(height: 10),
           pw.Container(height: 0.8, color: accent),
           pw.SizedBox(height: 8),
-          pw.Text('총 ${rows.length}건 · 출력일 '
-              '${DateTime.now().toString().substring(0, 16)}',
-              style: pw.TextStyle(font: reg, fontSize: 8, color: gray)),
+          pw.Text(
+            '총 ${rows.length}건 · 출력일 '
+            '${DateTime.now().toString().substring(0, 16)}',
+            style: pw.TextStyle(font: reg, fontSize: 8, color: gray),
+          ),
           pw.SizedBox(height: 10),
           pw.Table.fromTextArray(
             headers: const ['일시', '구분', '이벤트', '역할', '대상', '열람자', '기기', 'IP'],
             data: rows,
-            headerStyle:
-                pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+              font: bold,
+              fontSize: 8,
+              color: PdfColors.white,
+            ),
             headerDecoration: pw.BoxDecoration(color: accent),
             cellStyle: pw.TextStyle(font: reg, fontSize: 7.5, color: ink),
             rowDecoration: const pw.BoxDecoration(
-                border: pw.Border(
-                    bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.3))),
-            cellPadding:
-                const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
+              ),
+            ),
+            cellPadding: const pw.EdgeInsets.symmetric(
+              horizontal: 3,
+              vertical: 3,
+            ),
           ),
           pw.SizedBox(height: 12),
-          pw.Text('※ 본 기록은 마스터만 열람할 수 있으며, 개인정보 보호를 위해 관리하십시오.',
-              style: pw.TextStyle(font: reg, fontSize: 7.5, color: gray)),
+          pw.Text(
+            '※ 본 기록은 마스터만 열람할 수 있으며, 개인정보 보호를 위해 관리하십시오.',
+            style: pw.TextStyle(font: reg, fontSize: 7.5, color: gray),
+          ),
         ],
       ),
     );
@@ -259,13 +284,13 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
     setState(() => _busy = true);
     try {
       final bytes = await _pdf();
-      await Share.shareXFiles(
-        [
-          XFile.fromData(bytes,
-              mimeType: 'application/pdf', name: 'TSAK_접속기록.pdf')
-        ],
-        subject: 'TSAK 회원 접속·열람 기록',
-      );
+      await Share.shareXFiles([
+        XFile.fromData(
+          bytes,
+          mimeType: 'application/pdf',
+          name: 'TSAK_접속기록.pdf',
+        ),
+      ], subject: 'TSAK 회원 접속·열람 기록');
     } catch (e) {
       _snack('공유를 열 수 없습니다: $e');
     } finally {
@@ -282,8 +307,7 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         String q(Object? v) => '"${'${v ?? ''}'.replaceAll('"', '""')}"';
         b.writeln(r.map(q).join(','));
       }
-      final name =
-          '회원접속기록_${DateTime.now().toString().substring(0, 10)}';
+      final name = '회원접속기록_${DateTime.now().toString().substring(0, 10)}';
       final bytes = utf8.encode('\uFEFF${b.toString()}');
       final choose = await askSaveLocation(context, info: '접속기록 (CSV)');
       if (choose == null) return;
@@ -338,18 +362,20 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : filtered.isEmpty
-                        ? const Center(
-                            child: Text('접속 기록이 없습니다',
-                                style: TextStyle(color: AppColors.textGray)),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 40),
-                              itemCount: filtered.length,
-                              itemBuilder: (_, i) => _logTile(filtered[i], i),
-                            ),
-                          ),
+                    ? const Center(
+                        child: Text(
+                          '접속 기록이 없습니다',
+                          style: TextStyle(color: AppColors.textGray),
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 40),
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) => _logTile(filtered[i], i),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -383,23 +409,30 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.lock_outline, size: 15,
-                  color: AppColors.lifetimeGold),
+              const Icon(
+                Icons.lock_outline,
+                size: 15,
+                color: AppColors.lifetimeGold,
+              ),
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
                   '접속·열람 기록은 마스터만 열람할 수 있습니다. 기기·시각·IP가 기록됩니다.',
                   style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.lifetimeGold),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.lifetimeGold,
+                  ),
                 ),
               ),
-              Text('총 ${_logs.length}건',
-                  style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.purple)),
+              Text(
+                '총 ${_logs.length}건',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -425,25 +458,31 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
               if (_filtered.isNotEmpty)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                      foregroundColor:
-                          _selectMode ? Colors.white : AppColors.purple,
-                      backgroundColor: _selectMode ? AppColors.purple : null,
-                      side: BorderSide(
-                          color: AppColors.purple.withValues(alpha: 0.6))),
+                    foregroundColor: _selectMode
+                        ? Colors.white
+                        : AppColors.purple,
+                    backgroundColor: _selectMode ? AppColors.purple : null,
+                    side: BorderSide(
+                      color: AppColors.purple.withValues(alpha: 0.6),
+                    ),
+                  ),
                   onPressed: _busy
                       ? null
                       : () => setState(() {
-                            _selectMode = !_selectMode;
-                            _selected.clear();
-                          }),
-                  icon: Icon(_selectMode ? Icons.close : Icons.checklist,
-                      size: 16),
+                          _selectMode = !_selectMode;
+                          _selected.clear();
+                        }),
+                  icon: Icon(
+                    _selectMode ? Icons.close : Icons.checklist,
+                    size: 16,
+                  ),
                   label: Text(_selectMode ? '선택 취소' : '선택 삭제'),
                 ),
               if (_logs.isNotEmpty)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.taegeukRed),
+                    foregroundColor: AppColors.taegeukRed,
+                  ),
                   onPressed: _busy ? null : _deleteAll,
                   icon: const Icon(Icons.delete_sweep, size: 16),
                   label: const Text('전체 삭제'),
@@ -472,10 +511,14 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                     hintText: '이름 · 신원 · 기기 · IP 검색',
                     hintStyle: const TextStyle(fontSize: 12.5),
                     prefixIcon: const Icon(Icons.search, size: 18),
-                    prefixIconConstraints:
-                        const BoxConstraints(minWidth: 36, minHeight: 36),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -489,25 +532,53 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _chip('전체', _eventFilter.isEmpty, () =>
-                    setState(() => _eventFilter = '')),
-                _chip('로그인', _eventFilter == 'login', () =>
-                    setState(() => _eventFilter = 'login')),
-                _chip('열람', _eventFilter == 'view', () =>
-                    setState(() => _eventFilter = 'view')),
+                _chip(
+                  '전체',
+                  _eventFilter.isEmpty,
+                  () => setState(() => _eventFilter = ''),
+                ),
+                _chip(
+                  '로그인',
+                  _eventFilter == 'login',
+                  () => setState(() => _eventFilter = 'login'),
+                ),
+                _chip(
+                  '열람',
+                  _eventFilter == 'view',
+                  () => setState(() => _eventFilter = 'view'),
+                ),
                 const SizedBox(width: 10),
-                Container(width: 1, height: 20, color: AppColors.textGray.withValues(alpha: 0.3)),
+                Container(
+                  width: 1,
+                  height: 20,
+                  color: AppColors.textGray.withValues(alpha: 0.3),
+                ),
                 const SizedBox(width: 10),
-                _chip('전체 역할', _tierFilter.isEmpty, () =>
-                    setState(() => _tierFilter = '')),
-                _chip('마스터', _tierFilter == 'master', () =>
-                    setState(() => _tierFilter = 'master')),
-                _chip('관리자', _tierFilter == 'app', () =>
-                    setState(() => _tierFilter = 'app')),
-                _chip('인가자', _tierFilter == 'personal', () =>
-                    setState(() => _tierFilter = 'personal')),
-                _chip('비인가자', _tierFilter == 'guest', () =>
-                    setState(() => _tierFilter = 'guest')),
+                _chip(
+                  '전체 역할',
+                  _tierFilter.isEmpty,
+                  () => setState(() => _tierFilter = ''),
+                ),
+                _chip(
+                  '마스터',
+                  _tierFilter == 'master',
+                  () => setState(() => _tierFilter = 'master'),
+                ),
+                _chip(
+                  '관리자',
+                  _tierFilter == 'app',
+                  () => setState(() => _tierFilter = 'app'),
+                ),
+                _chip(
+                  '인가자',
+                  _tierFilter == 'personal',
+                  () => setState(() => _tierFilter = 'personal'),
+                ),
+                _chip(
+                  '비인가자',
+                  _tierFilter == 'guest',
+                  () => setState(() => _tierFilter = 'guest'),
+                ),
               ],
             ),
           ),
@@ -547,7 +618,8 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
   }
 
   Widget _selectBar(List<Map<String, dynamic>> filtered) {
-    final allSel = filtered.isNotEmpty &&
+    final allSel =
+        filtered.isNotEmpty &&
         filtered.every((l) => _selected.contains(_key(l)));
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
@@ -560,26 +632,31 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text('선택 ${_selected.length}건 / 표시 ${filtered.length}건',
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.purple)),
+            child: Text(
+              '선택 ${_selected.length}건 / 표시 ${filtered.length}건',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.purple,
+              ),
+            ),
           ),
           TextButton(
             onPressed: _busy
                 ? null
                 : () => setState(() {
-                      if (allSel) {
-                        _selected.clear();
-                      } else {
-                        _selected
-                          ..clear()
-                          ..addAll(filtered.map(_key));
-                      }
-                    }),
-            child: Text(allSel ? '전체 해제' : '전체 선택',
-                style: const TextStyle(fontSize: 12)),
+                    if (allSel) {
+                      _selected.clear();
+                    } else {
+                      _selected
+                        ..clear()
+                        ..addAll(filtered.map(_key));
+                    }
+                  }),
+            child: Text(
+              allSel ? '전체 해제' : '전체 선택',
+              style: const TextStyle(fontSize: 12),
+            ),
           ),
           const SizedBox(width: 4),
           FilledButton.icon(
@@ -619,15 +696,15 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         color: selected
             ? AppColors.purple.withValues(alpha: 0.10)
             : (isSelf
-                ? rowColor.withValues(alpha: 0.07)
-                : (i.isEven ? const Color(0xFFF8F6FC) : Colors.white)),
+                  ? rowColor.withValues(alpha: 0.07)
+                  : (i.isEven ? const Color(0xFFF8F6FC) : Colors.white)),
         borderRadius: BorderRadius.circular(9),
         border: Border.all(
           color: selected
               ? AppColors.purple
               : (isSelf
-                  ? rowColor.withValues(alpha: 0.45)
-                  : AppColors.purple.withValues(alpha: 0.12)),
+                    ? rowColor.withValues(alpha: 0.45)
+                    : AppColors.purple.withValues(alpha: 0.12)),
           width: selected ? 1.6 : (isSelf ? 1.4 : 1),
         ),
       ),
@@ -652,11 +729,14 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
               color: rowColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Text(role.isEmpty ? '-' : role,
-                style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    color: rowColor)),
+            child: Text(
+              role.isEmpty ? '-' : role,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: rowColor,
+              ),
+            ),
           ),
           const SizedBox(width: 7),
           Container(
@@ -666,11 +746,14 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                   .withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Text(isView ? '열람' : '로그인',
-                style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: isView ? AppColors.purple : AppColors.scoutGreen)),
+            child: Text(
+              isView ? '열람' : '로그인',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: isView ? AppColors.purple : AppColors.scoutGreen,
+              ),
+            ),
           ),
           const SizedBox(width: 9),
           Expanded(
@@ -679,30 +762,41 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.access_time,
-                        size: 12, color: AppColors.textGray),
+                    const Icon(
+                      Icons.access_time,
+                      size: 12,
+                      color: AppColors.textGray,
+                    ),
                     const SizedBox(width: 4),
-                    Text(ts,
-                        style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight:
-                                isSelf ? FontWeight.w900 : FontWeight.w700,
-                            color:
-                                isSelf ? AppColors.taegeukRed : AppColors.textDark)),
+                    Text(
+                      ts,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: isSelf ? FontWeight.w900 : FontWeight.w700,
+                        color: isSelf
+                            ? AppColors.taegeukRed
+                            : AppColors.textDark,
+                      ),
+                    ),
                     if (isSelf) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.taegeukRed,
                           borderRadius: BorderRadius.circular(5),
                         ),
-                        child: const Text('본인 접속',
-                            style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white)),
+                        child: const Text(
+                          '본인 접속',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -711,26 +805,31 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      Icon(isView ? Icons.visibility : Icons.person,
-                          size: 12, color: AppColors.textGray),
+                      Icon(
+                        isView ? Icons.visibility : Icons.person,
+                        size: 12,
+                        color: AppColors.textGray,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           isView
                               ? '대상 ${name.isEmpty ? '(${l['ident'] ?? ''})' : name}'
-                                  '${viewer.isNotEmpty ? '  ·  열람자 $viewer' : ''}'
+                                    '${viewer.isNotEmpty ? '  ·  열람자 $viewer' : ''}'
                               : (name.isEmpty
-                                  ? '(${l['who'] ?? l['ident'] ?? ''})'
-                                  : name),
+                                    ? '(${l['who'] ?? l['ident'] ?? ''})'
+                                    : name),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 11,
-                              fontWeight:
-                                  isSelf ? FontWeight.w800 : FontWeight.w600,
-                              color: isSelf
-                                  ? AppColors.taegeukRed
-                                  : AppColors.textDark),
+                            fontSize: 11,
+                            fontWeight: isSelf
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            color: isSelf
+                                ? AppColors.taegeukRed
+                                : AppColors.textDark,
+                          ),
                         ),
                       ),
                     ],
@@ -739,29 +838,43 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    const Icon(Icons.devices_other,
-                        size: 12, color: AppColors.textGray),
+                    const Icon(
+                      Icons.devices_other,
+                      size: 12,
+                      color: AppColors.textGray,
+                    ),
                     const SizedBox(width: 4),
                     Expanded(
-                      child: Text(device,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight:
-                                  isSelf ? FontWeight.w800 : FontWeight.w400,
-                              color: isSelf
-                                  ? AppColors.taegeukRed
-                                  : AppColors.textDark)),
+                      child: Text(
+                        device,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSelf
+                              ? FontWeight.w800
+                              : FontWeight.w400,
+                          color: isSelf
+                              ? AppColors.taegeukRed
+                              : AppColors.textDark,
+                        ),
+                      ),
                     ),
                     if (ip.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      const Icon(Icons.public,
-                          size: 11, color: AppColors.textGray),
+                      const Icon(
+                        Icons.public,
+                        size: 11,
+                        color: AppColors.textGray,
+                      ),
                       const SizedBox(width: 3),
-                      Text(ip,
-                          style: const TextStyle(
-                              fontSize: 10.5, color: AppColors.textGray)),
+                      Text(
+                        ip,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -771,8 +884,11 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
           IconButton(
             tooltip: '이 기록 삭제',
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.delete_outline,
-                size: 18, color: AppColors.taegeukRed),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: AppColors.taegeukRed,
+            ),
             onPressed: () => _deleteOne(l),
           ),
         ],

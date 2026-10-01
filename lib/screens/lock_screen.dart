@@ -40,10 +40,12 @@ class LockScreen extends StatefulWidget {
 class _LockScreenState extends State<LockScreen> {
   late String _tier = widget.initialTier;
   final _ctrl = TextEditingController();
-  late final TextEditingController _idCtrl =
-      TextEditingController(text: widget.initialId);
+  late final TextEditingController _idCtrl = TextEditingController(
+    text: widget.initialId,
+  );
   bool _obscure = true;
   bool _busy = false;
+
   /// 로그인 진행 단계(작업중 오버레이 진행문구 갱신용).
   int _busyStep = 0;
   Timer? _busyTimer;
@@ -352,307 +354,343 @@ class _LockScreenState extends State<LockScreen> {
     return Scaffold(
       body: Stack(
         children: [
-        Container(
-        decoration: const BoxDecoration(gradient: AppColors.brandGradient),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/images/tsak_emblem.png',
-                    width: 96,
-                    height: 96,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.shield, size: 84, color: Colors.white),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '한국 범스카우트중앙회',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'TSAK 인가자 · 회원 통합 관리',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                  if (_updating) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.8,
-                              color: Colors.white,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            '새로운 버전이 있어 다운로드 중입니다',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _tierTabs(),
-                        const SizedBox(height: 16),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: _tierHelp(),
+          Container(
+            decoration: const BoxDecoration(gradient: AppColors.brandGradient),
+            child: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/images/tsak_emblem.png',
+                        width: 96,
+                        height: 96,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.shield,
+                          size: 84,
+                          color: Colors.white,
                         ),
-                        const SizedBox(height: 12),
-                        // ID 입력 — 관리자·범스카우트·비인가자 표시 (마스터만 비밀번호 전용)
-                        if (_tier != 'master') ...[
-                          TextField(
-                            controller: _idCtrl,
-                            autofocus: true,
-                            keyboardType:
-                                (_tier == 'personal' || _tier == 'guest')
-                                ? TextInputType.number
-                                : TextInputType.text,
-                            textInputAction: TextInputAction.next,
-                            decoration: InputDecoration(
-                              labelText: _tier == 'guest' ? 'ID (전화번호)' : 'ID',
-                              prefixIcon: const Icon(Icons.badge_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        TextField(
-                          controller: _ctrl,
-                          obscureText: _obscure,
-                          autofocus: _tier == 'master',
-                          textInputAction: TextInputAction.go,
-                          onSubmitted: (_) => _submit(),
-                          decoration: InputDecoration(
-                            labelText: _tier == 'guest'
-                                ? '비밀번호 (뒤 4자리)'
-                                : '비밀번호',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                            ),
-                          ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        '한국 범스카우트중앙회',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
                         ),
-                        if (_error != null) ...[
-                          const SizedBox(height: 10),
-                          Row(
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'TSAK 인가자 · 회원 통합 관리',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      if (_updating) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
-                                Icons.error_outline,
-                                color: AppColors.taegeukRed,
-                                size: 18,
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.8,
+                                  color: Colors.white,
+                                ),
                               ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  _error!,
-                                  style: const TextStyle(
-                                    color: AppColors.taegeukRed,
-                                    fontSize: 12.5,
-                                  ),
+                              SizedBox(width: 8),
+                              Text(
+                                '새로운 버전이 있어 다운로드 중입니다',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.purple,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _tierTabs(),
+                            const SizedBox(height: 16),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              child: _tierHelp(),
                             ),
-                            onPressed: (_busy || _updating) ? null : _submit,
-                            icon: _busy
+                            const SizedBox(height: 12),
+                            // ID 입력 — 관리자·범스카우트·비인가자 표시 (마스터만 비밀번호 전용)
+                            if (_tier != 'master') ...[
+                              TextField(
+                                controller: _idCtrl,
+                                autofocus: true,
+                                keyboardType:
+                                    (_tier == 'personal' || _tier == 'guest')
+                                    ? TextInputType.number
+                                    : TextInputType.text,
+                                textInputAction: TextInputAction.next,
+                                decoration: InputDecoration(
+                                  labelText: _tier == 'guest'
+                                      ? 'ID (전화번호)'
+                                      : 'ID',
+                                  prefixIcon: const Icon(Icons.badge_outlined),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            TextField(
+                              controller: _ctrl,
+                              obscureText: _obscure,
+                              autofocus: _tier == 'master',
+                              textInputAction: TextInputAction.go,
+                              onSubmitted: (_) => _submit(),
+                              decoration: InputDecoration(
+                                labelText: _tier == 'guest'
+                                    ? '비밀번호 (뒤 4자리)'
+                                    : '비밀번호',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscure
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscure = !_obscure),
+                                ),
+                              ),
+                            ),
+                            if (_error != null) ...[
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.error_outline,
+                                    color: AppColors.taegeukRed,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _error!,
+                                      style: const TextStyle(
+                                        color: AppColors.taegeukRed,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.purple,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                ),
+                                onPressed: (_busy || _updating)
+                                    ? null
+                                    : _submit,
+                                icon: _busy
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.login),
+                                label: const Text('접속'),
+                              ),
+                            ),
+                            if (_tier == 'guest') ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.scoutGreen,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 13,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: _busy ? null : _createRegular,
+                                  icon: const Icon(
+                                    Icons.person_add_alt_1,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    '신규회원 가입 (ID=전화번호 · PW=뒤 4자리)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      // 로그인 없이 수품구매(굿즈) 열람·주문
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.6),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MerchShopScreen(),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.shopping_bag_outlined,
+                            size: 19,
+                          ),
+                          label: const Text(
+                            '수품구매 (로그인 없이 주문)',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        '개발: 이승준 · 범스카우트415 · june7558@gmail.com',
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '한국 범스카우트중앙회 $versionShortLabel',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // 바로가기: 홈페이지 / 네이버 카페 (클릭 시 새창 열기)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _shortcutBtn(
+                              icon: Icons.public,
+                              label: 'Homepage',
+                              url: 'https://www.tigerscout.kr',
+                              color: AppColors.taegeukBlue,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _shortcutBtn(
+                              icon: Icons.forum_outlined,
+                              label: 'Naver Cafe',
+                              url: 'https://cafe.naver.com/tigerscoutkr',
+                              color: AppColors.scoutGreen,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      // 업데이트 반영: 캐시 정리 / 버전 확인 (작게)
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 4,
+                        children: [
+                          TextButton.icon(
+                            onPressed: _cacheBusy ? null : _clearCache,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white.withValues(
+                                alpha: 0.8,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              minimumSize: const Size(0, 28),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: _cacheBusy
                                 ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
+                                    width: 12,
+                                    height: 12,
                                     child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                                      strokeWidth: 1.6,
                                       color: Colors.white,
                                     ),
                                   )
-                                : const Icon(Icons.login),
-                            label: const Text('접속'),
+                                : const Icon(Icons.refresh, size: 13),
+                            label: const Text(
+                              '캐시 삭제',
+                              style: TextStyle(fontSize: 10.5),
+                            ),
                           ),
-                        ),
-                        if (_tier == 'guest') ...[
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.scoutGreen,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 13),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                          TextButton.icon(
+                            onPressed: _checkVersion,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white.withValues(
+                                alpha: 0.8,
                               ),
-                              onPressed: _busy ? null : _createRegular,
-                              icon: const Icon(Icons.person_add_alt_1, size: 20),
-                              label: const Text(
-                                '신규회원 가입 (ID=전화번호 · PW=뒤 4자리)',
-                                style: TextStyle(fontWeight: FontWeight.w800),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
                               ),
+                              minimumSize: const Size(0, 28),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.verified_outlined, size: 13),
+                            label: const Text(
+                              '버전 확인',
+                              style: TextStyle(fontSize: 10.5),
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  // 로그인 없이 수품구매(굿즈) 열람·주문
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.6)),
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const MerchShopScreen()),
-                      ),
-                      icon: const Icon(Icons.shopping_bag_outlined, size: 19),
-                      label: const Text(
-                        '수품구매 (로그인 없이 주문)',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    '개발: 이승준 · 범스카우트415 · june7558@gmail.com',
-                    style: TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '한국 범스카우트중앙회 $versionShortLabel',
-                    style: const TextStyle(color: Colors.white60, fontSize: 10.5),
-                  ),
-                  const SizedBox(height: 12),
-                  // 바로가기: 홈페이지 / 네이버 카페 (클릭 시 새창 열기)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _shortcutBtn(
-                          icon: Icons.public,
-                          label: 'Homepage',
-                          url: 'https://www.tigerscout.kr',
-                          color: AppColors.taegeukBlue,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _shortcutBtn(
-                          icon: Icons.forum_outlined,
-                          label: 'Naver Cafe',
-                          url: 'https://cafe.naver.com/tigerscoutkr',
-                          color: AppColors.scoutGreen,
-                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  // 업데이트 반영: 캐시 정리 / 버전 확인 (작게)
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 4,
-                    children: [
-                      TextButton.icon(
-                        onPressed: _cacheBusy ? null : _clearCache,
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white.withValues(alpha: 0.8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: const Size(0, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: _cacheBusy
-                            ? const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.6,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.refresh, size: 13),
-                        label: const Text(
-                          '캐시 삭제',
-                          style: TextStyle(fontSize: 10.5),
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _checkVersion,
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white.withValues(alpha: 0.8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: const Size(0, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.verified_outlined, size: 13),
-                        label: const Text(
-                          '버전 확인',
-                          style: TextStyle(fontSize: 10.5),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-        ),
-        // 로그인/회원생성 대기 — 멈춘 것이 아님을 보여주는 공통 작업중 오버레이
-        BusyOverlay(
-          visible: _busy,
-          title: _tier == 'guest' ? '회원 확인 중입니다' : '로그인 중입니다',
-          lines: _loginBusyLines,
-        ),
+          // 로그인/회원생성 대기 — 멈춘 것이 아님을 보여주는 공통 작업중 오버레이
+          BusyOverlay(
+            visible: _busy,
+            title: _tier == 'guest' ? '회원 확인 중입니다' : '로그인 중입니다',
+            lines: _loginBusyLines,
+          ),
         ],
       ),
     );
@@ -672,9 +710,7 @@ class _LockScreenState extends State<LockScreen> {
         side: BorderSide(color: Colors.white.withValues(alpha: 0.5)),
         backgroundColor: color.withValues(alpha: 0.28),
         padding: const EdgeInsets.symmetric(vertical: 11),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       icon: Icon(icon, size: 16),
       label: Text(
@@ -697,9 +733,9 @@ class _LockScreenState extends State<LockScreen> {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       } catch (_) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('링크를 열 수 없습니다: $url')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('링크를 열 수 없습니다: $url')));
         }
       }
     }

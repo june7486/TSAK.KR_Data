@@ -87,8 +87,11 @@ class BusyOverlay extends StatelessWidget {
                         children: [
                           const Padding(
                             padding: EdgeInsets.only(top: 5, right: 6),
-                            child: Icon(Icons.circle,
-                                size: 6, color: AppColors.purple),
+                            child: Icon(
+                              Icons.circle,
+                              size: 6,
+                              color: AppColors.purple,
+                            ),
                           ),
                           Expanded(
                             child: Text(
@@ -114,8 +117,10 @@ class BusyOverlay extends StatelessWidget {
                   const SizedBox(height: 10),
                   TextButton(
                     onPressed: onCancel,
-                    child: Text(cancelLabel,
-                        style: const TextStyle(color: AppColors.taegeukRed)),
+                    child: Text(
+                      cancelLabel,
+                      style: const TextStyle(color: AppColors.taegeukRed),
+                    ),
                   ),
                 ],
               ],
@@ -175,7 +180,10 @@ void showBusy(
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
   _busyNotifier.value = _BusyState(
-      title: title, lines: List.of(lines), progress: progress);
+    title: title,
+    lines: List.of(lines),
+    progress: progress,
+  );
   _busyEntry = OverlayEntry(
     builder: (_) => ValueListenableBuilder<_BusyState?>(
       valueListenable: _busyNotifier,
@@ -191,11 +199,7 @@ void showBusy(
 }
 
 /// 전역 오버레이 내용을 갱신(진행률·문구 변경).
-void updateBusy({
-  String? title,
-  List<String>? lines,
-  double? progress,
-}) {
+void updateBusy({String? title, List<String>? lines, double? progress}) {
   final s = _busyNotifier.value;
   if (s == null) return;
   _busyNotifier.value = _BusyState(

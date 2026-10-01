@@ -426,6 +426,49 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     return '${it['number'] ?? it['ident'] ?? ''}';
   }
 
+  /// 연결 승인 대상 종류 라벨 — 멘토 / 페런츠 / 멘토·페런츠 (요구: 구분).
+  String _linkKindLabel(Map<String, dynamic> m) {
+    final s = '${m['linkKind'] ?? ''}'.trim();
+    if (s.isNotEmpty) return s;
+    final hm =
+        m['hasMentor'] == true || ((m['mentors'] as List?) ?? []).isNotEmpty;
+    final hp =
+        m['hasParent'] == true || ((m['parents'] as List?) ?? []).isNotEmpty;
+    if (hm && hp) return '멘토·페런츠';
+    if (hm) return '멘토';
+    if (hp) return '페런츠';
+    return '연결';
+  }
+
+  Color _linkKindColor(Map<String, dynamic> m) {
+    final hm =
+        m['hasMentor'] == true || ((m['mentors'] as List?) ?? []).isNotEmpty;
+    final hp =
+        m['hasParent'] == true || ((m['parents'] as List?) ?? []).isNotEmpty;
+    if (hm && hp) return AppColors.tigerGold;
+    if (hp) return AppColors.taegeukBlue;
+    return AppColors.purple;
+  }
+
+  /// 승인요청방법 라벨 — 수품신청시 / 직접입력 (요구).
+  String _reqSourceLabel(Map<String, dynamic> it) {
+    final lbl = '${it['reqSourceLabel'] ?? ''}'.trim();
+    if (lbl.isNotEmpty) return lbl;
+    final s = '${it['reqSource'] ?? ''}'.trim();
+    switch (s) {
+      case 'merch':
+        return '수품신청시';
+      case 'direct':
+        return '직접입력';
+      case 'bulk':
+        return '일괄등록';
+      case 'import':
+        return '이관';
+      default:
+        return '직접입력';
+    }
+  }
+
   Widget _bulkBar(
     String key,
     String kind,
@@ -499,6 +542,8 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
         ((m['parentLabels'] as List?) ?? (m['parents'] as List?) ?? [])
             .map((e) => '$e')
             .toList();
+    final reqAt = '${m['requestedAt'] ?? ''}'.trim();
+    final reqSrc = _reqSourceLabel(m);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
@@ -542,15 +587,15 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.tigerGold.withValues(alpha: 0.15),
+                        color: _linkKindColor(m).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text(
-                        '연결',
+                      child: Text(
+                        _linkKindLabel(m),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.tigerGold,
+                          color: _linkKindColor(m),
                         ),
                       ),
                     ),
@@ -612,6 +657,15 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                       '${m['unit'] ?? ''}',
                     ].where((e) => e.isNotEmpty).join(' · '),
                   ),
+                // 승인요청시간 + 승인요청방법(수품신청시/직접입력) — 요구.
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 4,
+                  children: [
+                    if (reqAt.isNotEmpty) _meta(Icons.schedule, '승인요청 $reqAt'),
+                    _meta(Icons.input, '승인요청방법: $reqSrc'),
+                  ],
+                ),
                 if (mentors.isNotEmpty)
                   _linkRow('멘토', mentors, AppColors.purple),
                 if (parents.isNotEmpty)
@@ -987,9 +1041,25 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     final name = '${it['name'] ?? ''}';
     final number = '${it['number'] ?? it['ident'] ?? ''}';
     final title = '${it['title'] ?? ''}';
-    final reqAt = '${it['requestedAt'] ?? ''}'.trim();
     final handledAt = '${it['handledAt'] ?? ''}'.trim();
     final handledBy = '${it['handledBy'] ?? ''}'.trim();
+    // 승인 히스토리 — 멘토/페런츠 구분 + 승인요청시간·요청방법(요구).
+    final source = '${it['source'] ?? ''}';
+    final payload = (it['payload'] is Map)
+        ? (it['payload'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+    final pm = (payload['member'] is Map)
+        ? (payload['member'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+    final isLink = source == 'link';
+    final kindLabel = '${pm['linkKind'] ?? ''}'.trim();
+    // 승인요청시간: payload.requestedAt 우선, 없으면 최상위 requestedAt.
+    final reqAt = (('${pm['requestedAt'] ?? ''}'.trim().isNotEmpty)
+        ? '${pm['requestedAt']}'.trim()
+        : '${it['requestedAt'] ?? ''}'.trim());
+    final reqSrcLabel = isLink
+        ? _reqSourceLabel(pm.isNotEmpty ? pm : it)
+        : _reqSourceLabel(it);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
@@ -1026,6 +1096,27 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                       ),
                     ),
                   ),
+                  if (isLink && kindLabel.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _linkKindColor(pm).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        kindLabel,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: _linkKindColor(pm),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1049,7 +1140,8 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                 spacing: 14,
                 runSpacing: 3,
                 children: [
-                  if (reqAt.isNotEmpty) _meta(Icons.event_note, '요청일 $reqAt'),
+                  if (reqAt.isNotEmpty) _meta(Icons.event_note, '승인요청 $reqAt'),
+                  if (isLink) _meta(Icons.input, '승인요청방법: $reqSrcLabel'),
                   if (handledAt.isNotEmpty)
                     _meta(Icons.check_circle_outline, '처리 $handledAt'),
                   if (handledBy.isNotEmpty)
@@ -1176,6 +1268,18 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
         ].where((e) => e.trim().isNotEmpty).join(' · '),
       );
       kv('연락처', '${ms['phone'] ?? ''}');
+      // 멘토/페런츠 구분 + 승인요청정보(요구).
+      if (source == 'link') {
+        final kind = '${ms['linkKind'] ?? ''}'.trim();
+        kv('구분', kind.isNotEmpty ? kind : _linkKindLabel(ms));
+        kv('승인요청시간', '${ms['requestedAt'] ?? it['requestedAt'] ?? ''}');
+        kv(
+          '승인요청방법',
+          '${ms['reqSourceLabel'] ?? ''}'.trim().isNotEmpty
+              ? '${ms['reqSourceLabel']}'
+              : _reqSourceLabel(ms),
+        );
+      }
       final mentors = ((ms['mentors'] as List?) ?? [])
           .map((e) => '$e')
           .toList();

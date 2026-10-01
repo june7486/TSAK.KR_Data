@@ -60,9 +60,13 @@ class _BulkScreenState extends State<BulkScreen> {
                     children: [
                       Icon(Icons.groups, color: AppColors.purple, size: 20),
                       SizedBox(width: 8),
-                      Text('발송 대상',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        '발송 대상',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -91,12 +95,13 @@ class _BulkScreenState extends State<BulkScreen> {
                       runSpacing: 6,
                       children: state.leagues.keys
                           .where((k) => k != '(미지정)')
-                          .map((k) => ChoiceChip(
-                                label: Text(k),
-                                selected: _league == k,
-                                onSelected: (_) =>
-                                    setState(() => _league = k),
-                              ))
+                          .map(
+                            (k) => ChoiceChip(
+                              label: Text(k),
+                              selected: _league == k,
+                              onSelected: (_) => setState(() => _league = k),
+                            ),
+                          )
                           .toList(),
                     ),
                   ],
@@ -105,9 +110,10 @@ class _BulkScreenState extends State<BulkScreen> {
                     '수신 대상: 인가자 ${recipients.length}명 '
                     '(전화 $phoneCount건 · 메일 $mailCount건)',
                     style: const TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textGray,
-                        fontWeight: FontWeight.w700),
+                      fontSize: 12.5,
+                      color: AppColors.textGray,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -124,9 +130,13 @@ class _BulkScreenState extends State<BulkScreen> {
                     children: [
                       Icon(Icons.edit_note, color: AppColors.purple, size: 20),
                       SizedBox(width: 8),
-                      Text('내용 작성',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        '내용 작성',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -170,12 +180,12 @@ class _BulkScreenState extends State<BulkScreen> {
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () {
-              Clipboard.setData(ClipboardData(
-                text: '${_subject.text}\n\n${_body.text}',
-              ));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('소식 내용이 복사되었습니다')),
+              Clipboard.setData(
+                ClipboardData(text: '${_subject.text}\n\n${_body.text}'),
               );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('소식 내용이 복사되었습니다')));
             },
             icon: const Icon(Icons.copy),
             label: const Text('소식 내용 복사 (공지용)'),
@@ -183,12 +193,12 @@ class _BulkScreenState extends State<BulkScreen> {
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () {
-              Clipboard.setData(ClipboardData(
-                text: ContactService.phoneList(recipients),
-              ));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('수신 전화번호가 복사되었습니다')),
+              Clipboard.setData(
+                ClipboardData(text: ContactService.phoneList(recipients)),
               );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('수신 전화번호가 복사되었습니다')));
             },
             icon: const Icon(Icons.phone_forwarded),
             label: const Text('수신 전화번호 목록 복사'),
@@ -209,10 +219,7 @@ class _BulkScreenState extends State<BulkScreen> {
 
   Future<void> _sendSms(List<Member> recipients) async {
     if (recipients.isEmpty) return;
-    final uri = ContactService.smsUri(
-      recipients,
-      body: _body.text,
-    );
+    final uri = ContactService.smsUri(recipients, body: _body.text);
     _open(uri, '문자 앱을 열 수 없습니다');
   }
 
@@ -231,11 +238,15 @@ class _BulkScreenState extends State<BulkScreen> {
       final u = Uri.parse(uri);
       final ok = await launchUrl(u, mode: LaunchMode.externalApplication);
       if (!ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(err)));
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(err)));
       }
     }
   }
@@ -257,11 +268,16 @@ class _YearFolderNote extends StatelessWidget {
           children: [
             const Row(
               children: [
-                Icon(Icons.folder_special,
-                    color: AppColors.scoutGreen, size: 18),
+                Icon(
+                  Icons.folder_special,
+                  color: AppColors.scoutGreen,
+                  size: 18,
+                ),
                 SizedBox(width: 8),
-                Text('연회비 폴더 자동 생성',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                Text(
+                  '연회비 폴더 자동 생성',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ],
             ),
             const SizedBox(height: 6),

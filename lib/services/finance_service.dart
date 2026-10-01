@@ -72,15 +72,17 @@ class FinanceService extends ChangeNotifier {
   void _apply(Map<String, dynamic> fin) {
     final list = fin['transactions'];
     if (list is List) {
-      _tx = list
-          .map((e) => FinanceTransaction.fromMap(e as Map))
-          .toList();
+      _tx = list.map((e) => FinanceTransaction.fromMap(e as Map)).toList();
     }
     if (fin['income_categories'] is List) {
-      _incomeCats = (fin['income_categories'] as List).map((e) => '$e').toList();
+      _incomeCats = (fin['income_categories'] as List)
+          .map((e) => '$e')
+          .toList();
     }
     if (fin['expense_categories'] is List) {
-      _expenseCats = (fin['expense_categories'] as List).map((e) => '$e').toList();
+      _expenseCats = (fin['expense_categories'] as List)
+          .map((e) => '$e')
+          .toList();
     }
     _updated = fin['updated']?.toString();
     _version = (fin['version'] is num) ? (fin['version'] as num).toInt() : 0;
@@ -206,8 +208,9 @@ class FinanceService extends ChangeNotifier {
         matchedNo = best.number.replaceAll(RegExp(r'[^0-9]'), '');
         matchedName = best.name;
         matchedId = best.id;
-        final residue =
-            payer.replaceAll(matchedName, '').replaceAll(RegExp(r'^[\s\-·,_/()\[\]]+|[\s\-·,_/()\[\]]+$'), '');
+        final residue = payer
+            .replaceAll(matchedName, '')
+            .replaceAll(RegExp(r'^[\s\-·,_/()\[\]]+|[\s\-·,_/()\[\]]+$'), '');
         if (residue.isNotEmpty) ctx.add(residue);
       }
     }
@@ -241,10 +244,17 @@ class FinanceService extends ChangeNotifier {
       if (e.key.isNotEmpty && text.contains(e.key)) return e.value;
     }
     const table = {
-      '후원': '후원', '찬조': '후원', '기부': '후원',
-      '수품': '수품구매', '구매': '수품구매', '물품': '수품구매',
-      '참가비': '참가비', '참가': '참가비', '행사비': '참가비',
-      '연회비': '연회비', '회비': '연회비',
+      '후원': '후원',
+      '찬조': '후원',
+      '기부': '후원',
+      '수품': '수품구매',
+      '구매': '수품구매',
+      '물품': '수품구매',
+      '참가비': '참가비',
+      '참가': '참가비',
+      '행사비': '참가비',
+      '연회비': '연회비',
+      '회비': '연회비',
     };
     for (final e in table.entries) {
       if (text.contains(e.key)) return e.value;
@@ -291,8 +301,9 @@ class FinanceService extends ChangeNotifier {
   //  집계 / 통계
   // ---------------------------------------------------------------------------
   List<FinanceTransaction> incomeOf([String? category]) => _tx
-      .where((t) => !t.isExpense &&
-          (category == null || t.category == category))
+      .where(
+        (t) => !t.isExpense && (category == null || t.category == category),
+      )
       .toList();
 
   List<FinanceTransaction> expenseList() =>
@@ -300,7 +311,8 @@ class FinanceService extends ChangeNotifier {
 
   /// 인가번호별 입금 집계
   Map<String, MemberDepositSummary> memberSummaries(
-      Map<String, Member> byNumber) {
+    Map<String, Member> byNumber,
+  ) {
     final map = <String, MemberDepositSummary>{};
     for (final t in _tx) {
       if (t.isExpense) continue;
@@ -309,7 +321,9 @@ class FinanceService extends ChangeNotifier {
       final s = map.putIfAbsent(
         no,
         () => MemberDepositSummary(
-            number: no, name: byNumber[no]?.name ?? t.name),
+          number: no,
+          name: byNumber[no]?.name ?? t.name,
+        ),
       );
       s.total += t.amount;
       s.byCategory[t.category] = (s.byCategory[t.category] ?? 0) + t.amount;
@@ -327,9 +341,10 @@ class FinanceService extends ChangeNotifier {
   List<FinanceTransaction> depositsOf(String number) {
     final no = number.replaceAll(RegExp(r'[^0-9]'), '');
     return _tx
-        .where((t) =>
-            !t.isExpense &&
-            t.number.replaceAll(RegExp(r'[^0-9]'), '') == no)
+        .where(
+          (t) =>
+              !t.isExpense && t.number.replaceAll(RegExp(r'[^0-9]'), '') == no,
+        )
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
   }
@@ -362,10 +377,9 @@ class FinanceService extends ChangeNotifier {
         final no = t.number.replaceAll(RegExp(r'[^0-9]'), '');
         if (no.isNotEmpty) byMember[no] = (byMember[no] ?? 0) + t.amount;
       }
-      final mo = RegExp(r'20\d{2}[.\-/]?(\d{1,2})')
-          .firstMatch(t.date)
-          ?.group(1)
-          ?.padLeft(2, '0');
+      final mo = RegExp(
+        r'20\d{2}[.\-/]?(\d{1,2})',
+      ).firstMatch(t.date)?.group(1)?.padLeft(2, '0');
       if (mo != null) byMonth[mo] = (byMonth[mo] ?? 0) + t.amount;
     }
     return YearStat(
@@ -447,7 +461,9 @@ class FinanceService extends ChangeNotifier {
     for (final t in _tx) {
       final y = t.year.isEmpty ? _yearOf(t.date) : t.year;
       final yy = byYear.putIfAbsent(
-          y, () => {'income': 0, 'expense': 0, 'count': 0});
+        y,
+        () => {'income': 0, 'expense': 0, 'count': 0},
+      );
       yy['count'] = (yy['count'] ?? 0) + 1;
       final mo = _monthOf(t.date);
       if (t.isExpense) {
@@ -487,7 +503,9 @@ class FinanceService extends ChangeNotifier {
   }
 
   static String _monthOf(String date) =>
-      RegExp(r'20\d{2}[.\-/]?(\d{1,2})').firstMatch(date)?.group(1)?.padLeft(2, '0') ??
+      RegExp(
+        r'20\d{2}[.\-/]?(\d{1,2})',
+      ).firstMatch(date)?.group(1)?.padLeft(2, '0') ??
       '';
 
   String get statsUpdated => '${_stats['updated'] ?? _updated ?? ''}';
@@ -525,7 +543,8 @@ class FinanceService extends ChangeNotifier {
       if (type == 'income' && t.isExpense) return false;
       if (type == 'expense' && !t.isExpense) return false;
       if (kw.isNotEmpty) {
-        final hay = '${t.name} ${t.payer} ${t.memo} ${t.event} '
+        final hay =
+            '${t.name} ${t.payer} ${t.memo} ${t.event} '
             '${t.category} ${t.number} ${t.context}';
         if (!hay.contains(kw)) return false;
       }
@@ -546,8 +565,9 @@ class FinanceService extends ChangeNotifier {
   }
 
   static DateTime? _dateOf(String date) {
-    final m = RegExp(r'(20\d{2})[.\-/]?(\d{1,2})[.\-/]?(\d{1,2})?')
-        .firstMatch(date);
+    final m = RegExp(
+      r'(20\d{2})[.\-/]?(\d{1,2})[.\-/]?(\d{1,2})?',
+    ).firstMatch(date);
     if (m == null) return null;
     final y = int.tryParse(m.group(1) ?? '');
     final mo = int.tryParse(m.group(2) ?? '') ?? 1;
@@ -599,38 +619,38 @@ class ClassifiedRow {
   bool get isExpense => type == 'expense';
 
   Map<String, dynamic> toMap() => {
-        'date': date,
-        'type': type,
-        'payer': payer,
-        'name': name,
-        'number': number,
-        'memberId': memberId,
-        'matchedName': matchedName,
-        'amount': amount,
-        'category': category,
-        'memo': memo,
-        'event': event,
-        'context': context,
-        'status': status,
-        'sheet': sheet,
-      };
+    'date': date,
+    'type': type,
+    'payer': payer,
+    'name': name,
+    'number': number,
+    'memberId': memberId,
+    'matchedName': matchedName,
+    'amount': amount,
+    'category': category,
+    'memo': memo,
+    'event': event,
+    'context': context,
+    'status': status,
+    'sheet': sheet,
+  };
 
   factory ClassifiedRow.fromMap(Map<dynamic, dynamic> m) => ClassifiedRow(
-        date: '${m['date'] ?? ''}',
-        type: '${m['type'] ?? 'income'}',
-        payer: '${m['payer'] ?? ''}',
-        name: '${m['name'] ?? ''}',
-        number: '${m['number'] ?? ''}',
-        memberId: '${m['memberId'] ?? ''}',
-        matchedName: '${m['matchedName'] ?? ''}',
-        amount: (m['amount'] is num) ? (m['amount'] as num).toInt() : 0,
-        category: '${m['category'] ?? '기타'}',
-        memo: '${m['memo'] ?? ''}',
-        event: '${m['event'] ?? ''}',
-        context: '${m['context'] ?? ''}',
-        status: '${m['status'] ?? 'unmatched'}',
-        sheet: '${m['sheet'] ?? ''}',
-      );
+    date: '${m['date'] ?? ''}',
+    type: '${m['type'] ?? 'income'}',
+    payer: '${m['payer'] ?? ''}',
+    name: '${m['name'] ?? ''}',
+    number: '${m['number'] ?? ''}',
+    memberId: '${m['memberId'] ?? ''}',
+    matchedName: '${m['matchedName'] ?? ''}',
+    amount: (m['amount'] is num) ? (m['amount'] as num).toInt() : 0,
+    category: '${m['category'] ?? '기타'}',
+    memo: '${m['memo'] ?? ''}',
+    event: '${m['event'] ?? ''}',
+    context: '${m['context'] ?? ''}',
+    status: '${m['status'] ?? 'unmatched'}',
+    sheet: '${m['sheet'] ?? ''}',
+  );
 }
 
 /// 연도 통계
@@ -642,9 +662,9 @@ class YearStat {
     Map<String, int>? byCategory,
     Map<String, int>? byMember,
     Map<String, int>? byMonth,
-  })  : byCategory = byCategory ?? {},
-        byMember = byMember ?? {},
-        byMonth = byMonth ?? {};
+  }) : byCategory = byCategory ?? {},
+       byMember = byMember ?? {},
+       byMonth = byMonth ?? {};
 
   String year;
   int income;

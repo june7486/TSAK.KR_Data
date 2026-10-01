@@ -122,10 +122,13 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
       final bytes = await FinanceReportService.build(_a);
       if (!mounted) return;
       setState(() => _building = false);
-      await Share.shareXFiles(
-        [XFile.fromData(bytes, name: '${FinanceReportService.fileName()}.pdf', mimeType: 'application/pdf')],
-        subject: '한국범스카우트중앙회 은행거래 종합분석 보고서',
-      );
+      await Share.shareXFiles([
+        XFile.fromData(
+          bytes,
+          name: '${FinanceReportService.fileName()}.pdf',
+          mimeType: 'application/pdf',
+        ),
+      ], subject: '한국범스카우트중앙회 은행거래 종합분석 보고서');
     } catch (e) {
       if (!mounted) return;
       setState(() => _building = false);
@@ -158,8 +161,9 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   }
 
   void _snack(String m) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(m), duration: const Duration(seconds: 2)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
+    );
   }
 
   @override
@@ -194,9 +198,7 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
           _body(),
           BusyOverlay(
             visible: _loading || _working || _building,
-            title: _building
-                ? '보고서를 생성하는 중입니다'
-                : '재무 데이터를 분석하는 중입니다',
+            title: _building ? '보고서를 생성하는 중입니다' : '재무 데이터를 분석하는 중입니다',
             lines: [
               if (_building) '선택한 조건으로 출력물을 만들고 있습니다...',
               if (!_building && _workingMsg.isNotEmpty) _workingMsg,
@@ -218,7 +220,11 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: AppColors.taegeukRed),
+            const Icon(
+              Icons.error_outline,
+              size: 48,
+              color: AppColors.taegeukRed,
+            ),
             const SizedBox(height: 10),
             Text(_error!, style: const TextStyle(color: AppColors.textGray)),
             const SizedBox(height: 12),
@@ -280,11 +286,14 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('은행거래내역 종합분석',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900)),
+                const Text(
+                  '은행거래내역 종합분석',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 3),
                 Text(
                   '${t['from'] ?? ''} – ${t['to'] ?? ''}년 (${t['yearCount'] ?? 0}개 연도) · 후원·수품·지출·행사',
@@ -299,7 +308,8 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   }
 
   Widget _summaryCards(Map<String, dynamic> t) {
-    Widget card(String label, num value, Color color, IconData icon) => Expanded(
+    Widget card(String label, num value, Color color, IconData icon) =>
+        Expanded(
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
             decoration: BoxDecoration(
@@ -311,12 +321,22 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
               children: [
                 Icon(icon, size: 18, color: color),
                 const SizedBox(height: 5),
-                Text(_shortWon(value),
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w900, color: color)),
+                Text(
+                  _shortWon(value),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
                 const SizedBox(height: 1),
-                Text(label,
-                    style: const TextStyle(fontSize: 10.5, color: AppColors.textGray)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
           ),
@@ -324,18 +344,41 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
     final net = (t['net'] ?? 0) as num;
     return Column(
       children: [
-        Row(children: [
-          card('총 수입', (t['income'] ?? 0) as num, AppColors.scoutGreen, Icons.trending_up),
-          const SizedBox(width: 8),
-          card('총 지출', (t['expense'] ?? 0) as num, AppColors.tigerGold, Icons.trending_down),
-        ]),
+        Row(
+          children: [
+            card(
+              '총 수입',
+              (t['income'] ?? 0) as num,
+              AppColors.scoutGreen,
+              Icons.trending_up,
+            ),
+            const SizedBox(width: 8),
+            card(
+              '총 지출',
+              (t['expense'] ?? 0) as num,
+              AppColors.tigerGold,
+              Icons.trending_down,
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
-        Row(children: [
-          card('순액', net, net >= 0 ? AppColors.taegeukBlue : AppColors.taegeukRed,
-              Icons.account_balance_wallet),
-          const SizedBox(width: 8),
-          card('분석 건수', (t['rows'] ?? 0) as num, AppColors.purple, Icons.receipt_long),
-        ]),
+        Row(
+          children: [
+            card(
+              '순액',
+              net,
+              net >= 0 ? AppColors.taegeukBlue : AppColors.taegeukRed,
+              Icons.account_balance_wallet,
+            ),
+            const SizedBox(width: 8),
+            card(
+              '분석 건수',
+              (t['rows'] ?? 0) as num,
+              AppColors.purple,
+              Icons.receipt_long,
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -344,7 +387,8 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
     final data = <String, int>{};
     for (final y in yearKeys.take(14)) {
       final b = (years[y] as Map).cast<String, dynamic>();
-      data[y] = (((b['income'] ?? 0) as num) + ((b['expense'] ?? 0) as num)).round();
+      data[y] = (((b['income'] ?? 0) as num) + ((b['expense'] ?? 0) as num))
+          .round();
     }
     return Container(
       padding: const EdgeInsets.all(12),
@@ -356,16 +400,19 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('수입+지출 규모 (연도별)',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+          const Text(
+            '수입+지출 규모 (연도별)',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
           const SizedBox(height: 8),
           SizedBox(
+            height: 120,
+            child: MiniBarChart(
+              data: data,
               height: 120,
-              child: MiniBarChart(
-                data: data,
-                height: 120,
-                valueFormatter: (v) => _shortWon(v),
-              )),
+              valueFormatter: (v) => _shortWon(v),
+            ),
+          ),
         ],
       ),
     );
@@ -375,10 +422,7 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
     return HScrollMenu(
       height: 36,
       child: Row(
-        children: [
-          _chip('전체', 'all'),
-          ...yearKeys.map((y) => _chip(y, y)),
-        ],
+        children: [_chip('전체', 'all'), ...yearKeys.map((y) => _chip(y, y))],
       ),
     );
   }
@@ -397,7 +441,7 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   }
 
   Widget _yearList(List<String> yearKeys, Map<String, dynamic> years) {
-    final keys = _yearFilter == 'all' ? yearKeys : [ _yearFilter ];
+    final keys = _yearFilter == 'all' ? yearKeys : [_yearFilter];
     return Column(
       children: keys.where((y) => years[y] is Map).map((y) {
         final b = (years[y] as Map).cast<String, dynamic>();
@@ -411,17 +455,25 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
             title: Row(
               children: [
-                Text('$y년',
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.textDark)),
+                Text(
+                  '$y년',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textDark,
+                  ),
+                ),
                 const SizedBox(width: 10),
-                Text('순액 ${_shortWon((b['net'] ?? 0) as num)}',
-                    style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: ((b['net'] ?? 0) as num) >= 0
-                            ? AppColors.scoutGreen
-                            : AppColors.taegeukRed)),
+                Text(
+                  '순액 ${_shortWon((b['net'] ?? 0) as num)}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: ((b['net'] ?? 0) as num) >= 0
+                        ? AppColors.scoutGreen
+                        : AppColors.taegeukRed,
+                  ),
+                ),
               ],
             ),
             subtitle: Text(
@@ -430,39 +482,58 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
             ),
             children: [
               ...entries.map((e) {
-              final isExp = e.key.startsWith('지출:');
-              final label = e.key.split(':').last;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: (isExp ? AppColors.tigerGold : AppColors.scoutGreen)
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(isExp ? '지출' : '수입',
+                final isExp = e.key.startsWith('지출:');
+                final label = e.key.split(':').last;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              (isExp
+                                      ? AppColors.tigerGold
+                                      : AppColors.scoutGreen)
+                                  .withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isExp ? '지출' : '수입',
                           style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: isExp ? AppColors.tigerGold : AppColors.scoutGreen)),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(label,
-                          style: const TextStyle(fontSize: 12.5, color: AppColors.textDark)),
-                    ),
-                    Text('${_wonComma(e.value as num)}원',
-                        style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: isExp
+                                ? AppColors.tigerGold
+                                : AppColors.scoutGreen,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: const TextStyle(
                             fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark)),
-                  ],
-                ),
-              );
-            }),
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${_wonComma(e.value as num)}원',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
               _monthsChart(b),
             ],
           ),
@@ -494,19 +565,28 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
         children: [
           Row(
             children: [
-              const Text('월별 수입/지출',
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark)),
+              const Text(
+                '월별 수입/지출',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textDark,
+                ),
+              ),
               const Spacer(),
               Container(width: 8, height: 8, color: AppColors.scoutGreen),
               const SizedBox(width: 3),
-              const Text('수입', style: TextStyle(fontSize: 9.5, color: AppColors.textGray)),
+              const Text(
+                '수입',
+                style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
+              ),
               const SizedBox(width: 8),
               Container(width: 8, height: 8, color: AppColors.tigerGold),
               const SizedBox(width: 3),
-              const Text('지출', style: TextStyle(fontSize: 9.5, color: AppColors.textGray)),
+              const Text(
+                '지출',
+                style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -550,7 +630,10 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
           ],
         ),
         const SizedBox(height: 2),
-        Text('$month', style: const TextStyle(fontSize: 7.5, color: AppColors.textGray)),
+        Text(
+          '$month',
+          style: const TextStyle(fontSize: 7.5, color: AppColors.textGray),
+        ),
       ],
     );
   }
@@ -558,11 +641,16 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   Widget _eventsCard() {
     final events = (_a['events'] as Map?)?.cast<String, dynamic>() ?? {};
     final list = events.values.toList();
-    list.sort((x, y) => ((y['income'] as num) + (y['expense'] as num))
-        .compareTo((x['income'] as num) + (x['expense'] as num)));
+    list.sort(
+      (x, y) => ((y['income'] as num) + (y['expense'] as num)).compareTo(
+        (x['income'] as num) + (x['expense'] as num),
+      ),
+    );
     if (list.isEmpty) {
-      return const Text('행사로 분류된 거래가 없습니다.',
-          style: TextStyle(fontSize: 12, color: AppColors.textGray));
+      return const Text(
+        '행사로 분류된 거래가 없습니다.',
+        style: TextStyle(fontSize: 12, color: AppColors.textGray),
+      );
     }
     return Card(
       child: Padding(
@@ -580,15 +668,29 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
                     children: [
-                      const Icon(Icons.celebration, size: 15, color: AppColors.purple),
+                      const Icon(
+                        Icons.celebration,
+                        size: 15,
+                        color: AppColors.purple,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Text('${e['event'] ?? '미분류'}',
-                            style: const TextStyle(fontSize: 12.5, color: AppColors.textDark),
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          '${e['event'] ?? '미분류'}',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.textDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      Text('+${_shortWon(inc)} / -${_shortWon(exp)}',
-                          style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+                      Text(
+                        '+${_shortWon(inc)} / -${_shortWon(exp)}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -601,16 +703,24 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
                       children: yrKeys.map((yy) {
                         final amt = (yrs[yy] ?? 0) as num;
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.bg,
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                                color: AppColors.purple.withValues(alpha: 0.12)),
+                              color: AppColors.purple.withValues(alpha: 0.12),
+                            ),
                           ),
-                          child: Text('$yy ${_shortWon(amt)}',
-                              style: const TextStyle(
-                                  fontSize: 9.5, color: AppColors.textGray)),
+                          child: Text(
+                            '$yy ${_shortWon(amt)}',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                         );
                       }).toList(),
                     ),
@@ -625,8 +735,10 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
 
   Widget _filesCard(List files) {
     if (files.isEmpty) {
-      return const Text('분석된 파일이 없습니다.',
-          style: TextStyle(fontSize: 12, color: AppColors.textGray));
+      return const Text(
+        '분석된 파일이 없습니다.',
+        style: TextStyle(fontSize: 12, color: AppColors.textGray),
+      );
     }
     return Card(
       child: Padding(
@@ -638,15 +750,29 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.insert_drive_file, size: 15, color: AppColors.scoutGreen),
+                  const Icon(
+                    Icons.insert_drive_file,
+                    size: 15,
+                    color: AppColors.scoutGreen,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text('${m['name']}',
-                        style: const TextStyle(fontSize: 12, color: AppColors.textDark),
-                        overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      '${m['name']}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textDark,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  Text('${m['rows']}건',
-                      style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+                  Text(
+                    '${m['rows']}건',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                 ],
               ),
             );
@@ -674,7 +800,11 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
               '※ 항상 가장 최신의 은행거래내역 파일을 기준으로 분석합니다. '
               '우측 상단 새로고침으로 원본 폴더를 다시 스캔할 수 있습니다. '
               '미분류 거래는 분류규칙(별칭) 등록 후 재분석하면 정확도가 올라갑니다.',
-              style: TextStyle(fontSize: 10.5, color: AppColors.textGray, height: 1.4),
+              style: TextStyle(
+                fontSize: 10.5,
+                color: AppColors.textGray,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -688,12 +818,15 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border(top: BorderSide(color: AppColors.purple.withValues(alpha: 0.15))),
+          border: Border(
+            top: BorderSide(color: AppColors.purple.withValues(alpha: 0.15)),
+          ),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, -2)),
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
           ],
         ),
         child: Row(
@@ -701,7 +834,9 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
             Expanded(
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.purple, minimumSize: const Size(0, 44)),
+                  backgroundColor: AppColors.purple,
+                  minimumSize: const Size(0, 44),
+                ),
                 onPressed: _building ? null : () => _buildPdf(),
                 icon: const Icon(Icons.picture_as_pdf, size: 18),
                 label: const Text('A4 보고서 보기', style: TextStyle(fontSize: 13)),
@@ -726,14 +861,19 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
   }
 
   Widget _sectionTitle(String s) => Row(
-        children: [
-          Container(width: 4, height: 16, color: AppColors.tigerGold),
-          const SizedBox(width: 8),
-          Text(s,
-              style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.textDark)),
-        ],
-      );
+    children: [
+      Container(width: 4, height: 16, color: AppColors.tigerGold),
+      const SizedBox(width: 8),
+      Text(
+        s,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          color: AppColors.textDark,
+        ),
+      ),
+    ],
+  );
 
   // ---- helpers ----
   String _wonComma(num v) {

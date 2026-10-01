@@ -42,7 +42,11 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this, initialIndex: widget.initialTab);
+    _tab = TabController(
+      length: 5,
+      vsync: this,
+      initialIndex: widget.initialTab,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
@@ -136,29 +140,34 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     final created = _ym('${prof['updatedAt'] ?? ''}');
     final canEdit = state.isApp || state.isMaster;
     if (!canEdit) {
-      return Text(receiverNo.isNotEmpty ? receiverNo : created,
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight:
-                  receiverNo.isNotEmpty ? FontWeight.w800 : FontWeight.w500,
-              color: receiverNo.isNotEmpty
-                  ? AppColors.textDark
-                  : AppColors.textGray));
+      return Text(
+        receiverNo.isNotEmpty ? receiverNo : created,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: receiverNo.isNotEmpty ? FontWeight.w800 : FontWeight.w500,
+          color: receiverNo.isNotEmpty
+              ? AppColors.textDark
+              : AppColors.textGray,
+        ),
+      );
     }
     return InkWell(
       onTap: () => _editReceiver(prof),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(receiverNo.isNotEmpty ? receiverNo : created,
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: receiverNo.isNotEmpty
-                      ? FontWeight.w800
-                      : FontWeight.w500,
-                  color: receiverNo.isNotEmpty
-                      ? AppColors.textDark
-                      : AppColors.textGray)),
+          Text(
+            receiverNo.isNotEmpty ? receiverNo : created,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: receiverNo.isNotEmpty
+                  ? FontWeight.w800
+                  : FontWeight.w500,
+              color: receiverNo.isNotEmpty
+                  ? AppColors.textDark
+                  : AppColors.textGray,
+            ),
+          ),
           const SizedBox(width: 4),
           const Icon(Icons.edit, size: 13, color: AppColors.purpleLight),
         ],
@@ -188,14 +197,17 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
               ),
             ),
             const SizedBox(height: 8),
-            Text('생성년월: ${_ym('${prof['updatedAt'] ?? ''}')}',
-                style: const TextStyle(
-                    fontSize: 11.5, color: AppColors.textGray)),
+            Text(
+              '생성년월: ${_ym('${prof['updatedAt'] ?? ''}')}',
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('저장'),
@@ -208,9 +220,9 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     setState(() => _busy = true);
     try {
       final res = await nas.linkProfileSetReceiver(
-            number: '${prof['number'] ?? ''}',
-            receiverNo: r,
-          );
+        number: '${prof['number'] ?? ''}',
+        receiverNo: r,
+      );
       if (!mounted) return;
       if (res['ok'] == true) {
         _snack('저장했습니다');
@@ -257,7 +269,10 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white.withValues(alpha: 0.72),
-          labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+          labelStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+          ),
           tabs: [
             const Tab(text: '범인가자'),
             const Tab(text: '멘토 대장'),
@@ -285,7 +300,11 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 44, color: AppColors.tigerGold),
+            const Icon(
+              Icons.error_outline,
+              size: 44,
+              color: AppColors.tigerGold,
+            ),
             const SizedBox(height: 12),
             Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 12),
@@ -312,8 +331,10 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('표시할 명부가 없습니다.',
-              style: TextStyle(color: AppColors.textGray)),
+          child: Text(
+            '표시할 명부가 없습니다.',
+            style: TextStyle(color: AppColors.textGray),
+          ),
         ),
       );
     }
@@ -334,11 +355,14 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
               color: const Color(0xFFF6F4F1),
               child: Row(
                 children: [
-                  Text('총 ${rows.length}명',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.purple)),
+                  Text(
+                    '총 ${rows.length}명',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purple,
+                    ),
+                  ),
                   const Spacer(),
                   TextButton.icon(
                     onPressed: () => _copyTsv(headers, rows),
@@ -356,26 +380,29 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
                       step: 220,
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                            minWidth: constraints.maxWidth),
+                          minWidth: constraints.maxWidth,
+                        ),
                         child: DataTable(
                           headingRowColor: WidgetStateProperty.all(
-                              const Color(0xFFF6F4F1)),
+                            const Color(0xFFF6F4F1),
+                          ),
                           headingTextStyle: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.purple),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.purple,
+                          ),
                           dataTextStyle: const TextStyle(
-                              fontSize: 12, color: AppColors.textDark),
+                            fontSize: 12,
+                            color: AppColors.textDark,
+                          ),
                           horizontalMargin: 12,
                           columnSpacing: 16,
                           columns: [
-                            for (final h in headers)
-                              DataColumn(label: Text(h)),
+                            for (final h in headers) DataColumn(label: Text(h)),
                           ],
                           rows: [
-                            for (final r in rows) DataRow(cells: [
-                              for (final c in r) DataCell(c),
-                            ]),
+                            for (final r in rows)
+                              DataRow(cells: [for (final c in r) DataCell(c)]),
                           ],
                         ),
                       ),
@@ -410,13 +437,13 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   }
 
   Widget _t(String s, {bool bold = false}) => Text(
-        s,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
-          color: bold ? AppColors.textDark : AppColors.textDark,
-        ),
-      );
+    s,
+    style: TextStyle(
+      fontSize: 12,
+      fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
+      color: bold ? AppColors.textDark : AppColors.textDark,
+    ),
+  );
 
   // ---- 1. 범스카우트 인가자 명부 ----
   Widget _credentialTable(AppState state) {
@@ -464,9 +491,11 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     for (var i = 0; i < list.length; i++) {
       final m = list[i];
       // 아이디(계정) 생성년월 — 서버가 저장 시 부여한 createdAt(updatedAt) 기준.
-      final created = _ym(m.updatedAt != null
-          ? '${m.updatedAt!.year}.${m.updatedAt!.month.toString().padLeft(2, '0')}'
-          : '');
+      final created = _ym(
+        m.updatedAt != null
+            ? '${m.updatedAt!.year}.${m.updatedAt!.month.toString().padLeft(2, '0')}'
+            : '',
+      );
       final phone = m.phone.trim().isNotEmpty ? m.phone : m.accessPhone;
       rows.add([
         _t('${i + 1}'),

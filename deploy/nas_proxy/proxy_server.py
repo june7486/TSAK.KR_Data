@@ -664,7 +664,7 @@ def _history_add(entry):
     """승인 히스토리 1건 추가(최신 우선, 최대 3000건)."""
     entry = dict(entry or {})
     entry.setdefault("id", "h_%d_%s" % (int(time.time() * 1000),
-                                       _secrets.token_hex(3)))
+                                       _secrets.token_hex(8)))
     entry.setdefault("handledAt", datetime.datetime.now().strftime(
         "%Y-%m-%d %H:%M:%S"))
     with _HISTORY_LOCK:
@@ -922,6 +922,44 @@ def _link_of(m):
     return ""
 
 
+def _link_kinds_of(m):
+    """연결 승인 대상 종류 — 'mentor'(멘토) / 'parent'(페런츠) 구분.
+    요구: "멘토, 페런츠 구분하고"."""
+    k = []
+    if [x for x in (m.get("mentors") or []) if str(x).strip()]:
+        k.append("mentor")
+    if [x for x in (m.get("parents") or []) if str(x).strip()]:
+        k.append("parent")
+    return k
+
+
+def _link_kind_label(kinds):
+    """종류 목록 → 표시 라벨('멘토' / '페런츠' / '멘토·페런츠')."""
+    ks = [str(x) for x in (kinds or [])]
+    has_m = "mentor" in ks
+    has_p = "parent" in ks
+    if has_m and has_p:
+        return "멘토·페런츠"
+    if has_m:
+        return "멘토"
+    if has_p:
+        return "페런츠"
+    return "멘토·페런츠"
+
+
+# 승인요청방법 라벨 — 요구: "승인요청방법: 수품신청시/직접입력"
+_REQ_SOURCE_LABEL = {
+    "merch": "수품신청시",
+    "direct": "직접입력",
+    "bulk": "일괄등록",
+    "import": "이관",
+}
+
+
+def _req_source_label(s):
+    return _REQ_SOURCE_LABEL.get(str(s or ""), "직접입력")
+
+
 def _link_pending_members():
     """멘토/페런츠를 지정했고 승인 대기(pending)인 회원 목록."""
     out = []
@@ -972,6 +1010,14 @@ def _link_pending_members():
             "parentLabels": _enrich(parents),
             "note": str(m.get("linkApprovalNote", "")),
             "linkApprovalStatus": "pending",
+            # 멘토/페런츠 구분 + 승인요청 정보(요구).
+            "hasMentor": bool(mentors),
+            "hasParent": bool(parents),
+            "linkKind": _link_kind_label(_link_kinds_of(m)),
+            "linkKinds": _link_kinds_of(m),
+            "requestedAt": str(m.get("linkRequestedAt") or m.get("created") or ""),
+            "reqSource": str(m.get("linkRequestSource") or ""),
+            "reqSourceLabel": _req_source_label(m.get("linkRequestSource")),
         })
     return out
 
@@ -1141,11 +1187,57 @@ def _set_member_link(ident, status, note=""):
                     m["linkApprovalNote"] = str(note)[:300]
                 if status == "approved":
                     m["linkApprovedAt"] = _now_stamp()
+                # '요청(pending)' 진입 시 승인요청시간·방법 기록(요구).
+                #  기존 요청정보가 있으면 보존한다(최초 요청시점 유지).
+                if status == "pending":
+                    if not str(m.get("linkRequestedAt") or "").strip():
+                        m["linkRequestedAt"] = _now_stamp()
+                    if not str(m.get("linkRequestSource") or "").strip():
+                        m["linkRequestSource"] = "direct"
                 members[i] = m
                 _save_json(DB_FILE, members)
                 _touch_meta({"updatedBy": "link-approval"})
                 return True, str(m.get("name", ""))
     return False, ""
+
+
+def _link_mark_request(mem, prev, default_source="direct"):
+    """연결 승인 '요청' 메타(요청시간·요청방법)를 회원 dict 에 기록한다.
+      · linkRequestedAt   : 최초 요청 시각(요구: 승인요청시간)
+      · linkRequestSource : 'merch'(수품신청시) | 'direct'(직접입력) ...
+    연결(멘토/페런츠)이 **실제로 바뀌었거나** 비요청→요청으로 진입할 때만
+    시각을 갱신하고, 그 외(동일 요청 유지)에는 최초 요청 시점을 보존한다.
+    """
+    if not isinstance(mem, dict):
+        return
+    cur_m = [str(x) for x in (mem.get("mentors") or []) if str(x).strip()]
+    cur_p = [str(x) for x in (mem.get("parents") or []) if str(x).strip()]
+    has_links = bool(cur_m or cur_p)
+    status = str(mem.get("linkApprovalStatus") or "").strip()
+    if not has_links or status not in ("pending", "held"):
+        # 미요청/승인완료 상태에서는 요청 메타를 비운다.
+        if status not in ("pending", "held"):
+            mem.pop("linkRequestedAt", None)
+            mem.pop("linkRequestSource", None)
+        return
+    _pv = prev if isinstance(prev, dict) else {}
+    prev_m = [str(x) for x in (_pv.get("mentors") or []) if str(x).strip()]
+    prev_p = [str(x) for x in (_pv.get("parents") or []) if str(x).strip()]
+    prev_status = str(_pv.get("linkApprovalStatus") or "").strip()
+    prev_at = str(_pv.get("linkRequestedAt") or "")
+    prev_src = str(_pv.get("linkRequestSource") or "")
+    changed = (cur_m != prev_m) or (cur_p != prev_p)
+    new_request = (prev_status != "pending") or changed
+    if new_request:
+        src = str(mem.get("linkRequestSource") or "").strip() \
+            or prev_src or default_source
+        mem["linkRequestSource"] = src
+        mem["linkRequestedAt"] = _now_stamp()
+    else:
+        # 동일 요청 유지 → 최초 요청시점 보존.
+        if not str(mem.get("linkRequestSource") or "").strip():
+            mem["linkRequestSource"] = prev_src or default_source
+        mem["linkRequestedAt"] = prev_at or _now_stamp()
 
 
 
@@ -4336,10 +4428,18 @@ def _merch_sync_medal_recipients(buyer_ident, kind, recips):
                     cur = m.get(field)
                     if not isinstance(cur, list):
                         cur = []
+                    added = False
                     for n in nums:
                         if n not in [str(x) for x in cur]:
                             cur.append(n)
+                            added = True
                     m[field] = cur
+                    # 새 연결이 실제로 추가된 경우에만 승인요청 상태로 전환하고,
+                    # 요청방법을 '수품신청시'(merch)로 기록한다(요구).
+                    if added:
+                        m["linkApprovalStatus"] = "pending"
+                        m["linkRequestSource"] = "merch"
+                        _link_mark_request(m, None, default_source="merch")
                     members[i] = m
                     hit = True
                     break
@@ -8969,6 +9069,24 @@ class Handler(BaseHTTPRequestHandler):
                     ok, _ = _set_member_approval(ident, "pending")
                 elif src == "link":
                     ok, _ = _set_member_link(ident, "pending")
+                    # 복원한 회원의 요청 메타(요청시간·방법)를 다시 기록.
+                    if ok:
+                        try:
+                            with _MEMBER_WRITE_LOCK:
+                                _ms = _ev_members()
+                                _pk = payload.get("member") or {}
+                                for _i, _m in enumerate(_ms):
+                                    if re.sub(r"[^0-9]", "", str(
+                                            _m.get("number", ""))) == ident:
+                                        if str(_pk.get("reqSource") or "").strip():
+                                            _m["linkRequestSource"] = \
+                                                str(_pk.get("reqSource"))
+                                        _link_mark_request(_m, None)
+                                        _ms[_i] = _m
+                                        _save_json(DB_FILE, _ms)
+                                        break
+                        except Exception:
+                            pass
                 elif src == "request":
                     req = dict(payload.get("request") or {})
                     if req:
@@ -9041,6 +9159,12 @@ class Handler(BaseHTTPRequestHandler):
                 _adm = _sess_label(self._sess())
                 for x in idents:
                     mm = _member_of_ident(x) or {}
+                    # 멘토/페런츠 구분 + 승인요청시간·요청방법(요구).
+                    _lkinds = _link_kinds_of(mm)
+                    _lklabel = _link_kind_label(_lkinds)
+                    _lreq_at = str(mm.get("linkRequestedAt")
+                                   or mm.get("created") or "")
+                    _lreq_src = str(mm.get("linkRequestSource") or "")
                     ok, nm = _set_member_link(x, status, note)
                     if ok:
                         done += 1
@@ -9051,17 +9175,25 @@ class Handler(BaseHTTPRequestHandler):
                                 str(mm.get("number", "") or x),
                                 nm or str(mm.get("name", "")),
                                 str(mm.get("number", "") or x),
-                                "멘토·페런츠 연결", status,
-                                str(mm.get("created", "")), _adm,
-                                summary="%s 처리" % _status_kr(status),
+                                "멘토·페런츠 연결 - %s" % _lklabel, status,
+                                _lreq_at, _adm,
+                                summary="%s · %s · 요청 %s" % (
+                                    _lklabel, _status_kr(status),
+                                    _req_source_label(_lreq_src)),
                                 payload={"member": {
                                     "number": str(mm.get("number", "")),
                                     "name": nm or str(mm.get("name", "")),
+                                    "linkKind": _lklabel,
+                                    "hasMentor": "mentor" in _lkinds,
+                                    "hasParent": "parent" in _lkinds,
                                     "mentors": [str(y) for y in
                                                 (mm.get("mentors") or [])],
                                     "parents": [str(y) for y in
                                                 (mm.get("parents") or [])],
                                     "note": note,
+                                    "reqSource": _lreq_src,
+                                    "reqSourceLabel": _req_source_label(_lreq_src),
+                                    "requestedAt": _lreq_at,
                                 }})
                 return self._json({"ok": True, "done": done})
             if p == "/api/link/profiles":
@@ -9191,6 +9323,10 @@ class Handler(BaseHTTPRequestHandler):
                     mem["league"] = _normalize_league(mem.get("league", ""))
                 if "regLeague" in mem:
                     mem["regLeague"] = _normalize_league(mem.get("regLeague", ""))
+                # 연결 승인요청방법('merch'|'direct') — 요구: 수품신청시/직접입력.
+                _req_src = str(d.get("linkRequestSource") or "").strip()
+                if _req_src:
+                    mem["linkRequestSource"] = _req_src
                 mid = str(mem.get("id", ""))
                 with LOCK:
                     members = _load_json(DB_FILE, [])
@@ -9200,12 +9336,24 @@ class Handler(BaseHTTPRequestHandler):
                             # 아이디(계정) 생성년월 보존 — 명부관리 '아이디생성년월'용.
                             if not mem.get("createdAt") and m.get("createdAt"):
                                 mem["createdAt"] = m.get("createdAt")
+                            # 연결 승인 '요청시간·요청방법' 기록(요구).
+                            #  · 클라이언트가 linkRequestSource 를 보내면 그 값
+                            #    ('merch'|'direct'), 아니면 기존값 보존(기본 직접입력).
+                            src = str(mem.get("linkRequestSource") or "").strip()
+                            if src:
+                                mem["linkRequestSource"] = src
+                            elif m.get("linkRequestSource"):
+                                mem["linkRequestSource"] = m.get("linkRequestSource")
+                            _link_mark_request(mem, m)
                             members[i] = mem
                             found = True
                             break
                     if not found:
                         if not mem.get("createdAt"):
                             mem["createdAt"] = _now_stamp()
+                        if not str(mem.get("linkRequestSource") or "").strip():
+                            mem["linkRequestSource"] = "direct"
+                        _link_mark_request(mem, None)
                         members.append(mem)
                     if NAS.exists(DB_FILE):
                         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -104,9 +104,7 @@ Future<Uint8List> _readBytes(web.File file) {
   reader.onloadend = (web.Event _) {
     final result = reader.result;
     if (result.isA<JSArrayBuffer>()) {
-      completer.complete(
-        (result as JSArrayBuffer).toDart.asUint8List(),
-      );
+      completer.complete((result as JSArrayBuffer).toDart.asUint8List());
     } else {
       completer.complete(Uint8List(0));
     }

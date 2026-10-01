@@ -51,8 +51,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  List<Map<String, dynamic>> _list(dynamic v) =>
-      ((v as List?) ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
+  List<Map<String, dynamic>> _list(dynamic v) => ((v as List?) ?? [])
+      .map((e) => (e as Map).cast<String, dynamic>())
+      .toList();
 
   Future<void> _load() async {
     setState(() {
@@ -104,7 +105,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   int _wonInt(dynamic v) => (v as num?)?.toInt() ?? 0;
   String _won(dynamic v) => _wonInt(v).toString().replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
+    RegExp(r'(\d)(?=(\d{3})+$)'),
+    (m) => '${m[1]},',
+  );
 
   /// 제작자 id → 표시명(업체명). 배당 없으면 '미배당'.
   String _makerLabel(String mid) {
@@ -117,10 +120,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     return '미배당';
   }
 
-  int get _total =>
-      _items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
-  int get _totalQty =>
-      _items.fold<int>(0, (a, e) => a + _wonInt(e['qty']));
+  int get _total => _items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
+  int get _totalQty => _items.fold<int>(0, (a, e) => a + _wonInt(e['qty']));
 
   // ---------- 사진 업로드 ----------
   Future<String?> _pickPhoto() async {
@@ -147,21 +148,25 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   // ---------- 추가 / 수정 ----------
   Future<void> _edit({Map<String, dynamic>? existing}) async {
     final group = TextEditingController(text: '${existing?['group'] ?? ''}');
-    final category =
-        TextEditingController(text: '${existing?['category'] ?? ''}');
+    final category = TextEditingController(
+      text: '${existing?['category'] ?? ''}',
+    );
     final size = TextEditingController(text: '${existing?['size'] ?? ''}');
     final qty = TextEditingController(text: '${existing?['qty'] ?? ''}');
-    final unitPrice =
-        TextEditingController(text: '${existing?['unitPrice'] ?? ''}');
+    final unitPrice = TextEditingController(
+      text: '${existing?['unitPrice'] ?? ''}',
+    );
     final amount = TextEditingController(text: '${existing?['amount'] ?? ''}');
     final note = TextEditingController(text: '${existing?['note'] ?? ''}');
     final date = TextEditingController(text: '${existing?['date'] ?? ''}');
     final cost = TextEditingController(
-        text: (existing?['cost'] ?? 0).toString() == '0'
-            ? ''
-            : '${existing?['cost']}');
-    final madeDate =
-        TextEditingController(text: '${existing?['madeDate'] ?? ''}');
+      text: (existing?['cost'] ?? 0).toString() == '0'
+          ? ''
+          : '${existing?['cost']}',
+    );
+    final madeDate = TextEditingController(
+      text: '${existing?['madeDate'] ?? ''}',
+    );
     String photo = '${existing?['photo'] ?? ''}';
     String makerId = '${existing?['makerId'] ?? ''}';
 
@@ -183,14 +188,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                         height: 64,
                         color: AppColors.bg,
                         child: photo.trim().isEmpty
-                            ? const Icon(Icons.image_outlined,
-                                color: AppColors.textGray)
+                            ? const Icon(
+                                Icons.image_outlined,
+                                color: AppColors.textGray,
+                              )
                             : Image.network(
                                 _nas.merchImageUrl(photo),
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.broken_image_outlined,
-                                    color: AppColors.textGray),
+                                  Icons.broken_image_outlined,
+                                  color: AppColors.textGray,
+                                ),
                               ),
                       ),
                     ),
@@ -201,7 +209,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                         children: [
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                                visualDensity: VisualDensity.compact),
+                              visualDensity: VisualDensity.compact,
+                            ),
                             onPressed: () async {
                               final f = await _pickPhoto();
                               if (f != null) setDlg(() => photo = f);
@@ -212,10 +221,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                           if (photo.trim().isNotEmpty)
                             TextButton(
                               style: TextButton.styleFrom(
-                                  visualDensity: VisualDensity.compact),
+                                visualDensity: VisualDensity.compact,
+                              ),
                               onPressed: () => setDlg(() => photo = ''),
-                              child: const Text('사진 제거',
-                                  style: TextStyle(fontSize: 12)),
+                              child: const Text(
+                                '사진 제거',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                         ],
                       ),
@@ -226,46 +238,60 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 TextField(
                   controller: group,
                   decoration: const InputDecoration(
-                      labelText: '그룹 (예: 열전사 / 뱃지 / 굿즈)', isDense: true),
+                    labelText: '그룹 (예: 열전사 / 뱃지 / 굿즈)',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: category,
                   decoration: const InputDecoration(
-                      labelText: '분류 (예: 검정케이스 / 후드티)', isDense: true),
+                    labelText: '분류 (예: 검정케이스 / 후드티)',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: size,
                   decoration: const InputDecoration(
-                      labelText: '사이즈 (예: 40mm / 56cm)', isDense: true),
+                    labelText: '사이즈 (예: 40mm / 56cm)',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(
-                    child: TextField(
-                      controller: qty,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                          labelText: '수량', isDense: true),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: qty,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '수량',
+                          isDense: true,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: unitPrice,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                          labelText: '단가', isDense: true),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: unitPrice,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '단가',
+                          isDense: true,
+                        ),
+                      ),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: amount,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                      labelText: '금액 (비우면 수량×단가 자동)', isDense: true),
+                    labelText: '금액 (비우면 수량×단가 자동)',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -273,15 +299,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   maxLines: 2,
                   minLines: 1,
                   decoration: const InputDecoration(
-                      labelText: '비고', isDense: true),
+                    labelText: '비고',
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: makerId.isEmpty ? '' : makerId,
                   isExpanded: true,
                   decoration: const InputDecoration(
-                      labelText: '제작자 배당 (제작자 페이지에 노출)',
-                      isDense: true),
+                    labelText: '제작자 배당 (제작자 페이지에 노출)',
+                    isDense: true,
+                  ),
                   items: [
                     const DropdownMenuItem(value: '', child: Text('미배당')),
                     for (final m in _makers)
@@ -299,29 +328,37 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 TextField(
                   controller: date,
                   decoration: const InputDecoration(
-                      labelText: '날짜 (예: 2026.09.23)', isDense: true),
+                    labelText: '날짜 (예: 2026.09.23)',
+                    isDense: true,
+                  ),
                 ),
                 // 원가(선택)·제작일 — 마스터 전용 금액/제작 정보
                 if (context.read<AppState>().isMaster) ...[
                   const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: cost,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                            labelText: '원가 (원, 선택)', isDense: true),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: cost,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '원가 (원, 선택)',
+                            isDense: true,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: madeDate,
-                        decoration: const InputDecoration(
-                            labelText: '제작일', isDense: true),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: madeDate,
+                          decoration: const InputDecoration(
+                            labelText: '제작일',
+                            isDense: true,
+                          ),
+                        ),
                       ),
-                    ),
-                  ]),
+                    ],
+                  ),
                 ],
               ],
             ),
@@ -379,11 +416,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         content: Text('"$label" 항목을 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -406,8 +445,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         DocCell('${p['size'] ?? ''}', align: 'center'),
         DocCell('${p['qty'] ?? 0}', align: 'center'),
         DocCell(_won(p['unitPrice']), align: 'right'),
-        DocCell(_won(p['amount']), align: 'right', bold: true,
-            sub: '${p['note'] ?? ''}'.trim().isEmpty ? null : '${p['note']}'),
+        DocCell(
+          _won(p['amount']),
+          align: 'right',
+          bold: true,
+          sub: '${p['note'] ?? ''}'.trim().isEmpty ? null : '${p['note']}',
+        ),
       ]);
     }
     return buildMujiDoc(
@@ -425,15 +468,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       ),
       columns: const ['번호', '그룹', '분류', '사이즈', '수량', '단가', '금액'],
       rows: rows,
-      summary: '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
+      summary:
+          '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
           '총 금액 <span class="g">${_won(_total)}원</span>',
       footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
     );
   }
 
-  Future<void> _print({
-    TsakOutputFormat format = TsakOutputFormat.pdf,
-  }) async {
+  Future<void> _print({TsakOutputFormat format = TsakOutputFormat.pdf}) async {
     if (_items.isEmpty) {
       _snack('인쇄할 항목이 없습니다');
       return;
@@ -445,9 +487,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         case TsakOutputFormat.pdf:
         case TsakOutputFormat.jpg:
           openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
+          _snack(
+            format == TsakOutputFormat.jpg
+                ? '인쇄창에서 대상=이미지로 저장하세요'
+                : '인쇄창에서 PDF로 저장하세요',
+          );
           return;
         case TsakOutputFormat.excel:
           await Clipboard.setData(ClipboardData(text: _csvText()));
@@ -455,8 +499,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           return;
         case TsakOutputFormat.ppt:
         case TsakOutputFormat.word:
-          await Clipboard.setData(
-              ClipboardData(text: _plainText(format)));
+          await Clipboard.setData(ClipboardData(text: _plainText(format)));
           _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
           return;
       }
@@ -477,9 +520,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     buf.writeln('번호,그룹,분류,사이즈,수량,단가,금액,비고');
     for (var i = 0; i < _items.length; i++) {
       final p = _items[i];
-      buf.writeln('${i + 1},${p['group'] ?? ''},${p['category'] ?? ''},'
-          '${p['size'] ?? ''},${p['qty'] ?? 0},${p['unitPrice'] ?? 0},'
-          '${p['amount'] ?? 0},${p['note'] ?? ''}');
+      buf.writeln(
+        '${i + 1},${p['group'] ?? ''},${p['category'] ?? ''},'
+        '${p['size'] ?? ''},${p['qty'] ?? 0},${p['unitPrice'] ?? 0},'
+        '${p['amount'] ?? 0},${p['note'] ?? ''}',
+      );
     }
     return buf.toString();
   }
@@ -487,15 +532,21 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   /// 물건 결제 내역 → PPT/워드 붙여넣기용 텍스트.
   String _plainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '중앙회 물건 결제 (슬라이드용)'
-        : '중앙회 물건 결제 내역서 (문서용)');
-    buf.writeln('한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}');
+    buf.writeln(
+      format == TsakOutputFormat.ppt
+          ? '중앙회 물건 결제 (슬라이드용)'
+          : '중앙회 물건 결제 내역서 (문서용)',
+    );
+    buf.writeln(
+      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}',
+    );
     buf.writeln();
     for (var i = 0; i < _items.length; i++) {
       final p = _items[i];
-      buf.writeln('${i + 1}. ${p['group'] ?? ''} ${p['category'] ?? ''} '
-          '${p['size'] ?? ''} / ${p['qty'] ?? 0}개 / ${_won(p['amount'])}');
+      buf.writeln(
+        '${i + 1}. ${p['group'] ?? ''} ${p['category'] ?? ''} '
+        '${p['size'] ?? ''} / ${p['qty'] ?? 0}개 / ${_won(p['amount'])}',
+      );
     }
     buf.writeln();
     buf.writeln('총 금액: ${_won(_total)}');
@@ -516,8 +567,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const Text(
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 12),
             TsakOutputBar(
               onFormat: (f) {
@@ -530,15 +583,16 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               },
               onShareLink: () {
                 Navigator.pop(ctx);
-                showLinkShareDialog(
-                    context, '${_nas.baseUrl}/#/purchase');
+                showLinkShareDialog(context, '${_nas.baseUrl}/#/purchase');
               },
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -560,13 +614,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline,
-                        size: 48, color: AppColors.taegeukRed),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: AppColors.taegeukRed,
+                    ),
                     const SizedBox(height: 12),
                     Text(_error!, textAlign: TextAlign.center),
                     const SizedBox(height: 12),
                     ElevatedButton(
-                        onPressed: _load, child: const Text('다시 시도')),
+                      onPressed: _load,
+                      child: const Text('다시 시도'),
+                    ),
                   ],
                 ),
               )
@@ -637,11 +696,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         Expanded(
           child: _items.isEmpty
               ? const Center(
-                  child: Text('물건 결제 내역이 없습니다. 아래 + 버튼으로 추가하세요.',
-                      style: TextStyle(color: AppColors.textGray)))
+                  child: Text(
+                    '물건 결제 내역이 없습니다. 아래 + 버튼으로 추가하세요.',
+                    style: TextStyle(color: AppColors.textGray),
+                  ),
+                )
               : _byMaker
-                  ? _byMakerList()
-                  : _flatList(),
+              ? _byMakerList()
+              : _flatList(),
         ),
       ],
     );
@@ -663,7 +725,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       });
     return [
       for (final k in keys)
-        {'makerId': k, 'label': _makerLabel(k), 'items': map[k]!}
+        {'makerId': k, 'label': _makerLabel(k), 'items': map[k]!},
     ];
   }
 
@@ -701,27 +763,35 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               color: isNone
                   ? AppColors.textGray.withValues(alpha: 0.08)
                   : AppColors.purple.withValues(alpha: 0.07),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
             ),
             child: Row(
               children: [
-                Icon(isNone ? Icons.help_outline : Icons.factory_outlined,
-                    size: 17,
-                    color: isNone ? AppColors.textGray : AppColors.purple),
+                Icon(
+                  isNone ? Icons.help_outline : Icons.factory_outlined,
+                  size: 17,
+                  color: isNone ? AppColors.textGray : AppColors.purple,
+                ),
                 const SizedBox(width: 7),
                 Expanded(
-                  child: Text('${g['label']}',
-                      style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w900,
-                          color: isNone
-                              ? AppColors.textGray
-                              : AppColors.purpleDark)),
+                  child: Text(
+                    '${g['label']}',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                      color: isNone ? AppColors.textGray : AppColors.purpleDark,
+                    ),
+                  ),
                 ),
-                Text('${items.length}종 · ${_won(sum)}원',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textGray)),
+                Text(
+                  '${items.length}종 · ${_won(sum)}원',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
           ),
@@ -730,12 +800,15 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             _row(items[i], i, allowDrag: false),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-            child: Text('소계  수량 $qty · 금액 ${_won(sum)}원',
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.taegeukBlue)),
+            child: Text(
+              '소계  수량 $qty · 금액 ${_won(sum)}원',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.taegeukBlue,
+              ),
+            ),
           ),
         ],
       ),
@@ -755,11 +828,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Widget _totalLine() => Text(
-      '총 ${_items.length}개 항목 · 총 수량 $_totalQty · 총 금액 ${_won(_total)}원',
-      style: const TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w700,
-          color: AppColors.purpleDark));
+    '총 ${_items.length}개 항목 · 총 수량 $_totalQty · 총 금액 ${_won(_total)}원',
+    style: const TextStyle(
+      fontSize: 12.5,
+      fontWeight: FontWeight.w700,
+      color: AppColors.purpleDark,
+    ),
+  );
 
   /// 보기 모드 / 전체보기 / 선택(취합·이동) 툴바.
   Widget _viewToolbar() {
@@ -775,28 +850,32 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           SegmentedButton<bool>(
             segments: const [
               ButtonSegment(
-                  value: true,
-                  label: Text('제작자별', style: TextStyle(fontSize: 12)),
-                  icon: Icon(Icons.factory_outlined, size: 15)),
+                value: true,
+                label: Text('제작자별', style: TextStyle(fontSize: 12)),
+                icon: Icon(Icons.factory_outlined, size: 15),
+              ),
               ButtonSegment(
-                  value: false,
-                  label: Text('전체보기', style: TextStyle(fontSize: 12)),
-                  icon: Icon(Icons.view_list_outlined, size: 15)),
+                value: false,
+                label: Text('전체보기', style: TextStyle(fontSize: 12)),
+                icon: Icon(Icons.view_list_outlined, size: 15),
+              ),
             ],
             selected: {_byMaker},
-            onSelectionChanged: (s) =>
-                setState(() => _byMaker = s.first),
+            onSelectionChanged: (s) => setState(() => _byMaker = s.first),
             style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
           ),
           if (_selectMode) ...[
-            Text('선택 ${_selected.length}',
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w700)),
+            Text(
+              '선택 ${_selected.length}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact),
+                visualDensity: VisualDensity.compact,
+              ),
               onPressed: _selected.length < 2 ? null : _mergeSelected,
               icon: const Icon(Icons.call_merge, size: 15),
               label: const Text('취합'),
@@ -804,14 +883,16 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             if (canMove)
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact),
+                  visualDensity: VisualDensity.compact,
+                ),
                 onPressed: _selected.isEmpty ? null : _moveSelected,
                 icon: const Icon(Icons.drive_file_move_outline, size: 15),
                 label: const Text('이동'),
               ),
             OutlinedButton(
               style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact),
+                visualDensity: VisualDensity.compact,
+              ),
               onPressed: () => setState(() {
                 _selectMode = false;
                 _selected.clear();
@@ -821,7 +902,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           ] else
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact),
+                visualDensity: VisualDensity.compact,
+              ),
               onPressed: _items.isEmpty
                   ? null
                   : () => setState(() => _selectMode = true),
@@ -830,7 +912,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact),
+              visualDensity: VisualDensity.compact,
+            ),
             onPressed: () => _edit(),
             icon: const Icon(Icons.add, size: 15),
             label: const Text('항목 추가'),
@@ -842,9 +925,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   // ---------- 취합(merge) ----------
   Future<void> _mergeSelected() async {
-    final sel = _items
-        .where((p) => _selected.contains('${p['id']}'))
-        .toList();
+    final sel = _items.where((p) => _selected.contains('${p['id']}')).toList();
     if (sel.length < 2) return;
     // 제작자가 다르면 취합 거부(안전).
     final mids = sel.map((e) => '${e['makerId'] ?? ''}').toSet();
@@ -856,15 +937,19 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('취합(합치기)'),
-        content: Text('선택한 ${sel.length}개 항목을 하나로 합칠까요?\n'
-            '수량·금액은 합산되고, 대표 항목 외 나머지는 삭제됩니다.'),
+        content: Text(
+          '선택한 ${sel.length}개 항목을 하나로 합칠까요?\n'
+          '수량·금액은 합산되고, 대표 항목 외 나머지는 삭제됩니다.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('취합')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('취합'),
+          ),
         ],
       ),
     );
@@ -923,19 +1008,23 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               for (final m in _makers)
                 DropdownMenuItem(
                   value: '${m['id']}',
-                  child: Text('${m['company'] ?? m['name'] ?? m['id']}',
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    '${m['company'] ?? m['name'] ?? m['id']}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
             ],
             onChanged: (v) => setDlg(() => target = v ?? ''),
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('이동')),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('이동'),
+            ),
           ],
         ),
       ),
@@ -977,17 +1066,22 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.receipt_long_outlined,
-                  size: 18, color: AppColors.purple),
+              const Icon(
+                Icons.receipt_long_outlined,
+                size: 18,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 6),
               const Expanded(
-                child: Text('중앙회 물건 결제 내역',
-                    style: TextStyle(
-                        fontSize: 15.5, fontWeight: FontWeight.w800)),
+                child: Text(
+                  '중앙회 물건 결제 내역',
+                  style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800),
+                ),
               ),
-              Text('${_items.length}건 · ${_won(_total)}원',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textGray)),
+              Text(
+                '${_items.length}건 · ${_won(_total)}원',
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
               if (widget.embedded) ...[
                 IconButton(
                   visualDensity: VisualDensity.compact,
@@ -1017,11 +1111,16 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   Widget _tableHead() {
     const style = TextStyle(
-        fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.textDark);
+      fontSize: 11.5,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textDark,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2)),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF4A4A48), width: 1.2),
+        ),
       ),
       child: const Row(
         children: [
@@ -1029,12 +1128,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           SizedBox(width: 46, child: Text('사진', style: style)),
           Expanded(flex: 4, child: Text('그룹 · 분류', style: style)),
           SizedBox(
-              width: 54,
-              child: Text('수량', style: style, textAlign: TextAlign.center)),
+            width: 54,
+            child: Text('수량', style: style, textAlign: TextAlign.center),
+          ),
           SizedBox(width: 12),
           SizedBox(
-              width: 66,
-              child: Text('금액', style: style, textAlign: TextAlign.right)),
+            width: 66,
+            child: Text('금액', style: style, textAlign: TextAlign.right),
+          ),
           SizedBox(width: 40),
         ],
       ),
@@ -1071,12 +1172,15 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           else
             SizedBox(
               width: 30,
-              child: Text('${i + 1}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textGray)),
+              child: Text(
+                '${i + 1}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textGray,
+                ),
+              ),
             ),
           SizedBox(width: 46, child: _photoThumb(p)),
           Expanded(
@@ -1087,9 +1191,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${p['category'] ?? p['group'] ?? ''}',
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w700)),
+                  Text(
+                    '${p['category'] ?? p['group'] ?? ''}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   Text(
                     [
                       if ('${p['group'] ?? ''}'.trim().isNotEmpty)
@@ -1108,34 +1216,44 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                         '제작일 ${p['madeDate']}',
                     ].join('  ·  '),
                     style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.textGray),
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
                   ),
                   if (note.isNotEmpty)
-                    Text(note,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 10.5, color: AppColors.scoutGreen)),
+                    Text(
+                      note,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.scoutGreen,
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
           SizedBox(
             width: 54,
-            child: Text('${p['qty'] ?? 0}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700)),
+            child: Text(
+              '${p['qty'] ?? 0}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
           ),
           const SizedBox(width: 12),
           SizedBox(
             width: 66,
-            child: Text(_won(p['amount']),
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.taegeukBlue)),
+            child: Text(
+              _won(p['amount']),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: AppColors.taegeukBlue,
+              ),
+            ),
           ),
           SizedBox(
             width: 40,
@@ -1168,7 +1286,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   // ---------- 항목별 금액수정(빠른 편집) ----------
   Future<void> _editAmount(Map<String, dynamic> p) async {
     final c = TextEditingController(
-        text: _wonInt(p['amount']) == 0 ? '' : '${_wonInt(p['amount'])}');
+      text: _wonInt(p['amount']) == 0 ? '' : '${_wonInt(p['amount'])}',
+    );
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1177,16 +1296,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           controller: c,
           autofocus: true,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-              labelText: '금액 (원)', isDense: true),
+          decoration: const InputDecoration(labelText: '금액 (원)', isDense: true),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('저장')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
         ],
       ),
     );
@@ -1253,19 +1373,23 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               for (final m in _makers)
                 DropdownMenuItem(
                   value: '${m['id']}',
-                  child: Text('${m['company'] ?? m['name'] ?? m['id']}',
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    '${m['company'] ?? m['name'] ?? m['id']}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
             ],
             onChanged: (v) => setDlg(() => target = v ?? ''),
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('이동')),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('이동'),
+            ),
           ],
         ),
       ),
@@ -1296,8 +1420,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final photo = '${p['photo'] ?? ''}'.trim();
     if (photo.isEmpty) {
       return Center(
-        child: Icon(Icons.image_not_supported_outlined,
-            size: 20, color: AppColors.textGray.withValues(alpha: 0.4)),
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: 20,
+          color: AppColors.textGray.withValues(alpha: 0.4),
+        ),
       );
     }
     return GestureDetector(
@@ -1310,9 +1437,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           height: 38,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => const Icon(
-              Icons.broken_image_outlined,
-              size: 20,
-              color: AppColors.textGray),
+            Icons.broken_image_outlined,
+            size: 20,
+            color: AppColors.textGray,
+          ),
         ),
       ),
     );
@@ -1330,19 +1458,24 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(_nas.merchImageUrl(photo),
-                  fit: BoxFit.contain),
+              child: Image.network(
+                _nas.merchImageUrl(photo),
+                fit: BoxFit.contain,
+              ),
             ),
             const SizedBox(height: 8),
-            Text('${p['category'] ?? p['group'] ?? ''}',
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700)),
+            Text(
+              '${p['category'] ?? p['group'] ?? ''}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () => Navigator.pop(ctx),
               icon: const Icon(Icons.close, color: Colors.white),
-              label:
-                  const Text('닫기', style: TextStyle(color: Colors.white)),
+              label: const Text('닫기', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),

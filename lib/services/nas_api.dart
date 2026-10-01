@@ -490,15 +490,21 @@ class NasApi {
   }
 
   /// 단일 인가자 부분 저장 (전체 DB 덮어쓰기 없이 안전하게 갱신)
+  ///   [linkRequestSource] = 'merch'(수품신청시) | 'direct'(직접입력) | ''
   Future<Map<String, dynamic>> saveMember(
     Member member, {
     String by = 'app',
+    String linkRequestSource = '',
   }) async {
+    final body = <String, dynamic>{'member': member.toMap(), 'by': by};
+    if (linkRequestSource.isNotEmpty) {
+      body['linkRequestSource'] = linkRequestSource;
+    }
     final r = await http
         .post(
           _uri('/api/member'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({'member': member.toMap(), 'by': by}),
+          body: json.encode(body),
         )
         .timeout(const Duration(seconds: 60));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;

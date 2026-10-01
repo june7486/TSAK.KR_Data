@@ -92,14 +92,19 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
                   ),
                   Row(
                     children: [
-                      const Icon(Icons.ios_share,
-                          color: AppColors.purple, size: 20),
+                      const Icon(
+                        Icons.ios_share,
+                        color: AppColors.purple,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           d.title,
                           style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w900),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -108,18 +113,27 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
                   if (d.subtitle.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(d.subtitle,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textGray)),
+                      child: Text(
+                        d.subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ),
                   const SizedBox(height: 6),
-                  Text('포함: $tableInfo',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textGray)),
+                  Text(
+                    '포함: $tableInfo',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                   const SizedBox(height: 14),
-                  const Text('출력 형식',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w800)),
+                  const Text(
+                    '출력 형식',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -152,7 +166,9 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.download),
                     label: Text(_busy ? '생성 중...' : '출력 (파일 내려받기)'),
@@ -192,8 +208,10 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
   }
 
   Future<void> _doExport() async {
-    final choose = await askSaveLocation(context,
-        info: '재무 보고서 (${_format.label})');
+    final choose = await askSaveLocation(
+      context,
+      info: '재무 보고서 (${_format.label})',
+    );
     if (choose == null) return; // 취소
     setState(() => _busy = true);
     try {
@@ -227,11 +245,12 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
         final img = await Printing.raster(bytes, dpi: 150).first;
         final png = await img.toPng();
         await saveFileNamed(
-            bytes: png,
-            filename: '$name.png',
-            mime: 'image/png',
-            mimeType: MimeType.png,
-            choose: choose);
+          bytes: png,
+          filename: '$name.png',
+          mime: 'image/png',
+          mimeType: MimeType.png,
+          choose: choose,
+        );
       } else {
         await saveFileNamed(
           bytes: bytes,
@@ -265,7 +284,9 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
     try {
       final bytes = FinanceExportService.buildCsv(widget.data);
       // BOM 제거 후 텍스트 복사
-      final text = String.fromCharCodes(bytes.length >= 3 ? bytes.sublist(3) : bytes);
+      final text = String.fromCharCodes(
+        bytes.length >= 3 ? bytes.sublist(3) : bytes,
+      );
       await Clipboard.setData(ClipboardData(text: text));
       _snack('CSV 내용을 복사했습니다');
     } catch (e) {

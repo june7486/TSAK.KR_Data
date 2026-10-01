@@ -53,7 +53,8 @@ class _MerchOrderDetailDialog extends StatefulWidget {
   final Future<bool> Function()? onDelete;
 
   @override
-  State<_MerchOrderDetailDialog> createState() => _MerchOrderDetailDialogState();
+  State<_MerchOrderDetailDialog> createState() =>
+      _MerchOrderDetailDialogState();
 }
 
 class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
@@ -85,7 +86,9 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
     setState(() => _busy = true);
     try {
       final res = await _nas.merchUpdateOrderRaw(
-          id: '${r['id']}', fields: patch);
+        id: '${r['id']}',
+        fields: patch,
+      );
       if (!mounted) return;
       if (res['ok'] == true && res['order'] is Map) {
         setState(() => r = (res['order'] as Map).cast<String, dynamic>());
@@ -105,11 +108,12 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
     setState(() => _busy = true);
     try {
       final res = await _nas.merchUpdateReserveRaw(
-          id: '${r['id']}', fields: patch);
+        id: '${r['id']}',
+        fields: patch,
+      );
       if (!mounted) return;
       if (res['ok'] == true && res['reservation'] is Map) {
-        setState(() =>
-            r = (res['reservation'] as Map).cast<String, dynamic>());
+        setState(() => r = (res['reservation'] as Map).cast<String, dynamic>());
         await widget.onChanged?.call();
         if (mounted) _snack('저장했습니다');
       } else {
@@ -132,7 +136,9 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
   /// 주문 정보 편집(상품/수량/단가/주문자/연락처/주소/메모).
   Future<void> _editInfo() async {
     final product = TextEditingController(text: _s('product'));
-    final qty = TextEditingController(text: '${_i('qty') == 0 ? 1 : _i('qty')}');
+    final qty = TextEditingController(
+      text: '${_i('qty') == 0 ? 1 : _i('qty')}',
+    );
     final unit = TextEditingController(text: '${_i('unitPrice')}');
     final fee = TextEditingController(text: '${_i('annualFeeAdded')}');
     final buyer = TextEditingController(text: _s('buyerName'));
@@ -168,11 +174,13 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('저장')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
         ],
       ),
     );
@@ -200,7 +208,9 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
   /// 금액만 빠르게 수정.
   Future<void> _editAmount() async {
     final unit = TextEditingController(text: '${_i('unitPrice')}');
-    final qty = TextEditingController(text: '${_i('qty') == 0 ? 1 : _i('qty')}');
+    final qty = TextEditingController(
+      text: '${_i('qty') == 0 ? 1 : _i('qty')}',
+    );
     final fee = TextEditingController(text: '${_i('annualFeeAdded')}');
     final ok = await showDialog<bool>(
       context: context,
@@ -216,11 +226,13 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('저장')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
         ],
       ),
     );
@@ -238,8 +250,9 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
       child: TextField(
         controller: c,
         keyboardType: number ? TextInputType.number : TextInputType.text,
-        inputFormatters:
-            number ? [FilteringTextInputFormatter.digitsOnly] : null,
+        inputFormatters: number
+            ? [FilteringTextInputFormatter.digitsOnly]
+            : null,
         decoration: InputDecoration(
           labelText: label,
           isDense: true,
@@ -274,8 +287,11 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
       contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
       title: Row(
         children: [
-          Icon(isReserve ? Icons.bookmark_border : Icons.receipt_long,
-              color: isReserve ? Colors.orange : AppColors.purple, size: 20),
+          Icon(
+            isReserve ? Icons.bookmark_border : Icons.receipt_long,
+            color: isReserve ? Colors.orange : AppColors.purple,
+            size: 20,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -283,36 +299,47 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
               children: [
                 Row(
                   children: [
-                    Text(isReserve ? '예약 상세 내역' : '주문 상세 내역',
-                        style: const TextStyle(
-                            fontSize: 16.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.purpleDark)),
+                    Text(
+                      isReserve ? '예약 상세 내역' : '주문 상세 내역',
+                      style: const TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purpleDark,
+                      ),
+                    ),
                     if (editable) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.tigerGold.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Text('수정가능',
-                            style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.lifetimeGold)),
+                        child: const Text(
+                          '수정가능',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.lifetimeGold,
+                          ),
+                        ),
                       ),
                     ],
                   ],
                 ),
                 if (orderNo.isNotEmpty)
-                  Text(isReserve ? '예약번호 $orderNo' : '주문번호 $orderNo',
-                      style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.purple,
-                          letterSpacing: 0.2)),
+                  Text(
+                    isReserve ? '예약번호 $orderNo' : '주문번호 $orderNo',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.purple,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -330,20 +357,26 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
               Row(
                 children: [
                   Expanded(
-                    child: Text('주문 정보',
-                        style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.purpleDark)),
+                    child: Text(
+                      '주문 정보',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purpleDark,
+                      ),
+                    ),
                   ),
                   if (editable)
                     TextButton.icon(
                       style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact),
+                        visualDensity: VisualDensity.compact,
+                      ),
                       onPressed: _busy ? null : _editInfo,
                       icon: const Icon(Icons.edit, size: 15),
-                      label: const Text('정보 수정',
-                          style: TextStyle(fontSize: 12)),
+                      label: const Text(
+                        '정보 수정',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                 ],
               ),
@@ -367,10 +400,7 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
               ]),
               const SizedBox(height: 10),
               _group(isReserve ? '접수 정보' : '배송 정보', [
-                (
-                  isReserve ? '접수일' : '주문일',
-                  created.isEmpty ? '-' : created
-                ),
+                (isReserve ? '접수일' : '주문일', created.isEmpty ? '-' : created),
                 if (!isReserve)
                   ('배송방법', _s('shipMethod').isEmpty ? '-' : _s('shipMethod')),
                 if (!isReserve && _s('address').isNotEmpty)
@@ -382,18 +412,16 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
               ]),
               if (history.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                _group(
-                  '진행 이력',
-                  [
-                    for (final h in history)
-                      if (h is Map)
-                        (
-                          '${h['status'] ?? ''}',
-                          '${h['at'] ?? ''}${'${h['by'] ?? ''}'.isNotEmpty ? ' · ${h['by']}' : ''}'
-                        )
-                      else ('$h', ''),
-                  ],
-                ),
+                _group('진행 이력', [
+                  for (final h in history)
+                    if (h is Map)
+                      (
+                        '${h['status'] ?? ''}',
+                        '${h['at'] ?? ''}${'${h['by'] ?? ''}'.isNotEmpty ? ' · ${h['by']}' : ''}',
+                      )
+                    else
+                      ('$h', ''),
+                ]),
               ],
               if (widget.statuses.isNotEmpty) ...[
                 const SizedBox(height: 10),
@@ -411,9 +439,11 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
             label: const Text('금액 수정'),
           ),
           OutlinedButton.icon(
-            onPressed:
-                _busy ? null : () => _saveOrder({'paid': !paid}),
-            icon: Icon(paid ? Icons.undo : Icons.check_circle_outline, size: 16),
+            onPressed: _busy ? null : () => _saveOrder({'paid': !paid}),
+            icon: Icon(
+              paid ? Icons.undo : Icons.check_circle_outline,
+              size: 16,
+            ),
             label: Text(paid ? '입금 취소' : '입금 처리'),
           ),
         ],
@@ -444,8 +474,8 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
     final c = cancelled
         ? AppColors.taegeukRed
         : isReserve
-            ? Colors.orange
-            : AppColors.purple;
+        ? Colors.orange
+        : AppColors.purple;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -456,8 +486,11 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
       ),
       child: Row(
         children: [
-          Icon(cancelled ? Icons.cancel_outlined : Icons.timeline,
-              size: 18, color: c),
+          Icon(
+            cancelled ? Icons.cancel_outlined : Icons.timeline,
+            size: 18,
+            color: c,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: widget.editable && !isReserve
@@ -466,12 +499,15 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                       value: widget.statuses.contains(status)
                           ? status
                           : (widget.statuses.isNotEmpty
-                              ? widget.statuses.first
-                              : null),
+                                ? widget.statuses.first
+                                : null),
                       isDense: true,
                       isExpanded: true,
                       style: TextStyle(
-                          fontSize: 14.5, fontWeight: FontWeight.w800, color: c),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: c,
+                      ),
                       items: [
                         for (final s in widget.statuses)
                           DropdownMenuItem(value: s, child: Text(s)),
@@ -486,7 +522,10 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                 : Text(
                     status,
                     style: TextStyle(
-                        fontSize: 14.5, fontWeight: FontWeight.w800, color: c),
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: c,
+                    ),
                   ),
           ),
           if (!isReserve)
@@ -497,12 +536,14 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                     .withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(paid ? '입금완료' : '미입금',
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color:
-                          paid ? AppColors.scoutGreen : AppColors.taegeukRed)),
+              child: Text(
+                paid ? '입금완료' : '미입금',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: paid ? AppColors.scoutGreen : AppColors.taegeukRed,
+                ),
+              ),
             ),
         ],
       ),
@@ -514,11 +555,14 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (title.isNotEmpty)
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.purpleDark)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: AppColors.purpleDark,
+            ),
+          ),
         if (title.isNotEmpty) const SizedBox(height: 5),
         Container(
           width: double.infinity,
@@ -538,16 +582,23 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                     children: [
                       SizedBox(
                         width: 74,
-                        child: Text(row.$1,
-                            style: const TextStyle(
-                                fontSize: 12, color: AppColors.textGray)),
+                        child: Text(
+                          row.$1,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textGray,
+                          ),
+                        ),
                       ),
                       Expanded(
-                        child: Text(row.$2,
-                            style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textDark)),
+                        child: Text(
+                          row.$2,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -564,11 +615,14 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('아이템 진행 상황',
-            style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: AppColors.purpleDark)),
+        const Text(
+          '아이템 진행 상황',
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: AppColors.purpleDark,
+          ),
+        ),
         const SizedBox(height: 6),
         Row(
           children: [
@@ -578,8 +632,9 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                   children: [
                     Container(
                       height: 6,
-                      margin:
-                          EdgeInsets.only(right: i == steps.length - 1 ? 0 : 3),
+                      margin: EdgeInsets.only(
+                        right: i == steps.length - 1 ? 0 : 3,
+                      ),
                       decoration: BoxDecoration(
                         color: i <= current
                             ? AppColors.purple
@@ -595,8 +650,9 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                         color: i <= current
                             ? AppColors.purpleDark
                             : AppColors.textGray,
-                        fontWeight:
-                            i == current ? FontWeight.w800 : FontWeight.w400,
+                        fontWeight: i == current
+                            ? FontWeight.w800
+                            : FontWeight.w400,
                       ),
                       textAlign: TextAlign.center,
                       maxLines: 2,

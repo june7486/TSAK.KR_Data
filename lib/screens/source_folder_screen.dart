@@ -106,65 +106,68 @@ class _SourceFolderScreenState extends State<SourceFolderScreen> {
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 8),
-            child: HScrollMenu(
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  for (final f in _folders)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        avatar: Icon(
-                          f.$3,
-                          size: 15,
-                          color: _selected == f.$1 ? Colors.white : f.$4,
+                child: HScrollMenu(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    children: [
+                      for (final f in _folders)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            avatar: Icon(
+                              f.$3,
+                              size: 15,
+                              color: _selected == f.$1 ? Colors.white : f.$4,
+                            ),
+                            label: Text(
+                              f.$2,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            selected: _selected == f.$1,
+                            selectedColor: f.$4,
+                            labelStyle: TextStyle(
+                              color: _selected == f.$1
+                                  ? Colors.white
+                                  : AppColors.textDark,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            onSelected: (_) {
+                              setState(() {
+                                _selected = f.$1;
+                                _files = [];
+                              });
+                              _load();
+                            },
+                          ),
                         ),
-                        label: Text(f.$2, style: const TextStyle(fontSize: 12)),
-                        selected: _selected == f.$1,
-                        selectedColor: f.$4,
-                        labelStyle: TextStyle(
-                          color: _selected == f.$1
-                              ? Colors.white
-                              : AppColors.textDark,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        onSelected: (_) {
-                          setState(() {
-                            _selected = f.$1;
-                            _files = [];
-                          });
-                          _load();
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline,
-                  size: 15,
-                  color: AppColors.textGray,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '첨부한 파일은 NAS "$_selectedLabel" 폴더에 저장되고 '
-                    '자동 분석되어 인가자별 기록·통계에 반영됩니다.',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.textGray,
-                    ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      size: 15,
+                      color: AppColors.textGray,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '첨부한 파일은 NAS "$_selectedLabel" 폴더에 저장되고 '
+                        '자동 분석되어 인가자별 기록·통계에 반영됩니다.',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               Expanded(
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())

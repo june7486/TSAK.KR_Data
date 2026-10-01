@@ -240,8 +240,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.confirmation_number,
               ),
               const SizedBox(height: 4),
-              _subHead('범스카우트 인가 정보 (인가 당시 정보)', Icons.verified_user,
-                  AppColors.purple),
+              _subHead(
+                '범스카우트 인가 정보 (인가 당시 정보)',
+                Icons.verified_user,
+                AppColors.purple,
+              ),
               _field(
                 '소속 연맹',
                 _league,
@@ -261,8 +264,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.event_available,
               ),
               const SizedBox(height: 4),
-              _subHead('현재 활동 등록 정보', Icons.play_circle_outline,
-                  AppColors.taegeukBlue),
+              _subHead(
+                '현재 활동 등록 정보',
+                Icons.play_circle_outline,
+                AppColors.taegeukBlue,
+              ),
               _field(
                 '현재 소속 연맹',
                 _regLeague,
@@ -539,8 +545,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 status == 'approved'
                     ? '멘토·페런츠 연결이 승인되었습니다.'
                     : '관리자·마스터의 승인 후 확정됩니다.',
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textGray),
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
               ),
             ),
             if (status != 'approved')
@@ -571,16 +576,18 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(r['ok'] == true
-              ? '승인요청을 보냈습니다. 관리자·마스터 승인 후 확정됩니다.'
-              : '승인요청 실패 — 잠시 후 다시 시도하세요'),
+          content: Text(
+            r['ok'] == true
+                ? '승인요청을 보냈습니다. 관리자·마스터 승인 후 확정됩니다.'
+                : '승인요청 실패 — 잠시 후 다시 시도하세요',
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('승인요청 오류: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('승인요청 오류: $e')));
     }
   }
 
@@ -1126,7 +1133,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       gender: _gender,
       genderVisible: _genderVisible,
     );
-    await state.save(member);
+    // 연결 승인요청방법 — 이 화면은 직접 입력이므로 'direct'(요구).
+    await state.save(member, linkRequestSource: 'direct');
     _existing = member; // 이후 dirty 비교 기준 갱신
 
     // 사진이 있으면 NAS 서버에도 업로드 (인가번호 기준)

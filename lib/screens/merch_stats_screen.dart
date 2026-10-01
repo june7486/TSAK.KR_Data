@@ -40,8 +40,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     final raw = '${o['created'] ?? o['createdAt'] ?? o['paidDate'] ?? ''}'
         .trim();
     if (raw.isEmpty) return '';
-    final m = RegExp(r'(\d{4})[.\-/년 ]\s*(\d{1,2})[.\-/월 ]\s*(\d{1,2})')
-        .firstMatch(raw);
+    final m = RegExp(
+      r'(\d{4})[.\-/년 ]\s*(\d{1,2})[.\-/월 ]\s*(\d{1,2})',
+    ).firstMatch(raw);
     if (m == null) return '';
     final y = m.group(1)!;
     final mo = m.group(2)!.padLeft(2, '0');
@@ -83,7 +84,8 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     return [
       const MapEntry('all', '전체'),
       for (final y in yearList) MapEntry('y:$y', '$y년'),
-      for (final m in monthList.take(12)) MapEntry('m:$m', '${m.substring(5)}월'),
+      for (final m in monthList.take(12))
+        MapEntry('m:$m', '${m.substring(5)}월'),
       for (final d in dayList.take(14)) MapEntry('d:$d', d.substring(5)),
     ];
   }
@@ -143,8 +145,7 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
   bool _isCancelled(Map<String, dynamic> o) =>
       '${o['status'] ?? ''}'.contains('취소');
 
-  int _actual(Map<String, dynamic> o) =>
-      _i(o['grandTotal'] ?? o['total']);
+  int _actual(Map<String, dynamic> o) => _i(o['grandTotal'] ?? o['total']);
 
   @override
   Widget build(BuildContext context) {
@@ -164,21 +165,23 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          size: 44, color: AppColors.taegeukRed),
-                      const SizedBox(height: 10),
-                      Text(_error!, textAlign: TextAlign.center),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                          onPressed: _load, child: const Text('다시 시도')),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 44,
+                    color: AppColors.taegeukRed,
                   ),
-                )
-              : _body(),
+                  const SizedBox(height: 10),
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 10),
+                  ElevatedButton(onPressed: _load, child: const Text('다시 시도')),
+                ],
+              ),
+            )
+          : _body(),
     );
   }
 
@@ -191,8 +194,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     // 합계
     final totalSales = valid.fold<int>(0, (p, o) => p + _actual(o));
     final totalFee = valid.fold<int>(0, (p, o) => p + _i(o['annualFeeAdded']));
-    final paidSum =
-        valid.where((o) => o['paid'] == true).fold<int>(0, (p, o) => p + _actual(o));
+    final paidSum = valid
+        .where((o) => o['paid'] == true)
+        .fold<int>(0, (p, o) => p + _actual(o));
     final unpaidSum = totalSales - paidSum;
     final paidCount = valid.where((o) => o['paid'] == true).length;
     final unpaidCount = valid.length - paidCount;
@@ -204,7 +208,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
           ? '구매자 미상'
           : '${o['buyerName']}'.trim();
       final b = byBuyer.putIfAbsent(
-          key, () => {'name': key, 'count': 0, 'amount': 0, 'unpaid': 0});
+        key,
+        () => {'name': key, 'count': 0, 'amount': 0, 'unpaid': 0},
+      );
       b['count'] = (b['count'] as int) + 1;
       b['amount'] = (b['amount'] as int) + _actual(o);
       if (o['paid'] != true) {
@@ -221,7 +227,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
           ? '기타'
           : '${o['product']}'.trim();
       final b = byProduct.putIfAbsent(
-          key, () => {'name': key, 'qty': 0, 'amount': 0});
+        key,
+        () => {'name': key, 'qty': 0, 'amount': 0},
+      );
       b['qty'] = (b['qty'] as int) + (_i(o['qty']) == 0 ? 1 : _i(o['qty']));
       b['amount'] = (b['amount'] as int) + _actual(o);
     }
@@ -281,7 +289,7 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
               _line(
                 '${b['name']}',
                 '${b['count']}건 · ${_won(b['amount'] as int)}'
-                '${(b['unpaid'] as int) > 0 ? ' (미수 ${_won(b['unpaid'] as int)})' : ''}',
+                    '${(b['unpaid'] as int) > 0 ? ' (미수 ${_won(b['unpaid'] as int)})' : ''}',
                 danger: (b['unpaid'] as int) > 0,
               ),
         ]),
@@ -291,13 +299,14 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
             const Text('데이터 없음', style: TextStyle(color: AppColors.textGray))
           else
             for (final p in productList)
-              _line('${p['name']}',
-                  '${p['qty']}개 · ${_won(p['amount'] as int)}'),
+              _line(
+                '${p['name']}',
+                '${p['qty']}개 · ${_won(p['amount'] as int)}',
+              ),
         ]),
         const SizedBox(height: 12),
         _box('입금 현황', [
-          _line('입금 완료', '$paidCount건 · ${_won(paidSum)}',
-              danger: false),
+          _line('입금 완료', '$paidCount건 · ${_won(paidSum)}', danger: false),
           _line('미입금', '$unpaidCount건 · ${_won(unpaidSum)}', danger: true),
         ]),
         const SizedBox(height: 12),
@@ -311,18 +320,21 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
         const SizedBox(height: 12),
         _box('미수금 현황 (미입금 주문 ${unpaidOrders.length}건)', [
           if (unpaidOrders.isEmpty)
-            const Text('미수금이 없습니다.',
-                style: TextStyle(color: AppColors.scoutGreen))
+            const Text(
+              '미수금이 없습니다.',
+              style: TextStyle(color: AppColors.scoutGreen),
+            )
           else
-            for (final o in unpaidOrders.take(50))
-              _unpaidRow(o),
+            for (final o in unpaidOrders.take(50)) _unpaidRow(o),
         ]),
         if (cancelled.isNotEmpty) ...[
           const SizedBox(height: 12),
           _box('취소된 주문 (${cancelled.length}건)', [
             for (final o in cancelled.take(30))
-              _line('${o['orderNo'] ?? ''}',
-                  '${o['product'] ?? ''} · ${_won(_actual(o))}'),
+              _line(
+                '${o['orderNo'] ?? ''}',
+                '${o['product'] ?? ''} · ${_won(_actual(o))}',
+              ),
           ]),
         ],
         const SizedBox(height: 30),
@@ -337,8 +349,9 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
   String _reportText() {
     final valid = _orders.where((o) => !_isCancelled(o)).toList();
     final totalSales = valid.fold<int>(0, (p, o) => p + _actual(o));
-    final paidSum =
-        valid.where((o) => o['paid'] == true).fold<int>(0, (p, o) => p + _actual(o));
+    final paidSum = valid
+        .where((o) => o['paid'] == true)
+        .fold<int>(0, (p, o) => p + _actual(o));
     final b = StringBuffer();
     b.writeln('수품 통계·현황');
     b.writeln('총 주문: ${valid.length}건');
@@ -348,10 +361,12 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     b.writeln('');
     b.writeln('[주문 목록]');
     for (final o in _orders) {
-      b.writeln('${o['orderNo'] ?? ''} | ${o['buyerName'] ?? ''} | '
-          '${o['product'] ?? ''} x${_i(o['qty']) == 0 ? 1 : _i(o['qty'])} | '
-          '${_won(_actual(o))} | ${o['status'] ?? ''} | '
-          '${o['paid'] == true ? '입금완료' : '미입금'}');
+      b.writeln(
+        '${o['orderNo'] ?? ''} | ${o['buyerName'] ?? ''} | '
+        '${o['product'] ?? ''} x${_i(o['qty']) == 0 ? 1 : _i(o['qty'])} | '
+        '${_won(_actual(o))} | ${o['status'] ?? ''} | '
+        '${o['paid'] == true ? '입금완료' : '미입금'}',
+      );
     }
     return b.toString();
   }
@@ -373,40 +388,46 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
       ]);
     }
     return rows
-        .map((r) => r
-            .map((c) => '"${c.replaceAll('"', '""')}"')
-            .join(','))
+        .map((r) => r.map((c) => '"${c.replaceAll('"', '""')}"').join(','))
         .join('\r\n');
   }
 
   String _reportHtml() {
     final valid = _orders.where((o) => !_isCancelled(o)).toList();
     final totalSales = valid.fold<int>(0, (p, o) => p + _actual(o));
-    final paidSum =
-        valid.where((o) => o['paid'] == true).fold<int>(0, (p, o) => p + _actual(o));
+    final paidSum = valid
+        .where((o) => o['paid'] == true)
+        .fold<int>(0, (p, o) => p + _actual(o));
     final sb = StringBuffer();
     sb.write('<h2 style="margin:0 0 8px">수품 통계·현황</h2>');
     sb.write(
-        '<p style="margin:0 0 4px"><b>총 주문</b> ${valid.length}건 · '
-        '<b>총 매출</b> ${_won(totalSales)} · '
-        '<b>입금</b> ${_won(paidSum)} · '
-        '<b>미수금</b> ${_won(totalSales - paidSum)}</p>');
-    sb.write('<table border="1" cellspacing="0" cellpadding="6" '
-        'style="border-collapse:collapse;width:100%;font-size:12px">');
-    sb.write('<thead><tr style="background:#F3E5F5">'
-        '<th>주문번호</th><th>구매자</th><th>상품</th><th>수량</th>'
-        '<th>금액</th><th>상태</th><th>입금</th><th>주문일</th></tr></thead><tbody>');
+      '<p style="margin:0 0 4px"><b>총 주문</b> ${valid.length}건 · '
+      '<b>총 매출</b> ${_won(totalSales)} · '
+      '<b>입금</b> ${_won(paidSum)} · '
+      '<b>미수금</b> ${_won(totalSales - paidSum)}</p>',
+    );
+    sb.write(
+      '<table border="1" cellspacing="0" cellpadding="6" '
+      'style="border-collapse:collapse;width:100%;font-size:12px">',
+    );
+    sb.write(
+      '<thead><tr style="background:#F3E5F5">'
+      '<th>주문번호</th><th>구매자</th><th>상품</th><th>수량</th>'
+      '<th>금액</th><th>상태</th><th>입금</th><th>주문일</th></tr></thead><tbody>',
+    );
     for (final o in _orders) {
-      sb.write('<tr>'
-          '<td>${_esc('${o['orderNo'] ?? ''}')}</td>'
-          '<td>${_esc('${o['buyerName'] ?? ''}')}</td>'
-          '<td>${_esc('${o['product'] ?? ''}')}</td>'
-          '<td>${_i(o['qty']) == 0 ? 1 : _i(o['qty'])}</td>'
-          '<td style="text-align:right">${_won(_actual(o))}</td>'
-          '<td>${_esc('${o['status'] ?? ''}')}</td>'
-          '<td>${o['paid'] == true ? '입금완료' : '미입금'}</td>'
-          '<td>${_esc('${o['created'] ?? o['createdAt'] ?? ''}')}</td>'
-          '</tr>');
+      sb.write(
+        '<tr>'
+        '<td>${_esc('${o['orderNo'] ?? ''}')}</td>'
+        '<td>${_esc('${o['buyerName'] ?? ''}')}</td>'
+        '<td>${_esc('${o['product'] ?? ''}')}</td>'
+        '<td>${_i(o['qty']) == 0 ? 1 : _i(o['qty'])}</td>'
+        '<td style="text-align:right">${_won(_actual(o))}</td>'
+        '<td>${_esc('${o['status'] ?? ''}')}</td>'
+        '<td>${o['paid'] == true ? '입금완료' : '미입금'}</td>'
+        '<td>${_esc('${o['created'] ?? o['createdAt'] ?? ''}')}</td>'
+        '</tr>',
+      );
     }
     sb.write('</tbody></table>');
     return sb.toString();
@@ -450,7 +471,8 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     final uri = Uri(
       scheme: 'mailto',
       path: _exportEmail,
-      query: 'subject=${Uri.encodeComponent('[수품 통계·현황]')}'
+      query:
+          'subject=${Uri.encodeComponent('[수품 통계·현황]')}'
           '&body=${Uri.encodeComponent(_reportText())}',
     );
     try {
@@ -463,65 +485,72 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
 
   Future<void> _share() async {
     final link = '${_nas.baseUrl}/#stats';
-    await Clipboard.setData(ClipboardData(text:
-        '수품 통계·현황 공유 링크: $link\n\n${_reportText()}'));
+    await Clipboard.setData(
+      ClipboardData(text: '수품 통계·현황 공유 링크: $link\n\n${_reportText()}'),
+    );
     _snackAsync('공유 링크와 내역을 복사했습니다');
   }
 
   Widget _exportBar() => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.purple.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: const [
-                Icon(Icons.ios_share, size: 17, color: AppColors.purple),
-                SizedBox(width: 6),
-                Text('내보내기 · 공유',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13.5,
-                        color: AppColors.purpleDark)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드 (+ 메일 · 링크 공유)',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _expBtn(Icons.print_outlined, 'PDF / 인쇄', _print),
-                _expBtn(Icons.image_outlined, 'JPG (이미지)', () => _print()),
-                _expBtn(Icons.grid_on_outlined, '엑셀 (CSV)', _copyCsv),
-                _expBtn(Icons.slideshow_outlined, 'PPT (텍스트)', _copyText),
-                _expBtn(Icons.description_outlined, '워드 (텍스트)', _copyText),
-                _expBtn(Icons.mail_outline, '메일 발송', _mail),
-                _expBtn(Icons.link, '공유 링크', _share),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '※ 이미지(JPG)는 인쇄 화면에서 "대상=PDF/이미지 저장"으로 저장할 수 있습니다.',
-              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: AppColors.purple.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: const [
+            Icon(Icons.ios_share, size: 17, color: AppColors.purple),
+            SizedBox(width: 6),
+            Text(
+              '내보내기 · 공유',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13.5,
+                color: AppColors.purpleDark,
+              ),
             ),
           ],
         ),
-      );
+        const SizedBox(height: 4),
+        const Text(
+          '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드 (+ 메일 · 링크 공유)',
+          style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _expBtn(Icons.print_outlined, 'PDF / 인쇄', _print),
+            _expBtn(Icons.image_outlined, 'JPG (이미지)', () => _print()),
+            _expBtn(Icons.grid_on_outlined, '엑셀 (CSV)', _copyCsv),
+            _expBtn(Icons.slideshow_outlined, 'PPT (텍스트)', _copyText),
+            _expBtn(Icons.description_outlined, '워드 (텍스트)', _copyText),
+            _expBtn(Icons.mail_outline, '메일 발송', _mail),
+            _expBtn(Icons.link, '공유 링크', _share),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '※ 이미지(JPG)는 인쇄 화면에서 "대상=PDF/이미지 저장"으로 저장할 수 있습니다.',
+          style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+        ),
+      ],
+    ),
+  );
 
-  Widget _expBtn(IconData icon, String label, VoidCallback onTap) => OutlinedButton.icon(
+  Widget _expBtn(IconData icon, String label, VoidCallback onTap) =>
+      OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.purpleDark,
           visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
         onPressed: onTap,
         icon: Icon(icon, size: 16),
@@ -543,14 +572,20 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.calendar_month,
-                  size: 16, color: AppColors.purple),
+              const Icon(
+                Icons.calendar_month,
+                size: 16,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 6),
-              const Text('기간 설정',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: AppColors.purpleDark)),
+              const Text(
+                '기간 설정',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: AppColors.purpleDark,
+                ),
+              ),
               const Spacer(),
               if (_periodKey != 'all')
                 TextButton(
@@ -575,14 +610,17 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
                       onTap: () => setState(() => _periodKey = e.key),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: _periodKey == e.key
                               ? AppColors.purple
                               : Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                              color: AppColors.purple.withValues(alpha: 0.4)),
+                            color: AppColors.purple.withValues(alpha: 0.4),
+                          ),
                         ),
                         child: Text(
                           e.value,
@@ -605,67 +643,82 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     );
   }
 
-  Widget _stat(String label, String value, Color c) => Expanded(        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: c.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: c.withValues(alpha: 0.25)),
+  Widget _stat(String label, String value, Color c) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11.5, color: AppColors.textGray)),
-              const SizedBox(height: 3),
-              Text(value,
-                  style: TextStyle(
-                      fontSize: 15.5, fontWeight: FontWeight.w800, color: c)),
-            ],
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w800,
+              color: c,
+            ),
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 
   Widget _box(String title, List<Widget> children) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.purple.withValues(alpha: 0.12)),
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.purple.withValues(alpha: 0.12)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w800,
+            color: AppColors.purpleDark,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.purpleDark)),
-            const SizedBox(height: 6),
-            ...children,
-          ],
-        ),
-      );
+        const SizedBox(height: 6),
+        ...children,
+      ],
+    ),
+  );
 
   Widget _line(String k, String v, {bool danger = false}) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(k,
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.textDark)),
-            ),
-            Text(v,
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: danger ? AppColors.taegeukRed : AppColors.textDark)),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            k,
+            style: const TextStyle(fontSize: 12.5, color: AppColors.textDark),
+          ),
         ),
-      );
+        Text(
+          v,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: danger ? AppColors.taegeukRed : AppColors.textDark,
+          ),
+        ),
+      ],
+    ),
+  );
 
   static String _gkey(Map<String, dynamic> o) {
     final no = '${o['orderNo'] ?? ''}'.trim();
@@ -676,41 +729,49 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     final key = _gkey(o);
     final items = _orders.where((x) => _gkey(x) == key).toList();
     Navigator.of(context)
-        .push(MaterialPageRoute(
-          builder: (_) => OrderDetailScreen(
-            groupKey: key,
-            initialItems: items,
-            canManage: true,
-            statuses: _statuses,
+        .push(
+          MaterialPageRoute(
+            builder: (_) => OrderDetailScreen(
+              groupKey: key,
+              initialItems: items,
+              canManage: true,
+              statuses: _statuses,
+            ),
           ),
-        ))
+        )
         .then((_) => _load());
   }
 
   Widget _unpaidRow(Map<String, dynamic> o) => InkWell(
-        onTap: () => _openGroup(o),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            children: [
-              const Icon(Icons.error_outline,
-                  size: 14, color: AppColors.taegeukRed),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  '${o['orderNo'] ?? ''} · ${o['buyerName'] ?? ''}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text(_won(_actual(o)),
-                  style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.taegeukRed)),
-            ],
+    onTap: () => _openGroup(o),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline,
+            size: 14,
+            color: AppColors.taegeukRed,
           ),
-        ),
-      );
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              '${o['orderNo'] ?? ''} · ${o['buyerName'] ?? ''}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            _won(_actual(o)),
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: AppColors.taegeukRed,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

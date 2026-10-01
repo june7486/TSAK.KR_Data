@@ -133,14 +133,17 @@ bool downloadTextFile(String content, String filename, String mime) {
       (_document.body as _Body).appendChild(a as _Element);
     } catch (_) {}
     a.click();
-    _setTimeout((() {
-      try {
-        a.remove();
-      } catch (_) {}
-      try {
-        _URL.revokeObjectURL(url);
-      } catch (_) {}
-    }).toJS, 4000);
+    _setTimeout(
+      (() {
+        try {
+          a.remove();
+        } catch (_) {}
+        try {
+          _URL.revokeObjectURL(url);
+        } catch (_) {}
+      }).toJS,
+      4000,
+    );
     return true;
   } catch (_) {
     return false;

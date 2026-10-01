@@ -12,11 +12,7 @@ import '../widgets/tsak_app_bar.dart';
 /// 행사 후기 게시판 — 댓글·첨부·비밀번호 보호·임시저장·좋아요(공감).
 /// 관리자·마스터는 작성자 기기·IP를 함께 본다.
 class EventReviewScreen extends StatefulWidget {
-  const EventReviewScreen({
-    super.key,
-    required this.year,
-    required this.title,
-  });
+  const EventReviewScreen({super.key, required this.year, required this.title});
 
   final String year;
   final String title;
@@ -30,6 +26,7 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   String? _error;
   List<Map<String, dynamic>> _posts = [];
   bool _isAdmin = false;
+
   /// 펼쳐서 내용을 보여줄 후기 id 집합 (기본은 접힌 요약 카드).
   final Set<String> _expanded = {};
 
@@ -97,21 +94,21 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
           _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-                  ? _errorView()
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                        children: [
-                          _headerCard(state),
-                          const SizedBox(height: 8),
-                          if (_posts.isEmpty)
-                            _emptyView()
-                          else
-                            for (final p in _posts) _postCard(p, state),
-                        ],
-                      ),
-                    ),
+              ? _errorView()
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                    children: [
+                      _headerCard(state),
+                      const SizedBox(height: 8),
+                      if (_posts.isEmpty)
+                        _emptyView()
+                      else
+                        for (final p in _posts) _postCard(p, state),
+                    ],
+                  ),
+                ),
           BusyOverlay(
             visible: _loading,
             title: '행사 후기를 불러오는 중입니다',
@@ -160,20 +157,27 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   }
 
   Widget _emptyView() => Padding(
-        padding: const EdgeInsets.only(top: 80),
-        child: Column(
-          children: [
-            Icon(Icons.forum_outlined,
-                size: 64, color: AppColors.purple.withValues(alpha: 0.3)),
-            const SizedBox(height: 12),
-            const Text('아직 등록된 후기가 없습니다',
-                style: TextStyle(color: AppColors.textGray)),
-            const SizedBox(height: 6),
-            const Text('첫 후기를 남겨보세요!',
-                style: TextStyle(color: AppColors.textGray, fontSize: 12)),
-          ],
+    padding: const EdgeInsets.only(top: 80),
+    child: Column(
+      children: [
+        Icon(
+          Icons.forum_outlined,
+          size: 64,
+          color: AppColors.purple.withValues(alpha: 0.3),
         ),
-      );
+        const SizedBox(height: 12),
+        const Text(
+          '아직 등록된 후기가 없습니다',
+          style: TextStyle(color: AppColors.textGray),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '첫 후기를 남겨보세요!',
+          style: TextStyle(color: AppColors.textGray, fontSize: 12),
+        ),
+      ],
+    ),
+  );
 
   Widget _postCard(Map<String, dynamic> p, AppState state) {
     final id = '${p['id']}';
@@ -226,8 +230,11 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
       padding: const EdgeInsets.fromLTRB(14, 11, 8, 11),
       child: Row(
         children: [
-          Icon(isOpen ? Icons.expand_less : Icons.expand_more,
-              size: 18, color: AppColors.textGray),
+          Icon(
+            isOpen ? Icons.expand_less : Icons.expand_more,
+            size: 18,
+            color: AppColors.textGray,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Column(
@@ -249,31 +256,42 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textDark),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
+                        ),
                       ),
                     ),
                     if (attachments > 0) ...[
                       const SizedBox(width: 4),
-                      const Icon(Icons.attach_file,
-                          size: 13, color: AppColors.textGray),
+                      const Icon(
+                        Icons.attach_file,
+                        size: 13,
+                        color: AppColors.textGray,
+                      ),
                     ],
                   ],
                 ),
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    Text(author.isEmpty ? '익명' : author,
-                        style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark)),
+                    Text(
+                      author.isEmpty ? '익명' : author,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
                     if (number.isNotEmpty) ...[
                       const SizedBox(width: 4),
-                      Text('($number)',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.textGray)),
+                      Text(
+                        '($number)',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ],
                     const SizedBox(width: 8),
                     Expanded(
@@ -284,22 +302,38 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray),
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
                       ),
                     ),
-                    Icon(Icons.favorite_border,
-                        size: 12, color: AppColors.textGray),
+                    Icon(
+                      Icons.favorite_border,
+                      size: 12,
+                      color: AppColors.textGray,
+                    ),
                     const SizedBox(width: 3),
-                    Text('$likes',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray)),
+                    Text(
+                      '$likes',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    const Icon(Icons.mode_comment_outlined,
-                        size: 12, color: AppColors.textGray),
+                    const Icon(
+                      Icons.mode_comment_outlined,
+                      size: 12,
+                      color: AppColors.textGray,
+                    ),
                     const SizedBox(width: 3),
-                    Text('$comments',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray)),
+                    Text(
+                      '$comments',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -336,7 +370,9 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
               child: Text(
                 author.isNotEmpty ? author.characters.first : '?',
                 style: const TextStyle(
-                    color: AppColors.purple, fontWeight: FontWeight.w800),
+                  color: AppColors.purple,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -344,7 +380,9 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
               child: Text(
                 author.isEmpty ? '익명' : author,
                 style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 14),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
               ),
             ),
             PopupMenuButton<String>(
@@ -369,104 +407,118 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
         SelectableText(
           body,
           style: const TextStyle(
-              fontSize: 14, height: 1.5, color: AppColors.textDark),
+            fontSize: 14,
+            height: 1.5,
+            color: AppColors.textDark,
+          ),
         ),
-            if (locked && pwdHint.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  const Icon(Icons.lock_outline,
-                      size: 13, color: AppColors.textGray),
-                  const SizedBox(width: 4),
-                  Text('비밀번호 힌트: $pwdHint',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textGray)),
-                ],
+        if (locked && pwdHint.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(
+                Icons.lock_outline,
+                size: 13,
+                color: AppColors.textGray,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '비밀번호 힌트: $pwdHint',
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
               ),
             ],
-            if (_isAdmin && (device.isNotEmpty || ip.isNotEmpty)) ...[
-              const SizedBox(height: 6),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.taegeukRed.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.devices,
-                        size: 12, color: AppColors.taegeukRed),
-                    const SizedBox(width: 4),
-                    Text(
-                      '기기: ${device.isEmpty ? '-' : device}'
-                      '   IP: ${ip.isEmpty ? '-' : ip}',
-                      style: const TextStyle(
-                          fontSize: 10.5, color: AppColors.taegeukRed),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (attachments.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final a in attachments)
-                    _attachmentChip(a),
-                ],
-              ),
-            ],
-            const SizedBox(height: 8),
-            Row(
+          ),
+        ],
+        if (_isAdmin && (device.isNotEmpty || ip.isNotEmpty)) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.taegeukRed.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _likeButton(p, likes),
-                const SizedBox(width: 12),
-                InkWell(
-                  onTap: () => _addComment(p),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.mode_comment_outlined,
-                            size: 16, color: AppColors.textGray),
-                        const SizedBox(width: 4),
-                        Text('댓글 ${comments.length}',
-                            style: const TextStyle(
-                                fontSize: 12.5, color: AppColors.textGray)),
-                      ],
-                    ),
-                  ),
+                const Icon(
+                  Icons.devices,
+                  size: 12,
+                  color: AppColors.taegeukRed,
                 ),
-                const Spacer(),
-                InkWell(
-                  onTap: () => _addAttachment(p),
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    child: Row(
-                      children: [
-                        Icon(Icons.attach_file,
-                            size: 16, color: AppColors.purple),
-                        SizedBox(width: 3),
-                        Text('첨부',
-                            style: TextStyle(
-                                fontSize: 12.5, color: AppColors.purple)),
-                      ],
-                    ),
+                const SizedBox(width: 4),
+                Text(
+                  '기기: ${device.isEmpty ? '-' : device}'
+                  '   IP: ${ip.isEmpty ? '-' : ip}',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.taegeukRed,
                   ),
                 ),
               ],
             ),
-            if (comments.isNotEmpty) ...[
-              const Divider(height: 18),
-              for (final c in comments) _commentTile(p, c),
-            ],
+          ),
+        ],
+        if (attachments.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [for (final a in attachments) _attachmentChip(a)],
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _likeButton(p, likes),
+            const SizedBox(width: 12),
+            InkWell(
+              onTap: () => _addComment(p),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.mode_comment_outlined,
+                      size: 16,
+                      color: AppColors.textGray,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '댓글 ${comments.length}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Spacer(),
+            InkWell(
+              onTap: () => _addAttachment(p),
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                child: Row(
+                  children: [
+                    Icon(Icons.attach_file, size: 16, color: AppColors.purple),
+                    SizedBox(width: 3),
+                    Text(
+                      '첨부',
+                      style: TextStyle(fontSize: 12.5, color: AppColors.purple),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (comments.isNotEmpty) ...[
+          const Divider(height: 18),
+          for (final c in comments) _commentTile(p, c),
+        ],
       ],
     );
   }
@@ -483,8 +535,11 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.subdirectory_arrow_right,
-              size: 14, color: AppColors.textGray),
+          const Icon(
+            Icons.subdirectory_arrow_right,
+            size: 14,
+            color: AppColors.textGray,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Column(
@@ -495,26 +550,39 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                     Text(
                       author.isEmpty ? '익명' : author,
                       style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 12.5),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                      ),
                     ),
                     const SizedBox(width: 6),
-                    Text(created,
-                        style: const TextStyle(
-                            fontSize: 10.5, color: AppColors.textGray)),
+                    Text(
+                      created,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                     if (_isAdmin && (device.isNotEmpty || ip.isNotEmpty)) ...[
                       const SizedBox(width: 6),
                       Text(
-                          '· ${device.isEmpty ? ip : device}'
-                          '${(device.isNotEmpty && ip.isNotEmpty) ? ' / $ip' : ''}',
-                          style: const TextStyle(
-                              fontSize: 10, color: AppColors.taegeukRed)),
+                        '· ${device.isEmpty ? ip : device}'
+                        '${(device.isNotEmpty && ip.isNotEmpty) ? ' / $ip' : ''}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.taegeukRed,
+                        ),
+                      ),
                     ],
                   ],
                 ),
                 const SizedBox(height: 2),
-                SelectableText(body,
-                    style: const TextStyle(
-                        fontSize: 13, color: AppColors.textDark)),
+                SelectableText(
+                  body,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textDark,
+                  ),
+                ),
               ],
             ),
           ),
@@ -531,15 +599,16 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   }
 
   Widget _chip(String t, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(t,
-            style: TextStyle(
-                fontSize: 10, color: c, fontWeight: FontWeight.w800)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      t,
+      style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w800),
+    ),
+  );
 
   Widget _likeButton(Map<String, dynamic> p, int likes) {
     final id = '${p['id']}';
@@ -557,12 +626,14 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
               color: liked ? AppColors.taegeukRed : AppColors.textGray,
             ),
             const SizedBox(width: 4),
-            Text('공감 $likes',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: liked ? FontWeight.w800 : FontWeight.w500,
-                  color: liked ? AppColors.taegeukRed : AppColors.textGray,
-                )),
+            Text(
+              '공감 $likes',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: liked ? FontWeight.w800 : FontWeight.w500,
+                color: liked ? AppColors.taegeukRed : AppColors.textGray,
+              ),
+            ),
           ],
         ),
       ),
@@ -572,8 +643,10 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   final Set<String> _liked = {};
 
   Widget _attachmentChip(String name) {
-    final isImg = RegExp(r'\.(jpg|jpeg|png|gif|webp)$', caseSensitive: false)
-        .hasMatch(name);
+    final isImg = RegExp(
+      r'\.(jpg|jpeg|png|gif|webp)$',
+      caseSensitive: false,
+    ).hasMatch(name);
     return InkWell(
       onTap: () => _openAttachment(name),
       borderRadius: BorderRadius.circular(6),
@@ -582,17 +655,26 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
         decoration: BoxDecoration(
           color: AppColors.scoutGreen.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: AppColors.scoutGreen.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: AppColors.scoutGreen.withValues(alpha: 0.3),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(isImg ? Icons.image : Icons.attach_file,
-                size: 14, color: AppColors.scoutGreen),
+            Icon(
+              isImg ? Icons.image : Icons.attach_file,
+              size: 14,
+              color: AppColors.scoutGreen,
+            ),
             const SizedBox(width: 4),
-            Text(name,
-                style: const TextStyle(
-                    fontSize: 11.5, color: AppColors.scoutGreen)),
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: AppColors.scoutGreen,
+              ),
+            ),
           ],
         ),
       ),
@@ -606,12 +688,16 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
     final bodyCtrl = TextEditingController(text: '${existing?['body'] ?? ''}');
     // 작성자: 로그인 시 이름 자동입력, 비회원이면 저장된 값/빈칸.
     final authorCtrl = TextEditingController(
-        text: '${existing?['author'] ?? (state.who.isNotEmpty ? state.who : '')}');
+      text: '${existing?['author'] ?? (state.who.isNotEmpty ? state.who : '')}',
+    );
     // 인가번호: 로그인 시 인가번호 자동입력, 비회원은 전화번호 뒷자리(직접 입력).
     final numberCtrl = TextEditingController(
-        text: '${existing?['number'] ?? (state.who.isNotEmpty ? state.who : '')}');
+      text: '${existing?['number'] ?? (state.who.isNotEmpty ? state.who : '')}',
+    );
     final pwCtrl = TextEditingController();
-    final hintCtrl = TextEditingController(text: '${existing?['pwdHint'] ?? ''}');
+    final hintCtrl = TextEditingController(
+      text: '${existing?['pwdHint'] ?? ''}',
+    );
     final attachments = ((existing?['attachments'] as List?) ?? [])
         .map((e) => '$e')
         .toList();
@@ -689,8 +775,7 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                         width: 120,
                         child: TextField(
                           controller: hintCtrl,
-                          decoration:
-                              const InputDecoration(labelText: '힌트'),
+                          decoration: const InputDecoration(labelText: '힌트'),
                         ),
                       ),
                     ],
@@ -722,9 +807,13 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                         label: const Text('첨부 추가'),
                       ),
                       const SizedBox(width: 8),
-                      Text('${attachments.length}개',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textGray)),
+                      Text(
+                        '${attachments.length}개',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                     ],
                   ),
                   if (attachments.isNotEmpty)
@@ -736,9 +825,12 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                         children: [
                           for (final a in attachments)
                             Chip(
-                              label: Text(a,
-                                  style: const TextStyle(fontSize: 11)),
-                              onDeleted: () => setD(() => attachments.remove(a)),
+                              label: Text(
+                                a,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              onDeleted: () =>
+                                  setD(() => attachments.remove(a)),
                             ),
                         ],
                       ),
@@ -794,7 +886,8 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
     final state = context.read<AppState>();
     final ctrl = TextEditingController();
     final authorCtrl = TextEditingController(
-        text: state.who.isNotEmpty ? state.who : '');
+      text: state.who.isNotEmpty ? state.who : '',
+    );
     final pwCtrl = TextEditingController();
     final locked = post['locked'] == true;
     final ok = await showDialog<bool>(
@@ -901,11 +994,13 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('확인')),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('확인'),
+            ),
           ],
         ),
       );
@@ -1010,21 +1105,20 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   }
 
   Widget _errorView() => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline,
-                size: 48, color: AppColors.taegeukRed),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(_error!, textAlign: TextAlign.center),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _load, child: const Text('다시 시도')),
-          ],
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.error_outline, size: 48, color: AppColors.taegeukRed),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(_error!, textAlign: TextAlign.center),
         ),
-      );
+        const SizedBox(height: 16),
+        FilledButton(onPressed: _load, child: const Text('다시 시도')),
+      ],
+    ),
+  );
 
   void _snack(String m) {
     if (!mounted) return;

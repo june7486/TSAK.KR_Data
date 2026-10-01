@@ -273,8 +273,7 @@ class HsTabStrip extends StatelessWidget {
               children: labels.asMap().entries.map((e) {
                 final i = e.key;
                 final selected = controller.index == i;
-                final hasIcon =
-                    icons != null && icons!.length == labels.length;
+                final hasIcon = icons != null && icons!.length == labels.length;
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: GestureDetector(
@@ -282,7 +281,9 @@ class HsTabStrip extends StatelessWidget {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: selected ? selBg : unselBg,
                         borderRadius: BorderRadius.circular(20),
@@ -294,9 +295,11 @@ class HsTabStrip extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (hasIcon) ...[
-                            Icon(icons![i],
-                                size: 16,
-                                color: selected ? selFg : unselFg),
+                            Icon(
+                              icons![i],
+                              size: 16,
+                              color: selected ? selFg : unselFg,
+                            ),
                             const SizedBox(width: 5),
                           ],
                           Text(
@@ -320,4 +323,3 @@ class HsTabStrip extends StatelessWidget {
     );
   }
 }
-

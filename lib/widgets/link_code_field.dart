@@ -103,7 +103,10 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
               const SizedBox(width: 6),
               Text(
                 widget.kind == 'mentor' ? '인가번호(멘티) · 인적사항(멘토)' : '인가번호 · 인적사항',
-                style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textGray,
+                ),
               ),
               const Spacer(),
               if (widget.editable)
@@ -126,9 +129,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             Wrap(
               spacing: 6,
               runSpacing: 6,
-              children: [
-                for (final code in widget.codes) _chip(code),
-              ],
+              children: [for (final code in widget.codes) _chip(code)],
             ),
         ],
       ),
@@ -143,8 +144,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final label = hasProfile ? '$nm  $noLabel' : noLabel;
     return InputChip(
       avatar: hasProfile
-          ? Icon(Icons.verified_user,
-              size: 15, color: _accent)
+          ? Icon(Icons.verified_user, size: 15, color: _accent)
           : null,
       label: Text(label),
       backgroundColor: _accent.withValues(alpha: 0.08),
@@ -186,9 +186,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             final previewPhone = phoneCtrl.text;
             final (pid, ppw) = _genCred(previewPhone);
             return AlertDialog(
-              title: Text(
-                isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인가번호 · 인적사항',
-              ),
+              title: Text(isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인가번호 · 인적사항'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -296,7 +294,10 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       if (!ctx.mounted) return;
                       Navigator.pop(ctx, true);
                     },
-                    child: const Text('삭제', style: TextStyle(color: Colors.red)),
+                    child: const Text(
+                      '삭제',
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
@@ -323,16 +324,19 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
       if (nm.isEmpty || ph.isEmpty) {
         _snack('이름과 전화번호를 모두 입력해야 인적사항이 저장됩니다.');
       } else {
-        final r = await _nas.linkProfileSave(profile: {
-          'number': code,
-          'name': nm,
-          'phone': ph,
-          'league': leagueCtrl.text.trim(),
-          'unit': unitCtrl.text.trim(),
-          'kind': widget.kind,
-        });
+        final r = await _nas.linkProfileSave(
+          profile: {
+            'number': code,
+            'name': nm,
+            'phone': ph,
+            'league': leagueCtrl.text.trim(),
+            'unit': unitCtrl.text.trim(),
+            'kind': widget.kind,
+          },
+        );
         if (r['ok'] == true) {
-          final p = (r['profile'] as Map?)?.cast<String, dynamic>() ??
+          final p =
+              (r['profile'] as Map?)?.cast<String, dynamic>() ??
               {'number': code, 'name': nm, 'phone': ph};
           setState(() => _profiles[code] = p);
         } else {

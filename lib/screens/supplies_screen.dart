@@ -610,7 +610,9 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                     Text(_error!, textAlign: TextAlign.center),
                     const SizedBox(height: 12),
                     ElevatedButton(
-                        onPressed: _load, child: const Text('다시 시도')),
+                      onPressed: _load,
+                      child: const Text('다시 시도'),
+                    ),
                   ],
                 ),
               )

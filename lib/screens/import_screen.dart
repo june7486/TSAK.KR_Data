@@ -53,9 +53,7 @@ class _ImportScreenState extends State<ImportScreen> {
             children: [
               _sourceBar(),
               if (_recognized.isNotEmpty) _recognizedHeader(),
-              Expanded(
-                child: _recognized.isEmpty ? _intro() : _list(),
-              ),
+              Expanded(child: _recognized.isEmpty ? _intro() : _list()),
               if (_recognized.isNotEmpty) _saveBar(),
             ],
           ),
@@ -85,9 +83,17 @@ class _ImportScreenState extends State<ImportScreen> {
           children: [
             _srcBtn(Icons.folder_open, '파일 (엑셀/CSV/PDF/워드/JSON)', _pickFile),
             const SizedBox(width: 8),
-            _srcBtn(Icons.photo_library, '이미지(JPG)', () => _pickImage(ImageSource.gallery)),
+            _srcBtn(
+              Icons.photo_library,
+              '이미지(JPG)',
+              () => _pickImage(ImageSource.gallery),
+            ),
             const SizedBox(width: 8),
-            _srcBtn(Icons.photo_camera, '카메라', () => _pickImage(ImageSource.camera)),
+            _srcBtn(
+              Icons.photo_camera,
+              '카메라',
+              () => _pickImage(ImageSource.camera),
+            ),
             const SizedBox(width: 8),
             _srcBtn(Icons.content_paste, '텍스트 붙여넣기', _pasteDialog),
           ],
@@ -114,8 +120,11 @@ class _ImportScreenState extends State<ImportScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.auto_awesome,
-                size: 60, color: AppColors.purple.withValues(alpha: 0.5)),
+            Icon(
+              Icons.auto_awesome,
+              size: 60,
+              color: AppColors.purple.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: 14),
             const Text(
               '자료를 불러오면 인가자 정보를 자동으로 인식합니다',
@@ -150,8 +159,7 @@ class _ImportScreenState extends State<ImportScreen> {
           Expanded(
             child: Text(
               '인식 결과 ${_recognized.length}건 · $_sourceName',
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
             ),
           ),
           TextButton(
@@ -180,9 +188,10 @@ class _ImportScreenState extends State<ImportScreen> {
               number: m.number,
               size: 34,
             ),
-            title: Text('${m.number} ${m.name}',
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 14)),
+            title: Text(
+              '${m.number} ${m.name}',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
             subtitle: Text(
               [
                 if (m.league.isNotEmpty) m.league,
@@ -200,8 +209,11 @@ class _ImportScreenState extends State<ImportScreen> {
                   onPressed: () => _editItem(i),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close,
-                      size: 18, color: AppColors.taegeukRed),
+                  icon: const Icon(
+                    Icons.close,
+                    size: 18,
+                    color: AppColors.taegeukRed,
+                  ),
                   onPressed: () => setState(() => _recognized.removeAt(i)),
                 ),
               ],
@@ -224,7 +236,10 @@ class _ImportScreenState extends State<ImportScreen> {
               Expanded(
                 child: Text(
                   '총 ${_recognized.length}건을 NAS DB에 추가합니다',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
                 ),
               ),
               FilledButton.icon(
@@ -299,14 +314,17 @@ class _ImportScreenState extends State<ImportScreen> {
             controller: _pasteCtrl,
             maxLines: 10,
             decoration: const InputDecoration(
-              hintText: '예)\n2186\t홍길동\t제주\t제405단\n'
+              hintText:
+                  '예)\n2186\t홍길동\t제주\t제405단\n'
                   '2187, 김철수, 광주, 제101단',
             ),
           ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
@@ -349,19 +367,23 @@ class _ImportScreenState extends State<ImportScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: ctrls.entries
-                .map((e) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: TextField(
-                        controller: e.value,
-                        decoration: InputDecoration(labelText: e.key),
-                      ),
-                    ))
+                .map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: TextField(
+                      controller: e.value,
+                      decoration: InputDecoration(labelText: e.key),
+                    ),
+                  ),
+                )
                 .toList(),
           ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
           FilledButton(
             onPressed: () {
               setState(() {

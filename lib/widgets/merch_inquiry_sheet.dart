@@ -53,14 +53,18 @@ class _MerchInquirySheet extends StatefulWidget {
 }
 
 class _MerchInquirySheetState extends State<_MerchInquirySheet> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.name);
-  late final TextEditingController _phone =
-      TextEditingController(text: widget.phone);
-  late final TextEditingController _email =
-      TextEditingController(text: widget.email);
-  late final TextEditingController _order =
-      TextEditingController(text: widget.orderNo);
+  late final TextEditingController _name = TextEditingController(
+    text: widget.name,
+  );
+  late final TextEditingController _phone = TextEditingController(
+    text: widget.phone,
+  );
+  late final TextEditingController _email = TextEditingController(
+    text: widget.email,
+  );
+  late final TextEditingController _order = TextEditingController(
+    text: widget.orderNo,
+  );
   final _subject = TextEditingController(text: '수품 구매 문의');
   final _message = TextEditingController();
 
@@ -172,18 +176,29 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                   ),
                   const Row(
                     children: [
-                      Icon(Icons.mark_email_read_rounded,
-                          color: AppColors.purple, size: 22),
+                      Icon(
+                        Icons.mark_email_read_rounded,
+                        color: AppColors.purple,
+                        size: 22,
+                      ),
                       SizedBox(width: 8),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('문의하기',
-                              style: TextStyle(
-                                  fontSize: 17, fontWeight: FontWeight.w900)),
-                          Text('내 메일로 보내면 담당자에게 접수됩니다',
-                              style: TextStyle(
-                                  fontSize: 11.5, color: AppColors.textGray)),
+                          Text(
+                            '문의하기',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '내 메일로 보내면 담당자에게 접수됩니다',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -191,22 +206,30 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.taegeukBlue.withValues(alpha: 0.07),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.alternate_email,
-                            size: 16, color: AppColors.taegeukBlue),
+                        const Icon(
+                          Icons.alternate_email,
+                          size: 16,
+                          color: AppColors.taegeukBlue,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: Text('받는사람(고정): $kMerchInquiryTo',
-                              style: const TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.taegeukBlue)),
+                          child: Text(
+                            '받는사람(고정): $kMerchInquiryTo',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.taegeukBlue,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -216,11 +239,18 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                   const SizedBox(height: 10),
                   _field(_name, '이름 (실명)', required: true),
                   const SizedBox(height: 10),
-                  _field(_phone, '수신 가능한 핸드폰 번호', required: true,
-                      keyboard: TextInputType.phone),
+                  _field(
+                    _phone,
+                    '수신 가능한 핸드폰 번호',
+                    required: true,
+                    keyboard: TextInputType.phone,
+                  ),
                   const SizedBox(height: 10),
-                  _field(_email, '내 이메일 (선택)',
-                      keyboard: TextInputType.emailAddress),
+                  _field(
+                    _email,
+                    '내 이메일 (선택)',
+                    keyboard: TextInputType.emailAddress,
+                  ),
                   const SizedBox(height: 10),
                   _field(_subject, '제목'),
                   const SizedBox(height: 10),
@@ -232,22 +262,28 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                       color: AppColors.tigerGold.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: AppColors.tigerGold.withValues(alpha: 0.5)),
+                        color: AppColors.tigerGold.withValues(alpha: 0.5),
+                      ),
                     ),
                     child: const Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('꼭 확인해 주세요',
-                            style: TextStyle(
-                                fontSize: 12.5, fontWeight: FontWeight.w900)),
+                        Text(
+                          '꼭 확인해 주세요',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                         SizedBox(height: 4),
                         Text(
                           '※ 답변이 다소 늦어질 수 있음을 양해해 주시기 바랍니다.\n'
                           '※ 만일 답변이 늦어질 경우 관리자에게 전화나 문자를 보내시기 바랍니다.',
                           style: TextStyle(
-                              fontSize: 11.5,
-                              height: 1.5,
-                              color: AppColors.textDark),
+                            fontSize: 11.5,
+                            height: 1.5,
+                            color: AppColors.textDark,
+                          ),
                         ),
                       ],
                     ),
@@ -263,9 +299,13 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                     ),
                     onPressed: () => _openMail(),
                     icon: const Icon(Icons.mail_outline, size: 19),
-                    label: const Text('메일 보내기 (기기 메일 앱)',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w900, fontSize: 15)),
+                    label: const Text(
+                      '메일 보내기 (기기 메일 앱)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
@@ -273,7 +313,10 @@ class _MerchInquirySheetState extends State<_MerchInquirySheet> {
                     '첨부파일은 각자 개인 메일에서 직접 첨부해 주세요.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 11, color: AppColors.textGray, height: 1.4),
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),

@@ -72,8 +72,11 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.auto_awesome_mosaic,
-            color: AppColors.purple, size: 32),
+        icon: const Icon(
+          Icons.auto_awesome_mosaic,
+          color: AppColors.purple,
+          size: 32,
+        ),
         title: const Text('썸네일 일괄 생성'),
         content: const Text(
           '모든 행사의 사진·동영상 썸네일을 미리 만들어 둡니다.\n\n'
@@ -108,22 +111,26 @@ class _EventYearScreenState extends State<EventYearScreen> {
   }
 
   void _watchThumbBackfill() {
-    context.read<NasApi>().eventThumbsStatus().then((r) {
-      if (!mounted) return;
-      final job = (r['job'] as Map?) ?? {};
-      final running = job['running'] == true;
-      final total = (job['total'] as num?)?.toInt() ?? 0;
-      final done = (job['done'] as num?)?.toInt() ?? 0;
-      _snack('썸네일 진행: $done / $total');
-      if (running) {
-        Future.delayed(const Duration(seconds: 3), _watchThumbBackfill);
-      } else {
-        setState(() => _backfillBusy = false);
-        _snack('썸네일 생성 완료 ($done건)');
-      }
-    }).catchError((_) {
-      if (mounted) setState(() => _backfillBusy = false);
-    });
+    context
+        .read<NasApi>()
+        .eventThumbsStatus()
+        .then((r) {
+          if (!mounted) return;
+          final job = (r['job'] as Map?) ?? {};
+          final running = job['running'] == true;
+          final total = (job['total'] as num?)?.toInt() ?? 0;
+          final done = (job['done'] as num?)?.toInt() ?? 0;
+          _snack('썸네일 진행: $done / $total');
+          if (running) {
+            Future.delayed(const Duration(seconds: 3), _watchThumbBackfill);
+          } else {
+            setState(() => _backfillBusy = false);
+            _snack('썸네일 생성 완료 ($done건)');
+          }
+        })
+        .catchError((_) {
+          if (mounted) setState(() => _backfillBusy = false);
+        });
   }
 
   void _snack(String msg) {
@@ -171,8 +178,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final years = _yearsOf(_events);
-    final inYear =
-        _events.where((e) => '${e['year']}' == _year).toList();
+    final inYear = _events.where((e) => '${e['year']}' == _year).toList();
     // 최신순 정렬(연도 → 기간/생성일 역순) — 연도 무관 전체 리스트
     final recent = List<Map<String, dynamic>>.from(_events)
       ..sort((a, b) {
@@ -209,13 +215,17 @@ class _EventYearScreenState extends State<EventYearScreen> {
           if (_canManage(state))
             IconButton(
               tooltip: '사진/동영상 썸네일 일괄 생성',
-              onPressed: _backfillBusy ? null : () => _startThumbBackfill(state),
+              onPressed: _backfillBusy
+                  ? null
+                  : () => _startThumbBackfill(state),
               icon: _backfillBusy
                   ? const SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Icon(Icons.auto_awesome_mosaic),
             ),
@@ -242,39 +252,47 @@ class _EventYearScreenState extends State<EventYearScreen> {
               const PersonalQuickActions(),
               Expanded(
                 child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? _errorView()
-              : Column(
-                  children: [
-                    _viewToggle(),
-                    if (!_recentMode) _yearTabs(years),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _load,
-                        child: _recentMode
-                            ? (recent.isEmpty
-                                ? _emptyView()
-                                : ListView.builder(
-                                    padding:
-                                        const EdgeInsets.fromLTRB(14, 10, 14, 90),
-                                    itemCount: recent.length,
-                                    itemBuilder: (_, i) =>
-                                        _eventCard(state, recent[i]),
-                                  ))
-                            : (inYear.isEmpty
-                                ? _emptyView()
-                                : ListView.builder(
-                                    padding:
-                                        const EdgeInsets.fromLTRB(14, 10, 14, 90),
-                                    itemCount: inYear.length,
-                                    itemBuilder: (_, i) =>
-                                        _eventCard(state, inYear[i]),
-                                  )),
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? _errorView()
+                    : Column(
+                        children: [
+                          _viewToggle(),
+                          if (!_recentMode) _yearTabs(years),
+                          Expanded(
+                            child: RefreshIndicator(
+                              onRefresh: _load,
+                              child: _recentMode
+                                  ? (recent.isEmpty
+                                        ? _emptyView()
+                                        : ListView.builder(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              14,
+                                              10,
+                                              14,
+                                              90,
+                                            ),
+                                            itemCount: recent.length,
+                                            itemBuilder: (_, i) =>
+                                                _eventCard(state, recent[i]),
+                                          ))
+                                  : (inYear.isEmpty
+                                        ? _emptyView()
+                                        : ListView.builder(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              14,
+                                              10,
+                                              14,
+                                              90,
+                                            ),
+                                            itemCount: inYear.length,
+                                            itemBuilder: (_, i) =>
+                                                _eventCard(state, inYear[i]),
+                                          )),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -324,9 +342,10 @@ class _EventYearScreenState extends State<EventYearScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text('${_events.length}개',
-              style: const TextStyle(
-                  fontSize: 12, color: AppColors.textGray)),
+          Text(
+            '${_events.length}개',
+            style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+          ),
         ],
       ),
     );
@@ -564,8 +583,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
                   _metaChip(Icons.people_alt_outlined, '참가인원 $count명'),
                   _metaChip(Icons.photo_camera_outlined, '사진 $photos장'),
                   _metaChip(Icons.videocam_outlined, '동영상 $videos개'),
-                  if (place.isNotEmpty)
-                    _metaChip(Icons.place_outlined, place),
+                  if (place.isNotEmpty) _metaChip(Icons.place_outlined, place),
                 ],
               ),
               if (createdBy.isNotEmpty) ...[
@@ -662,8 +680,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
                           decoration: InputDecoration(
                             labelText: '연도 * (필수)',
                             counterText: '',
-                            errorText: yearCtrl.text.trim().isEmpty ||
-                                    yearOk
+                            errorText: yearCtrl.text.trim().isEmpty || yearOk
                                 ? null
                                 : '4자리 연도를 입력하세요',
                           ),
@@ -732,7 +749,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
                 child: const Text('취소'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                ),
                 onPressed: (yearOk && titleCtrl.text.trim().isNotEmpty)
                     ? () => Navigator.pop(ctx, true)
                     : null,
@@ -747,9 +766,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
     // 이중 확인: 연도 필수 (요청 K#4)
     if (!RegExp(r'^\d{4}$').hasMatch(yearCtrl.text.trim())) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('연도를 선택해야 행사를 만들 수 있습니다')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('연도를 선택해야 행사를 만들 수 있습니다')));
       }
       return;
     }
@@ -773,9 +792,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('생성 실패: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('생성 실패: $e')));
       }
       return;
     }
@@ -861,14 +880,14 @@ class _EventYearScreenState extends State<EventYearScreen> {
             child: const Text('닫기'),
           ),
           TextButton(
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.taegeukRed),
+            style: TextButton.styleFrom(foregroundColor: AppColors.taegeukRed),
             onPressed: () => Navigator.pop(ctx, 'reject'),
             child: const Text('반려'),
           ),
           FilledButton(
-            style:
-                FilledButton.styleFrom(backgroundColor: AppColors.scoutGreen),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.scoutGreen,
+            ),
             onPressed: () => Navigator.pop(ctx, 'approve'),
             child: const Text('승인'),
           ),
@@ -876,14 +895,16 @@ class _EventYearScreenState extends State<EventYearScreen> {
       ),
     );
     if (action == null || !mounted) return;
-    final ok =
-        await context.read<NasApi>().eventPrivateSet(id: id, action: action);
+    final ok = await context.read<NasApi>().eventPrivateSet(
+      id: id,
+      action: action,
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok
-            ? (action == 'approve' ? '행사로 등록했습니다' : '반려했습니다')
-            : '처리에 실패했습니다'),
+        content: Text(
+          ok ? (action == 'approve' ? '행사로 등록했습니다' : '반려했습니다') : '처리에 실패했습니다',
+        ),
       ),
     );
     await _load();
@@ -894,10 +915,10 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final title = '${e['title']}';
     final msg = defined
         ? '“$title” 행사와 모든 파일을 삭제할까요?\n'
-          '개인 프로필(행사참가)에 등록된 같은 행사명도 함께 삭제됩니다.\n'
-          '이 작업은 되돌릴 수 없습니다.'
+              '개인 프로필(행사참가)에 등록된 같은 행사명도 함께 삭제됩니다.\n'
+              '이 작업은 되돌릴 수 없습니다.'
         : '“$title” 은(는) 행사관리 목록에 없는 행사입니다.\n'
-          '개인 프로필(행사참가)에서 이 행사명을 삭제할까요?';
+              '개인 프로필(행사참가)에서 이 행사명을 삭제할까요?';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -909,7 +930,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -925,15 +948,15 @@ class _EventYearScreenState extends State<EventYearScreen> {
         await nas.eventNameDelete([title]);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('“$title” 삭제했습니다')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('“$title” 삭제했습니다')));
       }
     } catch (err) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('삭제 실패: $err')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('삭제 실패: $err')));
       }
     }
     await _load();

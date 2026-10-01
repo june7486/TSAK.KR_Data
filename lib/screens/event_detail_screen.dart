@@ -58,6 +58,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Map<String, dynamic> _access = {};
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
+
   /// 사용자 정의 '메뉴추가' 탭 목록 [{name, note}] (PDF page9 최종 결정).
   List<Map<String, dynamic>> _customTabs = [];
   int _cols = 5;
@@ -132,8 +133,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       bool isStaff = false;
       if (myIdent.isNotEmpty) {
         for (final a in staffList) {
-          final id = '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
-              .replaceAll(RegExp(r'[^0-9]'), '');
+          final id =
+              '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
+                  .replaceAll(RegExp(r'[^0-9]'), '');
           if (id.isNotEmpty && id == myIdent) {
             isStaff = true;
             break;
@@ -175,9 +177,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     } catch (err) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('불러오기 실패: $err')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('불러오기 실패: $err')));
     }
     if (mounted) hideBusy();
   }
@@ -202,9 +204,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.title,
-                      style: const TextStyle(fontSize: 16),
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    widget.title,
+                    style: const TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   Text(
                     '${widget.year}'
                     '${'${_event['place'] ?? ''}'.isNotEmpty ? ' · ${_event['place']}' : ''}',
@@ -246,11 +250,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               onSelected: (v) {
                 switch (v) {
                   case 'zip':
-                    _download(context.read<NasApi>().eventZipUrl(
-                      widget.year,
-                      widget.title,
-                      'media',
-                    ));
+                    _download(
+                      context.read<NasApi>().eventZipUrl(
+                        widget.year,
+                        widget.title,
+                        'media',
+                      ),
+                    );
                     break;
                   case 'request':
                     _requestPhoto();
@@ -269,9 +275,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'qr', child: Text('행사 QR 코드 (참가 등록)')),
                 PopupMenuItem(value: 'zip', child: Text('사진 전체 ZIP 다운로드')),
-                PopupMenuItem(value: 'request', child: Text('전체 참가자 사진 업로드 요청')),
+                PopupMenuItem(
+                  value: 'request',
+                  child: Text('전체 참가자 사진 업로드 요청'),
+                ),
                 PopupMenuItem(value: 'staff', child: Text('행사 스텝(STAFF) 등록')),
-                PopupMenuItem(value: 'addmenu', child: Text('메뉴 추가 (사용자 정의 탭)')),
+                PopupMenuItem(
+                  value: 'addmenu',
+                  child: Text('메뉴 추가 (사용자 정의 탭)'),
+                ),
               ],
             ),
         ],
@@ -290,9 +302,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.scoutGreen,
                         side: BorderSide(
-                            color: AppColors.scoutGreen.withValues(alpha: 0.5)),
-                        backgroundColor:
-                            AppColors.scoutGreen.withValues(alpha: 0.06),
+                          color: AppColors.scoutGreen.withValues(alpha: 0.5),
+                        ),
+                        backgroundColor: AppColors.scoutGreen.withValues(
+                          alpha: 0.06,
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 11),
                       ),
                       onPressed: _openReview,
@@ -377,11 +391,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed: () => _download(_nas.eventZipUrl(
-                  widget.year,
-                  widget.title,
-                  key,
-                )),
+                onPressed: () =>
+                    _download(_nas.eventZipUrl(widget.year, widget.title, key)),
                 icon: const Icon(Icons.download),
                 label: const Text('ZIP'),
               ),
@@ -424,20 +435,24 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       trailing: PopupMenuButton<String>(
                         onSelected: (v) async {
                           if (v == 'open') {
-                            _download(_nas.eventFile2Url(
-                              widget.year,
-                              widget.title,
-                              key,
-                              name,
-                            ));
+                            _download(
+                              _nas.eventFile2Url(
+                                widget.year,
+                                widget.title,
+                                key,
+                                name,
+                              ),
+                            );
                           } else if (v == 'dl') {
-                            _download(_nas.eventFile2Url(
-                              widget.year,
-                              widget.title,
-                              key,
-                              name,
-                              download: true,
-                            ));
+                            _download(
+                              _nas.eventFile2Url(
+                                widget.year,
+                                widget.title,
+                                key,
+                                name,
+                                download: true,
+                              ),
+                            );
                           } else if (v == 'rename') {
                             await _renameFile(key, name);
                           } else if (v == 'del') {
@@ -451,12 +466,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                           PopupMenuItem(value: 'del', child: Text('삭제')),
                         ],
                       ),
-                      onTap: () => _download(_nas.eventFile2Url(
-                        widget.year,
-                        widget.title,
-                        key,
-                        name,
-                      )),
+                      onTap: () => _download(
+                        _nas.eventFile2Url(
+                          widget.year,
+                          widget.title,
+                          key,
+                          name,
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -478,7 +495,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       final ok = await _confirmPhotoConsent();
       if (ok != true) return;
     }
-    final upName = uploader ??
+    final upName =
+        uploader ??
         (state.isMaster
             ? '마스터'
             : state.isApp
@@ -593,7 +611,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         children: [
                           Checkbox(
                             value: agreed,
-                            onChanged: (v) => setLocal(() => agreed = v ?? false),
+                            onChanged: (v) =>
+                                setLocal(() => agreed = v ?? false),
                           ),
                           const Expanded(
                             child: Text(
@@ -610,10 +629,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                   const Text(
                     '※ 동의 없이 게시할 수 없습니다. 원하지 않는 참가자는 게시 전 담당자에게 알릴 수 있습니다.',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: AppColors.textGray,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
                   ),
                 ],
               ),
@@ -688,7 +704,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -739,7 +757,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.purple.withValues(alpha: 0.2)),
+                  border: Border.all(
+                    color: AppColors.purple.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: QrImageView(
                   data: payload,
@@ -771,8 +791,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 const SizedBox(height: 10),
                 Container(
                   width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.taegeukRed.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
@@ -822,7 +844,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   // ============================ 참석자 ============================
-  Widget _attendeeTab() {    return Column(
+  Widget _attendeeTab() {
+    return Column(
       children: [
         // (요구 #13) 참가자 등록은 관리자·마스터만 가능하다.
         if (widget.canManage)
@@ -863,11 +886,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              _rosterButton(
-                Icons.table_chart,
-                '명단 출력',
-                () => _openRoster(),
-              ),
+              _rosterButton(Icons.table_chart, '명단 출력', () => _openRoster()),
               const SizedBox(width: 6),
               _rosterButton(Icons.sms, '문자', _sendSms),
               const SizedBox(width: 6),
@@ -930,15 +949,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   Widget _attendeeTile(int i) {
     final a = _attendees[i];
-    final ident = '${a['number'] ?? a['phone'] ?? ''}'
-        .replaceAll(RegExp(r'[^0-9]'), '');
+    final ident = '${a['number'] ?? a['phone'] ?? ''}'.replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
     final visited = ident.isNotEmpty && _access.containsKey(ident);
     final roles = (a['roles'] as List?) ?? [];
     // (요구 #15) STAFF 여부 — 인가번호 옆 STAFF 단추.
-    final isStaff = _staff.any((s) =>
-        '${s['number'] ?? s['ident'] ?? s['phone'] ?? ''}'
-            .replaceAll(RegExp(r'[^0-9]'), '') ==
-        ident && ident.isNotEmpty);
+    final isStaff = _staff.any(
+      (s) =>
+          '${s['number'] ?? s['ident'] ?? s['phone'] ?? ''}'.replaceAll(
+                RegExp(r'[^0-9]'),
+                '',
+              ) ==
+              ident &&
+          ident.isNotEmpty,
+    );
     final canManage = widget.canManage;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -973,61 +999,61 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ],
             ],
           ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              [
-                if ('${a['unit'] ?? ''}'.isNotEmpty) '${a['unit']}',
-                if ('${a['phone'] ?? ''}'.isNotEmpty) '${a['phone']}',
-                if ('${a['gender'] ?? ''}'.isNotEmpty) '${a['gender']}',
-              ].join(' · '),
-              style: const TextStyle(fontSize: 12),
-            ),
-            if (roles.isNotEmpty)
-              Wrap(
-                spacing: 4,
-                children: [
-                  for (final r in roles)
-                    Container(
-                      margin: const EdgeInsets.only(top: 3),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.purple.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '$r',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.purple,
-                          fontWeight: FontWeight.w700,
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                [
+                  if ('${a['unit'] ?? ''}'.isNotEmpty) '${a['unit']}',
+                  if ('${a['phone'] ?? ''}'.isNotEmpty) '${a['phone']}',
+                  if ('${a['gender'] ?? ''}'.isNotEmpty) '${a['gender']}',
+                ].join(' · '),
+                style: const TextStyle(fontSize: 12),
+              ),
+              if (roles.isNotEmpty)
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    for (final r in roles)
+                      Container(
+                        margin: const EdgeInsets.only(top: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.purple.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$r',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-          ],
-        ),
-        trailing: widget.canManage
-            ? PopupMenuButton<String>(
-                onSelected: (v) async {
-                  if (v == 'edit') {
-                    await _manualAddAttendee(editIndex: i);
-                  } else if (v == 'del') {
-                    setState(() => _attendees.removeAt(i));
-                    await _saveAttendees();
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('수정')),
-                  PopupMenuItem(value: 'del', child: Text('삭제')),
-                ],
-              )
-            : const Icon(Icons.chevron_right, color: AppColors.textGray),
+                  ],
+                ),
+            ],
+          ),
+          trailing: widget.canManage
+              ? PopupMenuButton<String>(
+                  onSelected: (v) async {
+                    if (v == 'edit') {
+                      await _manualAddAttendee(editIndex: i);
+                    } else if (v == 'del') {
+                      setState(() => _attendees.removeAt(i));
+                      await _saveAttendees();
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('수정')),
+                    PopupMenuItem(value: 'del', child: Text('삭제')),
+                  ],
+                )
+              : const Icon(Icons.chevron_right, color: AppColors.textGray),
         ),
       ),
     );
@@ -1037,7 +1063,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///  - 접속 여부(V)는 항상 표시(접속기록 유지).
   ///  - 관리자·마스터에게는 그 위에 STAFF 지정 체크박스를 추가로 노출한다.
   Widget _attendeeLeading(
-      Map<String, dynamic> a, String ident, bool visited, bool isStaff) {
+    Map<String, dynamic> a,
+    String ident,
+    bool visited,
+    bool isStaff,
+  ) {
     final canStaff = widget.canManage && ident.isNotEmpty;
     return SizedBox(
       width: 34,
@@ -1056,9 +1086,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 decoration: BoxDecoration(
                   color: isStaff ? AppColors.purple : Colors.white,
                   border: Border.all(
-                    color: isStaff
-                        ? AppColors.purple
-                        : Colors.grey.shade400,
+                    color: isStaff ? AppColors.purple : Colors.grey.shade400,
                     width: isStaff ? 2 : 1.4,
                   ),
                   borderRadius: BorderRadius.circular(5),
@@ -1136,14 +1164,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   Future<void> _toggleStaff(
-      Map<String, dynamic> a, String ident, bool isStaff) async {
+    Map<String, dynamic> a,
+    String ident,
+    bool isStaff,
+  ) async {
     if (!widget.canManage) return;
     try {
       final list = isStaff
           ? await _nas.eventStaffRemove(
-              year: widget.year, title: widget.title, number: ident)
+              year: widget.year,
+              title: widget.title,
+              number: ident,
+            )
           : await _nas.eventStaffAdd(
-              year: widget.year, title: widget.title, number: ident);
+              year: widget.year,
+              title: widget.title,
+              number: ident,
+            );
       if (!mounted) return;
       setState(() => _staff = list);
       _snack(isStaff ? '스텝에서 해제했습니다' : '행사 스텝(STAFF)으로 등록했습니다');
@@ -1251,9 +1288,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       ),
                     const Divider(height: 16),
                     if (errMsg.isNotEmpty)
-                      Text(errMsg,
-                          style: const TextStyle(
-                              color: Colors.red, fontSize: 12)),
+                      Text(
+                        errMsg,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
                     Expanded(
                       child: loading
                           ? const Center(child: CircularProgressIndicator())
@@ -1261,38 +1299,45 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               itemCount: results.length,
                               itemBuilder: (_, i) {
                                 final r = results[i];
-                                final num = '${r['number'] ?? ''}'
-                                    .replaceAll(RegExp(r'[^0-9]'), '');
-                                final already = staff.any((s) =>
-                                    '${s['number'] ?? s['ident'] ?? ''}'
-                                        .replaceAll(RegExp(r'[^0-9]'), '') ==
-                                    num);
+                                final num = '${r['number'] ?? ''}'.replaceAll(
+                                  RegExp(r'[^0-9]'),
+                                  '',
+                                );
+                                final already = staff.any(
+                                  (s) =>
+                                      '${s['number'] ?? s['ident'] ?? ''}'
+                                          .replaceAll(RegExp(r'[^0-9]'), '') ==
+                                      num,
+                                );
                                 return ListTile(
                                   dense: true,
                                   leading: const Icon(Icons.person_outline),
-                                  title: Text(
-                                      '${r['name']} · #${r['number']}'),
-                                  subtitle: Text('${r['unit'] ?? ''}',
-                                      style:
-                                          const TextStyle(fontSize: 11)),
+                                  title: Text('${r['name']} · #${r['number']}'),
+                                  subtitle: Text(
+                                    '${r['unit'] ?? ''}',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
                                   trailing: already
-                                      ? const Text('등록됨',
+                                      ? const Text(
+                                          '등록됨',
                                           style: TextStyle(
-                                              fontSize: 11,
-                                              color: AppColors.scoutGreen))
-                                      : const Icon(Icons.add_circle_outline,
-                                          color: AppColors.purple),
+                                            fontSize: 11,
+                                            color: AppColors.scoutGreen,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.add_circle_outline,
+                                          color: AppColors.purple,
+                                        ),
                                   onTap: already
                                       ? null
                                       : () async {
-                                          final list =
-                                              await _nas.eventStaffAdd(
+                                          final list = await _nas.eventStaffAdd(
                                             year: widget.year,
                                             title: widget.title,
                                             number: '${r['number']}',
                                           );
-                                          setD(() =>
-                                              staff = List.from(list));
+                                          setD(() => staff = List.from(list));
                                           if (mounted) {
                                             setState(() => _staff = list);
                                           }
@@ -1410,53 +1455,49 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   child: loading
                       ? const Center(child: CircularProgressIndicator())
                       : results.isEmpty
-                          ? const Center(
-                              child: Text(
-                                '검색어를 입력하고 검색하세요',
-                                style: TextStyle(color: AppColors.textGray),
+                      ? const Center(
+                          child: Text(
+                            '검색어를 입력하고 검색하세요',
+                            style: TextStyle(color: AppColors.textGray),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: results.length,
+                          itemBuilder: (_, i) {
+                            final r = results[i];
+                            final num = '${r['number'] ?? ''}'.replaceAll(
+                              RegExp(r'[^0-9]'),
+                              '',
+                            );
+                            final already =
+                                existing.contains(num) ||
+                                checked.containsKey(num);
+                            return CheckboxListTile(
+                              dense: true,
+                              value: checked.containsKey(num),
+                              onChanged: already && !checked.containsKey(num)
+                                  ? null
+                                  : (v) {
+                                      setD(() {
+                                        if (v == true) {
+                                          checked[num] = r;
+                                        } else {
+                                          checked.remove(num);
+                                        }
+                                      });
+                                    },
+                              title: Text('${r['name']} · #${r['number']}'),
+                              subtitle: Text(
+                                '${already ? '이미 등록됨 · ' : ''}${r['unit'] ?? ''}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: already ? AppColors.textGray : null,
+                                ),
                               ),
-                            )
-                          : ListView.builder(
-                              itemCount: results.length,
-                              itemBuilder: (_, i) {
-                                final r = results[i];
-                                final num =
-                                    '${r['number'] ?? ''}'.replaceAll(
-                                  RegExp(r'[^0-9]'),
-                                  '',
-                                );
-                                final already =
-                                    existing.contains(num) ||
-                                        checked.containsKey(num);
-                                return CheckboxListTile(
-                                  dense: true,
-                                  value: checked.containsKey(num),
-                                  onChanged: already && !checked.containsKey(num)
-                                      ? null
-                                      : (v) {
-                                          setD(() {
-                                            if (v == true) {
-                                              checked[num] = r;
-                                            } else {
-                                              checked.remove(num);
-                                            }
-                                          });
-                                        },
-                                  title: Text('${r['name']} · #${r['number']}'),
-                                  subtitle: Text(
-                                    '${already ? '이미 등록됨 · ' : ''}${r['unit'] ?? ''}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: already
-                                          ? AppColors.textGray
-                                          : null,
-                                    ),
-                                  ),
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                );
-                              },
-                            ),
+                              controlAffinity: ListTileControlAffinity.leading,
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
@@ -1513,33 +1554,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            skipped > 0
-                ? '$added명 추가 완료 (중복 $skipped명 건너뜀)'
-                : '$added명 추가 완료',
+            skipped > 0 ? '$added명 추가 완료 (중복 $skipped명 건너뜀)' : '$added명 추가 완료',
           ),
         ),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('추가 실패: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('추가 실패: $e')));
     }
   }
 
   Future<List<String>?> _pickRoles() async {
-    const all = [
-      '지도자',
-      '멘토지도자',
-      '비버',
-      '스카우트',
-      '벤처',
-      '로버',
-      '본부',
-      '학부모',
-      '기타',
-    ];
+    const all = ['지도자', '멘토지도자', '비버', '스카우트', '벤처', '로버', '본부', '학부모', '기타'];
     final sel = <String>{};
     return showDialog<List<String>>(
       context: context,
@@ -1558,8 +1587,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   labelStyle: TextStyle(
                     color: sel.contains(r) ? Colors.white : AppColors.purple,
                   ),
-                  onSelected: (v) =>
-                      setD(() => v ? sel.add(r) : sel.remove(r)),
+                  onSelected: (v) => setD(() => v ? sel.add(r) : sel.remove(r)),
                 ),
             ],
           ),
@@ -1590,17 +1618,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final roles = <String>{
       ...((cur?['roles'] as List?)?.map((e) => '$e') ?? []),
     };
-    const all = [
-      '지도자',
-      '멘토지도자',
-      '비버',
-      '스카우트',
-      '벤처',
-      '로버',
-      '본부',
-      '학부모',
-      '기타',
-    ];
+    const all = ['지도자', '멘토지도자', '비버', '스카우트', '벤처', '로버', '본부', '학부모', '기타'];
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1624,9 +1642,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   const SizedBox(height: 8),
                   TextField(
                     controller: numC,
-                    decoration: const InputDecoration(
-                      labelText: '인가번호 (인가자만)',
-                    ),
+                    decoration: const InputDecoration(labelText: '인가번호 (인가자만)'),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -1751,23 +1767,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               height: 30,
               child: Row(
                 children: [
-                  _crumb('사진+동영상', () => setState(() {
-                        _mediaPath = [];
-                        _mediaSel.clear();
-                        _load();
-                      })),
+                  _crumb(
+                    '사진+동영상',
+                    () => setState(() {
+                      _mediaPath = [];
+                      _mediaSel.clear();
+                      _load();
+                    }),
+                  ),
                   for (var i = 0; i < _mediaPath.length; i++) ...[
-                    const Icon(Icons.chevron_right,
-                        size: 16, color: AppColors.textGray),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: AppColors.textGray,
+                    ),
                     _crumb(
                       _mediaPath[i],
                       i == _mediaPath.length - 1
                           ? null
                           : () => setState(() {
-                                _mediaPath = _mediaPath.sublist(0, i + 1);
-                                _mediaSel.clear();
-                                _load();
-                              }),
+                              _mediaPath = _mediaPath.sublist(0, i + 1);
+                              _mediaSel.clear();
+                              _load();
+                            }),
                     ),
                   ],
                 ],
@@ -1809,9 +1831,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     : null,
                 icon: const Icon(Icons.remove_circle_outline),
               ),
-              Text('$_cols열',
-                  style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w800)),
+              Text(
+                '$_cols열',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               IconButton(
                 tooltip: '열 늘리기 (사진 축소)',
                 visualDensity: VisualDensity.compact,
@@ -1868,12 +1894,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 child: OutlinedButton.icon(
                   onPressed: _media.isEmpty
                       ? null
-                      : () => _download(_nas.eventZipUrl(
+                      : () => _download(
+                          _nas.eventZipUrl(
                             widget.year,
                             widget.title,
                             'media',
                             sub: _mediaSub,
-                          )),
+                          ),
+                        ),
                   icon: const Icon(Icons.download),
                   label: const Text('전체 다운로드'),
                 ),
@@ -2038,13 +2066,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   void _downloadSelectedMedia() {
     if (_mediaSel.isEmpty) return;
     final tokens = _mediaSel.toList();
-    _download(_nas.eventZipUrl(
-      widget.year,
-      widget.title,
-      'media',
-      sub: _mediaSub,
-      files: tokens,
-    ));
+    _download(
+      _nas.eventZipUrl(
+        widget.year,
+        widget.title,
+        'media',
+        sub: _mediaSub,
+        files: tokens,
+      ),
+    );
   }
 
   /// 선택한 사진/동영상 일괄 삭제 (선택 모드)
@@ -2059,16 +2089,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('선택 삭제'),
-        content: Text(hasDir
-            ? '선택한 $n개 항목(폴더 포함)을 삭제할까요?\n폴더는 안의 내용까지 모두 삭제됩니다.'
-            : '선택한 $n개 항목을 삭제할까요?'),
+        content: Text(
+          hasDir
+              ? '선택한 $n개 항목(폴더 포함)을 삭제할까요?\n폴더는 안의 내용까지 모두 삭제됩니다.'
+              : '선택한 $n개 항목을 삭제할까요?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -2111,13 +2145,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final kind = '${m['kind'] ?? 'image'}';
     final uploader = _uploaderLabel('${m['uploader'] ?? ''}');
     final selected = _mediaSel.contains(name);
-    final thumbUrl =
-        _nas.eventThumb2Url(widget.year, widget.title, name, sub: _mediaSub);
+    final thumbUrl = _nas.eventThumb2Url(
+      widget.year,
+      widget.title,
+      name,
+      sub: _mediaSub,
+    );
     // 화면 폭/열 수에 맞춰 디코딩 크기를 제한 → 메모리·디코딩 비용 절감(로딩 가속).
-    final cacheW = ((MediaQuery.of(context).size.width / _cols) *
-            MediaQuery.of(context).devicePixelRatio)
-        .round()
-        .clamp(60, 2048);
+    final cacheW =
+        ((MediaQuery.of(context).size.width / _cols) *
+                MediaQuery.of(context).devicePixelRatio)
+            .round()
+            .clamp(60, 2048);
 
     if (isDir) {
       final cnt = m['count'] ?? 0;
@@ -2129,7 +2168,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             decoration: BoxDecoration(
               color: const Color(0xFFF3EEFA),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.purple.withValues(alpha: 0.25)),
+              border: Border.all(
+                color: AppColors.purple.withValues(alpha: 0.25),
+              ),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2298,20 +2339,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ),
             ),
             // 사진·동영상 용량(사용자가 열어볼지 결정하는 데 도움)
-            Builder(builder: (_) {
-              final sz = (m['size'] as num?)?.toInt() ?? 0;
-              if (sz <= 0) return const SizedBox.shrink();
-              return Text(
-                _fmtSize(sz),
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  color: AppColors.purple.withValues(alpha: 0.75),
-                  fontWeight: FontWeight.w700,
-                ),
-              );
-            }),
+            Builder(
+              builder: (_) {
+                final sz = (m['size'] as num?)?.toInt() ?? 0;
+                if (sz <= 0) return const SizedBox.shrink();
+                return Text(
+                  _fmtSize(sz),
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: AppColors.purple.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w700,
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -2336,10 +2379,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               onTap: () => Navigator.pop(ctx, 'rename'),
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline,
-                  color: AppColors.taegeukRed),
-              title: const Text('폴더 삭제',
-                  style: TextStyle(color: AppColors.taegeukRed)),
+              leading: const Icon(
+                Icons.delete_outline,
+                color: AppColors.taegeukRed,
+              ),
+              title: const Text(
+                '폴더 삭제',
+                style: TextStyle(color: AppColors.taegeukRed),
+              ),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
           ],
@@ -2347,12 +2394,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       ),
     );
     if (v == 'zip') {
-      _download(_nas.eventZipUrl(
-        widget.year,
-        widget.title,
-        'media',
-        sub: _mediaSub.isEmpty ? name : '$_mediaSub/$name',
-      ));
+      _download(
+        _nas.eventZipUrl(
+          widget.year,
+          widget.title,
+          'media',
+          sub: _mediaSub.isEmpty ? name : '$_mediaSub/$name',
+        ),
+      );
     } else if (v == 'rename') {
       await _renameFile('media', name, sub: _mediaSub);
     } else if (v == 'delete') {
@@ -2413,10 +2462,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         if (kind == 'fee')
           const Padding(
             padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: DonationAccounts(
-              title: '참가비·후원 납부 계좌',
-              showHolder: true,
-            ),
+            child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),
           ),
         Padding(
           padding: const EdgeInsets.all(12),
@@ -2510,14 +2556,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                 }
                               },
                               itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('수정'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'del',
-                                  child: Text('삭제'),
-                                ),
+                                PopupMenuItem(value: 'edit', child: Text('수정')),
+                                PopupMenuItem(value: 'del', child: Text('삭제')),
                               ],
                             ),
                           ],
@@ -2537,9 +2577,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final amtC = TextEditingController(
       text: row != null ? '${row['amount'] ?? ''}' : '',
     );
-    final dateC = TextEditingController(
-      text: '${row?['date'] ?? _today()}',
-    );
+    final dateC = TextEditingController(text: '${row?['date'] ?? _today()}');
     final memoC = TextEditingController(text: '${row?['memo'] ?? ''}');
     String category = '${row?['category'] ?? (kind == 'fee' ? '참가비' : '행사비')}';
     final ok = await showDialog<bool>(
@@ -2693,11 +2731,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
     final attendees = [
       for (final a in _attendees)
-        {
-          ...a,
-          'visited': _isVisited(a),
-          ..._rosterExtraFlags(a, feeKeys, s),
-        },
+        {...a, 'visited': _isVisited(a), ..._rosterExtraFlags(a, feeKeys, s)},
     ];
     await Navigator.push(
       context,
@@ -2719,10 +2753,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => EventReviewScreen(
-          year: widget.year,
-          title: widget.title,
-        ),
+        builder: (_) =>
+            EventReviewScreen(year: widget.year, title: widget.title),
       ),
     );
   }
@@ -2742,7 +2774,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               child: Text(
                 '${t['name'] ?? '메뉴'}',
                 style: const TextStyle(
-                    fontSize: 15.5, fontWeight: FontWeight.w800),
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             TextButton.icon(
@@ -2802,17 +2836,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               controller: noteCtrl,
               maxLines: 4,
               decoration: const InputDecoration(
-                  hintText: '내용/메모 (선택)', border: OutlineInputBorder()),
+                hintText: '내용/메모 (선택)',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('추가')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('추가'),
+          ),
         ],
       ),
     );
@@ -2820,7 +2858,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final name = nameCtrl.text.trim();
     if (name.isEmpty) return;
     final next = <Map<String, dynamic>>[
-      ..._customTabs.map((e) => {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'}),
+      ..._customTabs.map(
+        (e) => {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'},
+      ),
       {'name': name, 'note': noteCtrl.text.trim()},
     ];
     await _saveCustomTabs(next);
@@ -2846,17 +2886,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               controller: noteCtrl,
               maxLines: 5,
               decoration: const InputDecoration(
-                  hintText: '내용/메모', border: OutlineInputBorder()),
+                hintText: '내용/메모',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('저장')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
         ],
       ),
     );
@@ -2864,7 +2908,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final name = nameCtrl.text.trim();
     if (name.isEmpty) return;
     final next = _customTabs.map((e) {
-      final same = identical(e, t) ||
+      final same =
+          identical(e, t) ||
           ('${e['name'] ?? ''}' == '${t['name'] ?? ''}' &&
               '${e['note'] ?? ''}' == '${t['note'] ?? ''}');
       return same
@@ -2883,10 +2928,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         content: Text('"${t['name'] ?? ''}" 메뉴를 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -2895,10 +2943,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     if (yes != true || !mounted) return;
     final next = _customTabs
-        .where((e) =>
-            !('${e['name'] ?? ''}' == '${t['name'] ?? ''}' &&
-                '${e['note'] ?? ''}' == '${t['note'] ?? ''}'))
-        .map((e) => {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'})
+        .where(
+          (e) =>
+              !('${e['name'] ?? ''}' == '${t['name'] ?? ''}' &&
+                  '${e['note'] ?? ''}' == '${t['note'] ?? ''}'),
+        )
+        .map(
+          (e) => {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'},
+        )
         .toList();
     await _saveCustomTabs(next);
   }
@@ -2919,8 +2971,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   bool _isVisited(Map<String, dynamic> a) {
-    final ident =
-        '${a['number'] ?? a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final ident = '${a['number'] ?? a['phone'] ?? ''}'.replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
     return ident.isNotEmpty && _access.containsKey(ident);
   }
 
@@ -2933,7 +2987,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ) {
     final num = '${a['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
     final name = '${a['name'] ?? ''}'.trim();
-    final eventFee = (num.isNotEmpty && feeKeys.contains(num)) ||
+    final eventFee =
+        (num.isNotEmpty && feeKeys.contains(num)) ||
         (name.isNotEmpty && feeKeys.contains(name));
 
     // 회원 원본 조회 → 평생회원 여부 + 해당 행사년도 연회비 납부 여부
@@ -2945,7 +3000,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     var yearFee = a['yearFee'] == true;
     if (!yearFee && m != null && widget.year.isNotEmpty) {
       final y = widget.year.replaceAll(RegExp(r'[^0-9]'), '');
-      yearFee = m.feeYears[y] == true ||
+      yearFee =
+          m.feeYears[y] == true ||
           m.feeYears['$y년'] == true ||
           m.paidYears.any((p) => p.replaceAll(RegExp(r'[^0-9]'), '') == y);
     }
@@ -2958,9 +3014,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       _snack('연락처가 있는 참가자가 없습니다');
       return;
     }
-    final body = Uri.encodeComponent(
-      '[한국범스카우트] ${widget.title} 관련 안내드립니다.',
-    );
+    final body = Uri.encodeComponent('[한국범스카우트] ${widget.title} 관련 안내드립니다.');
     final uri = Uri.parse('sms:${nums.join(',')}?body=$body');
     try {
       await launchUrl(uri);
@@ -2976,9 +3030,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       return;
     }
     final subject = Uri.encodeComponent('[한국범스카우트] ${widget.title} 안내');
-    final uri = Uri.parse(
-      'mailto:${mails.join(',')}?subject=$subject',
-    );
+    final uri = Uri.parse('mailto:${mails.join(',')}?subject=$subject');
     try {
       await launchUrl(uri);
     } catch (_) {
@@ -2987,15 +3039,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   List<String> _participantPhones() => [
-        for (final a in _attendees)
-          if ('${a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty)
-            '${a['phone']}'.replaceAll(RegExp(r'[^0-9]'), ''),
-      ];
+    for (final a in _attendees)
+      if ('${a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty)
+        '${a['phone']}'.replaceAll(RegExp(r'[^0-9]'), ''),
+  ];
 
   List<String> _participantEmails() => [
-        for (final a in _attendees)
-          if ('${a['email'] ?? ''}'.contains('@')) '${a['email']}',
-      ];
+    for (final a in _attendees)
+      if ('${a['email'] ?? ''}'.contains('@')) '${a['email']}',
+  ];
 
   String _fmtSize(int b) {
     if (b < 1024) return '$b B';
@@ -3230,7 +3282,9 @@ class _MediaViewerState extends State<_MediaViewer> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -3297,7 +3351,9 @@ class _VideoBoxState extends State<_VideoBox> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           AspectRatio(
-            aspectRatio: c.value.aspectRatio == 0 ? 16 / 9 : c.value.aspectRatio,
+            aspectRatio: c.value.aspectRatio == 0
+                ? 16 / 9
+                : c.value.aspectRatio,
             child: VideoPlayer(c),
           ),
           VideoProgressIndicator(c, allowScrubbing: true),
@@ -3306,9 +3362,8 @@ class _VideoBoxState extends State<_VideoBox> {
               c.value.isPlaying ? Icons.pause : Icons.play_arrow,
               color: Colors.white,
             ),
-            onPressed: () => setState(
-              () => c.value.isPlaying ? c.pause() : c.play(),
-            ),
+            onPressed: () =>
+                setState(() => c.value.isPlaying ? c.pause() : c.play()),
           ),
         ],
       ),

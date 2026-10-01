@@ -63,8 +63,7 @@ class _ScrollDownHintState extends State<ScrollDownHint> {
     if (!widget.controller.hasClients) return;
     final p = widget.controller.position;
     final step = widget.step ?? (p.viewportDimension * 0.82);
-    final target =
-        (p.pixels + step).clamp(0.0, p.maxScrollExtent).toDouble();
+    final target = (p.pixels + step).clamp(0.0, p.maxScrollExtent).toDouble();
     widget.controller.animateTo(
       target,
       duration: const Duration(milliseconds: 300),
@@ -87,10 +86,7 @@ class _ScrollDownHintState extends State<ScrollDownHint> {
               duration: const Duration(milliseconds: 180),
               opacity: _more ? 1 : 0,
               child: Center(
-                child: _DownArrow(
-                  onTap: _scrollDown,
-                  label: '아래로 스크롤',
-                ),
+                child: _DownArrow(onTap: _scrollDown, label: '아래로 스크롤'),
               ),
             ),
           ),
@@ -121,15 +117,21 @@ class _DownArrow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (label != null) ...[
-                Text(label!,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800)),
+                Text(
+                  label!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 const SizedBox(width: 4),
               ],
-              const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white, size: 22),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
             ],
           ),
         ),

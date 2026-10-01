@@ -89,7 +89,8 @@ class DonationAccounts extends StatelessWidget {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                            '${state.donations[index]['label']} ${state.donations[index]['account']} 복사됨'),
+                          '${state.donations[index]['label']} ${state.donations[index]['account']} 복사됨',
+                        ),
                         duration: const Duration(milliseconds: 900),
                       ),
                     );
@@ -102,7 +103,10 @@ class DonationAccounts extends StatelessWidget {
     ];
 
     if (title == null) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: rows,
+      );
     }
     return Container(
       width: double.infinity,
@@ -117,7 +121,11 @@ class DonationAccounts extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.account_balance, color: AppColors.purple, size: 15),
+              const Icon(
+                Icons.account_balance,
+                color: AppColors.purple,
+                size: 15,
+              ),
               const SizedBox(width: 5),
               Text(
                 title!,

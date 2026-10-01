@@ -11,11 +11,7 @@
 enum AiKind { feePaid, donor, eventAttend, training, lifetime }
 
 class AiQuery {
-  AiQuery({
-    required this.kind,
-    this.year = '',
-    this.keyword = '',
-  });
+  AiQuery({required this.kind, this.year = '', this.keyword = ''});
 
   final AiKind kind;
 
@@ -89,15 +85,18 @@ class AiQuery {
     if (q.length < 4) return null;
     if (!_signals.any(q.contains)) return null;
 
-    final year =
-        RegExp(r'(20\d{2})\s*년').firstMatch(q)?.group(1) ?? '';
+    final year = RegExp(r'(20\d{2})\s*년').firstMatch(q)?.group(1) ?? '';
 
     // 의도 판정 (우선순위: 후원 > 참석 > 납부 > 훈련 > 평생회원)
     if (q.contains('후원') || q.contains('찬조') || q.contains('기부')) {
       return AiQuery(kind: AiKind.donor, year: year, keyword: _extract(q));
     }
     if (q.contains('참가') || q.contains('참석') || q.contains('행사')) {
-      return AiQuery(kind: AiKind.eventAttend, year: year, keyword: _extract(q));
+      return AiQuery(
+        kind: AiKind.eventAttend,
+        year: year,
+        keyword: _extract(q),
+      );
     }
     if (q.contains('납부') || q.contains('연회비') || q.contains('회비')) {
       return AiQuery(kind: AiKind.feePaid, year: year, keyword: _extract(q));

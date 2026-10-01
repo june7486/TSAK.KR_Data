@@ -80,15 +80,19 @@ class _ScoutPainter extends CustomPainter {
 
     // 4) 배낭 (어깨 뒤 위쪽, 양옆으로 살짝 보이게) — 좌우 실루엣
     final packL = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-        Rect.fromLTRB(0.20 * w, 0.50 * h, 0.31 * w, 0.72 * h),
-        Radius.circular(0.05 * w),
-      ));
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(0.20 * w, 0.50 * h, 0.31 * w, 0.72 * h),
+          Radius.circular(0.05 * w),
+        ),
+      );
     final packR = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-        Rect.fromLTRB(0.69 * w, 0.50 * h, 0.80 * w, 0.72 * h),
-        Radius.circular(0.05 * w),
-      ));
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(0.69 * w, 0.50 * h, 0.80 * w, 0.72 * h),
+          Radius.circular(0.05 * w),
+        ),
+      );
     canvas.drawPath(packL, p);
     canvas.drawPath(packR, p);
     // 배낭 어깨끈 (몸통 위 얇은 선)
@@ -99,9 +103,13 @@ class _ScoutPainter extends CustomPainter {
     canvas.drawLine(pt(0.40, 0.58), pt(0.44, 0.80), strap);
     canvas.drawLine(pt(0.60, 0.58), pt(0.56, 0.80), strap);
     // 배낭 상단 손잡이
-    canvas.drawLine(pt(0.20, 0.52), pt(0.80, 0.52), Paint()
-      ..color = color.withValues(alpha: 0.55)
-      ..strokeWidth = 0.015 * w);
+    canvas.drawLine(
+      pt(0.20, 0.52),
+      pt(0.80, 0.52),
+      Paint()
+        ..color = color.withValues(alpha: 0.55)
+        ..strokeWidth = 0.015 * w,
+    );
   }
 
   @override

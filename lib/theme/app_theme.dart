@@ -9,6 +9,7 @@ class AppColors {
   static const taegeukRed = Color(0xFFD62828);
   static const taegeukBlue = Color(0xFF1B4F9C);
   static const tigerGold = Color(0xFFF2B705);
+
   /// 평생회원 강조용 — 흰 배경 위에서도 가독성 높은 진한 골드
   static const lifetimeGold = Color(0xFFB8860B);
   static const scoutGreen = Color(0xFF2E7D32);
@@ -33,10 +34,10 @@ class AppTheme {
     //    완전히 사라지고, 이미 임계경로에 있는 폰트를 재사용한다.
     //  - fontFamilyFallback: 혹시 모를 미수록 글리프는 플랫폼 시스템 폰트로.
     const kFontFallback = <String>[
-      'NanumGothic',              // 번들 기본
-      'Apple SD Gothic Neo',      // iOS/macOS
-      'Noto Sans CJK KR',         // Android/리눅스
-      'Malgun Gothic',            // Windows
+      'NanumGothic', // 번들 기본
+      'Apple SD Gothic Neo', // iOS/macOS
+      'Noto Sans CJK KR', // Android/리눅스
+      'Malgun Gothic', // Windows
       'sans-serif',
     ];
     final base = ThemeData(

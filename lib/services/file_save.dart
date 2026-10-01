@@ -47,8 +47,7 @@ Future<void> saveBytes({
 /// - **웹(크롬·엣지·웨일 등 Chromium)**: File System Access API → true
 /// - **웹(사파리·파이어폭스)**: 미지원 → false (기본 다운로드만 가능)
 /// - **안드로이드·아이폰(iOS)·데스크톱 네이티브**: OS 저장 대화상자 → true
-bool get supportsLocationPicker =>
-    isWebRuntime ? supportsSaveFilePicker : true;
+bool get supportsLocationPicker => isWebRuntime ? supportsSaveFilePicker : true;
 
 /// 확장자 포함 파일명으로 저장한다 (PC·**모든 모바일(안드로이드·아이폰)** 공통).
 ///
@@ -80,10 +79,7 @@ Future<bool> saveFileNamed({
 ///
 /// 반환: false=기본 폴더로 저장 / true=위치 직접 선택 / null=취소.
 /// 위치 선택 미지원(사파리·파폭)이면 안내 문구를 띄우고 기본 저장만 제안한다.
-Future<bool?> askSaveLocation(
-  BuildContext context, {
-  String? info,
-}) async {
+Future<bool?> askSaveLocation(BuildContext context, {String? info}) async {
   final canPick = supportsLocationPicker;
   return showDialog<bool>(
     context: context,
@@ -97,7 +93,10 @@ Future<bool?> askSaveLocation(
           if (info != null && info.isNotEmpty) ...[
             Text(
               info,
-              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 10),
           ],
@@ -109,11 +108,11 @@ Future<bool?> askSaveLocation(
           Text(
             canPick
                 ? '* [위치 직접 선택] → 저장 위치·앱을 고를 수 있습니다.\n'
-                    '  · PC: 폴더·파일명 지정\n'
-                    '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
-                    '* [기본 폴더에 저장] → 다운로드(Downloads) 폴더에 바로 저장.'
+                      '  · PC: 폴더·파일명 지정\n'
+                      '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
+                      '* [기본 폴더에 저장] → 다운로드(Downloads) 폴더에 바로 저장.'
                 : '* 이 브라우저는 위치 선택을 지원하지 않아\n'
-                    '  다운로드(Downloads) 폴더에 저장됩니다.',
+                      '  다운로드(Downloads) 폴더에 저장됩니다.',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
         ],

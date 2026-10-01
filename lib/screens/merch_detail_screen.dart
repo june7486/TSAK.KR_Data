@@ -47,7 +47,8 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
     final price = (it['price'] as num?)?.toInt() ?? 0;
     final stock = (it['stock'] as num?)?.toInt() ?? 0;
     final minQty = (it['minQty'] as num?)?.toInt() ?? 0;
-    final count = (it['count'] as num?)?.toInt() ??
+    final count =
+        (it['count'] as num?)?.toInt() ??
         ((it['applicants'] as List?)?.length ?? 0);
     final applicants = (it['applicants'] as List?) ?? const [];
     final options = ((it['options'] as List?) ?? []).map((e) => '$e').toList();
@@ -65,8 +66,7 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
       else
         const MapEntry('가격', '가격문의'),
       if (!widget.isSurvey) MapEntry('재고', stock > 0 ? '$stock개' : '품절'),
-      if (widget.isSurvey)
-        MapEntry('신청 현황', '$count명 신청 / 최소 제작 착수 $minQty명'),
+      if (widget.isSurvey) MapEntry('신청 현황', '$count명 신청 / 최소 제작 착수 $minQty명'),
       if (options.isNotEmpty) MapEntry('옵션', options.join(' · ')),
       if (video.isNotEmpty) MapEntry('영상', video),
     ];
@@ -91,8 +91,10 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
               if (Navigator.of(context).canPop()) Navigator.of(context).pop();
             },
             icon: const Icon(Icons.keyboard_return, size: 18),
-            label: const Text('돌아가기',
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            label: const Text(
+              '돌아가기',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(width: 6),
         ],
@@ -112,8 +114,11 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                     ? const SizedBox(
                         height: 240,
                         child: Center(
-                          child: Icon(Icons.image_outlined,
-                              size: 56, color: AppColors.textGray),
+                          child: Icon(
+                            Icons.image_outlined,
+                            size: 56,
+                            color: AppColors.textGray,
+                          ),
                         ),
                       )
                     : GestureDetector(
@@ -128,14 +133,19 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                                 : const SizedBox(
                                     height: 240,
                                     child: Center(
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2)),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
                                   ),
                             errorBuilder: (_, __, ___) => const SizedBox(
                               height: 240,
                               child: Center(
-                                child: Icon(Icons.image_not_supported,
-                                    size: 48, color: AppColors.textGray),
+                                child: Icon(
+                                  Icons.image_not_supported,
+                                  size: 48,
+                                  color: AppColors.textGray,
+                                ),
                               ),
                             ),
                           ),
@@ -150,33 +160,43 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                 child: TextButton.icon(
                   onPressed: () => _openFullscreen(imgUrl, name),
                   icon: const Icon(Icons.zoom_in, size: 16),
-                  label: const Text('이미지 크게 보기',
-                      style: TextStyle(fontSize: 12)),
+                  label: const Text(
+                    '이미지 크게 보기',
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ),
               ),
             const SizedBox(height: 6),
 
             // ── 상품명 + 요약 ──
-            Text(name.isEmpty ? '수품' : name,
-                style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textDark)),
+            Text(
+              name.isEmpty ? '수품' : name,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textDark,
+              ),
+            ),
             const SizedBox(height: 8),
             if (credentialOnly)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.scoutGreen,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Text('범인가자 전용',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 11.5)),
+                child: const Text(
+                  '범인가자 전용',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11.5,
+                  ),
+                ),
               ),
 
             // ── 상세 정보 표 ──
@@ -185,50 +205,68 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
-                border:
-                    Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+                border: Border.all(
+                  color: AppColors.purple.withValues(alpha: 0.15),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.info_outline, size: 17, color: AppColors.purple),
+                      Icon(
+                        Icons.info_outline,
+                        size: 17,
+                        color: AppColors.purple,
+                      ),
                       SizedBox(width: 6),
-                      Text('상세 정보',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                              color: AppColors.purpleDark)),
+                      Text(
+                        '상세 정보',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          color: AppColors.purpleDark,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
                   for (final f in facts) _factRow(f.key, f.value),
                   if (desc.isNotEmpty) ...[
                     const Divider(height: 22),
-                    const Text('설명',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textGray)),
+                    const Text(
+                      '설명',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    SelectableText(desc,
-                        style: const TextStyle(
-                            fontSize: 13.5,
-                            height: 1.55,
-                            color: AppColors.textDark)),
+                    SelectableText(
+                      desc,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        height: 1.55,
+                        color: AppColors.textDark,
+                      ),
+                    ),
                   ],
                   if (memo.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    const Text('추가 메모',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textGray)),
+                    const Text(
+                      '추가 메모',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text(memo,
-                        style: const TextStyle(
-                            fontSize: 13, height: 1.5)), 
+                    Text(
+                      memo,
+                      style: const TextStyle(fontSize: 13, height: 1.5),
+                    ),
                   ],
                 ],
               ),
@@ -243,20 +281,27 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                      color: AppColors.tigerGold.withValues(alpha: 0.4)),
+                    color: AppColors.tigerGold.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.people_alt_outlined,
-                            size: 17, color: AppColors.tigerGold),
+                        const Icon(
+                          Icons.people_alt_outlined,
+                          size: 17,
+                          color: AppColors.tigerGold,
+                        ),
                         const SizedBox(width: 6),
-                        Text('신청자 명단 (${applicants.length}명)',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14)),
+                        Text(
+                          '신청자 명단 (${applicants.length}명)',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -275,7 +320,8 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.purple,
                   side: BorderSide(
-                      color: AppColors.purple.withValues(alpha: 0.5)),
+                    color: AppColors.purple.withValues(alpha: 0.5),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 13),
                 ),
                 onPressed: () {
@@ -284,8 +330,10 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                   }
                 },
                 icon: const Icon(Icons.arrow_back, size: 18),
-                label: const Text('돌아가기',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                label: const Text(
+                  '돌아가기',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -296,28 +344,34 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
   }
 
   Widget _factRow(String label, String value) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 84,
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textGray)),
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 84,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textGray,
             ),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textDark)),
-            ),
-          ],
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _applicantRow(int no, dynamic a) {
     final m = (a as Map).cast<String, dynamic>();
@@ -332,17 +386,22 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
         children: [
           SizedBox(
             width: 30,
-            child: Text('$no',
-                style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.tigerGold)),
+            child: Text(
+              '$no',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: AppColors.tigerGold,
+              ),
+            ),
           ),
           Expanded(
-            child: Text('$name${num_.isNotEmpty ? ' ($num_)' : ''}'
-                '${qty > 0 ? ' · $qty개' : ''}'
-                '${memo.isNotEmpty ? ' · $memo' : ''}',
-                style: const TextStyle(fontSize: 12.5)),
+            child: Text(
+              '$name${num_.isNotEmpty ? ' ($num_)' : ''}'
+              '${qty > 0 ? ' · $qty개' : ''}'
+              '${memo.isNotEmpty ? ' · $memo' : ''}',
+              style: const TextStyle(fontSize: 12.5),
+            ),
           ),
         ],
       ),
@@ -367,8 +426,11 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                     imgUrl,
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(Icons.image_not_supported,
-                          color: Colors.white54, size: 60),
+                      child: Icon(
+                        Icons.image_not_supported,
+                        color: Colors.white54,
+                        size: 60,
+                      ),
                     ),
                   ),
                 ),
@@ -381,14 +443,17 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                   padding: const EdgeInsets.all(10),
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white24,
-                        foregroundColor: Colors.white),
+                      backgroundColor: Colors.white24,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: () {
                       if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
                     },
                     icon: const Icon(Icons.close, size: 18),
-                    label: const Text('닫기',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    label: const Text(
+                      '닫기',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ),
               ),
@@ -399,11 +464,14 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
                   alignment: Alignment.topLeft,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text(name,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15)),
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
                   ),
                 ),
               ),

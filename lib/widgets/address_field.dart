@@ -177,8 +177,7 @@ class KakaoAddressButton extends StatelessWidget {
       child: FilledButton.icon(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.textDark,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
         onPressed: () async {
           String? picked;

@@ -45,12 +45,12 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   int _annualFee = 0;
 
   final List<_CartLine> _cart = [];
+
   /// 상품 카드별 수량(장바구니 담기 전 선택값). 키 = 상품 id.
   final Map<String, int> _cardQty = {};
   String _sort = '기본'; // 기본 | 낮은가격 | 높은가격 | 이름
 
-  int _qtyOf(Map<String, dynamic> p) =>
-      _cardQty['${p['id']}'] ?? 1;
+  int _qtyOf(Map<String, dynamic> p) => _cardQty['${p['id']}'] ?? 1;
 
   @override
   void initState() {
@@ -111,18 +111,21 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final list = [..._products];
     switch (_sort) {
       case '낮은가격':
-        list.sort((a, b) =>
-            ((a['price'] as num?)?.toInt() ?? 0)
-                .compareTo((b['price'] as num?)?.toInt() ?? 0));
+        list.sort(
+          (a, b) => ((a['price'] as num?)?.toInt() ?? 0).compareTo(
+            (b['price'] as num?)?.toInt() ?? 0,
+          ),
+        );
         break;
       case '높은가격':
-        list.sort((a, b) =>
-            ((b['price'] as num?)?.toInt() ?? 0)
-                .compareTo((a['price'] as num?)?.toInt() ?? 0));
+        list.sort(
+          (a, b) => ((b['price'] as num?)?.toInt() ?? 0).compareTo(
+            (a['price'] as num?)?.toInt() ?? 0,
+          ),
+        );
         break;
       case '이름':
-        list.sort((a, b) =>
-            '${a['name']}'.compareTo('${b['name']}'));
+        list.sort((a, b) => '${a['name']}'.compareTo('${b['name']}'));
         break;
       default:
         break;
@@ -153,14 +156,15 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? _errorView()
-                    : _body(),
+                ? _errorView()
+                : _body(),
           ),
         ],
       ),
       // 안전영역 + 키보드 대응: 하단바가 항상 보이도록 SafeArea 로 감싼다.
-      bottomNavigationBar:
-          _loading || _error != null ? null : SafeArea(top: false, child: _cartBar()),
+      bottomNavigationBar: _loading || _error != null
+          ? null
+          : SafeArea(top: false, child: _cartBar()),
     );
   }
 
@@ -185,8 +189,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 const SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
-                    child: Text('판매 중인 상품이 없습니다',
-                        style: TextStyle(color: AppColors.textGray)),
+                    child: Text(
+                      '판매 중인 상품이 없습니다',
+                      style: TextStyle(color: AppColors.textGray),
+                    ),
                   ),
                 )
               else
@@ -194,8 +200,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   // 하단 장바구니 바(약 76px)에 가려지지 않도록 여백 확보
                   padding: const EdgeInsets.fromLTRB(14, 4, 14, 96),
                   sliver: SliverGrid(
-                    gridDelegate:
-                        SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
@@ -218,17 +223,17 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
   }
 
   Widget _errorView() => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: AppColors.taegeukRed),
-            const SizedBox(height: 12),
-            Text(_error!, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            ElevatedButton(onPressed: _load, child: const Text('다시 시도')),
-          ],
-        ),
-      );
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.error_outline, size: 48, color: AppColors.taegeukRed),
+        const SizedBox(height: 12),
+        Text(_error!, textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        ElevatedButton(onPressed: _load, child: const Text('다시 시도')),
+      ],
+    ),
+  );
 
   Widget _sortBar() {
     final items = ['기본', '낮은가격', '높은가격', '이름'];
@@ -236,8 +241,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
       child: Row(
         children: [
-          const Text('정렬',
-              style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+          const Text(
+            '정렬',
+            style: TextStyle(fontSize: 12, color: AppColors.textGray),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: HScrollMenu(
@@ -283,11 +290,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             children: [
               const Icon(Icons.shopping_bag, color: AppColors.purple, size: 20),
               const SizedBox(width: 6),
-              const Text('수품(굿즈) 구매 안내',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                      color: AppColors.purpleDark)),
+              const Text(
+                '수품(굿즈) 구매 안내',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: AppColors.purpleDark,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -297,15 +307,21 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             '· 교환·반품 시 배송비는 구매자 부담입니다.'
             '${_shipFee > 0 ? '\n· 택배 배송료 ${_won(_shipFee)} 별도(우체국 택배).' : ''}',
             style: const TextStyle(
-                fontSize: 12.5, color: AppColors.textDark, height: 1.5),
+              fontSize: 12.5,
+              color: AppColors.textDark,
+              height: 1.5,
+            ),
           ),
           if (_annualFee > 0) ...[
             const SizedBox(height: 6),
-            Text('· 현재 연회비: ${_won(_annualFee)}',
-                style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AppColors.taegeukBlue,
-                    fontWeight: FontWeight.w700)),
+            Text(
+              '· 현재 연회비: ${_won(_annualFee)}',
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppColors.taegeukBlue,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
           if ('${_guide['membership'] ?? ''}'.trim().isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -316,11 +332,17 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 color: Colors.white.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: AppColors.purple.withValues(alpha: 0.15)),
+                  color: AppColors.purple.withValues(alpha: 0.15),
+                ),
               ),
-              child: Text('${_guide['membership']}',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textDark, height: 1.5)),
+              child: Text(
+                '${_guide['membership']}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textDark,
+                  height: 1.5,
+                ),
+              ),
             ),
           ],
           // 안내: 제작 예정(수요조사) 수품은 하단에서 사전신청
@@ -338,7 +360,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 '   사전신청할 수 있습니다. 일정 수량 이상 신청 시 제작이 확정됩니다.\n'
                 '   일반 수품은 장바구니에 담아 주문하세요.',
                 style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w700, height: 1.45),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  height: 1.45,
+                ),
               ),
             ),
           ],
@@ -350,11 +375,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 color: AppColors.taegeukRed.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text('현재 판매가 일시 중지되어 있습니다.',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.taegeukRed,
-                      fontWeight: FontWeight.w700)),
+              child: const Text(
+                '현재 판매가 일시 중지되어 있습니다.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.taegeukRed,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ],
           const SizedBox(height: 10),
@@ -363,13 +391,17 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.purple,
-                side: BorderSide(color: AppColors.purple.withValues(alpha: 0.4)),
+                side: BorderSide(
+                  color: AppColors.purple.withValues(alpha: 0.4),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 11),
               ),
               onPressed: _showGuide,
               icon: const Icon(Icons.menu_book_outlined, size: 18),
-              label: const Text('수품 안내 · 세트구성 자세히 보기',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
+              label: const Text(
+                '수품 안내 · 세트구성 자세히 보기',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
             ),
           ),
         ],
@@ -410,8 +442,12 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 color: const Color(0xFFF7F5FB),
                 child: imgUrl.isEmpty
                     ? const Center(
-                        child: Icon(Icons.image_outlined,
-                            size: 40, color: AppColors.textGray))
+                        child: Icon(
+                          Icons.image_outlined,
+                          size: 40,
+                          color: AppColors.textGray,
+                        ),
+                      )
                     : Image.network(
                         imgUrl,
                         fit: BoxFit.contain,
@@ -419,10 +455,15 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                             ? child
                             : const Center(
                                 child: CircularProgressIndicator(
-                                    strokeWidth: 2)),
+                                  strokeWidth: 2,
+                                ),
+                              ),
                         errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(Icons.image_not_supported,
-                                color: AppColors.textGray)),
+                          child: Icon(
+                            Icons.image_not_supported,
+                            color: AppColors.textGray,
+                          ),
+                        ),
                       ),
               ),
             ),
@@ -435,46 +476,64 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               children: [
                 if (kind.isNotEmpty)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.purple.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(kind,
-                        style: const TextStyle(
-                            fontSize: 9.5,
-                            color: AppColors.purple,
-                            fontWeight: FontWeight.w800)),
+                    child: Text(
+                      kind,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: AppColors.purple,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 const SizedBox(height: 4),
                 // 인가자 전용 — 상품명 말머리 표시
                 if (credentialOnly)
                   Container(
                     margin: const EdgeInsets.only(bottom: 3),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.scoutGreen,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text('범인가자 전용',
-                        style: TextStyle(
-                            fontSize: 9.5,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900)),
+                    child: const Text(
+                      '범인가자 전용',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                Text('${p['name'] ?? ''}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 13)),
+                Text(
+                  '${p['name'] ?? ''}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text('${p['desc'] ?? ''}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.textGray)),
+                Text(
+                  '${p['desc'] ?? ''}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGray,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 // 상세 설명 보기 (상품명/설명 클릭 → 확대·상세)
                 InkWell(
@@ -483,14 +542,20 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     padding: EdgeInsets.symmetric(vertical: 3),
                     child: Row(
                       children: [
-                        Icon(Icons.open_in_full,
-                            size: 12, color: AppColors.purple),
+                        Icon(
+                          Icons.open_in_full,
+                          size: 12,
+                          color: AppColors.purple,
+                        ),
                         SizedBox(width: 4),
-                        Text('상세보기 · 이미지 확대',
-                            style: TextStyle(
-                                fontSize: 10.5,
-                                color: AppColors.purple,
-                                fontWeight: FontWeight.w800)),
+                        Text(
+                          '상세보기 · 이미지 확대',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -499,18 +564,24 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(price > 0 ? _won(price) : '가격문의',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13.5,
-                              color: AppColors.taegeukBlue)),
+                      child: Text(
+                        price > 0 ? _won(price) : '가격문의',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
+                          color: AppColors.taegeukBlue,
+                        ),
+                      ),
                     ),
-                    Text(soldOut ? '품절' : '재고 $stock',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: soldOut
-                                ? AppColors.taegeukRed
-                                : AppColors.textGray)),
+                    Text(
+                      soldOut ? '품절' : '재고 $stock',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: soldOut
+                            ? AppColors.taegeukRed
+                            : AppColors.textGray,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -518,18 +589,24 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 Row(
                   children: [
                     _qtyBtn('-', () {
-                      if (qty > 1) setState(() => _cardQty['${p['id']}'] = qty - 1);
+                      if (qty > 1)
+                        setState(() => _cardQty['${p['id']}'] = qty - 1);
                     }),
                     Expanded(
                       child: Center(
-                        child: Text('$qty',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 14)),
+                        child: Text(
+                          '$qty',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
                     ),
                     _qtyBtn('+', () {
                       final max = stock > 0 ? stock : 99;
-                      if (qty < max) setState(() => _cardQty['${p['id']}'] = qty + 1);
+                      if (qty < max)
+                        setState(() => _cardQty['${p['id']}'] = qty + 1);
                     }),
                     const SizedBox(width: 6),
                     Expanded(
@@ -548,11 +625,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                           onPressed: (soldOut || !_salesOpen)
                               ? null
                               : () => _addToCart(p, options, qty),
-                          child: const Text('담기',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12.5,
-                                  color: Colors.white)),
+                          child: const Text(
+                            '담기',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12.5,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -568,9 +648,11 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
 
   /// 수품 이미지 클릭 → 확대 이미지 + 상세 설명 화면(돌아가기 포함, 에러 방지).
   void _openDetail(Map<String, dynamic> p, {bool isSurvey = false}) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => MerchDetailScreen(item: p, isSurvey: isSurvey),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MerchDetailScreen(item: p, isSurvey: isSurvey),
+      ),
+    );
   }
 
   // ==================== 장바구니 ====================
@@ -601,7 +683,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
         ],
       ),
     );
@@ -609,7 +693,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
 
   void _mergeCart(Map<String, dynamic> p, String option, [int qty = 1]) {
     final idx = _cart.indexWhere(
-        (e) => e.key == '${p['id']}::${option.trim()}');
+      (e) => e.key == '${p['id']}::${option.trim()}',
+    );
     setState(() {
       if (idx >= 0) {
         _cart[idx].qty += qty;
@@ -618,7 +703,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       }
     });
     _snack(
-        '장바구니에 담았습니다 (${p['name']}${option.isNotEmpty ? ' / $option' : ''} × $qty)');
+      '장바구니에 담았습니다 (${p['name']}${option.isNotEmpty ? ' / $option' : ''} × $qty)',
+    );
   }
 
   Widget _cartBar() {
@@ -646,26 +732,40 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.shopping_cart,
-                              size: 15, color: AppColors.purple),
+                          const Icon(
+                            Icons.shopping_cart,
+                            size: 15,
+                            color: AppColors.purple,
+                          ),
                           const SizedBox(width: 4),
-                          Text('장바구니 $_cartCount개',
-                              style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: AppColors.textGray,
-                                  fontWeight: FontWeight.w700)),
+                          Text(
+                            '장바구니 $_cartCount개',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textGray,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ],
                       ),
-                      Text(_won(_cartTotal),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
-                              color: AppColors.taegeukBlue)),
+                      Text(
+                        _won(_cartTotal),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: AppColors.taegeukBlue,
+                        ),
+                      ),
                     ],
                   )
-                : const Text('장바구니가 비어 있습니다\n상품을 골라 담아주세요',
+                : const Text(
+                    '장바구니가 비어 있습니다\n상품을 골라 담아주세요',
                     style: TextStyle(
-                        fontSize: 11.5, color: AppColors.textGray, height: 1.3)),
+                      fontSize: 11.5,
+                      color: AppColors.textGray,
+                      height: 1.3,
+                    ),
+                  ),
           ),
           const SizedBox(width: 6),
           OutlinedButton(
@@ -684,9 +784,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
             onPressed: (has && _salesOpen) ? _checkout : null,
-            child: const Text('주문하기',
-                style:
-                    TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+            child: const Text(
+              '주문하기',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -698,9 +799,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) => _cartSheet(setSheet),
-      ),
+      builder: (_) =>
+          StatefulBuilder(builder: (ctx, setSheet) => _cartSheet(setSheet)),
     );
   }
 
@@ -711,7 +811,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.8),
+        maxHeight: MediaQuery.of(context).size.height * 0.8,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -730,9 +831,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               children: [
                 const Icon(Icons.shopping_cart, color: AppColors.purple),
                 const SizedBox(width: 6),
-                Text('장바구니 ($_cartCount)',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 16)),
+                Text(
+                  '장바구니 ($_cartCount)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
                 const Spacer(),
                 if (_cart.isNotEmpty)
                   TextButton(
@@ -754,8 +859,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             child: _cart.isEmpty
                 ? const Padding(
                     padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Text('장바구니가 비어 있습니다',
-                        style: TextStyle(color: AppColors.textGray)),
+                    child: Text(
+                      '장바구니가 비어 있습니다',
+                      style: TextStyle(color: AppColors.textGray),
+                    ),
                   )
                 : ListView.separated(
                     shrinkWrap: true,
@@ -763,8 +870,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) {
                       final line = _cart[i];
-                      final imgUrl = _nas
-                          .merchImageUrl('${line.product['image'] ?? ''}');
+                      final imgUrl = _nas.merchImageUrl(
+                        '${line.product['image'] ?? ''}',
+                      );
                       return Padding(
                         padding: const EdgeInsets.all(10),
                         child: Row(
@@ -777,10 +885,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                                 height: 58,
                                 color: const Color(0xFFF7F5FB),
                                 child: imgUrl.isEmpty
-                                    ? const Icon(Icons.image_outlined,
-                                        color: AppColors.textGray)
-                                    : Image.network(imgUrl,
-                                        fit: BoxFit.contain),
+                                    ? const Icon(
+                                        Icons.image_outlined,
+                                        color: AppColors.textGray,
+                                      )
+                                    : Image.network(
+                                        imgUrl,
+                                        fit: BoxFit.contain,
+                                      ),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -788,25 +900,37 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('${line.product['name']}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 13.5)),
+                                  Text(
+                                    '${line.product['name']}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
                                   if (line.option.isNotEmpty)
-                                    Text('옵션: ${line.option}',
-                                        style: const TextStyle(
-                                            fontSize: 11.5,
-                                            color: AppColors.textGray)),
+                                    Text(
+                                      '옵션: ${line.option}',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: AppColors.textGray,
+                                      ),
+                                    ),
                                   const SizedBox(height: 4),
                                   if (line.product['_ship'] == '택배발송')
-                                    const Text('· 택배발송 선택됨',
-                                        style: TextStyle(
-                                            fontSize: 10.5,
-                                            color: AppColors.taegeukBlue)),
-                                  Text(_won(line.total),
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.taegeukBlue)),
+                                    const Text(
+                                      '· 택배발송 선택됨',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: AppColors.taegeukBlue,
+                                      ),
+                                    ),
+                                  Text(
+                                    _won(line.total),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.taegeukBlue,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -824,10 +948,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                                     }),
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 8),
-                                      child: Text('${line.qty}',
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.w800)),
+                                        horizontal: 8,
+                                      ),
+                                      child: Text(
+                                        '${line.qty}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
                                     ),
                                     _qtyBtn('+', () {
                                       setState(() => line.qty += 1);
@@ -837,16 +965,21 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                                 ),
                                 TextButton.icon(
                                   style: TextButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      foregroundColor: AppColors.taegeukRed),
+                                    visualDensity: VisualDensity.compact,
+                                    foregroundColor: AppColors.taegeukRed,
+                                  ),
                                   onPressed: () {
                                     setState(() => _cart.removeAt(i));
                                     setSheet(() {});
                                   },
-                                  icon: const Icon(Icons.delete_outline,
-                                      size: 15),
-                                  label: const Text('삭제',
-                                      style: TextStyle(fontSize: 11.5)),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 15,
+                                  ),
+                                  label: const Text(
+                                    '삭제',
+                                    style: TextStyle(fontSize: 11.5),
+                                  ),
                                 ),
                               ],
                             ),
@@ -863,14 +996,19 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               children: [
                 Row(
                   children: [
-                    const Text('합계',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    const Text(
+                      '합계',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                     const Spacer(),
-                    Text(_won(_cartTotal),
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                            color: AppColors.taegeukBlue)),
+                    Text(
+                      _won(_cartTotal),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        color: AppColors.taegeukBlue,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -878,8 +1016,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.purple,
-                        padding: const EdgeInsets.symmetric(vertical: 13)),
+                      backgroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
                     onPressed: _cart.isEmpty
                         ? null
                         : () {
@@ -887,8 +1026,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                             _checkout();
                           },
                     icon: const Icon(Icons.payment, size: 18),
-                    label: const Text('주문하기',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    label: const Text(
+                      '주문하기',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ),
               ],
@@ -901,48 +1042,50 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
 
   /// 수량 증감 버튼 — 아이콘 글리프(tree-shaking) 이슈 회피를 위해 부호 문자 사용.
   Widget _qtyBtn(String sign, VoidCallback onTap) => InkWell(
-        onTap: onTap,
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(8),
+    child: Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 30,
-          height: 30,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.purple.withValues(alpha: 0.35)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(sign,
-              style: const TextStyle(
-                  fontSize: 17,
-                  height: 1.0,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.purple)),
+      ),
+      child: Text(
+        sign,
+        style: const TextStyle(
+          fontSize: 17,
+          height: 1.0,
+          fontWeight: FontWeight.w900,
+          color: AppColors.purple,
         ),
-      );
+      ),
+    ),
+  );
 
   // ==================== 결제(주문) 단계 ====================
   //  팝업 대신 전용 페이지(MerchCheckoutScreen)로 이동 → 모든 브라우저 오류 없이 동작.
   Future<void> _checkout({String mode = 'order'}) async {
     if (_cart.isEmpty) return;
     final lines = _cart
-        .map((l) => <String, dynamic>{
-              'productId': '${l.product['id']}',
-              'name': '${l.product['name']}',
-              'image': '${l.product['image'] ?? ''}',
-              'price': l.price,
-              'option': l.option,
-              'qty': l.qty,
-              // 각인 메달(멘토/페런츠) 수령인 정보 입력이 필요함을 체크아웃에 전달.
-              'recipientKind': '${l.product['recipientKind'] ?? ''}',
-            })
+        .map(
+          (l) => <String, dynamic>{
+            'productId': '${l.product['id']}',
+            'name': '${l.product['name']}',
+            'image': '${l.product['image'] ?? ''}',
+            'price': l.price,
+            'option': l.option,
+            'qty': l.qty,
+            // 각인 메달(멘토/페런츠) 수령인 정보 입력이 필요함을 체크아웃에 전달.
+            'recipientKind': '${l.product['recipientKind'] ?? ''}',
+          },
+        )
         .toList();
     final ok = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => MerchCheckoutScreen(
-          lines: lines,
-          config: _config,
-          mode: mode,
-        ),
+        builder: (_) =>
+            MerchCheckoutScreen(lines: lines, config: _config, mode: mode),
       ),
     );
     if (ok == true) {
@@ -973,28 +1116,40 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 const Divider(height: 22),
                 Row(
                   children: [
-                    const Icon(Icons.account_balance,
-                        size: 16, color: AppColors.taegeukBlue),
+                    const Icon(
+                      Icons.account_balance,
+                      size: 16,
+                      color: AppColors.taegeukBlue,
+                    ),
                     const SizedBox(width: 6),
-                    Text('납부계좌: ${acc['bank'] ?? ''} ${acc['no'] ?? ''}'
-                        '${_shipFee > 0 ? '  (배송료 ${_won(_shipFee)} 별도)' : ''}',
-                        style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.taegeukBlue)),
+                    Text(
+                      '납부계좌: ${acc['bank'] ?? ''} ${acc['no'] ?? ''}'
+                      '${_shipFee > 0 ? '  (배송료 ${_won(_shipFee)} 별도)' : ''}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.taegeukBlue,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text('예금주: ${acc['holder'] ?? ''}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textGray)),
+                Text(
+                  '예금주: ${acc['holder'] ?? ''}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 if (_formUrl.trim().isNotEmpty)
                   TextButton.icon(
                     onPressed: () => _openForm(),
                     icon: const Icon(Icons.open_in_new, size: 15),
-                    label: Text(_formLabel,
-                        style: const TextStyle(fontSize: 12)),
+                    label: Text(
+                      _formLabel,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
               ],
             ),
@@ -1002,7 +1157,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
         ),
         actions: [
           FilledButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -1048,15 +1205,23 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13.5,
-                  color: AppColors.purpleDark)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13.5,
+              color: AppColors.purpleDark,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(body,
-              style: const TextStyle(
-                  fontSize: 12.5, color: AppColors.textDark, height: 1.5)),
+          Text(
+            body,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textDark,
+              height: 1.5,
+            ),
+          ),
         ],
       ),
     );
@@ -1064,9 +1229,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
 
   void _snack(String msg, {Color? color}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: color),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -1081,22 +1246,32 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
           const Divider(thickness: 1.2, height: 28),
           Row(
             children: [
-              const Icon(Icons.campaign_outlined,
-                  size: 20, color: AppColors.purple),
+              const Icon(
+                Icons.campaign_outlined,
+                size: 20,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 6),
               const Expanded(
-                child: Text('수요조사 진행중 — 사전신청',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                        color: AppColors.purpleDark)),
+                child: Text(
+                  '수요조사 진행중 — 사전신청',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: AppColors.purpleDark,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 4),
           const Text(
             '아래 수품은 제작 착수 전 수요조사 단계입니다. 누구나 사전신청할 수 있으며, 최소 제작 착수 수량 달성 시 제작이 진행됩니다.',
-            style: TextStyle(fontSize: 11.5, color: AppColors.textGray, height: 1.4),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: AppColors.textGray,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
           for (final s in _surveys) _surveyCard(s),
@@ -1111,7 +1286,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     final imgUrl = photo.isEmpty ? '' : _nas.merchImageUrl(photo);
     final price = (s['price'] as num?)?.toInt() ?? 0;
     final minQty = (s['minQty'] as num?)?.toInt() ?? 0;
-    final count = (s['count'] as num?)?.toInt() ?? (s['applicants'] as List?)?.length ?? 0;
+    final count =
+        (s['count'] as num?)?.toInt() ??
+        (s['applicants'] as List?)?.length ??
+        0;
     final progress = '${s['progress'] ?? ''}';
     final maker = '${s['maker'] ?? ''}';
     final desc = '${s['desc'] ?? ''}';
@@ -1148,13 +1326,18 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       height: 78,
                       color: AppColors.purpleLight.withValues(alpha: 0.15),
                       child: imgUrl.isEmpty
-                          ? const Icon(Icons.image_outlined,
-                              color: AppColors.textGray)
-                          : Image.network(imgUrl,
+                          ? const Icon(
+                              Icons.image_outlined,
+                              color: AppColors.textGray,
+                            )
+                          : Image.network(
+                              imgUrl,
                               fit: BoxFit.contain,
                               errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.broken_image_outlined,
-                                  color: AppColors.textGray)),
+                                Icons.broken_image_outlined,
+                                color: AppColors.textGray,
+                              ),
+                            ),
                     ),
                   ),
                 ),
@@ -1166,42 +1349,59 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14.5)),
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14.5,
+                              ),
+                            ),
                           ),
                           if (progress.isNotEmpty)
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
                               decoration: BoxDecoration(
-                                color: AppColors.scoutGreen.withValues(alpha: 0.14),
+                                color: AppColors.scoutGreen.withValues(
+                                  alpha: 0.14,
+                                ),
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: Text(progress,
-                                  style: const TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.scoutGreen)),
+                              child: Text(
+                                progress,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.scoutGreen,
+                                ),
+                              ),
                             ),
                         ],
                       ),
                       if (maker.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 3),
-                          child: Text('기획자 $maker',
-                              style: const TextStyle(
-                                  fontSize: 11, color: AppColors.textGray)),
+                          child: Text(
+                            '기획자 $maker',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                         ),
                       if (price > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
-                          child: Text(_won(price),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13.5,
-                                  color: AppColors.taegeukRed)),
+                          child: Text(
+                            _won(price),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.5,
+                              color: AppColors.taegeukRed,
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -1212,24 +1412,36 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
           if (desc.trim().isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Text(desc,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textDark, height: 1.4)),
+              child: Text(
+                desc,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textDark,
+                  height: 1.4,
+                ),
+              ),
             ),
           if (video.trim().isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.play_circle_outline,
-                      size: 16, color: AppColors.taegeukRed),
+                  const Icon(
+                    Icons.play_circle_outline,
+                    size: 16,
+                    color: AppColors.taegeukRed,
+                  ),
                   const SizedBox(width: 4),
                   Expanded(
-                    child: Text(video,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textGray)),
+                    child: Text(
+                      video,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1244,7 +1456,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   child: LinearProgressIndicator(
                     value: ratio,
                     minHeight: 8,
-                    backgroundColor: AppColors.purpleLight.withValues(alpha: 0.15),
+                    backgroundColor: AppColors.purpleLight.withValues(
+                      alpha: 0.15,
+                    ),
                     valueColor: const AlwaysStoppedAnimation(AppColors.purple),
                   ),
                 ),
@@ -1253,9 +1467,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   '$count명 신청 / 최소 제작 착수 $minQty명'
                   '${minQty > 0 ? "  (${((ratio) * 100).round()}%)" : ""}',
                   style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.purpleDark),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.purpleDark,
+                  ),
                 ),
               ],
             ),
@@ -1270,11 +1485,18 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () => _applySurvey(s),
-                icon: const Text('＋',
-                    style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800, height: 1.0)),
-                label: const Text('사전신청 하기',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                icon: const Text(
+                  '＋',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    height: 1.0,
+                  ),
+                ),
+                label: const Text(
+                  '사전신청 하기',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
             ),
           ),
@@ -1322,9 +1544,12 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                 ),
                 const SizedBox(height: 10),
                 _sf(nameCtl, '이름 *', autofocus: true),
-                _sf(noCtl, '인가번호 (범스카우트인가자)',
-                    keyboard: TextInputType.number,
-                    helper: '인가자 필수 · 입력 시 수품구매 내역에 자동 연동'),
+                _sf(
+                  noCtl,
+                  '인가번호 (범스카우트인가자)',
+                  keyboard: TextInputType.number,
+                  helper: '인가자 필수 · 입력 시 수품구매 내역에 자동 연동',
+                ),
                 _sf(phoneCtl, '연락처 *', keyboard: TextInputType.phone),
                 _sf(qtyCtl, '수량 *', keyboard: TextInputType.number),
                 _sf(memoCtl, '메모 (선택)', maxLines: 2),
@@ -1341,7 +1566,10 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     '* 범스카우트 비인가 회원분들은 전화번호로 로그인 하시면\n'
                     '   진행상황을 확인하실 수 있습니다.',
                     style: TextStyle(
-                        fontSize: 11, color: AppColors.textDark, height: 1.5),
+                      fontSize: 11,
+                      color: AppColors.textDark,
+                      height: 1.5,
+                    ),
                   ),
                 ),
               ],
@@ -1349,11 +1577,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(dctx, false),
-                child: const Text('취소')),
+              onPressed: () => Navigator.pop(dctx, false),
+              child: const Text('취소'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(dctx, true),
-                child: const Text('신청')),
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('신청'),
+            ),
           ],
         ),
       ),
@@ -1446,7 +1676,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
             ),
             actions: [
               FilledButton(
-                  onPressed: () => Navigator.pop(ctx), child: const Text('확인')),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('확인'),
+              ),
             ],
           ),
         );
@@ -1465,11 +1697,14 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
     }
   }
 
-  Widget _sf(TextEditingController c, String label,
-      {int maxLines = 1,
-      TextInputType? keyboard,
-      bool autofocus = false,
-      String? helper}) {
+  Widget _sf(
+    TextEditingController c,
+    String label, {
+    int maxLines = 1,
+    TextInputType? keyboard,
+    bool autofocus = false,
+    String? helper,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextField(

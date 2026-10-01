@@ -14,11 +14,7 @@ import 'file_pick_stub.dart'
 
 /// 사용자가 선택한 파일 한 건.
 class PickedFileData {
-  const PickedFileData({
-    required this.name,
-    required this.bytes,
-    this.path,
-  });
+  const PickedFileData({required this.name, required this.bytes, this.path});
 
   /// 파일 이름 (확장자 포함).
   final String name;

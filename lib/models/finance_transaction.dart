@@ -56,27 +56,28 @@ class FinanceTransaction {
   /// 입력 경로: manual(직접입력) | bank(은행파일) | excel
   String source;
 
-  int get numberInt => int.tryParse(number.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+  int get numberInt =>
+      int.tryParse(number.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
   bool get isExpense => type == 'expense';
   bool get matched => status == 'matched';
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'date': date,
-        'type': type,
-        'payer': payer,
-        'name': name,
-        'number': number,
-        'memberId': memberId,
-        'amount': amount,
-        'category': category,
-        'event': event,
-        'context': context,
-        'memo': memo,
-        'status': status,
-        'year': year,
-        'source': source,
-      };
+    'id': id,
+    'date': date,
+    'type': type,
+    'payer': payer,
+    'name': name,
+    'number': number,
+    'memberId': memberId,
+    'amount': amount,
+    'category': category,
+    'event': event,
+    'context': context,
+    'memo': memo,
+    'status': status,
+    'year': year,
+    'source': source,
+  };
 
   factory FinanceTransaction.fromMap(Map<dynamic, dynamic> m) {
     final date = '${m['date'] ?? ''}';
@@ -93,7 +94,10 @@ class FinanceTransaction {
       memberId: '${m['memberId'] ?? ''}',
       amount: (m['amount'] is num)
           ? (m['amount'] as num).toInt()
-          : int.tryParse('${m['amount'] ?? 0}'.replaceAll(RegExp(r'[^0-9\-]'), '')) ?? 0,
+          : int.tryParse(
+                  '${m['amount'] ?? 0}'.replaceAll(RegExp(r'[^0-9\-]'), ''),
+                ) ??
+                0,
       category: '${m['category'] ?? '기타'}',
       event: '${m['event'] ?? ''}',
       context: '${m['context'] ?? ''}',
@@ -119,24 +123,23 @@ class FinanceTransaction {
     String? status,
     String? year,
     String? source,
-  }) =>
-      FinanceTransaction(
-        id: id,
-        date: date ?? this.date,
-        type: type ?? this.type,
-        payer: payer ?? this.payer,
-        name: name ?? this.name,
-        number: number ?? this.number,
-        memberId: memberId ?? this.memberId,
-        amount: amount ?? this.amount,
-        category: category ?? this.category,
-        event: event ?? this.event,
-        context: context ?? this.context,
-        memo: memo ?? this.memo,
-        status: status ?? this.status,
-        year: year ?? this.year,
-        source: source ?? this.source,
-      );
+  }) => FinanceTransaction(
+    id: id,
+    date: date ?? this.date,
+    type: type ?? this.type,
+    payer: payer ?? this.payer,
+    name: name ?? this.name,
+    number: number ?? this.number,
+    memberId: memberId ?? this.memberId,
+    amount: amount ?? this.amount,
+    category: category ?? this.category,
+    event: event ?? this.event,
+    context: context ?? this.context,
+    memo: memo ?? this.memo,
+    status: status ?? this.status,
+    year: year ?? this.year,
+    source: source ?? this.source,
+  );
 }
 
 /// 인가자별 입금 집계
@@ -148,9 +151,9 @@ class MemberDepositSummary {
     Map<String, int>? byCategory,
     Map<String, int>? byYear,
     List<FinanceTransaction>? history,
-  })  : byCategory = byCategory ?? {},
-        byYear = byYear ?? {},
-        history = history ?? [];
+  }) : byCategory = byCategory ?? {},
+       byYear = byYear ?? {},
+       history = history ?? [];
 
   String number;
   String name;

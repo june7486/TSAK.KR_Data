@@ -135,9 +135,10 @@ class _ExportScreenState extends State<ExportScreen>
             Text(
               '${_selectedFields.length}/${kExportFields.length}',
               style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textGray,
-                  fontWeight: FontWeight.w700),
+                fontSize: 12,
+                color: AppColors.textGray,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ),
@@ -149,11 +150,20 @@ class _ExportScreenState extends State<ExportScreen>
         const SizedBox(height: 6),
         Row(
           children: [
-            _miniTextButton('전체', () => setState(() =>
-                _selectedFields.addAll(kExportFields.map((e) => e.key)))),
-            _miniTextButton('기본값',
-                () => setState(() => _selectedFields.addAll(kDefaultFieldKeys))),
-            _miniTextButton('해제', () => setState(() => _selectedFields.clear())),
+            _miniTextButton(
+              '전체',
+              () => setState(
+                () => _selectedFields.addAll(kExportFields.map((e) => e.key)),
+              ),
+            ),
+            _miniTextButton(
+              '기본값',
+              () => setState(() => _selectedFields.addAll(kDefaultFieldKeys)),
+            ),
+            _miniTextButton(
+              '해제',
+              () => setState(() => _selectedFields.clear()),
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -166,7 +176,8 @@ class _ExportScreenState extends State<ExportScreen>
             backgroundColor: AppColors.purple,
             padding: const EdgeInsets.symmetric(vertical: 13),
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
           onPressed: _busy ? null : _doExport,
           icon: _busy
@@ -174,11 +185,15 @@ class _ExportScreenState extends State<ExportScreen>
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Icon(Icons.download, size: 19),
-          label: Text(_busy ? '생성 중...' : '내보내기 실행',
-              style: const TextStyle(fontWeight: FontWeight.w700)),
+          label: Text(
+            _busy ? '생성 중...' : '내보내기 실행',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
         ),
         if (_format == ExportFormat.pdf) ...[
           const SizedBox(height: 8),
@@ -186,7 +201,8 @@ class _ExportScreenState extends State<ExportScreen>
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: _busy ? null : _previewPdf,
             icon: const Icon(Icons.print, size: 18),
@@ -254,13 +270,14 @@ class _ExportScreenState extends State<ExportScreen>
   }
 
   Widget _sectionTitle(String t) => Text(
-        t,
-        style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textGray,
-            letterSpacing: 0.2),
-      );
+    t,
+    style: const TextStyle(
+      fontSize: 12.5,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textGray,
+      letterSpacing: 0.2,
+    ),
+  );
 
   /// 항목을 그룹별로 나누어 간결하게 표시.
   Widget _fieldGroups() {
@@ -279,9 +296,10 @@ class _ExportScreenState extends State<ExportScreen>
             child: Text(
               g,
               style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.purple),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.purple,
+              ),
             ),
           ),
           Wrap(
@@ -324,18 +342,20 @@ class _ExportScreenState extends State<ExportScreen>
             child: Text(
               '선택된 인가자 ${widget.members.length}명',
               style: const TextStyle(
-                  color: AppColors.purpleDark,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14),
+                color: AppColors.purpleDark,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
             ),
           ),
           if (_chunk100)
             Text(
               '${_chunks.length}개 파일',
               style: const TextStyle(
-                  color: AppColors.purple,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700),
+                color: AppColors.purple,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
         ],
       ),
@@ -354,8 +374,10 @@ class _ExportScreenState extends State<ExportScreen>
         activeThumbColor: AppColors.purple,
         visualDensity: VisualDensity.compact,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-        title: const Text('100명 단위로 분할 출력',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+        title: const Text(
+          '100명 단위로 분할 출력',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+        ),
         subtitle: Text(
           _chunk100 ? '${_chunks.length}개 파일로 나누어 저장합니다' : '하나의 파일로 저장합니다',
           style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
@@ -476,7 +498,9 @@ class _ExportScreenState extends State<ExportScreen>
               '${_format.label} · ${widget.members.length}명'
               '${_chunk100 ? ' · ${_chunks.length}개 파일' : ''}',
               style: const TextStyle(
-                  fontSize: 13.5, fontWeight: FontWeight.w700),
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 10),
             const Text(
@@ -487,11 +511,11 @@ class _ExportScreenState extends State<ExportScreen>
             Text(
               canPick
                   ? '* [위치 직접 선택] 을 누르면 저장 위치·앱을 고를 수 있습니다.\n'
-                      '  · PC: 폴더·파일명 지정\n'
-                      '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
-                      '* [기본 폴더에 저장] 은 다운로드(Downloads) 폴더에 바로 저장합니다.'
+                        '  · PC: 폴더·파일명 지정\n'
+                        '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
+                        '* [기본 폴더에 저장] 은 다운로드(Downloads) 폴더에 바로 저장합니다.'
                   : '* 이 브라우저는 위치 선택을 지원하지 않아\n'
-                      '  다운로드(Downloads) 폴더에 저장됩니다.',
+                        '  다운로드(Downloads) 폴더에 저장됩니다.',
               style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
           ],

@@ -37,16 +37,16 @@ class MemberRepository {
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
   final ValueNotifier<Map<String, dynamic>> serverMeta =
       ValueNotifier<Map<String, dynamic>>({});
-  final ValueNotifier<String> syncStatus =
-      ValueNotifier<String>(''); // '', 'saving', 'saved', 'error', 'offline'
+  final ValueNotifier<String> syncStatus = ValueNotifier<String>(
+    '',
+  ); // '', 'saving', 'saved', 'error', 'offline'
 
   /// Hive 기반 (프로덕션, 오프라인 전용)
   MemberRepository({this.nas})
-      : _mem = nas != null ? <String, Map<String, dynamic>>{} : null;
+    : _mem = nas != null ? <String, Map<String, dynamic>>{} : null;
 
   /// 인메모리 기반 (테스트/미리보기)
-  MemberRepository.memory({this.nas})
-      : _mem = <String, Map<String, dynamic>>{};
+  MemberRepository.memory({this.nas}) : _mem = <String, Map<String, dynamic>>{};
 
   bool get isMemory => _mem != null;
   bool get isNasMode => nas != null;
@@ -200,7 +200,8 @@ class MemberRepository {
     }
   }
 
-  int get count => isRestricted ? all().length : (isMemory ? _mem!.length : _box!.length);
+  int get count =>
+      isRestricted ? all().length : (isMemory ? _mem!.length : _box!.length);
 
   Future<void> _put(String id, Map<String, dynamic> map) async {
     if (isMemory) {
@@ -265,8 +266,8 @@ class MemberRepository {
   }
 
   /// 제한 없이 전체 목록(관리자/마스터 전용)
-  List<Member> allUnscoped() => _values.map((v) => Member.fromMap(v)).toList()
-    ..sort(compareMembers);
+  List<Member> allUnscoped() =>
+      _values.map((v) => Member.fromMap(v)).toList()..sort(compareMembers);
 
   Member? byId(String id) {
     if (isRestricted) {
@@ -357,10 +358,12 @@ class MemberRepository {
 
   /// 현재활동 기준으로 별도 통계 산출 가능한지(= 현재활동 연맹/단위대·직위 중
   /// 하나라도 입력된 회원이 있는지) 여부.
-  bool hasCurrentActivityData() => all().any((m) =>
-      m.regLeague.trim().isNotEmpty ||
-      m.regUnit.trim().isNotEmpty ||
-      m.position.trim().isNotEmpty);
+  bool hasCurrentActivityData() => all().any(
+    (m) =>
+        m.regLeague.trim().isNotEmpty ||
+        m.regUnit.trim().isNotEmpty ||
+        m.position.trim().isNotEmpty,
+  );
 
   /// 직위(현재활동) 분포.
   Map<String, int> positionsWithCount() {
@@ -407,13 +410,18 @@ class MemberRepository {
     return counts.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
   }
 
-  Future<void> save(Member member, {bool syncing = true}) async {
+  Future<void> save(
+    Member member, {
+    bool syncing = true,
+    String linkRequestSource = '',
+  }) async {
     final updated = member.copyWith(updatedAt: DateTime.now());
     await _put(updated.id, updated.toMap());
     revision.value++;
     if (syncing && isNasMode) {
       if (isRestricted) {
-        unawaited(_saveOne(updated)); // 개인 접근: 본인 1건만 부분 저장
+        // 개인 접근: 본인 1건만 부분 저장 (연결 승인요청방법 전달).
+        unawaited(_saveOne(updated, linkRequestSource: linkRequestSource));
       } else {
         unawaited(syncToNas(by: 'app'));
       }
@@ -435,12 +443,16 @@ class MemberRepository {
   }
 
   /// 단일 인가자만 NAS에 부분 저장 (전체 DB 덮어쓰기 방지)
-  Future<bool> _saveOne(Member member) async {
+  Future<bool> _saveOne(Member member, {String linkRequestSource = ''}) async {
     final api = nas;
     if (api == null) return false;
     try {
       syncStatus.value = 'saving';
-      final res = await api.saveMember(member, by: 'personal');
+      final res = await api.saveMember(
+        member,
+        by: 'personal',
+        linkRequestSource: linkRequestSource,
+      );
       if (res['ok'] == true) {
         final meta = (res['meta'] as Map?)?.cast<String, dynamic>();
         if (meta != null) serverMeta.value = meta;

@@ -64,14 +64,16 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
         actions: [
           IconButton(
             tooltip: '열 줄이기 (사진 확대)',
-            onPressed:
-                _cols > 1 ? () => setState(() => _cols = _cols - 1) : null,
+            onPressed: _cols > 1
+                ? () => setState(() => _cols = _cols - 1)
+                : null,
             icon: const Icon(Icons.remove_circle_outline),
           ),
           IconButton(
             tooltip: '열 늘리기 (사진 축소)',
-            onPressed:
-                _cols < 8 ? () => setState(() => _cols = _cols + 1) : null,
+            onPressed: _cols < 8
+                ? () => setState(() => _cols = _cols + 1)
+                : null,
             icon: const Icon(Icons.add_circle_outline),
           ),
           const AppHomeEmblem(size: 22),
@@ -88,28 +90,27 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
-                        ? _errorView()
-                        : _events.isEmpty
-                            ? _emptyView()
-                            : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView(
-                              padding:
-                                  const EdgeInsets.fromLTRB(12, 10, 12, 60),
-                              children: [
-                                _summary(),
-                                for (var i = 0; i < _events.length; i++) ...[
-                                  _eventGroupHeader(_events[i]),
-                                  _eventGrid(_events[i]),
-                                  // ---- 행사별 구분선(다음 행사와 명확히 분리) ----
-                                  if (i != _events.length - 1)
-                                    const _EventDivider()
-                                  else
-                                    const SizedBox(height: 12),
-                                ],
-                              ],
-                            ),
-                          ),
+                    ? _errorView()
+                    : _events.isEmpty
+                    ? _emptyView()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 60),
+                          children: [
+                            _summary(),
+                            for (var i = 0; i < _events.length; i++) ...[
+                              _eventGroupHeader(_events[i]),
+                              _eventGrid(_events[i]),
+                              // ---- 행사별 구분선(다음 행사와 명확히 분리) ----
+                              if (i != _events.length - 1)
+                                const _EventDivider()
+                              else
+                                const SizedBox(height: 12),
+                            ],
+                          ],
+                        ),
+                      ),
               ),
             ],
           ),
@@ -277,8 +278,11 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
                   ),
             errorBuilder: (_, __, ___) => Container(
               color: const Color(0xFFF0EDE9),
-              child: const Icon(Icons.broken_image,
-                  color: AppColors.textGray, size: 26),
+              child: const Icon(
+                Icons.broken_image,
+                color: AppColors.textGray,
+                size: 26,
+              ),
             ),
           ),
         ),
@@ -307,34 +311,38 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
   }
 
   Widget _errorView() => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline,
-                size: 48, color: AppColors.taegeukRed),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(_error!, textAlign: TextAlign.center),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _load, child: const Text('다시 시도')),
-          ],
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.error_outline, size: 48, color: AppColors.taegeukRed),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(_error!, textAlign: TextAlign.center),
         ),
-      );
+        const SizedBox(height: 16),
+        FilledButton(onPressed: _load, child: const Text('다시 시도')),
+      ],
+    ),
+  );
 
   Widget _emptyView() => ListView(
-        children: [
-          const SizedBox(height: 100),
-          Icon(Icons.photo_library_outlined,
-              size: 64, color: AppColors.purple.withValues(alpha: 0.3)),
-          const SizedBox(height: 12),
-          const Center(
-            child: Text('등록된 행사 사진이 없습니다',
-                style: TextStyle(color: AppColors.textGray)),
-          ),
-        ],
-      );
+    children: [
+      const SizedBox(height: 100),
+      Icon(
+        Icons.photo_library_outlined,
+        size: 64,
+        color: AppColors.purple.withValues(alpha: 0.3),
+      ),
+      const SizedBox(height: 12),
+      const Center(
+        child: Text(
+          '등록된 행사 사진이 없습니다',
+          style: TextStyle(color: AppColors.textGray),
+        ),
+      ),
+    ],
+  );
 }
 
 /// 행사 사이 구분선 — 명확한 분리를 위해 라벨 포함.
@@ -355,19 +363,25 @@ class _EventDivider extends StatelessWidget {
               children: const [
                 Icon(Icons.arrow_upward, size: 12, color: AppColors.textGray),
                 SizedBox(width: 3),
-                Text('위 행사',
-                    style: TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.textGray,
-                        fontWeight: FontWeight.w700)),
+                Text(
+                  '위 행사',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 SizedBox(width: 8),
                 Icon(Icons.arrow_downward, size: 12, color: AppColors.textGray),
                 SizedBox(width: 3),
-                Text('아래 행사',
-                    style: TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.textGray,
-                        fontWeight: FontWeight.w700)),
+                Text(
+                  '아래 행사',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -454,11 +468,14 @@ class _AllPhotosViewerState extends State<_AllPhotosViewer> {
               loadingBuilder: (_, child, prog) => prog == null
                   ? child
                   : const Center(
-                      child:
-                          CircularProgressIndicator(color: Colors.white)),
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
               errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.broken_image,
-                    color: Colors.white54, size: 60),
+                child: Icon(
+                  Icons.broken_image,
+                  color: Colors.white54,
+                  size: 60,
+                ),
               ),
             ),
           );

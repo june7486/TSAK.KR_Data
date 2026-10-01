@@ -24,41 +24,100 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
 
   /// 메뉴 키 → 표시 이름/설명/아이콘
   static const List<Map<String, dynamic>> _menus = [
-    {'key': 'board', 'label': '게시판', 'desc': '게시글 열람·작성·댓글',
-     'icon': Icons.forum_outlined},
-    {'key': 'events', 'label': '행사관리', 'desc': '행사 사진·동영상·참가자',
-     'icon': Icons.event_note},
-    {'key': 'merchBuy', 'label': '수품구매', 'desc': '굿즈 주문·결제',
-     'icon': Icons.shopping_cart_checkout},
-    {'key': 'memberSearch', 'label': '명단검색', 'desc': '이름·번호 조회(타인 개인정보 제외)',
-     'icon': Icons.search},
-    {'key': 'memberDetail', 'label': '타인 상세열람', 'desc': '타인의 개인정보 상세 열람',
-     'icon': Icons.badge_outlined},
-    {'key': 'merchMgmt', 'label': '수품관리', 'desc': '수품 판매관리·등록·재고·통계',
-     'icon': Icons.inventory_2},
-    {'key': 'finance', 'label': '재무관리', 'desc': '참가비·지출·결산·기본자료',
-     'icon': Icons.account_balance_wallet},
-    {'key': 'stats', 'label': '통계', 'desc': '명단·연맹·연회비 통계',
-     'icon': Icons.insights},
-    {'key': 'bulk', 'label': '단체문자', 'desc': '단체 소식/문자 발송 · 일괄작업',
-     'icon': Icons.campaign},
-    {'key': 'memberAdd', 'label': '인가자 생성', 'desc': '범스카우트 인가자 신규 등록',
-     'icon': Icons.person_add_alt_1},
+    {
+      'key': 'board',
+      'label': '게시판',
+      'desc': '게시글 열람·작성·댓글',
+      'icon': Icons.forum_outlined,
+    },
+    {
+      'key': 'events',
+      'label': '행사관리',
+      'desc': '행사 사진·동영상·참가자',
+      'icon': Icons.event_note,
+    },
+    {
+      'key': 'merchBuy',
+      'label': '수품구매',
+      'desc': '굿즈 주문·결제',
+      'icon': Icons.shopping_cart_checkout,
+    },
+    {
+      'key': 'memberSearch',
+      'label': '명단검색',
+      'desc': '이름·번호 조회(타인 개인정보 제외)',
+      'icon': Icons.search,
+    },
+    {
+      'key': 'memberDetail',
+      'label': '타인 상세열람',
+      'desc': '타인의 개인정보 상세 열람',
+      'icon': Icons.badge_outlined,
+    },
+    {
+      'key': 'merchMgmt',
+      'label': '수품관리',
+      'desc': '수품 판매관리·등록·재고·통계',
+      'icon': Icons.inventory_2,
+    },
+    {
+      'key': 'finance',
+      'label': '재무관리',
+      'desc': '참가비·지출·결산·기본자료',
+      'icon': Icons.account_balance_wallet,
+    },
+    {
+      'key': 'stats',
+      'label': '통계',
+      'desc': '명단·연맹·연회비 통계',
+      'icon': Icons.insights,
+    },
+    {
+      'key': 'bulk',
+      'label': '단체문자',
+      'desc': '단체 소식/문자 발송 · 일괄작업',
+      'icon': Icons.campaign,
+    },
+    {
+      'key': 'memberAdd',
+      'label': '인가자 생성',
+      'desc': '범스카우트 인가자 신규 등록',
+      'icon': Icons.person_add_alt_1,
+    },
   ];
 
   /// 역할 키 → 표시 이름/설명/색
   static const List<Map<String, dynamic>> _roles = [
-    {'key': 'master', 'label': '마스터', 'desc': '모든 권한(변경 불가)',
-     'color': AppColors.taegeukRed},
-    {'key': 'app', 'label': '관리자', 'desc': '마스터가 지정한 관리자',
-     'color': AppColors.taegeukBlue},
-    {'key': 'personal', 'label': '범스카우트 인가자',
-     'desc': '인가번호로 로그인 · 수품구매·행사·게시판 중심',
-     'color': AppColors.purple},
-    {'key': 'supporter', 'label': '서포터즈', 'desc': '일반 아이디 · 개인정보 열람 불가',
-     'color': AppColors.scoutGreen},
-    {'key': 'guest', 'label': '비인가자', 'desc': '전화번호 뒷자리 로그인 · 최소 권한',
-     'color': AppColors.textGray},
+    {
+      'key': 'master',
+      'label': '마스터',
+      'desc': '모든 권한(변경 불가)',
+      'color': AppColors.taegeukRed,
+    },
+    {
+      'key': 'app',
+      'label': '관리자',
+      'desc': '마스터가 지정한 관리자',
+      'color': AppColors.taegeukBlue,
+    },
+    {
+      'key': 'personal',
+      'label': '범스카우트 인가자',
+      'desc': '인가번호로 로그인 · 수품구매·행사·게시판 중심',
+      'color': AppColors.purple,
+    },
+    {
+      'key': 'supporter',
+      'label': '서포터즈',
+      'desc': '일반 아이디 · 개인정보 열람 불가',
+      'color': AppColors.scoutGreen,
+    },
+    {
+      'key': 'guest',
+      'label': '비인가자',
+      'desc': '전화번호 뒷자리 로그인 · 최소 권한',
+      'color': AppColors.textGray,
+    },
   ];
 
   @override
@@ -76,9 +135,9 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('권한 저장에 실패했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('권한 저장에 실패했습니다')));
     }
   }
 
@@ -150,16 +209,23 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('역할별 메뉴 접근권한',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w900)),
+                Text(
+                  '역할별 메뉴 접근권한',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 SizedBox(height: 3),
                 Text(
                   '스위치를 켜고 끄면 서버에 즉시 저장되어 모든 기기에 반영됩니다.\n'
                   '범스카우트 인가자는 기본적으로 수품구매·행사관리·게시판만 허용됩니다.',
-                  style: TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11.5,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -170,7 +236,10 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
   }
 
   Widget _roleCard(
-      AppState state, Map<String, Map<String, bool>> perms, Map<String, dynamic> r) {
+    AppState state,
+    Map<String, Map<String, bool>> perms,
+    Map<String, dynamic> r,
+  ) {
     final role = r['key'] as String;
     final color = r['color'] as Color;
     final isMaster = role == 'master';
@@ -186,37 +255,48 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
                 Container(
                   width: 10,
                   height: 10,
-                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   '${r['label']}',
                   style: const TextStyle(
-                      fontSize: 14.5, fontWeight: FontWeight.w900,
-                      color: AppColors.textDark),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textDark,
+                  ),
                 ),
                 const SizedBox(width: 6),
                 if (isMaster)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.taegeukRed.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text('고정',
-                        style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.taegeukRed)),
+                    child: const Text(
+                      '고정',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.taegeukRed,
+                      ),
+                    ),
                   ),
               ],
             ),
             Padding(
               padding: const EdgeInsets.only(left: 18, top: 2, bottom: 4),
-              child: Text('${r['desc']}',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textGray)),
+              child: Text(
+                '${r['desc']}',
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+              ),
             ),
             const Divider(height: 12),
             for (final m in _menus)
@@ -259,14 +339,21 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: on ? AppColors.textDark : AppColors.textGray)),
-                Text(desc,
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.textGray)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: on ? AppColors.textDark : AppColors.textGray,
+                  ),
+                ),
+                Text(
+                  desc,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
           ),

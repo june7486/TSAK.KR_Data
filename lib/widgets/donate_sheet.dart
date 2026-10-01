@@ -49,9 +49,9 @@ class _DonateSheetState extends State<_DonateSheet> {
   }
 
   static String _won(int n) => n.toString().replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+$)'),
-        (m) => '${m[1]},',
-      );
+    RegExp(r'(\d)(?=(\d{3})+$)'),
+    (m) => '${m[1]},',
+  );
 
   void _toast(String m) {
     if (!mounted) return;
@@ -172,19 +172,30 @@ class _DonateSheetState extends State<_DonateSheet> {
                           gradient: AppColors.brandGradient,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.favorite_rounded,
-                            color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.favorite_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('개발자 후원',
-                              style: TextStyle(
-                                  fontSize: 17, fontWeight: FontWeight.w900)),
-                          Text('이 앱을 만든 개발자를 응원해 주세요',
-                              style: TextStyle(
-                                  fontSize: 11.5, color: AppColors.textGray)),
+                          Text(
+                            '개발자 후원',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '이 앱을 만든 개발자를 응원해 주세요',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -208,7 +219,10 @@ class _DonateSheetState extends State<_DonateSheet> {
                     icon: const Icon(Icons.bolt_rounded, size: 20),
                     label: const Text(
                       '토스로 바로 입금',
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -217,7 +231,9 @@ class _DonateSheetState extends State<_DonateSheet> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => _copy(
-                              '$_kDonateBank $_kDonateAccount', '계좌가 복사됐어요'),
+                            '$_kDonateBank $_kDonateAccount',
+                            '계좌가 복사됐어요',
+                          ),
                           icon: const Icon(Icons.copy, size: 16),
                           label: const Text('계좌 복사'),
                         ),
@@ -274,18 +290,32 @@ class _DonateSheetState extends State<_DonateSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('개발 · 운영',
-                    style: TextStyle(fontSize: 10.5, color: AppColors.textGray)),
-                Text(name,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w900)),
-                Text('$unit · 한국범스카우트중앙회',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textDark)),
+                const Text(
+                  '개발 · 운영',
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                ),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  '$unit · 한국범스카우트중앙회',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textDark,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(email,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textGray)),
+                Text(
+                  email,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
           ),
@@ -308,18 +338,25 @@ class _DonateSheetState extends State<_DonateSheet> {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF0064FF).withValues(alpha: 0.2)),
+        border: Border.all(
+          color: const Color(0xFF0064FF).withValues(alpha: 0.2),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.account_balance_wallet_rounded,
-                  size: 16, color: Color(0xFF0064FF)),
+              const Icon(
+                Icons.account_balance_wallet_rounded,
+                size: 16,
+                color: Color(0xFF0064FF),
+              ),
               const SizedBox(width: 6),
-              const Text('후원 계좌',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+              const Text(
+                '후원 계좌',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -327,20 +364,26 @@ class _DonateSheetState extends State<_DonateSheet> {
                   color: const Color(0xFF0064FF),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text('토스뱅크',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white)),
+                child: const Text(
+                  '토스뱅크',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text('$_kDonateBank $_kDonateAccount',
-              style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w900)),
-          Text('예금주 $_kDonateHolder',
-              style: const TextStyle(fontSize: 12, color: AppColors.textGray)),
+          Text(
+            '$_kDonateBank $_kDonateAccount',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          Text(
+            '예금주 $_kDonateHolder',
+            style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+          ),
         ],
       ),
     );
@@ -350,20 +393,22 @@ class _DonateSheetState extends State<_DonateSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('후원 금액 (선택)',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        const Text(
+          '후원 금액 (선택)',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
         const SizedBox(height: 6),
         TextField(
           controller: _amt,
           keyboardType: TextInputType.number,
           inputFormatters: [_ThousandsFormatter()],
           onChanged: (v) => setState(
-              () => _amount = int.tryParse(v.replaceAll(',', '').trim()) ?? 0),
+            () => _amount = int.tryParse(v.replaceAll(',', '').trim()) ?? 0,
+          ),
           decoration: InputDecoration(
             hintText: '금액 입력 (선택)',
             suffixText: '원',
-            border:
-                OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
         const SizedBox(height: 8),
@@ -398,8 +443,10 @@ class _DonateSheetState extends State<_DonateSheet> {
             children: [
               Icon(Icons.qr_code_2_rounded, size: 18, color: AppColors.purple),
               SizedBox(width: 6),
-              Text('QR로 휴대폰에 전달',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+              Text(
+                'QR로 휴대폰에 전달',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -425,8 +472,10 @@ class _DonateSheetState extends State<_DonateSheet> {
             ),
           ),
           const SizedBox(height: 6),
-          const Text('폰 카메라로 스캔하면 후원 정보가 열려요',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+          const Text(
+            '폰 카메라로 스캔하면 후원 정보가 열려요',
+            style: TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
         ],
       ),
     );
@@ -443,9 +492,9 @@ class _ThousandsFormatter extends TextInputFormatter {
     if (digits.isEmpty) return const TextEditingValue();
     final n = int.parse(digits);
     final s = n.toString().replaceAllMapped(
-          RegExp(r'(\d)(?=(\d{3})+$)'),
-          (m) => '${m[1]},',
-        );
+      RegExp(r'(\d)(?=(\d{3})+$)'),
+      (m) => '${m[1]},',
+    );
     return TextEditingValue(
       text: s,
       selection: TextSelection.collapsed(offset: s.length),

@@ -8,20 +8,20 @@ enum TsakOutputFormat { pdf, jpg, excel, ppt, word }
 
 extension TsakOutputFormatX on TsakOutputFormat {
   String get label => switch (this) {
-        TsakOutputFormat.pdf => 'PDF',
-        TsakOutputFormat.jpg => 'JPG',
-        TsakOutputFormat.excel => '엑셀',
-        TsakOutputFormat.ppt => 'PPT',
-        TsakOutputFormat.word => '워드',
-      };
+    TsakOutputFormat.pdf => 'PDF',
+    TsakOutputFormat.jpg => 'JPG',
+    TsakOutputFormat.excel => '엑셀',
+    TsakOutputFormat.ppt => 'PPT',
+    TsakOutputFormat.word => '워드',
+  };
 
   IconData get icon => switch (this) {
-        TsakOutputFormat.pdf => Icons.picture_as_pdf_outlined,
-        TsakOutputFormat.jpg => Icons.image_outlined,
-        TsakOutputFormat.excel => Icons.grid_on_outlined,
-        TsakOutputFormat.ppt => Icons.slideshow_outlined,
-        TsakOutputFormat.word => Icons.description_outlined,
-      };
+    TsakOutputFormat.pdf => Icons.picture_as_pdf_outlined,
+    TsakOutputFormat.jpg => Icons.image_outlined,
+    TsakOutputFormat.excel => Icons.grid_on_outlined,
+    TsakOutputFormat.ppt => Icons.slideshow_outlined,
+    TsakOutputFormat.word => Icons.description_outlined,
+  };
 }
 
 /// 규칙 순서(고정): pdf → jpg → 엑셀 → ppt → 워드.
@@ -91,20 +91,25 @@ class TsakOutputBar extends StatelessWidget {
           color: sel ? AppColors.purple : Colors.white,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: sel ? AppColors.purple : const Color(0xFFD8D3CA)),
+            color: sel ? AppColors.purple : const Color(0xFFD8D3CA),
+          ),
         ),
         child: Row(
           children: [
-            Icon(f.icon,
-                size: 14,
-                color: sel ? Colors.white : AppColors.textDark),
+            Icon(
+              f.icon,
+              size: 14,
+              color: sel ? Colors.white : AppColors.textDark,
+            ),
             const SizedBox(width: 4),
-            Text(f.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: sel ? Colors.white : AppColors.textDark,
-                )),
+            Text(
+              f.label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: sel ? Colors.white : AppColors.textDark,
+              ),
+            ),
           ],
         ),
       ),
@@ -136,11 +141,14 @@ class WaitingOverlay extends StatelessWidget {
             children: [
               const CircularProgressIndicator(color: Colors.white),
               const SizedBox(height: 14),
-              Text(message,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700)),
+              Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
@@ -176,12 +184,15 @@ Future<void> showLinkShareDialog(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(note,
-              style: const TextStyle(fontSize: 12, color: AppColors.textGray)),
+          Text(
+            note,
+            style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+          ),
           const SizedBox(height: 10),
-          SelectableText(url,
-              style:
-                  const TextStyle(fontSize: 12, color: AppColors.purple)),
+          SelectableText(
+            url,
+            style: const TextStyle(fontSize: 12, color: AppColors.purple),
+          ),
         ],
       ),
       actions: [
@@ -190,15 +201,17 @@ Future<void> showLinkShareDialog(
             await Clipboard.setData(ClipboardData(text: url));
             if (ctx.mounted) Navigator.pop(ctx);
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('링크를 복사했습니다')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('링크를 복사했습니다')));
             }
           },
           child: const Text('복사'),
         ),
         FilledButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('닫기'),
+        ),
       ],
     ),
   );

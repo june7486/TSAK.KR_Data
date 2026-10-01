@@ -460,9 +460,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
   void _pushTab(int tab) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => MerchAdminScreen(initialTab: tab),
-      ),
+      MaterialPageRoute(builder: (_) => MerchAdminScreen(initialTab: tab)),
     );
   }
 

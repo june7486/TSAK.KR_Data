@@ -73,7 +73,11 @@ class PrivacyConsentField extends StatelessWidget {
           if (showTitle)
             Row(
               children: [
-                const Icon(Icons.privacy_tip, color: AppColors.purple, size: 20),
+                const Icon(
+                  Icons.privacy_tip,
+                  color: AppColors.purple,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
@@ -96,7 +100,9 @@ class PrivacyConsentField extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+                border: Border.all(
+                  color: AppColors.purple.withValues(alpha: 0.15),
+                ),
               ),
               child: SingleChildScrollView(
                 child: Text(

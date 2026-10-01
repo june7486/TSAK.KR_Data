@@ -42,11 +42,8 @@ class AppHomeEmblem extends StatelessWidget {
       'assets/images/tsak_emblem.png',
       width: size,
       height: size,
-      errorBuilder: (_, __, ___) => Icon(
-        Icons.shield,
-        size: size * 0.9,
-        color: Colors.white,
-      ),
+      errorBuilder: (_, __, ___) =>
+          Icon(Icons.shield, size: size * 0.9, color: Colors.white),
     );
 
     return InkWell(

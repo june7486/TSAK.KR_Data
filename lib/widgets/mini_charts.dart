@@ -25,8 +25,10 @@ class MiniBarChart extends StatelessWidget {
       return SizedBox(
         height: height,
         child: const Center(
-          child: Text('데이터 없음',
-              style: TextStyle(color: AppColors.textGray, fontSize: 12)),
+          child: Text(
+            '데이터 없음',
+            style: TextStyle(color: AppColors.textGray, fontSize: 12),
+          ),
         ),
       );
     }
@@ -54,9 +56,10 @@ class MiniBarChart extends StatelessWidget {
                     Text(
                       fmt(e.value),
                       style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Flexible(
@@ -70,13 +73,11 @@ class MiniBarChart extends StatelessWidget {
                             gradient: LinearGradient(
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
-                              colors: [
-                                color,
-                                color.withValues(alpha: 0.55),
-                              ],
+                              colors: [color, color.withValues(alpha: 0.55)],
                             ),
                             borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(6)),
+                              top: Radius.circular(6),
+                            ),
                           ),
                         ),
                       ),
@@ -87,7 +88,9 @@ class MiniBarChart extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 9, color: AppColors.textGray),
+                        fontSize: 9,
+                        color: AppColors.textGray,
+                      ),
                     ),
                   ],
                 ),
@@ -139,8 +142,10 @@ class MiniDonut extends StatelessWidget {
       return SizedBox(
         height: size,
         child: const Center(
-          child: Text('데이터 없음',
-              style: TextStyle(color: AppColors.textGray, fontSize: 12)),
+          child: Text(
+            '데이터 없음',
+            style: TextStyle(color: AppColors.textGray, fontSize: 12),
+          ),
         ),
       );
     }
@@ -160,13 +165,15 @@ class MiniDonut extends StatelessWidget {
                     Text(
                       _short(total),
                       style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.textDark),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textDark,
+                      ),
                     ),
-                    const Text('합계(원)',
-                        style: TextStyle(
-                            fontSize: 9, color: AppColors.textGray)),
+                    const Text(
+                      '합계(원)',
+                      style: TextStyle(fontSize: 9, color: AppColors.textGray),
+                    ),
                   ],
                 ),
               ),
@@ -198,15 +205,18 @@ class MiniDonut extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontSize: 11, color: AppColors.textDark),
+                              fontSize: 11,
+                              color: AppColors.textDark,
+                            ),
                           ),
                         ),
                         Text(
                           '${(entries[i].value / total * 100).toStringAsFixed(0)}%',
                           style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textGray),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textGray,
+                          ),
                         ),
                       ],
                     ),
@@ -286,9 +296,10 @@ class MiniRankBar extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textDark,
+              ),
             ),
           ),
           Expanded(
@@ -309,9 +320,10 @@ class MiniRankBar extends StatelessWidget {
               trailing ?? '${value ~/ 10000}만',
               textAlign: TextAlign.right,
               style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textDark),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+              ),
             ),
           ),
         ],

@@ -128,8 +128,7 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title('관리자 계정 (생성 · 삭제)', Icons.vpn_key,
-                AppColors.taegeukRed),
+            _title('관리자 계정 (생성 · 삭제)', Icons.vpn_key, AppColors.taegeukRed),
             const SizedBox(height: 6),
             const Text(
               '관리자 계정은 「아이디(로그인) = 인가번호」 + 「암호 = 개인 비밀번호」로 동작합니다. '
@@ -166,9 +165,9 @@ class _AdminScreenState extends State<AdminScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact),
-                    onPressed:
-                        _busy ? null : () => _createAdminAccount(state),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: _busy ? null : () => _createAdminAccount(state),
                     icon: const Icon(Icons.badge_outlined, size: 16),
                     label: const Text('계정 생성 (권한+암호)'),
                   ),
@@ -177,7 +176,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact),
+                      visualDensity: VisualDensity.compact,
+                    ),
                     onPressed: _busy ? null : () => _loadAdmins(),
                     icon: const Icon(Icons.refresh, size: 16),
                     label: const Text('목록 새로고침'),
@@ -188,15 +188,24 @@ class _AdminScreenState extends State<AdminScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.verified_user_outlined,
-                    size: 16, color: AppColors.scoutGreen),
+                const Icon(
+                  Icons.verified_user_outlined,
+                  size: 16,
+                  color: AppColors.scoutGreen,
+                ),
                 const SizedBox(width: 6),
-                const Text('현재 지정된 관리자',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                const Text(
+                  '현재 지정된 관리자',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
                 const SizedBox(width: 6),
-                Text('(${_adminNumbers.length})',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textGray)),
+                Text(
+                  '(${_adminNumbers.length})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -208,14 +217,15 @@ class _AdminScreenState extends State<AdminScreen> {
             else if (_adminNumbers.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 6),
-                child: Text('지정된 관리자가 없습니다.',
-                    style: TextStyle(fontSize: 12.5, color: AppColors.textGray)),
+                child: Text(
+                  '지정된 관리자가 없습니다.',
+                  style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
+                ),
               )
             else
               Column(
                 children: [
-                  for (final no in _adminNumbers)
-                    _adminAccountTile(state, no),
+                  for (final no in _adminNumbers) _adminAccountTile(state, no),
                 ],
               ),
           ],
@@ -237,20 +247,29 @@ class _AdminScreenState extends State<AdminScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.admin_panel_settings,
-              size: 18, color: AppColors.purple),
+          const Icon(
+            Icons.admin_panel_settings,
+            size: 18,
+            color: AppColors.purple,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('아이디 #$no',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 13)),
+                Text(
+                  '아이디 #$no',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
                 Text(
                   name.isEmpty ? '이름 미확인' : name,
                   style: const TextStyle(
-                      fontSize: 11, color: AppColors.textGray),
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -261,9 +280,9 @@ class _AdminScreenState extends State<AdminScreen> {
             tooltip: '아이디 복사',
             onPressed: () {
               Clipboard.setData(ClipboardData(text: no));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('관리자 아이디(#$no)를 복사했습니다')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('관리자 아이디(#$no)를 복사했습니다')));
             },
             icon: const Icon(Icons.copy, size: 17),
           ),
@@ -304,50 +323,57 @@ class _AdminScreenState extends State<AdminScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('아이디(인가번호)와 암호(개인 비밀번호)를 지정하면 '
-                '해당 계정이 관리자로 생성됩니다.',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+            const Text(
+              '아이디(인가번호)와 암호(개인 비밀번호)를 지정하면 '
+              '해당 계정이 관리자로 생성됩니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
             const SizedBox(height: 10),
             TextField(
               controller: noCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                  labelText: '아이디 (인가번호)', isDense: true),
+                labelText: '아이디 (인가번호)',
+                isDense: true,
+              ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: pwCtrl,
               decoration: InputDecoration(
-                  labelText: '암호 (개인 비밀번호)',
-                  hintText: '비우면 기본 {인가번호}!@@',
-                  isDense: true),
+                labelText: '암호 (개인 비밀번호)',
+                hintText: '비우면 기본 {인가번호}!@@',
+                isDense: true,
+              ),
             ),
             if (!isPM) ...[
               const SizedBox(height: 8),
               TextField(
                 controller: masterCtrl,
                 obscureText: true,
-                decoration:
-                    const InputDecoration(labelText: '마스터 비밀번호 확인'),
+                decoration: const InputDecoration(labelText: '마스터 비밀번호 확인'),
               ),
             ],
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('생성')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('생성'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
     final no = noCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (no.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('인가번호를 입력하세요')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('인가번호를 입력하세요')));
       return;
     }
     setState(() => _busy = true);
@@ -366,11 +392,13 @@ class _AdminScreenState extends State<AdminScreen> {
     final granted = r['ok'] == true;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(granted
-            ? '관리자 계정(#$no) 생성 완료 · 암호 '
-                '${val.isEmpty ? '기본값($no!@@)' : '지정됨'}'
-                '${err != null ? ' (암호: $err)' : ''}'
-            : '실패: ${r['error'] ?? '권한 부여 확인 불가'}'),
+        content: Text(
+          granted
+              ? '관리자 계정(#$no) 생성 완료 · 암호 '
+                    '${val.isEmpty ? '기본값($no!@@)' : '지정됨'}'
+                    '${err != null ? ' (암호: $err)' : ''}'
+              : '실패: ${r['error'] ?? '권한 부여 확인 불가'}',
+        ),
       ),
     );
     if (granted) {
@@ -400,21 +428,26 @@ class _AdminScreenState extends State<AdminScreen> {
                 children: [
                   const Icon(Icons.vpn_key, color: AppColors.taegeukRed),
                   const SizedBox(width: 8),
-                  Text('관리자 계정 관리',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text(
+                    '관리자 계정 관리',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
               _kvLine('아이디 (로그인)', '#$no'),
               _kvLine('이름', name.isEmpty ? '미확인' : name),
-              _kvLine('암호 상태',
-                  hasCustom ? '지정됨 (개별 설정)' : '기본값 ($no!@@)'),
+              _kvLine('암호 상태', hasCustom ? '지정됨 (개별 설정)' : '기본값 ($no!@@)'),
               const SizedBox(height: 6),
               Text(
                 '개인 로그인 화면에서 아이디 #$no · 위 암호로 접속하면 관리자 기능이 열립니다.',
                 style: const TextStyle(
-                    fontSize: 11.5, color: AppColors.textGray),
+                  fontSize: 11.5,
+                  color: AppColors.textGray,
+                ),
               ),
               const SizedBox(height: 14),
               SizedBox(
@@ -447,7 +480,8 @@ class _AdminScreenState extends State<AdminScreen> {
                   Expanded(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.purple),
+                        backgroundColor: AppColors.purple,
+                      ),
                       onPressed: () async {
                         Navigator.pop(ctx);
                         await _adminSetPassword(state, no);
@@ -463,7 +497,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.taegeukRed),
+                    foregroundColor: AppColors.taegeukRed,
+                  ),
                   onPressed: () async {
                     Navigator.pop(ctx);
                     await _revokeAdmin(state, no);
@@ -480,24 +515,26 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _kvLine(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 96,
-              child: Text(k,
-                  style: const TextStyle(
-                      fontSize: 12.5, color: AppColors.textGray)),
-            ),
-            Expanded(
-              child: Text(v,
-                  style: const TextStyle(
-                      fontSize: 12.5, fontWeight: FontWeight.w700)),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 96,
+          child: Text(
+            k,
+            style: const TextStyle(fontSize: 12.5, color: AppColors.textGray),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            v,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _adminResetPassword(AppState state, String no) async {
     final master = await _askMaster('관리자 #$no 암호 초기화');
@@ -509,9 +546,10 @@ class _AdminScreenState extends State<AdminScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(err == null
-                ? '#$no 암호를 기본값($no!@@)으로 초기화했습니다'
-                : '실패: $err')),
+          content: Text(
+            err == null ? '#$no 암호를 기본값($no!@@)으로 초기화했습니다' : '실패: $err',
+          ),
+        ),
       );
     }
   }
@@ -525,24 +563,26 @@ class _AdminScreenState extends State<AdminScreen> {
         content: TextField(
           controller: pwCtrl,
           autofocus: true,
-          decoration:
-              const InputDecoration(labelText: '새 암호 (개인 비밀번호)'),
+          decoration: const InputDecoration(labelText: '새 암호 (개인 비밀번호)'),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('지정')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('지정'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
     final val = pwCtrl.text.trim();
     if (val.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('암호를 입력하세요')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('암호를 입력하세요')));
       return;
     }
     final master = await _askMaster('관리자 #$no 암호 지정');
@@ -554,9 +594,8 @@ class _AdminScreenState extends State<AdminScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(err == null
-                ? '#$no 관리자 암호를 지정했습니다'
-                : '실패: $err')),
+          content: Text(err == null ? '#$no 관리자 암호를 지정했습니다' : '실패: $err'),
+        ),
       );
     }
   }
@@ -564,8 +603,9 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _grantAdmin(AppState state) async {
     final no = _grantCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (no.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('인가번호를 입력하세요')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('인가번호를 입력하세요')));
       return;
     }
     final master = await _askMaster('관리자 권한 부여 (인가 $no)');
@@ -577,9 +617,10 @@ class _AdminScreenState extends State<AdminScreen> {
     final ok = r['ok'] == true;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text(ok
-              ? '인가 $no 님에게 관리자 권한을 부여했습니다'
-              : '실패: ${r['error'] ?? '확인 불가'}')),
+        content: Text(
+          ok ? '인가 $no 님에게 관리자 권한을 부여했습니다' : '실패: ${r['error'] ?? '확인 불가'}',
+        ),
+      ),
     );
     if (ok) {
       _grantCtrl.clear();
@@ -713,8 +754,10 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             ] else ...[
               const SizedBox(height: 8),
-              const Text('영구 마스터는 별도 확인 없이 변경됩니다.',
-                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+              const Text(
+                '영구 마스터는 별도 확인 없이 변경됩니다.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
             ],
           ],
         ),

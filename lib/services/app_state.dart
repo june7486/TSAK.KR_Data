@@ -1515,8 +1515,8 @@ class AppState extends ChangeNotifier {
     return false;
   }
 
-  Future<void> save(Member m) async {
-    await repo.save(m);
+  Future<void> save(Member m, {String linkRequestSource = ''}) async {
+    await repo.save(m, linkRequestSource: linkRequestSource);
   }
 
   /// 신규 일반회원(비인가자) 생성.

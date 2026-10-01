@@ -41,20 +41,25 @@ class _FinanceTransactionEditScreenState
     super.initState();
     final e = widget.existing;
     _date = TextEditingController(
-        text: e?.date ??
-            DateTime.now().toString().split(' ').first.replaceAll('-', '.'));
+      text:
+          e?.date ??
+          DateTime.now().toString().split(' ').first.replaceAll('-', '.'),
+    );
     _payer = TextEditingController(text: e?.payer ?? '');
     _amount = TextEditingController(
-        text: e == null || e.amount == 0 ? '' : '${e.amount}');
+      text: e == null || e.amount == 0 ? '' : '${e.amount}',
+    );
     _event = TextEditingController(text: e?.event ?? '');
     _memo = TextEditingController(text: e?.memo ?? '');
     _type = e?.type ?? 'income';
     _category = e?.category ?? '후원';
     if (e != null && e.number.isNotEmpty) {
       _member = widget.members
-          .where((m) =>
-              m.number.replaceAll(RegExp(r'[^0-9]'), '') ==
-              e.number.replaceAll(RegExp(r'[^0-9]'), ''))
+          .where(
+            (m) =>
+                m.number.replaceAll(RegExp(r'[^0-9]'), '') ==
+                e.number.replaceAll(RegExp(r'[^0-9]'), ''),
+          )
           .cast<Member?>()
           .firstWhere((m) => true, orElse: () => null);
     }
@@ -88,8 +93,13 @@ class _FinanceTransactionEditScreenState
           const AppHomeEmblem(size: 24),
           TextButton(
             onPressed: _save,
-            child: const Text('저장',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+            child: const Text(
+              '저장',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
         ],
       ),
@@ -98,8 +108,16 @@ class _FinanceTransactionEditScreenState
         children: [
           SegmentedButton<String>(
             segments: const [
-              ButtonSegment(value: 'income', label: Text('입금'), icon: Icon(Icons.south_west)),
-              ButtonSegment(value: 'expense', label: Text('지출'), icon: Icon(Icons.north_east)),
+              ButtonSegment(
+                value: 'income',
+                label: Text('입금'),
+                icon: Icon(Icons.south_west),
+              ),
+              ButtonSegment(
+                value: 'expense',
+                label: Text('지출'),
+                icon: Icon(Icons.north_east),
+              ),
             ],
             selected: {_type},
             onSelectionChanged: (s) => setState(() {
@@ -118,24 +136,26 @@ class _FinanceTransactionEditScreenState
           TextField(
             controller: _payer,
             onChanged: (_) => _autoMatch(),
-            decoration: const InputDecoration(
-              hintText: '예: 홍길동 제405단 후원',
-            ),
+            decoration: const InputDecoration(hintText: '예: 홍길동 제405단 후원'),
           ),
           if (_member != null)
             Padding(
               padding: const EdgeInsets.only(top: 6, left: 2),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle,
-                      size: 15, color: AppColors.scoutGreen),
+                  const Icon(
+                    Icons.check_circle,
+                    size: 15,
+                    color: AppColors.scoutGreen,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     '인식: ${_member!.name} (#${_member!.number})',
                     style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.scoutGreen,
-                        fontWeight: FontWeight.w700),
+                      fontSize: 12,
+                      color: AppColors.scoutGreen,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   TextButton(
                     onPressed: _pickMember,
@@ -171,8 +191,8 @@ class _FinanceTransactionEditScreenState
                   selected: _category == c,
                   selectedColor: AppColors.purple,
                   labelStyle: TextStyle(
-                      color:
-                          _category == c ? Colors.white : AppColors.textDark),
+                    color: _category == c ? Colors.white : AppColors.textDark,
+                  ),
                   onSelected: (_) => setState(() => _category = c),
                 ),
             ],
@@ -194,10 +214,14 @@ class _FinanceTransactionEditScreenState
                 widget.finance.save();
                 Navigator.pop(context);
               },
-              icon: const Icon(Icons.delete_outline,
-                  color: AppColors.taegeukRed),
-              label: const Text('삭제',
-                  style: TextStyle(color: AppColors.taegeukRed)),
+              icon: const Icon(
+                Icons.delete_outline,
+                color: AppColors.taegeukRed,
+              ),
+              label: const Text(
+                '삭제',
+                style: TextStyle(color: AppColors.taegeukRed),
+              ),
             ),
         ],
       ),
@@ -205,13 +229,16 @@ class _FinanceTransactionEditScreenState
   }
 
   Widget _label(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 5, left: 2),
-        child: Text(t,
-            style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textDark)),
-      );
+    padding: const EdgeInsets.only(bottom: 5, left: 2),
+    child: Text(
+      t,
+      style: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textDark,
+      ),
+    ),
+  );
 
   void _autoMatch() {
     final text = _payer.text.trim();
@@ -301,7 +328,9 @@ class _MemberPickerSheetState extends State<_MemberPickerSheet> {
               autofocus: true,
               onChanged: (v) => setState(() => _q = v),
               decoration: const InputDecoration(
-                  hintText: '이름/번호 검색', prefixIcon: Icon(Icons.search)),
+                hintText: '이름/번호 검색',
+                prefixIcon: Icon(Icons.search),
+              ),
             ),
           ),
           Expanded(
@@ -313,8 +342,11 @@ class _MemberPickerSheetState extends State<_MemberPickerSheet> {
                 return ListTile(
                   dense: true,
                   title: Text('${m.name} (#${m.number})'),
-                  subtitle: Text('${m.league} ${m.unit}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    '${m.league} ${m.unit}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   onTap: () => Navigator.pop(context, m),
                 );
               },

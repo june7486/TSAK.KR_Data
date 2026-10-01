@@ -36,7 +36,17 @@ class _FinanceScreenState extends State<FinanceScreen>
   DateTime? _from;
   DateTime? _to;
 
-  static const _tabs = ['전체현황', '통계', '후원', '수품구매', '참가비', '연회비', '평생회비', '지출', '결산'];
+  static const _tabs = [
+    '전체현황',
+    '통계',
+    '후원',
+    '수품구매',
+    '참가비',
+    '연회비',
+    '평생회비',
+    '지출',
+    '결산',
+  ];
 
   @override
   void initState() {
@@ -87,8 +97,7 @@ class _FinanceScreenState extends State<FinanceScreen>
                 case 'bank':
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(
-                        builder: (_) => const BankImportScreen()),
+                    MaterialPageRoute(builder: (_) => const BankImportScreen()),
                   );
                   if (context.mounted) fs.load();
                   break;
@@ -163,7 +172,9 @@ class _FinanceScreenState extends State<FinanceScreen>
                   selected: _selectedYear == y,
                   selectedColor: AppColors.purple,
                   labelStyle: TextStyle(
-                    color: _selectedYear == y ? Colors.white : AppColors.textDark,
+                    color: _selectedYear == y
+                        ? Colors.white
+                        : AppColors.textDark,
                     fontWeight: FontWeight.w700,
                   ),
                   onSelected: (_) => setState(() => _selectedYear = y),
@@ -215,9 +226,12 @@ class _FinanceScreenState extends State<FinanceScreen>
                               },
                             ),
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -232,18 +246,36 @@ class _FinanceScreenState extends State<FinanceScreen>
             height: 42,
             child: Row(
               children: [
-                _miniChip('전체', _selType, (v) => setState(() => _selType = v),
-                    AppColors.purple),
-                _miniChip('수입', _selType, (v) => setState(() => _selType = v),
-                    AppColors.scoutGreen),
-                _miniChip('지출', _selType, (v) => setState(() => _selType = v),
-                    AppColors.taegeukRed),
+                _miniChip(
+                  '전체',
+                  _selType,
+                  (v) => setState(() => _selType = v),
+                  AppColors.purple,
+                ),
+                _miniChip(
+                  '수입',
+                  _selType,
+                  (v) => setState(() => _selType = v),
+                  AppColors.scoutGreen,
+                ),
+                _miniChip(
+                  '지출',
+                  _selType,
+                  (v) => setState(() => _selType = v),
+                  AppColors.taegeukRed,
+                ),
                 const SizedBox(width: 10),
-                const Text('행사:',
-                    style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                const Text(
+                  '행사:',
+                  style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                ),
                 for (final e in events.take(12))
-                  _miniChip(e, _selEvent, (v) => setState(() => _selEvent = v),
-                      AppColors.taegeukBlue),
+                  _miniChip(
+                    e,
+                    _selEvent,
+                    (v) => setState(() => _selEvent = v),
+                    AppColors.taegeukBlue,
+                  ),
               ],
             ),
           ),
@@ -252,7 +284,12 @@ class _FinanceScreenState extends State<FinanceScreen>
     );
   }
 
-  Widget _miniChip(String label, String cur, ValueChanged<String> onSel, Color c) {
+  Widget _miniChip(
+    String label,
+    String cur,
+    ValueChanged<String> onSel,
+    Color c,
+  ) {
     final sel = cur == label;
     return Padding(
       padding: const EdgeInsets.only(right: 5),
@@ -264,11 +301,14 @@ class _FinanceScreenState extends State<FinanceScreen>
             color: sel ? c : c.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: sel ? Colors.white : c)),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: sel ? Colors.white : c,
+            ),
+          ),
         ),
       ),
     );
@@ -328,9 +368,9 @@ class _FinanceScreenState extends State<FinanceScreen>
     final eventNet = <String, int>{};
     byEvent.forEach((k, v) {
       if (v is Map) {
-        eventNet['$k'] = (((v['income'] as num?) ?? 0) -
-                ((v['expense'] as num?) ?? 0))
-            .toInt();
+        eventNet['$k'] =
+            (((v['income'] as num?) ?? 0) - ((v['expense'] as num?) ?? 0))
+                .toInt();
       }
     });
 
@@ -338,31 +378,51 @@ class _FinanceScreenState extends State<FinanceScreen>
       padding: const EdgeInsets.all(12),
       children: [
         _exportBar(1),
-        const Text('DB 자동분석 통계',
-            style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textDark)),
+        const Text(
+          'DB 자동분석 통계',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: AppColors.textDark,
+          ),
+        ),
         const SizedBox(height: 2),
-        Text('갱신 ${fs.statsUpdated}',
-            style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
+        Text(
+          '갱신 ${fs.statsUpdated}',
+          style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+        ),
         const SizedBox(height: 10),
-        Row(children: [
-          _metricCard('총 수입', income, AppColors.scoutGreen, Icons.savings),
-          const SizedBox(width: 8),
-          _metricCard('총 지출', expense, AppColors.taegeukRed, Icons.payments),
-        ]),
+        Row(
+          children: [
+            _metricCard('총 수입', income, AppColors.scoutGreen, Icons.savings),
+            const SizedBox(width: 8),
+            _metricCard('총 지출', expense, AppColors.taegeukRed, Icons.payments),
+          ],
+        ),
         const SizedBox(height: 8),
-        Row(children: [
-          _metricCard('순액', income - expense, AppColors.purple,
-              Icons.account_balance),
-          const SizedBox(width: 8),
-          _metricCard('거래건수', count, AppColors.taegeukBlue,
-              Icons.receipt_long, isMoney: false),
-        ]),
+        Row(
+          children: [
+            _metricCard(
+              '순액',
+              income - expense,
+              AppColors.purple,
+              Icons.account_balance,
+            ),
+            const SizedBox(width: 8),
+            _metricCard(
+              '거래건수',
+              count,
+              AppColors.taegeukBlue,
+              Icons.receipt_long,
+              isMoney: false,
+            ),
+          ],
+        ),
         const SizedBox(height: 14),
         _sectionTitle('연도별 수입'),
-        _card(child: MiniBarChart(data: yearIncome, color: AppColors.purple)),
+        _card(
+          child: MiniBarChart(data: yearIncome, color: AppColors.purple),
+        ),
         const SizedBox(height: 14),
         _sectionTitle('수입 분류별'),
         _card(child: MiniDonut(data: catMap)),
@@ -370,16 +430,20 @@ class _FinanceScreenState extends State<FinanceScreen>
         _sectionTitle('지출 분류별'),
         _card(
           child: expMap.isEmpty
-              ? const Text('지출 내역 없음',
-                  style: TextStyle(color: AppColors.textGray, fontSize: 12))
+              ? const Text(
+                  '지출 내역 없음',
+                  style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                )
               : MiniBarChart(data: expMap, color: AppColors.taegeukRed),
         ),
         const SizedBox(height: 14),
         _sectionTitle('행사별 순액 (수입−지출)'),
         _card(
           child: eventNet.isEmpty
-              ? const Text('행사 내역 없음',
-                  style: TextStyle(color: AppColors.textGray, fontSize: 12))
+              ? const Text(
+                  '행사 내역 없음',
+                  style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                )
               : MiniBarChart(data: eventNet, color: AppColors.scoutGreen),
         ),
         const SizedBox(height: 80),
@@ -390,8 +454,12 @@ class _FinanceScreenState extends State<FinanceScreen>
   // ---- 전체 현황 ----
   Widget _overview(FinanceService fs, AppState state) {
     final tx = fs.transactions.where(_inYear).toList();
-    final income = tx.where((t) => !t.isExpense).fold<int>(0, (s, t) => s + t.amount);
-    final expense = tx.where((t) => t.isExpense).fold<int>(0, (s, t) => s + t.amount);
+    final income = tx
+        .where((t) => !t.isExpense)
+        .fold<int>(0, (s, t) => s + t.amount);
+    final expense = tx
+        .where((t) => t.isExpense)
+        .fold<int>(0, (s, t) => s + t.amount);
     final catTotals = <String, int>{};
     for (final t in tx) {
       if (t.isExpense) continue;
@@ -404,7 +472,8 @@ class _FinanceScreenState extends State<FinanceScreen>
       yearMap[y] = (yearMap[y] ?? 0) + t.amount;
     }
     final sortedYears = Map.fromEntries(
-        yearMap.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+      yearMap.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
 
     return ListView(
       controller: _scroll,
@@ -421,15 +490,27 @@ class _FinanceScreenState extends State<FinanceScreen>
         const SizedBox(height: 8),
         Row(
           children: [
-            _metricCard('순액', income - expense, AppColors.purple, Icons.account_balance),
+            _metricCard(
+              '순액',
+              income - expense,
+              AppColors.purple,
+              Icons.account_balance,
+            ),
             const SizedBox(width: 8),
-            _metricCard('입금건수', tx.where((t) => !t.isExpense).length,
-                AppColors.taegeukBlue, Icons.receipt_long, isMoney: false),
+            _metricCard(
+              '입금건수',
+              tx.where((t) => !t.isExpense).length,
+              AppColors.taegeukBlue,
+              Icons.receipt_long,
+              isMoney: false,
+            ),
           ],
         ),
         const SizedBox(height: 14),
         _sectionTitle('연도별 입금현황'),
-        _card(child: MiniBarChart(data: sortedYears, color: AppColors.purple)),
+        _card(
+          child: MiniBarChart(data: sortedYears, color: AppColors.purple),
+        ),
         const SizedBox(height: 14),
         _sectionTitle('분류별 비중 (수입)'),
         _card(child: MiniDonut(data: catTotals)),
@@ -443,7 +524,11 @@ class _FinanceScreenState extends State<FinanceScreen>
 
   // ---- 카테고리별(후원/수품구매/참가비) ----
   Widget _categoryView(
-      FinanceService fs, AppState state, String category, Color color) {
+    FinanceService fs,
+    AppState state,
+    String category,
+    Color color,
+  ) {
     final tx = fs.transactions
         .where(_inYear)
         .where((t) => !t.isExpense && t.category == category)
@@ -457,8 +542,11 @@ class _FinanceScreenState extends State<FinanceScreen>
       final no = t.number.replaceAll(RegExp(r'[^0-9]'), '');
       if (no.isNotEmpty) byMember[no] = (byMember[no] ?? 0) + t.amount;
     }
-    final top = byMember.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final names = <String, Member>{for (final m in state.repo.all()) m.number: m};
+    final top = byMember.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final names = <String, Member>{
+      for (final m in state.repo.all()) m.number: m,
+    };
     final maxV = top.isEmpty ? 0 : top.first.value;
     final tabIdx = _tabs.indexOf(category);
 
@@ -469,13 +557,17 @@ class _FinanceScreenState extends State<FinanceScreen>
         _metricCard('$category 총액', total, color, Icons.volunteer_activism),
         const SizedBox(height: 12),
         _sectionTitle('연도별 $category'),
-        _card(child: MiniBarChart(data: yearMap, color: color)),
+        _card(
+          child: MiniBarChart(data: yearMap, color: color),
+        ),
         const SizedBox(height: 14),
         _sectionTitle('개인별 TOP (${top.length}명)'),
         _card(
           child: top.isEmpty
-              ? const Text('내역 없음',
-                  style: TextStyle(color: AppColors.textGray, fontSize: 12))
+              ? const Text(
+                  '내역 없음',
+                  style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                )
               : Column(
                   children: [
                     for (final e in top.take(15))
@@ -499,7 +591,10 @@ class _FinanceScreenState extends State<FinanceScreen>
 
   // ---- 지출현황 ----
   Widget _expenseView(FinanceService fs) {
-    final tx = fs.transactions.where(_inYear).where((t) => t.isExpense).toList();
+    final tx = fs.transactions
+        .where(_inYear)
+        .where((t) => t.isExpense)
+        .toList();
     final total = tx.fold<int>(0, (s, t) => s + t.amount);
     final catMap = <String, int>{};
     for (final t in tx) {
@@ -517,27 +612,37 @@ class _FinanceScreenState extends State<FinanceScreen>
         _metricCard('총 지출', total, AppColors.taegeukRed, Icons.payments),
         const SizedBox(height: 12),
         _sectionTitle('분류별 지출'),
-        _card(child: MiniBarChart(data: catMap, color: AppColors.taegeukRed)),
+        _card(
+          child: MiniBarChart(data: catMap, color: AppColors.taegeukRed),
+        ),
         const SizedBox(height: 14),
         _sectionTitle('행사별 지출'),
-        _card(child: MiniBarChart(data: byEvent, color: AppColors.taegeukBlue)),
+        _card(
+          child: MiniBarChart(data: byEvent, color: AppColors.taegeukBlue),
+        ),
         const SizedBox(height: 14),
         _sectionTitle('지출 내역 (${tx.length}건)'),
         if (tx.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('지출 내역이 없습니다',
-                style: TextStyle(color: AppColors.textGray)),
+            child: Text(
+              '지출 내역이 없습니다',
+              style: TextStyle(color: AppColors.textGray),
+            ),
           )
         else ...[
           for (final t in tx.take(150)) _txTile(t, null, isExpense: true),
           if (tx.length > 150)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text('외 ${tx.length - 150}건 (검색/기간 필터로 좁혀보세요)',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 11.5, color: AppColors.textGray)),
+              child: Text(
+                '외 ${tx.length - 150}건 (검색/기간 필터로 좁혀보세요)',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textGray,
+                ),
+              ),
             ),
         ],
         const SizedBox(height: 80),
@@ -556,8 +661,10 @@ class _FinanceScreenState extends State<FinanceScreen>
         if (list.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('결산 자료가 없습니다',
-                style: TextStyle(color: AppColors.textGray)),
+            child: Text(
+              '결산 자료가 없습니다',
+              style: TextStyle(color: AppColors.textGray),
+            ),
           )
         else
           for (final s in list)
@@ -565,10 +672,9 @@ class _FinanceScreenState extends State<FinanceScreen>
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: (s.net >= 0
-                          ? AppColors.scoutGreen
-                          : AppColors.taegeukRed)
-                      .withValues(alpha: 0.15),
+                  backgroundColor:
+                      (s.net >= 0 ? AppColors.scoutGreen : AppColors.taegeukRed)
+                          .withValues(alpha: 0.15),
                   child: Icon(
                     s.net >= 0 ? Icons.trending_up : Icons.trending_down,
                     color: s.net >= 0
@@ -576,8 +682,10 @@ class _FinanceScreenState extends State<FinanceScreen>
                         : AppColors.taegeukRed,
                   ),
                 ),
-                title: Text(s.event,
-                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                title: Text(
+                  s.event,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
                 subtitle: Text(
                   '수입 ${_won(s.income)}원 · 지출 ${_won(s.expense)}원',
                   style: const TextStyle(fontSize: 12),
@@ -586,8 +694,9 @@ class _FinanceScreenState extends State<FinanceScreen>
                   '${s.net >= 0 ? '+' : ''}${_won(s.net)}원',
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    color:
-                        s.net >= 0 ? AppColors.scoutGreen : AppColors.taegeukRed,
+                    color: s.net >= 0
+                        ? AppColors.scoutGreen
+                        : AppColors.taegeukRed,
                   ),
                 ),
               ),
@@ -598,8 +707,13 @@ class _FinanceScreenState extends State<FinanceScreen>
   }
 
   // ---- 공용 위젯 ----
-  Widget _metricCard(String label, int value, Color color, IconData icon,
-      {bool isMoney = true}) {
+  Widget _metricCard(
+    String label,
+    int value,
+    Color color,
+    IconData icon, {
+    bool isMoney = true,
+  }) {
     return Expanded(
       child: Card(
         child: Padding(
@@ -611,18 +725,24 @@ class _FinanceScreenState extends State<FinanceScreen>
                 children: [
                   Icon(icon, size: 16, color: color),
                   const SizedBox(width: 5),
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textGray)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textGray,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
               Text(
                 isMoney ? '${_won(value)}원' : '$value건',
                 style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w900, color: color),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
               ),
             ],
           ),
@@ -632,51 +752,65 @@ class _FinanceScreenState extends State<FinanceScreen>
   }
 
   Widget _sectionTitle(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 6, left: 2),
-        child: Text(t,
-            style: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textDark)),
-      );
+    padding: const EdgeInsets.only(bottom: 6, left: 2),
+    child: Text(
+      t,
+      style: const TextStyle(
+        fontSize: 13.5,
+        fontWeight: FontWeight.w800,
+        color: AppColors.textDark,
+      ),
+    ),
+  );
 
-  Widget _card({required Widget child}) =>
-      Card(child: Padding(padding: const EdgeInsets.all(12), child: child));
+  Widget _card({required Widget child}) => Card(
+    child: Padding(padding: const EdgeInsets.all(12), child: child),
+  );
 
   Widget _txList(List<FinanceTransaction> tx, AppState state) {
     if (tx.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(12),
-        child: Text('내역이 없습니다',
-            style: TextStyle(color: AppColors.textGray, fontSize: 12)),
+        child: Text(
+          '내역이 없습니다',
+          style: TextStyle(color: AppColors.textGray, fontSize: 12),
+        ),
       );
     }
     // 성능: 다량 거래시 상위 N건만 렌더(무한 스크롤 대신 요약)
     const cap = 150;
     final shown = tx.length > cap ? tx.take(cap).toList() : tx;
-    return Column(children: [
-      for (final t in shown) _txTile(t, state),
-      if (tx.length > cap)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text('외 ${tx.length - cap}건 (검색/기간 필터로 좁혀보세요)',
+    return Column(
+      children: [
+        for (final t in shown) _txTile(t, state),
+        if (tx.length > cap)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text(
+              '외 ${tx.length - cap}건 (검색/기간 필터로 좁혀보세요)',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray)),
-        ),
-    ]);
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+          ),
+      ],
+    );
   }
 
-  Widget _txTile(FinanceTransaction t, AppState? state, {bool isExpense = false}) {
-    final member =
-        t.number.isNotEmpty ? state?.byNumber(t.number) : null;
+  Widget _txTile(
+    FinanceTransaction t,
+    AppState? state, {
+    bool isExpense = false,
+  }) {
+    final member = t.number.isNotEmpty ? state?.byNumber(t.number) : null;
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
         dense: true,
         leading: CircleAvatar(
           radius: 16,
-          backgroundColor: (isExpense ? AppColors.taegeukRed : AppColors.scoutGreen)
-              .withValues(alpha: 0.14),
+          backgroundColor:
+              (isExpense ? AppColors.taegeukRed : AppColors.scoutGreen)
+                  .withValues(alpha: 0.14),
           child: Icon(
             isExpense ? Icons.arrow_upward : Icons.arrow_downward,
             size: 16,
@@ -700,15 +834,18 @@ class _FinanceScreenState extends State<FinanceScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text('${_won(t.amount)}원',
-                style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: isExpense
-                        ? AppColors.taegeukRed
-                        : AppColors.textDark)),
+            Text(
+              '${_won(t.amount)}원',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: isExpense ? AppColors.taegeukRed : AppColors.textDark,
+              ),
+            ),
             if (!isExpense && !t.matched)
-              const Text('미매칭',
-                  style: TextStyle(fontSize: 9.5, color: AppColors.taegeukRed)),
+              const Text(
+                '미매칭',
+                style: TextStyle(fontSize: 9.5, color: AppColors.taegeukRed),
+              ),
           ],
         ),
         onTap: () => _editTransaction(context, existing: t),
@@ -716,8 +853,10 @@ class _FinanceScreenState extends State<FinanceScreen>
     );
   }
 
-  Future<void> _editTransaction(BuildContext context,
-      {FinanceTransaction? existing}) async {
+  Future<void> _editTransaction(
+    BuildContext context, {
+    FinanceTransaction? existing,
+  }) async {
     final fs = context.read<FinanceService>();
     final state = context.read<AppState>();
     await Navigator.push(
@@ -747,12 +886,16 @@ class _FinanceScreenState extends State<FinanceScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('아래 주소를 브라우저에 붙여 넣으면 '
-                '거래내역·연도별집계·인가자별요약·분류규칙 시트가 담긴 '
-                '엑셀 파일을 내려받습니다.'),
+            const Text(
+              '아래 주소를 브라우저에 붙여 넣으면 '
+              '거래내역·연도별집계·인가자별요약·분류규칙 시트가 담긴 '
+              '엑셀 파일을 내려받습니다.',
+            ),
             const SizedBox(height: 10),
-            SelectableText(url,
-                style: const TextStyle(fontSize: 11, color: AppColors.purple)),
+            SelectableText(
+              url,
+              style: const TextStyle(fontSize: 11, color: AppColors.purple),
+            ),
           ],
         ),
         actions: [
@@ -797,9 +940,13 @@ class _FinanceScreenState extends State<FinanceScreen>
               ),
               onPressed: () => _exportTab(tabIndex),
               icon: const Icon(Icons.ios_share, size: 18),
-              label: Text('「$label」 출력 (PDF·JPG·엑셀·PPT·워드·CSV·TXT)',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w800)),
+              label: Text(
+                '「$label」 출력 (PDF·JPG·엑셀·PPT·워드·CSV·TXT)',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
         ],
@@ -815,7 +962,10 @@ class _FinanceScreenState extends State<FinanceScreen>
   }
 
   FinanceExportData _buildExportData(
-      FinanceService fs, AppState state, int tabIndex) {
+    FinanceService fs,
+    AppState state,
+    int tabIndex,
+  ) {
     switch (tabIndex) {
       case 0:
         return _overviewExport(fs, state);
@@ -841,10 +991,12 @@ class _FinanceScreenState extends State<FinanceScreen>
 
   FinanceExportData _overviewExport(FinanceService fs, AppState state) {
     final tx = fs.transactions.where(_inYear).toList();
-    final income =
-        tx.where((t) => !t.isExpense).fold<int>(0, (s, t) => s + t.amount);
-    final expense =
-        tx.where((t) => t.isExpense).fold<int>(0, (s, t) => s + t.amount);
+    final income = tx
+        .where((t) => !t.isExpense)
+        .fold<int>(0, (s, t) => s + t.amount);
+    final expense = tx
+        .where((t) => t.isExpense)
+        .fold<int>(0, (s, t) => s + t.amount);
 
     final catTotals = <String, int>{};
     for (final t in tx) {
@@ -860,10 +1012,10 @@ class _FinanceScreenState extends State<FinanceScreen>
       yearMap[y] = (yearMap[y] ?? 0) + t.amount;
     }
     final sortedYears = Map.fromEntries(
-        yearMap.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+      yearMap.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
 
-    final unmatched =
-        tx.where((t) => !t.isExpense && !t.matched).toList();
+    final unmatched = tx.where((t) => !t.isExpense && !t.matched).toList();
 
     final tables = <FinanceTable>[
       FinanceTable(
@@ -883,13 +1035,17 @@ class _FinanceScreenState extends State<FinanceScreen>
         rows: [
           for (final e in sortedYears.entries) [e.key, _money(e.value)],
         ],
-        totals: ['합계', _money(sortedYears.values.fold<int>(0, (s, v) => s + v))],
+        totals: [
+          '합계',
+          _money(sortedYears.values.fold<int>(0, (s, v) => s + v)),
+        ],
       ),
       FinanceTable(
         title: '분류별 비중 (수입)',
         headers: const ['분류', '금액', '비중'],
         rows: [
-          for (final e in (catTotals.entries.toList()
+          for (final e
+              in (catTotals.entries.toList()
                 ..sort((a, b) => b.value.compareTo(a.value))))
             [
               e.key,
@@ -907,13 +1063,7 @@ class _FinanceScreenState extends State<FinanceScreen>
         headers: const ['일자', '입금자(원문)', '인식정보', '금액', '분류'],
         rows: [
           for (final t in unmatched)
-            [
-              t.date,
-              t.payer,
-              t.context,
-              _money(t.amount),
-              t.category,
-            ],
+            [t.date, t.payer, t.context, _money(t.amount), t.category],
         ],
       ),
     ];
@@ -950,16 +1100,18 @@ class _FinanceScreenState extends State<FinanceScreen>
 
     final catRows = <List<String>>[];
     final cEntries = byCat.entries.toList()
-      ..sort((a, b) =>
-          (((b.value as num?) ?? 0)).compareTo((a.value as num?) ?? 0));
+      ..sort(
+        (a, b) => (((b.value as num?) ?? 0)).compareTo((a.value as num?) ?? 0),
+      );
     for (final e in cEntries) {
       catRows.add(['${e.key}', _money(((e.value as num?) ?? 0).toInt())]);
     }
 
     final expRows = <List<String>>[];
     final eEntries = byExpCat.entries.toList()
-      ..sort((a, b) =>
-          (((b.value as num?) ?? 0)).compareTo((a.value as num?) ?? 0));
+      ..sort(
+        (a, b) => (((b.value as num?) ?? 0)).compareTo((a.value as num?) ?? 0),
+      );
     for (final e in eEntries) {
       expRows.add(['${e.key}', _money(((e.value as num?) ?? 0).toInt())]);
     }
@@ -999,8 +1151,12 @@ class _FinanceScreenState extends State<FinanceScreen>
           rows: catRows,
           totals: [
             '합계',
-            _money(catRows.fold<int>(
-                0, (s, r) => s + _parseWon(r.length > 1 ? r[1] : ''))),
+            _money(
+              catRows.fold<int>(
+                0,
+                (s, r) => s + _parseWon(r.length > 1 ? r[1] : ''),
+              ),
+            ),
           ],
         ),
         FinanceTable(
@@ -1009,8 +1165,12 @@ class _FinanceScreenState extends State<FinanceScreen>
           rows: expRows,
           totals: [
             '합계',
-            _money(expRows.fold<int>(
-                0, (s, r) => s + _parseWon(r.length > 1 ? r[1] : ''))),
+            _money(
+              expRows.fold<int>(
+                0,
+                (s, r) => s + _parseWon(r.length > 1 ? r[1] : ''),
+              ),
+            ),
           ],
         ),
         FinanceTable(
@@ -1026,7 +1186,10 @@ class _FinanceScreenState extends State<FinanceScreen>
       int.tryParse(s.replaceAll(RegExp(r'[^0-9\-]'), '')) ?? 0;
 
   FinanceExportData _categoryExport(
-      FinanceService fs, AppState state, String category) {
+    FinanceService fs,
+    AppState state,
+    String category,
+  ) {
     final tx = fs.transactions
         .where(_inYear)
         .where((t) => !t.isExpense && t.category == category)
@@ -1042,7 +1205,9 @@ class _FinanceScreenState extends State<FinanceScreen>
     }
     final top = byMember.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    final names = <String, Member>{for (final m in state.repo.all()) m.number: m};
+    final names = <String, Member>{
+      for (final m in state.repo.all()) m.number: m,
+    };
 
     return FinanceExportData(
       title: '$category 현황',
@@ -1061,8 +1226,9 @@ class _FinanceScreenState extends State<FinanceScreen>
           title: '연도별 $category',
           headers: const ['연도', '금액'],
           rows: [
-            for (final e in (yearMap.entries.toList()
-              ..sort((a, b) => a.key.compareTo(b.key))))
+            for (final e
+                in (yearMap.entries.toList()
+                  ..sort((a, b) => a.key.compareTo(b.key))))
               [e.key, _money(e.value)],
           ],
           totals: ['합계', _money(total)],
@@ -1072,11 +1238,7 @@ class _FinanceScreenState extends State<FinanceScreen>
           headers: const ['인가번호', '성명', '금액'],
           rows: [
             for (final e in top.take(100))
-              [
-                e.key,
-                names[e.key]?.name ?? '번호 ${e.key}',
-                _money(e.value),
-              ],
+              [e.key, names[e.key]?.name ?? '번호 ${e.key}', _money(e.value)],
           ],
         ),
         FinanceTable(
@@ -1100,8 +1262,10 @@ class _FinanceScreenState extends State<FinanceScreen>
   }
 
   FinanceExportData _expenseExport(FinanceService fs) {
-    final tx =
-        fs.transactions.where(_inYear).where((t) => t.isExpense).toList();
+    final tx = fs.transactions
+        .where(_inYear)
+        .where((t) => t.isExpense)
+        .toList();
     final total = tx.fold<int>(0, (s, t) => s + t.amount);
     final catMap = <String, int>{};
     for (final t in tx) {
@@ -1129,8 +1293,9 @@ class _FinanceScreenState extends State<FinanceScreen>
           title: '분류별 지출',
           headers: const ['분류', '금액'],
           rows: [
-            for (final e in (catMap.entries.toList()
-              ..sort((a, b) => b.value.compareTo(a.value))))
+            for (final e
+                in (catMap.entries.toList()
+                  ..sort((a, b) => b.value.compareTo(a.value))))
               [e.key, _money(e.value)],
           ],
           totals: ['합계', _money(total)],
@@ -1139,8 +1304,9 @@ class _FinanceScreenState extends State<FinanceScreen>
           title: '행사별 지출',
           headers: const ['행사', '금액'],
           rows: [
-            for (final e in (byEvent.entries.toList()
-              ..sort((a, b) => b.value.compareTo(a.value))))
+            for (final e
+                in (byEvent.entries.toList()
+                  ..sort((a, b) => b.value.compareTo(a.value))))
               [e.key, _money(e.value)],
           ],
         ),

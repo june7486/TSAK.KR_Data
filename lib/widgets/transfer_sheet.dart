@@ -81,15 +81,12 @@ class _TransferSheetState extends State<_TransferSheet> {
     final a = widget.accounts;
     if (a != null && a.isNotEmpty) return a;
     return [
-      {
-        'label': widget.label,
-        'bank': widget.bank,
-        'account': widget.account,
-      },
+      {'label': widget.label, 'bank': widget.bank, 'account': widget.account},
     ];
   }
 
-  Map<String, dynamic> get _acct => _accounts[_acctIdx.clamp(0, _accounts.length - 1)];
+  Map<String, dynamic> get _acct =>
+      _accounts[_acctIdx.clamp(0, _accounts.length - 1)];
 
   /// 현재 선택 계좌의 종류 라벨 (혼선 방지용 — 계좌번호 앞에 명기).
   String get _label => '${_acct['label'] ?? widget.label}';
@@ -98,11 +95,13 @@ class _TransferSheetState extends State<_TransferSheet> {
   @override
   void initState() {
     super.initState();
-    _acctIdx = (widget.initialIndex >= 0 && widget.initialIndex < _accounts.length)
+    _acctIdx =
+        (widget.initialIndex >= 0 && widget.initialIndex < _accounts.length)
         ? widget.initialIndex
         : 0;
-    final initial =
-        (widget.amount != null && widget.amount! > 0) ? widget.amount! : 0;
+    final initial = (widget.amount != null && widget.amount! > 0)
+        ? widget.amount!
+        : 0;
     _amount = initial;
     _amt = TextEditingController(text: initial > 0 ? _won(initial) : '');
   }
@@ -114,9 +113,9 @@ class _TransferSheetState extends State<_TransferSheet> {
   }
 
   static String _won(int n) => n.toString().replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+$)'),
-        (m) => '${m[1]},',
-      );
+    RegExp(r'(\d)(?=(\d{3})+$)'),
+    (m) => '${m[1]},',
+  );
 
   String get _accountDigits => _account.replaceAll(RegExp(r'[^0-9]'), '');
 
@@ -191,27 +190,194 @@ class _TransferSheetState extends State<_TransferSheet> {
   ///   store : 미설치 시 설치 유도용 패키지 ID(없으면 Play 검색)
   ///   site  : **PC(데스크톱) 웹**에서 여는 인터넷뱅킹 주소 (핵심)
   static const List<Map<String, String>> _banks = [
-    {'name': '토스', 'mode': 'toss', 'scheme': 'supertoss://send', 'short': '토스', 'color': '0064FF', 'site': 'https://www.tossbank.com/'},
-    {'name': '카카오뱅크', 'mode': 'open', 'scheme': 'kakaobank://', 'store': 'com.kakaobank.channel', 'short': '카뱅', 'color': 'FFCD00', 'site': 'https://www.kakaobank.com/'},
-    {'name': '케이뱅크', 'mode': 'open', 'scheme': 'kbank://', 'store': 'com.kbankwith.kbankwith', 'short': '케이', 'color': '00B4B0', 'site': 'https://www.kbanknow.com/'},
-    {'name': 'KB국민은행', 'mode': 'open', 'scheme': 'kb-acp://', 'store': 'com.kbstar.kbbank', 'short': 'KB', 'color': 'FFB800', 'site': 'https://www.kbstar.com/'},
-    {'name': '신한은행', 'mode': 'open', 'scheme': 'shinhan-sbank://', 'store': 'com.shinhan.sbanking', 'short': '신한', 'color': '0046FF', 'site': 'https://www.shinhan.com/'},
-    {'name': '우리은행', 'mode': 'open', 'scheme': 'wooribank://', 'store': 'com.wooribank.smart', 'short': '우리', 'color': '0067AC', 'site': 'https://www.wooribank.com/'},
-    {'name': '하나은행', 'mode': 'open', 'scheme': 'hanabank://', 'store': 'com.hanabank.ebk.channel.android.hanabank', 'short': '하나', 'color': '009A93', 'site': 'https://www.kebhana.com/'},
-    {'name': 'NH농협은행', 'mode': 'open', 'scheme': 'nhbapp://', 'store': 'nh.smart.nhall', 'short': 'NH', 'color': '1B7C3D', 'site': 'https://banking.nonghyup.com/'},
-    {'name': 'IBK기업은행', 'mode': 'open', 'scheme': 'ibkonebank://', 'store': 'com.ibk.android.ionebank', 'short': 'IBK', 'color': '005EB8', 'site': 'https://www.ibk.co.kr/'},
-    {'name': 'SC제일은행', 'mode': 'open', 'scheme': 'scbank://', 'store': 'com.scbank.smart', 'short': 'SC', 'color': '00694E', 'site': 'https://www.standardchartered.co.kr/'},
-    {'name': '한국씨티은행', 'mode': 'open', 'scheme': 'citibank://', 'store': 'com.citibank.mobile.kr', 'short': '씨티', 'color': '0F4FA8', 'site': 'https://www.citibank.co.kr/'},
-    {'name': '부산은행', 'mode': 'open', 'scheme': 'busanbank://', 'store': 'kr.co.busanbank.mobile', 'short': '부산', 'color': '0059A5', 'site': 'https://www.busanbank.co.kr/'},
-    {'name': '경남은행', 'mode': 'open', 'scheme': 'knbank://', 'store': 'kr.co.knbank.smart', 'short': '경남', 'color': 'C8102E', 'site': 'https://www.knbank.co.kr/'},
-    {'name': '대구은행', 'mode': 'open', 'scheme': 'dgbbank://', 'store': 'com.dgb.imbank', 'short': '대구', 'color': '0B4DA2', 'site': 'https://www.imbank.com/'},
-    {'name': '광주은행', 'mode': 'open', 'scheme': 'kjbank://', 'store': 'com.kjbank.smart', 'short': '광주', 'color': 'F0A500', 'site': 'https://www.kjbank.com/'},
-    {'name': '전북은행', 'mode': 'open', 'scheme': 'jbbank://', 'store': 'com.jbbank.smart', 'short': '전북', 'color': '005BAC', 'site': 'https://www.jbbank.co.kr/'},
-    {'name': '제주은행', 'mode': 'open', 'scheme': 'jejubank://', 'store': 'com.jejubank.smart', 'short': '제주', 'color': 'E87722', 'site': 'https://www.jejubank.com/'},
-    {'name': '수협은행', 'mode': 'open', 'scheme': 'suhyupbank://', 'store': 'com.suhyup.heydan', 'short': '수협', 'color': '0067A3', 'site': 'https://www.suhyup-bank.com/'},
-    {'name': '우체국', 'mode': 'open', 'scheme': 'epostbank://', 'store': 'com.epost.psf.smart', 'short': '우체국', 'color': 'E8442E', 'site': 'https://www.epostbank.go.kr/'},
-    {'name': '새마을금고', 'mode': 'open', 'scheme': 'mgbank://', 'store': 'com.kfcc.mgbank', 'short': '새마을', 'color': '00703C', 'site': 'https://www.kfcc.co.kr/'},
-    {'name': '신협', 'mode': 'open', 'scheme': 'cuapp://', 'store': 'com.cu.smartbank', 'short': '신협', 'color': '0083C6', 'site': 'https://www.cu.co.kr/'},
+    {
+      'name': '토스',
+      'mode': 'toss',
+      'scheme': 'supertoss://send',
+      'short': '토스',
+      'color': '0064FF',
+      'site': 'https://www.tossbank.com/',
+    },
+    {
+      'name': '카카오뱅크',
+      'mode': 'open',
+      'scheme': 'kakaobank://',
+      'store': 'com.kakaobank.channel',
+      'short': '카뱅',
+      'color': 'FFCD00',
+      'site': 'https://www.kakaobank.com/',
+    },
+    {
+      'name': '케이뱅크',
+      'mode': 'open',
+      'scheme': 'kbank://',
+      'store': 'com.kbankwith.kbankwith',
+      'short': '케이',
+      'color': '00B4B0',
+      'site': 'https://www.kbanknow.com/',
+    },
+    {
+      'name': 'KB국민은행',
+      'mode': 'open',
+      'scheme': 'kb-acp://',
+      'store': 'com.kbstar.kbbank',
+      'short': 'KB',
+      'color': 'FFB800',
+      'site': 'https://www.kbstar.com/',
+    },
+    {
+      'name': '신한은행',
+      'mode': 'open',
+      'scheme': 'shinhan-sbank://',
+      'store': 'com.shinhan.sbanking',
+      'short': '신한',
+      'color': '0046FF',
+      'site': 'https://www.shinhan.com/',
+    },
+    {
+      'name': '우리은행',
+      'mode': 'open',
+      'scheme': 'wooribank://',
+      'store': 'com.wooribank.smart',
+      'short': '우리',
+      'color': '0067AC',
+      'site': 'https://www.wooribank.com/',
+    },
+    {
+      'name': '하나은행',
+      'mode': 'open',
+      'scheme': 'hanabank://',
+      'store': 'com.hanabank.ebk.channel.android.hanabank',
+      'short': '하나',
+      'color': '009A93',
+      'site': 'https://www.kebhana.com/',
+    },
+    {
+      'name': 'NH농협은행',
+      'mode': 'open',
+      'scheme': 'nhbapp://',
+      'store': 'nh.smart.nhall',
+      'short': 'NH',
+      'color': '1B7C3D',
+      'site': 'https://banking.nonghyup.com/',
+    },
+    {
+      'name': 'IBK기업은행',
+      'mode': 'open',
+      'scheme': 'ibkonebank://',
+      'store': 'com.ibk.android.ionebank',
+      'short': 'IBK',
+      'color': '005EB8',
+      'site': 'https://www.ibk.co.kr/',
+    },
+    {
+      'name': 'SC제일은행',
+      'mode': 'open',
+      'scheme': 'scbank://',
+      'store': 'com.scbank.smart',
+      'short': 'SC',
+      'color': '00694E',
+      'site': 'https://www.standardchartered.co.kr/',
+    },
+    {
+      'name': '한국씨티은행',
+      'mode': 'open',
+      'scheme': 'citibank://',
+      'store': 'com.citibank.mobile.kr',
+      'short': '씨티',
+      'color': '0F4FA8',
+      'site': 'https://www.citibank.co.kr/',
+    },
+    {
+      'name': '부산은행',
+      'mode': 'open',
+      'scheme': 'busanbank://',
+      'store': 'kr.co.busanbank.mobile',
+      'short': '부산',
+      'color': '0059A5',
+      'site': 'https://www.busanbank.co.kr/',
+    },
+    {
+      'name': '경남은행',
+      'mode': 'open',
+      'scheme': 'knbank://',
+      'store': 'kr.co.knbank.smart',
+      'short': '경남',
+      'color': 'C8102E',
+      'site': 'https://www.knbank.co.kr/',
+    },
+    {
+      'name': '대구은행',
+      'mode': 'open',
+      'scheme': 'dgbbank://',
+      'store': 'com.dgb.imbank',
+      'short': '대구',
+      'color': '0B4DA2',
+      'site': 'https://www.imbank.com/',
+    },
+    {
+      'name': '광주은행',
+      'mode': 'open',
+      'scheme': 'kjbank://',
+      'store': 'com.kjbank.smart',
+      'short': '광주',
+      'color': 'F0A500',
+      'site': 'https://www.kjbank.com/',
+    },
+    {
+      'name': '전북은행',
+      'mode': 'open',
+      'scheme': 'jbbank://',
+      'store': 'com.jbbank.smart',
+      'short': '전북',
+      'color': '005BAC',
+      'site': 'https://www.jbbank.co.kr/',
+    },
+    {
+      'name': '제주은행',
+      'mode': 'open',
+      'scheme': 'jejubank://',
+      'store': 'com.jejubank.smart',
+      'short': '제주',
+      'color': 'E87722',
+      'site': 'https://www.jejubank.com/',
+    },
+    {
+      'name': '수협은행',
+      'mode': 'open',
+      'scheme': 'suhyupbank://',
+      'store': 'com.suhyup.heydan',
+      'short': '수협',
+      'color': '0067A3',
+      'site': 'https://www.suhyup-bank.com/',
+    },
+    {
+      'name': '우체국',
+      'mode': 'open',
+      'scheme': 'epostbank://',
+      'store': 'com.epost.psf.smart',
+      'short': '우체국',
+      'color': 'E8442E',
+      'site': 'https://www.epostbank.go.kr/',
+    },
+    {
+      'name': '새마을금고',
+      'mode': 'open',
+      'scheme': 'mgbank://',
+      'store': 'com.kfcc.mgbank',
+      'short': '새마을',
+      'color': '00703C',
+      'site': 'https://www.kfcc.co.kr/',
+    },
+    {
+      'name': '신협',
+      'mode': 'open',
+      'scheme': 'cuapp://',
+      'store': 'com.cu.smartbank',
+      'short': '신협',
+      'color': '0083C6',
+      'site': 'https://www.cu.co.kr/',
+    },
   ];
 
   /// 계좌번호만(숫자) 클립보드에 복사 — 은행 앱 송금화면에 붙여넣기용.
@@ -348,14 +514,22 @@ class _TransferSheetState extends State<_TransferSheet> {
                       'PC(데스크톱): 은행 아이콘을 누르면 계좌번호가 복사되고 '
                       '해당 은행 인터넷뱅킹 사이트가 새 탭으로 열려요.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.45),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                        height: 1.45,
+                      ),
                     )
                   else
                     const Text(
                       '토스: 계좌·금액이 자동 입력된 송금화면이 열려요.\n'
                       '그 외 은행: 계좌번호가 복사되고 앱이 열려요 → 앱에서 붙여넣기.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.45),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                        height: 1.45,
+                      ),
                     ),
                   const SizedBox(height: 16),
                   _qrCard(),
@@ -368,8 +542,7 @@ class _TransferSheetState extends State<_TransferSheet> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    onPressed: () =>
-                        _copy(_copyAllText(), '송금 정보가 복사됐어요'),
+                    onPressed: () => _copy(_copyAllText(), '송금 정보가 복사됐어요'),
                     icon: const Icon(Icons.copy_all_rounded, size: 18),
                     label: const Text(
                       '송금 정보 복사 (은행·계좌·금액)',
@@ -515,9 +688,7 @@ class _TransferSheetState extends State<_TransferSheet> {
                     child: Icon(
                       isToss ? Icons.bolt_rounded : Icons.copy_rounded,
                       size: 11,
-                      color: isToss
-                          ? AppColors.purple
-                          : AppColors.textGray,
+                      color: isToss ? AppColors.purple : AppColors.textGray,
                     ),
                   ),
                 ),
@@ -566,12 +737,18 @@ class _TransferSheetState extends State<_TransferSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             decoration: BoxDecoration(
               color: AppColors.purple.withValues(alpha: 0.06),
-              border: Border.all(color: AppColors.purple.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: AppColors.purple.withValues(alpha: 0.3),
+              ),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               children: [
-                const Icon(Icons.lock_outline, size: 16, color: AppColors.purple),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 16,
+                  color: AppColors.purple,
+                ),
                 const SizedBox(width: 8),
                 const Text(
                   '우리은행',
@@ -623,7 +800,9 @@ class _TransferSheetState extends State<_TransferSheet> {
                       // 계좌 종류 명기 (혼선 방지)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2),
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.tigerGold.withValues(alpha: 0.22),
                           borderRadius: BorderRadius.circular(5),
@@ -648,8 +827,11 @@ class _TransferSheetState extends State<_TransferSheet> {
                       ),
                       if (multi) ...[
                         const Spacer(),
-                        const Icon(Icons.expand_more,
-                            size: 20, color: AppColors.purple),
+                        const Icon(
+                          Icons.expand_more,
+                          size: 20,
+                          color: AppColors.purple,
+                        ),
                       ],
                     ],
                   ),
@@ -691,11 +873,16 @@ class _TransferSheetState extends State<_TransferSheet> {
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.account_balance, size: 18, color: AppColors.purple),
+                  Icon(
+                    Icons.account_balance,
+                    size: 18,
+                    color: AppColors.purple,
+                  ),
                   SizedBox(width: 6),
-                  Text('송금할 계좌 선택',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w800)),
+                  Text(
+                    '송금할 계좌 선택',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
                 ],
               ),
             ),
@@ -705,14 +892,14 @@ class _TransferSheetState extends State<_TransferSheet> {
                   i == _acctIdx
                       ? Icons.radio_button_checked
                       : Icons.radio_button_unchecked,
-                  color: i == _acctIdx
-                      ? AppColors.purple
-                      : AppColors.textGray,
+                  color: i == _acctIdx ? AppColors.purple : AppColors.textGray,
                 ),
                 title: Text(
                   '${_accounts[i]['label']}',
                   style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w800),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 subtitle: Text(
                   '${_accounts[i]['bank']} ${_accounts[i]['account']}',
@@ -749,9 +936,7 @@ class _TransferSheetState extends State<_TransferSheet> {
           decoration: InputDecoration(
             hintText: '금액 입력 (선택)',
             suffixText: '원',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
         const SizedBox(height: 8),
@@ -792,8 +977,11 @@ class _TransferSheetState extends State<_TransferSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.qr_code_2_rounded,
-                  size: 18, color: AppColors.purple),
+              const Icon(
+                Icons.qr_code_2_rounded,
+                size: 18,
+                color: AppColors.purple,
+              ),
               const SizedBox(width: 6),
               const Text(
                 'QR로 휴대폰에 전달',
@@ -893,9 +1081,9 @@ class _ThousandsFormatter extends TextInputFormatter {
     if (digits.isEmpty) return const TextEditingValue();
     final n = int.parse(digits);
     final s = n.toString().replaceAllMapped(
-          RegExp(r'(\d)(?=(\d{3})+$)'),
-          (m) => '${m[1]},',
-        );
+      RegExp(r'(\d)(?=(\d{3})+$)'),
+      (m) => '${m[1]},',
+    );
     return TextEditingValue(
       text: s,
       selection: TextSelection.collapsed(offset: s.length),

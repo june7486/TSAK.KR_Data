@@ -323,11 +323,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      '현재활동: ${[
-                        if (m.regLeague.isNotEmpty) m.regLeague,
-                        if (m.regUnit.isNotEmpty) m.regUnit,
-                        if (m.position.isNotEmpty) m.position,
-                      ].join(' · ')}',
+                      '현재활동: ${[if (m.regLeague.isNotEmpty) m.regLeague, if (m.regUnit.isNotEmpty) m.regUnit, if (m.position.isNotEmpty) m.position].join(' · ')}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11.5,
@@ -1628,22 +1624,28 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (awards.isNotEmpty) ...[
-                const Text('받은 메달',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark)),
+                const Text(
+                  '받은 메달',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 for (final a in awards) _medalRow(a, '받음'),
               ],
               if (awards.isNotEmpty && granted.isNotEmpty)
                 const SizedBox(height: 8),
               if (granted.isNotEmpty) ...[
-                const Text('수여한 메달 (이름·인가번호 각인)',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark)),
+                const Text(
+                  '수여한 메달 (이름·인가번호 각인)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 for (final a in granted) _medalRow(a, '수여'),
               ],
@@ -1658,12 +1660,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final kind = '${a['kindLabel'] ?? a['kind'] ?? ''}';
     final product = '${a['product'] ?? ''}';
     final created = '${a['created'] ?? ''}';
-    final color =
-        '${a['kind']}' == 'parent' ? AppColors.taegeukBlue : AppColors.purple;
+    final color = '${a['kind']}' == 'parent'
+        ? AppColors.taegeukBlue
+        : AppColors.purple;
     // 받은 메달: 이름 각인(누가 줬는지 표시 어려움) / 수여: 상대 이름
     final rcp = (a['recipient'] as Map?)?.cast<String, dynamic>();
     final detail = mode == '받음'
-        ? (rcp != null ? '${rcp['unit'] ?? ''} ${rcp['name'] ?? ''}'.trim() : '')
+        ? (rcp != null
+              ? '${rcp['unit'] ?? ''} ${rcp['name'] ?? ''}'.trim()
+              : '')
         : '${a['buyerName'] ?? ''}'.trim();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -1677,22 +1682,30 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(kind,
-                style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+            child: Text(
+              kind,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
           ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              [product, if (detail.isNotEmpty) detail]
-                  .where((s) => s.isNotEmpty)
-                  .join(' · '),
+              [
+                product,
+                if (detail.isNotEmpty) detail,
+              ].where((s) => s.isNotEmpty).join(' · '),
               style: const TextStyle(fontSize: 11.5, color: AppColors.textDark),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(created,
-              style: const TextStyle(fontSize: 10, color: AppColors.textGray)),
+          Text(
+            created,
+            style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+          ),
         ],
       ),
     );
@@ -1724,7 +1737,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return _section(
       title: '현재 활동 등록 정보',
       icon: Icons.play_circle_outline,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
     );
   }
 
@@ -1736,10 +1752,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   ///     (편집 화면과 동일한 기준: 멘티 인가번호 + 멘토/페런츠 인적사항)
   Widget _credentialCard(Member m) {
     final state = context.watch<AppState>();
-    final canEdit = state.isApp || state.isMaster || state.isSelfNumber(m.number);
+    final canEdit =
+        state.isApp || state.isMaster || state.isSelfNumber(m.number);
     // 멘토: 코드는 멘티(본인) 범인가자번호 → 표시는 "멘토이름 (멘티 #번호)".
-    final mentorLabels =
-        m.mentors.map((e) => _linkNameLabel(e, numberKind: 'mentor')).join(', ');
+    final mentorLabels = m.mentors
+        .map((e) => _linkNameLabel(e, numberKind: 'mentor'))
+        .join(', ');
     final parentLabels = m.parents.map((e) => _linkNameLabel(e)).join(', ');
     return _section(
       title: '범스카우트 인가 정보 (인가 당시 정보)',
@@ -1751,14 +1769,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
           // 멘토대장·페런츠 등록현황 — 미등록도 표시(누락 방지).
-          _regRow('멘토대장',
-              mentorLabels.isEmpty ? '' : '$mentorLabels${_linkBadge(m)}'),
+          _regRow(
+            '멘토대장',
+            mentorLabels.isEmpty ? '' : '$mentorLabels${_linkBadge(m)}',
+          ),
           _regRow('페런츠', parentLabels),
           // (복원) 편집 권한자에게는 그 자리에서 입력하는 멘토·페런츠 입력창을 노출.
-          if (canEdit) ...[
-            const Divider(height: 22),
-            _linkEditor(m),
-          ],
+          if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
         ],
       ),
     );
@@ -1820,7 +1837,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       linkApprovalNote: hasLinks ? m.linkApprovalNote : '',
     );
     try {
-      await state.save(updated);
+      await state.save(updated, linkRequestSource: 'direct');
       if (!mounted) return;
       await _loadLinkProfiles();
       _snack('멘토·페런츠 등록을 저장했습니다 (관리자 승인 대기)');

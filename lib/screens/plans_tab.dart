@@ -42,8 +42,9 @@ class _PlansTabState extends State<PlansTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  List<Map<String, dynamic>> _list(dynamic v) =>
-      ((v as List?) ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
+  List<Map<String, dynamic>> _list(dynamic v) => ((v as List?) ?? [])
+      .map((e) => (e as Map).cast<String, dynamic>())
+      .toList();
 
   Future<void> _load() async {
     setState(() {
@@ -94,7 +95,9 @@ class _PlansTabState extends State<PlansTab> {
       final bytes = await x.readAsBytes();
       final b64 = base64Encode(bytes);
       final r = await _nas.merchImageUpload(
-          'plan_${DateTime.now().millisecondsSinceEpoch}.jpg', b64);
+        'plan_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        b64,
+      );
       if (r['ok'] == true) {
         draft['photo'] = '${r['file'] ?? ''}';
         if (mounted) setState(() {});
@@ -110,8 +113,7 @@ class _PlansTabState extends State<PlansTab> {
     final name = TextEditingController(text: '${existing?['name'] ?? ''}');
     final desc = TextEditingController(text: '${existing?['desc'] ?? ''}');
     final memo = TextEditingController(text: '${existing?['memo'] ?? ''}');
-    final price =
-        TextEditingController(text: '${existing?['price'] ?? ''}');
+    final price = TextEditingController(text: '${existing?['price'] ?? ''}');
     final video = TextEditingController(text: '${existing?['video'] ?? ''}');
     final maker = TextEditingController(text: '${existing?['maker'] ?? ''}');
     final submitted = TextEditingController(
@@ -119,13 +121,11 @@ class _PlansTabState extends State<PlansTab> {
           ? '${existing?['submittedAt']}'
           : _today(),
     );
-    final progress =
-        TextEditingController(text: '${existing?['progress'] ?? ''}');
-    final minQty =
-        TextEditingController(text: '${existing?['minQty'] ?? ''}');
-    final draft = <String, dynamic>{
-      'photo': '${existing?['photo'] ?? ''}',
-    };
+    final progress = TextEditingController(
+      text: '${existing?['progress'] ?? ''}',
+    );
+    final minQty = TextEditingController(text: '${existing?['minQty'] ?? ''}');
+    final draft = <String, dynamic>{'photo': '${existing?['photo'] ?? ''}'};
     bool surveyOpen = existing?['surveyOpen'] == true;
 
     final ok = await showDialog<bool>(
@@ -149,21 +149,24 @@ class _PlansTabState extends State<PlansTab> {
                           height: 64,
                           color: AppColors.bg,
                           child: '${draft['photo']}'.isEmpty
-                              ? const Icon(Icons.image_outlined,
-                                  color: AppColors.textGray)
+                              ? const Icon(
+                                  Icons.image_outlined,
+                                  color: AppColors.textGray,
+                                )
                               : Image.network(
                                   _nas.merchImageUrl('${draft['photo']}'),
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => const Icon(
-                                      Icons.broken_image_outlined,
-                                      color: AppColors.textGray),
+                                    Icons.broken_image_outlined,
+                                    color: AppColors.textGray,
+                                  ),
                                 ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       OutlinedButton.icon(
-                        onPressed: () => _pickPhoto(draft).then(
-                            (_) => setD(() {})),
+                        onPressed: () =>
+                            _pickPhoto(draft).then((_) => setD(() {})),
                         icon: const Icon(Icons.photo_camera_outlined, size: 16),
                         label: const Text('사진 선택'),
                       ),
@@ -173,23 +176,29 @@ class _PlansTabState extends State<PlansTab> {
                   TextField(
                     controller: name,
                     decoration: const InputDecoration(
-                        labelText: '아이템명 *', isDense: true),
+                      labelText: '아이템명 *',
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: desc,
                     maxLines: 3,
                     minLines: 1,
-                    decoration:
-                        const InputDecoration(labelText: '설명', isDense: true),
+                    decoration: const InputDecoration(
+                      labelText: '설명',
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: memo,
                     maxLines: 2,
                     minLines: 1,
-                    decoration:
-                        const InputDecoration(labelText: '메모', isDense: true),
+                    decoration: const InputDecoration(
+                      labelText: '메모',
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -199,7 +208,9 @@ class _PlansTabState extends State<PlansTab> {
                           controller: price,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                              labelText: '가격(원)', isDense: true),
+                            labelText: '가격(원)',
+                            isDense: true,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -208,7 +219,9 @@ class _PlansTabState extends State<PlansTab> {
                           controller: minQty,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                              labelText: '최소 제작 착수 수량', isDense: true),
+                            labelText: '최소 제작 착수 수량',
+                            isDense: true,
+                          ),
                         ),
                       ),
                     ],
@@ -217,7 +230,9 @@ class _PlansTabState extends State<PlansTab> {
                   TextField(
                     controller: video,
                     decoration: const InputDecoration(
-                        labelText: '동영상 (URL)', isDense: true),
+                      labelText: '동영상 (URL)',
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -226,7 +241,9 @@ class _PlansTabState extends State<PlansTab> {
                         child: TextField(
                           controller: maker,
                           decoration: const InputDecoration(
-                              labelText: '기획자', isDense: true),
+                            labelText: '기획자',
+                            isDense: true,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -234,7 +251,9 @@ class _PlansTabState extends State<PlansTab> {
                         child: TextField(
                           controller: submitted,
                           decoration: const InputDecoration(
-                              labelText: '기획안 제출일', isDense: true),
+                            labelText: '기획안 제출일',
+                            isDense: true,
+                          ),
                         ),
                       ),
                     ],
@@ -243,7 +262,9 @@ class _PlansTabState extends State<PlansTab> {
                   TextField(
                     controller: progress,
                     decoration: const InputDecoration(
-                        labelText: '현재 진행상황', isDense: true),
+                      labelText: '현재 진행상황',
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   SwitchListTile(
@@ -303,11 +324,13 @@ class _PlansTabState extends State<PlansTab> {
         content: Text('"${p['name']}" 을(를) 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -370,12 +393,16 @@ class _PlansTabState extends State<PlansTab> {
                 '최소 제작 ${minimum > 0 ? '$minimum명' : '미정'} 대비 '
                 '${apps.length}명 신청',
                 style: const TextStyle(
-                    fontWeight: FontWeight.w800, color: AppColors.purpleDark),
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purpleDark,
+                ),
               ),
               const SizedBox(height: 8),
               if (apps.isEmpty)
-                const Text('아직 신청자가 없습니다',
-                    style: TextStyle(color: AppColors.textGray))
+                const Text(
+                  '아직 신청자가 없습니다',
+                  style: TextStyle(color: AppColors.textGray),
+                )
               else
                 Flexible(
                   child: ListView.builder(
@@ -388,11 +415,16 @@ class _PlansTabState extends State<PlansTab> {
                         dense: true,
                         leading: CircleAvatar(
                           radius: 13,
-                          backgroundColor:
-                              AppColors.purple.withValues(alpha: 0.12),
-                          child: Text('${i + 1}',
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w800)),
+                          backgroundColor: AppColors.purple.withValues(
+                            alpha: 0.12,
+                          ),
+                          child: Text(
+                            '${i + 1}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                         title: Text(
                           '${a['name'] ?? ''}'
@@ -434,7 +466,11 @@ class _PlansTabState extends State<PlansTab> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: AppColors.taegeukRed, size: 44),
+            const Icon(
+              Icons.error_outline,
+              color: AppColors.taegeukRed,
+              size: 44,
+            ),
             const SizedBox(height: 10),
             Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 10),
@@ -450,13 +486,17 @@ class _PlansTabState extends State<PlansTab> {
           children: [
             Row(
               children: [
-                const Icon(Icons.lightbulb_outline,
-                    size: 18, color: AppColors.purple),
+                const Icon(
+                  Icons.lightbulb_outline,
+                  size: 18,
+                  color: AppColors.purple,
+                ),
                 const SizedBox(width: 6),
                 const Expanded(
-                  child: Text('기획실',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 15)),
+                  child: Text(
+                    '기획실',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
                 ),
                 if (_plans.isNotEmpty)
                   IconButton(
@@ -482,9 +522,11 @@ class _PlansTabState extends State<PlansTab> {
             if (_plans.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(20),
-                child: Text('등록된 기획 아이템이 없습니다. 아래 + 버튼으로 추가하세요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textGray)),
+                child: Text(
+                  '등록된 기획 아이템이 없습니다. 아래 + 버튼으로 추가하세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textGray),
+                ),
               )
             else
               ReorderableListView.builder(
@@ -510,25 +552,35 @@ class _PlansTabState extends State<PlansTab> {
                                 width: 38,
                                 margin: const EdgeInsets.only(right: 4),
                                 decoration: BoxDecoration(
-                                  color:
-                                      AppColors.purple.withValues(alpha: 0.07),
+                                  color: AppColors.purple.withValues(
+                                    alpha: 0.07,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                      color: AppColors.purple
-                                          .withValues(alpha: 0.22)),
+                                    color: AppColors.purple.withValues(
+                                      alpha: 0.22,
+                                    ),
+                                  ),
                                 ),
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.drag_indicator,
-                                        size: 18, color: AppColors.purple),
+                                    Icon(
+                                      Icons.drag_indicator,
+                                      size: 18,
+                                      color: AppColors.purple,
+                                    ),
                                     const SizedBox(height: 1),
-                                    Text('순서변경',
-                                        style: TextStyle(
-                                            fontSize: 8,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.purple
-                                                .withValues(alpha: 0.85))),
+                                    Text(
+                                      '순서변경',
+                                      style: TextStyle(
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.purple.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -600,13 +652,18 @@ class _PlansTabState extends State<PlansTab> {
                     height: 54,
                     color: AppColors.bg,
                     child: photoUrl.isEmpty
-                        ? const Icon(Icons.image_outlined,
-                            color: AppColors.textGray)
-                        : Image.network(photoUrl,
+                        ? const Icon(
+                            Icons.image_outlined,
+                            color: AppColors.textGray,
+                          )
+                        : Image.network(
+                            photoUrl,
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => const Icon(
-                                Icons.broken_image_outlined,
-                                color: AppColors.textGray)),
+                              Icons.broken_image_outlined,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -618,21 +675,28 @@ class _PlansTabState extends State<PlansTab> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text('${p['name'] ?? ''}',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800, fontSize: 14.5)),
+                          child: Text(
+                            '${p['name'] ?? ''}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14.5,
+                            ),
+                          ),
                         ),
-                        if (surveyOpen)
-                          _chip('수요조사 진행중', AppColors.scoutGreen),
+                        if (surveyOpen) _chip('수요조사 진행중', AppColors.scoutGreen),
                       ],
                     ),
                     const SizedBox(height: 3),
                     if ('${p['desc'] ?? ''}'.isNotEmpty)
-                      Text('${p['desc']}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textDark)),
+                      Text(
+                        '${p['desc']}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textDark,
+                        ),
+                      ),
                     const SizedBox(height: 4),
                     Wrap(
                       spacing: 12,
@@ -647,8 +711,7 @@ class _PlansTabState extends State<PlansTab> {
                         if ('${p['progress'] ?? ''}'.isNotEmpty)
                           _kv('진행상황', '${p['progress']}'),
                         if (minQty > 0) _kv('최소수량', '$minQty'),
-                        if ('${p['video'] ?? ''}'.isNotEmpty)
-                          _kv('동영상', '있음'),
+                        if ('${p['video'] ?? ''}'.isNotEmpty) _kv('동영상', '있음'),
                       ],
                     ),
                   ],
@@ -666,8 +729,11 @@ class _PlansTabState extends State<PlansTab> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.groups_outlined,
-                    size: 16, color: AppColors.purple),
+                const Icon(
+                  Icons.groups_outlined,
+                  size: 16,
+                  color: AppColors.purple,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -675,12 +741,15 @@ class _PlansTabState extends State<PlansTab> {
                     '${minQty > 0 ? ' / 최소 $minQty명' : ''}'
                     '${minQty > 0 && count >= minQty ? '  ✓ 제작가능' : ''}',
                     style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w700),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 TextButton.icon(
                   style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact),
+                    visualDensity: VisualDensity.compact,
+                  ),
                   onPressed: () => _viewApplicants(p),
                   icon: const Icon(Icons.list_alt, size: 16),
                   label: const Text('신청자 명단'),
@@ -696,8 +765,7 @@ class _PlansTabState extends State<PlansTab> {
                 child: CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
-                  title: const Text('수요조사 진행',
-                      style: TextStyle(fontSize: 13)),
+                  title: const Text('수요조사 진행', style: TextStyle(fontSize: 13)),
                   value: surveyOpen,
                   onChanged: (v) => _toggleSurvey(p, v == true),
                 ),
@@ -721,33 +789,38 @@ class _PlansTabState extends State<PlansTab> {
 
   /// 기획안 이미지 클릭 → 확대 이미지 + 상세 설명 화면(돌아가기 포함).
   void _openPlanDetail(Map<String, dynamic> p) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => MerchDetailScreen(item: p, isSurvey: true),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MerchDetailScreen(item: p, isSurvey: true),
+      ),
+    );
   }
 
   Widget _chip(String t, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(t,
-            style: TextStyle(
-                fontSize: 10.5, fontWeight: FontWeight.w800, color: c)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      t,
+      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c),
+    ),
+  );
 
   Widget _kv(String k, String v) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('$k ',
-              style: const TextStyle(
-                  fontSize: 11, color: AppColors.textGray)),
-          Text(v,
-              style: const TextStyle(
-                  fontSize: 11.5, fontWeight: FontWeight.w700)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        '$k ',
+        style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+      ),
+      Text(
+        v,
+        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+      ),
+    ],
+  );
 
   String _won(int v) {
     final s = v.toString();
@@ -767,18 +840,26 @@ class _PlansTabState extends State<PlansTab> {
       final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
       rows.add([
         DocCell('${i + 1}', align: 'center'),
-        DocCell('${p['name'] ?? ''}',
-            accent: kMujiAccents[i % kMujiAccents.length], bold: true,
-            sub: '${p['desc'] ?? ''}'),
+        DocCell(
+          '${p['name'] ?? ''}',
+          accent: kMujiAccents[i % kMujiAccents.length],
+          bold: true,
+          sub: '${p['desc'] ?? ''}',
+        ),
         DocCell('${p['maker'] ?? ''}'),
-        DocCell('${p['price'] ?? 0}'.isNotEmpty
-            ? _won((p['price'] as num?)?.toInt() ?? 0)
-            : '-', align: 'right'),
+        DocCell(
+          '${p['price'] ?? 0}'.isNotEmpty
+              ? _won((p['price'] as num?)?.toInt() ?? 0)
+              : '-',
+          align: 'right',
+        ),
         DocCell('${p['submittedAt'] ?? ''}', align: 'center'),
         DocCell('${p['progress'] ?? ''}'),
-        DocCell('${apps.length}${minQty > 0 ? ' / $minQty' : ''}명',
-            align: 'center',
-            bold: minQty > 0 && apps.length >= minQty),
+        DocCell(
+          '${apps.length}${minQty > 0 ? ' / $minQty' : ''}명',
+          align: 'center',
+          bold: minQty > 0 && apps.length >= minQty,
+        ),
       ]);
     }
     final html = buildMujiDoc(
@@ -809,9 +890,11 @@ class _PlansTabState extends State<PlansTab> {
         case TsakOutputFormat.pdf:
         case TsakOutputFormat.jpg:
           openPrintableHtml(html);
-          _snack(format == TsakOutputFormat.jpg
-              ? '인쇄창에서 대상=이미지로 저장하세요'
-              : '인쇄창에서 PDF로 저장하세요');
+          _snack(
+            format == TsakOutputFormat.jpg
+                ? '인쇄창에서 대상=이미지로 저장하세요'
+                : '인쇄창에서 PDF로 저장하세요',
+          );
           return;
         case TsakOutputFormat.excel:
           await Clipboard.setData(ClipboardData(text: _plansCsvText()));
@@ -819,8 +902,7 @@ class _PlansTabState extends State<PlansTab> {
           return;
         case TsakOutputFormat.ppt:
         case TsakOutputFormat.word:
-          await Clipboard.setData(
-              ClipboardData(text: _plansPlainText(format)));
+          await Clipboard.setData(ClipboardData(text: _plansPlainText(format)));
           _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
           return;
       }
@@ -844,8 +926,10 @@ class _PlansTabState extends State<PlansTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray)),
+            const Text(
+              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
             const SizedBox(height: 12),
             TsakOutputBar(
               onFormat: (f) {
@@ -865,7 +949,9 @@ class _PlansTabState extends State<PlansTab> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('닫기')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -879,9 +965,11 @@ class _PlansTabState extends State<PlansTab> {
       final p = _plans[i];
       final apps = (p['applicants'] as List?) ?? [];
       final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
-      buf.writeln('${i + 1},${p['name'] ?? ''},${p['maker'] ?? ''},'
-          '${(p['price'] as num?)?.toInt() ?? 0},${p['submittedAt'] ?? ''},'
-          '${p['progress'] ?? ''},${apps.length},$minQty');
+      buf.writeln(
+        '${i + 1},${p['name'] ?? ''},${p['maker'] ?? ''},'
+        '${(p['price'] as num?)?.toInt() ?? 0},${p['submittedAt'] ?? ''},'
+        '${p['progress'] ?? ''},${apps.length},$minQty',
+      );
     }
     return buf.toString();
   }
@@ -889,19 +977,21 @@ class _PlansTabState extends State<PlansTab> {
   /// 기획안 목록 → PPT/워드 붙여넣기용 텍스트.
   String _plansPlainText(TsakOutputFormat format) {
     final buf = StringBuffer();
-    buf.writeln(format == TsakOutputFormat.ppt
-        ? '수품 기획안 목록 (슬라이드용)'
-        : '수품 기획안 목록 (문서용)');
+    buf.writeln(
+      format == TsakOutputFormat.ppt ? '수품 기획안 목록 (슬라이드용)' : '수품 기획안 목록 (문서용)',
+    );
     buf.writeln('한국범스카우트중앙회 · 기획실');
     buf.writeln();
     for (var i = 0; i < _plans.length; i++) {
       final p = _plans[i];
       final apps = (p['applicants'] as List?) ?? [];
       final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
-      buf.writeln('${i + 1}. ${p['name'] ?? ''} / ${p['maker'] ?? ''} / '
-          '${_won((p['price'] as num?)?.toInt() ?? 0)} / '
-          '신청 ${apps.length}명${minQty > 0 ? ' (최소 $minQty)' : ''} / '
-          '${p['progress'] ?? ''}');
+      buf.writeln(
+        '${i + 1}. ${p['name'] ?? ''} / ${p['maker'] ?? ''} / '
+        '${_won((p['price'] as num?)?.toInt() ?? 0)} / '
+        '신청 ${apps.length}명${minQty > 0 ? ' (최소 $minQty)' : ''} / '
+        '${p['progress'] ?? ''}',
+      );
     }
     buf.writeln();
     buf.writeln('총 ${_plans.length}건');

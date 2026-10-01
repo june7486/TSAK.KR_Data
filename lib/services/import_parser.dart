@@ -62,10 +62,7 @@ class ImportParser {
       } else {
         return [];
       }
-      return list
-          .whereType<Map>()
-          .map((e) => Member.fromMap(e))
-          .toList();
+      return list.whereType<Map>().map((e) => Member.fromMap(e)).toList();
     } catch (_) {
       return [];
     }
