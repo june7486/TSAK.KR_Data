@@ -52,7 +52,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   void initState() {
     super.initState();
     _tab = TabController(
-      length: 5,
+      length: 7,
       vsync: this,
       initialIndex: widget.initialTab,
     );
@@ -80,6 +80,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       _error = null;
     });
     try {
+      // 은하스카우트 명부 탭을 위해 은하 데이터도 함께 로드(관리자·마스터).
+      state.ensureEunhaForSearch();
       final profs = await state.nas.linkProfiles();
       Map<String, dynamic> admins = <String, dynamic>{};
       if (state.isMaster) {
@@ -284,7 +286,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
           preferredSize: const Size.fromHeight(50),
           child: HsTabStrip(
             controller: _tab,
-            labels: ['범인가자', '멘토 대장', '페런츠', '서포터즈', if (isMaster) '관리자'],
+            labels: ['범인가자', '멘토 대장', '페런츠', '서포터즈', if (isMaster) '관리자', 'ATAS', '은하스카우트'],
             bg: AppColors.purple,
           ),
         ),
@@ -328,6 +330,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _linkTable(state, 'parent'),
         _supporterTable(state),
         if (isMaster) _adminTable(),
+        _atasRosterTable(state),
+        _eunhaRosterTable(state),
       ],
     );
   }
@@ -397,7 +401,11 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     }
 
     return [
-      for (final r in rows) [for (final w in r) cell(w)],
+      for (final r in rows)
+        [
+          for (final w in r)
+            if (w is! Checkbox) cell(w),
+        ],
     ];
   }
 
@@ -558,9 +566,26 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
 
   Widget _selItem(String key, List<String> row, int idx) {
     final on = _sel.contains(key);
-    // 0=번호, 1=인가번호, 2=이름 순서를 가정(Live) — 없으면 앞 두 칸.
-    final no = row.isNotEmpty ? row[0] : '${idx + 1}';
-    final name = row.length > 2 ? row[2] : (row.length > 1 ? row[1] : '');
+    // row = [#없음, 순번, 인가번호, 아타스인가번호, 이름 …] 형태에서
+    //  · 순번은 항목 순서로 확정(신뢰).
+    //  · 라벨은 "이름" 을 우선 사용 — 한글로만 이루어진 첫 값(2자 이상).
+    final no = '${idx + 1}';
+    String name = '';
+    final nameRe = RegExp(r'^[가-힣]{2,}$');
+    for (final v in row) {
+      if (nameRe.hasMatch(v.trim())) {
+        name = v.trim();
+        break;
+      }
+    }
+    if (name.isEmpty) {
+      for (var k = 1; k < row.length; k++) {
+        if (row[k].trim().isNotEmpty) {
+          name = row[k].trim();
+          break;
+        }
+      }
+    }
     return InkWell(
       onTap: () => setState(() {
         if (on) {
@@ -597,6 +622,42 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         ),
       ),
     );
+  }
+
+  /// '#(체크박스+순번)' 셀 — (요구) 체크박스를 항목 맨 앞에 위치.
+  Widget _numCell(String key, int idx) {
+    final on = _sel.contains(key);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          value: on,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onChanged: (_) => setState(() {
+            if (on) {
+              _sel.remove(key);
+            } else {
+              _sel.add(key);
+            }
+          }),
+        ),
+        Text('${idx + 1}', style: const TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
+  /// 열 폭 조정 — (요구) 범인가번호·아타스인가번호·연락처는 좁게.
+  TableColumnWidth _colWidth(String header, int ci) {
+    if (ci == 0) return const FixedColumnWidth(44); // 챁크박스 열
+    if (header == '범인가번호' ||
+        header == '아타스인가번호' ||
+        header == '은하인가번호' ||
+        header == '연락처') {
+      return const FixedColumnWidth(116);
+    }
+    if (header == '구분') return const FixedColumnWidth(48);
+    return const FlexColumnWidth();
   }
 
   Widget _tableView(List<String> headers, List<List<Widget>> rows) {
@@ -657,7 +718,13 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
                         horizontalMargin: 12,
                         columnSpacing: 16,
                         columns: [
-                          for (final h in headers) DataColumn(label: Text(h)),
+                          for (var ci = 0; ci < headers.length; ci++)
+                            DataColumn(
+                              label: Text(headers[ci]),
+                              // (요구) 폭 조정 — 체크박스(#) 좁게,
+                              //   범인가번호·아타스인가번호·연락처는 고정폭으로 축소.
+                              columnWidth: _colWidth(headers[ci], ci),
+                            ),
                         ],
                         rows: [
                           for (final r in rows)
@@ -796,14 +863,16 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     final buf = StringBuffer(headers.join('\t'));
     buf.writeln();
     for (final r in rows) {
-      final cells = r.map((w) {
-        if (w is Text) return w.data ?? '';
-        if (w is Row) {
-          final t = w.children.whereType<Text>().firstOrNull;
-          return t?.data ?? '';
-        }
-        return '';
-      });
+      final cells = r
+          .where((w) => w is! Checkbox)
+          .map((w) {
+            if (w is Text) return w.data ?? '';
+            if (w is Row) {
+              final t = w.children.whereType<Text>().firstOrNull;
+              return t?.data ?? '';
+            }
+            return '';
+          });
       buf.writeln(cells.join('\t'));
     }
     await Clipboard.setData(ClipboardData(text: buf.toString()));
@@ -819,24 +888,71 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     ),
   );
 
-  // ---- 1. 범스카우트 인가자 명부 ----
+  // ---- 1. 범스카우트 인가자 명부 (체크박스 + 범/아타스 인가번호) ----
   Widget _credentialTable(AppState state) {
     final list = _credentialMembers(state);
+    // (요구) 항목 순서: ① 체크박스(#) ② 범인가번호 ③ 아타스인가번호 ④ 이름 ⑤ 연락처 ⑥ 소속
     final headers = ['#', '범인가번호', '아타스인가번호', '이름', '연락처', '소속'];
     final rows = <List<Widget>>[];
     for (var i = 0; i < list.length; i++) {
       final m = list[i];
-      final contact = m.phone.trim().isNotEmpty ? m.phone : m.tel;
       rows.add([
-        _t('${i + 1}'),
+        _numCell('r$i', i),
         _t(m.number, bold: true),
         _t(m.atasNo),
         _t(m.name, bold: true),
-        _t(contact),
+        _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);
     }
     return _tableWrap('범스카우트 인가자 명부', headers, rows);
+  }
+
+  // ---- 6. 아타스(ATAS) 명부 — 범·은하 통합, ATAS 인가번호 보유자 ----
+  Widget _atasRosterTable(AppState state) {
+    final all = <Member>[
+      ...state.allMembers.where((m) => !m.isRegular),
+      ...state.eunhaMembers,
+    ];
+    final list = all.where((m) => m.atasNo.trim().isNotEmpty).toList();
+    int aKey(Member m) =>
+        int.tryParse(m.atasNo.replaceAll(RegExp(r'[^0-9]'), '')) ?? 1 << 30;
+    list.sort((a, b) => aKey(a).compareTo(aKey(b)));
+    final headers = ['#', '아타스인가번호', '구분', '인가번호', '이름', '연락처', '소속'];
+    final rows = <List<Widget>>[];
+    for (var i = 0; i < list.length; i++) {
+      final m = list[i];
+      rows.add([
+        _numCell('r$i', i),
+        _t(m.atasNo, bold: true),
+        _t(m.corps == 'eunha' ? '은하' : '범'),
+        _t(m.numberLabel),
+        _t(m.name, bold: true),
+        _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
+        _t(_org(m.league, m.unit)),
+      ]);
+    }
+    return _tableWrap('아타스(ATAS) 명부', headers, rows);
+  }
+
+  // ---- 7. 은하스카우트 명부 ----
+  Widget _eunhaRosterTable(AppState state) {
+    final list = [...state.eunhaMembers];
+    list.sort((a, b) => a.numberInt.compareTo(b.numberInt));
+    final headers = ['#', '은하인가번호', '아타스인가번호', '이름', '연락처', '소속'];
+    final rows = <List<Widget>>[];
+    for (var i = 0; i < list.length; i++) {
+      final m = list[i];
+      rows.add([
+        _numCell('r$i', i),
+        _t(m.numberLabel, bold: true),
+        _t(m.atasNo),
+        _t(m.name, bold: true),
+        _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
+        _t(_org(m.league, m.unit)),
+      ]);
+    }
+    return _tableWrap('은하스카우트 명부', headers, rows);
   }
 
   // ---- 2/3. 멘토 대장 · 페런츠 명부 ----
@@ -849,7 +965,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       // 자동생성 아이디(수품구매시 입력한 인적사항의 전화번호 기반).
       final loginId = '${prof['loginId'] ?? ''}'.trim();
       rows.add([
-        _t('${i + 1}'),
+        _numCell('r$i', i),
         _receiverCell(prof),
         _t('${prof['name'] ?? ''}', bold: true),
         _t('${prof['phone'] ?? ''}'),
@@ -875,7 +991,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       );
       final phone = m.phone.trim().isNotEmpty ? m.phone : m.accessPhone;
       rows.add([
-        _t('${i + 1}'),
+        _numCell('r$i', i),
         _t(created),
         _t(m.name, bold: true),
         _t(phone),
@@ -893,7 +1009,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     for (var i = 0; i < list.length; i++) {
       final a = (list[i] as Map).cast<String, dynamic>();
       rows.add([
-        _t('${i + 1}'),
+        _numCell('r$i', i),
         _t('${a['number'] ?? ''}', bold: true),
         _t('${a['name'] ?? ''}', bold: true),
         _t('${a['phone'] ?? ''}'),

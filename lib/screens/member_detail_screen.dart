@@ -1776,6 +1776,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
+          // (복원) ATAS 인가번호 — 범·은하 모두 표시(요구: "개인페이지에 atas 다시 넣어줘").
+          _plainRow('ATAS 인가번호', m.atasNo),
           // 멘토대장·페런츠 등록현황 — 미등록도 표시(누락 방지).
           _regRow(
             '멘토대장',
