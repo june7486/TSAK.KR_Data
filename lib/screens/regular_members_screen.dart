@@ -388,7 +388,7 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
         content: Text(
           updated == null
               ? '승격 실패: 인가번호가 비었거나 중복됩니다'
-              : '인가자로 승격했습니다 (#${updated.number})',
+              : '인가자로 승격했습니다 (${updated.numberLabel})',
         ),
         duration: const Duration(seconds: 2),
       ),

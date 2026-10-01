@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/finance_service.dart';
@@ -266,7 +267,7 @@ class _BankImportScreenState extends State<BankImportScreen> {
                   ),
                   if (r.number.isNotEmpty)
                     Text(
-                      '→ ${r.matchedName} (#${r.number})',
+                      '→ ${r.matchedName} (${Member.numLabelOf(r.number)})',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.scoutGreen,

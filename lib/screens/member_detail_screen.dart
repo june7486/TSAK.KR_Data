@@ -280,7 +280,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     border: Border.all(color: AppColors.tigerGold, width: 2),
                   ),
                   child: Text(
-                    '#${m.number}',
+                    m.numberLabel,
                     style: const TextStyle(
                       color: AppColors.purple,
                       fontWeight: FontWeight.w900,
@@ -1598,9 +1598,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final nm = '${p['name'] ?? ''}'.trim();
     final no = code.replaceAll(RegExp(r'[^0-9]'), '');
     if (nm.isEmpty) {
-      return numberKind == 'mentor' ? '멘티 #$code' : '#$code';
+      return numberKind == 'mentor' ? '멘티 범#$code' : '범#$code';
     }
-    return numberKind == 'mentor' ? '$nm (멘티 #$no)' : '$nm #$no';
+    return numberKind == 'mentor' ? '$nm (멘티 범#$no)' : '$nm 범#$no';
   }
 
   /// 각인 메달(멘토·페런츠) 수상/수여 기록 — 개인프로필 연동.
@@ -2235,7 +2235,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                m.isRegular ? '현재: 일반회원 (비인가자)' : '현재: 인가자 (#${m.number})',
+                m.isRegular ? '현재: 일반회원 (비인가자)' : '현재: 인가자 (${m.numberLabel})',
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
@@ -2329,7 +2329,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (updated == null) {
       _snack('승격 실패: 인가번호가 비었거나 중복됩니다');
     } else {
-      _snack('인가자로 승격했습니다 (#${updated.number})');
+      _snack('인가자로 승격했습니다 (${updated.numberLabel})');
       setState(() {});
     }
   }
@@ -2364,7 +2364,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 child: Text(
                   isRegular
                       ? '일반회원 · ID ${m.loginId}'
-                      : '인가자 · ID ${m.number}',
+                      : '인가자 · ID ${m.numPrefix(prefixHash: false)}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textGray,
@@ -2850,7 +2850,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       MaterialPageRoute(
         builder: (_) => ExportScreen(
           members: [m],
-          title: '개인정보 출력 — ${m.name} (#${m.number})',
+          title: '개인정보 출력 — ${m.name} (${m.numberLabel})',
         ),
       ),
     );

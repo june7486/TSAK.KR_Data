@@ -819,7 +819,9 @@ class _FinanceScreenState extends State<FinanceScreen>
         ),
         title: Text(
           '${member?.name ?? t.name}'
-          '${t.number.isNotEmpty ? ' (#${t.number})' : ''}',
+          '${member != null
+              ? ' (${member.numberLabel})'
+              : (t.number.isNotEmpty ? ' (#${t.number})' : '')}',
           style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
         ),
         subtitle: Text(

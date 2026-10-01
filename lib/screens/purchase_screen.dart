@@ -452,7 +452,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     title: '중앙회 물건 결제 내역',
     subtitle: '한국범스카우트중앙회 · 물건 구매·결제 내역',
     description: '아래 물건의 품목·수량·단가·금액을 확인합니다.',
-    author: _whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '',
+    author: _whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '',
     extra: {
       '총 항목': '${_items.length}건',
       '총 수량': '$_totalQty',
@@ -604,7 +604,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           : '중앙회 물건 결제 내역서 (문서용)',
     );
     buf.writeln(
-      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}',
+      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : ''}',
     );
     buf.writeln();
     for (var i = 0; i < _items.length; i++) {

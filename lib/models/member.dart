@@ -292,6 +292,28 @@ class Member {
 
   int get numberInt => int.tryParse(number) ?? 0;
 
+  /// 소속(corps) 표기 말머리 — 범스카우트 '범' / 은하스카우트 '은하'.
+  String get corpsPrefix => corps == 'eunha' ? '은하' : '범';
+
+  /// 인가번호 표기 라벨 — 은하스카우트는 '은하#43', 범스카우트는 '범#43'.
+  ///   (요구: "은하스카우트는 #43 → 은하#43, 모든 창에서 그렇게 표시")
+  String get numberLabel =>
+      number.trim().isEmpty ? '' : '$corpsPrefix#$number';
+
+  /// 소속 말머리를 붙인 번호(은하#43). [prefixHash] 면 '#' 표기, 아니면 '은하43'.
+  String numPrefix({bool prefixHash = true}) {
+    if (number.trim().isEmpty) return '';
+    return prefixHash ? '$corpsPrefix#$number' : '$corpsPrefix$number';
+  }
+
+  /// (정적) Raw 값용 인가번호 표기 — 서버 map 등 Member 미생성 데이터용.
+  ///   예: ['43','eunha'] → '은하#43', ['43'] → '범#43'.
+  static String numLabelOf(String number, [String corps = 'tsak']) {
+    final n = number.trim();
+    if (n.isEmpty) return '';
+    return '${corps == 'eunha' ? '은하' : '범'}#$n';
+  }
+
   /// 납부한 연도 목록
   List<String> get paidYears =>
       feeYears.entries.where((e) => e.value).map((e) => e.key).toList()..sort();

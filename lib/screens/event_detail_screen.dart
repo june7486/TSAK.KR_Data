@@ -986,7 +986,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               if (ident.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 Text(
-                  '#$ident',
+                  Member.numLabelOf(ident, '${a['corps'] ?? 'tsak'}'),
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textGray,
@@ -1272,7 +1272,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                             Chip(
                               avatar: const Icon(Icons.engineering, size: 15),
                               label: Text(
-                                '${s['name'] ?? ''} #${s['number'] ?? s['ident'] ?? ''}',
+                                '${s['name'] ?? ''} ${Member.numLabelOf('${s['number'] ?? s['ident'] ?? ''}', '${s['corps'] ?? 'tsak'}')}',
                                 style: const TextStyle(fontSize: 11.5),
                               ),
                               onDeleted: () async {
@@ -1313,7 +1313,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                 return ListTile(
                                   dense: true,
                                   leading: const Icon(Icons.person_outline),
-                                  title: Text('${r['name']} · #${r['number']}'),
+                                  title: Text('${r['name']} · ${Member.numLabelOf('${r['number'] ?? ''}', '${r['corps'] ?? 'tsak'}')}'),
                                   subtitle: Text(
                                     '${r['unit'] ?? ''}',
                                     style: const TextStyle(fontSize: 11),
@@ -1487,7 +1487,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         }
                                       });
                                     },
-                              title: Text('${r['name']} · #${r['number']}'),
+                              title: Text('${r['name']} · ${Member.numLabelOf('${r['number'] ?? ''}', '${r['corps'] ?? 'tsak'}')}'),
                               subtitle: Text(
                                 '${already ? '이미 등록됨 · ' : ''}${r['unit'] ?? ''}',
                                 style: TextStyle(

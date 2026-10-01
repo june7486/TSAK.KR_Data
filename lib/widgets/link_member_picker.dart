@@ -212,7 +212,7 @@ class _LinkMemberPickerDialogState extends State<_LinkMemberPickerDialog> {
             ),
           ),
           title: Text(
-            name.isNotEmpty ? '$name  #$num' : '#$num',
+            name.isNotEmpty ? '$name  범#$num' : '범#$num',
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
           ),
           subtitle: Text(

@@ -154,7 +154,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final p = _profileOf(code);
     final nm = '${p['name'] ?? ''}'.trim();
     final hasProfile = nm.isNotEmpty || '${p['phone'] ?? ''}'.trim().isNotEmpty;
-    final noLabel = widget.kind == 'mentor' ? '멘티 #$code' : '#$code';
+    final noLabel = widget.kind == 'mentor' ? '멘티 범#$code' : '범#$code';
     final label = hasProfile ? '$nm  $noLabel' : noLabel;
     return InputChip(
       avatar: hasProfile

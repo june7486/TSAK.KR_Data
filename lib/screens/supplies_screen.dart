@@ -238,7 +238,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '확인자: #$_whoNumber $_whoName',
+                    '확인자: 범#$_whoNumber $_whoName',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.textGray,
@@ -328,7 +328,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       final checkedBy = '${s['checkedBy'] ?? ''}'.trim();
       final checkedName = '${s['checkedByName'] ?? ''}'.trim();
       final who = [
-        if (checkedBy.isNotEmpty) '#$checkedBy',
+        if (checkedBy.isNotEmpty) '범#$checkedBy',
         if (checkedName.isNotEmpty) checkedName,
       ].join(' ');
       rows.add([
@@ -353,7 +353,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         title: '중앙회 비품 재고 리스트',
         subtitle: '한국범스카우트중앙회 · 비품 재고 및 입출고 현황',
         description: '아래 비품의 수량과 비고를 확인하고, 확인일자·확인자를 함께 기재합니다.',
-        author: _whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '',
+        author: _whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '',
         extra: {
           '총 항목': '${_items.length}건',
           '총 수량': '$total',
@@ -382,7 +382,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       title: '중앙회 비품 재고 리스트',
       subtitle: '한국범스카우트중앙회 · 비품 재고 및 입출고 현황',
       description: '아래 비품의 수량과 비고를 확인하고, 확인일자·확인자를 함께 기재합니다.',
-      author: _whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '',
+      author: _whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '',
       extra: {
         '총 항목': '${_items.length}건',
         '총 수량': '$total',
@@ -501,7 +501,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           : '중앙회 비품 재고 리스트 (문서용)',
     );
     buf.writeln(
-      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : ''}',
+      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : ''}',
     );
     buf.writeln();
     for (var i = 0; i < _items.length; i++) {
@@ -571,13 +571,13 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     final b = StringBuffer();
     b.writeln('중앙회 비품 재고 리스트');
     b.writeln('업데이트: ${_updated.isNotEmpty ? _updated : _today()}');
-    b.writeln('확인자: ${_whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '-'}');
+    b.writeln('확인자: ${_whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '-'}');
     b.writeln('──────────────────────────────────');
     b.writeln('연번 | 품명 | 수량 | 비고 | 확인일자 | 확인자');
     for (var i = 0; i < _items.length; i++) {
       final s = _items[i];
       final who = [
-        if ('${s['checkedBy'] ?? ''}'.trim().isNotEmpty) '#${s['checkedBy']}',
+        if ('${s['checkedBy'] ?? ''}'.trim().isNotEmpty) '범#${s['checkedBy']}',
         if ('${s['checkedByName'] ?? ''}'.trim().isNotEmpty)
           '${s['checkedByName']}',
       ].join(' ');
@@ -827,7 +827,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           const SizedBox(height: 4),
           Text(
             '업데이트 ${_updated.isNotEmpty ? _updated : _today()}'
-            '${_whoName.isNotEmpty ? '   ·   확인자 #$_whoNumber $_whoName' : ''}',
+            '${_whoName.isNotEmpty ? '   ·   확인자 범#$_whoNumber $_whoName' : ''}',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
         ],
@@ -904,7 +904,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     final checkedBy = '${s['checkedBy'] ?? ''}'.trim();
     final checkedName = '${s['checkedByName'] ?? ''}'.trim();
     final who = [
-      if (checkedBy.isNotEmpty) '#$checkedBy',
+      if (checkedBy.isNotEmpty) '범#$checkedBy',
       if (checkedName.isNotEmpty) checkedName,
     ].join(' ');
     return Padding(

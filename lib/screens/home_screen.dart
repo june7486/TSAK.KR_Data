@@ -2606,7 +2606,7 @@ class _HomeScreenState extends State<HomeScreen> {
           title: const Text('열람 제한', textAlign: TextAlign.center),
           content: Text(
             '개인 로그인 시 다른 인가자의 정보를 볼 수 없습니다.\n\n'
-            '#${m.number} ${m.name} 님의 정보는 본인만 열람할 수 있습니다.',
+            '${m.numberLabel} ${m.name} 님의 정보는 본인만 열람할 수 있습니다.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 13.5, height: 1.4),
           ),
@@ -2981,7 +2981,7 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '인가번호 #${me.number} (${me.name})',
+                  '인가번호 ${me.numberLabel} (${me.name})',
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
@@ -3121,7 +3121,7 @@ class _PersonalEditSheet extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '본인 정보 — #${me.number} ${me.name}',
+                  '본인 정보 — ${me.numberLabel} ${me.name}',
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,

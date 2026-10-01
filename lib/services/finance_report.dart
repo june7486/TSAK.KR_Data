@@ -793,7 +793,7 @@ class FinanceReportService {
           pw.Expanded(
             child: pw.Text(
               '${nm.isEmpty ? (r['payer'] ?? '') : nm}'
-              '${(r['number'] ?? '').toString().isNotEmpty ? ' (#${r['number']})' : ''}'
+              '${(r['number'] ?? '').toString().isNotEmpty ? ' (범#${r['number']})' : ''}'
               '${(r['category'] ?? '').toString().isNotEmpty ? ' · ${r['category']}' : ''}',
               style: const pw.TextStyle(fontSize: 7.5, color: _ink),
               maxLines: 1,

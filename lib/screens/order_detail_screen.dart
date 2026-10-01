@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/doc_pdf.dart';
 import '../services/export_save.dart';
@@ -1679,7 +1680,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                 if ('${r['name'] ?? ''}'.trim().isNotEmpty)
                                   '${r['name']}',
                                 if ('${r['number'] ?? ''}'.trim().isNotEmpty)
-                                  '#${r['number']}',
+                                  Member.numLabelOf(
+                                    '${r['number'] ?? ''}',
+                                    '${r['corps'] ?? 'tsak'}',
+                                  ),
                                 if ('${r['phone'] ?? ''}'.trim().isNotEmpty)
                                   '${r['phone']}',
                               ].join(' · '),

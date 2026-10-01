@@ -150,7 +150,7 @@ class _FinanceTransactionEditScreenState
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '인식: ${_member!.name} (#${_member!.number})',
+                    '인식: ${_member!.name} (${_member!.numberLabel})',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.scoutGreen,
@@ -341,7 +341,7 @@ class _MemberPickerSheetState extends State<_MemberPickerSheet> {
                 final m = list[i];
                 return ListTile(
                   dense: true,
-                  title: Text('${m.name} (#${m.number})'),
+                  title: Text('${m.name} (${m.numberLabel})'),
                   subtitle: Text(
                     '${m.league} ${m.unit}',
                     maxLines: 1,

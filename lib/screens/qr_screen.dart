@@ -58,7 +58,11 @@ class _QrGenerateView extends StatelessWidget {
       final ok = await showDialog<bool>(
         context: context,
         builder: (_) =>
-            _QrLoginDialog(number: member.number, name: member.name),
+            _QrLoginDialog(
+              number: member.number,
+              name: member.name,
+              corps: member.corps,
+            ),
       );
       if (ok != true) return;
     }
@@ -75,7 +79,7 @@ class _QrGenerateView extends StatelessWidget {
       appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
-        title: Text('#${member.number} ${member.name} QR'),
+        title: Text('${member.numberLabel} ${member.name} QR'),
         actions: [
           const AppHomeEmblem(size: 24),
           IconButton(
@@ -261,18 +265,34 @@ class _QrGenerateView extends StatelessWidget {
 /// QR 화면에서 정보수정 진입 시 사용하는 로그인 다이얼로그.
 /// ID(인가번호/TSAK) + PW. 개인비번·앱비번·마스터비번 중 하나로 통과.
 class _QrLoginDialog extends StatefulWidget {
-  const _QrLoginDialog({required this.number, required this.name});
+  const _QrLoginDialog({
+    required this.number,
+    required this.name,
+    this.corps = 'tsak',
+  });
 
   final String number;
   final String name;
+  final String corps;
 
   @override
   State<_QrLoginDialog> createState() => _QrLoginDialogState();
 }
 
 class _QrLoginDialogState extends State<_QrLoginDialog> {
+  bool get _isEunha => widget.corps == 'eunha';
+  String get _prefix => _isEunha ? '은하' : '범';
+
+  /// 표기 라벨 — 은하 '#43' → 은하#43.
+  String get _numberLabel =>
+      widget.number.trim().isEmpty ? '' : '$_prefix#${widget.number}';
+
+  /// 로그인 기본 ID — 은하는 '은하N'(서버 개인 아이디), 범은 인가번호.
+  String get _defaultLoginId =>
+      _isEunha ? '$_prefix${widget.number}' : widget.number;
+
   late final TextEditingController _idCtrl = TextEditingController(
-    text: widget.number,
+    text: _defaultLoginId,
   );
   final _pwCtrl = TextEditingController();
   bool _obscure = true;
@@ -307,6 +327,25 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
       }
     }
     final no = id.replaceAll(RegExp(r'[^0-9]'), '');
+    if (_isEunha) {
+      // 은하스카우트 — 개인 로그인 id='은하N', pw='N!@@' (서버 전용 검증).
+      if (no.isNotEmpty && pw == '$no!@@') return true;
+      if (state.repo.isNasMode) {
+        final cands = <String>{pw, if (no.isNotEmpty) '$no!@@'};
+        for (final c in cands) {
+          try {
+            final r = await state.nas.login(
+              'personal',
+              c,
+              id: _defaultLoginId,
+              corps: 'eunha',
+            );
+            if (r['ok'] == true) return true;
+          } catch (_) {}
+        }
+      }
+      return false;
+    }
     if (no.isNotEmpty) {
       final cands = <String>{pw, '$no$pw'};
       if (cands.contains('$no${AppConfig.personalSuffix}')) return true;
@@ -359,7 +398,7 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                '인가자: ${widget.name} (#${widget.number})',
+                '인가자: ${widget.name} ($_numberLabel)',
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w800,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -526,6 +527,8 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     final color = _queueColor(key);
     final name = '${m['name'] ?? '(이름없음)'}';
     final number = '${m['number'] ?? m['ident'] ?? ''}';
+    final numLabel =
+        Member.numLabelOf(number, '${m['corps'] ?? 'tsak'}');
     final phone = '${m['phone'] ?? m['loginId'] ?? ''}';
     final type = '${m['type'] ?? ''}';
     final year = '${m['year'] ?? ''}'.trim();
@@ -573,7 +576,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '$name${number.isNotEmpty ? '  #$number' : ''}',
+                      '$name${numLabel.isNotEmpty ? '  $numLabel' : ''}',
                       style: const TextStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w800,
@@ -927,7 +930,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
   ) {
     final labels = (ms[labelKey] as List?) ?? [];
     if (labels.isNotEmpty) return labels.map((e) => '$e').toList();
-    return ((ms[rawKey] as List?) ?? []).map((e) => '#$e').toList();
+    return ((ms[rawKey] as List?) ?? []).map((e) => '범#$e').toList();
   }
 
   Widget _meta(IconData icon, String text) {
@@ -1104,6 +1107,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     final sc = _histStatusColor(status);
     final name = '${it['name'] ?? ''}';
     final number = '${it['number'] ?? it['ident'] ?? ''}';
+    final numLabel = Member.numLabelOf(number, '${it['corps'] ?? 'tsak'}');
     final title = '${it['title'] ?? ''}';
     final handledAt = '${it['handledAt'] ?? ''}'.trim();
     final handledBy = '${it['handledBy'] ?? ''}'.trim();
@@ -1184,7 +1188,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '$title  $name${number.isNotEmpty ? ' #$number' : ''}',
+                      '$title  $name${numLabel.isNotEmpty ? ' $numLabel' : ''}',
                       style: const TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w800,

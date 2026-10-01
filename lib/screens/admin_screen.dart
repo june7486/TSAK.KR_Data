@@ -438,7 +438,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 ],
               ),
               const SizedBox(height: 10),
-              _kvLine('아이디 (로그인)', '#$no'),
+              _kvLine('아이디 (로그인)', '범#$no'),
               _kvLine('이름', name.isEmpty ? '미확인' : name),
               _kvLine('암호 상태', hasCustom ? '지정됨 (개별 설정)' : '기본값 ($no!@@)'),
               const SizedBox(height: 6),
@@ -547,7 +547,7 @@ class _AdminScreenState extends State<AdminScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            err == null ? '#$no 암호를 기본값($no!@@)으로 초기화했습니다' : '실패: $err',
+            err == null ? '범#$no 암호를 기본값($no!@@)으로 초기화했습니다' : '실패: $err',
           ),
         ),
       );
@@ -594,7 +594,7 @@ class _AdminScreenState extends State<AdminScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(err == null ? '#$no 관리자 암호를 지정했습니다' : '실패: $err'),
+          content: Text(err == null ? '범#$no 관리자 암호를 지정했습니다' : '실패: $err'),
         ),
       );
     }
@@ -911,7 +911,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                   ),
                                   title: Text(
                                     '${m.name.isEmpty ? '(이름없음)' : m.name}'
-                                    ' · #${m.number}',
+                                    ' · ${m.numberLabel}',
                                     style: const TextStyle(fontSize: 13),
                                   ),
                                   subtitle: Text(
@@ -959,7 +959,7 @@ class _AdminScreenState extends State<AdminScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '#${member.number} ${member.name}',
+              '${member.numberLabel} ${member.name}',
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: AppColors.purple,
@@ -1014,8 +1014,8 @@ class _AdminScreenState extends State<AdminScreen> {
           content: Text(
             err == null
                 ? (reset
-                      ? '#${member.number} ${member.name} 비밀번호를 초기화했습니다 (${member.number}!@@)'
-                      : '#${member.number} ${member.name} 비밀번호를 재설정했습니다')
+                      ? '${member.numberLabel} ${member.name} 비밀번호를 초기화했습니다 (${member.number}!@@)'
+                      : '${member.numberLabel} ${member.name} 비밀번호를 재설정했습니다')
                 : '실패: $err',
           ),
         ),

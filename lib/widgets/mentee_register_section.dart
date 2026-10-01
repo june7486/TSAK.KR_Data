@@ -143,7 +143,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
               borderRadius: BorderRadius.circular(7),
             ),
             child: Text(
-              '#${d.isEmpty ? code : d}',
+              '범#${d.isEmpty ? code : d}',
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w800,
