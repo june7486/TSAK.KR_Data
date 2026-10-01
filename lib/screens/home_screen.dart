@@ -34,12 +34,13 @@ import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 import 'regular_members_screen.dart';
-import 'roster_admin_screen.dart';
-import 'member_request_screen.dart';
+import 'roster_admin_screen.dart';import 'member_request_screen.dart';
 import 'settings_screen.dart';
 import 'master_console_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
+import 'eunha_stats_screen.dart';
+import 'eunha_roster_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -458,6 +459,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const StatsScreen()),
+                ),
+              ),
+            // 은하스카우트 통계 — 별도 관리(범스카우트와 분리) · 관리자 이상
+            if (state.isApp || state.isMaster)
+              IconButton(
+                tooltip: '은하스카우트 통계',
+                icon: const Icon(Icons.groups_2_outlined),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EunhaStatsScreen()),
+                ),
+              ),
+            // 은하스카우트 명단 — 별도 관리 · 관리자 이상
+            if (state.isApp || state.isMaster)
+              IconButton(
+                tooltip: '은하스카우트 명단',
+                icon: const Icon(Icons.list_alt),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EunhaRosterScreen()),
                 ),
               ),
             // 명단 선택 (일괄작업) — 관리자 이상

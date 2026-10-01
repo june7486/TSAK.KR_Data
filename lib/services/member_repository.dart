@@ -235,6 +235,13 @@ class MemberRepository {
     }
   }
 
+  /// 로컬 캐시만 비운다(NAS 저장은 하지 않음).
+  ///  소속(corps) 전환 시 이전 소속 데이터가 섞이지 않도록 초기화하는 용도.
+  Future<void> clearLocalCache() async {
+    await _clearAll();
+    revision.value++;
+  }
+
   // ---- 공개 API ----
   bool _matchesRestricted(Member m) {
     if (!isRestricted) return true;

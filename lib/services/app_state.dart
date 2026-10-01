@@ -43,6 +43,15 @@ class AppState extends ChangeNotifier {
   String get who => _who;
   bool get isMaster => _tier == 'master';
 
+  // ---------- 소속(corps) ----------
+  /// 로그인 소속 — 'tsak'(범스카우트, 기본) | 'eunha'(은하스카우트).
+  /// 은하스카우트는 범스카우트와 **별도 관리**(통계·명단·로그인 분리)한다.
+  String _corps = 'tsak';
+  String get corps => _corps;
+
+  /// 은하스카우트 세션 여부(개인 로그인 '은하#N').
+  bool get isEunha => _corps == 'eunha';
+
   // ---------- 역할 / 메뉴 접근권한 ----------
   /// 서포터즈(일반회원 로그인) 여부 — 서버 로그인 응답으로 설정.
   bool _isSupporter = false;
@@ -238,6 +247,7 @@ class AppState extends ChangeNotifier {
       final ts = p.getInt(AppConfig.kSessionTs);
       final tier = p.getString(AppConfig.kAuthTier) ?? '';
       final who = p.getString(AppConfig.kAuthWho) ?? '';
+      final corps = p.getString(AppConfig.kAuthCorps) ?? 'tsak';
       final sid = p.getString(AppConfig.kSessionSid) ?? '';
       if (ts != null && tier.isNotEmpty) {
         final start = DateTime.fromMillisecondsSinceEpoch(ts);
@@ -254,6 +264,7 @@ class AppState extends ChangeNotifier {
           _unlocked = true;
           _tier = tier;
           _who = who;
+          _corps = (corps == 'eunha') ? 'eunha' : 'tsak';
           _sessionStart = start;
           _applyAccessScope();
           // 세션 복원 시에도 최신 명단을 백그라운드로 재조회(로딩 문구 표시).
@@ -267,8 +278,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String tier, String value, {String id = ''}) async {
+  Future<bool> login(String tier, String value,
+      {String id = '', String corps = 'tsak'}) async {
     bool ok;
+    // 로그인 소속(범스카우트/은하스카우트) — 별도 관리.
+    _corps = (corps == 'eunha') ? 'eunha' : 'tsak';
     // 개인 접근에서 입력된 인가번호 (ID 필드)
     String personalNo = '';
     if (tier == 'master') {
@@ -341,39 +355,56 @@ class AppState extends ChangeNotifier {
       if (personalNo.isEmpty) {
         personalNo = value.replaceAll(RegExp(r'[^0-9]'), '');
       }
-      final expected = '$personalNo${AppConfig.personalSuffix}';
-      final candidates = <String>{value};
-      if (personalNo.isNotEmpty) {
-        candidates.add('$personalNo$value'); // 번호 + 입력값
-      }
-      // 로컬 검증 (기본값/마스터)
-      ok = candidates.any(
-        (c) =>
-            c == expected ||
-            c == AppConfig.masterPassword ||
-            c == '$personalNo${AppConfig.personalSuffix}',
-      );
-      // 인가번호 존재 확인
-      if (ok) {
-        ok = repo.byNumber(personalNo) != null;
-      }
-      // 서버(개인별 지정 비번) 검증 (오프라인/로컬 실패 시)
-      if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
-        for (final c in candidates) {
+      if (_corps == 'eunha') {
+        // 은하스카우트 — 별도 규칙(서버 전용 검증). 범스카우트의 '{번호}!@@'
+        //  로컬 규칙은 적용하지 않는다(규칙 비노출·교차 로그인 방지).
+        ok = false;
+        if (repo.isNasMode && (value.isNotEmpty || id.isNotEmpty)) {
           try {
-            final r = await nas.login('personal', c, id: personalNo);
-            if (r['ok'] == true) {
-              ok = true;
-              break;
-            }
+            final r = await nas.login('personal', value, id: id, corps: 'eunha');
+            if (r['ok'] == true) ok = true;
           } catch (_) {}
         }
-      }
-      // 서버 검증으로 성공한 경우엔 이미 세션이 발급됐고(관리자 부여 플래그),
-      //  로컬 검증만 성공한 경우 세션을 별도로 확보한다(아래에서 처리).
-      if (ok && repo.isNasMode && nas.sessionId.isNotEmpty) {
-        _grantedAdmin = nas.lastLoginAdmin;
-        _isSupporter = nas.lastLoginSupporter;
+        if (ok && nas.sessionId.isNotEmpty) {
+          _grantedAdmin = false;
+          _isSupporter = false;
+        }
+      } else {
+        final expected = '$personalNo${AppConfig.personalSuffix}';
+        final candidates = <String>{value};
+        if (personalNo.isNotEmpty) {
+          candidates.add('$personalNo$value'); // 번호 + 입력값
+        }
+        // 로컬 검증 (기본값/마스터)
+        ok = candidates.any(
+          (c) =>
+              c == expected ||
+              c == AppConfig.masterPassword ||
+              c == '$personalNo${AppConfig.personalSuffix}',
+        );
+        // 인가번호 존재 확인
+        if (ok) {
+          ok = repo.byNumber(personalNo) != null;
+        }
+        // 서버(개인별 지정 비번) 검증 (오프라인/로컬 실패 시)
+        if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
+          for (final c in candidates) {
+            try {
+              final r = await nas.login('personal', c,
+                  id: personalNo, corps: 'tsak');
+              if (r['ok'] == true) {
+                ok = true;
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+        // 서버 검증으로 성공한 경우엔 이미 세션이 발급됐고(관리자 부여 플래그),
+        //  로컬 검증만 성공한 경우 세션을 별도로 확보한다(아래에서 처리).
+        if (ok && repo.isNasMode && nas.sessionId.isNotEmpty) {
+          _grantedAdmin = nas.lastLoginAdmin;
+          _isSupporter = nas.lastLoginSupporter;
+        }
       }
     }
     if (ok) {
@@ -406,6 +437,7 @@ class AppState extends ChangeNotifier {
             await nas.grantSession(
               tier,
               id: personalNo.isNotEmpty ? personalNo : id,
+              corps: _corps,
               log: true,
             );
           }
@@ -437,6 +469,13 @@ class AppState extends ChangeNotifier {
   Future<void> _reloadAfterLogin() async {
     _setMembersLoading(true);
     try {
+      // 소속 분리 — 은하스카우트 세션은 이전(범스카우트) 캐시를 비워
+      //  은하 명단만 남긴다(범스카우트 데이터 혼입 방지).
+      if (_corps == 'eunha') {
+        try {
+          await repo.clearLocalCache();
+        } catch (_) {}
+      }
       await repo.syncFromNas();
       _membersLoaded = true;
     } catch (_) {}
@@ -460,6 +499,7 @@ class AppState extends ChangeNotifier {
     _unlocked = false;
     _tier = '';
     _who = '';
+    _corps = 'tsak';
     _sessionStart = null;
     _grantedAdmin = false;
     _isSupporter = false;
@@ -475,6 +515,7 @@ class AppState extends ChangeNotifier {
       await p.remove(AppConfig.kSessionTs);
       await p.remove(AppConfig.kAuthTier);
       await p.remove(AppConfig.kAuthWho);
+      await p.remove(AppConfig.kAuthCorps);
       await p.remove(AppConfig.kSessionSid);
     } catch (_) {}
     notifyListeners();
@@ -536,6 +577,7 @@ class AppState extends ChangeNotifier {
       );
       await p.setString(AppConfig.kAuthTier, _tier);
       await p.setString(AppConfig.kAuthWho, _who);
+      await p.setString(AppConfig.kAuthCorps, _corps);
       await p.setString(AppConfig.kSessionSid, nas.sessionId);
     } catch (_) {}
   }
@@ -1226,6 +1268,30 @@ class AppState extends ChangeNotifier {
     _admin = {..._admin, 'serverPaused': p};
     notifyListeners();
     return p;
+  }
+
+  // ---------- 은하스카우트 별도 명단 ----------
+  /// 은하스카우트 명단(별도 관리) — 관리자·마스터 전용 조회 캐시.
+  List<Member> _eunhaMembers = [];
+  List<Member> get eunhaMembers => List.unmodifiable(_eunhaMembers);
+  bool _eunhaLoading = false;
+  bool get eunhaLoading => _eunhaLoading;
+  int get eunhaTotal => _eunhaMembers.length;
+
+  /// 은하스카우트 명단을 서버에서 불러온다(관리자·마스터 전용).
+  ///  실패(권한/오프라인) 시 빈 목록을 유지한다.
+  Future<void> loadEunhaMembers() async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return;
+    _eunhaLoading = true;
+    notifyListeners();
+    try {
+      final list = await nas.fetchEunhaMembers();
+      _eunhaMembers = list;
+    } catch (_) {
+      _eunhaMembers = [];
+    }
+    _eunhaLoading = false;
+    notifyListeners();
   }
 
   // ---------- 리스트 크기 ----------

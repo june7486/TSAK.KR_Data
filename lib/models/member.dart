@@ -8,6 +8,7 @@ class Member {
     required this.id,
     required this.number,
     required this.name,
+    this.corps = 'tsak',
     this.league = '',
     this.unit = '',
     this.regLeague = '',
@@ -74,6 +75,10 @@ class Member {
 
   /// 성명
   String name;
+
+  /// 소속 단체(corps) — 'tsak'(범스카우트, 기본) | 'eunha'(은하스카우트).
+  /// 은하스카우트는 범스카우트와 **별도 관리**(통계·명단·로그인 분리)한다.
+  String corps;
 
   /// 소속 연맹 (예: "제주", "광주")
   String league;
@@ -291,6 +296,7 @@ class Member {
     'id': id,
     'number': number,
     'name': name,
+    'corps': corps,
     'league': league,
     'unit': unit,
     'regLeague': regLeague,
@@ -366,6 +372,9 @@ class Member {
       id: '${map['id'] ?? ''}',
       number: '${map['number'] ?? ''}',
       name: '${map['name'] ?? ''}',
+      corps: (map['corps'] != null && '${map['corps']}'.isNotEmpty)
+          ? '${map['corps']}'
+          : 'tsak',
       league: normalizeLeague('${map['league'] ?? ''}'),
       unit: '${map['unit'] ?? ''}',
       regLeague: normalizeLeague('${map['regLeague'] ?? ''}'),
@@ -432,6 +441,7 @@ class Member {
   Member copyWith({
     String? number,
     String? name,
+    String? corps,
     String? league,
     String? unit,
     String? regLeague,
@@ -487,6 +497,7 @@ class Member {
       id: id,
       number: number ?? this.number,
       name: name ?? this.name,
+      corps: corps ?? this.corps,
       league: league ?? this.league,
       unit: unit ?? this.unit,
       regLeague: regLeague ?? this.regLeague,

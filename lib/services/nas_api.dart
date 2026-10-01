@@ -110,16 +110,24 @@ class NasApi {
   ///
   /// [보안] 서버가 발급한 세션토큰(sid)을 자동 저장한다. 이후 모든 요청에
   /// X-TSAK-Session 헤더로 실려 나간다(웹은 동일출처 쿠키도 함께).
+  /// [corps] = 'tsak'(범스카우트, 기본) | 'eunha'(은하스카우트).
+  ///  은하스카우트는 별도 명단/로그인 규칙으로 검증된다.
   Future<Map<String, dynamic>> login(
     String tier,
     String value, {
     String id = '',
+    String corps = 'tsak',
   }) async {
     final r = await http
         .post(
           _uri('/api/login'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({'tier': tier, 'value': value, 'id': id}),
+          body: json.encode({
+            'tier': tier,
+            'value': value,
+            'id': id,
+            'corps': corps,
+          }),
         )
         .timeout(const Duration(seconds: 15));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
@@ -137,6 +145,7 @@ class NasApi {
     String id = '',
     String? master,
     String? app,
+    String corps = 'tsak',
     bool log = false,
   }) async {
     try {
@@ -147,6 +156,7 @@ class NasApi {
             body: json.encode({
               'tier': tier,
               'id': id,
+              'corps': corps,
               if (master != null) 'master': master,
               if (app != null) 'app': app,
               if (log) 'log': true,
@@ -465,6 +475,16 @@ class NasApi {
   Future<List<Member>> fetchMembers() async {
     final r = await http
         .get(_uri('/api/members'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final list = (j['members'] as List?) ?? [];
+    return list.map((e) => Member.fromMap(e as Map)).toList();
+  }
+
+  /// 은하스카우트 별도 명단 조회(관리자·마스터 전용).
+  Future<List<Member>> fetchEunhaMembers() async {
+    final r = await http
+        .get(_uri('/api/eunha/members'), headers: _authHeaders)
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     final list = (j['members'] as List?) ?? [];

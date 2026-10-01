@@ -36,6 +36,7 @@ CONF = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
 NAS = NasClient(CONF["nas"]["base"], CONF["nas"]["user"], CONF["nas"]["pw"])
 BASE = CONF["nas"]["base_path"]          # /92_Tiger_app_data/TSAK_인가자관리
 DB_FILE = BASE + "/db/members.json"
+EUNHA_DB_FILE = BASE + "/db/eunha_members.json"   # 은하스카우트 별도 명단(범스카우트와 분리 관리)
 META_FILE = BASE + "/db/meta.json"
 CFG_FILE = BASE + "/db/config.json"
 FIN_FILE = BASE + "/db/finance.json"
@@ -136,7 +137,7 @@ CORS_ALLOW_ORIGINS = [
 ]
 
 
-def _sess_new(tier, who="", regular=False):
+def _sess_new(tier, who="", regular=False, corps="tsak"):
     sid = _secrets.token_urlsafe(32)
     with _SESS_LOCK:
         # 오래된 세션 정리
@@ -144,6 +145,7 @@ def _sess_new(tier, who="", regular=False):
         for k in [k for k, v in _SESS.items() if v.get("exp", 0) < now]:
             _SESS.pop(k, None)
         _SESS[sid] = {"tier": tier, "who": who, "regular": bool(regular),
+                      "corps": str(corps or "tsak"),
                       "exp": now + _SESS_TTL}
     return sid
 
@@ -323,10 +325,11 @@ def _log_access_view(viewer_tier, viewer_who, target_ident, ua, ip):
     return entry
 
 
-def _scope_members(tier, who, members, regular=False):
+def _scope_members(tier, who, members, regular=False, corps="tsak"):
     """역할별 최소 항목 제공(대량 명단 열람 최소화).
 
     - 관리자(app)·마스터: 전체
+    - 은하스카우트(eunha): 로그인 규칙상 **본인 1건만**(행사게시판은 별도 허용).
     - 범스카우트(personal): 역할권한에 따라
         · memberDetail 허용 시 → 전원 상세(민감필드 제거)
         · memberSearch 만 허용 시 → 전원 축약형(이름·번호 중심)
@@ -337,6 +340,14 @@ def _scope_members(tier, who, members, regular=False):
     who = re.sub(r"[^0-9]", "", str(who or ""))
     if tier in ("app", "master"):
         return members
+    # 은하스카우트: 본인 1건만 열람(별도 관리). 범스카우트 명단은 보이지 않는다.
+    if str(corps or "tsak") == "eunha":
+        out = []
+        for m in members:
+            num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+            if who and who == num:
+                out.append(_redact_member(m))
+        return out
     # 실효 역할 키 도출
     if tier == "personal":
         role = "supporter" if regular else "personal"
@@ -1775,6 +1786,9 @@ def _perm_for(role, key):
 
 
 # --- seed members into NAS on first boot ---
+EUNHA_SEED = os.path.join(HERE, "eunha_members_seed.json")
+if not os.path.exists(EUNHA_SEED):
+    EUNHA_SEED = "/home/user/flutter_app/assets/data/eunha_members_seed.json"
 SEED = os.path.join(HERE, "members_seed.json")
 if not SEED.endswith("json") or not os.path.exists(SEED):
     SEED = "/home/user/flutter_app/assets/data/members_seed.json"
@@ -1792,6 +1806,16 @@ def _boot():
             _save_json(DB_FILE, members)
             _touch_meta({"note": "초기 시딩 %d명" % len(members), "count": len(members)})
             print("seeded", len(members))
+        # 은하스카우트 별도 명단 초기 시딩(범스카우트와 분리 관리).
+        if not NAS.exists(EUNHA_DB_FILE):
+            emembers = []
+            try:
+                emembers = json.load(open(EUNHA_SEED, encoding="utf-8"))
+            except Exception as e:
+                print("eunha seed read fail", e)
+            if emembers:
+                _save_json(EUNHA_DB_FILE, emembers)
+                print("seeded eunha", len(emembers))
         if not NAS.exists(CFG_FILE):
             _save_json(CFG_FILE, _default_config())
         if not NAS.exists(FIN_FILE):
@@ -2075,6 +2099,16 @@ def _personal_pw_of(no):
     return str(pws.get(no) or f"{no}!@@")
 
 
+def _personal_pw_of_eunha(no):
+    """은하스카우트 개인비번 — 기본 '은하#{no}!@@'.
+
+    범스카우트({no}!@@)와 규칙이 다르며, 화면에 규칙을 노출하지 않는다.
+    """
+    no = re.sub(r"[^0-9]", "", str(no))
+    pws = _cfg_value("eunhaPasswords", {}) or {}
+    return str(pws.get(no) or f"은하#{no}!@@")
+
+
 def _granted_admins():
     """마스터가 관리자 권한을 부여한 인가번호 집합."""
     cfg = _load_json(CFG_FILE, _default_config())
@@ -2104,21 +2138,65 @@ def _member_by_number(no):
     return None
 
 
+def _eunha_member_by_number(no):
+    """은하스카우트 별도 명단에서 인가번호로 1명 찾기."""
+    no = re.sub(r"[^0-9]", "", str(no or ""))
+    if not no:
+        return None
+    for m in _load_json(EUNHA_DB_FILE, []):
+        if re.sub(r"[^0-9]", "", str(m.get("number", ""))) == no:
+            return m
+    return None
+
+
+def _corps_of_number(no):
+    """인가번호가 어느 소속인지 판정 → 'tsak'(범스카우트) | 'eunha'(은하스카우트) | ''.
+
+    범스카우트를 먼저 확인한다(레거시 회원은 corps 필드가 없어 범스카우트로 간주).
+    """
+    no = re.sub(r"[^0-9]", "", str(no or ""))
+    if not no:
+        return ""
+    if _member_by_number(no):
+        return "tsak"
+    if _eunha_member_by_number(no):
+        return "eunha"
+    return ""
+
+
+def _resolve_corps(hint, ident):
+    """세션 corps 결정 — 명시 힌트 우선, 없으면 ID(은하#N) 또는 번호로 판정."""
+    h = str(hint or "").strip().lower()
+    if h in ("eunha", "tsak"):
+        return h
+    if "은하" in str(ident or ""):
+        return "eunha"
+    c = _corps_of_number(ident)
+    return c or "tsak"
+
+
 def _is_regular_member(no):
     """해당 인가번호가 일반회원(서포터즈)인지 — isRegular 플래그 기준."""
     m = _member_by_number(no)
     return bool(m and m.get("isRegular") is True)
 
 
-def _verify(tier, value):
+def _verify(tier, value, ident="", corps=""):
     if tier == "master":
         return value == MASTER_PW, "master"
     app_pw = _cfg_value("appPassword", APP_PW) or APP_PW
     if tier == "app":
         return value == app_pw or value == MASTER_PW, "app"
     if tier == "personal":
+        # 은하스카우트는 별도 명단/규칙(은하#N!@@)으로 검증한다.
+        if _resolve_corps(corps, ident) == "eunha":
+            n = (re.sub(r"[^0-9]", "", str(ident or ""))
+                 or re.sub(r"[^0-9]", "", value or ""))
+            if not n or not _eunha_member_by_number(n):
+                return False, ""
+            return (value == _personal_pw_of_eunha(n) or value == MASTER_PW), "personal"
         # 입력값에서 인가번호 추출 후, 설정된 개인비번과 비교
-        no = re.sub(r"[^0-9]", "", value or "")
+        no = re.sub(r"[^0-9]", "", value or "") or re.sub(r"[^0-9]", "", str(ident or ""))
         if not no:
             return False, ""
         members = _load_json(DB_FILE, [])
@@ -7451,12 +7529,30 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require():
                     return
                 s = self._sess() or {}
+                # 은하스카우트 세션은 별도 명단으로 스코프(범스카우트와 분리 관리).
+                if str(s.get("corps") or "tsak") == "eunha":
+                    members = _load_json(EUNHA_DB_FILE, [])
+                    members = _scope_members(s.get("tier"), s.get("who"), members,
+                                             regular=bool(s.get("regular")),
+                                             corps="eunha")
+                    _attach_pending_event_names(members)
+                    return self._json({"ok": True, "members": members,
+                                       "corps": "eunha"})
                 members = _load_json(DB_FILE, [])
                 members = _scope_members(s.get("tier"), s.get("who"), members,
-                                         regular=bool(s.get("regular")))
+                                         regular=bool(s.get("regular")),
+                                         corps=str(s.get("corps") or "tsak"))
                 _attach_pending_event_names(members)
                 return self._json({"ok": True, "members": members})
-            # ---- 접속 비밀번호 "현재값" 조회 (요구: 마스터 로그인 시에만 노출) ----
+            # ---- 은하스카우트 별도 명단 (관리자·마스터 전용: 통계/명단) ----
+            #  범스카우트와 완전히 분리 관리한다. 은하 개인 세션은 본인 1건만
+            #  볼 수 있으므로(위 /api/members) 이 전체 엔드포인트는 관리 이상만.
+            if p == "/api/eunha/members":
+                if not self._require("admin"):
+                    return
+                members = _load_json(EUNHA_DB_FILE, [])
+                return self._json({"ok": True, "members": members,
+                                   "corps": "eunha"})
             if p == "/api/member/password":
                 if not self._require("master"):
                     return
@@ -8737,34 +8833,40 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(
                         {"ok": ok, "role": role, "number": no,
                          "supporter": bool(ok), "sid": sid})
-                ok, role = _verify(tier, value)
+                # 소속(corps) 판정 — 은하스카우트는 별도 관리(로그인 규칙·명단 분리).
+                corps = _resolve_corps(d.get("corps", ""), (ident or value))
+                ok, role = _verify(tier, value, ident=ident, corps=corps)
                 # 세션에 기록할 신원: 개인은 인가번호, 그 외는 role
                 who = ""
                 if ok and tier == "personal":
-                    who = re.sub(r"[^0-9]", "", str(ident))
+                    who = (re.sub(r"[^0-9]", "", str(ident))
+                           or re.sub(r"[^0-9]", "", str(value)))
                 # 마스터가 관리자 권한을 부여한 인가번호는 개인 로그인이어도
                 #  관리자(app) 세션을 받는다(마스터 권한 부여 기능).
+                #  (은하스카우트는 범스카우트 관리자 부여와 무관 — 적용 제외)
                 granted_admin = False
                 sess_tier = tier
-                if ok and tier == "personal" and _is_granted_admin(who):
+                if (ok and tier == "personal" and corps != "eunha"
+                        and _is_granted_admin(who)):
                     granted_admin = True
                     sess_tier = "app"
                 # 개인 로그인이라도 일반회원(서포터즈)이면 role 을 supporter 로 알린다.
                 is_supporter = False
-                if ok and tier == "personal" and not granted_admin:
+                if (ok and tier == "personal" and corps != "eunha"
+                        and not granted_admin):
                     is_supporter = _is_regular_member(who)
                 if ok:
                     _log_access_login(tier, role,
                                       who or re.sub(r"[^0-9]", "", str(ident)),
                                       who, _ua, _ip)
-                sid = _sess_new(sess_tier, who,
-                                regular=bool(is_supporter)) if ok else ""
+                sid = _sess_new(sess_tier, who, regular=bool(is_supporter),
+                                corps=corps) if ok else ""
                 if sid:
                     self._set_sid_cookie(sid)
                 return self._json(
                     {"ok": ok, "role": role, "silent": (tier == "master"),
                      "admin": granted_admin, "supporter": is_supporter,
-                     "sid": sid})
+                     "corps": corps, "sid": sid})
             # ---- 세션 종료 ----
             if p == "/api/logout":
                 _sess_del(self._sid())
@@ -8805,10 +8907,16 @@ class Handler(BaseHTTPRequestHandler):
                     if not _ok:
                         m = _ev_member_by_ident(ident)
                         _ok = bool(m)
+                    # 은하스카우트는 별도 명단에서 확인(분리 관리).
+                    _corps = _resolve_corps(d.get("corps", ""), ident)
+                    if not _ok and _corps == "eunha":
+                        _ok = bool(_eunha_member_by_number(ident))
                     if not _ok:
                         return self._json({"ok": False, "error": "unknown"}, 404)
                     sid = _sess_new("personal", ident,
-                                    regular=_is_regular_member(ident))
+                                    regular=(_corps != "eunha"
+                                             and _is_regular_member(ident)),
+                                    corps=_corps)
                 elif tier == "guest":
                     if len(ident) < 4:
                         return self._json({"ok": False, "error": "id"}, 400)

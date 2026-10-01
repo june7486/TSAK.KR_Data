@@ -147,7 +147,10 @@ class _LockScreenState extends State<LockScreen> {
     final state = context.read<AppState>();
     // 관리자는 ID 고정(TSAK), 그 외는 입력값 사용
     final idInput = _tier == 'app' ? 'TSAK' : _idCtrl.text.trim();
-    final ok = await state.login(_tier, v, id: idInput);
+    // 은하스카우트는 개인 로그인이지만 소속(corps)이 달라 별도 검증된다.
+    final ok = _tier == 'eunha'
+        ? await state.login('personal', v, id: idInput, corps: 'eunha')
+        : await state.login(_tier, v, id: idInput);
     if (!mounted) return;
     _stopLoginBusy();
     setState(() => _busy = false);
@@ -261,6 +264,8 @@ class _LockScreenState extends State<LockScreen> {
     switch (_tier) {
       case 'master':
         return '마스터 비밀번호가 올바르지 않습니다';
+      case 'eunha':
+        return 'ID(은하번호) 또는 비밀번호가 올바르지 않습니다';
       case 'personal':
         return 'ID(인가번호) 또는 비밀번호가 올바르지 않습니다';
       case 'guest':
@@ -744,55 +749,61 @@ class _LockScreenState extends State<LockScreen> {
   Widget _tierTabs() {
     // (요구#5) 첫 화면 로그인 위치 이동 — 사용 빈도순으로 재배치하여
     //  관리자 로그인 탭을 맨 앞에서 뒤쪽으로 옮긴다.
-    //  범스카우트(다수) → 비인가자 → 관리자 → 마스터(최소)
-    final tabs = [
+    //  범스카우트(다수) → 은하스카우트 → 비인가자 → 관리자 → 마스터(최소)
+    final row1 = [
       ('personal', '범스카우트', Icons.person),
+      ('eunha', '은하스카우트', Icons.groups),
+    ];
+    final row2 = [
       ('guest', '비인가자', Icons.person_outline),
       ('app', '관리자', Icons.admin_panel_settings),
       ('master', '마스터', Icons.workspace_premium),
     ];
-    return Row(
+    return Column(
       children: [
-        for (final t in tabs)
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: GestureDetector(
-                onTap: () => _switchTier(t.$1),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _tier == t.$1
-                        ? AppColors.purple
-                        : AppColors.purple.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        t.$3,
-                        size: 18,
-                        color: _tier == t.$1 ? Colors.white : AppColors.purple,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        t.$2,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: _tier == t.$1
-                              ? Colors.white
-                              : AppColors.purple,
-                        ),
-                      ),
-                    ],
+        Row(children: [for (final t in row1) _tierChip(t)]),
+        const SizedBox(height: 6),
+        Row(children: [for (final t in row2) _tierChip(t)]),
+      ],
+    );
+  }
+
+  Widget _tierChip((String, String, IconData) t) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: GestureDetector(
+          onTap: () => _switchTier(t.$1),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: _tier == t.$1
+                  ? AppColors.purple
+                  : AppColors.purple.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  t.$3,
+                  size: 18,
+                  color: _tier == t.$1 ? Colors.white : AppColors.purple,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  t.$2,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _tier == t.$1 ? Colors.white : AppColors.purple,
                   ),
                 ),
-              ),
+              ],
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 
@@ -804,6 +815,10 @@ class _LockScreenState extends State<LockScreen> {
         break;
       case 'personal':
         text = 'ID에 본인 인가번호를 입력하세요';
+        break;
+      case 'eunha':
+        // 은하스카우트 — 비밀번호 규칙은 절대 노출하지 않는다(요구).
+        text = '은하스카우트 회원은 본인 ID(은하번호)와 비밀번호를 입력하세요';
         break;
       case 'guest':
         text = 'ID=휴대폰 전화번호 · 비밀번호=전화번호 뒤 4자리';
