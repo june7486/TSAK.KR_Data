@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/league_names.dart';
 import '../services/nas_api.dart';
@@ -42,6 +43,9 @@ class _StatsScreenState extends State<StatsScreen> {
   ///   현재활동 데이터가 없으면 인가시 정보로 자동 폴백한다.
   int _basis = 0;
 
+  /// 소속 — 0=범스카우트, 1=은하스카우트(별도 관리).
+  int _scope = 0;
+
   /// 분포별 정렬 모드: 0=인가자순, 1=광역통합, 2=광역대통합, 3=가나다.
   ///   key: gap0..gap3(신분 탭), mentor, parent, supporter.
   final Map<String, int> _sortMode = {
@@ -52,6 +56,7 @@ class _StatsScreenState extends State<StatsScreen> {
     'mentor': 0,
     'parent': 0,
     'supporter': 0,
+    'eunha': 0,
   };
 
   /// 멘토·페런츠 인적사항(소속연맹) — 통계용. 인가번호 → 프로필.
@@ -60,7 +65,10 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfiles());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadProfiles();
+      context.read<AppState>().loadEunhaMembers();
+    });
   }
 
   Future<void> _loadProfiles() async {
@@ -185,6 +193,17 @@ class _StatsScreenState extends State<StatsScreen> {
     return _finalize(map);
   }
 
+  /// 은하스카우트 연맹 분포 — 별도 명단(state.eunhaMembers) 기준.
+  Map<String, int> _eunhaLeagueCounts(List<Member> ms) {
+    final map = <String, int>{};
+    for (final m in ms) {
+      final k = normalizeLeague(m.league);
+      final key = k.isEmpty ? '(미지정)' : k;
+      map[key] = (map[key] ?? 0) + 1;
+    }
+    return _finalize(map);
+  }
+
   /// 정렬 적용 — 0=인가자순(그대로) / 1=광역통합 / 2=광역대통합 / 3=가나다.
   Map<String, int> _sortDist(Map<String, int> src, int mode) {
     switch (mode) {
@@ -224,6 +243,16 @@ class _StatsScreenState extends State<StatsScreen> {
       _sortMode['supporter'] ?? 0,
     );
 
+    final eunhaOnly = _scope == 1;
+    final eunhaList = state.eunhaMembers;
+    final eunhaSrc = _sortDist(_eunhaLeagueCounts(eunhaList), _sortMode['eunha'] ?? 0);
+    final eunhaYears = <int, int>{};
+    for (final m in eunhaList) {
+      final y = _yearOf(m.date);
+      if (y > 0) eunhaYears[y] = (eunhaYears[y] ?? 0) + 1;
+    }
+    final sortedEunhaYears = eunhaYears.keys.toList()..sort();
+
     final years = state.yearDistribution;
     final feeYears = state.feeYears;
     final sortedYears = years.keys.toList()..sort();
@@ -238,6 +267,51 @@ class _StatsScreenState extends State<StatsScreen> {
         children: [
           _summary(state),
           const SizedBox(height: 12),
+          // 소속 전환 — 범스카우트 / 은하스카우트(별도 관리)
+          _scopeTabs(),
+          const SizedBox(height: 6),
+          if (eunhaOnly) ...[
+            // ---- 은하스카우트(별도 관리) 통계 ----
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    _statBox('은하 인가자', '${eunhaList.length}', Icons.groups_2_outlined,
+                        AppColors.taegeukBlue),
+                    _divider(),
+                    _statBox('연맹 수', '${_eunhaLeagueCounts(eunhaList).length}',
+                        Icons.public, AppColors.purple),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _sectionTitle('연맹별 인가자 분포 (은하스카우트)'),
+            _distTabs('eunha'),
+            _distRows(eunhaSrc),
+            const SizedBox(height: 16),
+            _sectionTitle('연도별 인가 현황 (은하스카우트)'),
+            if (sortedEunhaYears.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('연도 데이터가 없습니다.',
+                    style: TextStyle(color: AppColors.textGray)),
+              )
+            else
+              ...sortedEunhaYears.reversed.map((y) {
+                final v = eunhaYears[y]!;
+                final maxYear =
+                    eunhaYears.values.reduce((a, b) => a > b ? a : b);
+                return _barRow(
+                  context: context,
+                  label: '$y년',
+                  value: v,
+                  max: maxYear,
+                  color: AppColors.taegeukBlue,
+                );
+              }),
+          ] else ...[
           _sectionTitle('회원 유형 분포'),
           _typeDistribution(state),
           const SizedBox(height: 12),
@@ -266,8 +340,10 @@ class _StatsScreenState extends State<StatsScreen> {
           _sectionTitle('연맹별 서포터즈-일반 분포 (2026년 이후 인가 기준)'),
           _distTabs('supporter'),
           _distRows(supporterSrc),
+          ],
 
           const SizedBox(height: 16),
+          if (!eunhaOnly)
           if (state.positions.isNotEmpty) ...[
             _sectionTitle('직위 분포 (현재활동)'),
             ...state.positions.entries.map(
@@ -281,7 +357,9 @@ class _StatsScreenState extends State<StatsScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          if (!eunhaOnly)
           _sectionTitle('연간회비 납부 현황'),
+          if (!eunhaOnly)
           ...feeYears.map((y) {
             final paid = state.members
                 .where((m) => m.feeYears[y] == true)
@@ -290,7 +368,9 @@ class _StatsScreenState extends State<StatsScreen> {
             return _feeRow(y, paid, total);
           }),
           const SizedBox(height: 16),
+          if (!eunhaOnly)
           _sectionTitle('연도별 인가 현황 (2004~2025)'),
+          if (!eunhaOnly)
           ...sortedYears.reversed.map((y) {
             final v = years[y]!;
             final maxYear = years.values.reduce((a, b) => a > b ? a : b);
@@ -433,6 +513,36 @@ class _StatsScreenState extends State<StatsScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 소속 전환 탭 — 범스카우트 / 은하스카우트(별도 관리).
+  Widget _scopeTabs() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<int>(
+          segments: const [
+            ButtonSegment(
+              value: 0,
+              icon: Icon(Icons.groups, size: 15),
+              label: Text('범스카우트', style: TextStyle(fontSize: 12)),
+            ),
+            ButtonSegment(
+              value: 1,
+              icon: Icon(Icons.groups_2_outlined, size: 15),
+              label: Text('은하스카우트', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+          selected: {_scope},
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity(horizontal: -3, vertical: -2),
+          ),
+          onSelectionChanged: (s) => setState(() => _scope = s.first),
+        ),
       ),
     );
   }
