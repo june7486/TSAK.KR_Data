@@ -378,9 +378,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '한국 범스카우트중앙회',
-                            style: TextStyle(
+                          Text(
+                            state.isEunha
+                                ? '한국은하스카우트중앙회'
+                                : '한국 범스카우트중앙회',
+                            style: const TextStyle(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w800,
                             ),
@@ -1619,7 +1621,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         me.isRegular
                             ? '서포터즈'
-                            : '범스카우트 ${me.number.isEmpty ? '-' : me.number}',
+                            : '${me.corpsFullName} ${me.number.isEmpty ? '-' : me.number}',
                         style: const TextStyle(
                           color: AppColors.purple,
                           fontWeight: FontWeight.w900,
@@ -1888,9 +1890,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 size: 15,
               ),
               const SizedBox(width: 5),
-              const Text(
-                '한국범스카우트중앙회 계좌',
-                style: TextStyle(
+              Text(
+                '한국${state.isEunha ? '은하' : '범'}스카우트중앙회 계좌',
+                style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
                   color: AppColors.textDark,

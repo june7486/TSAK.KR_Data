@@ -149,7 +149,7 @@ class _QrGenerateView extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '범스카우트인가번호 ${member.number}',
+                        '${member.corpsFullName}인가번호 ${member.number}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -410,10 +410,12 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
             TextField(
               controller: _idCtrl,
               autofocus: true,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'ID',
-                hintText: '범스카우트 인가번호 (예: 415) 또는 TSAK',
-                prefixIcon: Icon(Icons.badge_outlined),
+                hintText: _isEunha
+                    ? '은하스카우트 아이디 (예: 은하100)'
+                    : '범스카우트 인가번호 (예: 415) 또는 TSAK',
+                prefixIcon: const Icon(Icons.badge_outlined),
               ),
             ),
             const SizedBox(height: 10),

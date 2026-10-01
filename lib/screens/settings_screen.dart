@@ -80,8 +80,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle('내 정보', Icons.badge_outlined),
             const SizedBox(height: 10),
-            _kv('접근 등급', state.isGuest ? '비인가자' : '범스카우트(개인)'),
-            _kv('인가번호', state.who.isEmpty ? '-' : '${state.who}'),
+            _kv(
+              '접근 등급',
+              state.isGuest
+                  ? '비인가자'
+                  : (state.isEunha ? '은하스카우트(개인)' : '범스카우트(개인)'),
+            ),
+            _kv(
+              '인가번호',
+              state.who.isEmpty
+                  ? '-'
+                  : '${state.isEunha ? '은하' : '범'}#${state.who}',
+            ),
             _kv('버전', state.versionText),
             const SizedBox(height: 10),
             const Text(

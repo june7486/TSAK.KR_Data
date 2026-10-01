@@ -230,7 +230,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 required: true,
               ),
               _field(
-                '범스카우트 인가번호',
+                '${_existing?.corpsFullName ?? '범스카우트'} 인가번호',
                 _number,
                 hint: '예: 2186',
                 icon: Icons.tag,
@@ -245,7 +245,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
               ),
               const SizedBox(height: 4),
               _subHead(
-                '범스카우트 인가 정보 (인가 당시 정보)',
+                '${_existing?.corpsFullName ?? '범스카우트'} 인가 정보 (인가 당시 정보)',
                 Icons.verified_user,
                 AppColors.purple,
               ),

@@ -295,6 +295,13 @@ class Member {
   /// 소속(corps) 표기 말머리 — 범스카우트 '범' / 은하스카우트 '은하'.
   String get corpsPrefix => corps == 'eunha' ? '은하' : '범';
 
+  /// 소속 단체 정식 명칭 — 개인창 명칭 전환용(범스카우트 → 은하스카우트).
+  String get corpsFullName => corps == 'eunha' ? '은하스카우트' : '범스카우트';
+
+  /// 소속 중앙회 명칭 — 은하스카우트 개인창 헤더용.
+  String get corpsOrgName =>
+      corps == 'eunha' ? '한국은하스카우트중앙회' : '한국범스카우트중앙회';
+
   /// 인가번호 표기 라벨 — 은하스카우트는 '은하#43', 범스카우트는 '범#43'.
   ///   (요구: "은하스카우트는 #43 → 은하#43, 모든 창에서 그렇게 표시")
   String get numberLabel =>

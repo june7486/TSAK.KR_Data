@@ -258,9 +258,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // (요구#2) 모든 창 상단에 중앙회 브랜드 동일 노출
-                const Text(
-                  '한국 범스카우트중앙회',
-                  style: TextStyle(
+                Text(
+                  m.corpsOrgName,
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
@@ -1768,7 +1768,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         .join(', ');
     final parentLabels = m.parents.map((e) => _linkNameLabel(e)).join(', ');
     return _section(
-      title: '범스카우트 인가 정보 (인가 당시 정보)',
+      title: '${m.corpsFullName} 인가 정보 (인가 당시 정보)',
       icon: Icons.verified_user,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
