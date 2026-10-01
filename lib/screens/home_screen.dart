@@ -40,6 +40,7 @@ import 'master_console_screen.dart';
 import 'source_folder_screen.dart';
 import 'stats_screen.dart';
 import 'eunha_roster_screen.dart';
+import 'atas_roster_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -1334,6 +1335,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   _regularMembersButton(),
                   // (3-1) 명부관리 (관리자·마스터, 관리자 명부는 마스터 전용) — 별도 창
                   _rosterAdminButton(),
+                  // (3-2) 아타스(ATAS) 명부 — 요구: "아타스 은하버튼 추가"
+                  _atasRosterButton(),
+                  // (3-3) 은하스카우트 명부 — 요구: "아타스 은하버튼 추가"
+                  _eunhaRosterButton(),
                 ],
                 // (4) 수품 구매 — 권한 허용 시 노출
                 if (state.can('merchBuy'))
@@ -2149,6 +2154,78 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(width: 4),
               Text(
                 '명부관리',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 아타스(ATAS) 명부 진입 버튼 — 관리자·마스터 전용.
+  /// (요구: 홈 메인 버튼 행에 "아타스" 버튼 추가)
+  Widget _atasRosterButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AtasRosterScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.military_tech, size: 15, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '아타스',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 은하스카우트 명부 진입 버튼 — 관리자·마스터 전용.
+  /// (요구: 홈 메인 버튼 행에 "은하" 버튼 추가)
+  Widget _eunhaRosterButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EunhaRosterScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.list_alt, size: 15, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '은하',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 11.5,

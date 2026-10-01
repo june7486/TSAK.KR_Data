@@ -1,0 +1,378 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/member.dart';
+import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/file_save.dart';
+import '../services/output_formats.dart';
+import '../services/print_doc.dart';
+import '../services/table_export.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_home_emblem.dart';
+import '../widgets/busy_overlay.dart';
+import '../widgets/tsak_app_bar.dart';
+import '../widgets/tsak_output_sheet.dart';
+
+/// 아타스(ATAS) 명부 — 범스카우트 인가자 중 **ATAS 인가번호**를 보유한 대원 명단.
+///
+/// 관리자·마스터 전용. 항목: ATAS 인가번호 · 범인가번호 · 성명 · 소속 · 인가년월일.
+/// (홈 화면 메인 버튼 행의 "아타스" 버튼에서 진입)
+class AtasRosterScreen extends StatefulWidget {
+  const AtasRosterScreen({super.key});
+
+  @override
+  State<AtasRosterScreen> createState() => _AtasRosterScreenState();
+}
+
+class _AtasRosterScreenState extends State<AtasRosterScreen> {
+  final _searchCtrl = TextEditingController();
+  String _q = '';
+  bool _busyBuilding = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// ATAS 인가번호를 가진 대원만 대상으로 한다(빈 값 제외).
+  List<Member> _atasAll(AppState state) =>
+      state.members.where((m) => m.atasNo.trim().isNotEmpty).toList();
+
+  List<Member> _filtered(List<Member> ms) {
+    final q = _q.trim().toLowerCase();
+    if (q.isEmpty) return ms;
+    return ms
+        .where((m) =>
+            m.searchText.contains(q) ||
+            'atas${m.atasNo}'.contains(q) ||
+            m.atasNo.contains(q) ||
+            m.name.contains(q))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final all = _atasAll(state);
+    final list = _filtered(all);
+
+    return Scaffold(
+      appBar: TsakAppBar(
+        title: const Text('아타스(ATAS) 명부'),
+        actions: [
+          IconButton(
+            tooltip: '출력 (PDF·엑셀 등)',
+            onPressed: _busyBuilding ? null : () => _openOutput(context, list),
+            icon: const Icon(Icons.ios_share),
+          ),
+          const AppHomeEmblem(size: 26),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        onChanged: (v) => setState(() => _q = v),
+                        decoration: InputDecoration(
+                          hintText: '이름 · ATAS번호 · 범인가번호 · 소속 검색',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          isDense: true,
+                          suffixIcon: _q.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() => _q = '');
+                                  },
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.military_tech,
+                        size: 16, color: AppColors.tigerGold),
+                    const SizedBox(width: 6),
+                    Text(
+                      'ATAS 명부 ${all.length}명'
+                      '${_q.isEmpty ? '' : ' · 검색 ${list.length}명'}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Divider(height: 1),
+              Expanded(
+                child: list.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'ATAS 인가번호가 등록된 대원이 없습니다.',
+                          style: TextStyle(color: AppColors.textGray),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: list.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) => _row(list[i], i),
+                      ),
+              ),
+            ],
+          ),
+          BusyOverlay(
+            visible: _busyBuilding,
+            title: '아타스 명부를 만드는 중입니다',
+            lines: const [
+              '명단을 정리하고 문서를 구성하고 있습니다...',
+              '파일로 저장하는 중입니다...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===================== 출력 (범스카우트와 동일 규격) =====================
+
+  Future<void> _openOutput(BuildContext context, List<Member> list) async {
+    if (list.isEmpty) {
+      _snack('출력할 아타스 명부가 없습니다');
+      return;
+    }
+    final headers = ['ATAS 인가번호', '범인가번호', '성명', '소속', '인가년월일'];
+    final rows = <List<String>>[];
+    for (final m in list) {
+      rows.add([
+        m.atasNo.trim(),
+        m.number.trim(),
+        m.name,
+        m.unit.trim(),
+        m.date.trim(),
+      ]);
+    }
+    final title =
+        '아타스(ATAS) 명부${_q.isEmpty ? '' : ' (검색 ${list.length}명)'}';
+    await showTsakOutputSheet(
+      context,
+      title: '아타스 명부 출력',
+      subtitle: 'ATAS ${list.length}명 · 범스카우트',
+      onPick: (f) => _runOutput(title, headers, rows, f),
+      onPrint: () =>
+          _runOutput(title, headers, rows, TsakOutputFormat.pdf, justPrint: true),
+      onEmail: () => _emailOutput(title, headers, rows),
+      onOnePage: () => _runOnePage(_atasAll(context.read<AppState>())),
+      onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
+    );
+  }
+
+  /// ATAS 명부 전원을 A4 한 장에 담아 PDF로 저장/인쇄한다.
+  Future<void> _runOnePage(List<Member> members) async {
+    if (members.isEmpty) {
+      _snack('출력할 아타스 명부가 없습니다');
+      return;
+    }
+    setState(() => _busyBuilding = true);
+    try {
+      final loc = await askTsakSaveLocation(
+        context,
+        info: '아타스 명부 · 전원 ${members.length}명 · A4 1장 PDF',
+      );
+      if (loc == null) {
+        if (mounted) _snack('저장을 취소했습니다');
+        return;
+      }
+      if (!mounted) return;
+      await runWithTsakProgress(
+        context,
+        title: '아타스 명부 A4 한 장 생성',
+        note: '전원 ${members.length}명을 한 장에 맞춥니다.',
+        steps: const ['레이아웃 계산', 'PDF 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(
+              progress: 0.2, message: '열·글자 크기를 계산하는 중…', stepIndex: 0);
+          final pdf = await DocPdf.buildRosterOnePage(
+            meta: const DocMeta(
+              title: '아타스(ATAS) 명부',
+              subtitle: '범스카우트 인가자',
+            ),
+            rows: [
+              for (final m in members) [m.atasNo.trim(), m.name],
+            ],
+            footerLeft: '한국범스카우트중앙회 · 아타스',
+          );
+          ctl.update(progress: 0.7, message: 'PDF를 저장하는 중…', stepIndex: 1);
+          final cols = DocPdf.lastRosterCols;
+          final name = 'TSAK_아타스_명부_A4한장_$cols열_전원${members.length}명';
+          await saveBytesChoose(
+            bytes: pdf,
+            name: name,
+            ext: 'pdf',
+            mime: 'application/pdf',
+            choose: loc,
+          );
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+      if (mounted) {
+        _snack('A4 한 장 PDF 저장을 시작했습니다 (전원 ${members.length}명)');
+      }
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
+  }
+
+  Future<void> _runOutput(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+    TsakOutputFormat format, {
+    bool justPrint = false,
+  }) async {
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '아타스 · 명부관리',
+      description: '아타스(ATAS) 명부 출력물입니다.',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}명'],
+      footerLeft: '한국범스카우트중앙회 · 아타스',
+    );
+    setState(() => _busyBuilding = true);
+    try {
+      var choose = false;
+      if (!justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info: '$title · ${rows.length}명 · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return;
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      await runWithTsakProgress(
+        context,
+        title: justPrint ? '명단 프린트 준비' : '명단 ${format.label} 생성',
+        note: '${rows.length}명 명단을 처리합니다.',
+        steps: justPrint
+            ? const ['문서 구성', '인쇄 창 열기']
+            : ['문서 구성', '${format.label} 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(progress: 0.15, message: '문서를 구성하는 중…', stepIndex: 0);
+          if (justPrint) {
+            ctl.update(progress: 0.6, message: '인쇄 창을 여는 중…', stepIndex: 1);
+            await printTsakTable(doc);
+            ctl.update(progress: 1.0, stepIndex: 2);
+            return;
+          }
+          ctl.update(
+              progress: 0.5,
+              message: '${format.label} 생성 중…',
+              stepIndex: 1);
+          await saveTsakTableChosen(context, doc, format, choose: choose);
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+      if (mounted) {
+        _snack(justPrint ? '인쇄 창을 열었습니다' : '${format.label} 저장을 시작했습니다');
+      }
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
+  }
+
+  Future<void> _emailOutput(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+  ) async {
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '아타스 · 명부관리',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}명'],
+      footerLeft: '한국범스카우트중앙회 · 아타스',
+    );
+    await emailTsakTable(context, doc);
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Widget _row(Member m, int idx) {
+    return ListTile(
+      dense: true,
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: AppColors.tigerGold.withValues(alpha: 0.16),
+        child: Text(
+          '${idx + 1}',
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: AppColors.lifetimeGold,
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          Text(
+            'ATAS ${m.atasNo.trim()}',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: AppColors.lifetimeGold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            m.name,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+        ],
+      ),
+      subtitle: Text(
+        [
+          if (m.number.trim().isNotEmpty) '범인가 ${m.number.trim()}',
+          if (m.unit.trim().isNotEmpty) m.unit.trim(),
+          if (m.date.trim().isNotEmpty) '인가 ${m.date.trim()}',
+        ].join('  ·  '),
+        style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+      ),
+    );
+  }
+}

@@ -45,6 +45,8 @@ class Member {
     this.privacyAgreedAt = '',
     List<String>? mentors,
     List<String>? parents,
+    List<String>? mentees,
+    List<String>? children,
     this.linkApprovalStatus = '',
     this.linkApprovalNote = '',
     this.linkRequestSource = '',
@@ -62,6 +64,8 @@ class Member {
     this.updatedAt,
   }) : mentors = mentors ?? <String>[],
        parents = parents ?? <String>[],
+       mentees = mentees ?? <String>[],
+       children = children ?? <String>[],
        feeYears = feeYears ?? <String, bool>{},
        eventAttend = eventAttend ?? <String, bool>{},
        pendingEventNames = pendingEventNames ?? <String>[],
@@ -196,6 +200,14 @@ class Member {
   /// 페런츠(보호자) 인가번호 목록 (복수 지정 가능)
   List<String> parents;
 
+  /// 멘티대원 인가번호 목록 — 본인이 **멘토**로서 등록한 멘티들의 인가번호.
+  /// (요구: 인가자 개인창의 '멘티 등록정보 창' / 멘토=멘티=페런츠 연동)
+  List<String> mentees;
+
+  /// 자녀대원 인가번호 목록 — 본인이 **페런츠**로서 등록한 자녀대원들의 인가번호.
+  /// (요구: 페런츠 인가자 개인창의 '자녀대원 등록정보 창')
+  List<String> children;
+
   /// 멘토·페런츠 연결 상태: ''(미요청) | 'pending'(요청) | 'approved'(승인) | 'held'(보류)
   /// 한 대상(멘토/페런츠)을 가리키는 연결 단위 상태.
   String linkApprovalStatus;
@@ -255,7 +267,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $position $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')}'
+      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $position $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')} ${mentees.join(' ')} ${children.join(' ')}'
           .toLowerCase();
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
@@ -333,6 +345,8 @@ class Member {
     'privacyAgreedAt': privacyAgreedAt,
     'mentors': mentors,
     'parents': parents,
+    'mentees': mentees,
+    'children': children,
     'linkApprovalStatus': linkApprovalStatus,
     'linkRequestSource': linkRequestSource,
     'linkRequestedAt': linkRequestedAt,
@@ -411,6 +425,8 @@ class Member {
       privacyAgreedAt: '${map['privacyAgreedAt'] ?? ''}',
       mentors: castStrList(map['mentors']),
       parents: castStrList(map['parents']),
+      mentees: castStrList(map['mentees']),
+      children: castStrList(map['children']),
       linkApprovalStatus: '${map['linkApprovalStatus'] ?? ''}',
       linkRequestSource: '${map['linkRequestSource'] ?? ''}',
       linkRequestedAt: '${map['linkRequestedAt'] ?? ''}',
@@ -478,6 +494,8 @@ class Member {
     String? privacyAgreedAt,
     List<String>? mentors,
     List<String>? parents,
+    List<String>? mentees,
+    List<String>? children,
     String? linkApprovalStatus,
     String? linkRequestSource,
     String? linkRequestedAt,
@@ -534,6 +552,8 @@ class Member {
       privacyAgreedAt: privacyAgreedAt ?? this.privacyAgreedAt,
       mentors: mentors ?? List<String>.from(this.mentors),
       parents: parents ?? List<String>.from(this.parents),
+      mentees: mentees ?? List<String>.from(this.mentees),
+      children: children ?? List<String>.from(this.children),
       linkApprovalStatus: linkApprovalStatus ?? this.linkApprovalStatus,
       linkRequestSource: linkRequestSource ?? this.linkRequestSource,
       linkRequestedAt: linkRequestedAt ?? this.linkRequestedAt,
