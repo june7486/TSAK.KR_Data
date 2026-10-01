@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -59,6 +60,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   bool _lifetime = false;
   Map<String, bool> _fees = {};
   Member? _existing;
+
+  /// 마스터 비밀번호 열람 시 가림 여부(기본: 가림).
+  bool _pwObscured = true;
 
   /// 성별 — '남' | '여' | ''. 남/여 중 하나는 필수. 공개여부는 기본 비노출.
   String _gender = '';
@@ -433,6 +437,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+              // 비밀번호 관리 카드 (요구: 개인정보 수정 페이지에서 비밀번호 변경).
+              //  · 본인: 변경 + 분실 시 초기화 요청
+              //  · 마스터: 열람·변경·초기화 / 관리자: 초기화만
+              _passwordCard(state),
+              const SizedBox(height: 20),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.purple,
@@ -457,6 +466,438 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
         ),
       ),
     );
+  }
+
+  // ================= 비밀번호 관리 카드 =================
+  //  요구: "모든 회원은 개인정보 페이지에서 비밀번호를 변경할 수 있습니다.
+  //   비밀번호 변경창을 넣어주세요. 마스터만 비밀번호를 볼 수 있고 변경·초기화
+  //   할 수 있습니다. 관리자는 초기화만 할 수 있습니다. 이런 내용은 해당권한을
+  //   갖는 사람에게만 노출합니다."
+  String _loginId() {
+    final m = _existing;
+    if (m != null) return m.loginId;
+    final no = _number.text.trim();
+    return no.isNotEmpty ? no : _phone.text.trim();
+  }
+
+  Widget _passwordCard(AppState state) {
+    final isNew = _existing == null;
+    if (isNew) return const SizedBox.shrink(); // 신규 등록 시엔 비번 관리 불필요
+    final isAdmin = state.isApp || state.isMaster;
+    final isMaster = state.isMaster;
+    final isSelf = state.isSelfAccess;
+    if (!isAdmin && !isSelf) return const SizedBox.shrink(); // 권한 없으면 미노출
+    final isRegular = _existing!.isRegular;
+    return Card(
+      color: AppColors.purple.withValues(alpha: 0.04),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.password, size: 19, color: AppColors.purple),
+                SizedBox(width: 8),
+                Text(
+                  '접속 비밀번호 관리',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${isRegular ? '일반회원' : '인가자'} · 아이디 ${_loginId()}',
+              style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+            // 마스터 전용: 현재 비밀번호 실제값
+            if (isMaster) ...[
+              const SizedBox(height: 10),
+              _passwordReveal(state),
+            ],
+            // 관리자·마스터: 초기화(+마스터는 변경)
+            if (isAdmin) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _resetPassword,
+                    icon: const Icon(Icons.lock_reset, size: 17),
+                    label: const Text('비번 초기화'),
+                  ),
+                  if (isMaster)
+                    OutlinedButton.icon(
+                      onPressed: _forceChangePassword,
+                      icon: const Icon(Icons.lock_open, size: 17),
+                      label: const Text('비번 강제 변경'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                isMaster
+                    ? '마스터는 모든 회원의 비밀번호를 열람·변경·초기화할 수 있습니다.'
+                    : '관리자는 비밀번호 초기화만 할 수 있습니다. 변경은 마스터만 가능합니다.',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textGray,
+                  height: 1.35,
+                ),
+              ),
+            ],
+            // 본인(비관리자): 변경 + 분실 시 초기화 요청
+            if (isSelf && !isAdmin) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                  ),
+                  onPressed: _selfChangePassword,
+                  icon: const Icon(Icons.password, size: 18),
+                  label: const Text('비밀번호 변경'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.tigerGold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AppColors.tigerGold.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.help_outline,
+                          size: 15,
+                          color: AppColors.lifetimeGold,
+                        ),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '비밀번호를 분실한 경우 관리자·마스터에게 초기화를 요청하세요.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.lifetimeGold,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.tigerGold,
+                        ),
+                        onPressed: _requestPasswordReset,
+                        icon: const Icon(Icons.send, size: 16),
+                        label: const Text('비밀번호 초기화 요청'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 마스터 전용 — 현재 비밀번호 실제값(가림/보기 + 복사).
+  Widget _passwordReveal(AppState state) {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: state.fetchMemberPassword(_loginId()),
+      builder: (ctx, snap) {
+        final loading = snap.connectionState == ConnectionState.waiting;
+        final d = snap.data;
+        final pw = d == null ? null : '${d['password'] ?? ''}';
+        final isDefault = d?['isDefault'] == true;
+        final obscured = _pwObscured;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.purple.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.purple.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.key, size: 17, color: AppColors.purple),
+              const SizedBox(width: 8),
+              const Text(
+                '현재 비밀번호',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  loading
+                      ? '조회 중…'
+                      : (pw == null || pw.isEmpty
+                            ? '조회 실패'
+                            : '${obscured ? '••••••' : pw}${isDefault ? '  (기본값)' : ''}'),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              if (pw != null && pw.isNotEmpty) ...[
+                IconButton(
+                  tooltip: obscured ? '보기' : '가리기',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    obscured ? Icons.visibility : Icons.visibility_off,
+                    size: 17,
+                  ),
+                  onPressed: () =>
+                      setState(() => _pwObscured = !_pwObscured),
+                ),
+                IconButton(
+                  tooltip: '복사',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.copy, size: 17),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: pw));
+                    _snack('비밀번호를 복사했습니다');
+                  },
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 본인 — 비밀번호 변경.
+  void _selfChangePassword() {
+    final curCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final newCtrl2 = TextEditingController();
+    bool busy = false;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('비밀번호 변경'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: curCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '현재 비밀번호'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: newCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '새 비밀번호 (4자 이상)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: newCtrl2,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '새 비밀번호 확인'),
+                ),
+                const SizedBox(height: 8),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '※ 비밀번호를 분실한 경우 관리자·마스터에게 초기화를 요청하세요.',
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final cur = curCtrl.text.trim();
+                      final nw = newCtrl.text.trim();
+                      final nw2 = newCtrl2.text.trim();
+                      if (cur.isEmpty || nw.isEmpty) {
+                        _snack('모든 항목을 입력하세요');
+                        return;
+                      }
+                      if (nw.length < 4) {
+                        _snack('새 비밀번호는 4자 이상이어야 합니다');
+                        return;
+                      }
+                      if (nw != nw2) {
+                        _snack('새 비밀번호가 서로 다릅니다');
+                        return;
+                      }
+                      setLocal(() => busy = true);
+                      final err = await context
+                          .read<AppState>()
+                          .changePersonalPassword(cur, nw);
+                      if (!ctx.mounted) return;
+                      setLocal(() => busy = false);
+                      if (err == null) {
+                        Navigator.pop(ctx);
+                        _snack('비밀번호가 변경되었습니다');
+                      } else {
+                        _snack('변경 실패: $err');
+                      }
+                    },
+              child: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('변경'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 본인 — 관리자·마스터에게 초기화 요청 접수.
+  Future<void> _requestPasswordReset() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.lock_reset, color: AppColors.tigerGold, size: 32),
+        title: const Text('비밀번호 초기화 요청'),
+        content: const Text(
+          '관리자·마스터에게 비밀번호 초기화를 요청하시겠습니까?\n\n'
+          '· 요청은 통합승인관리에 접수되어 승인 후 초기화됩니다.\n'
+          '· 초기화되면 기본 비밀번호로 다시 로그인할 수 있습니다.',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('요청'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final err = await context.read<AppState>().requestPasswordReset();
+    if (!mounted) return;
+    _snack(
+      err == null
+          ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.'
+          : '요청 실패: $err',
+    );
+  }
+
+  /// 관리자·마스터 — 비밀번호 초기화.
+  Future<void> _resetPassword() async {
+    final m = _existing!;
+    final target = m.isRegular ? m.phoneLast4 : '${m.number}!@@';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('비밀번호 초기화'),
+        content: Text(
+          '${m.name}(${m.loginId}) 님의 비밀번호를 기본값으로 초기화할까요?\n\n'
+          '초기화 값: $target',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('초기화'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final err = await context.read<AppState>().setMemberPassword(m, reset: true);
+    if (!mounted) return;
+    _snack(err == null ? '비밀번호를 초기화했습니다 ($target)' : '실패: $err');
+  }
+
+  /// 마스터 — 비밀번호 강제 변경.
+  Future<void> _forceChangePassword() async {
+    final m = _existing!;
+    final ctrl = TextEditingController();
+    final nw = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('비밀번호 강제 변경 — ${m.name}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '새 비밀번호',
+            helperText: '4자 이상 입력하세요',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('변경'),
+          ),
+        ],
+      ),
+    );
+    if (nw == null || nw.length < 4 || !mounted) {
+      if (nw != null && mounted) _snack('4자 이상 입력하세요');
+      return;
+    }
+    final err = await context.read<AppState>().setMemberPassword(m, value: nw);
+    if (!mounted) return;
+    _snack(err == null ? '비밀번호를 변경했습니다' : '실패: $err');
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   /// 수정 여부 판정 (원본과 비교)
