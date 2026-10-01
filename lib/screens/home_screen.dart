@@ -1297,9 +1297,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 // (1) 행사관리 — 가장 자주 쓰는 진입점
                 if (state.can('events')) _eventButton(),
                 if (state.isApp || state.isMaster) ...[
+                  // 통합승인관리 — 승인(멘토·페런츠 연결 포함)이 모두 취합되므로
+                  // 별도 '연결승인' 버튼은 두지 않는다(요구: 통합승인으로 취합).
                   _approvalButton(),
-                  // (2-1) 멘토·페런츠 연결 승인 (관리자·마스터)
-                  _linkApprovalButton(),
                   // (3) 일반회원 (관리자·마스터)
                   _regularMembersButton(),
                   // (3-1) 명부관리 (관리자·마스터, 관리자 명부는 마스터 전용) — 별도 창
@@ -2042,50 +2042,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   SizedBox(width: 5),
                   Text(
                     '통합승인관리',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (n > 0) _approvalBadgeDot(size: 19),
-        ],
-      ),
-    );
-  }
-
-  /// 멘토·페런츠 연결 승인 — 통합승인관리로 연결(요구: 모두 하나의 창으로 통합).
-  /// 우상단 붉은 원형 숫자 배지 포함(관리자·마스터).
-  Widget _linkApprovalButton() {
-    final state = context.watch<AppState>();
-    final n = _approvalBadgeCount > 0
-        ? _approvalBadgeCount
-        : state.pendingApprovalCount;
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          GestureDetector(
-            onTap: _openApproval,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.20),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.family_restroom, size: 16, color: Colors.white),
-                  SizedBox(width: 5),
-                  Text(
-                    '연결승인',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
