@@ -1427,10 +1427,7 @@ class NasApi {
   ///  limit: 최대 조회 건수(기본 200).
   Future<List<Map<String, dynamic>>> allAccessLogs({int limit = 200}) async {
     final r = await http
-        .get(
-          _uri('/api/access/logs?limit=$limit'),
-          headers: _authHeaders,
-        )
+        .get(_uri('/api/access/logs?limit=$limit'), headers: _authHeaders)
         .timeout(const Duration(seconds: 15));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     return ((j['logs'] as List?) ?? [])
@@ -1501,6 +1498,50 @@ class NasApi {
         )
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 승인 히스토리 목록 (관리자·마스터) — 통합승인관리 하단 히스토리.
+  ///  [source] = ''(전체) | 'regular' | 'request' | 'link'
+  Future<List<Map<String, dynamic>>> approvalHistory({
+    int limit = 200,
+    String source = '',
+  }) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (source.isNotEmpty) q['source'] = source;
+    final uri = _uri('/api/approval/history').replace(queryParameters: q);
+    final r = await http
+        .get(uri, headers: _authHeaders)
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return ((j['items'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 히스토리 항목 복원 — 다시 승인창(대기 큐)으로 올린다 (관리자·마스터).
+  Future<bool> approvalHistoryRestore({required String id}) async {
+    final r = await http
+        .post(
+          _uri('/api/approval/history/restore'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 25));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 히스토리 항목 삭제 (관리자·마스터).
+  Future<bool> approvalHistoryDelete({required List<String> ids}) async {
+    final r = await http
+        .post(
+          _uri('/api/approval/history/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ids': ids}),
+        )
+        .timeout(const Duration(seconds: 25));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
   }
 
   /// 회원 이름 공개/비공개 토글 (관리자·마스터). 개인 프로필 좌우 버튼.
@@ -1614,7 +1655,9 @@ class NasApi {
   /// 개인프로필 연동 — 해당 인가번호의 각인 메달 수상(받은)/수여(해준) 기록.
   Future<Map<String, dynamic>> memberMedals({String number = ''}) async {
     try {
-      final q = number.isNotEmpty ? '?number=${Uri.encodeComponent(number)}' : '';
+      final q = number.isNotEmpty
+          ? '?number=${Uri.encodeComponent(number)}'
+          : '';
       final r = await http
           .get(_uri('/api/member/medals$q'), headers: _authHeaders)
           .timeout(const Duration(seconds: 15));

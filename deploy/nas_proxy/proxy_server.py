@@ -629,6 +629,177 @@ def _set_member_request_status(rid, action):
     return False, "", ""
 
 
+# ==========================================================================
+#  승인 히스토리 (요구: 통합승인관리 — 승인 시 승인창에서 제거하고,
+#    하단 히스토리에서 승인요청일·승인자·복원·삭제를 관리한다.)
+#  저장: db/approval_history.json  {"items":[{id, source, kind, ident, ref,
+#        title, name, number, summary, status, requestedAt, handledAt,
+#        handledBy, type, payload}]}
+#   · source : 'regular'(비인가회원) | 'request'(등록요청) | 'link'(멘토·페런츠)
+#   · status : 'approved' | 'held' | 'rejected' | 'deleted'
+#   · 복원(restore) → status='pending' + 대기 큐로 재등록
+# ==========================================================================
+APPROVAL_HISTORY_FILE = BASE + "/db/approval_history.json"
+_HISTORY_LOCK = threading.Lock()
+
+
+def _history_file():
+    return APPROVAL_HISTORY_FILE
+
+
+def _history_load():
+    d = _load_json(_history_file(), {"items": []})
+    if not isinstance(d, dict):
+        d = {"items": []}
+    if not isinstance(d.get("items"), list):
+        d["items"] = []
+    return d
+
+
+def _history_save(doc):
+    _save_json(_history_file(), doc)
+
+
+def _history_add(entry):
+    """승인 히스토리 1건 추가(최신 우선, 최대 3000건)."""
+    entry = dict(entry or {})
+    entry.setdefault("id", "h_%d_%s" % (int(time.time() * 1000),
+                                       _secrets.token_hex(3)))
+    entry.setdefault("handledAt", datetime.datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"))
+    with _HISTORY_LOCK:
+        doc = _history_load()
+        items = doc.get("items") or []
+        items.insert(0, entry)
+        doc["items"] = items[:3000]
+        _history_save(doc)
+    return entry["id"]
+
+
+def _history_update(hid, **fields):
+    with _HISTORY_LOCK:
+        doc = _history_load()
+        items = doc.get("items") or []
+        for i, it in enumerate(items):
+            if str(it.get("id", "")) == str(hid):
+                it.update(fields)
+                items[i] = it
+                doc["items"] = items
+                _history_save(doc)
+                return it
+    return None
+
+
+def _history_remove(hid):
+    """히스토리에서 완전 삭제."""
+    with _HISTORY_LOCK:
+        doc = _history_load()
+        items = doc.get("items") or []
+        keep = [it for it in items if str(it.get("id", "")) != str(hid)]
+        if len(keep) == len(items):
+            return False
+        doc["items"] = keep
+        _history_save(doc)
+        return True
+
+
+def _history_list(limit=300):
+    doc = _history_load()
+    return (doc.get("items") or [])[:limit]
+
+
+def _history_find(hid):
+    for it in _history_list(3000):
+        if str(it.get("id", "")) == str(hid):
+            return it
+    return None
+
+
+def _history_member_name(ident):
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return ""
+    for m in _ev_members():
+        mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        mp = re.sub(r"[^0-9]", "", str(
+            m.get("accessPhone") or m.get("phone") or ""))
+        if d in (mn, mp):
+            return str(m.get("name", ""))
+    return ""
+
+
+def _member_of_ident(ident):
+    """인가번호/전화 → 회원 dict(없으면 None)."""
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return None
+    for m in _ev_members():
+        mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        mp = re.sub(r"[^0-9]", "", str(
+            m.get("accessPhone") or m.get("phone") or ""))
+        if d in (mn, mp):
+            return m
+    return None
+
+
+def _sess_label(sess):
+    """세션 → 승인자 표시 라벨(예: '김병혁 (#417)', '마스터 (#1)')."""
+    if not sess:
+        return ""
+    who = re.sub(r"[^0-9]", "", str(sess.get("who", "") or ""))
+    tier = str(sess.get("tier", "") or "")
+    if who:
+        nm = _history_member_name(who)
+        base = ("%s (#%s)" % (nm, who)) if nm else ("#%s" % who)
+        return ("마스터 " + base) if tier == "master" else base
+    return {"master": "마스터", "app": "앱 관리자"}.get(tier, tier or "관리자")
+
+
+# 등록요청 유형 라벨(통합승인관리 화면과 동일 문구)
+_REQ_TYPE_LABEL = {
+    "lifetime": "평생회원 납부 등록",
+    "fee": "연회비 납부 등록",
+    "event": "행사 참가자 등록",
+    "qualification": "자격 지정",
+    "regular": "비인가회원 등록",
+}
+
+_STATUS_KR = {"approved": "승인", "held": "보류", "rejected": "반려",
+              "pending": "대기", "deleted": "삭제", "restored": "복원"}
+
+
+def _req_type_label(t):
+    return _REQ_TYPE_LABEL.get(str(t or ""), "등록요청 (%s)" % t)
+
+
+def _status_kr(s):
+    return _STATUS_KR.get(str(s or ""), str(s or ""))
+
+
+def _approval_history_record(source, kind, ident, name, number, title,
+                             status, requested_at="", handled_by="",
+                             rtype="", summary="", payload=None, ref=""):
+    """승인 처리 1건을 히스토리에 기록(통합승인관리 하단 히스토리용)."""
+    try:
+        return _history_add({
+            "source": str(source or ""),
+            "kind": str(kind or ""),
+            "ident": re.sub(r"[^0-9]", "", str(ident or "")),
+            "ref": str(ref or ident or ""),
+            "title": str(title or ""),
+            "name": str(name or ""),
+            "number": re.sub(r"[^0-9]", "", str(number or ident or "")),
+            "status": str(status or "approved"),
+            "requestedAt": str(requested_at or ""),
+            "handledBy": str(handled_by or ""),
+            "type": str(rtype or ""),
+            "summary": str(summary or ""),
+            "payload": payload if isinstance(payload, dict) else {},
+        })
+    except Exception:
+        return ""
+
+
 # ---- 관리자(아이디)별 '확인(읽음)' 워터마크 ----
 #  배지 숫자는 "해당 아이디가 아직 확인하지 않은 항목"만 표시한다.
 #  관리자가 승인화면/알림을 열어 확인하면 그 시각을 워터마크로 저장하고,
@@ -7337,6 +7508,25 @@ class Handler(BaseHTTPRequestHandler):
                 unread = _approval_badge_unread(owner)
                 return self._json({"ok": True, "queues": queues,
                                    "total": total, "unread": unread})
+            # ---- 승인 히스토리 목록(관리자·마스터) ----
+            #  통합승인관리 화면 하단의 '승인 히스토리' — 처리 완료/보류/삭제된
+            #  승인 건을 최신순으로 내려준다(승인요청일·승인자·복원·삭제 관리).
+            if p == "/api/approval/history":
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    limit = int(q.get("limit", ["200"])[0])
+                except Exception:
+                    limit = 200
+                limit = max(1, min(1000, limit))
+                src = str(q.get("source", [""])[0] or "").strip()
+                items = _history_list(limit if not src else 3000)
+                if src:
+                    items = [it for it in items
+                             if str(it.get("source", "")) == src][:limit]
+                return self._json({"ok": True, "items": items,
+                                   "count": len(items)})
             if p == "/api/link/pending":
                 # 멘토·페런츠 연결 승인 대기 목록(관리자·마스터).
                 if not self._require("admin"):
@@ -8624,7 +8814,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not idents:
                     return self._json({"ok": False, "error": "ident"}, 400)
                 done = 0
+                _adm = _sess_label(self._sess())
                 if action == "delete":
+                    removed = []
                     with _MEMBER_WRITE_LOCK:
                         members = _ev_members()
                         keys = {re.sub(r"[^0-9]", "", x) for x in idents}
@@ -8635,19 +8827,49 @@ class Handler(BaseHTTPRequestHandler):
                                 m.get("accessPhone") or m.get("phone") or ""))
                             if mk in keys or lk in keys or str(m.get("id", "")) in idents:
                                 done += 1
+                                removed.append(m)
                                 continue
                             keep.append(m)
                         _save_json(DB_FILE, keep)
                         _touch_meta({"count": len(keep), "updatedBy": "approval-del"})
+                    # 삭제도 히스토리에 기록(복원 시 payload 로 재등록 가능).
+                    for m in removed:
+                        _approval_history_record(
+                            "regular", "member",
+                            str(m.get("number", "")), str(m.get("name", "")),
+                            str(m.get("number", "")), "비인가회원 등록",
+                            "deleted", str(m.get("approvalAt")
+                                           or m.get("created") or ""), _adm,
+                            summary="비인가회원 삭제 (복원 시 재등록)",
+                            payload={"member": m})
                 else:
                     status = {
                         "approve": "approved", "hold": "held",
                         "pending": "pending", "bulk": "approved",
                     }.get(action, "approved")
                     for x in idents:
-                        ok, _ = _set_member_approval(x, status)
+                        ok, nm = _set_member_approval(x, status)
                         if ok:
                             done += 1
+                            # 승인/보류 → 히스토리에 기록(대기 복귀는 제외).
+                            if status in ("approved", "held"):
+                                mm = _member_of_ident(x) or {}
+                                _approval_history_record(
+                                    "regular", "member",
+                                    str(mm.get("number", "") or x),
+                                    nm or str(mm.get("name", "")),
+                                    str(mm.get("number", "") or x),
+                                    "비인가회원 등록", status,
+                                    str(mm.get("approvalAt")
+                                        or mm.get("created") or ""), _adm,
+                                    summary="%s 처리" % _status_kr(status),
+                                    payload={"member": {
+                                        "number": str(mm.get("number", "")),
+                                        "name": nm or str(mm.get("name", "")),
+                                        "phone": str(mm.get("phone", "")),
+                                        "league": str(mm.get("league", "")),
+                                        "unit": str(mm.get("unit", "")),
+                                    }})
                 return self._json({"ok": True, "done": done})
             # ---- 회원 등록요청 제출(로그인 회원 누구나) ----
             if p == "/api/member/request":
@@ -8697,8 +8919,87 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "id"}, 400)
                 if action not in ("approve", "reject", "pending", "delete"):
                     return self._json({"ok": False, "error": "action"}, 400)
+                # 처리 전 원본 요청을 확보(히스토리 payload·표시용).
+                _before = None
+                for it in (_load_member_requests().get("items") or []):
+                    if str(it.get("id", "")) == rid:
+                        _before = it
+                        break
                 ok, name, rtype = _set_member_request_status(rid, action)
+                # 승인/반려/삭제 → 히스토리에 기록(대기 복귀는 제외).
+                if ok and action in ("approve", "reject", "delete") and _before:
+                    _status = {"approve": "approved", "reject": "rejected",
+                               "delete": "deleted"}.get(action, action)
+                    _ident = str(_before.get("ident", ""))
+                    _summary = _req_type_label(rtype)
+                    if str(rtype) == "fee" and str(_before.get("year", "")):
+                        _summary += " · %s년" % _before.get("year")
+                    elif str(rtype) == "lifetime" and str(_before.get("date", "")):
+                        _summary += " · 납부일 %s" % _before.get("date")
+                    elif str(rtype) == "event" and str(_before.get("event", "")):
+                        _summary += " · %s" % _before.get("event")
+                    _approval_history_record(
+                        "request", "request", _ident, name,
+                        str(_before.get("number", "") or _ident),
+                        _req_type_label(rtype), _status,
+                        str(_before.get("created", "")),
+                        _sess_label(self._sess()), rtype=rtype,
+                        summary="%s 처리" % _status_kr(_status),
+                        payload={"request": _before})
                 return self._json({"ok": ok, "name": name, "type": rtype})
+            # ---- 승인 히스토리 복원(관리자·마스터) ----
+            #  복원 = 다시 승인창(대기 큐)으로 올린다.
+            #   · regular  → 회원 approvalStatus='pending'
+            #   · request  → 등록요청 재생성(status='pending')
+            #   · link     → linkApprovalStatus='pending'
+            #  복원 후 히스토리 항목은 '복원' 상태로 남긴다(이력 추적).
+            if p == "/api/approval/history/restore":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                hid = str(d.get("id", "")).strip()
+                it = _history_find(hid)
+                if not it:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                src = str(it.get("source", ""))
+                ident = re.sub(r"[^0-9]", "", str(it.get("ident", "")))
+                payload = it.get("payload") or {}
+                ok = False
+                if src == "regular":
+                    ok, _ = _set_member_approval(ident, "pending")
+                elif src == "link":
+                    ok, _ = _set_member_link(ident, "pending")
+                elif src == "request":
+                    req = dict(payload.get("request") or {})
+                    if req:
+                        req.pop("id", None)
+                        req["status"] = "pending"
+                        # 같은 내용의 pending 요청이 있으면 재사용된다.
+                        ok, _rid = _add_member_request(req)
+                    else:
+                        ok = False
+                if not ok:
+                    return self._json({"ok": False, "error": "restore"},
+                                      400)
+                _history_update(hid, status="restored",
+                                restoredAt=datetime.datetime.now().strftime(
+                                    "%Y-%m-%d %H:%M:%S"),
+                                restoredBy=_sess_label(self._sess()))
+                return self._json({"ok": True, "id": hid, "source": src})
+            # ---- 승인 히스토리 삭제(관리자·마스터) ----
+            if p == "/api/approval/history/delete":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                ids = d.get("ids")
+                if not isinstance(ids, list):
+                    ids = [d.get("id", "")]
+                ids = [str(x) for x in ids if str(x).strip()]
+                n = 0
+                for hid in ids:
+                    if _history_remove(hid):
+                        n += 1
+                return self._json({"ok": True, "done": n})
             # ---- 배지 '확인(읽음)' 처리(관리자·마스터) ----
             #  해당 아이디가 승인화면/게시판을 열어 확인했음을 기록한다.
             #  kind: 'approval'(통합 승인) | 'board'(게시판 알림) | 'all'
@@ -8737,10 +9038,31 @@ class Handler(BaseHTTPRequestHandler):
                     "pending": "pending",
                 }.get(action, "approved")
                 done = 0
+                _adm = _sess_label(self._sess())
                 for x in idents:
-                    ok, _ = _set_member_link(x, status, note)
+                    mm = _member_of_ident(x) or {}
+                    ok, nm = _set_member_link(x, status, note)
                     if ok:
                         done += 1
+                        # 승인/보류 → 히스토리 기록(대기 복귀는 제외).
+                        if status in ("approved", "held"):
+                            _approval_history_record(
+                                "link", "link",
+                                str(mm.get("number", "") or x),
+                                nm or str(mm.get("name", "")),
+                                str(mm.get("number", "") or x),
+                                "멘토·페런츠 연결", status,
+                                str(mm.get("created", "")), _adm,
+                                summary="%s 처리" % _status_kr(status),
+                                payload={"member": {
+                                    "number": str(mm.get("number", "")),
+                                    "name": nm or str(mm.get("name", "")),
+                                    "mentors": [str(y) for y in
+                                                (mm.get("mentors") or [])],
+                                    "parents": [str(y) for y in
+                                                (mm.get("parents") or [])],
+                                    "note": note,
+                                }})
                 return self._json({"ok": True, "done": done})
             if p == "/api/link/profiles":
                 # 멘토·페런츠(수동 등록) 인적사항 저장/삭제 + 아이디·비번 생성.

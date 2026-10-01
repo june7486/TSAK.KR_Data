@@ -877,8 +877,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// 전체 회원 접속·열람 로그 조회 (마스터 전용, 최신 limit건).
-  Future<List<Map<String, dynamic>>> fetchAllAccessLogs(
-      {int limit = 200}) async {
+  Future<List<Map<String, dynamic>>> fetchAllAccessLogs({
+    int limit = 200,
+  }) async {
     if (!repo.isNasMode || !isMaster) return [];
     try {
       return await nas.allAccessLogs(limit: limit);
@@ -1058,6 +1059,43 @@ class AppState extends ChangeNotifier {
       return await nas.approvalPending();
     } catch (_) {
       return [];
+    }
+  }
+
+  // ---------- 승인 히스토리 (통합승인관리 하단) ----------
+  /// 승인 히스토리 목록(관리자·마스터).
+  /// [source] = ''(전체) | 'regular' | 'request' | 'link'
+  Future<List<Map<String, dynamic>>> fetchApprovalHistory({
+    int limit = 200,
+    String source = '',
+  }) async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return [];
+    try {
+      return await nas.approvalHistory(limit: limit, source: source);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 히스토리 항목 복원 → 다시 승인창(대기 큐)으로 올린다(관리자·마스터).
+  Future<bool> restoreApprovalHistory(String id) async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return false;
+    try {
+      final ok = await nas.approvalHistoryRestore(id: id);
+      if (ok) await repo.syncFromNas();
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 히스토리 항목 삭제(관리자·마스터).
+  Future<bool> deleteApprovalHistory(List<String> ids) async {
+    if (!repo.isNasMode || !(isApp || isMaster) || ids.isEmpty) return false;
+    try {
+      return await nas.approvalHistoryDelete(ids: ids);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -1565,19 +1603,24 @@ class AppState extends ChangeNotifier {
   ///   · held     : 보류
   int _linkStatusCount(String status) => repo
       .all()
-      .where((m) =>
-          (m.mentors.isNotEmpty || m.parents.isNotEmpty) &&
-          m.linkApprovalStatus == status)
+      .where(
+        (m) =>
+            (m.mentors.isNotEmpty || m.parents.isNotEmpty) &&
+            m.linkApprovalStatus == status,
+      )
       .length;
   int get linkApprovedCount => _linkStatusCount('approved');
   int get linkPendingCount => _linkStatusCount('pending');
   int get linkHeldCount => _linkStatusCount('held');
+
   /// 연결은 있으나 승인 상태가 없는(레거시) 회원 수.
   int get linkUnsetCount => repo
       .all()
-      .where((m) =>
-          (m.mentors.isNotEmpty || m.parents.isNotEmpty) &&
-          m.linkApprovalStatus.isEmpty)
+      .where(
+        (m) =>
+            (m.mentors.isNotEmpty || m.parents.isNotEmpty) &&
+            m.linkApprovalStatus.isEmpty,
+      )
       .length;
 
   int get regularCount => repo.all().where((m) => m.isRegular).length;

@@ -32,8 +32,6 @@ import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 import 'regular_members_screen.dart';
-import 'approval_screen.dart';
-import 'link_approval_screen.dart';
 import 'roster_admin_screen.dart';
 import 'member_request_screen.dart';
 import 'settings_screen.dart';
@@ -198,10 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (go == true && mounted) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ApprovalScreen()),
-      );
+      await _openApproval();
       if (mounted) setState(() {});
     }
   }
@@ -445,16 +440,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   _loadBoardUnread();
                 },
               ),
-            // 승인관리 — 대기 항목 배지 표시(비인가회원·행사·연회비·평생 등)
-            if (state.isApp || state.isMaster) ...[
-              IconButton(
-                tooltip: '승인관리',
-                icon: const Icon(Icons.how_to_reg),
-                onPressed: _openApproval,
-              ),
-              // 승인 내용이 있으면 항목 수만큼 작은 번호 단추(1,2,3…)로 표시 (예전 복원)
-              _approvalCountChips(),
-            ],
+            // 통합승인관리 — 대기 항목 배지(붉은 원형 숫자, 관리자·마스터 전용)
+            if (state.isApp || state.isMaster) _approvalAppbarIcon(),
             if (personaForPersonal(state) && !_showMainHome)
               IconButton(
                 tooltip: '메인 홈으로',
@@ -1132,8 +1119,7 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchCtrl,
               onChanged: (v) => state.setQuery(v),
               decoration: InputDecoration(
-                hintText:
-                    '통합검색 (인가번호, 이름, 전화번호, 범위, 연맹, 지역대 등)',
+                hintText: '통합검색 (인가번호, 이름, 전화번호, 범위, 연맹, 지역대 등)',
                 hintStyle: const TextStyle(
                   fontSize: 11.5,
                   color: AppColors.textGray,
@@ -1913,7 +1899,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 일반회원(비인가자) 관리 진입 버튼 — 관리자·마스터 전용
   /// 일반회원 승인 관리 진입 버튼 — 관리자·마스터 전용, 미승인 건수 배지 표시
-  /// 승인관리 화면을 연 뒤, 해당 아이디 기준으로 확인 처리(배지 차감).
+  /// 통합승인관리 화면을 연 뒤, 해당 아이디 기준으로 확인 처리(배지 차감).
   Future<void> _openApproval() async {
     final st = context.read<AppState>();
     await Navigator.push(
@@ -1924,131 +1910,147 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadApprovalBadge();
   }
 
-  /// 승인 대기 항목 수만큼 작은 번호 단추(1,2,3…)를 나란히 보여준다.
-  /// 앱바·승인관리 메뉴 양쪽에서 공용 — 탭하면 승인관리 화면으로 이동한다.
-  /// ("승인 내용이 있을 경우 항목 숫자만큼 단추로 보여줄 것" — 예전 복원)
-  Widget _approvalCountChips() {
+  /// 승인 대기 총 건수를 아이콘 상단 **붉은색 원형 숫자**로 표시한다.
+  /// (관리자·마스터에게만 노출 — 요구: 두 아이콘 상단 붉은 원형 숫자)
+  /// 9 이상이면 '9+'. 탭하면 통합승인관리 화면으로 이동한다.
+  Widget _approvalBadgeDot({double size = 18}) {
     final state = context.watch<AppState>();
-    final n = _approvalUnread > 0 ? _approvalUnread : state.pendingApprovalCount;
+    final n = _approvalUnread > 0
+        ? _approvalUnread
+        : state.pendingApprovalCount;
     if (n <= 0) return const SizedBox.shrink();
-    final show = n > 8 ? 8 : n;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (int i = 0; i < show; i++)
-          GestureDetector(
-            onTap: _openApproval,
-            child: Container(
-              margin: const EdgeInsets.only(left: 3),
-              width: 17,
-              height: 17,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.tigerGold,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1),
-              ),
-              child: Text(
-                '${i + 1}',
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-        if (n > 8)
-          Padding(
-            padding: const EdgeInsets.only(left: 3),
-            child: Text(
-              '+${n - 8}',
-              style: const TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _approvalButton() {
-    final state = context.watch<AppState>();
-    final n = state.pendingApprovalCount;
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
+    return Positioned(
+      top: -4,
+      right: -5,
       child: GestureDetector(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ApprovalScreen()),
-        ),
+        onTap: _openApproval,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          constraints: BoxConstraints(minWidth: size, minHeight: size),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.20),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: n > 0 ? AppColors.tigerGold : Colors.white,
-              width: n > 0 ? 2.0 : 1.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.how_to_reg, size: 16, color: Colors.white),
-              const SizedBox(width: 5),
-              const Text(
-                '승인관리',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+            color: AppColors.taegeukRed,
+            borderRadius: BorderRadius.circular(size),
+            border: Border.all(color: Colors.white, width: 1.4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
               ),
-              if (n > 0) ...[
-                const SizedBox(width: 5),
-                _approvalCountChips(),
-              ],
             ],
+          ),
+          child: Text(
+            n > 99 ? '99+' : '$n',
+            style: TextStyle(
+              fontSize: n > 9 ? 9 : 10.5,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              height: 1.0,
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// 멘토·페런츠 연결 승인 진입 버튼 — 관리자·마스터 전용.
-  Widget _linkApprovalButton() {
+  /// 승인관리 아이콘(앱바) — 우상단 붉은 원형 숫자 배지 포함.
+  Widget _approvalAppbarIcon() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          tooltip: '통합승인관리',
+          icon: const Icon(Icons.how_to_reg),
+          onPressed: _openApproval,
+        ),
+        _approvalBadgeDot(),
+      ],
+    );
+  }
+
+  Widget _approvalButton() {
+    final state = context.watch<AppState>();
+    final n = _approvalUnread > 0
+        ? _approvalUnread
+        : state.pendingApprovalCount;
     return Padding(
       padding: const EdgeInsets.only(right: 6),
-      child: GestureDetector(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const LinkApprovalScreen()),
-        ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.20),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.family_restroom, size: 16, color: Colors.white),
-              SizedBox(width: 5),
-              Text(
-                '연결승인',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: _openApproval,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.20),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
               ),
-            ],
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.how_to_reg, size: 16, color: Colors.white),
+                  SizedBox(width: 5),
+                  Text(
+                    '통합승인관리',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
+          if (n > 0) _approvalBadgeDot(size: 19),
+        ],
+      ),
+    );
+  }
+
+  /// 멘토·페런츠 연결 승인 — 통합승인관리로 연결(요구: 모두 하나의 창으로 통합).
+  /// 우상단 붉은 원형 숫자 배지 포함(관리자·마스터).
+  Widget _linkApprovalButton() {
+    final state = context.watch<AppState>();
+    final n = _approvalUnread > 0
+        ? _approvalUnread
+        : state.pendingApprovalCount;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: _openApproval,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.20),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.family_restroom, size: 16, color: Colors.white),
+                  SizedBox(width: 5),
+                  Text(
+                    '연결승인',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (n > 0) _approvalBadgeDot(size: 19),
+        ],
       ),
     );
   }
@@ -2105,7 +2107,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: const Row(
             children: [
-              Icon(Icons.assignment_ind_outlined, size: 15, color: Colors.white),
+              Icon(
+                Icons.assignment_ind_outlined,
+                size: 15,
+                color: Colors.white,
+              ),
               SizedBox(width: 4),
               Text(
                 '명부관리',
