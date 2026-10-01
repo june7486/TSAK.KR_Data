@@ -446,29 +446,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             // 승인관리 — 대기 항목 배지 표시(비인가회원·행사·연회비·평생 등)
-            if (state.isApp || state.isMaster)
+            if (state.isApp || state.isMaster) ...[
               IconButton(
                 tooltip: '승인관리',
-                icon: Badge(
-                  isLabelVisible: _approvalUnread > 0,
-                  label: Text('$_approvalUnread'),
-                  backgroundColor: AppColors.tigerGold,
-                  child: const Icon(Icons.how_to_reg),
-                ),
-                onPressed: () async {
-                  final st = context.read<AppState>();
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const MemberRequestScreen(),
-                    ),
-                  );
-                  // 화면을 열어 확인했으므로 해당 아이디 기준 확인 처리 →
-                  // 배지에서 이미 확인한 건수만큼 차감된다.
-                  await st.markBadgeSeen(kind: 'approval');
-                  _loadApprovalBadge();
-                },
+                icon: const Icon(Icons.how_to_reg),
+                onPressed: _openApproval,
               ),
+              // 승인 내용이 있으면 항목 수만큼 작은 번호 단추(1,2,3…)로 표시 (예전 복원)
+              _approvalCountChips(),
+            ],
             if (personaForPersonal(state) && !_showMainHome)
               IconButton(
                 tooltip: '메인 홈으로',
@@ -1927,6 +1913,67 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 일반회원(비인가자) 관리 진입 버튼 — 관리자·마스터 전용
   /// 일반회원 승인 관리 진입 버튼 — 관리자·마스터 전용, 미승인 건수 배지 표시
+  /// 승인관리 화면을 연 뒤, 해당 아이디 기준으로 확인 처리(배지 차감).
+  Future<void> _openApproval() async {
+    final st = context.read<AppState>();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MemberRequestScreen()),
+    );
+    await st.markBadgeSeen(kind: 'approval');
+    _loadApprovalBadge();
+  }
+
+  /// 승인 대기 항목 수만큼 작은 번호 단추(1,2,3…)를 나란히 보여준다.
+  /// 앱바·승인관리 메뉴 양쪽에서 공용 — 탭하면 승인관리 화면으로 이동한다.
+  /// ("승인 내용이 있을 경우 항목 숫자만큼 단추로 보여줄 것" — 예전 복원)
+  Widget _approvalCountChips() {
+    final state = context.watch<AppState>();
+    final n = _approvalUnread > 0 ? _approvalUnread : state.pendingApprovalCount;
+    if (n <= 0) return const SizedBox.shrink();
+    final show = n > 8 ? 8 : n;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < show; i++)
+          GestureDetector(
+            onTap: _openApproval,
+            child: Container(
+              margin: const EdgeInsets.only(left: 3),
+              width: 17,
+              height: 17,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.tigerGold,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1),
+              ),
+              child: Text(
+                '${i + 1}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        if (n > 8)
+          Padding(
+            padding: const EdgeInsets.only(left: 3),
+            child: Text(
+              '+${n - 8}',
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _approvalButton() {
     final state = context.watch<AppState>();
     final n = state.pendingApprovalCount;
@@ -1962,24 +2009,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               if (n > 0) ...[
                 const SizedBox(width: 5),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.tigerGold,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$n',
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
+                _approvalCountChips(),
               ],
             ],
           ),
