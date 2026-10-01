@@ -1260,6 +1260,19 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 비밀번호 초기화 요청 (본인) — 분실 시 관리자·마스터에게 초기화 요청.
+  /// 요구: "비밀번호 분실 변경시 관리자나 마스터에게 초기화 요청하십시요."
+  Future<String?> requestPasswordReset() async {
+    if (who.isEmpty) return '본인 인가번호를 확인할 수 없습니다';
+    try {
+      final r = await nas.requestPasswordReset(who);
+      if (r['ok'] == true) return null;
+      return '${r['error'] ?? '실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
   Future<bool> setServerPaused(String master, bool paused) async {
     try {
       final r = await nas.setServerPaused(master, paused);

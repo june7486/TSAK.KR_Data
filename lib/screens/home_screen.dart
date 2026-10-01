@@ -2769,9 +2769,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('개인 비밀번호 변경', textAlign: TextAlign.center),
         content: const Text(
           '개인 비밀번호를 변경하시겠습니까?\n\n'
-          '· 비밀번호는 「본인 인가번호!@@」 형식이 기본값입니다.\n'
           '· 변경하면 다음 접속부터 새 비밀번호를 사용해야 합니다.\n'
-          '· 분실 시 관리자(마스터)에게 재설정을 요청하세요.',
+          '· 비밀번호를 분실한 경우 관리자·마스터에게 초기화를 요청하세요.',
           style: TextStyle(fontSize: 13, height: 1.45),
         ),
         actions: [
@@ -2809,10 +2808,10 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              '비밀번호를 분실한 경우 관리자에게 문의하세요.\n\n'
-              '· 관리자(마스터)가 인가띸가번호 기준으로\n'
+              '비밀번호를 분실한 경우 관리자·마스터에게 초기화를 요청하세요.\n\n'
+              '· 관리자(마스터)가 회원 아이디 기준으로\n'
               '  비밀번호를 초기화하거나 재설정할 수 있습니다.\n'
-              '· 초기화 시 기본값은 「본인 인가번호!@@」 입니다.',
+              '· 아래 「초기화 요청」 버튼을 눌러 바로 요청할 수도 있습니다.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, height: 1.5),
             ),
@@ -2868,12 +2867,57 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('확인'),
+            child: const Text('닫기'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.tigerGold),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _requestPasswordReset();
+            },
+            icon: const Icon(Icons.send, size: 16),
+            label: const Text('초기화 요청'),
           ),
         ],
       ),
+    );
+  }
+
+  /// 본인 — 관리자·마스터에게 비밀번호 초기화 요청 (요구).
+  Future<void> _requestPasswordReset() async {
+    final state = context.read<AppState>();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.lock_reset, color: AppColors.tigerGold, size: 32),
+        title: const Text('비밀번호 초기화 요청'),
+        content: const Text(
+          '관리자·마스터에게 비밀번호 초기화를 요청하시겠습니까?\n\n'
+          '· 요청은 통합승인관리에 접수되어 승인 후 초기화됩니다.\n'
+          '· 초기화되면 기본 비밀번호로 다시 로그인할 수 있습니다.',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('요청'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final err = await state.requestPasswordReset();
+    if (!mounted) return;
+    _snack(
+      err == null
+          ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.'
+          : '요청 실패: $err',
     );
   }
 

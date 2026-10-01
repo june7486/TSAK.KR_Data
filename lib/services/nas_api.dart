@@ -1765,6 +1765,19 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 비밀번호 초기화 요청 (본인) — 분실 시 관리자·마스터에게 초기화 요청.
+  /// 요구: "비밀번호 분실 변경시 관리자나 마스터에게 초기화 요청하십시요."
+  Future<Map<String, dynamic>> requestPasswordReset(String number) async {
+    final r = await http
+        .post(
+          _uri('/api/personal/password-request'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'number': number}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> setServerPaused(
     String master,
     bool paused,
