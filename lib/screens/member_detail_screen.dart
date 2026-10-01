@@ -1999,7 +1999,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     // (라벨, 키, 값) — 항목별 노출관리 대상.
     //  ※ 소속연맹/단위대/인가일은 위의 [현재활동]/[범인가 정보] 카드에서 다룬다.
     final fields = <List<String>>[
-      ['Scout 고유번호', 'scoutNo', m.scoutNo],
+      ['스카우트 고유번호', 'scoutNo', m.scoutNo],
       ['주민등록번호', 'residentNo', m.residentNo],
       ['생일', 'birthday', m.birthday],
       ['성별', 'gender', m.gender],

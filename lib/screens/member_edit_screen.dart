@@ -307,9 +307,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 keyboard: TextInputType.phone,
               ),
               _field(
-                'Scout 회원번호',
+                '스카우트 고유번호',
                 _scoutNo,
-                hint: '명부 인가번호(예: 2186) — 비어있으면 인가번호 사용',
+                hint: '인가번호와 다른 별도 고유번호 (예: 16187) — 없으면 비워두세요',
                 icon: Icons.confirmation_number_outlined,
                 numeric: true,
               ),
