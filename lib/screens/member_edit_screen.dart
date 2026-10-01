@@ -1534,6 +1534,8 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       id: id,
       number: _number.text.trim(),
       name: _name.text.trim(),
+      // 소속(corps) 보존 — 은하스카우트 편집이 범스카우트 DB로 저장되지 않도록.
+      corps: _existing?.corps ?? 'tsak',
       league: normalizeLeague(_league.text),
       unit: _unit.text.trim(),
       regLeague: normalizeLeague(_regLeague.text),

@@ -112,6 +112,10 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBoardUnread());
     // 승인관리 대기 배지 로드(관리자 이상) + 실시간 감시 시작.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startApprovalWatch());
+    // 은하스카우트 명단을 미리 로드 — 통합검색(범+은하)에 노출하기 위함(관리자·마스터).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().ensureEunhaForSearch();
+    });
   }
 
   /// 승인요청을 주기적으로 감시해 배지(원형 숫자)를 자동 갱신한다.
@@ -1275,11 +1279,15 @@ class _HomeScreenState extends State<HomeScreen> {
           if (state.can('memberSearch'))
             Row(
               children: [
-                _statChip('전체', '${state.total}명', Icons.groups),
+                _statChip('전체', '${state.totalSearchCount}명', Icons.groups),
+                const SizedBox(width: 6),
+                _statChip(
+                  '범인가자수',
+                  '${state.tsakCredentialCount}명',
+                  Icons.verified_user,
+                ),
                 const SizedBox(width: 6),
                 _statChip('검색결과', '${state.members.length}명', Icons.search),
-                const SizedBox(width: 6),
-                _statChip('평생회원', '${state.lifetimeCount}명', Icons.star),
               ],
             ),
           const SizedBox(height: 6),
@@ -2342,6 +2350,42 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Column(
         children: [
+          // ── 소속 필터 — 범스카우트/은하스카우트 통합검색 (요구: 은하도 명단검색) ──
+          //   · 은하스카우트는 배출 중단된 별도 명단이지만, 모든 관리규칙은
+          //     범스카우트와 동일하게 검색·말머리 노출한다.
+          HScrollMenu(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _filterChip(
+                  label: '전체 소속',
+                  selected: state.corpsFilter.isEmpty,
+                  color: AppColors.purple,
+                  onTap: () => state.setCorpsFilter(''),
+                ),
+                const SizedBox(width: 5),
+                _filterChip(
+                  label: '범스카우트 ${state.corpsFilterTsakCount}',
+                  selected: state.corpsFilter == 'tsak',
+                  color: AppColors.scoutGreen,
+                  onTap: () => state.setCorpsFilter(
+                    state.corpsFilter == 'tsak' ? '' : 'tsak',
+                  ),
+                ),
+                const SizedBox(width: 5),
+                _filterChip(
+                  label: '은하스카우트 ${state.corpsFilterEunhaCount}',
+                  selected: state.corpsFilter == 'eunha',
+                  color: AppColors.taegeukBlue,
+                  onTap: () => state.setCorpsFilter(
+                    state.corpsFilter == 'eunha' ? '' : 'eunha',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 3),
           HScrollMenu(
             height: 30,
             padding: const EdgeInsets.symmetric(horizontal: 12),

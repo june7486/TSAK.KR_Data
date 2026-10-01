@@ -512,14 +512,19 @@ class NasApi {
 
   /// 단일 인가자 부분 저장 (전체 DB 덮어쓰기 없이 안전하게 갱신)
   ///   [linkRequestSource] = 'merch'(수품신청시) | 'direct'(직접입력) | ''
+  ///   [corps] 를 넘기면 서버가 그 소속 명단(은하 등)으로 저장한다.
   Future<Map<String, dynamic>> saveMember(
     Member member, {
     String by = 'app',
     String linkRequestSource = '',
+    String corps = '',
   }) async {
     final body = <String, dynamic>{'member': member.toMap(), 'by': by};
     if (linkRequestSource.isNotEmpty) {
       body['linkRequestSource'] = linkRequestSource;
+    }
+    if (corps.isNotEmpty) {
+      body['corps'] = corps;
     }
     final r = await http
         .post(

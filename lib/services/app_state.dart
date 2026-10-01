@@ -1316,8 +1316,95 @@ class AppState extends ChangeNotifier {
       _eunhaMembers = [];
     }
     _eunhaLoading = false;
+    // 은하(느린 네트워크) 로드 후 조건이 걸려 있으면 목록에 반영한다.
+    if (_corpsFilter == 'eunha') refresh();
     notifyListeners();
   }
+
+  /// 소속 필터: '' (전체 = 범+은하) | 'tsak' (범스카우트) | 'eunha' (은하스카우트).
+  ///   요구: "은하 스카우트도 명단검색되도록 하고 아래와 유사하게 말머리(소속 배지)를
+  ///         만들어 노출할 것 / 상부노출 수정: 전체·범인가자수·검색결과"
+  String _corpsFilter = '';
+  String get corpsFilter => _corpsFilter;
+
+  /// 관리자·마스터이고 은하 명단을 아직 불러오지 않았으면 로드(검색 통합용).
+  void ensureEunhaForSearch() {
+    if ((isApp || isMaster) && _eunhaMembers.isEmpty && !_eunhaLoading) {
+      unawaited(loadEunhaMembers());
+    }
+  }
+
+  void setCorpsFilter(String v) {
+    _corpsFilter = (v == 'eunha' || v == 'tsak') ? v : '';
+    if (_corpsFilter == 'eunha') ensureEunhaForSearch();
+    refresh();
+  }
+
+  /// 전역 검색 기준 목록 — 소속 필터에 따라 범/은하/전체를 합친다.
+  ///  은하는 개인 로그인(소속 eunha) 세션에서는 repo 캐시가 곧 은하 명단이다.
+  List<Member> _searchBase() {
+    final base = repo.all();
+    List<Member> eunha;
+    if (_corps == 'eunha') {
+      eunha = base.where((m) => m.corps == 'eunha').toList();
+      if (eunha.isEmpty) eunha = base;
+      return _corpsFilter == 'tsak' ? const [] : eunha;
+    }
+    eunha = _eunhaMembers;
+    switch (_corpsFilter) {
+      case 'eunha':
+        return eunha;
+      case 'tsak':
+        return base.where((m) => m.corps != 'eunha').toList();
+      default:
+        // 전체 — 범(in-memory) + 은하(별도 명단)를 합친다.
+        final seen = base.map((m) => m.id).toSet();
+        final merged = [...base];
+        for (final e in eunha) {
+          if (seen.add(e.id)) merged.add(e);
+        }
+        return merged;
+    }
+  }
+
+  /// 은하 포함 전역 **전체** 회원수 — 상부 '전체' 노출용(소속 필터 반영).
+  int get totalSearchCount {
+    if (_corps == 'eunha') return repo.all().length;
+    switch (_corpsFilter) {
+      case 'eunha':
+        return _eunhaMembers.length;
+      case 'tsak':
+        return repo.all().where((m) => m.corps != 'eunha').length;
+      default:
+        return repo.all().length + _eunhaMembers.length;
+    }
+  }
+
+  /// 은하 포함 전역 **인가자**(비일반회원) 수 — (소속 필터 반영, 보조용).
+  int get credentialSearchCount {
+    if (_corps == 'eunha') {
+      return repo.all().where((m) => !m.isRegular).length;
+    }
+    switch (_corpsFilter) {
+      case 'eunha':
+        return _eunhaMembers.where((m) => !m.isRegular).length;
+      case 'tsak':
+        return repo.all().where((m) => m.corps != 'eunha' && !m.isRegular).length;
+      default:
+        return repo.all().where((m) => !m.isRegular).length +
+            _eunhaMembers.where((m) => !m.isRegular).length;
+    }
+  }
+
+  /// 상부노출 **'범인가자수'** — 범스카우트 인가자(비일반회원) 수.
+  ///   (은하스카우트는 별도 · 소속 필터와 무관한 고정 참조값)
+  int get tsakCredentialCount =>
+      repo.all().where((m) => m.corps != 'eunha' && !m.isRegular).length;
+
+  int get corpsFilterTsakCount =>
+      repo.all().where((m) => m.corps != 'eunha').length;
+  int get corpsFilterEunhaCount =>
+      (_corps == 'eunha') ? repo.all().length : _eunhaMembers.length;
 
   // ---------- 리스트 크기 ----------
   double _listScale = 0.85;
@@ -1391,7 +1478,8 @@ class AppState extends ChangeNotifier {
   List<MapEntry<String, int>> get feeCounts => repo.feeCountsByYear();
 
   int get total => repo.count;
-  int get lifetimeCount => _filterBase().where((m) => m.lifetimeMember).length;
+  int get lifetimeCount =>
+      _searchBase().where((m) => m.lifetimeMember).length;
   Map<String, int> get feeCountMap => {
     for (final e in repo.feeCountsByYear()) e.key: e.value,
   };
@@ -1401,7 +1489,13 @@ class AppState extends ChangeNotifier {
   }
 
   void refresh() {
-    var list = _filterBase();
+    _members = _applyFilters(_searchBase());
+    notifyListeners();
+  }
+
+  /// 목록 필터(연맹·연도·평생·구분·검색)를 순수 함수로 적용 — 범/은하 공용.
+  List<Member> _applyFilters(List<Member> input) {
+    var list = input;
     if (_leagueFilter.isNotEmpty) {
       if (_leagueFilter == '(미지정)') {
         list = list.where((m) => m.league.trim().isEmpty).toList();
@@ -1432,8 +1526,7 @@ class AppState extends ChangeNotifier {
     if (_query.trim().isNotEmpty) {
       list = _applyQuery(list, _query.trim());
     }
-    _members = list;
-    notifyListeners();
+    return list;
   }
 
   /// 검색 질의 적용 — 범위 검색(1-100) / 하이픈 무관 전화 / 일반 통합검색 / AI 자연어
@@ -1476,7 +1569,6 @@ class AppState extends ChangeNotifier {
   }
 
   // 개인 접근 시에는 본인 정보만 노출한다(all()이 restrictedNumber로 제한).
-  List<Member> _filterBase() => repo.all();
 
   /// AI 자연어 검색 결과 적용
   List<Member> _applyAiQuery(List<Member> list, AiQuery ai) {
@@ -1579,9 +1671,38 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
-  Member? byId(String id) => repo.byId(id);
-  Member? byNumber(String number) => repo.byNumber(number);
-  Member? byName(String name) => repo.byName(name);
+  Member? byId(String id) => repo.byId(id) ?? _eunhaById(id);
+  Member? byNumber(String number) => repo.byNumber(number) ?? _eunhaByNumber(number);
+  Member? byName(String name) => repo.byName(name) ?? _eunhaByName(name);
+
+  /// 은하스카우트 캐시에서 조회(통합 검색 목록에 노출되는 은하 회원 해석용).
+  Member? _eunhaById(String id) {
+    for (final m in _eunhaMembers) {
+      if (m.id == id) return m;
+    }
+    return null;
+  }
+
+  Member? _eunhaByNumber(String number) {
+    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (n.isEmpty) return null;
+    for (final m in _eunhaMembers) {
+      if (m.number.replaceAll(RegExp(r'[^0-9]'), '') == n) return m;
+    }
+    return null;
+  }
+
+  Member? _eunhaByName(String name) {
+    final q = name.trim();
+    if (q.isEmpty) return null;
+    for (final m in _eunhaMembers) {
+      if (m.name == q) return m;
+    }
+    return null;
+  }
+
+  /// 통합 검색 목록에 노출된 은하 회원인지(상세/편집 화면 라우팅 판정용).
+  bool isEunhaMember(Member m) => m.corps == 'eunha';
 
   /// 이름 공개/비공개 로컬 반영 (서버 저장은 호출부에서 완료 후 호출).
   void setNameVisible(String id, bool visible) {
@@ -1607,6 +1728,27 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> save(Member m, {String linkRequestSource = ''}) async {
+    if (m.corps == 'eunha') {
+      // 은하스카우트 — 범스카우트 DB 오염 방지를 위해 은하 명단으로 단건 저장.
+      //  (관리자·마스터 편집 저장 경로)
+      await repo.saveOneNas(
+        m,
+        corps: 'eunha',
+        by: (isEunha && !(isApp || isMaster)) ? 'personal' : 'app',
+        linkRequestSource: linkRequestSource,
+      );
+      // 은하 캐시도 최신 상태로 반영(검색 목록/말머리 즉시 갱신).
+      if (_eunhaMembers.isNotEmpty) {
+        final i = _eunhaMembers.indexWhere((x) => x.id == m.id);
+        if (i >= 0) {
+          _eunhaMembers[i] = m;
+        } else {
+          _eunhaMembers.add(m);
+        }
+      }
+      refresh();
+      return;
+    }
     await repo.save(m, linkRequestSource: linkRequestSource);
   }
 

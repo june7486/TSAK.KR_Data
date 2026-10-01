@@ -150,6 +150,9 @@ class MemberCard extends StatelessWidget {
                           ),
                         ),
                         SizedBox(width: 6 * s),
+                        // 말머리(소속 배지) — 범스카우트 '범' / 은하스카우트 '은하'
+                        _corpsMark(member, s),
+                        SizedBox(width: 4 * s),
                         Container(
                           padding: EdgeInsets.symmetric(
                             horizontal: 9 * s,
@@ -288,6 +291,31 @@ class MemberCard extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 말머리 — 소속(corps) 배지. 범스카우트 '범'(청록) / 은하스카우트 '은하'(청색).
+  ///   요구: "은하 스카우트도 명단검색되도록 하고 아래와 유사하게 말머리 만들어 노출".
+  Widget _corpsMark(Member m, double s) {
+    final isEunha = m.corps == 'eunha';
+    final label = isEunha ? '은하' : '범';
+    final color = isEunha ? AppColors.taegeukBlue : AppColors.scoutGreen;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 7 * s, vertical: 3 * s),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.55)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 13 * s,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.2,
         ),
       ),
     );

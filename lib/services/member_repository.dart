@@ -426,13 +426,42 @@ class MemberRepository {
     await _put(updated.id, updated.toMap());
     revision.value++;
     if (syncing && isNasMode) {
-      if (isRestricted) {
+      if (updated.corps == 'eunha') {
+        // 은하스카우트 회원: 범스카우트 DB 오염 방지를 위해 **단건 부분 저장**만
+        //  수행한다(서버가 corps='eunha' 를 보고 은하 DB로 라우팅).
+        unawaited(_saveOne(
+          updated,
+          linkRequestSource: linkRequestSource,
+          corps: 'eunha',
+          by: 'app',
+        ));
+      } else if (isRestricted) {
         // 개인 접근: 본인 1건만 부분 저장 (연결 승인요청방법 전달).
         unawaited(_saveOne(updated, linkRequestSource: linkRequestSource));
       } else {
         unawaited(syncToNas(by: 'app'));
       }
     }
+  }
+
+  /// 의도한 소속(corps)으로 **단건만** NAS에 부분 저장한다.
+  ///  · 은하스카우트 편집 저장이 범스카우트 DB를 오염시키지 않도록 라우팅.
+  ///  · 로컬 캐시는 호출부(AppState)가 은하 캐시(_eunhaMembers)로 별도 관리하므로
+  ///    이 메서드는 박스에 쓰지 않는다(범스카우트 목록 오염 방지).
+  Future<bool> saveOneNas(
+    Member member, {
+    String corps = '',
+    String by = 'app',
+    String linkRequestSource = '',
+  }) async {
+    if (!isNasMode) return false;
+    final updated = member.copyWith(updatedAt: DateTime.now());
+    return _saveOne(
+      updated,
+      linkRequestSource: linkRequestSource,
+      corps: corps,
+      by: by,
+    );
   }
 
   /// 제한 없이 원본 1건 조회(관리자 토글용).
@@ -450,15 +479,21 @@ class MemberRepository {
   }
 
   /// 단일 인가자만 NAS에 부분 저장 (전체 DB 덮어쓰기 방지)
-  Future<bool> _saveOne(Member member, {String linkRequestSource = ''}) async {
+  Future<bool> _saveOne(
+    Member member, {
+    String linkRequestSource = '',
+    String corps = '',
+    String by = 'personal',
+  }) async {
     final api = nas;
     if (api == null) return false;
     try {
       syncStatus.value = 'saving';
       final res = await api.saveMember(
         member,
-        by: 'personal',
+        by: by,
         linkRequestSource: linkRequestSource,
+        corps: corps,
       );
       if (res['ok'] == true) {
         final meta = (res['meta'] as Map?)?.cast<String, dynamic>();
