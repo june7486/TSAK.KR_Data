@@ -886,6 +886,9 @@ def _approval_badge_unread(owner):
     """통합 승인 대기 중 해당 아이디가 미확인한 건수.
      · 비인가회원: approvalAt(없으면 created)
      · 등록요청:   created
+     · 멘토·페런츠 연결: linkRequestedAt(없으면 created)
+    요구: "승인대기중인 사람들이 있을 경우 관리자/마스터 원형단추 숫자" —
+     멘토·페런츠 연결 승인 대기도 반드시 배지에 포함한다(수정).
     """
     if not owner:
         return 0
@@ -905,6 +908,15 @@ def _approval_badge_unread(owner):
     try:
         for it in _pending_member_requests():
             ts_key, ts_empty = _norm_stamp(it.get("created"))
+            if ts_empty or wm_empty or ts_key > wm_key:
+                total += 1
+    except Exception:
+        pass
+    # 3) 멘토·페런츠 연결 승인 대기(요구 — 배지 숫자 연동)
+    try:
+        for it in _link_pending_members():
+            ts_key, ts_empty = _norm_stamp(
+                it.get("requestedAt") or it.get("created"))
             if ts_empty or wm_empty or ts_key > wm_key:
                 total += 1
     except Exception:
@@ -4461,10 +4473,22 @@ def _merch_sync_medal_recipients(buyer_ident, kind, recips):
                 "number": n,
                 "name": str(r.get("name", "") or ""),
                 "phone": str(r.get("phone", "") or ""),
+                "league": str(r.get("league", "") or ""),
                 "unit": str(r.get("unit", "") or ""),
                 "kind": kind,
             })
             profs[n]["receiverNo"] = n
+            # 요구: "수품구매시 입력한 멘토·페런츠 입력값으로 비인가 회원 아이디
+            #  자동생성" — 수령인(멘토·페런츠) 인적사항으로도 로그인 아이디/비번을
+            #  자동 생성해 둔다(link_profiles 저장과 동일 규칙).
+            try:
+                _lid, _lpw = _gen_profile_credentials(
+                    r.get("phone"), r.get("name"))
+                if _lid:
+                    profs[n]["loginId"] = _lid
+                    profs[n]["password"] = _lpw
+            except Exception:
+                pass
             profs[n]["updatedAt"] = _now_stamp()
             changed = True
         if changed:
@@ -10100,8 +10124,11 @@ class Handler(BaseHTTPRequestHandler):
                         if oc0:
                             _merch_attach_to_member(oc0, oid, "order")
                         # 각인 메달 수령인 번호 → 주문자 개인프로필(멘토·페런츠) 연동.
+                        #  · 인가번호 없는(전화만) 구매자는 자동생성된 회원번호(oc0)로
+                        #    매칭해야 한다 — 빈 buyerNumber 로는 연동이 누락된다(수정).
                         if mkind and recips:
-                            _merch_sync_medal_recipients(ident0, mkind, recips)
+                            _merch_sync_medal_recipients(
+                                oc0 or ident0, mkind, recips)
                         out_orders.append(order)
                     _merch_save(doc)
                     return self._json({
@@ -10206,8 +10233,10 @@ class Handler(BaseHTTPRequestHandler):
                 if oc:
                     _merch_attach_to_member(oc, oid, "order")
                 # 각인 메달 수령인 번호 → 주문자 개인프로필(멘토·페런츠) 연동.
+                #  · oc(인가번호 또는 자동생성 회원번호) 로 매칭 — 빈 인가번호
+                #    구매자(비인가)도 정확히 연동되도록 한다(수정).
                 if mkind and recips:
-                    _merch_sync_medal_recipients(ident, mkind, recips)
+                    _merch_sync_medal_recipients(oc or ident, mkind, recips)
                 return self._json({"ok": True, "order": order,
                                    "contactId": oc, "contactType": octype,
                                    "account": cfg.get("account", {})})

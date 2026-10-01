@@ -46,6 +46,8 @@ class Member {
     List<String>? parents,
     this.linkApprovalStatus = '',
     this.linkApprovalNote = '',
+    this.linkRequestSource = '',
+    this.linkRequestedAt = '',
     this.linkApprovedAt = '',
     this.linkApprovedBy = '',
     Map<String, bool>? feeYears,
@@ -193,6 +195,12 @@ class Member {
   /// 한 대상(멘토/페런츠)을 가리키는 연결 단위 상태.
   String linkApprovalStatus;
 
+  /// 멘토·페런츠 연결 승인요청방법 — 'merch'(수품신청시) | 'direct'(직접입력).
+  String linkRequestSource;
+
+  /// 멘토·페런츠 연결 최초 승인요청 시각.
+  String linkRequestedAt;
+
   /// 연결 요청/처리 메모(요청 사유·처리 의견 등)
   String linkApprovalNote;
 
@@ -320,6 +328,8 @@ class Member {
     'mentors': mentors,
     'parents': parents,
     'linkApprovalStatus': linkApprovalStatus,
+    'linkRequestSource': linkRequestSource,
+    'linkRequestedAt': linkRequestedAt,
     'linkApprovalNote': linkApprovalNote,
     'linkApprovedAt': linkApprovedAt,
     'linkApprovedBy': linkApprovedBy,
@@ -393,6 +403,8 @@ class Member {
       mentors: castStrList(map['mentors']),
       parents: castStrList(map['parents']),
       linkApprovalStatus: '${map['linkApprovalStatus'] ?? ''}',
+      linkRequestSource: '${map['linkRequestSource'] ?? ''}',
+      linkRequestedAt: '${map['linkRequestedAt'] ?? ''}',
       linkApprovalNote: '${map['linkApprovalNote'] ?? ''}',
       linkApprovedAt: '${map['linkApprovedAt'] ?? ''}',
       linkApprovedBy: '${map['linkApprovedBy'] ?? ''}',
@@ -457,6 +469,8 @@ class Member {
     List<String>? mentors,
     List<String>? parents,
     String? linkApprovalStatus,
+    String? linkRequestSource,
+    String? linkRequestedAt,
     String? linkApprovalNote,
     String? linkApprovedAt,
     String? linkApprovedBy,
@@ -510,6 +524,8 @@ class Member {
       mentors: mentors ?? List<String>.from(this.mentors),
       parents: parents ?? List<String>.from(this.parents),
       linkApprovalStatus: linkApprovalStatus ?? this.linkApprovalStatus,
+      linkRequestSource: linkRequestSource ?? this.linkRequestSource,
+      linkRequestedAt: linkRequestedAt ?? this.linkRequestedAt,
       linkApprovalNote: linkApprovalNote ?? this.linkApprovalNote,
       linkApprovedAt: linkApprovedAt ?? this.linkApprovedAt,
       linkApprovedBy: linkApprovedBy ?? this.linkApprovedBy,

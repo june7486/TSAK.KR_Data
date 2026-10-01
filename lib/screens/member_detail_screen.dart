@@ -1774,8 +1774,58 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             mentorLabels.isEmpty ? '' : '$mentorLabels${_linkBadge(m)}',
           ),
           _regRow('페런츠', parentLabels),
+          // 승인대기중 안내 — 관리자·마스터 승인 전까지 명확히 표시(요구).
+          if (m.linkApprovalStatus == 'pending') _linkPendingNotice(m),
           // (복원) 편집 권한자에게는 그 자리에서 입력하는 멘토·페런츠 입력창을 노출.
           if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
+        ],
+      ),
+    );
+  }
+
+  /// 멘토·페런츠 연결 '승인대기중' 안내 — 관리자·마스터 승인 전 상태 설명(요구).
+  Widget _linkPendingNotice(Member m) {
+    final held = false;
+    final color = held ? AppColors.taegeukRed : AppColors.tigerGold;
+    final src = m.linkRequestSource == 'merch' ? '수품신청시' : '직접입력';
+    final at = m.linkRequestedAt;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hourglass_top, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                '승인대기중',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '멘토·페런츠 연결은 관리자·마스터의 승인이 필요합니다. '
+            '승인되기 전까지는 \'승인대기중\'으로 표시되며, 승인 후 정식 등록됩니다.',
+            style: TextStyle(fontSize: 11.5, height: 1.45),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '승인요청방법: $src'
+            '${at.trim().isEmpty ? '' : ' · 승인요청 $at'}',
+            style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
         ],
       ),
     );

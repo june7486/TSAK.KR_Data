@@ -666,6 +666,31 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                     _meta(Icons.input, '승인요청방법: $reqSrc'),
                   ],
                 ),
+                // 승인대기중 안내 — 관리자·마스터 승인 전 상태 설명(요구).
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.hourglass_top,
+                        size: 14,
+                        color: AppColors.tigerGold,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          '승인대기중 — 관리자·마스터가 승인하면 정식 등록됩니다.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.tigerGold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 if (mentors.isNotEmpty)
                   _linkRow('멘토', mentors, AppColors.purple),
                 if (parents.isNotEmpty)
