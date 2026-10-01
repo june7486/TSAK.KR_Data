@@ -14,6 +14,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/member_access_log.dart';
 import '../widgets/link_code_field.dart';
+import '../widgets/mentee_register_section.dart';
 import '../widgets/member_registration_request_section.dart';
 import '../widgets/merch_activity_section.dart';
 import '../widgets/personal_survey_section.dart';
@@ -1783,6 +1784,26 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _regRow('페런츠', parentLabels),
           // 승인대기중 안내 — 관리자·마스터 승인 전까지 명확히 표시(요구).
           if (m.linkApprovalStatus == 'pending') _linkPendingNotice(m),
+          // (요구 #3) 멘티·자녀대원 등록정보 — 인가자 본인이 직접 등록/승인요청.
+          //  · 멘토=멘티=페런츠 데이터 상호 연동(승인 시 통합승인관리에서 처리).
+          if (!m.isRegular) ...[
+            const Divider(height: 22),
+            MenteeRegisterSection(
+              member: m,
+              kind: 'mentee',
+              codes: m.mentees,
+              canEdit: canEdit,
+              onChanged: (v) => _saveLinks(m, mentees: v),
+            ),
+            const SizedBox(height: 8),
+            MenteeRegisterSection(
+              member: m,
+              kind: 'child',
+              codes: m.children,
+              canEdit: canEdit,
+              onChanged: (v) => _saveLinks(m, children: v),
+            ),
+          ],
           // (복원) 편집 권한자에게는 그 자리에서 입력하는 멘토·페런츠 입력창을 노출.
           if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
         ],
@@ -1885,14 +1906,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     Member m, {
     List<String>? mentors,
     List<String>? parents,
+    List<String>? mentees,
+    List<String>? children,
   }) async {
     final state = context.read<AppState>();
     final nextMentors = mentors ?? List<String>.from(m.mentors);
     final nextParents = parents ?? List<String>.from(m.parents);
-    final hasLinks = nextMentors.isNotEmpty || nextParents.isNotEmpty;
+    final nextMentees = mentees ?? List<String>.from(m.mentees);
+    final nextChildren = children ?? List<String>.from(m.children);
+    final hasLinks = nextMentors.isNotEmpty ||
+        nextParents.isNotEmpty ||
+        nextMentees.isNotEmpty ||
+        nextChildren.isNotEmpty;
     final updated = m.copyWith(
       mentors: nextMentors,
       parents: nextParents,
+      mentees: nextMentees,
+      children: nextChildren,
       linkApprovalStatus: hasLinks ? 'pending' : '',
       linkApprovalNote: hasLinks ? m.linkApprovalNote : '',
     );
@@ -1900,7 +1930,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       await state.save(updated, linkRequestSource: 'direct');
       if (!mounted) return;
       await _loadLinkProfiles();
-      _snack('멘토·페런츠 등록을 저장했습니다 (관리자 승인 대기)');
+      _snack('등록을 저장했습니다 (관리자 승인 대기)');
     } catch (_) {
       if (!mounted) return;
       _snack('저장에 실패했습니다. 잠시 후 다시 시도해 주세요.');

@@ -695,6 +695,33 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   _linkRow('멘토', mentors, AppColors.purple),
                 if (parents.isNotEmpty)
                   _linkRow('페런츠', parents, AppColors.taegeukBlue),
+                // (요구 #3) 멘티·자녀대원 등록정보 — 본인이 멘토/페런츠로서 등록.
+                if ((((m['menteeLabels'] as List?) ??
+                        (m['mentees'] as List?) ??
+                        [])
+                    .map((e) => '$e')
+                    .toList())
+                    .isNotEmpty)
+                  _linkRow(
+                    '멘티대원',
+                    ((m['menteeLabels'] as List?) ?? (m['mentees'] as List?) ?? [])
+                        .map((e) => '$e')
+                        .toList(),
+                    AppColors.purple,
+                  ),
+                if ((((m['childLabels'] as List?) ??
+                        (m['children'] as List?) ??
+                        [])
+                    .map((e) => '$e')
+                    .toList())
+                    .isNotEmpty)
+                  _linkRow(
+                    '자녀대원',
+                    ((m['childLabels'] as List?) ?? (m['children'] as List?) ?? [])
+                        .map((e) => '$e')
+                        .toList(),
+                    AppColors.taegeukBlue,
+                  ),
               ] else ...[
                 const SizedBox(height: 8),
                 Wrap(

@@ -40,6 +40,36 @@ class _ExportScreenState extends State<ExportScreen>
   /// 선택된 개인정보 항목 (기본: 전체)
   final Set<String> _selectedFields = {...kDefaultFieldKeys};
 
+  /// 상단 구분(카테고리) 필터 — 범스카우트/은하스카우트/멘토/페런츠/서포터츠.
+  /// (요구: 전체명단출력 상단에 구분버튼 추가 · 복수선택 가능)
+  final Set<String> _cats = {'tsak', 'eunha', 'mentor', 'parent', 'supporters'};
+
+  /// 구분 라벨(고정 순서).
+  static const List<List<String>> _catDefs = [
+    ['tsak', '범스카우트'],
+    ['eunha', '은하스카우트'],
+    ['mentor', '멘토'],
+    ['parent', '페런츠'],
+    ['supporters', '서포터츠'],
+  ];
+
+  /// 구분 필터가 적용된 실제 대상 명단.
+  List<Member> get _visible {
+    if (_cats.length == _catDefs.length) return widget.members;
+    return widget.members.where((m) {
+      // 서포터츠(비인가/일반회원): 전화 기반 계정.
+      final isSupporter =
+          m.isRegular || m.accessPhone.trim().isNotEmpty;
+      if (m.corps == 'eunha') return _cats.contains('eunha');
+      if (isSupporter) return _cats.contains('supporters');
+      final hasMentee = m.mentees.isNotEmpty;
+      final hasChild = m.children.isNotEmpty;
+      if (hasMentee && _cats.contains('mentor')) return true;
+      if (hasChild && _cats.contains('parent')) return true;
+      return _cats.contains('tsak');
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -61,13 +91,13 @@ class _ExportScreenState extends State<ExportScreen>
   }
 
   List<List<Member>> get _chunks {
-    if (!_chunk100) return [widget.members];
+    if (!_chunk100) return [_visible];
     final out = <List<Member>>[];
-    for (var i = 0; i < widget.members.length; i += 100) {
+    for (var i = 0; i < _visible.length; i += 100) {
       out.add(
-        widget.members.sublist(
+        _visible.sublist(
           i,
-          (i + 100 > widget.members.length) ? widget.members.length : i + 100,
+          (i + 100 > _visible.length) ? _visible.length : i + 100,
         ),
       );
     }
@@ -116,6 +146,8 @@ class _ExportScreenState extends State<ExportScreen>
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
       children: [
         _summaryRow(),
+        const SizedBox(height: 12),
+        _categoryFilter(),
         const SizedBox(height: 18),
         _sectionTitle('출력 형식'),
         const SizedBox(height: 8),
@@ -213,15 +245,78 @@ class _ExportScreenState extends State<ExportScreen>
         const SizedBox(height: 26),
         _sectionTitle('미리보기 (상위 30명)'),
         const SizedBox(height: 8),
-        ...widget.members.take(30).map((m) => MemberCard(member: m)),
-        if (widget.members.length > 30)
+        ..._visible.take(30).map((m) => MemberCard(member: m)),
+        if (_visible.length > 30)
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
-              '외 ${widget.members.length - 30}명...',
+              '외 ${_visible.length - 30}명...',
               style: const TextStyle(color: AppColors.textGray, fontSize: 12),
             ),
           ),
+      ],
+    );
+  }
+
+  /// 상단 구분(카테고리) 필터 — 복수선택 가능. (요구 #4)
+  ///   범스카우트 / 은하스카우트 / 멘토 / 페런츠 / 서포터츠
+  Widget _categoryFilter() {
+    final all = _cats.length == _catDefs.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.filter_alt_outlined,
+                size: 15, color: AppColors.purple),
+            const SizedBox(width: 5),
+            const Text(
+              '구분 (복수선택 가능)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.purple,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 28),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+                foregroundColor: AppColors.purple,
+              ),
+              onPressed: () => setState(() {
+                if (all) {
+                  _cats.clear();
+                } else {
+                  _cats.addAll(_catDefs.map((e) => e[0]));
+                }
+              }),
+              child: Text(
+                all ? '전체해제' : '전체선택',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final d in _catDefs)
+              _chip(d[1], _cats.contains(d[0]), () {
+                setState(() {
+                  if (_cats.contains(d[0])) {
+                    _cats.remove(d[0]);
+                  } else {
+                    _cats.add(d[0]);
+                  }
+                });
+              }),
+          ],
+        ),
       ],
     );
   }
@@ -341,7 +436,7 @@ class _ExportScreenState extends State<ExportScreen>
           const SizedBox(width: 9),
           Expanded(
             child: Text(
-              '선택된 인가자 ${widget.members.length}명',
+              '선택된 인가자 ${_visible.length}명',
               style: const TextStyle(
                 color: AppColors.purpleDark,
                 fontWeight: FontWeight.w800,
@@ -389,7 +484,7 @@ class _ExportScreenState extends State<ExportScreen>
   }
 
   Future<void> _doExport() async {
-    if (widget.members.isEmpty) {
+    if (_visible.isEmpty) {
       _snack('선택된 인가자가 없습니다');
       return;
     }
@@ -410,7 +505,7 @@ class _ExportScreenState extends State<ExportScreen>
       await runWithTsakProgress(
         context,
         title: '명단 ${_format.label} 생성',
-        note: '${widget.members.length}명 · $total개 파일'
+        note: '${_visible.length}명 · $total개 파일'
             '${_chunk100 ? ' (100명 분할)' : ''}',
         steps: const ['문서 구성', '파일 생성', '파일 저장'],
         task: (ctl) async {
@@ -526,7 +621,7 @@ class _ExportScreenState extends State<ExportScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${_format.label} · ${widget.members.length}명'
+              '${_format.label} · ${_visible.length}명'
               '${_chunk100 ? ' · ${_chunks.length}개 파일' : ''}',
               style: const TextStyle(
                 fontSize: 13.5,
@@ -611,7 +706,7 @@ class _ExportScreenState extends State<ExportScreen>
   Future<void> _previewPdf() async {
     setState(() => _busy = true);
     try {
-      final bytes = await ExportService.buildPdf(widget.members);
+      final bytes = await ExportService.buildPdf(_visible);
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {
       _snack('미리보기 실패: $e');
@@ -622,7 +717,7 @@ class _ExportScreenState extends State<ExportScreen>
 
   // ---------------- 문자 ----------------
   Widget _smsTab() {
-    final phones = ContactService.phones(widget.members);
+    final phones = ContactService.phones(_visible);
     final ctrl = TextEditingController();
     return ListView(
       padding: const EdgeInsets.all(14),
@@ -675,14 +770,14 @@ class _ExportScreenState extends State<ExportScreen>
         _recipientList(
           title: '수신 번호 (${phones.length}개)',
           items: phones,
-          copyText: ContactService.phoneList(widget.members),
+          copyText: ContactService.phoneList(_visible),
         ),
       ],
     );
   }
 
   Future<void> _openSms(String body) async {
-    final uri = Uri.parse(ContactService.smsUri(widget.members, body: body));
+    final uri = Uri.parse(ContactService.smsUri(_visible, body: body));
     await _launch(uri, '문자 앱');
   }
 
@@ -700,7 +795,7 @@ class _ExportScreenState extends State<ExportScreen>
 
   // ---------------- 메일 ----------------
   Widget _mailTab() {
-    final emails = ContactService.emails(widget.members);
+    final emails = ContactService.emails(_visible);
     final subjectCtrl = TextEditingController();
     final bodyCtrl = TextEditingController();
     return ListView(
@@ -751,7 +846,7 @@ class _ExportScreenState extends State<ExportScreen>
         _recipientList(
           title: '수신 이메일 (${emails.length}개)',
           items: emails,
-          copyText: ContactService.emailList(widget.members),
+          copyText: ContactService.emailList(_visible),
         ),
       ],
     );
@@ -759,7 +854,7 @@ class _ExportScreenState extends State<ExportScreen>
 
   Future<void> _openMail(String subject, String body) async {
     var uri = Uri.parse(
-      ContactService.mailtoUri(widget.members, subject: subject, body: body),
+      ContactService.mailtoUri(_visible, subject: subject, body: body),
     );
     // BCC 방식 폴백 (URL 길이 초과 대비)
     if (uri.toString().length > 1800) {
