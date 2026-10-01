@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
@@ -80,6 +82,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // 승인관리 대기 배지(비인가회원·행사·연회비·평생 등 통합)
   int _approvalUnread = 0;
 
+  /// 승인요청 실시간 감시 타이머 — 승인 요청이 오면 원형 숫자 배지를
+  /// 자동 갱신한다(관리자·마스터). (요구: "승인 요청이 오면 원형단추 숫자로 표시")
+  Timer? _approvalTimer;
+  int _prevApprovalUnread = 0;
+
   @override
   void initState() {
     super.initState();
@@ -98,19 +105,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     // 게시판 새 글 알림 배지 로드(관리자 이상).
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBoardUnread());
-    // 승인관리 대기 배지 로드(관리자 이상).
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadApprovalBadge());
+    // 승인관리 대기 배지 로드(관리자 이상) + 실시간 감시 시작.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startApprovalWatch());
+  }
+
+  /// 승인요청을 주기적으로 감시해 배지(원형 숫자)를 자동 갱신한다.
+  ///  · 8초마다 서버의 미확인 승인요청 건수를 폴링한다.
+  ///  · 건수가 늘면 새 요청이 들어온 것이므로 스낵바로 안내한다.
+  void _startApprovalWatch() {
+    _loadApprovalBadge();
+    _approvalTimer?.cancel();
+    _approvalTimer = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _loadApprovalBadge(poll: true),
+    );
   }
 
   /// 승인관리 대기 총 건수 배지 로드(관리자·마스터).
   /// 해당 아이디가 '확인'하지 않은 항목만 배지로 표시한다.
-  Future<void> _loadApprovalBadge() async {
+  Future<void> _loadApprovalBadge({bool poll = false}) async {
     final state = context.read<AppState>();
     if (!(state.isApp || state.isMaster)) return;
     try {
       final n = await state.fetchApprovalUnread();
       if (!mounted) return;
-      setState(() => _approvalUnread = n);
+      // 새 승인요청 도착 → 조용히 안내(팝업 대신 스낵바).
+      if (poll && n > _prevApprovalUnread && _prevApprovalUnread >= 0) {
+        final diff = n - _prevApprovalUnread;
+        if (diff > 0) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            SnackBar(
+              content: Text('새 승인요청 $diff건이 도착했습니다.'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+      setState(() {
+        _approvalUnread = n;
+        _prevApprovalUnread = n;
+      });
     } catch (_) {}
   }
 
@@ -253,6 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _approvalTimer?.cancel();
     _searchCtrl.dispose();
     _scroll.dispose();
     _personalScroll.dispose();

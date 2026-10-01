@@ -4,6 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
+import '../services/doc_pdf.dart';
+import '../services/export_save.dart';
+import '../services/mail_helper.dart';
+import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
@@ -457,6 +461,57 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     }
   }
 
+  /// 실제 **PDF 파일**로 저장(규칙: 기본 출력 = PDF 실제 파일).
+  Future<void> _savePdf() async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: _reportText()));
+      await _snackAsync('내역을 복사했습니다');
+      return;
+    }
+    try {
+      final bytes = await DocPdf.buildFromText(
+        meta: _statMeta(),
+        text: _reportText(),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      final ok = await saveBytesAs(bytes, '수품_통계현황.pdf', 'application/pdf');
+      await _snackAsync(ok ? '수품_통계현황.pdf 저장을 시작했습니다' : 'PDF 저장 실패');
+    } catch (e) {
+      await _snackAsync('PDF 생성 실패: $e');
+    }
+  }
+
+  /// 실제 **JPG 파일**로 저장(규칙: 모든 출력메뉴에 JPG).
+  Future<void> _saveJpg() async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: _reportText()));
+      await _snackAsync('내역을 복사했습니다');
+      return;
+    }
+    try {
+      final pdf = await DocPdf.buildFromText(
+        meta: _statMeta(),
+        text: _reportText(),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      final jpg = await pdfToJpg(pdf);
+      final ok = await saveBytesAs(jpg, '수품_통계현황.jpg', 'image/jpeg');
+      await _snackAsync(ok ? '수품_통계현황.jpg 저장을 시작했습니다' : 'JPG 저장 실패');
+    } catch (e) {
+      await _snackAsync('JPG 생성 실패: $e');
+    }
+  }
+
+  DocMeta _statMeta() => DocMeta(
+    title: '수품 통계·현황',
+    subtitle: '한국범스카우트중앙회 · 수품 판매 통계',
+    description: '주문·매출·입금·미수금 현황을 정리한 리포트입니다.',
+    extra: {
+      '총 주문': '${_orders.length}건',
+      '총 매출': _won(_orders.where((o) => !_isCancelled(o)).fold<int>(0, (p, o) => p + _actual(o))),
+    },
+  );
+
   Future<void> _copyCsv() async {
     await Clipboard.setData(ClipboardData(text: _csv()));
     _snackAsync('CSV를 클립보드에 복사했습니다 (엑셀에 붙여넣기)');
@@ -468,19 +523,16 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
   }
 
   Future<void> _mail() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: _exportEmail,
-      query:
-          'subject=${Uri.encodeComponent('[수품 통계·현황]')}'
-          '&body=${Uri.encodeComponent(_reportText())}',
+    // 기기 메일앱을 열고 제목·본문을 자동 입력(요구).
+    final opened = await openMailOrCopy(
+      to: _exportEmail,
+      subject: '[수품 통계·현황]',
+      body: _reportText(),
+      fallbackText: '[수품 통계·현황]\n\n${_reportText()}',
     );
-    try {
-      await launchUrl(uri);
-    } catch (_) {
-      await Clipboard.setData(ClipboardData(text: _reportText()));
-      _snackAsync('메일 앱을 열 수 없어 내용을 복사했습니다');
-    }
+    await _snackAsync(
+      opened ? '메일 앱을 열었습니다' : '메일 앱을 열 수 없어 내용을 복사했습니다',
+    );
   }
 
   Future<void> _share() async {
@@ -525,8 +577,8 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _expBtn(Icons.print_outlined, 'PDF / 인쇄', _print),
-            _expBtn(Icons.image_outlined, 'JPG (이미지)', () => _print()),
+            _expBtn(Icons.picture_as_pdf_outlined, 'PDF 저장', _savePdf),
+            _expBtn(Icons.image_outlined, 'JPG (이미지)', _saveJpg),
             _expBtn(Icons.grid_on_outlined, '엑셀 (CSV)', _copyCsv),
             _expBtn(Icons.slideshow_outlined, 'PPT (텍스트)', _copyText),
             _expBtn(Icons.description_outlined, '워드 (텍스트)', _copyText),
@@ -536,7 +588,7 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
         ),
         const SizedBox(height: 6),
         const Text(
-          '※ 이미지(JPG)는 인쇄 화면에서 "대상=PDF/이미지 저장"으로 저장할 수 있습니다.',
+          '※ PDF·JPG 는 실제 파일로 바로 저장됩니다.',
           style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
         ),
       ],

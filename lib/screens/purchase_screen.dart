@@ -485,13 +485,39 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       // 규칙(#14): 형식 순서 PDF→JPG→엑셀→PPT→워드.
       switch (format) {
         case TsakOutputFormat.pdf:
+          // 규칙: 실제 PDF 파일로 저장.
+          try {
+            final bytes = await DocPdf.build(
+              meta: _meta(),
+              columns: _columns,
+              rows: _rows(),
+              summary:
+                  '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
+                  '총 금액 ${_won(_total)}원',
+              footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
+            );
+            await _saveBytes(bytes, '중앙회_물건_결제_내역.pdf');
+          } catch (e) {
+            _snack('PDF 생성 실패: $e');
+          }
+          return;
         case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(
-            format == TsakOutputFormat.jpg
-                ? '인쇄창에서 대상=이미지로 저장하세요'
-                : '인쇄창에서 PDF로 저장하세요',
-          );
+          // 규칙: 실제 .jpg 파일로 저장.
+          try {
+            final bytes = await DocPdf.build(
+              meta: _meta(),
+              columns: _columns,
+              rows: _rows(),
+              summary:
+                  '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
+                  '총 금액 ${_won(_total)}원',
+              footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
+            );
+            final jpg = await pdfToJpg(bytes);
+            await _saveBytes(jpg, '중앙회_물건_결제_내역.jpg', mime: 'image/jpeg');
+          } catch (e) {
+            _snack('JPG 생성 실패: $e');
+          }
           return;
         case TsakOutputFormat.excel:
           await Clipboard.setData(ClipboardData(text: _csvText()));
@@ -511,6 +537,20 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         mime: 'text/html;charset=utf-8',
       );
       _snack('문서를 저장했습니다');
+    }
+  }
+
+  /// 바이트를 실제 파일로 저장(웹) / 클립보드 폴백.
+  Future<void> _saveBytes(Uint8List bytes, String filename, {String? mime}) async {
+    try {
+      final ok = await saveBytesAs(
+        bytes,
+        filename,
+        mime ?? mimeForFilename(filename),
+      );
+      _snack(ok ? '$filename 저장을 시작했습니다' : '저장하지 못했습니다');
+    } catch (e) {
+      _snack('저장 실패: $e');
     }
   }
 
