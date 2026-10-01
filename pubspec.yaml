@@ -27,6 +27,8 @@ dependencies:
 
   # 내보내기 (엑셀/PDF/워드/이미지/텍스트)
   excel: ^4.0.6
+  # XLSX 직접 파싱용 (excel 패키지 상대/절대경로 버그 우회 — 견고한 자체 파서)
+  xml: ^6.5.0
   pdf: ^3.11.1
   printing: ^5.13.4
   archive: ^3.6.1

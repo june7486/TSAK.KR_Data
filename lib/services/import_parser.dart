@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 
 import '../models/member.dart';
+import 'xlsx_reader.dart';
 
 /// 문서(엑셀/CSV/TSV/텍스트/JSON) → 인가자 목록 자동 인식 파서
 ///
@@ -69,38 +70,59 @@ class ImportParser {
   }
 
   static List<Member> _parseExcel(Uint8List bytes) {
+    // 1) 견고한 자체 파서(archive+xml) 우선 — 절대경로 rels 를 쓰는 정상 xlsx 도 처리.
+    final sheets = XlsxReader.read(bytes);
+    if (sheets != null && sheets.isNotEmpty) {
+      final out = <Member>[];
+      for (final sheet in sheets) {
+        out.addAll(_rowsToMembers(sheet.rows));
+      }
+      if (out.isNotEmpty) return out;
+    }
+
+    // 2) 폴백: excel 패키지(기존 경로).
     try {
       final excel = Excel.decodeBytes(bytes);
       final out = <Member>[];
       for (final table in excel.tables.keys) {
         final rows = excel.tables[table]!.rows;
-        if (rows.isEmpty) continue;
-        final headers = rows.first.map((c) => _cell(c)).toList();
-        final mapping = <int, String>{};
-        for (var i = 0; i < headers.length; i++) {
-          final f = _fieldForHeader(headers[i]);
-          if (f != null) mapping[i] = f;
-        }
-        final startRow = mapping.isEmpty ? 1 : 1; // 헤더 다음부터
-        if (mapping.isEmpty) {
-          // 헤더 인식 실패 시 관례적 순서 가정: 번호, 이름, 연맹, 단위대, ...
-          mapping[0] = 'number';
-          mapping[1] = 'name';
-          mapping[2] = 'league';
-          mapping[3] = 'unit';
-        }
-        for (var r = startRow; r < rows.length; r++) {
-          final row = rows[r];
-          if (row.every((c) => _cell(c).trim().isEmpty)) continue;
-          final m = _rowToMember(row, mapping);
-          if (m.name.trim().isEmpty && m.number.trim().isEmpty) continue;
-          out.add(m);
-        }
+        final grid = rows
+            .map((row) => row.map((c) => _cell(c)).toList())
+            .toList();
+        out.addAll(_rowsToMembers(grid));
       }
       return out;
     } catch (_) {
       return [];
     }
+  }
+
+  /// 2차원 문자열 격자 → 인가자 목록(헤더 추론 + 관례 순서 폴백).
+  static List<Member> _rowsToMembers(List<List<String>> rows) {
+    if (rows.isEmpty) return [];
+    final out = <Member>[];
+    final headers = rows.first.map((h) => h.trim()).toList();
+    final mapping = <int, String>{};
+    for (var i = 0; i < headers.length; i++) {
+      final f = _fieldForHeader(headers[i]);
+      if (f != null) mapping[i] = f;
+    }
+    var start = 1; // 헤더 다음부터
+    if (mapping.isEmpty) {
+      // 헤더 인식 실패 시 관례적 순서 가정: 번호, 이름, 연맹, 단위대.
+      mapping[0] = 'number';
+      mapping[1] = 'name';
+      mapping[2] = 'league';
+      mapping[3] = 'unit';
+    }
+    for (var r = start; r < rows.length; r++) {
+      final row = rows[r];
+      if (row.isEmpty || row.every((c) => c.trim().isEmpty)) continue;
+      final m = _rowToMember(row, mapping);
+      if (m.name.trim().isEmpty && m.number.trim().isEmpty) continue;
+      out.add(m);
+    }
+    return out;
   }
 
   static List<Member> _parseText(Uint8List bytes, {bool tsv = false}) {
