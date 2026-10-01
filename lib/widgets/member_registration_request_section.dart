@@ -201,6 +201,9 @@ class _MemberRegistrationRequestSectionState
   Widget _requestSection(Member m, {required bool canSubmit}) {
     final state = context.watch<AppState>();
     final isAdmin = state.isApp || state.isMaster;
+    // 우측 휴지통(삭제)은 마스터 전용 — 개인 계정으로 로그인해 열람한 경우에도
+    //  마스터만 내역을 삭제할 수 있도록 한다(요구).
+    final canDelete = state.isMaster;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Padding(
@@ -249,7 +252,11 @@ class _MemberRegistrationRequestSectionState
               canSubmit
                   ? '* 등록요청을 제출하면 관리자·마스터가 확인 후 승인합니다. '
                         '승인 시 연간회비 납부 이력과 연동됩니다.'
-                  : '* 관리자·마스터는 아래 내역에서 요청을 확인하거나 삭제할 수 있습니다.',
+                  : (canDelete
+                        ? '* 관리자·마스터는 아래 내역에서 요청을 확인할 수 있고, '
+                              '마스터는 우측 휴지통으로 삭제할 수 있습니다.'
+                        : '* 등록요청 내역은 관리자·마스터가 확인하며, '
+                              '삭제는 마스터만 할 수 있습니다.'),
               style: const TextStyle(fontSize: 11, color: AppColors.textGray),
             ),
             if (_loading)
@@ -263,7 +270,7 @@ class _MemberRegistrationRequestSectionState
               )
             else if (_requests.isNotEmpty) ...[
               const SizedBox(height: 10),
-              _requestHistory(m, isAdmin: isAdmin),
+              _requestHistory(m, isAdmin: isAdmin, canDelete: canDelete),
             ],
           ],
         ),
@@ -343,7 +350,7 @@ class _MemberRegistrationRequestSectionState
     );
   }
 
-  Widget _requestHistory(Member m, {required bool isAdmin}) {
+  Widget _requestHistory(Member m, {required bool isAdmin, required bool canDelete}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -408,10 +415,11 @@ class _MemberRegistrationRequestSectionState
                     ),
                   ),
                 ),
-                // 요구 #11: 관리자·마스터만 삭제 아이콘 노출(내역 제거).
-                if (isAdmin)
+                // 마스터 전용 — 우측 휴지통으로 등록요청 내역을 삭제한다.
+                //  개인 계정(개인 로그인)으로 열람한 경우에도 마스터만 삭제 가능.
+                if (canDelete)
                   IconButton(
-                    tooltip: '내역 삭제',
+                    tooltip: '내역 삭제 (마스터)',
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
