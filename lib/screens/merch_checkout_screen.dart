@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/address_field.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/link_member_picker.dart';
 import '../widgets/tsak_app_bar.dart';
 
 /// 수품 주문/예약 전용 화면 — 팝업(다이얼로그) 대신 전체 페이지로 구현하여
@@ -573,13 +574,35 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
               children: [
                 Text(
                   '$pname · ${isMentor ? '멘토' : '페런츠'} 수령인'
-                  '${qty > 1 ? ' ${u + 1}/${qty}' : ''}',
+                  '${qty > 1 ? ' ${u + 1}/$qty' : ''}',
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 6),
+                // 요구: 수품구매(각인 메달) 개인정보 입력창에도 '범스카우트
+                //   인가정보 연동' 창(선택)을 동일하게 적용한다.
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 2,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _linkRecipientFromScout(idx, u, kind),
+                    icon: const Icon(Icons.manage_search, size: 16),
+                    label: const Text(
+                      '범스카우트 인가정보 연동 (선택)',
+                      style: TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 if (isMentor)
                   TextFormField(
                     key: ValueKey('rcp-unit-$idx-$u'),
@@ -633,6 +656,36 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         ],
       ],
     );
+  }
+
+  /// '범스카우트 인가정보 연동' (요구) — 각인 메달 수령인 정보를 기존 인가자
+  ///   정보로 자동 채운다. 이름·전화·(멘토)소속·범인가번호를 모두 채운다.
+  Future<void> _linkRecipientFromScout(int idx, int u, String kind) async {
+    final list = _lineRecips(idx);
+    if (u < 0 || u >= list.length) return;
+    final isMentor = kind == 'mentor';
+    final picked = await showLinkMemberPicker(
+      context,
+      nas: _nas,
+      kind: kind,
+      hint: isMentor
+          ? '각인할 멘토(수여받는 분)의 인가정보를 선택하세요.'
+          : '각인할 페런츠(수여받는 분)의 인가정보를 선택하세요.',
+    );
+    if (picked == null || !mounted) return;
+    final name = '${picked['name'] ?? ''}'.trim();
+    final phone = '${picked['phone'] ?? ''}'.trim();
+    final number = '${picked['number'] ?? ''}'.trim();
+    final league = '${picked['league'] ?? ''}'.trim();
+    final unit = '${picked['unit'] ?? ''}'.trim();
+    final org = [league, unit].where((e) => e.isNotEmpty).join(' · ');
+    setState(() {
+      if (name.isNotEmpty) list[u].name.text = name;
+      if (phone.isNotEmpty) list[u].phone.text = phone;
+      if (number.isNotEmpty) list[u].number.text = number;
+      if (isMentor && org.isNotEmpty) list[u].unit.text = org;
+    });
+    _snack('인가정보를 불러왔습니다. 내용을 확인해 주세요.');
   }
 
   Widget _waitingNotice() {

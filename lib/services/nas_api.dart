@@ -1628,6 +1628,28 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// '범스카우트 인가정보 연동' 검색 — 멘토·페런츠 인적사항을 수동 입력할 때
+  ///   기존 범스카우트 인가자의 정보(번호·이름·연맹·단위대·전화·스카우트번호)를
+  ///   불러와 자동 채우기 위한 검색. q: 인가번호/이름/전화.
+  Future<List<Map<String, dynamic>>> linkSearchMembers(
+    String q, {
+    int limit = 20,
+  }) async {
+    try {
+      final r = await http
+          .get(
+            _uri('/api/link/search?q=${Uri.encodeComponent(q)}&limit=$limit'),
+            headers: _authHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      final list = (j['members'] as List?) ?? [];
+      return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// 멘토·페런츠(수동 등록) 인적사항 조회.
   ///   관리자·마스터: 전체, 개인(로그인): 본인 연결만.
   Future<Map<String, dynamic>> linkProfiles() async {

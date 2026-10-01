@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import 'link_member_picker.dart';
 
 /// 멘토·페런츠 인적사항 입력 필드.
 ///
@@ -214,7 +215,36 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                         isDense: true,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 4),
+                    // 요구: 멘토·페런츠 개인정보 입력 시 '범스카우트 인가정보 연동'
+                    //   창(선택)으로 기존 인가자 정보를 불러와 자동 채운다.
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _accent,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 2,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => _linkFromScout(
+                          noCtrl,
+                          nameCtrl,
+                          phoneCtrl,
+                          leagueCtrl,
+                          unitCtrl,
+                          setDlg,
+                        ),
+                        icon: const Icon(Icons.manage_search, size: 16),
+                        label: const Text(
+                          '범스카우트 인가정보 연동 (선택)',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     TextField(
                       controller: nameCtrl,
                       decoration: InputDecoration(
@@ -364,6 +394,43 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     if (!widget.codes.contains(code)) {
       widget.onChanged([...widget.codes, code]);
     }
+  }
+
+  /// '범스카우트 인가정보 연동' (요구) — 기존 인가자를 검색해 인적사항을 채운다.
+  ///   · 멘토: 번호칸은 **멘티(본인)번호**이므로 건드리지 않고, 이름·전화·소속만 채운다.
+  ///   · 페런츠: 번호칸이 **페런츠 인가번호**이므로 번호까지 채운다.
+  Future<void> _linkFromScout(
+    TextEditingController noCtrl,
+    TextEditingController nameCtrl,
+    TextEditingController phoneCtrl,
+    TextEditingController leagueCtrl,
+    TextEditingController unitCtrl,
+    void Function(void Function()) setDlg,
+  ) async {
+    final isMentor = widget.kind == 'mentor';
+    final picked = await showLinkMemberPicker(
+      context,
+      nas: _nas,
+      kind: widget.kind,
+      hint: isMentor
+          ? '멘토 본인의 인가정보를 선택하세요. (멘티 번호는 그대로 유지됩니다)'
+          : '페런츠의 인가정보를 선택하세요. (인가번호까지 채워집니다)',
+    );
+    if (picked == null || !mounted) return;
+    final name = '${picked['name'] ?? ''}'.trim();
+    final phone = '${picked['phone'] ?? ''}'.trim();
+    final league = '${picked['league'] ?? ''}'.trim();
+    final unit = '${picked['unit'] ?? ''}'.trim();
+    final number = '${picked['number'] ?? ''}'.trim();
+    setDlg(() {
+      if (name.isNotEmpty) nameCtrl.text = name;
+      if (phone.isNotEmpty) phoneCtrl.text = phone;
+      if (league.isNotEmpty) leagueCtrl.text = league;
+      if (unit.isNotEmpty) unitCtrl.text = unit;
+      // 멘토는 번호칸이 멘티(본인)번호이므로 연동 시 번호를 덮어쓰지 않는다.
+      if (!isMentor && number.isNotEmpty) noCtrl.text = number;
+    });
+    _snack('인가정보를 불러왔습니다. 내용을 확인 후 저장하세요.');
   }
 
   void _snack(String m) {
