@@ -155,7 +155,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               leadingWidth: 84,
               flexibleSpace: FlexibleSpaceBar(background: _header(m)),
               actions: [
-                const AppHomeEmblem(size: 24),
+                // (요구 복원) 홈 버튼 — 첫 화면(홈)으로 복귀.
+                IconButton(
+                  tooltip: '홈',
+                  icon: const Icon(Icons.home_filled),
+                  onPressed: _goHome,
+                ),
+                // (요구 복원) 개인정보 수정 버튼.
+                IconButton(
+                  tooltip: '개인정보 수정',
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _edit(m),
+                ),
                 IconButton(
                   icon: const Icon(Icons.ios_share),
                   tooltip: '개인정보 출력 (PDF·JPG·엑셀·워드·PPT)',
@@ -169,11 +180,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     MaterialPageRoute(builder: (_) => QrScreen(member: m)),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  tooltip: '편집',
-                  onPressed: () => _edit(m),
-                ),
+                const AppHomeEmblem(size: 24),
               ],
             ),
             SliverToBoxAdapter(
@@ -2616,6 +2623,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
     );
     if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// (요구 복원) 홈 버튼 — 첫 화면(홈)까지 되돌아간다.
+  void _goHome() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   /// 개인정보 최종 출력 — 선택한 형식(PDF/JPG/엑셀/워드/PPT)으로 내보낸다.

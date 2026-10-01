@@ -484,9 +484,8 @@ class DocPdf {
 
   /// 이름 문자열의 폭(폰트 1pt 기준). 한글 0.98 · 공백 0.32.
   static double _nameUnits(String s) {
-    final clean = s.replaceAll(' ', '   ').trim();
     var u = 0.0;
-    for (final c in clean.runes) {
+    for (final c in s.trim().runes) {
       u += (c == 0x20) ? 0.32 : 0.98;
     }
     return u < 1.0 ? 1.0 : u;
