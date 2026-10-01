@@ -15,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
+import '../widgets/tsak_output_sheet.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/member_card.dart';
 
@@ -396,78 +397,108 @@ class _ExportScreenState extends State<ExportScreen>
     final choice = await _askSaveMethod();
     if (choice == null) return; // 취소
     final choose = choice == 'choose';
+    if (!mounted) return;
 
-    setState(() => _busy = true);
+    // ② 실시간 진행 대기창을 띄우고 파일을 만든다(공통 진행창).
+    var saved = 0;
+    final chunks = _chunks;
+    final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
+    final baseName = _baseName();
+    final total = chunks.length;
+    var failed = false;
     try {
-      final chunks = _chunks;
-      final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
-      final baseName = _baseName();
-      var saved = 0;
-      for (var i = 0; i < chunks.length; i++) {
-        final list = chunks[i];
-        final suffix = chunks.length > 1 ? '_${i + 1}' : '';
-        final name = '$baseName$suffix';
-        Uint8List bytes;
-        switch (_format) {
-          case ExportFormat.excel:
-            bytes = ExportService.buildExcel(list, fieldKeys: fields);
-            break;
-          case ExportFormat.pdf:
-            bytes = await ExportService.buildPdf(list, fieldKeys: fields);
-            break;
-          case ExportFormat.word:
-            bytes = ExportService.buildWord(list, fieldKeys: fields);
-            break;
-          case ExportFormat.txt:
-            bytes = ExportService.buildTxt(list, fieldKeys: fields);
-            break;
-          case ExportFormat.ppt:
-            bytes = ExportService.buildPpt(list, fieldKeys: fields);
-            break;
-          case ExportFormat.jpg:
-            bytes = await ExportService.buildPdf(list, fieldKeys: fields);
-            break;
-        }
-        if (_format == ExportFormat.jpg) {
-          // JPG — 첫 페이지를 이미지로 변환해 저장.
-          final raster = await Printing.raster(bytes, dpi: 150).first;
-          final im = img.Image.fromBytes(
-            width: raster.width,
-            height: raster.height,
-            bytes: raster.pixels.buffer,
-            numChannels: 4,
+      await runWithTsakProgress(
+        context,
+        title: '명단 ${_format.label} 생성',
+        note: '${widget.members.length}명 · $total개 파일'
+            '${_chunk100 ? ' (100명 분할)' : ''}',
+        steps: const ['문서 구성', '파일 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(
+            progress: 0.05,
+            message: '문서를 구성하는 중…',
+            stepIndex: 0,
           );
-          final jpg = img.encodeJpg(im, quality: 88);
-          final ok = await saveBytesChoose(
-            bytes: jpg,
-            name: name,
-            ext: 'jpg',
-            mime: 'image/jpeg',
-            mimeType: MimeType.jpeg,
-            choose: choose,
-          );
-          if (ok) saved++;
-        } else {
-          final ok = await saveBytesChoose(
-            bytes: bytes,
-            name: name,
-            ext: _format.extension,
-            mime: _mimeStr(_format),
-            mimeType: _mimeOf(_format),
-            choose: choose,
-          );
-          if (ok) saved++;
-        }
-      }
-      if (saved == 0) {
-        _snack('저장이 취소되었습니다');
-      } else {
-        _snack('내보내기 완료 ($saved개 파일 · ${_format.label})');
-      }
+          for (var i = 0; i < chunks.length; i++) {
+            final list = chunks[i];
+            final suffix = chunks.length > 1 ? '_${i + 1}' : '';
+            final name = '$baseName$suffix';
+            final frac = (i + 1) / total;
+            ctl.update(
+              progress: 0.10 + 0.80 * (i / total),
+              message: '$total개 중 ${i + 1}번째 파일 생성 중…'
+                  ' (${list.length}명)',
+              stepIndex: 1,
+            );
+            Uint8List bytes;
+            switch (_format) {
+              case ExportFormat.excel:
+                bytes = ExportService.buildExcel(list, fieldKeys: fields);
+                break;
+              case ExportFormat.pdf:
+                bytes = await ExportService.buildPdf(list, fieldKeys: fields);
+                break;
+              case ExportFormat.word:
+                bytes = ExportService.buildWord(list, fieldKeys: fields);
+                break;
+              case ExportFormat.txt:
+                bytes = ExportService.buildTxt(list, fieldKeys: fields);
+                break;
+              case ExportFormat.ppt:
+                bytes = ExportService.buildPpt(list, fieldKeys: fields);
+                break;
+              case ExportFormat.jpg:
+                bytes = await ExportService.buildPdf(list, fieldKeys: fields);
+                break;
+            }
+            ctl.update(
+              progress: 0.10 + 0.80 * frac,
+              message: '파일 저장 중… ($name.${_format.extension})',
+              stepIndex: 2,
+            );
+            if (_format == ExportFormat.jpg) {
+              // JPG — 첫 페이지를 이미지로 변환해 저장.
+              final raster = await Printing.raster(bytes, dpi: 150).first;
+              final im = img.Image.fromBytes(
+                width: raster.width,
+                height: raster.height,
+                bytes: raster.pixels.buffer,
+                numChannels: 4,
+              );
+              final jpg = img.encodeJpg(im, quality: 88);
+              final ok = await saveBytesChoose(
+                bytes: jpg,
+                name: name,
+                ext: 'jpg',
+                mime: 'image/jpeg',
+                mimeType: MimeType.jpeg,
+                choose: choose,
+              );
+              if (ok) saved++;
+            } else {
+              final ok = await saveBytesChoose(
+                bytes: bytes,
+                name: name,
+                ext: _format.extension,
+                mime: _mimeStr(_format),
+                mimeType: _mimeOf(_format),
+                choose: choose,
+              );
+              if (ok) saved++;
+            }
+          }
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
     } catch (e) {
+      failed = true;
       _snack('내보내기 실패: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    }
+    if (failed) return;
+    if (saved == 0) {
+      _snack('저장이 취소되었습니다');
+    } else {
+      _snack('내보내기 완료 ($saved개 파일 · ${_format.label})');
     }
   }
 

@@ -29,7 +29,10 @@ import '../widgets/tsak_app_bar.dart';
 ///   · 연맹별 서포터즈-일반 분포 (인가일 2026년 이후)
 ///   → 세 분포 모두 "인가일 2026년 이후" 로 통일한다.
 class StatsScreen extends StatefulWidget {
-  const StatsScreen({super.key});
+  const StatsScreen({super.key, this.initialScope = 0});
+
+  /// 처음 열 때의 소속 탭 — 0=범스카우트, 1=은하스카우트.
+  final int initialScope;
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
@@ -44,7 +47,7 @@ class _StatsScreenState extends State<StatsScreen> {
   int _basis = 0;
 
   /// 소속 — 0=범스카우트, 1=은하스카우트(별도 관리).
-  int _scope = 0;
+  late int _scope = widget.initialScope;
 
   /// 분포별 정렬 모드: 0=인가자순, 1=광역통합, 2=광역대통합, 3=가나다.
   ///   key: gap0..gap3(신분 탭), mentor, parent, supporter.

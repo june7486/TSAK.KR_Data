@@ -13,6 +13,7 @@ import 'access_log_screen.dart';
 import 'admin_screen.dart';
 import 'board_screen.dart';
 import 'bulk_screen.dart';
+import 'eunha_roster_screen.dart';
 import 'event_year_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
@@ -215,6 +216,20 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   Icons.insights,
                   AppColors.taegeukBlue,
                   () => _push(const StatsScreen()),
+                ),
+              ]),
+              _section('은하스카우트 (별도 관리)', [
+                _tile(
+                  '은하스카우트 명단',
+                  Icons.groups_2,
+                  AppColors.taegeukBlue,
+                  () => _push(const EunhaRosterScreen()),
+                ),
+                _tile(
+                  '은하스카우트 통계',
+                  Icons.insights,
+                  AppColors.tigerGold,
+                  () => _push(const StatsScreen(initialScope: 1)),
                 ),
               ]),
               _section('출력 · 로그', [

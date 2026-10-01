@@ -7,11 +7,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
+import '../services/output_formats.dart';
+import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
+import '../widgets/tsak_output_sheet.dart';
 
 /// 게시판 (#12).
 /// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호.
@@ -35,6 +38,9 @@ class _BoardScreenState extends State<BoardScreen> {
   bool _isAdmin = false;
   String _filter = '전체';
   final Set<String> _liked = {};
+
+  /// 출력(문서 생성·저장) 진행 중 표시.
+  bool _busyBuilding = false;
 
   /// 펼쳐서 내용을 보여줄 게시글 id 집합 (기본은 접힌 요약 카드).
   final Set<String> _expanded = {};
@@ -124,6 +130,13 @@ class _BoardScreenState extends State<BoardScreen> {
         actions: [
           const AppHomeEmblem(size: 22),
           IconButton(
+            tooltip: '출력 (PDF·엑셀 등)',
+            onPressed: _busyBuilding || _visible.isEmpty
+                ? null
+                : () => _openOutput(context),
+            icon: const Icon(Icons.ios_share),
+          ),
+          IconButton(
             tooltip: '새로고침',
             onPressed: _load,
             icon: const Icon(Icons.refresh),
@@ -175,9 +188,153 @@ class _BoardScreenState extends State<BoardScreen> {
               '잠시만 기다려 주세요...',
             ],
           ),
+          // 게시판 출력(문서 생성·저장) 대기.
+          BusyOverlay(
+            visible: _busyBuilding,
+            title: '게시판 출력물을 만드는 중입니다',
+            lines: const [
+              '게시글을 표로 정리하고 있습니다...',
+              '파일로 저장하는 중입니다...',
+              '잠시만 기다려 주세요...',
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  // ===================== 출력 (게시판 공통 출력 시트) =====================
+
+  /// 게시판을 범스카우트·명단과 **동일한 공용 출력 시트/시트 규격**으로 출력.
+  ///  · 형식 순서 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드 → TXT.
+  ///  · 저장 위치 선택 → 실시간 진행 대기창(runWithTsakProgress) 순서로 동작.
+  ///  · 현재 카테고리(전체/공지/행사…)의 **보이는 글**을 대상으로 한다.
+  Future<void> _openOutput(BuildContext context) async {
+    final posts = _visible;
+    if (posts.isEmpty) {
+      _snack('출력할 게시글이 없습니다');
+      return;
+    }
+    final headers = ['분류', '제목', '작성자', '작성일', '조회', '좋아요', '댓글', '첨부'];
+    String clip(String s, [int n = 80]) {
+      final t = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+      return t.length <= n ? t : '${t.substring(0, n)}…';
+    }
+
+    final rows = <List<String>>[];
+    for (final p in posts) {
+      rows.add([
+        '${p['category'] ?? '일반'}',
+        clip('${p['title'] ?? ''}'),
+        clip('${p['author'] ?? ''}', 24),
+        '${p['created'] ?? ''}',
+        '${(p['views'] as num?)?.toInt() ?? 0}',
+        '${(p['likes'] as num?)?.toInt() ?? 0}',
+        '${((p['comments'] as List?) ?? []).length}',
+        '${((p['attachments'] as List?) ?? []).length}',
+      ]);
+    }
+    final title = '게시판'
+        '${_filter == '전체' ? ' 전체' : ' · $_filter'} (${posts.length}건)';
+    await showTsakOutputSheet(
+      context,
+      title: '게시판 출력',
+      subtitle: '${_filter == '전체' ? '전체 카테고리' : _filter} · ${posts.length}건',
+      onPick: (f) => _runOutput(title, headers, rows, f),
+      onPrint: () => _runOutput(
+        title,
+        headers,
+        rows,
+        TsakOutputFormat.pdf,
+        justPrint: true,
+      ),
+      onEmail: () => _emailOutput(title, headers, rows),
+      onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
+    );
+  }
+
+  Future<void> _runOutput(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+    TsakOutputFormat format, {
+    bool justPrint = false,
+  }) async {
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '한국범스카우트중앙회 · 게시판',
+      description: '게시판 게시글 목록 출력물입니다.',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}건'],
+      footerLeft: '한국범스카우트중앙회 · 게시판',
+      landscape: true,
+    );
+    setState(() => _busyBuilding = true);
+    try {
+      // 1) 저장 위치를 진행창 이전에 먼저 확정한다(공용 규칙).
+      var choose = false;
+      if (!justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info: '$title · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return;
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      // 2) 진행창을 열고 파일을 만든다.
+      await runWithTsakProgress(
+        context,
+        title: justPrint ? '게시판 프린트 준비' : '게시판 ${format.label} 생성',
+        note: '${rows.length}건을 처리합니다.',
+        steps: justPrint
+            ? const ['문서 구성', '인쇄 창 열기']
+            : ['문서 구성', '${format.label} 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(progress: 0.15, message: '문서를 구성하는 중…', stepIndex: 0);
+          if (justPrint) {
+            ctl.update(progress: 0.6, message: '인쇄 창을 여는 중…', stepIndex: 1);
+            await printTsakTable(doc);
+            ctl.update(progress: 1.0, stepIndex: 2);
+            return;
+          }
+          ctl.update(
+            progress: 0.5,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
+          await saveTsakTableChosen(context, doc, format, choose: choose);
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+      if (mounted) {
+        _snack(justPrint ? '인쇄 창을 열었습니다' : '${format.label} 저장을 시작했습니다');
+      }
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
+  }
+
+  Future<void> _emailOutput(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+  ) async {
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '한국범스카우트중앙회 · 게시판',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}건'],
+      footerLeft: '한국범스카우트중앙회 · 게시판',
+    );
+    await emailTsakTable(context, doc);
   }
 
   Widget _categoryBar() {
