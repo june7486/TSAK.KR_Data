@@ -46,7 +46,8 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
 
   /// 각인 메달(멘토/페런츠) 라인별 수령인 입력 컨트롤러.
   ///  key = 라인 인덱스. 각인 내용(수여받는 사람 정보)이 있어야 판매 가능.
-  final Map<int, _RecipientCtl> _recips = {};
+  ///  value = 수량(qty)만큼의 수령인 1:1 목록(복수 구매 시 그 수만큼 입력).
+  final Map<int, List<_RecipientCtl>> _recips = {};
 
   bool _noticeChecked = false;
   bool _feePaidYes = true; // 연간회비 납부 여부(예=면제, 아니요=추가)
@@ -90,8 +91,10 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
     _email.dispose();
     _address.dispose();
     _memo.dispose();
-    for (final c in _recips.values) {
-      c.dispose();
+    for (final list in _recips.values) {
+      for (final c in list) {
+        c.dispose();
+      }
     }
     // 화면 종료 시 화면 꺼짐 방지를 확실히 해제.
     try {
@@ -480,8 +483,9 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
             const SizedBox(height: 6),
             const Text(
               '멘토·페런츠 메달은 각인 작업을 위해 수여받는 분의 정보가 반드시 필요합니다.\n'
-              '· 멘토 메달: 멘토 대장님의 소속 · 이름 · 연락처\n'
-              '· 페런츠 메달: 페런츠의 이름 · 연락처',
+              '· 멘토 메달: 멘토 대장님의 소속 · 이름 · 연락처 · 범인가번호\n'
+              '· 페런츠 메달: 페런츠의 이름 · 연락처 · 범인가번호\n'
+              '· 여러 개를 구매하면 그 수량만큼 각각 입력해 주세요.',
               style: TextStyle(fontSize: 12, height: 1.45),
             ),
             for (final e in _medalLines.entries) ...[
@@ -492,72 +496,101 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
         ),
       );
 
+  /// 라인 [idx] 의 수령인 컨트롤러 목록 — 수량(qty)만큼 1:1로 생성/보장한다.
+  List<_RecipientCtl> _lineRecips(int idx) {
+    final qty = (widget.lines[idx]['qty'] as num?)?.toInt() ?? 1;
+    final n = qty < 1 ? 1 : qty;
+    final list = _recips.putIfAbsent(
+        idx, () => List<_RecipientCtl>.generate(n, (_) => _RecipientCtl()));
+    while (list.length < n) {
+      list.add(_RecipientCtl());
+    }
+    return list;
+  }
+
   Widget _recipientFields(int idx, String kind) {
-    final c = _recips.putIfAbsent(idx, () => _RecipientCtl());
+    final list = _lineRecips(idx);
     final pname = (widget.lines[idx]['name'] ?? '')
         .toString()
         .split('(')
         .first
         .trim();
     final isMentor = kind == 'mentor';
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.tigerGold.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('$pname · ${isMentor ? '멘토' : '페런츠'} 수령인',
-              style: const TextStyle(
-                  fontSize: 12.5, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          if (isMentor)
-            TextFormField(
-              key: ValueKey('rcp-unit-$idx'),
-              controller: c.unit,
-              validator: (v) => (v == null || v.trim().isEmpty)
-                  ? '멘토 소속을 입력하세요'
-                  : null,
-              decoration: const InputDecoration(
-                  labelText: '멘토 소속 *', isDense: true),
+    final qty = list.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int u = 0; u < list.length; u++) ...[
+          if (u > 0) const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.tigerGold.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: AppColors.tigerGold.withValues(alpha: 0.35)),
             ),
-          if (isMentor) const SizedBox(height: 8),
-          TextFormField(
-            key: ValueKey('rcp-name-$idx'),
-            controller: c.name,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? '수령인 이름을 입력하세요'
-                : null,
-            decoration: InputDecoration(
-                labelText: '${isMentor ? '멘토' : '페런츠'} 이름 *', isDense: true),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            key: ValueKey('rcp-phone-$idx'),
-            controller: c.phone,
-            keyboardType: TextInputType.phone,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? '수령인 연락처를 입력하세요'
-                : null,
-            decoration: InputDecoration(
-                labelText: '${isMentor ? '멘토' : '페런츠'} 연락처 *', isDense: true),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            key: ValueKey('rcp-number-$idx'),
-            controller: c.number,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: '${isMentor ? '멘토' : '페런츠'} 인가번호 (선택)',
-              hintText: '입력 시 해당 회원 개인프로필에 메달 수상 연동',
-              isDense: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    '$pname · ${isMentor ? '멘토' : '페런츠'} 수령인'
+                    '${qty > 1 ? ' ${u + 1}/${qty}' : ''}',
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                if (isMentor)
+                  TextFormField(
+                    key: ValueKey('rcp-unit-$idx-$u'),
+                    controller: list[u].unit,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? '멘토 소속을 입력하세요'
+                        : null,
+                    decoration: const InputDecoration(
+                        labelText: '멘토 소속 *', isDense: true),
+                  ),
+                if (isMentor) const SizedBox(height: 8),
+                TextFormField(
+                  key: ValueKey('rcp-name-$idx-$u'),
+                  controller: list[u].name,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? '수령인 이름을 입력하세요'
+                      : null,
+                  decoration: InputDecoration(
+                      labelText: '${isMentor ? '멘토' : '페런츠'} 이름 *',
+                      isDense: true),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  key: ValueKey('rcp-phone-$idx-$u'),
+                  controller: list[u].phone,
+                  keyboardType: TextInputType.phone,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? '수령인 연락처를 입력하세요'
+                      : null,
+                  decoration: InputDecoration(
+                      labelText: '${isMentor ? '멘토' : '페런츠'} 연락처 *',
+                      isDense: true),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  key: ValueKey('rcp-number-$idx-$u'),
+                  controller: list[u].number,
+                  keyboardType: TextInputType.number,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? '범인가번호를 입력하세요'
+                      : null,
+                  decoration: InputDecoration(
+                    labelText: '범인가번호 (필수)',
+                    hintText: '입력 시 해당 회원 개인프로필(멘토·페런츠)에 추가됩니다',
+                    isDense: true,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
-      ),
+      ],
     );
   }
 
@@ -731,12 +764,13 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
             // 각인 메달: 수여받는 사람(수령인) 정보 필수 전송.
             if (mk != null)
               'recipients': [
-                {
-                  'unit': _recips[i]?.unit.text.trim() ?? '',
-                  'name': _recips[i]?.name.text.trim() ?? '',
-                  'number': _recips[i]?.number.text.trim() ?? '',
-                  'phone': _recips[i]?.phone.text.trim() ?? '',
-                }
+                for (final c in _lineRecips(i))
+                  {
+                    'unit': c.unit.text.trim(),
+                    'name': c.name.text.trim(),
+                    'number': c.number.text.trim(),
+                    'phone': c.phone.text.trim(),
+                  }
               ],
           });
         }
@@ -758,8 +792,8 @@ class _MerchCheckoutScreenState extends State<MerchCheckoutScreen> {
           await _resultDialog(reserve: false, last: r);
           if (mounted) Navigator.pop(context, true);
         } else if (r['error'] == 'medal_recipient_required') {
-          _snack('각인 메달은 수여받는 분의 정보(소속·이름·연락처)를 입력해야 판매할 수 있습니다.',
-              color: AppColors.taegeukRed);
+          _snack('각인 메달은 수량만큼 수여받는 분의 정보(범인가번호·이름·연락처, 멘토는 소속 포함)를 '
+              '모두 입력해야 판매할 수 있습니다.', color: AppColors.taegeukRed);
           await WakelockPlus.disable();
           setState(() => _busy = false);
           return;

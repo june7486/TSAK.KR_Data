@@ -4108,17 +4108,20 @@ def _medal_recipient_kind(name):
 
 
 def _medal_recipient_ok(kind, rcp):
-    """수령인 정보 유효성 검사(각인 메달 필수)."""
+    """수령인 정보 유효성 검사(각인 메달 필수).
+    요구: 범인가번호(number)는 멘토·페런츠 모두 필수 — 이 번호로 개인프로필
+    (멘토·페런츠)에 수상/연동된다."""
     if kind not in ("mentor", "parent"):
         return True
     if not isinstance(rcp, dict):
         return False
     name = str(rcp.get("name", "") or "").strip()
     phone = str(rcp.get("phone", "") or "").strip()
+    number = re.sub(r"[^0-9]", "", str(rcp.get("number", "") or ""))
     if kind == "mentor":
         unit = str(rcp.get("unit", "") or "").strip()
-        return bool(unit and name and phone)
-    return bool(name and phone)
+        return bool(unit and name and phone and number)
+    return bool(name and phone and number)
 
 
 def _medal_recipient_clean(rcp):
@@ -4131,6 +4134,73 @@ def _medal_recipient_clean(rcp):
         "number": re.sub(r"[^0-9]", "", str(rcp.get("number", "") or ""))[:12],
         "phone": str(rcp.get("phone", "") or "")[:20],
     }
+
+
+def _merch_sync_medal_recipients(buyer_ident, kind, recips):
+    """각인 메달 수령인의 범인가번호로 **주문자 개인프로필**에 멘토·페런츠를
+    추가하고, 수령인 인적사항을 link_profiles 에 등록한다.
+      · kind 'mentor' → 주문자 mentors[] / 'parent' → parents[]
+      · link_profiles[수령인번호] = {name, phone, unit, kind}  (없을 때만 생성)
+    요구: "이 넘버로 개인프로필 멘토·페런츠에 추가"."""
+    if kind not in ("mentor", "parent"):
+        return
+    buyer = re.sub(r"[^0-9]", "", str(buyer_ident or ""))
+    nums = [re.sub(r"[^0-9]", "", str(r.get("number", "") or ""))
+            for r in recips if isinstance(r, dict)]
+    nums = [n for n in nums if n]
+    if not nums:
+        return
+    # 1) 주문자(멘티/자녀) 프로필의 mentors/parents 에 수령인 번호 추가
+    if buyer:
+        with _MEMBER_WRITE_LOCK:
+            members = _ev_members()
+            hit = False
+            for i, m in enumerate(members):
+                num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                lid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
+                ph = re.sub(r"[^0-9]", "",
+                            str(m.get("accessPhone") or m.get("phone") or ""))
+                if buyer in (num, lid, ph):
+                    field = "mentors" if kind == "mentor" else "parents"
+                    cur = m.get(field)
+                    if not isinstance(cur, list):
+                        cur = []
+                    for n in nums:
+                        if n not in [str(x) for x in cur]:
+                            cur.append(n)
+                    m[field] = cur
+                    members[i] = m
+                    hit = True
+                    break
+            if hit:
+                _save_json(DB_FILE, members)
+    # 2) 수령인 인적사항을 link_profiles 에 등록(없을 때만 — 기존 입력 보존)
+    try:
+        profs = _link_profiles_load()
+        changed = False
+        for r in recips:
+            if not isinstance(r, dict):
+                continue
+            n = re.sub(r"[^0-9]", "", str(r.get("number", "") or ""))
+            if not n:
+                continue
+            if n in profs and isinstance(profs[n], dict):
+                continue
+            profs[n] = _link_profile_sanitize({
+                "number": n,
+                "name": str(r.get("name", "") or ""),
+                "phone": str(r.get("phone", "") or ""),
+                "unit": str(r.get("unit", "") or ""),
+                "kind": kind,
+            })
+            profs[n]["receiverNo"] = n
+            profs[n]["updatedAt"] = _now_stamp()
+            changed = True
+        if changed:
+            with LOCK:
+                _link_profiles_save(profs)
+    except Exception as e:
+        print("medal recipient link sync fail", e)
 
 
 def _merch_mine(ident):
@@ -9494,14 +9564,15 @@ class Handler(BaseHTTPRequestHandler):
                         recips = [_medal_recipient_clean(r) for r in raw_recips
                                   if isinstance(r, dict)]
                         if mkind:
-                            # 필수: 최소 1명 + 제출된 모든 수령인이 유효해야 함.
-                            if not recips or not all(
-                                    _medal_recipient_ok(mkind, r)
-                                    for r in recips):
+                            # 필수: 수량(qty)만큼 수령인 + 제출된 모든 수령인이 유효해야 함.
+                            if (not recips or len(recips) != lqty
+                                    or not all(_medal_recipient_ok(mkind, r)
+                                               for r in recips)):
                                 return self._json({
                                     "ok": False,
                                     "error": "medal_recipient_required",
                                     "recipientKind": mkind,
+                                    "required": lqty,
                                     "product": str(lprod.get("name", "")),
                                 }, 400)
                         built.append((lprod, lunit, lqty, lfee, ltotal,
@@ -9558,6 +9629,9 @@ class Handler(BaseHTTPRequestHandler):
                         doc.setdefault("orders", []).append(order)
                         if oc0:
                             _merch_attach_to_member(oc0, oid, "order")
+                        # 각인 메달 수령인 번호 → 주문자 개인프로필(멘토·페런츠) 연동.
+                        if mkind and recips:
+                            _merch_sync_medal_recipients(ident0, mkind, recips)
                         out_orders.append(order)
                     _merch_save(doc)
                     return self._json({
@@ -9611,12 +9685,13 @@ class Handler(BaseHTTPRequestHandler):
                                   if isinstance(d.get("recipient"), dict) else [])
                 recips = [_medal_recipient_clean(r) for r in raw_recips
                           if isinstance(r, dict)]
-                if mkind and (not recips or not all(
+                if mkind and (not recips or len(recips) != qty or not all(
                         _medal_recipient_ok(mkind, r) for r in recips)):
                     return self._json({
                         "ok": False,
                         "error": "medal_recipient_required",
                         "recipientKind": mkind,
+                        "required": qty,
                         "product": str(prod.get("name", "")),
                     }, 400)
                 # 주문자 식별: 인가번호 우선, 없으면 전화로 비인가 자동생성
@@ -9660,6 +9735,9 @@ class Handler(BaseHTTPRequestHandler):
                 # 인가자/비인가자 프로필에 주문 내역 부착
                 if oc:
                     _merch_attach_to_member(oc, oid, "order")
+                # 각인 메달 수령인 번호 → 주문자 개인프로필(멘토·페런츠) 연동.
+                if mkind and recips:
+                    _merch_sync_medal_recipients(ident, mkind, recips)
                 return self._json({"ok": True, "order": order,
                                    "contactId": oc, "contactType": octype,
                                    "account": cfg.get("account", {})})
