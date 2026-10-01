@@ -711,11 +711,23 @@ class AppState extends ChangeNotifier {
   static const String permHidden = 'hidden';
 
   /// 특정 회원(member) 항목의 유효 노출 권한을 반환한다.
+  /// 별도 지정이 없을 때 **관리자·마스터에게 기본 노출**되는 항목.
+  ///  요구: "스카우트등록번호(스카우트 고유번호)는 관리자가 볼 수 있도록".
+  ///  → 전역/개인 설정이 전혀 없으면 '관리자 노출(admin)'로 판정한다.
+  static const Set<String> adminDefaultFields = {'scoutNo'};
+
   String permFor(Member m, String key) {
     final v = m.fieldPerms[key];
     if (v == permPublic) return permPublic;
     if (v == permAdmin) return permAdmin;
     if (v == permHidden) return permHidden;
+    // 전역 항목노출 설정이 명시돼 있으면 그 값을 최우선으로 따른다.
+    final fv = _config['fieldVisibility'];
+    if (fv is Map && fv.containsKey(key)) {
+      return fieldVisible(key) ? permPublic : permHidden;
+    }
+    // 아무 지정도 없을 때: 관리자 기본노출 항목은 관리자 노출로.
+    if (adminDefaultFields.contains(key)) return permAdmin;
     return fieldVisible(key) ? permPublic : permHidden;
   }
 

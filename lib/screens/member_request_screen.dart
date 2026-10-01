@@ -918,6 +918,18 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     return '';
   }
 
+  /// 인적사항 라벨 목록 추출 — *Labels(이름·소속·전화 보강) 우선, 없으면 번호.
+  /// 요구: "멘토·멘티·페런츠 모든 사람의 정보를 보여줘".
+  List<String> _labelsOf(
+    Map<String, dynamic> ms,
+    String rawKey,
+    String labelKey,
+  ) {
+    final labels = (ms[labelKey] as List?) ?? [];
+    if (labels.isNotEmpty) return labels.map((e) => '$e').toList();
+    return ((ms[rawKey] as List?) ?? []).map((e) => '#$e').toList();
+  }
+
   Widget _meta(IconData icon, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1332,14 +1344,15 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
               : _reqSourceLabel(ms),
         );
       }
-      final mentors = ((ms['mentors'] as List?) ?? [])
-          .map((e) => '$e')
-          .toList();
-      final parents = ((ms['parents'] as List?) ?? [])
-          .map((e) => '$e')
-          .toList();
-      kv('멘토', mentors.join(', '));
-      kv('페런츠', parents.join(', '));
+      final mentors = _labelsOf(ms, 'mentors', 'mentorLabels');
+      final parents = _labelsOf(ms, 'parents', 'parentLabels');
+      final mentees = _labelsOf(ms, 'mentees', 'menteeLabels');
+      final children = _labelsOf(ms, 'children', 'childLabels');
+      // 멘토·멘티·페런츠·자녀대원 **모든 사람의 정보**(이름·소속·전화)를 노출.
+      kv('멘토', mentors.join('\n'));
+      kv('멘티대원', mentees.join('\n'));
+      kv('페런츠', parents.join('\n'));
+      kv('자녀대원', children.join('\n'));
       kv('메모', '${ms['note'] ?? ''}');
     }
     if (req is Map) {
