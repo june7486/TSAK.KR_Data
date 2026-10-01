@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -933,7 +932,6 @@ class _PlansTabState extends State<PlansTab> {
       _snack('출력할 기획안이 없습니다');
       return;
     }
-    final html = _plansDocHtml();
     if (isWebRuntime) {
       switch (format) {
         case TsakOutputFormat.pdf:

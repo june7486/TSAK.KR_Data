@@ -1,13 +1,17 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/export_save.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
 import '../services/nas_api.dart';
+import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
 import '../services/web_nav.dart';
@@ -434,7 +438,30 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   // ---------- MUJI 문서 ----------
-  String _docHtml() {
+  static const List<String> _columns = [
+    '번호',
+    '그룹',
+    '분류',
+    '사이즈',
+    '수량',
+    '단가',
+    '금액',
+  ];
+
+  DocMeta _meta() => DocMeta(
+    title: '중앙회 물건 결제 내역',
+    subtitle: '한국범스카우트중앙회 · 물건 구매·결제 내역',
+    description: '아래 물건의 품목·수량·단가·금액을 확인합니다.',
+    author: _whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '',
+    extra: {
+      '총 항목': '${_items.length}건',
+      '총 수량': '$_totalQty',
+      '총 금액': '${_won(_total)}원',
+      if (_updated.isNotEmpty) '목록 갱신': _updated,
+    },
+  );
+
+  List<List<DocCell>> _rows() {
     final rows = <List<DocCell>>[];
     for (var i = 0; i < _items.length; i++) {
       final p = _items[i];
@@ -453,21 +480,21 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         ),
       ]);
     }
+    return rows;
+  }
+
+  /// PDF/JPG 저장용 요약(줄 목록 — `DocPdf.build`의 summary 형식).
+  List<String> _pdfSummary() => [
+    '총 ${_items.length}개 항목 · 총 수량 $_totalQty',
+    '총 금액 ${_won(_total)}원',
+    '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
+  ];
+
+  String _docHtml() {
     return buildMujiDoc(
-      meta: DocMeta(
-        title: '중앙회 물건 결제 내역',
-        subtitle: '한국범스카우트중앙회 · 물건 구매·결제 내역',
-        description: '아래 물건의 품목·수량·단가·금액을 확인합니다.',
-        author: _whoName.isNotEmpty ? '#$_whoNumber $_whoName' : '',
-        extra: {
-          '총 항목': '${_items.length}건',
-          '총 수량': '$_totalQty',
-          '총 금액': '${_won(_total)}원',
-          if (_updated.isNotEmpty) '목록 갱신': _updated,
-        },
-      ),
-      columns: const ['번호', '그룹', '분류', '사이즈', '수량', '단가', '금액'],
-      rows: rows,
+      meta: _meta(),
+      columns: _columns,
+      rows: _rows(),
       summary:
           '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
           '총 금액 <span class="g">${_won(_total)}원</span>',
@@ -491,10 +518,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               meta: _meta(),
               columns: _columns,
               rows: _rows(),
-              summary:
-                  '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
-                  '총 금액 ${_won(_total)}원',
-              footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
+              summary: _pdfSummary(),
             );
             await _saveBytes(bytes, '중앙회_물건_결제_내역.pdf');
           } catch (e) {
@@ -508,10 +532,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               meta: _meta(),
               columns: _columns,
               rows: _rows(),
-              summary:
-                  '총 <b>${_items.length}</b>개 항목 · 총 수량 $_totalQty · '
-                  '총 금액 ${_won(_total)}원',
-              footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
+              summary: _pdfSummary(),
             );
             final jpg = await pdfToJpg(bytes);
             await _saveBytes(jpg, '중앙회_물건_결제_내역.jpg', mime: 'image/jpeg');
@@ -541,7 +562,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   /// 바이트를 실제 파일로 저장(웹) / 클립보드 폴백.
-  Future<void> _saveBytes(Uint8List bytes, String filename, {String? mime}) async {
+  Future<void> _saveBytes(
+    Uint8List bytes,
+    String filename, {
+    String? mime,
+  }) async {
     try {
       final ok = await saveBytesAs(
         bytes,

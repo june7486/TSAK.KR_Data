@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'print_doc.dart';
+import 'doc_pdf.dart';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
@@ -196,23 +197,15 @@ class RosterService {
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.fromLTRB(40, 44, 40, 40),
-        footer: (ctx) => pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 8),
-          child: pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(
-                org,
-                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
-              ),
-              pw.Text(
-                '${ctx.pageNumber} / ${ctx.pagesCount}',
-                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
-              ),
-            ],
-          ),
+        pageTheme: tsakPdfPageTheme(
+          format: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(40, 44, 40, 40),
+        ),
+        footer: (ctx) => tsakPdfFooter(
+          pageNumber: ctx.pageNumber,
+          pagesCount: ctx.pagesCount,
+          left: org,
+          font: reg,
         ),
         build: (ctx) => [
           // ---- 헤더 (MUJI풍: 큰 제목 + 얇은 구분선) ----

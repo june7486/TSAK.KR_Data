@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 
 import '../services/file_save.dart';
 import '../services/finance_export.dart';
+import '../services/pdf_to_jpg.dart';
 import '../theme/app_theme.dart';
 
 /// 재무 데이터를 여러 파일포맷으로 출력하는 공용 시트.
@@ -242,13 +243,13 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
           break;
       }
       if (_format == FinanceFormat.jpg) {
-        final img = await Printing.raster(bytes, dpi: 150).first;
-        final png = await img.toPng();
+        // 규칙: 실제 .jpg 파일로 저장(기존 PNG → JPG 통일).
+        final jpg = await pdfToJpg(bytes);
         await saveFileNamed(
-          bytes: png,
-          filename: '$name.png',
-          mime: 'image/png',
-          mimeType: MimeType.png,
+          bytes: jpg,
+          filename: '$name.jpg',
+          mime: 'image/jpeg',
+          mimeType: MimeType.jpeg,
           choose: choose,
         );
       } else {

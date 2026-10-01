@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
 import '../services/file_save.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -216,8 +217,16 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
     final rows = _rows();
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(24),
+        pageTheme: tsakPdfPageTheme(
+          format: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(24),
+        ),
+        footer: (ctx) => tsakPdfFooter(
+          pageNumber: ctx.pageNumber,
+          pagesCount: ctx.pagesCount,
+          left: '한국범스카우트중앙회 · 마스터 전용',
+          font: reg,
+        ),
         build: (ctx) => [
           pw.Text(
             'TSAK 회원 접속·열람 기록',

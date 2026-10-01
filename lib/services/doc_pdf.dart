@@ -8,6 +8,13 @@
 ///
 /// `print_doc.dart` 의 [DocMeta]·[DocCell] 표 데이터를 그대로 받아, 인쇄용 HTML
 /// (`buildMujiDoc`)과 **동일한 무인양품 스타일**의 PDF를 생성한다.
+///
+/// ## 샘플 규격 (모든 출력 공통 — 명부·리스트·오더·메뉴·비품·주문·명단·승인창)
+///  · 페이지를 **얇은 테두리 박스**로 감싼다.
+///  · 최상단 **레터헤드**: 좌 브랜드 · 우 `N of M`(페이지 번호).
+///  · 큰 **제목** + 부제/설명/메타(생성일·생성자).
+///  · 표 위 **`PART 1`** 구분 라벨 + 가로 규칙선 + 항목 수.
+///  · 하단 **출력규칙 · 보고서 · N/M** 푸터.
 library;
 
 import 'dart:typed_data';
@@ -37,6 +44,12 @@ class DocPdf {
   static const _title = PdfColor.fromInt(0xFF4A4A48);
   static const _gray = PdfColor.fromInt(0xFF8C877E);
   static const _line = PdfColor.fromInt(0xFFEDEAE3);
+
+  /// 페이지 테두리 박스 색(샘플 규격).
+  static const _border = PdfColor.fromInt(0xFFD8D3CA);
+
+  /// 표 헤더 옅은 배경.
+  static const _head = PdfColor.fromInt(0xFFF4F1EA);
   static const _strong = PdfColor.fromInt(0xFF4A4A48);
 
   static PdfColor _hex(String h) {
@@ -53,6 +66,9 @@ class DocPdf {
   }
 
   /// 표 데이터로 **실제 PDF 바이트**를 만든다. (A4 세로 기본)
+  ///
+  /// 샘플 규격(모든 출력 공통): 얇은 **테두리 박스** + 최상단 **레터헤드**(브랜드 +
+  /// `N of M`) + 큰 **제목** + 메타 + **`PART 1`** 구분 라벨 + 표 + 합계 + 푸터.
   static Future<Uint8List> build({
     required DocMeta meta,
     List<String> columns = const [],
@@ -65,6 +81,7 @@ class DocPdf {
     final reg = _regular!;
     final bold = _bold!;
     final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
+    final fmt = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
     final base = pw.TextStyle(font: reg, fontSize: 9, color: _ink);
     final baseBold = pw.TextStyle(font: bold, fontSize: 9, color: _ink);
@@ -78,79 +95,90 @@ class DocPdf {
       ...meta.extra.entries,
     ];
 
-    final header = <pw.Widget>[
-      pw.Text(
-        '한국범스카우트중앙회 · TSAK',
-        style: pw.TextStyle(font: reg, fontSize: 8, color: _gray),
-      ),
-      pw.SizedBox(height: 3),
-      pw.Text(
-        meta.title,
-        style: pw.TextStyle(font: bold, fontSize: 17, color: _title),
-      ),
-      if (meta.subtitle.trim().isNotEmpty)
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 2),
-          child: pw.Text(
-            meta.subtitle,
-            style: pw.TextStyle(font: reg, fontSize: 10, color: _gray),
-          ),
+    // ── 기초정보 블록 (설명 + 생성일·생성자·추가정보) ──
+    final metaBlock = pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 7),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          top: pw.BorderSide(color: _line),
+          bottom: pw.BorderSide(color: _line),
         ),
-      pw.SizedBox(height: 8),
-      pw.Container(
-        padding: const pw.EdgeInsets.symmetric(vertical: 7),
-        decoration: const pw.BoxDecoration(
-          border: pw.Border(
-            top: pw.BorderSide(color: _line),
-            bottom: pw.BorderSide(color: _line),
-          ),
-        ),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            if (meta.description.trim().isNotEmpty)
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(bottom: 5),
-                child: pw.Text(
-                  meta.description,
-                  style: pw.TextStyle(font: reg, fontSize: 9.5, color: _ink),
-                ),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          if (meta.description.trim().isNotEmpty)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 5),
+              child: pw.Text(
+                meta.description,
+                style: pw.TextStyle(font: reg, fontSize: 9.5, color: _ink),
               ),
-            pw.Wrap(
-              spacing: 22,
-              runSpacing: 2,
-              children: facts
-                  .map(
-                    (e) => pw.RichText(
-                      text: pw.TextSpan(
-                        children: [
-                          pw.TextSpan(
-                            text: '${e.key} ',
-                            style: pw.TextStyle(
-                              font: bold,
-                              fontSize: 8.5,
-                              color: _gray,
-                            ),
-                          ),
-                          pw.TextSpan(
-                            text: e.value,
-                            style: pw.TextStyle(
-                              font: reg,
-                              fontSize: 8.5,
-                              color: _gray,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                  .toList(),
             ),
-          ],
-        ),
+          pw.Wrap(
+            spacing: 22,
+            runSpacing: 2,
+            children: facts
+                .map(
+                  (e) => pw.RichText(
+                    text: pw.TextSpan(
+                      children: [
+                        pw.TextSpan(
+                          text: '${e.key} ',
+                          style: pw.TextStyle(
+                            font: bold,
+                            fontSize: 8.5,
+                            color: _gray,
+                          ),
+                        ),
+                        pw.TextSpan(
+                          text: e.value,
+                          style: pw.TextStyle(
+                            font: reg,
+                            fontSize: 8.5,
+                            color: _gray,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
       ),
-      pw.SizedBox(height: 10),
-    ];
+    );
+
+    // ── PART 라벨 (샘플 규격: 다크 라벨 + 가로 규칙선 + 항목 수) ──
+    pw.Widget partLabel(int count) => pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: pw.BoxDecoration(
+            color: _ink,
+            borderRadius: pw.BorderRadius.circular(3),
+          ),
+          child: pw.Text(
+            'PART 1',
+            style: pw.TextStyle(
+              font: bold,
+              fontSize: 8,
+              color: PdfColors.white,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        pw.SizedBox(width: 10),
+        pw.Expanded(child: pw.Container(height: 0.8, color: _border)),
+        pw.SizedBox(width: 10),
+        if (count > 0)
+          pw.Text(
+            '$count개 항목',
+            style: pw.TextStyle(font: reg, fontSize: 8, color: _gray),
+          ),
+      ],
+    );
 
     // ── 표 ──
     pw.Widget? table;
@@ -158,11 +186,13 @@ class DocPdf {
       table = pw.Table(
         border: pw.TableBorder(
           horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
+          bottom: const pw.BorderSide(color: _border, width: 0.8),
         ),
         columnWidths: _defaultCols(columns.length),
         children: [
           if (columns.isNotEmpty)
             pw.TableRow(
+              decoration: const pw.BoxDecoration(color: _head),
               children: columns
                   .map(
                     (c) => pw.Padding(
@@ -250,36 +280,107 @@ class DocPdf {
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: (landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4),
-        margin: const pw.EdgeInsets.fromLTRB(34, 36, 34, 34),
-        footer: (ctx) => pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 8),
-          child: pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        maxPages: 500,
+        pageTheme: pw.PageTheme(
+          pageFormat: fmt,
+          margin: const pw.EdgeInsets.fromLTRB(36, 40, 36, 30),
+          // 샘플 규격: 페이지를 얇은 테두리 박스로 감싼다.
+          buildBackground: (ctx) => pw.FullPage(
+            ignoreMargins: true,
+            child: pw.Container(
+              margin: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: _border, width: 0.8),
+              ),
+            ),
+          ),
+        ),
+        // 레터헤드 — 모든 페이지 상단 좌 브랜드 · 우 N of M.
+        header: (ctx) => pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 6),
+          child: pw.Column(
             children: [
-              pw.Text(
-                footerLeft,
-                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    '한국범스카우트중앙회 · TSAK',
+                    style: pw.TextStyle(
+                      font: bold,
+                      fontSize: 7.5,
+                      color: _gray,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  pw.Text(
+                    '${ctx.pageNumber} of ${ctx.pagesCount}',
+                    style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
+                  ),
+                ],
               ),
-              pw.Text(
-                '${ctx.pageNumber} / ${ctx.pagesCount}',
-                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
-              ),
+              pw.SizedBox(height: 4),
+              pw.Container(height: 0.6, color: _line),
             ],
           ),
         ),
-        header: (ctx) => ctx.pageNumber == 1
-            ? pw.SizedBox()
-            : pw.Container(
-                alignment: pw.Alignment.centerRight,
-                padding: const pw.EdgeInsets.only(bottom: 6),
-                child: pw.Text(
-                  '${meta.title} (계속)',
-                  style: pw.TextStyle(font: reg, fontSize: 8, color: _gray),
+        // 푸터 — 좌 기관명 · 우 출력규칙 · 보고서 · N/M.
+        footer: (ctx) => pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 8),
+          child: pw.Container(
+            padding: const pw.EdgeInsets.only(top: 6),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(top: pw.BorderSide(color: _line)),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  footerLeft,
+                  style: pw.TextStyle(
+                    font: reg,
+                    fontSize: 7.5,
+                    color: _gray,
+                    letterSpacing: 0.4,
+                  ),
                 ),
-              ),
+                pw.Text(
+                  '출력규칙 · 보고서 · ${ctx.pageNumber}/${ctx.pagesCount}',
+                  style: pw.TextStyle(
+                    font: reg,
+                    fontSize: 7.5,
+                    color: _gray,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         build: (ctx) => [
-          ...header,
+          pw.Text(
+            meta.title,
+            style: pw.TextStyle(
+              font: bold,
+              fontSize: 18,
+              color: _title,
+              letterSpacing: -0.2,
+            ),
+          ),
+          if (meta.subtitle.trim().isNotEmpty)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(top: 3),
+              child: pw.Text(
+                meta.subtitle,
+                style: pw.TextStyle(font: reg, fontSize: 10, color: _gray),
+              ),
+            ),
+          pw.SizedBox(height: 8),
+          metaBlock,
+          pw.SizedBox(height: 12),
+          if (columns.isNotEmpty || rows.isNotEmpty) ...[
+            partLabel(rows.length),
+            pw.SizedBox(height: 8),
+          ],
           if (table != null) table,
           if (sumWidget != null) sumWidget,
         ],
@@ -373,3 +474,80 @@ class DocPdf {
     return build(meta: meta, summary: lines, footerLeft: footerLeft);
   }
 }
+
+/// ─────────────────────────────────────────────────────────────────────────
+/// 샘플 규격 공용 PDF 크롬(chrome) — 자체 `pw.MultiPage` 로 PDF 를 만드는 화면
+/// (명단·회계·출입기록 등)에서 재사용하는 최소 헬퍼. `DocPdf.build` 를 쓰지 않는
+/// 출력도 동일한 **테두리 박스 + 푸터** 규격을 유지하도록 한다.
+/// ─────────────────────────────────────────────────────────────────────────
+
+const PdfColor _tsakPdfBorder = PdfColor.fromInt(0xFFD8D3CA);
+const PdfColor _tsakPdfLine = PdfColor.fromInt(0xFFEDEAE3);
+const PdfColor _tsakPdfGray = PdfColor.fromInt(0xFF8C877E);
+
+/// (샘플 규격) 페이지를 감싸는 **얇은 테두리 박스** 배경.
+pw.Widget tsakPdfPageBox({
+  double inset = 14,
+  PdfColor color = _tsakPdfBorder,
+}) => pw.FullPage(
+  ignoreMargins: true,
+  child: pw.Container(
+    margin: pw.EdgeInsets.all(inset),
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: color, width: 0.8),
+    ),
+  ),
+);
+
+/// (샘플 규격) 자체 `pw.MultiPage` 에 넘길 `pageTheme` — 테두리 박스 포함.
+pw.PageTheme tsakPdfPageTheme({
+  required PdfPageFormat format,
+  pw.EdgeInsets margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30),
+}) => pw.PageTheme(
+  pageFormat: format,
+  margin: margin,
+  buildBackground: (ctx) => tsakPdfPageBox(),
+);
+
+/// (샘플 규격) 공통 **푸터** — 좌 기관명 · 우 `출력규칙 · 보고서 · N/M`.
+pw.Widget tsakPdfFooter({
+  required int pageNumber,
+  required int pagesCount,
+  String left = '한국범스카우트중앙회',
+  pw.Font? font,
+  pw.Font? fontBold,
+}) => pw.Padding(
+  padding: const pw.EdgeInsets.only(top: 8),
+  child: pw.Container(
+    padding: const pw.EdgeInsets.only(top: 6),
+    decoration: const pw.BoxDecoration(
+      border: pw.Border(top: pw.BorderSide(color: _tsakPdfLine)),
+    ),
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          left,
+          style: pw.TextStyle(
+            font: font,
+            fontWeight: fontBold != null && font == null
+                ? pw.FontWeight.bold
+                : null,
+            fontSize: 7.5,
+            color: _tsakPdfGray,
+            letterSpacing: 0.4,
+          ),
+        ),
+        pw.Text(
+          '출력규칙 · 보고서 · $pageNumber/$pagesCount',
+          style: pw.TextStyle(
+            font: font,
+            fontSize: 7.5,
+            color: _tsakPdfGray,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ],
+    ),
+  ),
+);

@@ -88,7 +88,15 @@ class DocMeta {
   final Map<String, String> extra;
 }
 
-/// 앱 전역 기본 출력 문서를 만든다(무인양품 + 다양한 색채, A4 세로).
+/// 앱 전역 기본 출력 문서를 만든다.
+///
+/// ## 디자인 규칙 (샘플 포맷 — 모든 출력 공통)
+///  · 페이지를 **얇은 테두리 박스**로 감싼다(둥근 모서리).
+///  · 최상단 좌측에 **레터헤드**(브랜드 · 문서명) + 우측 **`1 of 1`**.
+///  · 큰 **제목** + 작은 **부제/설명/메타(생성일·생성자)**.
+///  · 표 위에 **`PART 1 | N개 항목`** 구분 라벨.
+///  · 표 헤더는 옅은 배경 + 좌측 컬러바, 본문은 저채도 다색 악센트.
+///  · 하단 **출력규칙 · 보고서 · 1/1** 푸터.
 ///
 /// [columns] 표 헤더, [rows] 각 행의 셀 목록, [summary] 하단 합계(HTML 조각 허용).
 String buildMujiDoc({
@@ -102,7 +110,11 @@ String buildMujiDoc({
 }) {
   final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
   final head = StringBuffer();
-  head.write('<div class="brand">한국범스카우트중앙회 · TSAK</div>');
+  // 레터헤드 — 브랜드 · 문서명 + 1 of 1
+  head.write(
+    '<div class="letter"><span class="lbrand">한국범스카우트중앙회 · TSAK</span>'
+    '<span class="lpage">1 of 1</span></div>',
+  );
   head.write('<h1>${_esc(meta.title)}</h1>');
   if (meta.subtitle.trim().isNotEmpty) {
     head.write('<div class="sub2">${_esc(meta.subtitle)}</div>');
@@ -124,6 +136,14 @@ String buildMujiDoc({
       '<div class="meta">${metaItems.join()}'
       '<div class="facts">$factHtml</div></div>';
 
+  // PART 라벨 — 표 위 구분선 + 섹션 표시.
+  final rowCount = rows.length;
+  final partLabel = columns.isEmpty
+      ? ''
+      : '<div class="part"><span class="plabel">PART 1</span>'
+            '<span class="prule"></span>'
+            '<span class="pcount">${rowCount > 0 ? '$rowCount개 항목' : ''}</span></div>';
+
   final thead = columns.isEmpty
       ? ''
       : '<tr>${columns.map((c) => '<th>$c</th>').join()}</tr>';
@@ -138,52 +158,79 @@ String buildMujiDoc({
       ? ''
       : '<div class="sum">$summary</div>';
 
+  final footRightText = footerRight.isNotEmpty
+      ? footerRight
+      : '출력규칙 · 보고서 · 1/1';
   return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>${_esc(meta.title)}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
  *{box-sizing:border-box}
- @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:14mm}
+ @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:12mm}
  body{font-family:$kDocFontStack;color:#3A3A3A;
-   padding:30px;max-width:820px;margin:0 auto;background:#fff;font-size:13px}
- .brand{font-size:11px;letter-spacing:3px;color:#9A9388}
- h1{font-size:21px;color:#4A4A48;font-weight:600;margin:4px 0 2px}
- .sub2{font-size:12.5px;color:#8C877E;margin:2px 0 10px}
- .meta{padding:12px 0;border-top:1px solid #E4E0D8;border-bottom:1px solid #E4E0D8;
-   font-size:11.5px;line-height:1.7}
+   padding:24px;margin:0;background:#EFEDE8;font-size:13px}
+ /* 페이지 테두리 박스(샘플 규칙) */
+ .page{background:#fff;border:1px solid #D8D3CA;border-radius:4px;
+   padding:26px 26px 16px;max-width:820px;margin:16px auto;
+   box-shadow:0 1px 3px rgba(0,0,0,.05)}
+ /* 레터헤드 */
+ .letter{display:flex;justify-content:space-between;align-items:center;
+   font-size:10px;letter-spacing:1.2px;color:#9A9388;padding-bottom:6px;
+   border-bottom:1px solid #EDEAE3}
+ .letter .lbrand{font-weight:700}
+ .letter .lpage{font-variant-numeric:tabular-nums}
+ h1{font-size:22px;color:#3A3A3A;font-weight:800;margin:14px 0 6px;letter-spacing:-.3px}
+ .sub2{font-size:12.5px;color:#8C877E;margin:0 0 12px}
+ .meta{padding:10px 0;border-top:1px solid #E4E0D8;border-bottom:1px solid #E4E0D8;
+   font-size:11px;line-height:1.7;margin-bottom:4px}
  .desc{font-size:12px;color:#5A564E;margin-bottom:8px;white-space:pre-wrap}
- .facts{display:flex;flex-wrap:wrap;gap:0 24px;color:#8C877E}
- .facts b{color:#6E6960;font-weight:600;display:inline-block;min-width:52px}
- table{width:100%;border-collapse:collapse;margin-top:16px}
- th{font-weight:600;color:#6E6960;text-align:left;font-size:12px;letter-spacing:.4px;
-   border-bottom:1px solid #4A4A48;padding:8px 10px}
+ .facts{display:flex;flex-wrap:wrap;gap:0 22px;color:#8C877E}
+ .facts b{color:#6E6960;font-weight:600;display:inline-block;min-width:50px}
+ /* PART 라벨 */
+ .part{display:flex;align-items:center;gap:10px;margin:14px 0 0}
+ .part .plabel{font-size:11px;font-weight:800;color:#fff;background:#3A3A3A;
+   padding:3px 9px;border-radius:3px;letter-spacing:.6px;white-space:nowrap}
+ .part .prule{flex:1;height:1px;background:#D8D3CA}
+ .part .pcount{font-size:11px;color:#8C877E;white-space:nowrap}
+ table{width:100%;border-collapse:collapse;margin-top:10px}
+ th{font-weight:700;color:#5A564E;text-align:left;font-size:11.5px;letter-spacing:.3px;
+   background:#F4F1EA;border-bottom:1px solid #C9C2B6;padding:8px 10px}
  td{border-bottom:1px solid #EDEAE3;padding:9px 10px;vertical-align:top}
+ tr:nth-child(even) td{background:#FBFAF7}
  .sub{font-size:11px;color:#9A9388;margin-top:2px}
- .sum{margin-top:20px;padding-top:14px;border-top:2px solid #4A4A48;text-align:right;font-size:13px;line-height:2}
+ .sum{margin-top:18px;padding:14px 16px;border-top:2px solid #3A3A3A;
+   background:#F8F7F4;border-radius:0 0 4px 4px;
+   text-align:right;font-size:13px;line-height:2}
  .sum .g{font-size:18px;font-weight:700;color:#7C6A9C}
- .foot{margin-top:28px;padding-top:12px;border-top:1px solid #E4E0D8;font-size:11px;color:#9A9388;
-   display:flex;justify-content:space-between}
+ .foot{margin-top:22px;padding-top:12px;border-top:1px solid #E4E0D8;font-size:11px;
+   color:#9A9388;display:flex;justify-content:space-between;
+   letter-spacing:.4px}
  /* 상단 툴바 — 닫기(뒤로가기)·인쇄 버튼. (모든 출력창 공통 규칙) */
  .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;align-items:center;
    justify-content:flex-end;padding:10px 14px;background:#F4F1EA;
-   border-bottom:1px solid #E4E0D8;margin:-30px -30px 16px}
+   border-bottom:1px solid #E4E0D8;margin:-24px -24px 16px}
  .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:center}
  .tsak-bar button{font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;
    border-radius:8px;padding:8px 16px;border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
  .tsak-bar button.pri{background:#7C6A9C;color:#fff}
  .tsak-bar button.back{background:#5E7A4B;color:#fff;border-color:#5E7A4B}
- @media print{.tsak-bar{display:none!important}body{padding:0}}
+ @media print{body{background:#fff;padding:0}
+   .tsak-bar{display:none!important}
+   .page{border:0;box-shadow:none;margin:0;padding:0;max-width:none}}
 </style></head><body>
 <div class="tsak-bar">
   <button class="back" onclick="window.close(); if(!window.closed){history.back();}" title="이전 화면으로">‹ 돌아가기</button>
   <span class="sp">${_esc(meta.title)}</span>
   <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
 </div>
+<div class="page">
 $head
 $metaHtml
+$partLabel
 $table
 $sumHtml
-<div class="foot"><span>${_esc(footerLeft)}</span><span>${_esc(footerRight.isNotEmpty ? footerRight : now)}</span></div>
+<div class="foot"><span>${_esc(footerLeft)}</span><span>${_esc(footRightText)}</span></div>
+</div>
 </body></html>''';
 }
 
@@ -205,11 +252,20 @@ String wrapPrintHtml(String title, String inner, {bool landscape = false}) =>
 <style>
  *{box-sizing:border-box}
  @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:14mm}
- body{font-family:$kDocFontStack;color:#2c2c2c;padding:0;margin:0;background:#fff}
- .print-body{padding:24px}
- table{border-collapse:collapse;width:100%;font-size:12.5px}
+ body{font-family:$kDocFontStack;color:#3A3A3A;padding:0;margin:0;background:#EFEDE8;font-size:13px}
+ /* 샘플 규격: 페이지 테두리 박스 + 레터헤드 */
+ .page{background:#fff;border:1px solid #D8D3CA;border-radius:4px;
+   padding:26px 26px 16px;max-width:820px;margin:16px auto;
+   box-shadow:0 1px 3px rgba(0,0,0,.05)}
+ .letter{display:flex;justify-content:space-between;align-items:center;
+   font-size:10px;letter-spacing:1.2px;color:#9A9388;padding-bottom:6px;
+   border-bottom:1px solid #EDEAE3}
+ .letter .lbrand{font-weight:700}
+ .print-body{padding:0}
+ table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:10px}
  th,td{border-bottom:1px solid #EDEAE3;padding:8px 10px}
  th{background:#F4F1EA;color:#5A564E;font-weight:700}
+ tr:nth-child(even) td{background:#FBFAF7}
  /* 상단 툴바 — 닫기(뒤로가기)·인쇄 버튼. (모든 출력창 공통 규칙) */
  .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;align-items:center;
    justify-content:flex-end;padding:10px 14px;background:#F4F1EA;
@@ -219,12 +275,16 @@ String wrapPrintHtml(String title, String inner, {bool landscape = false}) =>
    border-radius:8px;padding:8px 16px;border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
  .tsak-bar button.pri{background:#7C6A9C;color:#fff}
  .tsak-bar button.back{background:#5E7A4B;color:#fff;border-color:#5E7A4B}
- @media print{.tsak-bar{display:none!important}.print-body{padding:0}}
+ @media print{body{background:#fff;padding:0}.tsak-bar{display:none!important}
+   .page{border:0;box-shadow:none;margin:0;padding:0;max-width:none}.print-body{padding:0}}
 </style></head><body>
 <div class="tsak-bar">
   <button class="back" onclick="window.close(); if(!window.closed){history.back();}" title="이전 화면으로">‹ 돌아가기</button>
   <span class="sp">${_esc(title)}</span>
   <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
 </div>
-<div class="print-body">$inner</div>
+<div class="page">
+  <div class="letter"><span class="lbrand">한국범스카우트중앙회 · TSAK</span><span>1 of 1</span></div>
+  <div class="print-body">$inner</div>
+</div>
 </body></html>''';

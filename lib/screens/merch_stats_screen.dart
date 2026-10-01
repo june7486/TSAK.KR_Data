@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nas_api.dart';
 import '../services/doc_pdf.dart';
@@ -508,7 +507,11 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
     description: '주문·매출·입금·미수금 현황을 정리한 리포트입니다.',
     extra: {
       '총 주문': '${_orders.length}건',
-      '총 매출': _won(_orders.where((o) => !_isCancelled(o)).fold<int>(0, (p, o) => p + _actual(o))),
+      '총 매출': _won(
+        _orders
+            .where((o) => !_isCancelled(o))
+            .fold<int>(0, (p, o) => p + _actual(o)),
+      ),
     },
   );
 
@@ -530,9 +533,7 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
       body: _reportText(),
       fallbackText: '[수품 통계·현황]\n\n${_reportText()}',
     );
-    await _snackAsync(
-      opened ? '메일 앱을 열었습니다' : '메일 앱을 열 수 없어 내용을 복사했습니다',
-    );
+    await _snackAsync(opened ? '메일 앱을 열었습니다' : '메일 앱을 열 수 없어 내용을 복사했습니다');
   }
 
   Future<void> _share() async {

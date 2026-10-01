@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'doc_pdf.dart';
 import '../models/member.dart';
 
 /// 내보내기 형식 (PDF / JPG / 엑셀 / 워드 / PPT / 텍스트)
@@ -497,8 +498,10 @@ class ExportService {
     final cellStyle = pw.TextStyle(font: reg, fontSize: 7.2);
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(18),
+        pageTheme: tsakPdfPageTheme(
+          format: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(18),
+        ),
         header: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -515,7 +518,7 @@ class ExportService {
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
-            '한국범스카우트중앙회   ·   ${ctx.pageNumber} / ${ctx.pagesCount}',
+            '출력규칙 · 보고서 · ${ctx.pageNumber}/${ctx.pagesCount}',
             style: pw.TextStyle(
               font: reg,
               fontSize: 8,

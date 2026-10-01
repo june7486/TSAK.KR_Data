@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'print_doc.dart';
+import 'doc_pdf.dart';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
@@ -197,9 +198,10 @@ class FinanceExportService {
     final tables = d.tables.where((t) => !t.isEmpty).toList();
     doc.addPage(
       pw.MultiPage(
-        theme: theme,
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(22),
+        pageTheme: tsakPdfPageTheme(
+          format: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(22),
+        ).copyWith(theme: theme),
         header: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -217,12 +219,9 @@ class FinanceExportService {
             pw.Divider(),
           ],
         ),
-        footer: (ctx) => pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: pw.Text(
-            '${ctx.pageNumber} / ${ctx.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9),
-          ),
+        footer: (ctx) => tsakPdfFooter(
+          pageNumber: ctx.pageNumber,
+          pagesCount: ctx.pagesCount,
         ),
         build: (ctx) {
           final out = <pw.Widget>[];
