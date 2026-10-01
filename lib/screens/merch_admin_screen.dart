@@ -41,11 +41,11 @@ class MerchAdminScreen extends StatefulWidget {
 class _MerchAdminScreenState extends State<MerchAdminScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(
-    length: 11,
+    length: 12,
     vsync: this,
     initialIndex: widget.initialTab < 0
         ? 0
-        : (widget.initialTab > 10 ? 10 : widget.initialTab),
+        : (widget.initialTab > 11 ? 11 : widget.initialTab),
   );
 
   NasApi get _nas => context.read<NasApi>();
@@ -74,6 +74,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   final List<Map<String, dynamic>> _archived = [];
   // 주문내역별 보기 — ON 시 주문번호 묶음 내부를 주문번호별로 펼쳐서 노출
   bool _perOrderView = false;
+
+  // 삭제주문 관리 탭 — 좌측 선택창에서 고른 삭제 항목(그룹키)
+  final Set<String> _delSel = {};
+  // 좌측 선택창 필터: '' = 전체, 'order' = 주문만, 'reserve' = 예약·수요조사만
+  String _delFilter = '';
+  // 일괄 처리(복원/완전삭제) 순차 실행 진행 표시
+  bool _delBusy = false;
+  int _delBusyDone = 0;
+  int _delBusyTotal = 0;
+  String _delBusyLabel = '';
 
   // 수품판매대장(ledger)
   List<Map<String, dynamic>> _ledgerRows = [];
@@ -277,6 +287,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               children: [
                 _productsTab(),
                 _ordersTab(),
+                _deletedOrdersTab(),
                 _reportsTab(),
                 _ledgerTab(),
                 _stockTab(),
@@ -312,6 +323,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   static const List<String> _tabLabels = [
     '상품관리',
     '주문관리',
+    '삭제주문',
     '누적판매',
     '판매대장',
     '재고',
@@ -324,7 +336,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   ];
 
   /// 마스터 전용 탭 인덱스 (#9: 수품제작 리스트 등은 마스터만 접근).
-  static const Set<int> _masterOnlyTabs = {5, 6, 9};
+  static const Set<int> _masterOnlyTabs = {6, 7, 10};
 
   Widget _errorView() => Center(
     child: Column(
@@ -562,11 +574,24 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         else if (_perOrderView)
           for (final g in reserveGroups) ..._perOrderBlocks(g, isReserve: true)
         else
-          for (final g in reserveGroups) _groupCard(g, isReserve: true),
-        const SizedBox(height: 20),
-        _deletedSection(),
-        const SizedBox(height: 10),
-        if (_showArchive) _archiveSection(),
+          for (final g in reserveGroups)
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (_selMode)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 2),
+                      child: Checkbox(
+                        value: _selKeys.contains(_groupKeyOf(g.first)),
+                        onChanged: (_) => _toggleSel(_groupKeyOf(g.first)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  Expanded(child: _groupCard(g, isReserve: true)),
+                ],
+              ),
+            ),
       ],
     );
   }
@@ -772,6 +797,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   // ---------- 일괄편집 툴바 ----------
   Widget _bulkToolbar() {
+    final orderGroups = _orderedGroups(_orders);
+    final reserveGroups = _orderedGroups(_reserves);
+    final allKeys = <String>[
+      for (final g in orderGroups) _groupKeyOf(g.first),
+      for (final g in reserveGroups) _groupKeyOf(g.first),
+    ];
+    final orderKeys = [for (final g in orderGroups) _groupKeyOf(g.first)];
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -813,7 +845,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           if (_selMode) ...[
             const SizedBox(height: 4),
             Text(
-              '선택 ${_selKeys.length}건 · 우측 「순서변경」 손잡이를 끌어 이동',
+              '선택 ${_selKeys.length}건 · 주문·예약·수요조사를 함께 선택할 수 있습니다.',
               style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
             const SizedBox(height: 8),
@@ -843,7 +875,49 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                   onPressed: _selKeys.isEmpty ? null : _deleteSelected,
                   icon: const Icon(Icons.delete_outline, size: 16),
-                  label: const Text('주문 삭제', style: TextStyle(fontSize: 12.5)),
+                  label: const Text('선택 삭제', style: TextStyle(fontSize: 12.5)),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.purpleDark,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  onPressed: orderKeys.isEmpty
+                      ? null
+                      : () => setState(
+                          () => _selKeys
+                            ..clear()
+                            ..addAll(orderKeys),
+                        ),
+                  icon: const Icon(Icons.done_all, size: 16),
+                  label: const Text(
+                    '주문 전체선택',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.deepOrange,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  onPressed: allKeys.isEmpty
+                      ? null
+                      : () => setState(
+                          () => _selKeys
+                            ..clear()
+                            ..addAll(allKeys),
+                        ),
+                  icon: const Icon(Icons.select_all, size: 16),
+                  label: const Text(
+                    '예약포함 전체선택',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
                 ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
@@ -867,12 +941,329 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  // ---------- 삭제된 주문(30일 보관) ----------
-  Widget _deletedSection() {
-    final deleted = <List<Map<String, dynamic>>>[
-      ..._orderedGroups(_deletedOrders),
-      ..._orderedGroups(_deletedReserves),
-    ];
+  // ============ 삭제주문 관리 탭 (좌측 선택창 + 일괄 복원/완전삭제) ============
+  /// 삭제된 주문·예약을 그룹 단위 항목으로 변환.
+  List<_DelEntry> _deletedEntries() {
+    final out = <_DelEntry>[];
+    for (final g in _orderedGroups(_deletedOrders)) {
+      out.add(_DelEntry(_groupKeyOf(g.first), g, false));
+    }
+    for (final g in _orderedGroups(_deletedReserves)) {
+      out.add(_DelEntry(_groupKeyOf(g.first), g, true));
+    }
+    // "먼저 오더한것부터" — 생성(주문) 시각 오름차순으로 정렬.
+    out.sort((a, b) => _deletedSortKey(a).compareTo(_deletedSortKey(b)));
+    return out;
+  }
+
+  /// 순차 실행 정렬 키 — 먼저 오더한 항목이 앞으로.
+  String _deletedSortKey(_DelEntry e) {
+    final h = e.items.first;
+    final c = '${h['created'] ?? h['createdAt'] ?? ''}'.trim();
+    if (c.isNotEmpty) return c;
+    return '${h['deletedAt'] ?? ''}'.trim();
+  }
+
+  Widget _deletedOrdersTab() {
+    final entries = _deletedEntries();
+    final shown = _delFilter.isEmpty
+        ? entries
+        : entries
+              .where(
+                (e) => _delFilter == 'reserve' ? e.isReserve : !e.isReserve,
+              )
+              .toList();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+      children: [
+        _subHeader(
+          '삭제주문 관리 (${entries.length}건)',
+          '좌측 선택창에서 고른 뒤 복원·완전삭제를 동시에 실행 · 먼저 주문한 항목부터 순차 처리',
+          Icons.delete_sweep_outlined,
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (ctx, c) {
+            final wide = c.maxWidth >= 660;
+            final left = _delSelectPanel(entries, shown);
+            final right = _delListPanel(entries);
+            if (wide) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 250, child: left),
+                  const SizedBox(width: 12),
+                  Expanded(child: right),
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [left, const SizedBox(height: 12), right],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        if (_showArchive) _archiveSection(),
+      ],
+    );
+  }
+
+  /// 좌측 「선택 창」 — 필터·전체선택·개별 선택·일괄 실행 버튼.
+  Widget _delSelectPanel(List<_DelEntry> entries, List<_DelEntry> shown) {
+    final shownKeys = shown.map((e) => e.key).toList();
+    final orderCnt = entries.where((e) => !e.isReserve).length;
+    final resCnt = entries.where((e) => e.isReserve).length;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.checklist, size: 16, color: Colors.red),
+              const SizedBox(width: 5),
+              const Text(
+                '선택 창',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: Colors.red,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_delSel.length}건 선택',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purpleDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // 필터 — 전체 / 주문 / 예약·수요조사
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _delFilterChip('전체', '', entries.length),
+              _delFilterChip('주문', 'order', orderCnt),
+              _delFilterChip('예약·수요조사', 'reserve', resCnt),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                onPressed: shownKeys.isEmpty
+                    ? null
+                    : () => setState(() => _delSel.addAll(shownKeys)),
+                child: const Text('표시 전체선택', style: TextStyle(fontSize: 11.5)),
+              ),
+              const Spacer(),
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                onPressed: _delSel.isEmpty
+                    ? null
+                    : () => setState(() => _delSel.clear()),
+                child: const Text('선택 해제', style: TextStyle(fontSize: 11.5)),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          if (shown.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                '삭제된 항목이 없습니다.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [for (final e in shown) _delSelRow(e)],
+                ),
+              ),
+            ),
+          const Divider(height: 12),
+          // ── 일괄 실행: 복원 / 완전삭제 (선택분을 동시에, 순차 실행) ──
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.scoutGreen,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: (_delSel.isEmpty || _delBusy)
+                  ? null
+                  : () => _deletedRunBatch(restore: true),
+              icon: const Icon(Icons.restore, size: 16),
+              label: const Text(
+                '선택 복원',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: (_delSel.isEmpty || _delBusy)
+                  ? null
+                  : () => _deletedRunBatch(restore: false),
+              icon: const Icon(Icons.delete_forever, size: 16),
+              label: const Text(
+                '선택 완전삭제',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          if (_delBusy) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: _delBusyTotal == 0 ? null : _delBusyDone / _delBusyTotal,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$_delBusyLabel 순차 처리 중… $_delBusyDone/$_delBusyTotal',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.purpleDark,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _delFilterChip(String label, String value, int count) {
+    final on = _delFilter == value;
+    return GestureDetector(
+      onTap: () => setState(() => _delFilter = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: on ? AppColors.purple.withValues(alpha: 0.14) : AppColors.bg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: (on ? AppColors.purple : AppColors.textGray).withValues(
+              alpha: 0.4,
+            ),
+          ),
+        ),
+        child: Text(
+          '$label $count',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: on ? AppColors.purpleDark : AppColors.textGray,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _delSelRow(_DelEntry e) {
+    final h = e.items.first;
+    final orderNo = '${h['orderNo'] ?? ''}'.trim();
+    final buyer = '${h['buyerName'] ?? ''}'.trim();
+    final checked = _delSel.contains(e.key);
+    return InkWell(
+      onTap: () => setState(() {
+        if (checked) {
+          _delSel.remove(e.key);
+        } else {
+          _delSel.add(e.key);
+        }
+      }),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Row(
+          children: [
+            Checkbox(
+              value: checked,
+              onChanged: (_) => setState(() {
+                if (checked) {
+                  _delSel.remove(e.key);
+                } else {
+                  _delSel.add(e.key);
+                }
+              }),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    orderNo.isEmpty ? '(번호없음)' : orderNo,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${e.isReserve ? '예약·수요조사' : '주문'} · '
+                    '${buyer.isEmpty ? '구매자 미상' : buyer} · ${e.items.length}항목',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textGray,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 우측 — 삭제 항목 상세 목록(개별 복원/완전삭제 포함).
+  Widget _delListPanel(List<_DelEntry> entries) {
+    if (entries.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.18)),
+        ),
+        child: const Text(
+          '삭제된 주문이 없습니다.',
+          style: TextStyle(fontSize: 12, color: AppColors.textGray),
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -888,7 +1279,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               const Icon(Icons.delete_outline, size: 17, color: Colors.red),
               const SizedBox(width: 6),
               Text(
-                '삭제된 주문 (${deleted.length}건)',
+                '삭제된 주문 목록 (${entries.length}건)',
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 13.5,
@@ -899,18 +1290,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           ),
           const SizedBox(height: 4),
           const Text(
-            '※ 삭제 후 30일간 보관되며, 30일이 지나면 목록에서 사라집니다. '
-            '(아래 "30일 초과 삭제 내역"에서 계속 확인 가능)',
+            '※ 삭제 후 30일간 보관되며, 30일이 지나면 아래 보관함으로 이동합니다.',
             style: TextStyle(fontSize: 11, color: AppColors.textGray),
           ),
           const SizedBox(height: 8),
-          if (deleted.isEmpty)
-            const Text(
-              '삭제된 주문이 없습니다.',
-              style: TextStyle(fontSize: 12, color: AppColors.textGray),
-            )
-          else
-            for (final g in deleted) _deletedRow(g),
+          for (final e in entries) _deletedRow(e.items),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -927,6 +1311,44 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ],
       ),
     );
+  }
+
+  /// 선택분을 먼저 주문한 순서대로 하나씩(순차) 복원/완전삭제.
+  Future<void> _deletedRunBatch({required bool restore}) async {
+    final sel = _deletedEntries()
+        .where((e) => _delSel.contains(e.key))
+        .toList();
+    if (sel.isEmpty) return;
+    sel.sort((a, b) => _deletedSortKey(a).compareTo(_deletedSortKey(b)));
+    final yes = await _confirm(
+      restore ? '선택 복원' : '선택 완전삭제',
+      restore
+          ? '선택한 ${sel.length}건을 순서대로 복원할까요?\n(먼저 주문한 항목부터 순차 실행)'
+          : '선택한 ${sel.length}건을 완전 삭제할까요?\n복원할 수 없습니다. (먼저 주문한 항목부터 순차 실행)',
+    );
+    if (yes != true) return;
+    setState(() {
+      _delBusy = true;
+      _delBusyDone = 0;
+      _delBusyTotal = sel.length;
+      _delBusyLabel = restore ? '복원' : '완전삭제';
+    });
+    int ok = 0;
+    for (final e in sel) {
+      final r = restore
+          ? await _nas.merchOrdersRestore([e.key])
+          : await _nas.merchOrdersHardDelete([e.key]);
+      if (r['ok'] == true) ok++;
+      if (!mounted) return;
+      setState(() {
+        _delBusyDone++;
+        _delSel.remove(e.key);
+      });
+    }
+    if (!mounted) return;
+    setState(() => _delBusy = false);
+    _snack('$ok/${sel.length}건 ${restore ? '복원' : '완전삭제'} 완료');
+    _load();
   }
 
   Widget _deletedRow(List<Map<String, dynamic>> items) {
@@ -1139,14 +1561,41 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   }
 
   // ----- 삭제 / 복원 / 완전삭제 -----
+  /// 선택키를 "먼저 오더한 것부터" 순서로 정렬(주문·예약 통합).
+  List<String> _keysInOrder(Iterable<String> keys) {
+    final set = keys.toSet();
+    final order = <String>[];
+    final groups = <List<Map<String, dynamic>>>[
+      ..._orderedGroups(_orders),
+      ..._orderedGroups(_reserves),
+    ];
+    groups.sort((a, b) {
+      final ka = '${a.first['created'] ?? a.first['createdAt'] ?? ''}';
+      final kb = '${b.first['created'] ?? b.first['createdAt'] ?? ''}';
+      return ka.compareTo(kb);
+    });
+    for (final g in groups) {
+      final k = _groupKeyOf(g.first);
+      if (set.contains(k)) order.add(k);
+    }
+    // 목록에 없던 키(이미 삭제됨 등)는 뒤에 보존
+    for (final k in set) {
+      if (!order.contains(k)) order.add(k);
+    }
+    return order;
+  }
+
   Future<void> _deleteSelected() async {
     if (_selKeys.isEmpty) return;
+    final ordered = _keysInOrder(_selKeys);
     final yes = await _confirm(
-      '주문 삭제',
-      '선택한 ${_selKeys.length}건을 삭제할까요?\n삭제 후 30일간 보관되며 복원할 수 있습니다.',
+      '선택 삭제',
+      '선택한 ${_selKeys.length}건을 삭제할까요?\n'
+          '주문·예약·수요조사를 함께 삭제할 수 있으며, 먼저 주문한 항목부터 순차 처리됩니다.\n'
+          '삭제 후 30일간 보관되며 복원할 수 있습니다.',
     );
     if (yes != true) return;
-    final r = await _nas.merchOrdersDelete(_selKeys.toList());
+    final r = await _nas.merchOrdersDelete(ordered);
     if (!mounted) return;
     if (r['ok'] == true) {
       _snack('${r['count']}항목을 삭제했습니다 (30일 보관)');
@@ -6346,6 +6795,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
+}
+
+/// 삭제주문 관리 — 그룹 단위 항목(주문 묶음 또는 예약·수요조사 묶음).
+class _DelEntry {
+  _DelEntry(this.key, this.items, this.isReserve);
+
+  final String key;
+  final List<Map<String, dynamic>> items;
+  final bool isReserve;
 }
 
 /// 재고 수량 인라인 편집 위젯 — 숫자를 누르면 바로 입력/저장.

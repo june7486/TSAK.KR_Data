@@ -202,7 +202,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   '수품 재고 확인',
                   Icons.inventory_2,
                   AppColors.scoutGreen,
-                  () => _pushTab(4),
+                  () => _pushTab(5),
                 ),
                 _tile(
                   '행사 확인',

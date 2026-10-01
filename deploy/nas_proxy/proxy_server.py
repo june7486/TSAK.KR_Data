@@ -11186,23 +11186,31 @@ class Handler(BaseHTTPRequestHandler):
                 _merch_save(doc)
                 return self._json({"ok": True, "count": n})
             if p == "/api/merch/orders/hard-delete":
-                # 삭제된 주문 즉시 영구 삭제(회원 프로필에서도 분리).
+                # 삭제된 주문/예약 즉시 영구 삭제(회원 프로필에서도 분리).
                 if not self._require("admin"):
                     return
                 d = json.loads(self._body() or b"{}")
                 doc = _merch_doc()
                 keys = [str(x) for x in (d.get("keys") or []) if str(x).strip()]
-                removed = [x for x in doc.get("orders", [])
-                           if _merch_group_key(x) in keys]
+                # 주문 + 예약 모두 대상(삭제주문 관리에서 함께 완전삭제 가능).
+                removed = []
+                for x in doc.get("orders", []):
+                    if _merch_group_key(x) in keys:
+                        removed.append((x, "order"))
+                for x in doc.get("reservations", []):
+                    if _merch_group_key(x) in keys:
+                        removed.append((x, "reservation"))
                 doc["orders"] = [x for x in doc.get("orders", [])
                                  if _merch_group_key(x) not in keys]
+                doc["reservations"] = [x for x in doc.get("reservations", [])
+                                       if _merch_group_key(x) not in keys]
                 doc["orderOrder"] = [k for k in doc.get("orderOrder", [])
                                      if k not in keys]
                 _merch_save(doc)
-                for rec in removed:
+                for rec, kind in removed:
                     if rec.get("contactId"):
                         _merch_detach_from_member(
-                            rec.get("contactId"), rec.get("id"), "order")
+                            rec.get("contactId"), rec.get("id"), kind)
                 return self._json({"ok": True, "removed": len(removed)})
             if p == "/api/merch/orders/order":
                 # 표시 순서 저장(드래그 재정렬 결과). keys=최종 순서 배열.
