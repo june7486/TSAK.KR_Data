@@ -10,6 +10,7 @@ import '../services/export_save.dart';
 import '../services/file_save.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
+import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
 import '../services/web_nav.dart';
@@ -400,8 +401,18 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         await _saveBytes(bytes, '$base.pdf');
         return;
       case TsakOutputFormat.jpg:
-        openPrintableHtml(_docHtml());
-        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        // 규칙: 실제 .jpg 파일을 생성해 저장(인쇄창 불필요).
+        try {
+          final pdfBytes = await DocPdf.buildFromText(
+            meta: meta,
+            text: _plainText(TsakOutputFormat.word),
+            footerLeft: '한국범스카우트중앙회',
+          );
+          final jpg = await pdfToJpg(pdfBytes);
+          await _saveBytes(jpg, '$base.jpg', mime: 'image/jpeg');
+        } catch (e) {
+          _snack('JPG 생성 실패: $e');
+        }
         return;
       case TsakOutputFormat.excel:
         await _saveText(_csvText(), '$base.csv');

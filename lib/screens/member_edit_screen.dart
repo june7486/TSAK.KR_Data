@@ -363,6 +363,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 icon: Icons.family_restroom,
                 kind: 'parent',
                 codes: _parents,
+                // 요구: 소속연맹/단위대가 없으면 인가자(본인) 값을 쓴다.
+                defaultLeague: _league.text.trim(),
+                defaultUnit: _unit.text.trim(),
                 onChanged: (v) => setState(() => _parents = v),
                 editable: _canEditLinks,
               ),

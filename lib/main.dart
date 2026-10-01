@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
@@ -53,8 +54,46 @@ class TsakApp extends StatelessWidget {
       title: AppConfig.appTitle,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
+      // 규칙: 모든 창의 텍스트를 선택·복사할 수 있게 한다(PC 우클릭/드래그).
+      //  · SelectionArea 가 트리 전체의 Text 를 선택 가능하게 만든다.
+      //  · 데스크톱(PC 웹)에서는 마우스 드래그로 스크롤되도록 스크롤 동작을
+      //    바꿔, 스크롤 막대 없이도 끌어서 이동할 수 있게 한다.
+      scrollBehavior: const _TsakScrollBehavior(),
+      builder: (context, child) => _TextSelectionHost(child: child),
       home: const AuthGate(),
     );
+  }
+}
+
+/// 웹/데스크톱에서 마우스로 목록을 끌어 스크롤할 수 있게 하는 동작.
+///
+/// (모바일은 기존 터치 스크롤 그대로 — 마우스 입력이 있을 때만 확장한다.)
+class _TsakScrollBehavior extends MaterialScrollBehavior {
+  const _TsakScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+  };
+}
+
+/// 모든 화면의 텍스트를 **선택·복사** 가능하게 만드는 전역 래퍼.
+///
+/// `SelectionArea` 는 하위 트리의 `Text`·`RichText` 를 길게 눌러(모바일) 또는
+/// 드래그(PC) 선택할 수 있게 하고, PC 우클릭 시 "복사" 메뉴를 제공한다.
+class _TextSelectionHost extends StatelessWidget {
+  const _TextSelectionHost({required this.child});
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (child == null) return const SizedBox.shrink();
+    return SelectionArea(child: child!);
   }
 }
 

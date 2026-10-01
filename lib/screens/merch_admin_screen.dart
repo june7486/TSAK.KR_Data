@@ -11,6 +11,7 @@ import '../services/app_state.dart';
 import '../services/doc_pdf.dart';
 import '../services/export_save.dart';
 import '../services/nas_api.dart';
+import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
 import '../services/web_nav.dart';
@@ -2470,9 +2471,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await pdf();
         return;
       case TsakOutputFormat.jpg:
-        // 이미지 저장은 브라우저 인쇄창의 "이미지로 저장" 사용.
-        openPrintableHtml(_reportDocHtml());
-        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        await _saveJpgFromDoc(
+          meta: _reportMeta(),
+          summary: _reportText().split('\n'),
+          filename: '$base.jpg',
+        );
         return;
       case TsakOutputFormat.excel:
         await _saveText(_reportCsvText(), '$base.csv');
@@ -2605,6 +2608,65 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       }
     } catch (e) {
       if (mounted) _snack('파일 저장 실패: $e');
+    }
+  }
+
+  /// **HTML 문서에서 실제 JPG 파일**을 만들어 저장한다. (규칙: 모든 출력메뉴에 JPG)
+  ///
+  /// HTML 을 그대로 PDF 바이트로 만든 뒤 래스터화하여 진짜 .jpg 를 생성한다.
+  /// (인쇄창의 "이미지로 저장" 방식은 환경에 따라 동작하지 않아 폐기)
+  Future<void> _saveJpgFromDoc({
+    required DocMeta meta,
+    List<String> columns = const [],
+    List<List<DocCell>> rows = const [],
+    List<String> summary = const [],
+    String footerLeft = '한국범스카우트중앙회 수품',
+    bool landscape = false,
+    required String filename,
+  }) async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: filename));
+      if (mounted) _snack('JPG 는 웹에서 생성됩니다(기기에서는 내용을 복사했습니다)');
+      return;
+    }
+    try {
+      final pdf = await DocPdf.build(
+        meta: meta,
+        columns: columns,
+        rows: rows,
+        summary: summary,
+        footerLeft: footerLeft,
+        landscape: landscape,
+      );
+      final jpg = await pdfToJpg(pdf);
+      await _saveBytes(jpg, filename, mime: 'image/jpeg');
+    } catch (e) {
+      if (mounted) _snack('JPG 생성 실패: $e');
+    }
+  }
+
+  /// **텍스트 기반 문서에서 실제 JPG 파일**을 만들어 저장한다(규칙: 모든 출력메뉴에 JPG).
+  Future<void> _saveJpgFromText({
+    required DocMeta meta,
+    required String text,
+    String footerLeft = '한국범스카우트중앙회 수품',
+    required String filename,
+  }) async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) _snack('JPG 는 웹에서 생성됩니다(기기에서는 내용을 복사했습니다)');
+      return;
+    }
+    try {
+      final pdf = await DocPdf.buildFromText(
+        meta: meta,
+        text: text,
+        footerLeft: footerLeft,
+      );
+      final jpg = await pdfToJpg(pdf);
+      await _saveBytes(jpg, filename, mime: 'image/jpeg');
+    } catch (e) {
+      if (mounted) _snack('JPG 생성 실패: $e');
     }
   }
 
@@ -2751,8 +2813,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveBytes(bytes, '$base.pdf');
         return;
       case TsakOutputFormat.jpg:
-        openPrintableHtml(_ledgerDocHtml());
-        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        await _saveJpgFromText(
+          meta: _ledgerMeta(),
+          text: _ledgerText(),
+          filename: '$base.jpg',
+        );
         return;
       case TsakOutputFormat.excel:
         await _saveText(_ledgerCsvText(), '$base.csv');
@@ -3629,8 +3694,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveBytes(bytes, '$base.pdf');
         return;
       case TsakOutputFormat.jpg:
-        openPrintableHtml(_stockDocHtml(stock));
-        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        await _saveJpgFromText(
+          meta: _stockMeta(stock),
+          text: _stockText(stock),
+          filename: '$base.jpg',
+        );
         return;
       case TsakOutputFormat.excel:
         await _saveText(_stockCsvText(stock), '$base.csv');
@@ -4104,8 +4172,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveBytes(bytes, '$base.pdf');
         return;
       case TsakOutputFormat.jpg:
-        openPrintableHtml(_donationDocHtml());
-        _snack('인쇄창에서 대상=이미지로 저장하세요');
+        await _saveJpgFromText(
+          meta: _donationMeta(),
+          text: _donationText(),
+          filename: '$base.jpg',
+        );
         return;
       case TsakOutputFormat.excel:
         await _saveText(_donationCsvText(), '$base.csv');
@@ -5463,9 +5534,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         '총 합계': _won(totalAmt),
       },
     );
-    final summaryLine =
-        '총 <b>${_makers.length}</b>곳 · <b>$madeCount</b>건 · '
-        '합계 <span class="g">${_won(totalAmt)}</span>';
     // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
     const base = '수품_제작내역서';
     switch (format) {
@@ -5493,24 +5561,26 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveBytes(bytes, '$base.pdf');
         return;
       case TsakOutputFormat.jpg:
-        openPrintableHtml(
-          buildMujiDoc(
-            meta: meta,
-            columns: const [
-              '번호',
-              '제작자/담당',
-              '그룹·분류·규격',
-              '수량',
-              '단가',
-              '합계',
-              '제작일',
-              '메모',
-            ],
-            rows: rows,
-            summary: summaryLine,
-          ),
+        await _saveJpgFromDoc(
+          meta: meta,
+          columns: const [
+            '번호',
+            '제작자/담당',
+            '그룹·분류·규격',
+            '수량',
+            '단가',
+            '합계',
+            '제작일',
+            '메모',
+          ],
+          rows: rows,
+          summary: [
+            '총 ${_makers.length}곳 · $madeCount건',
+            '합계 ${_won(totalAmt)}',
+          ],
+          landscape: true,
+          filename: '$base.jpg',
         );
-        _snack('인쇄창에서 대상=이미지로 저장하세요');
         return;
       case TsakOutputFormat.excel:
         await _saveText(_makerCsv(), '$base.csv');

@@ -9,7 +9,9 @@ import '../services/app_state.dart';
 import '../services/doc_pdf.dart';
 import '../services/export_save.dart';
 import '../services/file_pick.dart';
+import '../services/mail_helper.dart';
 import '../services/nas_api.dart';
+import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
 import '../services/web_nav.dart';
@@ -836,6 +838,32 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
+  /// JPG 저장 — 실제 .jpg 파일 생성(인쇄창 불필요). (규칙: 모든 출력메뉴에 JPG)
+  Future<void> _saveJpg() async {
+    if (!isWebRuntime) {
+      await Clipboard.setData(ClipboardData(text: _orderText()));
+      _snack('내역을 복사했습니다(문서에 붙여넣기)');
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final pdf = await _orderPdfBytes();
+      final jpg = await pdfToJpg(pdf);
+      final name = '수품주문내역서_${widget.groupKey}.jpg';
+      final ok = await saveBytesAs(jpg, name, 'image/jpeg');
+      if (ok) {
+        _snack('$name 저장을 시작했습니다');
+      } else {
+        _snack('JPG 저장을 시작하지 못했습니다');
+      }
+    } catch (e) {
+      _snack('JPG 생성 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   /// 저장 — 기본 출력은 **PDF 실제 파일**. (p.28: jpg→pdf 로 변경)
   Future<void> _save() async {
     final go = await showDialog<bool>(
@@ -899,7 +927,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ListTile(
               leading: const Icon(Icons.image, color: AppColors.purple),
               title: const Text('JPG (이미지)'),
-              subtitle: const Text('인쇄화면에서 "이미지로 저장" · 스마트폰 저장에 적합'),
+              subtitle: const Text('실제 이미지 파일로 바로 저장 · 공유/보관용'),
               onTap: () => Navigator.pop(ctx, 'jpg'),
             ),
             ListTile(
@@ -950,8 +978,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         await _savePdf();
         break;
       case 'jpg':
-        // 이미지는 인쇄창의 "이미지로 저장"을 사용한다(브라우저가 JPG 캡처).
-        _print();
+        // 규칙: 실제 .jpg 파일을 생성해 저장(인쇄창 불필요).
+        await _saveJpg();
         break;
       case 'excel':
         await _downloadFile(
@@ -1007,20 +1035,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 
   Future<void> _mail() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: 'june7558@gmail.com',
-      query: _encodeQuery({
-        'subject': '[수품 주문내역] ${widget.groupKey}',
-        'body': _orderText(),
-      }),
+    // 요구: "메일 클릭시 아무것도 안나옴 → 자신의 기기에서 mailto 기능을 써주고
+    //       → 주문번호와 주문내용이 자동으로 입력됨".
+    //  · 제목에 주문번호, 본문에 주문내용 전체를 채워 **기기 메일 앱**을 연다.
+    //  · 메일 앱이 없으면 본문을 클립보드로 복사해 안내한다(폴백).
+    final subject = '[수품 주문내역] ${widget.groupKey}';
+    final body = _orderText();
+    // 주문자 이메일이 있으면 수신자로 자동 지정(없으면 빈 값 → 직접 입력).
+    final to = _s(_head, 'email');
+    final opened = await openMailOrCopy(
+      to: to,
+      subject: subject,
+      body: body,
+      fallbackText: '제목: $subject\n\n$body',
     );
-    try {
-      await launchUrl(uri);
-    } catch (_) {
-      await Clipboard.setData(ClipboardData(text: _orderText()));
-      _snack('메일을 열 수 없어 내역을 복사했습니다');
-    }
+    if (!mounted) return;
+    _snack(
+      opened
+          ? (to.isNotEmpty ? '메일 앱을 열었습니다 ($to)' : '메일 앱을 열었습니다')
+          : '메일 앱을 열 수 없어 주문내역을 복사했습니다 — 붙여넣어 보내세요',
+    );
   }
 
   String _encodeQuery(Map<String, String> q) => q.entries

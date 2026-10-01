@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,8 +7,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
+import '../services/doc_pdf.dart';
+import '../services/export_save.dart';
 import '../services/nas_api.dart';
 import '../services/output_formats.dart';
+import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
@@ -863,17 +867,62 @@ class _PlansTabState extends State<PlansTab> {
       ]);
     }
     final html = buildMujiDoc(
-      meta: DocMeta(
-        title: '수품 기획안 목록 (기획실)',
-        subtitle: '한국범스카우트중앙회 · 신규 수품 기획',
-        description: '신규 수품 기획 아이템과 수요조사 신청 현황입니다.',
-        author: _whoName(),
-        extra: {'기획 아이템': '${_plans.length}건'},
-      ),
-      columns: const ['번호', '아이템', '기획자', '가격', '기획안 제출일', '진행상황', '신청/최소'],
+      meta: _plansMeta(),
+      columns: _plansColumns,
       rows: rows,
     );
     return html;
+  }
+
+  static const List<String> _plansColumns = [
+    '번호',
+    '아이템',
+    '기획자',
+    '가격',
+    '기획안 제출일',
+    '진행상황',
+    '신청/최소',
+  ];
+
+  DocMeta _plansMeta() => DocMeta(
+    title: '수품 기획안 목록 (기획실)',
+    subtitle: '한국범스카우트중앙회 · 신규 수품 기획',
+    description: '신규 수품 기획 아이템과 수요조사 신청 현황입니다.',
+    author: _whoName(),
+    extra: {'기획 아이템': '${_plans.length}건'},
+  );
+
+  List<List<DocCell>> _plansRows() {
+    final rows = <List<DocCell>>[];
+    for (var i = 0; i < _plans.length; i++) {
+      final p = _plans[i];
+      final apps = (p['applicants'] as List?) ?? [];
+      final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
+      rows.add([
+        DocCell('${i + 1}', align: 'center'),
+        DocCell(
+          '${p['name'] ?? ''}',
+          accent: kMujiAccents[i % kMujiAccents.length],
+          bold: true,
+          sub: '${p['desc'] ?? ''}',
+        ),
+        DocCell('${p['maker'] ?? ''}'),
+        DocCell(
+          '${p['price'] ?? 0}'.isNotEmpty
+              ? _won((p['price'] as num?)?.toInt() ?? 0)
+              : '-',
+          align: 'right',
+        ),
+        DocCell('${p['submittedAt'] ?? ''}', align: 'center'),
+        DocCell('${p['progress'] ?? ''}'),
+        DocCell(
+          '${apps.length}${minQty > 0 ? ' / $minQty' : ''}명',
+          align: 'center',
+          bold: minQty > 0 && apps.length >= minQty,
+        ),
+      ]);
+    }
+    return rows;
   }
 
   /// 기획안 목록 출력 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
@@ -888,13 +937,33 @@ class _PlansTabState extends State<PlansTab> {
     if (isWebRuntime) {
       switch (format) {
         case TsakOutputFormat.pdf:
+          // 규칙: 실제 PDF 파일로 저장.
+          try {
+            final bytes = await DocPdf.build(
+              meta: _plansMeta(),
+              columns: _plansColumns,
+              rows: _plansRows(),
+              footerLeft: '한국범스카우트중앙회 수품',
+            );
+            await _saveBytes(bytes, '수품_기획안목록.pdf');
+          } catch (e) {
+            _snack('PDF 생성 실패: $e');
+          }
+          return;
         case TsakOutputFormat.jpg:
-          openPrintableHtml(html);
-          _snack(
-            format == TsakOutputFormat.jpg
-                ? '인쇄창에서 대상=이미지로 저장하세요'
-                : '인쇄창에서 PDF로 저장하세요',
-          );
+          // 규칙: 실제 .jpg 파일로 저장(인쇄창 불필요).
+          try {
+            final bytes = await DocPdf.build(
+              meta: _plansMeta(),
+              columns: _plansColumns,
+              rows: _plansRows(),
+              footerLeft: '한국범스카우트중앙회 수품',
+            );
+            final jpg = await pdfToJpg(bytes);
+            await _saveBytes(jpg, '수품_기획안목록.jpg', mime: 'image/jpeg');
+          } catch (e) {
+            _snack('JPG 생성 실패: $e');
+          }
           return;
         case TsakOutputFormat.excel:
           await Clipboard.setData(ClipboardData(text: _plansCsvText()));
@@ -909,6 +978,24 @@ class _PlansTabState extends State<PlansTab> {
     } else {
       await Clipboard.setData(ClipboardData(text: _plansPlainText(format)));
       _snack('기획안 목록을 복사했습니다');
+    }
+  }
+
+  /// 바이트를 실제 파일로 저장(웹) / 클립보드 폴백.
+  Future<void> _saveBytes(
+    Uint8List bytes,
+    String filename, {
+    String? mime,
+  }) async {
+    try {
+      final ok = await saveBytesAs(
+        bytes,
+        filename,
+        mime ?? mimeForFilename(filename),
+      );
+      _snack(ok ? '$filename 저장을 시작했습니다' : '저장하지 못했습니다');
+    } catch (e) {
+      _snack('저장 실패: $e');
     }
   }
 

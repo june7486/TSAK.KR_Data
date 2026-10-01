@@ -1812,6 +1812,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           kind: 'parent',
           codes: m.parents,
           editable: true,
+          // 요구: 소속연맹/단위대가 없으면 인가자(본인) 값을 쓴다.
+          defaultLeague: m.league,
+          defaultUnit: m.unit,
           onChanged: (v) => _saveLinks(m, parents: v),
         ),
       ],
