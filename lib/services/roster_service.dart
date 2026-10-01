@@ -111,7 +111,7 @@ class RosterService {
       3: const pw.FixedColumnWidth(56), // 이름
       4: const pw.FlexColumnWidth(2.0), // 소속
       5: const pw.FixedColumnWidth(24), // 성별
-      6: const pw.FixedColumnWidth(80), // 연락처 ← 확대(줄바꿈 방지)
+      6: const pw.FixedColumnWidth(94), // 연락처 ← 확대(전화번호 끝자리 줄바꿈 방지, p.11)
       7: const pw.FlexColumnWidth(1.7), // 메일
       8: const pw.FlexColumnWidth(1.6), // 항목
     };

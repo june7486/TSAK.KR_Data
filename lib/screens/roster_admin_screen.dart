@@ -121,8 +121,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   List<MapEntry<String, Map<String, dynamic>>> _linkProfiles(String kind) {
     final out = <MapEntry<String, Map<String, dynamic>>>[];
     _profiles.forEach((k, v) {
-      if (v is Map && '${v['kind'] ?? 'mentor'}' == kind) {
-        out.add(MapEntry('$k', v.cast<String, dynamic>()));
+      if (v is Map && (v['kind'] ?? 'mentor').toString() == kind) {
+        out.add(MapEntry(k, v.cast<String, dynamic>()));
       }
     });
     out.sort((a, b) => '${a.value['name']}'.compareTo('${b.value['name']}'));
@@ -167,6 +167,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   }
 
   Future<void> _editReceiver(Map<String, dynamic> prof) async {
+    final nas = context.read<AppState>().nas;
     final ctrl = TextEditingController(text: '${prof['receiverNo'] ?? ''}');
     final r = await showDialog<String>(
       context: context,
@@ -206,7 +207,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     // 취소(null)와 빈값('') 구분: 빈값은 삭제(생성년월 대체).
     setState(() => _busy = true);
     try {
-      final res = await context.read<AppState>().nas.linkProfileSetReceiver(
+      final res = await nas.linkProfileSetReceiver(
             number: '${prof['number'] ?? ''}',
             receiverNo: r,
           );
@@ -395,10 +396,10 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     buf.writeln();
     for (final r in rows) {
       final cells = r.map((w) {
-        if (w is Text) return '${w.data ?? ''}';
+        if (w is Text) return w.data ?? '';
         if (w is Row) {
           final t = w.children.whereType<Text>().firstOrNull;
-          return '${t?.data ?? ''}';
+          return t?.data ?? '';
         }
         return '';
       });
