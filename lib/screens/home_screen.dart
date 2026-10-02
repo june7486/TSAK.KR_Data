@@ -414,32 +414,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.edit, color: Colors.white),
                   onPressed: () => _openMyEdit(state),
                 ),
-              // (요구) QR 아이콘을 2행 삼점(⋮) 왼쪽으로 이동 — 우측 끝에서 일정거리
-              //  이격시킨다. 본인 인가자면 내 QR, 아니면 범스카우트 접근 QR 화면.
-              IconButton(
-                tooltip: 'QR',
-                icon: const Icon(Icons.qr_code_2),
-                onPressed: () {
-                  final me = state.who.isNotEmpty
-                      ? state.byNumber(state.who)
-                      : null;
-                  if (me != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => QrScreen(member: me)),
-                    );
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AppAccessScreen(),
-                      ),
-                    );
-                  }
-                },
-              ),
-              // (요구) QR 은 우측 끝(⋮)에서 일정거리 이격 — 삼점과 명확히 분리.
-              const SizedBox(width: 10),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
                 onSelected: (v) {
@@ -764,9 +738,42 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                  // (요구) 1행과 우측 아이콘(2행 QR/삼점) 사이 일정거리 유지용 여백.
-                  const SizedBox(width: 30),
-                  // (요구) QR 아이콘을 2행(삼점 위치)으로 이동 — 1행에서는 제거.
+                  // (요구) 버전 텍스트 ↔ QR 사이 일정거리 유지.
+                  const SizedBox(width: 10),
+                  // (요구) QR 아이콘은 상단(1행)에 그대로 두되, 오른쪽 끝에서
+                  //  좌측으로 이격시킨다(2행 삼점 위치로 내리지 않음).
+                  //  본인 인가자면 내 QR, 아니면 범스카우트 접근 QR 화면.
+                  IconButton(
+                    tooltip: 'QR',
+                    icon: const Icon(Icons.qr_code_2),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 34,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      final me = state.who.isNotEmpty
+                          ? state.byNumber(state.who)
+                          : null;
+                      if (me != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                        );
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AppAccessScreen(),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  // (요구) QR 을 화면 오른쪽 끝에서 좌측으로 이격 — 우측 끝과
+                  //  충분히 띄워 '좌측으로 당긴' 배치가 되도록 한다.
+                  const SizedBox(width: 28),
                 ],
               ),
             ),
