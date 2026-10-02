@@ -801,6 +801,10 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Column(
         children: [
           if (!selfView) _header(state, personalMain: personalMain),
+          // 후원계좌 검정 카드 하단의 보라색 갭 바로 아래에 오는 '흰색 갭'.
+          //  (참조: 보라 띠 ~5px + 흰색 갭 ~5px → 아래 칩 행이 시작)
+          if (!selfView && state.can('memberSearch'))
+            const SizedBox(height: 5),
           // 검색·필터는 명단검색 권한이 있을 때만 노출(개인정보 보호)
           if (!selfView && state.can('memberSearch')) _filterBar(state),
           const SizedBox(height: 2),
@@ -1442,11 +1446,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 3),
-          // 후원계좌 박스 ↔ 아래 둥근 필터버튼(칩) 사이 간격.
-          //  (픽셀 분석: 기존 약 10px → 약간 더 확보하도록 bottom 패딩을 키운다.)
+          // 후원계좌 박스 하단 ↔ 보라색 갭(그라데이션 바탕)은 얇게 유지한다.
+          //  (참조 이미지: 카드 아래 보라 띠 ~5px + 흰색 갭 ~5px 구조.
+          //   보라 띠 = 이 bottom 패딩 + 헤더 컨테이너 하단 패딩(4).)
           if (state.can('memberSearch'))
             Padding(
-              padding: const EdgeInsets.only(bottom: 22),
+              padding: const EdgeInsets.only(bottom: 2),
               child: _donationBanner(state),
             ),
           // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
