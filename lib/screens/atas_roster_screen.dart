@@ -222,13 +222,16 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
       _snack('출력할 아타스 명부가 없습니다');
       return;
     }
-    final headers = ['ATAS 인가번호', '범인가번호', '성명', '소속', '인가년월일'];
+    // (요구) 명단 출력 시 **한글 이름 옆에 영문 이름**을 배치한다.
+    //  · 영문 이름(nameEn)은 ATAS 인가정보에서 온 값이며, 없으면 빈칸으로 둔다.
+    final headers = ['ATAS 인가번호', '범인가번호', '성명', '영문 이름', '소속', '인가년월일'];
     final rows = <List<String>>[];
     for (final m in list) {
       rows.add([
         m.atasNo.trim(),
         m.number.trim(),
         m.name,
+        m.nameEn.trim(),
         m.unit.trim(),
         m.date.trim(),
       ]);
@@ -279,7 +282,14 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
               subtitle: '범스카우트 인가자',
             ),
             rows: [
-              for (final m in members) [m.atasNo.trim(), m.name],
+              // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
+              for (final m in members)
+                [
+                  m.atasNo.trim(),
+                  m.nameEn.trim().isEmpty
+                      ? m.name
+                      : '${m.name} (${m.nameEn.trim()})',
+                ],
             ],
             footerLeft: '한국범스카우트중앙회 · 아타스',
           );
@@ -441,6 +451,21 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
               color: AppColors.textDark,
             ),
           ),
+          // (요구) 한글 이름 옆에 영문 이름 배치 — 없으면 표시하지 않는다.
+          if (m.nameEn.trim().isNotEmpty) ...[
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                m.nameEn.trim(),
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textGray,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ],
       ),
       subtitle: Text(

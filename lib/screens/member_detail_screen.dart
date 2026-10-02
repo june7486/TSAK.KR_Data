@@ -1754,6 +1754,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow('인가일', m.date),
           // (복원) ATAS 인가번호 — 범·은하 모두 표시(요구: "개인페이지에 atas 다시 넣어줘").
           _plainRow('ATAS 인가번호', m.atasNo),
+          // (요구) 영문 이름 — ATAS 인가정보에서 가져온 로마자 표기. 없으면 미표시.
+          _plainRow('영문 이름', m.nameEn),
           // 멘토대장·페런츠 등록정보 — **멘티 등록정보와 동일한 형식**으로 노출.
           //  (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출해줘",
           //         "이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
@@ -1964,6 +1966,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ['포상', 'awards', m.awards],
       ['전문과정 이수', 'specialtyCourses', m.specialtyCourses],
       ['ATAS 인가번호', 'atasNo', m.atasNo],
+      ['영문 이름', 'nameEn', m.nameEn],
       ['핸드폰', 'phone', m.phone],
       ['연락처', 'tel', m.tel],
       ['이메일', 'email', m.email],

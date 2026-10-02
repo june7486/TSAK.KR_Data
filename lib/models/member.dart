@@ -8,6 +8,7 @@ class Member {
     required this.id,
     required this.number,
     required this.name,
+    this.nameEn = '',
     this.corps = 'tsak',
     this.league = '',
     this.unit = '',
@@ -79,6 +80,11 @@ class Member {
 
   /// 성명
   String name;
+
+  /// 영문 이름 (ATAS 인가정보에서 가져온 로마자 표기, 예: "Won Ho CHO").
+  ///  · 값이 없으면 **빈칸**으로 두고 개인정보 페이지에서 직접 입력할 수 있다.
+  ///  · ATAS 명부 출력 시 한글 이름 **옆**에 함께 배치한다.
+  String nameEn;
 
   /// 소속 단체(corps) — 'tsak'(범스카우트, 기본) | 'eunha'(은하스카우트).
   /// 은하스카우트는 범스카우트와 **별도 관리**(통계·명단·로그인 분리)한다.
@@ -267,7 +273,7 @@ class Member {
 
   /// 검색용 통합 텍스트
   String get searchText =>
-      '$number $name $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $position $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')} ${mentees.join(' ')} ${children.join(' ')}'
+      '$number $name $nameEn $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $position $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')} ${mentees.join(' ')} ${children.join(' ')}'
           .toLowerCase();
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
@@ -353,6 +359,7 @@ class Member {
     'id': id,
     'number': number,
     'name': name,
+    'nameEn': nameEn,
     'corps': corps,
     'league': league,
     'unit': unit,
@@ -431,6 +438,7 @@ class Member {
       id: '${map['id'] ?? ''}',
       number: '${map['number'] ?? ''}',
       name: '${map['name'] ?? ''}',
+      nameEn: '${map['nameEn'] ?? ''}',
       corps: (map['corps'] != null && '${map['corps']}'.isNotEmpty)
           ? '${map['corps']}'
           : 'tsak',
@@ -502,6 +510,7 @@ class Member {
   Member copyWith({
     String? number,
     String? name,
+    String? nameEn,
     String? corps,
     String? league,
     String? unit,
@@ -560,6 +569,7 @@ class Member {
       id: id,
       number: number ?? this.number,
       name: name ?? this.name,
+      nameEn: nameEn ?? this.nameEn,
       corps: corps ?? this.corps,
       league: league ?? this.league,
       unit: unit ?? this.unit,

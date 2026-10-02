@@ -33,6 +33,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _number,
       _name,
+      _nameEn,
       _league,
       _unit,
       _regLeague,
@@ -98,6 +99,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       text: m?.number ?? widget.suggestedNumber ?? '',
     );
     _name = TextEditingController(text: m?.name ?? '');
+    _nameEn = TextEditingController(text: m?.nameEn ?? '');
     _league = TextEditingController(text: m?.league ?? '');
     _unit = TextEditingController(text: m?.unit ?? '');
     _regLeague = TextEditingController(text: m?.regLeague ?? '');
@@ -137,6 +139,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     for (final c in [
       _number,
       _name,
+      _nameEn,
       _league,
       _unit,
       _regLeague,
@@ -242,6 +245,14 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                 _atas,
                 hint: 'ATAS 번호',
                 icon: Icons.confirmation_number,
+              ),
+              // (요구) 영문 이름 — ATAS 인가정보에서 가져온 로마자 표기.
+              //  · 값이 없으면 **빈칸**으로 두고 여기서 직접 입력할 수 있다.
+              _field(
+                '영문 이름',
+                _nameEn,
+                hint: 'ATAS 인가정보의 영문 이름 (없으면 직접 입력, 예: Won Ho CHO)',
+                icon: Icons.abc,
               ),
               const SizedBox(height: 4),
               _subHead(
@@ -906,6 +917,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     return m == null ||
         _number.text.trim() != m.number ||
         _name.text.trim() != m.name ||
+        _nameEn.text.trim() != m.nameEn ||
         _league.text.trim() != m.league ||
         _unit.text.trim() != m.unit ||
         _regLeague.text.trim() != m.regLeague ||
@@ -1534,6 +1546,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       id: id,
       number: _number.text.trim(),
       name: _name.text.trim(),
+      nameEn: _nameEn.text.trim(),
       // 소속(corps) 보존 — 은하스카우트 편집이 범스카우트 DB로 저장되지 않도록.
       corps: _existing?.corps ?? 'tsak',
       league: normalizeLeague(_league.text),
