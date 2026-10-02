@@ -14,6 +14,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/member_access_log.dart';
 import '../widgets/link_code_field.dart';
+import '../widgets/link_register_section.dart';
 import '../widgets/mentee_register_section.dart';
 import '../widgets/member_registration_request_section.dart';
 import '../widgets/merch_activity_section.dart';
@@ -52,13 +53,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// 멘토·페런츠 인적사항·메달 연동 캐시 (인가번호 → 데이터).
   Map<String, dynamic> _linkProfilesCache = {};
   final Map<String, Future<Map<String, dynamic>>> _medalFuture = {};
-
-  Map<String, dynamic> _profileOf(String code) {
-    final key = code.replaceAll(RegExp(r'[^0-9]'), '');
-    return (_linkProfilesCache[key] as Map?)?.cast<String, dynamic>() ??
-        (_linkProfilesCache[code] as Map?)?.cast<String, dynamic>() ??
-        {};
-  }
 
   Future<void> _loadLinkProfiles() async {
     final p = await context.read<NasApi>().linkProfiles();
@@ -1590,19 +1584,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
   }
 
-  /// 멘토·페런츠 인가번호 라벨 — 인적사항이 있으면 "이름 #번호" 로 표시한다.
-  ///   (요구: 개인프로필에 멘토·페런츠 메달 수여자 이름도 함께 표시)
-  ///   · memberNoKind == 'mentor' 이면 표시 번호는 **멘티(본인) 범인가자번호**.
-  String _linkNameLabel(String code, {String numberKind = 'parent'}) {
-    final p = _profileOf(code);
-    final nm = '${p['name'] ?? ''}'.trim();
-    final no = code.replaceAll(RegExp(r'[^0-9]'), '');
-    if (nm.isEmpty) {
-      return numberKind == 'mentor' ? '멘티 범#$code' : '범#$code';
-    }
-    return numberKind == 'mentor' ? '$nm (멘티 범#$no)' : '$nm 범#$no';
-  }
-
   /// 각인 메달(멘토·페런츠) 수상/수여 기록 — 개인프로필 연동.
   ///   · 받은 메달(awards) : 본인이 수여받은 각인 메달
   ///   · 수여한 메달(granted): 본인 이름·인가번호가 각인돼 남에게 준 메달
@@ -1762,11 +1743,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final state = context.watch<AppState>();
     final canEdit =
         state.isApp || state.isMaster || state.isSelfNumber(m.number);
-    // 멘토: 코드는 멘티(본인) 범인가자번호 → 표시는 "멘토이름 (멘티 #번호)".
-    final mentorLabels = m.mentors
-        .map((e) => _linkNameLabel(e, numberKind: 'mentor'))
-        .join(', ');
-    final parentLabels = m.parents.map((e) => _linkNameLabel(e)).join(', ');
     return _section(
       title: '${m.corpsFullName} 인가 정보 (인가 당시 정보)',
       icon: Icons.verified_user,
@@ -1778,12 +1754,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow('인가일', m.date),
           // (복원) ATAS 인가번호 — 범·은하 모두 표시(요구: "개인페이지에 atas 다시 넣어줘").
           _plainRow('ATAS 인가번호', m.atasNo),
-          // 멘토대장·페런츠 등록현황 — 미등록도 표시(누락 방지).
-          _regRow(
-            '멘토대장',
-            mentorLabels.isEmpty ? '' : '$mentorLabels${_linkBadge(m)}',
+          // 멘토대장·페런츠 등록정보 — **멘티 등록정보와 동일한 형식**으로 노출.
+          //  (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출해줘",
+          //         "이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
+          const Divider(height: 22),
+          LinkRegisterSection(
+            kind: 'mentor',
+            codes: m.mentors,
+            profiles: _linkProfilesCache,
+            badgeSuffix: _linkBadge(m),
           ),
-          _regRow('페런츠', parentLabels),
+          const SizedBox(height: 8),
+          LinkRegisterSection(
+            kind: 'parent',
+            codes: m.parents,
+            profiles: _linkProfilesCache,
+          ),
           // 승인대기중 안내 — 관리자·마스터 승인 전까지 명확히 표시(요구).
           if (m.linkApprovalStatus == 'pending') _linkPendingNotice(m),
           // (요구 #3) 멘티·자녀대원 등록정보 — 인가자 본인이 직접 등록/승인요청.
@@ -1939,39 +1925,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
   }
 
-  /// 등록현황 행 — 값이 없어도 항상 표시("미등록"). (멘토·페런츠 등록현황)
-  Widget _regRow(String label, String value) {
-    final empty = value.trim().isEmpty;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 96,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textGray,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              empty ? '미등록' : value,
-              style: TextStyle(
-                color: empty ? AppColors.textGray : AppColors.textDark,
-                fontSize: 13.5,
-                fontStyle: empty ? FontStyle.italic : FontStyle.normal,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  /// 각인 메달(멘토·페런츠) 수상/수여 기록 — 개인프로필 연동.
 
   Widget _infoCard(Member m) {
     final state = context.watch<AppState>();

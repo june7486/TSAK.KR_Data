@@ -188,7 +188,7 @@ class DocPdf {
           horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
           bottom: const pw.BorderSide(color: _border, width: 0.8),
         ),
-        columnWidths: _defaultCols(columns.length),
+        columnWidths: _contentCols(columns, rows),
         children: [
           if (columns.isNotEmpty)
             pw.TableRow(
@@ -390,13 +390,50 @@ class DocPdf {
     return doc.save();
   }
 
-  static Map<int, pw.TableColumnWidth> _defaultCols(int n) {
+  /// 열 폭을 **내용 길이에 비례**해 자동 배분한다.
+  ///
+  /// ## 왜 필요한가 (요구: "범스카우트명단, 은하스카우트명단 출력시 여백을 조정해서
+  /// 불필요한 공간이 생기지 않도록 해줘")
+  /// 기존에는 첫 열만 2배 고정이라, 짧은 '인가번호' 열이 넓게 벌어지고 긴 '성명'
+  /// 열이 좁아지는 **불필요한 여백**이 생겼다. 열마다 헤더·셀의 최대 글자폭을 재서
+  /// 그 비율대로 폭을 나눠 여백을 없앤다.
+  static Map<int, pw.TableColumnWidth> _contentCols(
+    List<String> columns,
+    List<List<DocCell>> rows,
+  ) {
+    final n = columns.length;
     if (n <= 0) return const {};
+    final units = List<double>.filled(n, 2.0);
+    for (var i = 0; i < n; i++) {
+      units[i] = _textUnits(columns[i]);
+    }
+    for (final r in rows) {
+      final lim = r.length < n ? r.length : n;
+      for (var i = 0; i < lim; i++) {
+        final u = _textUnits(r[i].text);
+        if (u > units[i]) units[i] = u;
+      }
+    }
     final m = <int, pw.TableColumnWidth>{};
     for (var i = 0; i < n; i++) {
-      m[i] = i == 0 ? const pw.FlexColumnWidth(2.0) : pw.FlexColumnWidth(1);
+      m[i] = pw.FlexColumnWidth(units[i].clamp(3.0, 30.0));
     }
     return m;
+  }
+
+  /// 문자열의 대략적 글자폭(폰트 1pt 기준). 한글 1.0 · 공백 0.32 · 그 외 0.56.
+  static double _textUnits(String? s) {
+    var u = 0.0;
+    for (final c in (s ?? '').trim().runes) {
+      if (c == 0x20) {
+        u += 0.32;
+      } else if (c >= 0x1100) {
+        u += 1.0;
+      } else {
+        u += 0.56;
+      }
+    }
+    return u;
   }
 
   static pw.TextAlign _align(String a) {

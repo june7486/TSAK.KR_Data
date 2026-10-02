@@ -167,7 +167,11 @@ class MemberCard extends StatelessWidget {
                           child: Text(
                             member.number.trim().isEmpty
                                 ? '일반 ${member.loginId}'
-                                : '${member.number}호',
+                                // 소속 접두어 — 은하 회원은 인가번호 앞에 '은하'를 붙인다
+                                //  (예: '은하46호'). 범스카우트는 기존 '305호' 유지.
+                                //  (요구: "은하스카우트의 모든 창에는 인가번호 앞에
+                                //   은하 접두어를 넣을 것 '은하'+'n', 예) 은하46")
+                                : '${member.corps == 'eunha' ? '은하' : ''}${member.number}호',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 15 * s,

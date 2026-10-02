@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
+import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import 'link_member_picker.dart';
@@ -94,6 +96,31 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
   Color get _accent =>
       widget.kind == 'parent' ? AppColors.taegeukBlue : AppColors.purple;
 
+  /// 연결된 인가번호의 회원(명단) — 이름·소속(활동) 조회용.
+  Member? _memberOf(String code) {
+    final d = _clean(code);
+    if (d.isEmpty) return null;
+    return context.watch<AppState>().byNumber(d);
+  }
+
+  /// 인가번호 배지 — 은하회원은 '은하N', 그 외(범·미확인)는 '범#N'.
+  String _numBadge(String code) {
+    final d = _clean(code);
+    final m = _memberOf(code);
+    if (m != null && m.corps == 'eunha') return '은하$d';
+    return '범#${d.isEmpty ? code : d}';
+  }
+
+  /// 소속정보 = **현재활동 등록정보**(없으면 인가시 값으로 폴백). (요구 #4)
+  String _activityInfo(Member? m) {
+    if (m == null) return '';
+    final regL = m.regLeague.trim();
+    final regU = m.regUnit.trim();
+    final l = regL.isNotEmpty ? regL : m.league.trim();
+    final u = regU.isNotEmpty ? regU : m.unit.trim();
+    return [l, u].where((s) => s.isNotEmpty).join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -103,28 +130,38 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
         children: [
           Row(
             children: [
-              Icon(widget.icon, size: 18, color: _accent),
-              const SizedBox(width: 6),
+              Icon(widget.icon, size: 16, color: _accent),
+              const SizedBox(width: 5),
               Text(
                 widget.label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textDark,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: _accent,
                 ),
               ),
               const SizedBox(width: 6),
-              Text(
-                widget.kind == 'mentor'
-                    ? '인가번호(멘티) · 인적사항(멘토)'
-                    : '인가번호 · 인적사항(페런츠)',
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: AppColors.textGray,
+              Flexible(
+                child: Text(
+                  widget.kind == 'mentor'
+                      ? '인가번호(멘티) · 이름(멘토) · 소속정보(현재활동)'
+                      : '인가번호 · 이름(페런츠) · 소속정보(현재활동)',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textGray,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Spacer(),
               if (widget.editable)
                 TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: _accent,
+                  ),
                   onPressed: () => _edit(null),
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('추가', style: TextStyle(fontSize: 12)),
@@ -133,48 +170,99 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
           ),
           if (widget.codes.isEmpty)
             const Padding(
-              padding: EdgeInsets.only(left: 24, bottom: 4),
+              padding: EdgeInsets.only(left: 20, top: 2, bottom: 2),
               child: Text(
                 '등록된 인가번호 없음 (복수 입력 가능)',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
               ),
             )
           else
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [for (final code in widget.codes) _chip(code)],
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [for (final code in widget.codes) _row(code)],
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _chip(String code) {
-    final p = _profileOf(code);
-    final nm = '${p['name'] ?? ''}'.trim();
-    final hasProfile = nm.isNotEmpty || '${p['phone'] ?? ''}'.trim().isNotEmpty;
-    final noLabel = widget.kind == 'mentor' ? '멘티 범#$code' : '범#$code';
-    final label = hasProfile ? '$nm  $noLabel' : noLabel;
-    return InputChip(
-      avatar: hasProfile
-          ? Icon(Icons.verified_user, size: 15, color: _accent)
-          : null,
-      label: Text(label),
-      backgroundColor: _accent.withValues(alpha: 0.08),
-      labelStyle: TextStyle(
-        color: _accent,
-        fontWeight: FontWeight.w700,
-        fontSize: 12.5,
+  /// 멘티 등록정보와 **동일한 형식** — [인가번호 배지] [이름 / 소속정보] [수정·삭제].
+  ///   (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출")
+  Widget _row(String code) {
+    final m = _memberOf(code);
+    final nm = (m?.name ?? '').trim();
+    final info = _activityInfo(m);
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, top: 3, bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: _accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Text(
+              _numBadge(code),
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: _accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nm.isEmpty ? '(이름 미확인)' : nm,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: nm.isEmpty ? AppColors.textGray : AppColors.textDark,
+                    fontStyle: nm.isEmpty ? FontStyle.italic : FontStyle.normal,
+                  ),
+                ),
+                if (info.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      info,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.textGray,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (widget.editable)
+            IconButton(
+              tooltip: '수정',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.edit, size: 16, color: AppColors.textGray),
+              onPressed: () => _edit(code),
+            ),
+          if (widget.editable)
+            IconButton(
+              tooltip: '삭제',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close, size: 16, color: AppColors.textGray),
+              onPressed: () {
+                final next = List<String>.from(widget.codes)..remove(code);
+                widget.onChanged(next);
+              },
+            ),
+        ],
       ),
-      onPressed: widget.editable ? () => _edit(code) : null,
-      deleteIcon: widget.editable ? const Icon(Icons.close, size: 16) : null,
-      onDeleted: widget.editable
-          ? () {
-              final next = List<String>.from(widget.codes)..remove(code);
-              widget.onChanged(next);
-            }
-          : null,
     );
   }
 

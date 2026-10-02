@@ -58,15 +58,21 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
     return '';
   }
 
-  /// 자녀대원/멘티대원의 **인가정보(연맹·단위대)** — 회원 명단에서 조회.
+  /// 자녀대원/멘티대원의 **소속정보 = 현재활동 등록정보** — 회원 명단에서 조회.
+  ///   (요구: "멘토(멘티,페런츠) 이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
+  ///   · 현재활동(regLeague·regUnit)이 비어 있으면 인가 당시(league·unit)로 폴백.
   String _infoOf(String code) {
     final d = code.replaceAll(RegExp(r'[^0-9]'), '');
     final state = context.watch<AppState>();
     final m = state.byNumber(d);
     if (m == null) return '';
     final parts = <String>[];
-    if (m.league.trim().isNotEmpty) parts.add(m.league.trim());
-    if (m.unit.trim().isNotEmpty) parts.add(m.unit.trim());
+    if (m.regLeague.trim().isNotEmpty) parts.add(m.regLeague.trim());
+    if (m.regUnit.trim().isNotEmpty) parts.add(m.regUnit.trim());
+    if (parts.isEmpty) {
+      if (m.league.trim().isNotEmpty) parts.add(m.league.trim());
+      if (m.unit.trim().isNotEmpty) parts.add(m.unit.trim());
+    }
     return parts.join(' · ');
   }
 
@@ -89,7 +95,9 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
             ),
             const SizedBox(width: 6),
             Text(
-              _isMentee ? '($_codeLabel · 이름)' : '($_codeLabel · 이름 · 인가정보)',
+              _isMentee
+                  ? '($_codeLabel · 이름 · 현재활동 등록정보)'
+                  : '($_codeLabel · 이름 · 현재활동 등록정보)',
               style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
             ),
             const Spacer(),

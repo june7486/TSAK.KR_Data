@@ -13,6 +13,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import 'member_detail_screen.dart';
 
 /// 은하스카우트 명단 — 범스카우트와 **분리 관리**되는 별도 명단.
 ///
@@ -28,6 +29,38 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
   final _searchCtrl = TextEditingController();
   String _q = '';
   bool _busyBuilding = false;
+
+  /// 좌측 선택박스로 고른 항목(회원 id). 선택 시 그 항목만 출력한다.
+  final Set<String> _sel = {};
+
+  void _toggle(String id) {
+    setState(() {
+      if (_sel.contains(id)) {
+        _sel.remove(id);
+      } else {
+        _sel.add(id);
+      }
+    });
+  }
+
+  void _toggleAll(List<Member> list) {
+    setState(() {
+      if (_sel.length == list.length) {
+        _sel.clear();
+      } else {
+        _sel
+          ..clear()
+          ..addAll(list.map((m) => m.id));
+      }
+    });
+  }
+
+  /// 명단 항목 클릭 → 개인정보(상세) 화면으로 이동.
+  void _openDetail(Member m) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
+    );
+  }
 
   @override
   void initState() {
@@ -65,9 +98,16 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         title: const Text('은하스카우트 명단'),
         actions: [
           IconButton(
-            tooltip: '출력 (PDF·엑셀 등)',
-            onPressed: _busyBuilding ? null : () => _openOutput(context, list),
-            icon: const Icon(Icons.ios_share),
+            tooltip: _sel.isEmpty ? '출력 (PDF·엑셀 등)' : '선택 ${_sel.length}명 출력',
+            onPressed: _busyBuilding
+                ? null
+                : () => _openOutput(
+                    context,
+                    _sel.isEmpty
+                        ? list
+                        : list.where((m) => _sel.contains(m.id)).toList(),
+                  ),
+            icon: Icon(_sel.isEmpty ? Icons.ios_share : Icons.check_circle),
           ),
           const AppHomeEmblem(size: 26),
         ],
@@ -110,11 +150,32 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
                 const Icon(Icons.groups, size: 16, color: AppColors.taegeukBlue),
                 const SizedBox(width: 6),
                 Text(
-                  '전체 ${all.length}명${_q.isEmpty ? '' : ' · 검색 ${list.length}명'}',
+                  '전체 ${all.length}명${_q.isEmpty ? '' : ' · 검색 ${list.length}명'}'
+                  '${_sel.isEmpty ? '' : ' · 선택 ${_sel.length}명'}',
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textDark,
+                  ),
+                ),
+                const Spacer(),
+                // 좌측 선택박스 전체선택/해제 — 선택 시 그 항목만 출력한다.
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    foregroundColor: AppColors.taegeukBlue,
+                  ),
+                  onPressed: list.isEmpty ? null : () => _toggleAll(list),
+                  icon: Icon(
+                    _sel.isNotEmpty && _sel.length == list.length
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    size: 16,
+                  ),
+                  label: Text(
+                    _sel.isNotEmpty && _sel.length == list.length ? '전체해제' : '전체선택',
+                    style: const TextStyle(fontSize: 11.5),
                   ),
                 ),
               ],
@@ -347,20 +408,36 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
   }
 
   Widget _row(Member m, int idx) {
+    final on = _sel.contains(m.id);
     return ListTile(
       dense: true,
-      leading: CircleAvatar(
-        radius: 16,
-        backgroundColor: AppColors.taegeukBlue.withValues(alpha: 0.12),
-        child: Text(
-          '${idx + 1}',
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: AppColors.taegeukBlue,
+      // 좌측 선택박스 — 선택 시 그 항목만 출력한다(요구).
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Checkbox(
+            value: on,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            activeColor: AppColors.taegeukBlue,
+            onChanged: (_) => _toggle(m.id),
           ),
-        ),
+          CircleAvatar(
+            radius: 14,
+            backgroundColor: AppColors.taegeukBlue.withValues(alpha: 0.12),
+            child: Text(
+              '${idx + 1}',
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: AppColors.taegeukBlue,
+              ),
+            ),
+          ),
+        ],
       ),
+      // 항목 클릭 → 개인정보(상세) 화면으로 이동(요구).
+      onTap: () => _openDetail(m),
       title: Row(
         children: [
           Text(
@@ -389,6 +466,11 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
           if (m.date.trim().isNotEmpty) '인가 ${m.date.trim()}',
         ].join('  ·  '),
         style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+      ),
+      trailing: const Icon(
+        Icons.chevron_right,
+        size: 18,
+        color: AppColors.textGray,
       ),
     );
   }

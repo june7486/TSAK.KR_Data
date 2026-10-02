@@ -1420,7 +1420,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 3),
-          if (state.can('memberSearch')) _donationBanner(state),
+          // 후원계좌 ↔ 아래 둥근 필터버튼 사이 간격을 소폭 확보(요구).
+          if (state.can('memberSearch'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: _donationBanner(state),
+            ),
           // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
           if (personalMain)
             Padding(
@@ -1642,7 +1647,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         me.isRegular
                             ? '서포터즈'
-                            : '${me.corpsFullName} ${me.number.isEmpty ? '-' : me.number}',
+                            : '${me.corpsFullName} ${me.number.isEmpty ? '-' : me.displayNumber}',
                         style: const TextStyle(
                           color: AppColors.purple,
                           fontWeight: FontWeight.w900,

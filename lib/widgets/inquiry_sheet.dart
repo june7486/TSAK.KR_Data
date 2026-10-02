@@ -63,7 +63,12 @@ class _InquirySheetState extends State<_InquirySheet> {
     if (s.isSelfAccess && s.who.isNotEmpty) {
       final m = s.repo.byNumber(s.who);
       if (m != null) {
-        _number.text = m.number;
+        // 인가번호 표기 — 은하스카우트는 '은하'+번호로 자동 기입(범스카우트와 혼동 방지).
+        //  (요구: "은하스카우트의 모든 창에는 인가번호 앞에 은하 접두어를 넣을 것,
+        //   예)은하46 이렇게 자동으로 기입되도록")
+        _number.text = m.corps == 'eunha'
+            ? '은하${m.number.replaceAll(RegExp(r"[^0-9]"), "")}'
+            : m.number;
         if (m.phone.isNotEmpty) _phone.text = m.phone;
       }
     }

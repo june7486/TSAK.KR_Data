@@ -322,6 +322,13 @@ class Member {
     return prefixHash ? '$corpsPrefix#$number' : '$corpsPrefix$number';
   }
 
+  /// 화면 표기용 인가번호 — **은하스카우트는 '은하'+번호**(예: 은하46),
+  ///   범스카우트는 기존처럼 번호만(예: 46). '#' 없이 붙여 쓴다.
+  ///   (요구: "은하스카우트의 모든 창에는 인가번호 앞에 은하 접두어를 넣을 것
+  ///    '은하'+'n', 예)은하46 … 그래야 범스카우트랑 헷갈리지 않아")
+  String get displayNumber =>
+      corps == 'eunha' ? '은하${number.replaceAll(RegExp(r'[^0-9]'), '')}' : number;
+
   /// (정적) Raw 값용 인가번호 표기 — 서버 map 등 Member 미생성 데이터용.
   ///   예: ['43','eunha'] → '은하#43', ['43'] → '범#43'.
   static String numLabelOf(String number, [String corps = 'tsak']) {
