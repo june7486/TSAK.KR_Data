@@ -13,6 +13,7 @@ import '../widgets/hscroll_menu.dart';
 import '../widgets/scroll_arrows.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import 'member_detail_screen.dart';
 
 /// 명부관리 — (관리자·마스터, 관리자 명부는 마스터 전용)
 ///
@@ -888,6 +889,56 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     ),
   );
 
+  /// 명부 항목 클릭 → 해당 대원의 **개인정보(상세) 화면**으로 이동(요구).
+  ///  · 인가번호(범·은하)로 회원을 찾아 상세로 이동한다. 못 찾으면 무시.
+  void _openMemberDetail(String number) {
+    final d = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.isEmpty) return;
+    final m = context.read<AppState>().byNumber(d);
+    if (m == null) {
+      _snack('인가번호 $number 의 대원을 찾을 수 없습니다');
+      return;
+    }
+    _openDetailById(m.id);
+  }
+
+  /// 회원 id 로 상세화면 이동.
+  void _openDetailById(String id) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: id)),
+    );
+  }
+
+  /// 클릭 가능한 이름 셀(회원 객체) — 탭하면 개인정보 화면으로 이동한다(요구).
+  Widget _nameCell(Member m) {
+    return InkWell(
+      onTap: () => _openDetailById(m.id),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _t(m.name, bold: true),
+          const SizedBox(width: 3),
+          const Icon(Icons.open_in_new, size: 12, color: AppColors.textGray),
+        ],
+      ),
+    );
+  }
+
+  /// 클릭 가능한 이름 셀(이름 + 인가번호) — 탭하면 개인정보 화면으로 이동한다(요구).
+  Widget _nameLink(String name, String number, {bool bold = true}) {
+    return InkWell(
+      onTap: () => _openMemberDetail(number),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _t(name, bold: bold),
+          const SizedBox(width: 3),
+          const Icon(Icons.open_in_new, size: 12, color: AppColors.textGray),
+        ],
+      ),
+    );
+  }
+
   // ---- 1. 범스카우트 인가자 명부 (체크박스 + 범/아타스 인가번호) ----
   Widget _credentialTable(AppState state) {
     final list = _credentialMembers(state);
@@ -900,7 +951,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _numCell('r$i', i),
         _t(m.number, bold: true),
         _t(m.atasNo),
-        _t(m.name, bold: true),
+        _nameCell(m),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);
@@ -927,7 +978,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _t(m.atasNo, bold: true),
         _t(m.corps == 'eunha' ? '은하' : '범'),
         _t(m.numberLabel),
-        _t(m.name, bold: true),
+        _nameCell(m),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);
@@ -947,7 +998,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _numCell('r$i', i),
         _t(m.numberLabel, bold: true),
         _t(m.atasNo),
-        _t(m.name, bold: true),
+        _nameCell(m),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);
@@ -967,7 +1018,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       rows.add([
         _numCell('r$i', i),
         _receiverCell(prof),
-        _t('${prof['name'] ?? ''}', bold: true),
+        _nameLink('${prof['name'] ?? ''}', '${prof['number'] ?? ''}'),
         _t('${prof['phone'] ?? ''}'),
         _t(loginId.isEmpty ? '—' : loginId),
         _t(_org('${prof['league'] ?? ''}', '${prof['unit'] ?? ''}')),
@@ -993,7 +1044,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       rows.add([
         _numCell('r$i', i),
         _t(created),
-        _t(m.name, bold: true),
+        _nameCell(m),
         _t(phone),
         _t(_org(m.league, m.unit)),
       ]);
