@@ -83,8 +83,10 @@ class DocPdf {
     final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
     final fmt = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
-    final base = pw.TextStyle(font: reg, fontSize: 9, color: _ink);
-    final baseBold = pw.TextStyle(font: bold, fontSize: 9, color: _ink);
+    // (요구) 좁은 열(성명·인가년월일 등)이 **2줄로 접히지 않도록** 폰트를 8.5로
+    //  낮추고 셀 좌우 패딩을 줄이며, 열 폭 계산에 패딩을 반영한다(_contentCols).
+    final base = pw.TextStyle(font: reg, fontSize: 8.5, color: _ink);
+    final baseBold = pw.TextStyle(font: bold, fontSize: 8.5, color: _ink);
 
     final doc = pw.Document();
 
@@ -196,12 +198,12 @@ class DocPdf {
               children: columns
                   .map(
                     (c) => pw.Padding(
-                      padding: const pw.EdgeInsets.fromLTRB(6, 6, 6, 6),
+                      padding: const pw.EdgeInsets.fromLTRB(4, 6, 4, 6),
                       child: pw.Text(
                         c,
                         style: pw.TextStyle(
                           font: bold,
-                          fontSize: 9,
+                          fontSize: 8.5,
                           color: _strong,
                         ),
                       ),
@@ -214,7 +216,7 @@ class DocPdf {
               children: r
                   .map(
                     (c) => pw.Container(
-                      padding: const pw.EdgeInsets.fromLTRB(6, 5, 6, 5),
+                      padding: const pw.EdgeInsets.fromLTRB(4, 5, 4, 5),
                       decoration: c.accent != null
                           ? pw.BoxDecoration(
                               border: pw.Border(
@@ -403,6 +405,7 @@ class DocPdf {
   ) {
     final n = columns.length;
     if (n <= 0) return const {};
+    // 각 열의 **내용** 폭(폰트 1pt 기준). 헤더·서브텍스트·본문을 모두 고려한다.
     final units = List<double>.filled(n, 2.0);
     for (var i = 0; i < n; i++) {
       units[i] = _textUnits(columns[i]);
@@ -412,11 +415,40 @@ class DocPdf {
       for (var i = 0; i < lim; i++) {
         final u = _textUnits(r[i].text);
         if (u > units[i]) units[i] = u;
+        final subText = r[i].sub;
+        if (subText != null && subText.trim().isNotEmpty) {
+          // 서브텍스트는 7.5pt(=본문 8.5pt 대비 환산) — 본문 폭으로 환산해 비교.
+          final su = _textUnits(subText) * (7.5 / 8.5);
+          if (su > units[i]) units[i] = su;
+        }
       }
     }
+    // ── 열 폭 배분: **최소요구폭 보장형** ──
+    //  좁은 열(예: 성명·인가년월일)이 셀 패딩에 잠식되어 글자가 2줄로 접히는
+    //  문제를 막기 위해, 먼저 각 열에 "줄바꿈 없이 필요한 최소 폭"을 배정한 뒤
+    //  남는 폭만 내용 비율대로 나눠 준다.
+    const double fontPt = 8.5;   // 셀 본문 폰트
+    const double padU = 8.0;     // 셀 좌우 패딩 합(좌 4 + 우 4)
+    const double lead = 3.0;     // 헤어라인/렌더 오차 여유
+    const double avail = 517.0;  // 페이지 폭 − 좌우 여백 − 테두리(≈ 595 − 36·2 − 여유)
+    final req = <double>[
+      for (var i = 0; i < n; i++) units[i] * fontPt + padU + lead,
+    ];
+    final reqSum = req.fold<double>(0, (a, b) => a + b);
+    final unitSum = units.fold<double>(0, (a, b) => a + b);
     final m = <int, pw.TableColumnWidth>{};
     for (var i = 0; i < n; i++) {
-      m[i] = pw.FlexColumnWidth(units[i].clamp(3.0, 30.0));
+      double band;
+      if (reqSum < avail) {
+        // 남는 폭을 내용 비율로 분배.
+        final extra = unitSum > 0 ? (avail - reqSum) * units[i] / unitSum : 0;
+        band = req[i] + extra;
+      } else {
+        // 폭이 부족한 극단적 경우엔 내용 비율대로 축소(최소 10pt 보장).
+        band = avail * (units[i] + padU) /
+            (unitSum + padU * n).clamp(1.0, double.infinity);
+      }
+      m[i] = pw.FlexColumnWidth(band.clamp(10.0, 300.0));
     }
     return m;
   }
