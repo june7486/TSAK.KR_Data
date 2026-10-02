@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/doc_pdf.dart';
 import '../services/export_save.dart';
+import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../services/output_formats.dart';
 import '../services/pdf_to_jpg.dart';
@@ -998,6 +999,32 @@ class _PlansTabState extends State<PlansTab> {
     }
   }
 
+  /// 기획안 목록을 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  Future<void> _sharePlans() async {
+    if (_plans.isEmpty) {
+      _snack('공유할 기획안이 없습니다');
+      return;
+    }
+    try {
+      final bytes = await DocPdf.build(
+        meta: _plansMeta(),
+        columns: _plansColumns,
+        rows: _plansRows(),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      final res = await shareFileNamed(
+        bytes: bytes,
+        filename: '수품_기획안목록.pdf',
+        mime: 'application/pdf',
+        subject: '수품 기획안 목록',
+        text: '수품 기획안 목록 · ${_plans.length}건',
+      );
+      _snack(tsakShareMessage(res, what: '기획안 목록 PDF'));
+    } catch (e) {
+      _snack('공유 실패: $e');
+    }
+  }
+
   /// 기획안 출력 형식 선택 다이얼로그 (#14 규칙).
   Future<void> _showPlansOutputDialog() async {
     if (_plans.isEmpty) {
@@ -1021,6 +1048,10 @@ class _PlansTabState extends State<PlansTab> {
               onFormat: (f) {
                 Navigator.pop(ctx);
                 _printPlans(format: f);
+              },
+              onShare: () {
+                Navigator.pop(ctx);
+                _sharePlans();
               },
               onShareImage: () {
                 Navigator.pop(ctx);

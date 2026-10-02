@@ -50,17 +50,21 @@ const List<TsakOutputFormat> kTsakOutputOrder = [
 const String kTsakOutputRule = '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드 → TXT';
 
 /// 출력 형식 버튼 바 — 모든 출력 화면 우측/하단에 동일 규칙으로 배치.
-/// 마지막에 '이미지 공유'·'링크 공유'를 함께 제공한다.
+/// 마지막에 '공유'·'이미지 공유'·'링크 공유'를 함께 제공한다.
 class TsakOutputBar extends StatelessWidget {
   const TsakOutputBar({
     super.key,
     required this.onFormat,
+    this.onShare,
     this.onShareImage,
     this.onShareLink,
     this.active,
   });
 
   final void Function(TsakOutputFormat) onFormat;
+
+  /// 파일 공유(OS 공유 시트) — 모든 기기 공통.
+  final VoidCallback? onShare;
   final VoidCallback? onShareImage;
   final VoidCallback? onShareLink;
 
@@ -79,10 +83,23 @@ class TsakOutputBar extends StatelessWidget {
               child: _fmtChip(f, active == f),
             ),
           const SizedBox(width: 4),
+          // (요구) 모든 기기에 OS 공유 시트 — 파일을 곧바로 공유한다.
+          if (onShare != null) ...[
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.purple,
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: onShare,
+              icon: const Icon(Icons.ios_share, size: 15),
+              label: const Text('공유 시트', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(width: 6),
+          ],
           if (onShareImage != null) ...[
             OutlinedButton.icon(
               onPressed: onShareImage,
-              icon: const Icon(Icons.ios_share, size: 15),
+              icon: const Icon(Icons.image_outlined, size: 15),
               label: const Text('이미지 공유', style: TextStyle(fontSize: 12)),
             ),
             const SizedBox(width: 6),

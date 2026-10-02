@@ -580,6 +580,32 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     }
   }
 
+  /// 물건 결제 내역을 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  Future<void> _share() async {
+    if (_items.isEmpty) {
+      _snack('공유할 항목이 없습니다');
+      return;
+    }
+    try {
+      final bytes = await DocPdf.build(
+        meta: _meta(),
+        columns: _columns,
+        rows: _rows(),
+        summary: _pdfSummary(),
+      );
+      final res = await shareFileNamed(
+        bytes: bytes,
+        filename: '중앙회_물건_결제_내역.pdf',
+        mime: 'application/pdf',
+        subject: '중앙회 물건 결제 내역',
+        text: '중앙회 물건 결제 내역 · ${_items.length}건',
+      );
+      _snack(tsakShareMessage(res, what: '물건 결제 내역 PDF'));
+    } catch (e) {
+      _snack('공유 실패: $e');
+    }
+  }
+
   /// 물건 결제 내역 → CSV(엑셀).
   String _csvText() {
     final buf = StringBuffer();
@@ -642,6 +668,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               onFormat: (f) {
                 Navigator.pop(ctx);
                 _print(format: f);
+              },
+              onShare: () {
+                Navigator.pop(ctx);
+                _share();
               },
               onShareImage: () {
                 Navigator.pop(ctx);

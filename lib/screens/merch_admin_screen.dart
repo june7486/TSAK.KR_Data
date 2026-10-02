@@ -3374,6 +3374,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         justPrint: true,
       ),
       onEmail: () => _emailLedgerRows(rows),
+      onShare: () =>
+          _shareLedgerRows(rows, selectedOnly: selectedOnly),
       onShareImage: () => _runLedgerOutput(
         TsakOutputFormat.jpg,
         rows: rows,
@@ -3384,15 +3386,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  /// 판매대장을 지정 형식으로 출력(선택/전체 공용) — 실시간 진행 대기창 포함.
-  Future<void> _runLedgerOutput(
-    TsakOutputFormat format, {
+  /// 판매대장 문서(저장·프린트·공유 공용) — 선택/전체를 반영해 만든다.
+  TsakTableDoc _ledgerDoc({
     required List<Map<String, dynamic>> rows,
     bool selectedOnly = false,
     bool justPrint = false,
-  }) async {
+  }) {
     final meta = _ledgerMeta();
-    final doc = TsakTableDoc(
+    return TsakTableDoc(
       title: justPrint ? '수품 판매대장' : '수품 판매대장${selectedOnly ? ' (선택)' : ''}',
       subtitle: '한국범스카우트중앙회 · ${_ledgerLabel()}',
       description: '주문·예약 통합 장부입니다. 상태와 입금 여부를 함께 표기합니다.',
@@ -3428,6 +3429,53 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       summary: _ledgerSummaryLines(rows),
       footerLeft: '한국범스카우트중앙회 수품',
       landscape: true,
+    );
+  }
+
+  /// 판매대장을 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  Future<void> _shareLedgerRows(
+    List<Map<String, dynamic>> rows, {
+    bool selectedOnly = false,
+  }) async {
+    if (rows.isEmpty) {
+      _snack('공유할 판매대장이 없습니다');
+      return;
+    }
+    final doc = _ledgerDoc(rows: rows, selectedOnly: selectedOnly);
+    setState(() => _ledgerBusy = true);
+    try {
+      late TsakShareResult res;
+      await runWithTsakProgress(
+        context,
+        title: '판매대장 공유 준비',
+        note: '${rows.length}건을 PDF로 만들어 공유합니다.',
+        steps: const ['문서 구성', 'PDF 생성', '공유 시트 열기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.6, message: 'PDF 생성 중…', stepIndex: 1);
+          res = await shareTsakTableChosen(context, doc, TsakOutputFormat.pdf);
+          ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
+        },
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '판매대장 PDF'));
+    } catch (e) {
+      if (mounted) _snack('공유 실패: $e');
+    } finally {
+      if (mounted) setState(() => _ledgerBusy = false);
+    }
+  }
+
+  /// 판매대장을 지정 형식으로 출력(선택/전체 공용) — 실시간 진행 대기창 포함.
+  Future<void> _runLedgerOutput(
+    TsakOutputFormat format, {
+    required List<Map<String, dynamic>> rows,
+    bool selectedOnly = false,
+    bool justPrint = false,
+  }) async {
+    final doc = _ledgerDoc(
+      rows: rows,
+      selectedOnly: selectedOnly,
+      justPrint: justPrint,
     );
     setState(() => _ledgerBusy = true);
     try {

@@ -459,6 +459,46 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     _snack(ok ? '$filename 저장을 시작했습니다' : '저장이 취소되었습니다');
   }
 
+  /// 비품 재고 리스트를 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  Future<void> _share() async {
+    if (_items.isEmpty) {
+      _snack('공유할 항목이 없습니다');
+      return;
+    }
+    final total = _items.fold<int>(
+      0,
+      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
+    );
+    final meta = DocMeta(
+      title: '중앙회 비품 재고 리스트',
+      subtitle: '한국범스카우트중앙회 · 비품 재고 및 입출고 현황',
+      description: '아래 비품의 수량과 비고를 확인하고, 확인일자·확인자를 함께 기재합니다.',
+      author: _whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '',
+      extra: {
+        '총 항목': '${_items.length}건',
+        '총 수량': '$total',
+        if (_updated.isNotEmpty) '목록 갱신': _updated,
+      },
+    );
+    try {
+      final bytes = await DocPdf.buildFromText(
+        meta: meta,
+        text: _plainText(TsakOutputFormat.word),
+        footerLeft: '한국범스카우트중앙회',
+      );
+      final res = await shareFileNamed(
+        bytes: bytes,
+        filename: '중앙회_비품_재고_리스트.pdf',
+        mime: 'application/pdf',
+        subject: '중앙회 비품 재고 리스트',
+        text: '중앙회 비품 재고 리스트 · ${_items.length}건',
+      );
+      _snack(tsakShareMessage(res, what: '비품 재고 리스트 PDF'));
+    } catch (e) {
+      _snack('공유 실패: $e');
+    }
+  }
+
   /// 텍스트 파일 저장(웹) / 클립보드 폴백.
   Future<void> _saveText(
     String content,
@@ -537,6 +577,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
               onFormat: (f) {
                 Navigator.pop(ctx);
                 _print(format: f);
+              },
+              onShare: () {
+                Navigator.pop(ctx);
+                _share();
               },
               onShareImage: () {
                 Navigator.pop(ctx);

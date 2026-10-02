@@ -162,6 +162,64 @@ Future<bool> saveTsakTable(
   );
 }
 
+/// 지정 형식의 **파일 바이트**를 만들어 돌려준다(저장/공유 공용 빌더).
+///
+/// 저장([saveTsakTableChosen])과 공유([shareTsakTableChosen])가 **동일한 바이트**를
+/// 쓰도록 한 곳에서 만든다(규칙: 형식별 산출물은 항상 이 빌더로 통일).
+///
+/// 확장자·MIME 은 규칙(#14)의 형식 정의를 따른다(엑셀=CSV·워드=DOC).
+Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
+  TsakTableDoc doc,
+  TsakOutputFormat format,
+) async {
+  switch (format) {
+    case TsakOutputFormat.pdf:
+      return (
+        bytes: await DocPdf.buildSimple(
+          meta: doc.meta,
+          columns: doc.columns,
+          rows: doc.rows,
+          summary: doc.summary,
+          footerLeft: doc.footerLeft,
+          landscape: doc.landscape,
+        ),
+        ext: 'pdf',
+        mime: 'application/pdf',
+      );
+    case TsakOutputFormat.jpg:
+      final pdf = await DocPdf.buildSimple(
+        meta: doc.meta,
+        columns: doc.columns,
+        rows: doc.rows,
+        summary: doc.summary,
+        footerLeft: doc.footerLeft,
+        landscape: doc.landscape,
+      );
+      return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
+    case TsakOutputFormat.excel:
+      // 규칙: excel 은 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 한다.
+      return (bytes: _csvBytes(doc.toCsv()), ext: 'csv', mime: 'text/csv');
+    case TsakOutputFormat.ppt:
+      return (
+        bytes: _bytes(doc.toFormattedText(format)),
+        ext: 'ppt',
+        mime: 'application/vnd.ms-powerpoint',
+      );
+    case TsakOutputFormat.word:
+      return (
+        bytes: _bytes(doc.toFormattedText(format)),
+        ext: 'doc',
+        mime: 'application/msword',
+      );
+    case TsakOutputFormat.txt:
+      return (
+        bytes: _bytes(doc.toPlainText()),
+        ext: 'txt',
+        mime: 'text/plain',
+      );
+  }
+}
+
 /// 저장 위치([choose])를 **이미 정한 상태**에서 문서를 만들어 저장한다.
 ///
 /// 진행 대기창(task 콜백) **내부**에서 호출하기 좋다. 위치 선택창은 밖에서
@@ -177,58 +235,34 @@ Future<bool> saveTsakTableChosen(
 }) async {
   onStep?.call();
   final base = doc.baseName();
-  switch (format) {
-    case TsakOutputFormat.pdf:
-      final bytes = await DocPdf.buildSimple(
-        meta: doc.meta,
-        columns: doc.columns,
-        rows: doc.rows,
-        summary: doc.summary,
-        footerLeft: doc.footerLeft,
-        landscape: doc.landscape,
-      );
-      await _save(bytes, base, 'pdf', 'application/pdf', choose);
-      return true;
-    case TsakOutputFormat.jpg:
-      final pdf = await DocPdf.buildSimple(
-        meta: doc.meta,
-        columns: doc.columns,
-        rows: doc.rows,
-        summary: doc.summary,
-        footerLeft: doc.footerLeft,
-        landscape: doc.landscape,
-      );
-      final jpg = await pdfToJpg(pdf);
-      await _save(jpg, base, 'jpg', 'image/jpeg', choose);
-      return true;
-    case TsakOutputFormat.excel:
-      // 규칙: excel 은 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 한다.
-      // 위치(choose)도 반드시 반영한다(기존 saveText 는 위치 무시 버그).
-      await _save(_csvBytes(doc.toCsv()), base, 'csv', 'text/csv', choose);
-      return true;
-    case TsakOutputFormat.ppt:
-      await _save(
-        _bytes(doc.toFormattedText(format)),
-        base,
-        'ppt',
-        'application/vnd.ms-powerpoint',
-        choose,
-      );
-      return true;
-    case TsakOutputFormat.word:
-      await _save(
-        _bytes(doc.toFormattedText(format)),
-        base,
-        'doc',
-        'application/msword',
-        choose,
-      );
-      return true;
-    case TsakOutputFormat.txt:
-      // 위치(choose) 반영(기존 saveText 는 위치 무시 버그).
-      await _save(_bytes(doc.toPlainText()), base, 'txt', 'text/plain', choose);
-      return true;
-  }
+  final f = await buildTsakTableFile(doc, format);
+  await _save(f.bytes, base, f.ext, f.mime, choose);
+  return true;
+}
+
+/// 문서를 지정 형식으로 만들어 **OS 공유 시트**로 공유한다(모든 기기 공통).
+///
+/// 진행 대기창(task 콜백) **내부**에서 호출하기 좋다. 저장과 달리 위치를 묻지
+/// 않고 곧바로 공유 시트를 연다(카톡·메일·드라이브 등으로 바로 전송).
+///
+/// 반환: [TsakShareResult] — 호출부는 [tsakShareMessage] 로 안내 문구를 만든다.
+Future<TsakShareResult> shareTsakTableChosen(
+  BuildContext context,
+  TsakTableDoc doc,
+  TsakOutputFormat format, {
+  VoidCallback? onStep,
+}) async {
+  onStep?.call();
+  final base = doc.baseName();
+  final f = await buildTsakTableFile(doc, format);
+  return shareBytes(
+    bytes: f.bytes,
+    name: base,
+    ext: f.ext,
+    mime: f.mime,
+    subject: doc.title,
+    text: '${doc.title} · ${doc.rows.length}건',
+  );
 }
 
 /// 문서를 메일 본문으로 열기(공용).

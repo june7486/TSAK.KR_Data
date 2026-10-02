@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../theme/app_theme.dart';
 import 'web_nav.dart';
@@ -48,6 +49,124 @@ Future<void> saveBytes({
 /// - **웹(사파리·파이어폭스)**: 미지원 → false (기본 다운로드만 가능)
 /// - **안드로이드·아이폰(iOS)·데스크톱 네이티브**: OS 저장 대화상자 → true
 bool get supportsLocationPicker => isWebRuntime ? supportsSaveFilePicker : true;
+
+// ─────────────────────────────────────────────────────────────────────────
+// 공유 시트 (OS 공유 대화상자) — **모든 기기 공통**
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 공유 동작 결과(호출부가 스낵바 문구를 정확히 고르도록).
+enum TsakShareResult {
+  /// OS 공유 시트가 열려 공유가 시작됨(웹 Web Share / 네이티브 공유 시트).
+  shared,
+
+  /// 공유 미지원 → 대신 파일 다운로드(기본 저장)로 처리됨(웹 폴백).
+  downloaded,
+
+  /// 사용자가 공유 시트를 닫음(취소).
+  dismissed,
+
+  /// 공유에 실패함(예외).
+  failed,
+
+  /// 공유할 내용(파일)이 없음.
+  empty,
+}
+
+/// 파일을 **OS 공유 시트**로 공유한다 — **모든 기기(PC·안드로이드·아이폰) 공통**.
+///
+/// ## 왜 필요한가 (요구: "모든기기에도 공유 시트 넣어주세요")
+/// 지금까지는 '저장'만 가능해서, 아이폰·안드로이드에서 카톡·메일·드라이브로
+/// **바로 보내려면** 먼저 파일앱에 저장한 뒤 다시 공유해야 했다. 이 헬퍼는
+/// 생성한 파일을 **곧바로 OS 공유 시트**에 넘겨 어디로든 바로 보낼 수 있게 한다.
+///
+/// ## 동작 (플랫폼별)
+/// - **웹(모바일 사파리·크롬 등)**: Web Share API(`navigator.share`) → OS 공유
+///   시트(카톡·메일·드라이브…). 미지원 브라우저(PC 사파리·파폭 등)는 자동으로
+///   **파일 다운로드**로 폴백한다(share_plus 가 처리).
+/// - **안드로이드·아이폰(iOS)·데스크톱 네이티브**: OS 공유 시트(Android
+///   `ACTION_SEND` / iOS `UIActivityViewController`).
+///
+/// [bytes]를 [XFile.fromData] 로 넘기면 네이티브는 임시파일에 자동 기록 후
+/// 공유하고, 웹은 Blob 으로 변환해 공유하므로 **별도 임시파일 관리가 필요 없다**.
+///
+/// 반환: [TsakShareResult] — 호출부는 이 값으로 사용자 안내 문구를 정한다.
+Future<TsakShareResult> shareBytes({
+  required Uint8List bytes,
+  required String name,
+  String ext = '',
+  String mime = 'application/octet-stream',
+  String? subject,
+  String? text,
+  Rect? sharePositionOrigin,
+}) async {
+  if (bytes.isEmpty) return TsakShareResult.empty;
+  final filename = (ext.isEmpty || name.toLowerCase().endsWith('.$ext'))
+      ? name
+      : '$name.$ext';
+  try {
+    final result = await Share.shareXFiles(
+      [
+        XFile.fromData(
+          bytes,
+          name: filename,
+          mimeType: mime.isEmpty ? 'application/octet-stream' : mime,
+        ),
+      ],
+      subject: subject,
+      text: text,
+      sharePositionOrigin: sharePositionOrigin,
+    );
+    // 웹에서 Web Share 미지원 → share_plus 가 자동 다운로드로 폴백한 경우.
+    if (result.status == ShareResultStatus.unavailable) {
+      return TsakShareResult.downloaded;
+    }
+    if (result.status == ShareResultStatus.dismissed) {
+      return TsakShareResult.dismissed;
+    }
+    return TsakShareResult.shared;
+  } catch (_) {
+    // 공유 실패 → 파일이라도 잃지 않도록 기본 다운로드로 폴백한다.
+    try {
+      saveBytes(bytes: bytes, name: name, ext: ext, mime: mime);
+      return TsakShareResult.downloaded;
+    } catch (_) {
+      return TsakShareResult.failed;
+    }
+  }
+}
+
+/// 확장자 포함 파일명으로 공유한다([shareBytes] 의 파일명 편의 래퍼).
+Future<TsakShareResult> shareFileNamed({
+  required Uint8List bytes,
+  required String filename,
+  String mime = 'application/octet-stream',
+  String? subject,
+  String? text,
+  Rect? sharePositionOrigin,
+}) {
+  final i = filename.lastIndexOf('.');
+  final hasExt = i > 0;
+  final base = hasExt ? filename.substring(0, i) : filename;
+  final ext = hasExt ? filename.substring(i + 1) : '';
+  return shareBytes(
+    bytes: bytes,
+    name: base,
+    ext: ext,
+    mime: mime,
+    subject: subject,
+    text: text,
+    sharePositionOrigin: sharePositionOrigin,
+  );
+}
+
+/// 공유 결과 → 사용자 안내 문구(공용).
+String tsakShareMessage(TsakShareResult r, {String what = '파일'}) => switch (r) {
+  TsakShareResult.shared => '$what 공유 창을 열었습니다',
+  TsakShareResult.downloaded => '이 브라우저는 공유 미지원 → $what을(를) 다운로드했습니다',
+  TsakShareResult.dismissed => '공유를 취소했습니다',
+  TsakShareResult.failed => '$what 공유에 실패했습니다',
+  TsakShareResult.empty => '공유할 $what이(가) 없습니다',
+};
 
 /// 확장자 포함 파일명으로 저장한다 (PC·**모든 모바일(안드로이드·아이폰)** 공통).
 ///

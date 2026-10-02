@@ -30,6 +30,7 @@ Future<void> showTsakOutputSheet(
   void Function(TsakOutputFormat)? onPick,
   VoidCallback? onPrint,
   VoidCallback? onEmail,
+  VoidCallback? onShare,
   VoidCallback? onShareImage,
   VoidCallback? onShareLink,
   VoidCallback? onTxt,
@@ -135,11 +136,20 @@ Future<void> showTsakOutputSheet(
               const SizedBox(height: 14),
               const Divider(height: 1),
               const SizedBox(height: 10),
-              // ── 부가 동작: 인쇄 · 이메일 · 공유 ──
+              // ── 부가 동작: 공유 · 인쇄 · 이메일 · 이미지/링크 공유 ──
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  // (요구) 모든 기기에 OS 공유 시트 — PDF(기본) 파일을 곧바로
+                  //   카톡·메일·드라이브 등으로 보낸다. 가장 눈에 띄게(강조) 배치.
+                  if (onShare != null)
+                    _act(
+                      Icons.ios_share,
+                      '공유 시트',
+                      () => fire(onShare),
+                      primary: true,
+                    ),
                   if (onPrint != null)
                     _act(Icons.print_outlined, '프린트', () => fire(onPrint)),
                   if (onEmail != null)
@@ -164,7 +174,28 @@ Future<void> showTsakOutputSheet(
   );
 }
 
-Widget _act(IconData icon, String label, VoidCallback onTap) {
+Widget _act(
+  IconData icon,
+  String label,
+  VoidCallback onTap, {
+  bool primary = false,
+}) {
+  // primary = 공유 시트 등 **대표 동작**을 눈에 띄게(채워진 보라 버튼).
+  if (primary) {
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.purple,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      ),
+      onPressed: onTap,
+      icon: Icon(icon, size: 15),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
   return OutlinedButton.icon(
     style: OutlinedButton.styleFrom(
       visualDensity: VisualDensity.compact,

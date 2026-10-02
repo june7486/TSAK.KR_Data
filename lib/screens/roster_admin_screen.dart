@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/file_save.dart';
 import '../services/output_formats.dart';
 import '../services/table_export.dart';
 import '../theme/app_theme.dart';
@@ -773,6 +774,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         justPrint: true,
       ),
       onEmail: () => _emailRoster(title, headers, rows),
+      onShare: () => _shareRoster(title, headers, rows),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
   }
@@ -857,6 +859,47 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       summary: ['총 ${rows.length}명'],
     );
     await emailTsakTable(context, doc);
+  }
+
+  /// 명부를 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  Future<void> _shareRoster(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+  ) async {
+    if (rows.isEmpty) {
+      _snack('공유할 명단이 없습니다');
+      return;
+    }
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '한국범스카우트중앙회 · 명부관리',
+      description: '인가자 명부입니다.',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}명'],
+    );
+    setState(() => _busyBuilding = true);
+    try {
+      late TsakShareResult res;
+      await runWithTsakProgress(
+        context,
+        title: '명부 공유 준비',
+        note: '${rows.length}명 명부를 PDF로 만들어 공유합니다.',
+        steps: const ['문서 구성', 'PDF 생성', '공유 시트 열기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.6, message: 'PDF 생성 중…', stepIndex: 1);
+          res = await shareTsakTableChosen(context, doc, TsakOutputFormat.pdf);
+          ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
+        },
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '명부 PDF'));
+    } catch (e) {
+      if (mounted) _snack('공유 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
   }
 
   Future<void> _copyTsv(List<String> headers, List<List<Widget>> rows) async {
