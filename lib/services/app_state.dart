@@ -350,11 +350,20 @@ class AppState extends ChangeNotifier {
         if (ok && personalNo.isEmpty) personalNo = phone; // 번호 미상 시 전화로 식별
       }
     } else {
-      // 개인 접근: ID=인가번호, 비밀번호=개인비밀번호
+      // 개인 접근: ID=인가번호(문자 허용), 비밀번호=개인비밀번호
       //  - ID(인가번호)로 번호를 확정하고, 비밀번호는 다음 중 하나로 인정:
       //    ① 번호 + !@@ (예: 415!@@)   ② 접미사만 (예: !@@)
       //    ③ 관리자가 지정한 개인 비밀번호 / 마스터 비밀번호
-      personalNo = id.replaceAll(RegExp(r'[^0-9]'), '');
+      //  (요구) ID는 숫자뿐 아니라 영문·한글·특수문자도 가능 → 먼저 ID 문자열로
+      //         회원을 찾아 실제 인가번호로 정규화하고, 못 찾으면 숫자 추출 폴백.
+      final idRaw = id.trim();
+      Member? idMatched;
+      if (idRaw.isNotEmpty) {
+        idMatched = repo.byLoginId(idRaw) ?? repo.byNumber(idRaw);
+      }
+      personalNo = idMatched != null
+          ? idMatched.number.replaceAll(RegExp(r'[^0-9]'), '')
+          : idRaw.replaceAll(RegExp(r'[^0-9]'), '');
       if (personalNo.isEmpty) {
         personalNo = value.replaceAll(RegExp(r'[^0-9]'), '');
       }

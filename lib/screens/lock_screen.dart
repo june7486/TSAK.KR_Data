@@ -449,10 +449,9 @@ class _LockScreenState extends State<LockScreen> {
                               TextField(
                                 controller: _idCtrl,
                                 autofocus: true,
-                                keyboardType:
-                                    (_tier == 'personal' || _tier == 'guest')
-                                    ? TextInputType.number
-                                    : TextInputType.text,
+                                // (요구) ID는 숫자뿐 아니라 영문·한글·외국어·특수문자도 허용
+                                //  → 어떤 티어에서도 항상 쿼티(문자) 키보드를 노출한다.
+                                keyboardType: TextInputType.text,
                                 textInputAction: TextInputAction.next,
                                 decoration: InputDecoration(
                                   labelText: _tier == 'guest'

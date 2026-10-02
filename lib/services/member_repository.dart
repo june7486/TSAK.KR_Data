@@ -323,6 +323,27 @@ class MemberRepository {
     return null;
   }
 
+  /// ID 문자열(문자 포함 가능)로 회원 조회 — loginId/전화번호/인가번호 순으로 대조.
+  /// (요구) ID는 숫자뿐 아니라 영문·한글·특수문자도 허용하므로, 문자열이
+  /// 등록된 로그인아이디와 일치하면 우선 반환하고, 아니면 숫자를 추출해
+  /// 전화번호·인가번호와 대조한다.
+  Member? byLoginId(String id) {
+    final q = id.trim();
+    if (q.isEmpty) return null;
+    final low = q.toLowerCase();
+    final digits = q.replaceAll(RegExp(r'[^0-9]'), '');
+    for (final m in allUnscoped()) {
+      final lid = m.loginId.trim();
+      if (lid.isNotEmpty && lid.toLowerCase() == low) return m;
+      if (digits.isNotEmpty) {
+        if (lid.replaceAll(RegExp(r'[^0-9]'), '') == digits) return m;
+        if (m.phone.replaceAll(RegExp(r'[^0-9]'), '') == digits) return m;
+        if (m.number.replaceAll(RegExp(r'[^0-9]'), '') == digits) return m;
+      }
+    }
+    return null;
+  }
+
   List<Member> search(String query, {String? league, String? year}) {
     final q = query.trim().toLowerCase();
     var list = all();

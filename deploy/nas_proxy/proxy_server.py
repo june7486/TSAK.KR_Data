@@ -2468,16 +2468,26 @@ def _verify(tier, value, ident="", corps=""):
             if not n or not _eunha_member_by_number(n):
                 return False, ""
             return (value == _personal_pw_of_eunha(n) or value == MASTER_PW), "personal"
-        # 입력값에서 인가번호 추출 후, 설정된 개인비번과 비교
-        no = re.sub(r"[^0-9]", "", value or "") or re.sub(r"[^0-9]", "", str(ident or ""))
+        # (요구) ID에 숫자 외 문자(영문·한글·특수문자 등)도 허용 — 문자 포함 ID로
+        #  회원을 찾아 인가번호로 정규화한 뒤 설정된 개인비번과 비교한다.
+        m, resolved = _member_by_ident_any(ident)
+        if m is None:
+            # 값(비번)에 번호가 섞여 있는 경우(예: '43!@@')도 처리
+            m, resolved = _member_by_ident_any(value)
+        no = re.sub(r"[^0-9]", "", str(resolved or ""))
+        if not no:
+            no = (re.sub(r"[^0-9]", "", value or "")
+                  or re.sub(r"[^0-9]", "", str(ident or "")))
         if not no:
             return False, ""
-        members = _load_json(DB_FILE, [])
-        exists = any(
-            re.sub(r"[^0-9]", "", str(m.get("number", ""))) == no for m in members
-        )
-        if not exists:
-            return False, ""
+        if m is None:
+            members = _load_json(DB_FILE, [])
+            exists = any(
+                re.sub(r"[^0-9]", "", str(x.get("number", ""))) == no
+                for x in members
+            )
+            if not exists:
+                return False, ""
         return (value == _personal_pw_of(no) or value == MASTER_PW), "personal"
     if tier == "guest":
         # 비인가자(일반회원): ID=전화번호(숫자), PW=뒤 4자리(또는 설정값)
@@ -5796,6 +5806,47 @@ def _ev_member_by_ident(ident):
         if re.sub(r"[^0-9]", "", str(m.get("phone", ""))) == d:
             return m
     return None
+
+
+def _member_by_ident_any(ident):
+    """ID 문자열로 회원을 찾는다 — **숫자 전용이 아닌 문자 포함 ID 지원**.
+
+    우선순위:
+      1) ID가 등록된 로그인아이디(loginId/accessPhone)와 (숫자 무시) 일치
+      2) ID가 인가번호/은하번호와 일치
+      3) ID가 전화번호와 일치
+      4) ID에 숫자가 있으면 그 숫자로 기존 방식(_ev_member_by_ident) 재시도
+    반환: (member dict or None, 원본 ident 문자열)
+    """
+    raw = str(ident or "").strip()
+    if not raw:
+        return None, raw
+    low = raw.lower()
+    digits = re.sub(r"[^0-9]", "", raw)
+    try:
+        members = _ev_members()
+    except Exception:
+        members = []
+    for m in members:
+        for fld in ("loginId", "accessPhone"):
+            v = str(m.get(fld) or "").strip()
+            if v and v.lower() == low:
+                return m, str(m.get("number", "") or raw)
+        no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        if no and (no == digits or str(m.get("number", "")) == raw):
+            return m, str(m.get("number", "") or raw)
+        ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
+        if ph and ph == digits:
+            return m, str(m.get("number", "") or raw)
+    # 은하스카우트 명단에서도 확인
+    try:
+        em = _eunha_member_by_number(digits)
+    except Exception:
+        em = None
+    if em:
+        return em, digits
+    return None, raw
+
 
 
 def _ev_member_set_event(ident, event_name, value=True):
