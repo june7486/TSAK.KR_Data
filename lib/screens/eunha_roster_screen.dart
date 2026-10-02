@@ -226,12 +226,14 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
       _snack('출력할 은하스카우트 명단이 없습니다');
       return;
     }
-    final headers = ['은하번호', '성명', '소속', '생년월일', '인가년월일'];
+    final headers = ['은하번호', '성명', '영문 이름', '소속', '생년월일', '인가년월일'];
     final rows = <List<String>>[];
     for (final m in list) {
       rows.add([
         '은하${m.number}',
-        m.name,
+        // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
+        m.nameEn.trim().isEmpty ? m.name : '${m.name} (${m.nameEn.trim()})',
+        m.nameEn.trim(),
         m.unit.trim(),
         m.birthday.trim(),
         m.date.trim(),
@@ -292,7 +294,14 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
               subtitle: '소속 은하스카우트',
             ),
             rows: [
-              for (final m in members) ['은하${m.number}', m.name],
+              // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
+              for (final m in members)
+                [
+                  '은하${m.number}',
+                  m.nameEn.trim().isEmpty
+                      ? m.name
+                      : '${m.name} (${m.nameEn.trim()})',
+                ],
             ],
             footerLeft: '한국범스카우트중앙회 · 은하스카우트',
           );
@@ -457,6 +466,21 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
               color: AppColors.textDark,
             ),
           ),
+          // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 표시하지 않음).
+          if (m.nameEn.trim().isNotEmpty) ...[
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                m.nameEn.trim(),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textGray,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       subtitle: Text(
