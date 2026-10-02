@@ -414,22 +414,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.edit, color: Colors.white),
                   onPressed: () => _openMyEdit(state),
                 ),
-              if (state.isSelfAccess && !_showMainHome)
-                IconButton(
-                  tooltip: '내 QR',
-                  icon: const Icon(Icons.qr_code_2),
-                  onPressed: () {
-                    final me = state.who.isNotEmpty
-                        ? state.byNumber(state.who)
-                        : (members.isNotEmpty ? members.first : null);
-                    if (me != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => QrScreen(member: me)),
-                      );
-                    }
-                  },
-                ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
                 onSelected: (v) {
@@ -513,6 +497,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           duration: Duration(milliseconds: 900),
                         ),
                       );
+                      break;
+                    case 'myqr':
+                      final me = state.who.isNotEmpty
+                          ? state.byNumber(state.who)
+                          : (members.isNotEmpty ? members.first : null);
+                      if (me != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                        );
+                      }
                       break;
                   }
                 },
@@ -617,6 +612,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: AppColors.textDark,
                     ),
                   ),
+                  // 내 QR 표시 (본인 인가자) — QR 아이콘을 삼점(⋮) 위치로 옮기며
+                  //  메뉴로도 접근 가능하게 한다(요구).
+                  if (state.isSelfAccess)
+                    const PopupMenuItem(
+                      value: 'myqr',
+                      child: _MenuItem(
+                        icon: Icons.qr_code_2,
+                        label: '내 QR 표시',
+                        color: AppColors.taegeukBlue,
+                      ),
+                    ),
                   // 개발자 후원 (모든 접근 등급)
                   const PopupMenuItem(
                     value: 'donate',
@@ -644,6 +650,30 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ],
+              ),
+              // QR 아이콘 — 삼점(⋮) 위치(우측 끝)로 이동. 본인 인가자면 내 QR 표시,
+              //  아니면 범스카우트 접근(앱 사용) QR 화면으로 이동한다(요구).
+              IconButton(
+                tooltip: 'QR',
+                icon: const Icon(Icons.qr_code_2),
+                onPressed: () {
+                  final me = state.who.isNotEmpty
+                      ? state.byNumber(state.who)
+                      : null;
+                  if (me != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AppAccessScreen(),
+                      ),
+                    );
+                  }
+                },
               ),
             ],
     ];
@@ -721,7 +751,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: Text(
                       '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
-                      // (요구) 버전 표시를 QR 쪽으로 붙여 우측 정렬.
+                      // (요구) 버전 표시를 우측 정렬.
                       textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -731,27 +761,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AppAccessScreen(),
-                      ),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.qr_code_2,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+                  // (요구) QR 아이콘을 2행(삼점 위치)으로 이동 — 1행에서는 제거.
                 ],
               ),
             ),
