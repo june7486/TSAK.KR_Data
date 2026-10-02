@@ -414,6 +414,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.edit, color: Colors.white),
                   onPressed: () => _openMyEdit(state),
                 ),
+              // (요구) QR 아이콘을 2행 삼점(⋮) 왼쪽으로 이동 — 우측 끝에서 일정거리
+              //  이격시킨다. 본인 인가자면 내 QR, 아니면 범스카우트 접근 QR 화면.
+              IconButton(
+                tooltip: 'QR',
+                icon: const Icon(Icons.qr_code_2),
+                onPressed: () {
+                  final me = state.who.isNotEmpty
+                      ? state.byNumber(state.who)
+                      : null;
+                  if (me != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AppAccessScreen(),
+                      ),
+                    );
+                  }
+                },
+              ),
+              // (요구) QR 은 우측 끝(⋮)에서 일정거리 이격 — 삼점과 명확히 분리.
+              const SizedBox(width: 10),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
                 onSelected: (v) {
@@ -651,30 +677,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              // QR 아이콘 — 삼점(⋮) 위치(우측 끝)로 이동. 본인 인가자면 내 QR 표시,
-              //  아니면 범스카우트 접근(앱 사용) QR 화면으로 이동한다(요구).
-              IconButton(
-                tooltip: 'QR',
-                icon: const Icon(Icons.qr_code_2),
-                onPressed: () {
-                  final me = state.who.isNotEmpty
-                      ? state.byNumber(state.who)
-                      : null;
-                  if (me != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => QrScreen(member: me)),
-                    );
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AppAccessScreen(),
-                      ),
-                    );
-                  }
-                },
-              ),
             ],
     ];
   }
@@ -751,7 +753,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: Text(
                       '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
-                      // (요구) 버전 표시를 우측 정렬.
+                      // (요구) 버전 표시를 우측 정렬하되, 우측 끝(QR/삼점)과 일정거리
+                      //  유지 — 트레일링 여백으로 이격한다.
                       textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -761,6 +764,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
+                  // (요구) 1행과 우측 아이콘(2행 QR/삼점) 사이 일정거리 유지용 여백.
+                  const SizedBox(width: 30),
                   // (요구) QR 아이콘을 2행(삼점 위치)으로 이동 — 1행에서는 제거.
                 ],
               ),
@@ -1430,10 +1435,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 3),
-          // 후원계좌 ↔ 아래 둥근 필터버튼 사이 간격을 소폭 확보(요구).
+          // 후원계좌 ↔ 아래 둥근 필터버튼 사이 간격(픽셀 분석: 현재 약 10px →
+          //  약간 더 확보, 요구).
           if (state.can('memberSearch'))
             Padding(
-              padding: const EdgeInsets.only(bottom: 7),
+              padding: const EdgeInsets.only(bottom: 13),
               child: _donationBanner(state),
             ),
           // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
