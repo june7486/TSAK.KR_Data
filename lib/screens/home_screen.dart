@@ -721,7 +721,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: Text(
                       '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
-                      textAlign: TextAlign.center,
+                      // (요구) 버전 표시를 QR 쪽으로 붙여 우측 정렬.
+                      textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1214,7 +1215,7 @@ class _HomeScreenState extends State<HomeScreen> {
       width: double.infinity,
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
       // (요구) 상하 여백 최소화 — 화면을 효율적으로 사용.
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Column(
         children: [
           // 검색창은 명단검색 권한이 있을 때만 (개인정보 보호)
@@ -1244,11 +1245,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
               ),
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           // AI 자연어 검색 예시 칩 — 누르면 바로 검색 실행
           if (state.can('memberSearch'))
             HScrollMenu(
-              height: 30,
+              height: 26,
               child: Row(
                 children: [
                   const Icon(
@@ -1297,7 +1298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           if (state.can('memberSearch'))
             Row(
               children: [
@@ -1312,7 +1313,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _statChip('검색결과', '${state.members.length}명', Icons.search),
               ],
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           // 연회비 연도별 납부 인원 (작게)
           if (state.can('memberSearch'))
             HScrollMenu(
@@ -1345,11 +1346,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           // 바로가기 — 행사관리를 맨 앞에 배치(가장 자주 쓰는 진입점).
           // 이어서 재무 바로가기(관리자·마스터 전용: 후원현황/수품구매/참가비/지출/결산/기본자료)
           HScrollMenu(
-            height: 48,
+            height: 42,
             padding: const EdgeInsets.only(right: 8),
             child: Row(
               children: [
@@ -1418,7 +1419,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           if (state.can('memberSearch')) _donationBanner(state),
           // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
           if (personalMain)
@@ -2369,14 +2370,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _filterBar(AppState state) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 1),
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           // ── 소속 필터 — 범스카우트/은하스카우트 통합검색 (요구: 은하도 명단검색) ──
           //   · 은하스카우트는 배출 중단된 별도 명단이지만, 모든 관리규칙은
           //     범스카우트와 동일하게 검색·말머리 노출한다.
           HScrollMenu(
-            height: 26,
+            height: 24,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2409,7 +2410,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 1),
           HScrollMenu(
-            height: 26,
+            height: 24,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2460,7 +2461,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 1),
           HScrollMenu(
-            height: 26,
+            height: 24,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2500,7 +2501,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 1),
           HScrollMenu(
-            height: 26,
+            height: 24,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
