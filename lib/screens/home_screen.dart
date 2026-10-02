@@ -1442,11 +1442,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 3),
-          // 후원계좌 ↔ 아래 둥근 필터버튼 사이 간격(픽셀 분석: 현재 약 10px →
-          //  약간 더 확보, 요구).
+          // 후원계좌 박스 ↔ 아래 둥근 필터버튼(칩) 사이 간격.
+          //  (픽셀 분석: 기존 약 10px → 약간 더 확보하도록 bottom 패딩을 키운다.)
           if (state.can('memberSearch'))
             Padding(
-              padding: const EdgeInsets.only(bottom: 13),
+              padding: const EdgeInsets.only(bottom: 22),
               child: _donationBanner(state),
             ),
           // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
