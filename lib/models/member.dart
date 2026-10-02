@@ -276,10 +276,19 @@ class Member {
     return '';
   }
 
-  /// 로그인 아이디 (일반회원은 전화번호, 인가자는 인가번호)
-  String get loginId => accessPhone.trim().isNotEmpty
-      ? accessPhone.replaceAll(RegExp(r'[^0-9]'), '')
-      : number;
+  /// 로그인 아이디 — 표준은 **'tiger<인가번호>'**(요구: "ID의 tiger 붙여 주고").
+  ///  · 일반회원(서포터즈): 전화번호(숫자)
+  ///  · 인가자: 'tiger' + 인가번호 (예: 인가번호 415 → 'tiger415')
+  ///  · (하위호환) 명시된 접속전화(accessPhone)가 있으면 그 숫자를 그대로 사용
+  static const String loginPrefix = 'tiger';
+  String get loginId {
+    final ap = accessPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (ap.isNotEmpty) return ap;
+    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (isRegular) return n;
+    if (n.isEmpty) return number.trim();
+    return '$loginPrefix$n';
+  }
 
   /// 전화번호 뒤 4자리 (기본 개인비밀번호)
   String get phoneLast4 {

@@ -346,7 +346,7 @@ def _scope_members(tier, who, members, regular=False, corps="tsak"):
         for m in members:
             num = re.sub(r"[^0-9]", "", str(m.get("number", "")))
             if who and who == num:
-                out.append(_redact_member(m))
+                out.append(_redact_member(m, self=True))
         return out
     # 실효 역할 키 도출
     if tier == "personal":
@@ -362,10 +362,12 @@ def _scope_members(tier, who, members, regular=False, corps="tsak"):
         ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
         is_self = bool(who) and (who in (num, lid, ph))
         is_sample = m.get("sample") is True
-        if is_self or is_sample or detail:
-            out.append(_redact_member(m))        # 상세(민감필드만 제거)
+        if is_self:
+            out.append(_redact_member(m, self=True))   # 본인: 사진·메모 보존
+        elif is_sample or detail:
+            out.append(_redact_member(m))              # 상세(민감필드만 제거)
         elif search:
-            out.append(_summary_member(m))       # 이름·번호 중심 축약
+            out.append(_summary_member(m))             # 이름·번호 중심 축약
         # 그 외(supporter/guest 타인)는 제외 → 개인정보 보호
     return out
 
@@ -389,13 +391,22 @@ def _summary_member(m):
     }
 
 
-def _redact_member(m):
-    """일반 열람 응답에서 제외해야 하는 민감 필드 제거(F01)."""
+def _redact_member(m, self=False):
+    """일반 열람 응답에서 제외해야 하는 민감 필드 제거(F01).
+
+    self=True(본인 조회)인 경우, 비밀번호류만 가리고 **본인 사진·메모·주소는
+    보존**한다. (요구: 본인 프로필에서 사진이 사라지면 안 됨 — 사진 초기화
+    버그의 원인 중 하나였던 리댁션 제거를 본인에 한해 완화)
+    """
     m = dict(m)
-    for k in ("personalPassword", "password", "pw", "memo", "photoPath", "address"):
-        m.pop(k, None)
+    if self:
+        for k in ("personalPassword", "password", "pw"):
+            m.pop(k, None)
+    else:
+        for k in ("personalPassword", "password", "pw", "memo", "photoPath", "address"):
+            m.pop(k, None)
     # 이름 노출 제어 — 관리자가 '이름 비공개'로 설정한 경우 이름을 가린다.
-    if m.get("nameVisible") is False:
+    if m.get("nameVisible") is False and not self:
         m["name"] = "(이름 비공개)"
         m["nameHidden"] = True
     return m
@@ -5808,32 +5819,69 @@ def _ev_member_by_ident(ident):
     return None
 
 
+# 로그인 아이디 접두어(요구: "ID의 tiger 붙여 주고") — 모든 인가자 ID는
+#   'tiger<인가번호>' 형태를 표준으로 한다. 하위호환을 위해 접두어 없는 입력도
+#   계속 허용하며, 내부 저장·대조 시에는 접두어를 제거한 값을 정본으로 본다.
+LOGIN_PREFIX = "tiger"
+
+
+def _strip_login_prefix(s):
+    """문자열 앞의 로그인 접두어('tiger'/'TIGER' 등, 무시 또는 뒤에 구분자 허용)를 제거."""
+    t = str(s or "").strip()
+    low = t.lower()
+    if low.startswith(LOGIN_PREFIX):
+        rest = t[len(LOGIN_PREFIX):]
+        # 'tiger415' 뿐 아니라 'tiger-415', 'tiger 415' 도 허용.
+        return rest.lstrip("-_ .")
+    return t
+
+
+def _login_id_of(number):
+    """인가번호 → 표준 로그인 아이디('tiger<번호>'). 숫자가 없으면 원본 반환."""
+    d = re.sub(r"[^0-9]", "", str(number or ""))
+    return f"{LOGIN_PREFIX}{d}" if d else str(number or "")
+
+
 def _member_by_ident_any(ident):
     """ID 문자열로 회원을 찾는다 — **숫자 전용이 아닌 문자 포함 ID 지원**.
 
     우선순위:
       1) ID가 등록된 로그인아이디(loginId/accessPhone)와 (숫자 무시) 일치
+         — 'tiger415' 처럼 접두어가 붙은 입력도 접두어를 떼고 대조한다.
       2) ID가 인가번호/은하번호와 일치
       3) ID가 전화번호와 일치
       4) ID에 숫자가 있으면 그 숫자로 기존 방식(_ev_member_by_ident) 재시도
-    반환: (member dict or None, 원본 ident 문자열)
+    반환: (member dict or None, 해석된 인가번호/원본 ident 문자열)
     """
     raw = str(ident or "").strip()
     if not raw:
         return None, raw
+    # 'tiger' 접두어 제거(하위호환: 접두어 없는 입력도 그대로 사용).
+    bare = _strip_login_prefix(raw)
     low = raw.lower()
-    digits = re.sub(r"[^0-9]", "", raw)
+    bare_low = bare.lower()
+    digits = re.sub(r"[^0-9]", "", bare) or re.sub(r"[^0-9]", "", raw)
     try:
         members = _ev_members()
     except Exception:
         members = []
     for m in members:
+        no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        # 표준 접두어 ID('tiger<번호>')와의 대조.
+        canon = _login_id_of(m.get("number", ""))
+        if canon and canon.lower() in (low, bare_low):
+            return m, str(m.get("number", "") or raw)
         for fld in ("loginId", "accessPhone"):
             v = str(m.get(fld) or "").strip()
-            if v and v.lower() == low:
+            if not v:
+                continue
+            vl = v.lower()
+            if vl in (low, bare_low):
                 return m, str(m.get("number", "") or raw)
-        no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
-        if no and (no == digits or str(m.get("number", "")) == raw):
+            # 등록값에 접두어가 없어도 접두어 입력과 일치하도록.
+            if _strip_login_prefix(v).lower() == bare_low:
+                return m, str(m.get("number", "") or raw)
+        if no and (no == digits or str(m.get("number", "")) == bare):
             return m, str(m.get("number", "") or raw)
         ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
         if ph and ph == digits:
@@ -9956,6 +10004,28 @@ class Handler(BaseHTTPRequestHandler):
                     found = False
                     for i, m in enumerate(members):
                         if str(m.get("id", "")) == mid:
+                            # ─────────────────────────────────────────────
+                            # [데이터 초기화 버그 수정] 클라이언트가 보낸 부분
+                            #  payload 를 기존 회원 위에 **병합**한다.
+                            #  · 회원 dict 를 통째로 교체하면, 읽기 응답에서
+                            #    스코핑(_scope_members)/리댁션(_redact_member)으로
+                            #    빠진 필드(사진·메모·주소·멘토/맨티/페어런츠 링크
+                            #    등)가 그대로 소실된다(실측: 사진 5건·부모/자녀
+                            #    링크가 이 경로로 사라짐). 기존값을 베이스로 두고
+                            #    payload 가 '실제로 지정한' 필드만 덮어쓴다.
+                            merged = dict(m)
+                            for k, v in mem.items():
+                                if k == "id":
+                                    continue
+                                cur = m.get(k)
+                                if (isinstance(v, str) and v.strip() == ""
+                                        and isinstance(cur, str)
+                                        and cur.strip()):
+                                    # 빈 문자열은 '값 비우기'가 아니라 '미지정'으로
+                                    #  간주해 기존값을 보존한다(사진·메모 보호).
+                                    continue
+                                merged[k] = v
+                            mem = merged
                             # 아이디(계정) 생성년월 보존 — 명부관리 '아이디생성년월'용.
                             if not mem.get("createdAt") and m.get("createdAt"):
                                 mem["createdAt"] = m.get("createdAt")
@@ -10007,14 +10077,49 @@ class Handler(BaseHTTPRequestHandler):
                         and str(members[0].get("corps") or "") == "eunha"):
                     _is_eunha_save = True
                 target_db = EUNHA_DB_FILE if _is_eunha_save else DB_FILE
-                # 연맹명 정규화(저장 시 일괄)
-                for _m in members:
-                    if isinstance(_m, dict):
-                        if "league" in _m:
-                            _m["league"] = _normalize_league(_m.get("league", ""))
-                        if "regLeague" in _m:
-                            _m["regLeague"] = _normalize_league(_m.get("regLeague", ""))
                 with LOCK:
+                    # ─────────────────────────────────────────────
+                    # [데이터 초기화 버그 수정] 전체 저장(/api/members)도 클라이언트가
+                    #  실제로 아는 필드만 반영하고, 서버에만 있는 필드(스코핑/리댁션으로
+                    #  읽기 응답에서 빠졌던 사진·메모·링크 등)는 삭제하지 않고 보존한다.
+                    #  → 통째 교체로 인한 리치 필드 소실을 원천 차단.
+                    try:
+                        _old_list = _load_json(target_db, [])
+                        _old_by_id = {
+                            str(x.get("id", "")): x
+                            for x in _old_list
+                            if isinstance(x, dict) and str(x.get("id", ""))
+                        }
+                        _merged_list = []
+                        for _m in members:
+                            if not isinstance(_m, dict):
+                                _merged_list.append(_m)
+                                continue
+                            _old = _old_by_id.get(str(_m.get("id", "")))
+                            if _old:
+                                _mm = dict(_old)
+                                for _k, _v in _m.items():
+                                    if _k == "id":
+                                        continue
+                                    _cur = _old.get(_k)
+                                    if (isinstance(_v, str) and _v.strip() == ""
+                                            and isinstance(_cur, str)
+                                            and _cur.strip()):
+                                        continue  # 빈 문자열=미지정 → 기존값 보존
+                                    _mm[_k] = _v
+                                _merged_list.append(_mm)
+                            else:
+                                _merged_list.append(_m)
+                        members = _merged_list
+                    except Exception:
+                        pass
+                    # 연맹명 정규화(저장 시 일괄)
+                    for _m in members:
+                        if isinstance(_m, dict):
+                            if "league" in _m:
+                                _m["league"] = _normalize_league(_m.get("league", ""))
+                            if "regLeague" in _m:
+                                _m["regLeague"] = _normalize_league(_m.get("regLeague", ""))
                     # backup before overwrite
                     if NAS.exists(target_db):
                         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
