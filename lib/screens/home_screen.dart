@@ -311,6 +311,344 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// 상단바 액션 아이콘 — (요구) 2행(아랫줄)에 우측 정렬로 배치.
+  List<Widget> _buildAppBarActions(AppState state) {
+    final members = state.members;
+    return [
+            if (_selectMode) ...[
+              IconButton(
+                tooltip: '전체 선택',
+                icon: const Icon(Icons.select_all),
+                onPressed: () {
+                  setState(() {
+                    if (_selected.length == members.length) {
+                      _selected.clear();
+                    } else {
+                      _selected
+                        ..clear()
+                        ..addAll(members.map((e) => e.id));
+                    }
+                  });
+                },
+              ),
+              IconButton(
+                tooltip: '닫기',
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() {
+                  _selectMode = false;
+                  _selected.clear();
+                }),
+              ),
+            ] else ...[
+              // 권한이 허용하는 메뉴만 아이콘으로 노출한다.
+              if (state.can('bulk'))
+                IconButton(
+                  tooltip: '단체 소식/문자',
+                  icon: const Icon(Icons.campaign),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BulkScreen()),
+                  ),
+                ),
+              if (state.can('stats'))
+                IconButton(
+                  tooltip: '통계',
+                  icon: const Icon(Icons.insights),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const StatsScreen()),
+                  ),
+                ),
+              // 은하스카우트 명단 — 별도 관리 · 관리자 이상
+              if (state.isApp || state.isMaster)
+                IconButton(
+                  tooltip: '은하스카우트 명단',
+                  icon: const Icon(Icons.list_alt),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const EunhaRosterScreen()),
+                  ),
+                ),
+              // 명단 선택 (일괄작업) — 관리자 이상
+              if (state.can('bulk'))
+                IconButton(
+                  tooltip: '명단 선택 (일괄작업)',
+                  icon: const Icon(Icons.checklist),
+                  onPressed: () => setState(() => _selectMode = true),
+                ),
+              // 게시판 — 새 글 알림 배지 표시
+              if (state.can('board'))
+                IconButton(
+                  tooltip: '게시판',
+                  icon: Badge(
+                    isLabelVisible: _boardUnread > 0,
+                    label: Text('$_boardUnread'),
+                    child: const Icon(Icons.forum_outlined),
+                  ),
+                  onPressed: () async {
+                    final st = context.read<AppState>();
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BoardScreen()),
+                    );
+                    // 게시판을 확인했으므로 해당 아이디 기준 읽음 처리 → 배지 차감.
+                    await st.markBadgeSeen(kind: 'board');
+                    _loadBoardUnread();
+                  },
+                ),
+              // 통합승인관리 — 대기 항목 배지(붉은 원형 숫자, 관리자·마스터 전용)
+              if (state.isApp || state.isMaster) _approvalAppbarIcon(),
+              if (personaForPersonal(state) && !_showMainHome)
+                IconButton(
+                  tooltip: '메인 홈으로',
+                  icon: const Icon(Icons.home_filled),
+                  onPressed: () {
+                    state.setPersonalBrowse(true);
+                    setState(() => _showMainHome = true);
+                  },
+                ),
+              if (state.isSelfAccess && !_showMainHome)
+                IconButton(
+                  tooltip: '본인 정보 편집',
+                  // 흰색 연필 — 보라 앱바 배경에 자연스럽게 어울리도록 복원.
+                  icon: const Icon(Icons.edit, color: Colors.white),
+                  onPressed: () => _openMyEdit(state),
+                ),
+              if (state.isSelfAccess && !_showMainHome)
+                IconButton(
+                  tooltip: '내 QR',
+                  icon: const Icon(Icons.qr_code_2),
+                  onPressed: () {
+                    final me = state.who.isNotEmpty
+                        ? state.byNumber(state.who)
+                        : (members.isNotEmpty ? members.first : null);
+                    if (me != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                      );
+                    }
+                  },
+                ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (v) {
+                  switch (v) {
+                    case 'settings':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                      break;
+                    case 'admin':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AdminScreen()),
+                      );
+                      break;
+                    case 'master_console':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const MasterConsoleScreen(),
+                        ),
+                      );
+                      break;
+                    case 'member_request':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const MemberRequestScreen(),
+                        ),
+                      );
+                      break;
+                    case 'import':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ImportScreen()),
+                      );
+                      break;
+                    case 'finance':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const FinanceScreen()),
+                      );
+                      break;
+                    case 'source':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SourceFolderScreen(),
+                        ),
+                      );
+                      break;
+                    case 'select':
+                      setState(() => _selectMode = true);
+                      break;
+                    case 'refresh':
+                      context.read<AppState>().refreshFromNas();
+                      break;
+                    case 'donate':
+                      showDonateSheet(context);
+                      break;
+                    case 'inquiry':
+                      showInquirySheet(context);
+                      break;
+                    case 'lock':
+                      context.read<AppState>().lock();
+                      break;
+                    case 'home':
+                      _searchCtrl.clear();
+                      context.read<AppState>().clearFilters();
+                      if (_scroll.hasClients) {
+                        _scroll.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                        );
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('초기 화면으로 이동했습니다'),
+                          duration: Duration(milliseconds: 900),
+                        ),
+                      );
+                      break;
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  if (state.isMaster)
+                    const PopupMenuItem(
+                      value: 'admin',
+                      child: _MenuItem(
+                        icon: Icons.admin_panel_settings,
+                        label: '앱 관리 — 앱접근 비번 변경/정지/복구',
+                        color: AppColors.taegeukRed,
+                        role: '마스터',
+                      ),
+                    ),
+                  if (state.isMaster)
+                    const PopupMenuItem(
+                      value: 'master_console',
+                      child: _MenuItem(
+                        icon: Icons.workspace_premium,
+                        label: '마스터 관리창 — 백업/회원/권한/로그/재무',
+                        color: AppColors.taegeukRed,
+                        role: '마스터',
+                      ),
+                    ),
+                  if (state.isApp || state.isMaster)
+                    const PopupMenuItem(
+                      value: 'member_request',
+                      child: _MenuItem(
+                        icon: Icons.app_registration,
+                        label: '등록요청 승인 — 평생회원·연회비·자격',
+                        color: AppColors.lifetimeGold,
+                        role: '관리자',
+                      ),
+                    ),
+                  if (!state.isSelfAccess) ...[
+                    const PopupMenuItem(
+                      value: 'finance',
+                      child: _MenuItem(
+                        icon: Icons.account_balance_wallet,
+                        label: '재무 관리 (후원·수품·참가비)',
+                        color: AppColors.taegeukBlue,
+                        role: '관리자',
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'import',
+                      child: _MenuItem(
+                        icon: Icons.auto_awesome,
+                        label: '자료 가져오기 (AI 인식)',
+                        color: AppColors.taegeukBlue,
+                        role: '관리자',
+                      ),
+                    ),
+                  ],
+                  // 기본자료 폴더 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
+                  if (state.isMaster)
+                    const PopupMenuItem(
+                      value: 'source',
+                      child: _MenuItem(
+                        icon: Icons.folder_special,
+                        label: '기본자료 폴더 (첨부·자동분석)',
+                        color: AppColors.taegeukRed,
+                        role: '마스터',
+                      ),
+                    ),
+                  if (state.isMaster)
+                    const PopupMenuItem(
+                      value: 'settings',
+                      child: _MenuItem(
+                        icon: Icons.settings,
+                        label: '설정 · 백업/복원',
+                        color: AppColors.taegeukRed,
+                        role: '마스터',
+                      ),
+                    ),
+                  if (!state.isSelfAccess) ...[
+                    const PopupMenuItem(
+                      value: 'refresh',
+                      child: _MenuItem(
+                        icon: Icons.cloud_download,
+                        label: 'NAS 최신 데이터 불러오기',
+                        color: AppColors.taegeukBlue,
+                        role: '관리자',
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'select',
+                      child: _MenuItem(
+                        icon: Icons.checklist,
+                        label: '명단 선택 (일괄작업)',
+                        color: AppColors.taegeukBlue,
+                        role: '관리자',
+                      ),
+                    ),
+                  ],
+                  // 첫 화면으로 이동 (모든 접근 등급)
+                  const PopupMenuItem(
+                    value: 'home',
+                    child: _MenuItem(
+                      icon: Icons.home_outlined,
+                      label: '첫 화면으로 이동',
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  // 개발자 후원 (모든 접근 등급)
+                  const PopupMenuItem(
+                    value: 'donate',
+                    child: _MenuItem(
+                      icon: Icons.favorite,
+                      label: '개발자 후원',
+                      color: AppColors.lifetimeGold,
+                    ),
+                  ),
+                  // 문의 (모든 접근 등급)
+                  const PopupMenuItem(
+                    value: 'inquiry',
+                    child: _MenuItem(
+                      icon: Icons.mail_outline,
+                      label: '문의하기',
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'lock',
+                    child: _MenuItem(
+                      icon: Icons.lock_outline,
+                      label: '로그아웃',
+                      color: AppColors.taegeukRed,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -330,21 +668,22 @@ class _HomeScreenState extends State<HomeScreen> {
         //  leading 폭을 0으로 두고 title 좌측 여백 12 + 엠블럼 내부 패딩 4 = 16px 정렬.
         leadingWidth: 0,
         titleSpacing: 0,
-        title: _selectMode
-            ? Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: Text('${_selected.length}명 선택됨'),
-              )
-            : Row(
+        // (요구) 2행 앱바 — 상하 여백을 줄여 화면을 효율적으로 사용(목표 이미지).
+        toolbarHeight: 76,
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // (요구) 1행: 로고·브랜드(좌) · 버전/시각(가운데) · QR(우) — 여백 최소화.
+            SizedBox(
+              height: 34,
+              child: Row(
                 children: [
-                  // 좌측 여백 — 아래 검색창(16px)과 좌측 라인 정렬.
-                  const SizedBox(width: 12),
-                  // 엠블럼 — 누르면 초기 화면(필터 초기화 + 맨 위로)
                   AppHomeEmblem(
-                    size: 30,
+                    size: 26,
                     onHome: () {
                       _searchCtrl.clear();
-                      state.clearFilters();
+                      context.read<AppState>().clearFilters();
                       if (_scroll.hasClients) {
                         _scroll.animateTo(
                           0,
@@ -361,7 +700,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(width: 6),
-                  // 앱 접근 안내(주소+QR) — 제목 버튼
                   InkWell(
                     onTap: () => Navigator.push(
                       context,
@@ -369,37 +707,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         builder: (_) => const AppAccessScreen(),
                       ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 6,
-                        horizontal: 4,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            state.isEunha
-                                ? '한국은하스카우트중앙회'
-                                : '한국 범스카우트중앙회',
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          Text(
-                            '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ],
+                    child: Text(
+                      state.isEunha
+                          ? '한국은하스카우트중앙회'
+                          : '한국 범스카우트중앙회',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 2),
-                  // 상단 QR 링크 픽토그램
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   GestureDetector(
                     onTap: () => Navigator.push(
                       context,
@@ -408,360 +739,48 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
                         Icons.qr_code_2,
-                        size: 20,
+                        size: 18,
                         color: Colors.white,
                       ),
                     ),
                   ),
                 ],
               ),
-        actions: [
-          if (_selectMode) ...[
-            IconButton(
-              tooltip: '전체 선택',
-              icon: const Icon(Icons.select_all),
-              onPressed: () {
-                setState(() {
-                  if (_selected.length == members.length) {
-                    _selected.clear();
-                  } else {
-                    _selected
-                      ..clear()
-                      ..addAll(members.map((e) => e.id));
-                  }
-                });
-              },
             ),
-            IconButton(
-              tooltip: '닫기',
-              icon: const Icon(Icons.close),
-              onPressed: () => setState(() {
-                _selectMode = false;
-                _selected.clear();
-              }),
-            ),
-          ] else ...[
-            // 권한이 허용하는 메뉴만 아이콘으로 노출한다.
-            if (state.can('bulk'))
-              IconButton(
-                tooltip: '단체 소식/문자',
-                icon: const Icon(Icons.campaign),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const BulkScreen()),
+            const SizedBox(height: 2),
+            // (요구) 2행: 액션 아이콘 — 여백을 줄여 우측 정렬.
+            //   아이콘 버튼 자체를 조밀(compact)하게 만들어 한 줄에 더 많이 노출한다.
+            IconButtonTheme(
+              data: IconButtonThemeData(
+                style: ButtonStyle(
+                  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                  minimumSize: const WidgetStatePropertyAll(Size(38, 36)),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
                 ),
               ),
-            if (state.can('stats'))
-              IconButton(
-                tooltip: '통계',
-                icon: const Icon(Icons.insights),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const StatsScreen()),
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: _buildAppBarActions(state),
               ),
-            // 은하스카우트 명단 — 별도 관리 · 관리자 이상
-            if (state.isApp || state.isMaster)
-              IconButton(
-                tooltip: '은하스카우트 명단',
-                icon: const Icon(Icons.list_alt),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const EunhaRosterScreen()),
-                ),
-              ),
-            // 명단 선택 (일괄작업) — 관리자 이상
-            if (state.can('bulk'))
-              IconButton(
-                tooltip: '명단 선택 (일괄작업)',
-                icon: const Icon(Icons.checklist),
-                onPressed: () => setState(() => _selectMode = true),
-              ),
-            // 게시판 — 새 글 알림 배지 표시
-            if (state.can('board'))
-              IconButton(
-                tooltip: '게시판',
-                icon: Badge(
-                  isLabelVisible: _boardUnread > 0,
-                  label: Text('$_boardUnread'),
-                  child: const Icon(Icons.forum_outlined),
-                ),
-                onPressed: () async {
-                  final st = context.read<AppState>();
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const BoardScreen()),
-                  );
-                  // 게시판을 확인했으므로 해당 아이디 기준 읽음 처리 → 배지 차감.
-                  await st.markBadgeSeen(kind: 'board');
-                  _loadBoardUnread();
-                },
-              ),
-            // 통합승인관리 — 대기 항목 배지(붉은 원형 숫자, 관리자·마스터 전용)
-            if (state.isApp || state.isMaster) _approvalAppbarIcon(),
-            if (personaForPersonal(state) && !_showMainHome)
-              IconButton(
-                tooltip: '메인 홈으로',
-                icon: const Icon(Icons.home_filled),
-                onPressed: () {
-                  state.setPersonalBrowse(true);
-                  setState(() => _showMainHome = true);
-                },
-              ),
-            if (state.isSelfAccess && !_showMainHome)
-              IconButton(
-                tooltip: '본인 정보 편집',
-                // 흰색 연필 — 보라 앱바 배경에 자연스럽게 어울리도록 복원.
-                icon: const Icon(Icons.edit, color: Colors.white),
-                onPressed: () => _openMyEdit(state),
-              ),
-            if (state.isSelfAccess && !_showMainHome)
-              IconButton(
-                tooltip: '내 QR',
-                icon: const Icon(Icons.qr_code_2),
-                onPressed: () {
-                  final me = state.who.isNotEmpty
-                      ? state.byNumber(state.who)
-                      : (members.isNotEmpty ? members.first : null);
-                  if (me != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => QrScreen(member: me)),
-                    );
-                  }
-                },
-              ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (v) {
-                switch (v) {
-                  case 'settings':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                    );
-                    break;
-                  case 'admin':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AdminScreen()),
-                    );
-                    break;
-                  case 'master_console':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MasterConsoleScreen(),
-                      ),
-                    );
-                    break;
-                  case 'member_request':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MemberRequestScreen(),
-                      ),
-                    );
-                    break;
-                  case 'import':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ImportScreen()),
-                    );
-                    break;
-                  case 'finance':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const FinanceScreen()),
-                    );
-                    break;
-                  case 'source':
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const SourceFolderScreen(),
-                      ),
-                    );
-                    break;
-                  case 'select':
-                    setState(() => _selectMode = true);
-                    break;
-                  case 'refresh':
-                    context.read<AppState>().refreshFromNas();
-                    break;
-                  case 'donate':
-                    showDonateSheet(context);
-                    break;
-                  case 'inquiry':
-                    showInquirySheet(context);
-                    break;
-                  case 'lock':
-                    context.read<AppState>().lock();
-                    break;
-                  case 'home':
-                    _searchCtrl.clear();
-                    context.read<AppState>().clearFilters();
-                    if (_scroll.hasClients) {
-                      _scroll.animateTo(
-                        0,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
-                      );
-                    }
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('초기 화면으로 이동했습니다'),
-                        duration: Duration(milliseconds: 900),
-                      ),
-                    );
-                    break;
-                }
-              },
-              itemBuilder: (ctx) => [
-                if (state.isMaster)
-                  const PopupMenuItem(
-                    value: 'admin',
-                    child: _MenuItem(
-                      icon: Icons.admin_panel_settings,
-                      label: '앱 관리 — 앱접근 비번 변경/정지/복구',
-                      color: AppColors.taegeukRed,
-                      role: '마스터',
-                    ),
-                  ),
-                if (state.isMaster)
-                  const PopupMenuItem(
-                    value: 'master_console',
-                    child: _MenuItem(
-                      icon: Icons.workspace_premium,
-                      label: '마스터 관리창 — 백업/회원/권한/로그/재무',
-                      color: AppColors.taegeukRed,
-                      role: '마스터',
-                    ),
-                  ),
-                if (state.isApp || state.isMaster)
-                  const PopupMenuItem(
-                    value: 'member_request',
-                    child: _MenuItem(
-                      icon: Icons.app_registration,
-                      label: '등록요청 승인 — 평생회원·연회비·자격',
-                      color: AppColors.lifetimeGold,
-                      role: '관리자',
-                    ),
-                  ),
-                if (!state.isSelfAccess) ...[
-                  const PopupMenuItem(
-                    value: 'finance',
-                    child: _MenuItem(
-                      icon: Icons.account_balance_wallet,
-                      label: '재무 관리 (후원·수품·참가비)',
-                      color: AppColors.taegeukBlue,
-                      role: '관리자',
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'import',
-                    child: _MenuItem(
-                      icon: Icons.auto_awesome,
-                      label: '자료 가져오기 (AI 인식)',
-                      color: AppColors.taegeukBlue,
-                      role: '관리자',
-                    ),
-                  ),
-                ],
-                // 기본자료 폴더 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
-                if (state.isMaster)
-                  const PopupMenuItem(
-                    value: 'source',
-                    child: _MenuItem(
-                      icon: Icons.folder_special,
-                      label: '기본자료 폴더 (첨부·자동분석)',
-                      color: AppColors.taegeukRed,
-                      role: '마스터',
-                    ),
-                  ),
-                if (state.isMaster)
-                  const PopupMenuItem(
-                    value: 'settings',
-                    child: _MenuItem(
-                      icon: Icons.settings,
-                      label: '설정 · 백업/복원',
-                      color: AppColors.taegeukRed,
-                      role: '마스터',
-                    ),
-                  ),
-                if (!state.isSelfAccess) ...[
-                  const PopupMenuItem(
-                    value: 'refresh',
-                    child: _MenuItem(
-                      icon: Icons.cloud_download,
-                      label: 'NAS 최신 데이터 불러오기',
-                      color: AppColors.taegeukBlue,
-                      role: '관리자',
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'select',
-                    child: _MenuItem(
-                      icon: Icons.checklist,
-                      label: '명단 선택 (일괄작업)',
-                      color: AppColors.taegeukBlue,
-                      role: '관리자',
-                    ),
-                  ),
-                ],
-                // 첫 화면으로 이동 (모든 접근 등급)
-                const PopupMenuItem(
-                  value: 'home',
-                  child: _MenuItem(
-                    icon: Icons.home_outlined,
-                    label: '첫 화면으로 이동',
-                    color: AppColors.textDark,
-                  ),
-                ),
-                // 개발자 후원 (모든 접근 등급)
-                const PopupMenuItem(
-                  value: 'donate',
-                  child: _MenuItem(
-                    icon: Icons.favorite,
-                    label: '개발자 후원',
-                    color: AppColors.lifetimeGold,
-                  ),
-                ),
-                // 문의 (모든 접근 등급)
-                const PopupMenuItem(
-                  value: 'inquiry',
-                  child: _MenuItem(
-                    icon: Icons.mail_outline,
-                    label: '문의하기',
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'lock',
-                  child: _MenuItem(
-                    icon: Icons.lock_outline,
-                    label: '로그아웃',
-                    color: AppColors.taegeukRed,
-                  ),
-                ),
-              ],
             ),
           ],
-        ],
+        ),
       ),
       body: Column(
         children: [
           if (!selfView) _header(state, personalMain: personalMain),
           // 검색·필터는 명단검색 권한이 있을 때만 노출(개인정보 보호)
           if (!selfView && state.can('memberSearch')) _filterBar(state),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Expanded(
             child: selfView
                 // 개인 페이지: 헤더(개인정보·바로가기)를 함께 스크롤에 포함해
@@ -1194,7 +1213,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      // (요구) 상하 여백 최소화 — 화면을 효율적으로 사용.
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: Column(
         children: [
           // 검색창은 명단검색 권한이 있을 때만 (개인정보 보호)
@@ -1211,7 +1231,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 hintMaxLines: 1,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
                 prefixIcon: const Icon(Icons.search, color: AppColors.purple),
                 suffixIcon: _searchCtrl.text.isEmpty
                     ? null
@@ -1224,7 +1244,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
               ),
             ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           // AI 자연어 검색 예시 칩 — 누르면 바로 검색 실행
           if (state.can('memberSearch'))
             HScrollMenu(
@@ -1277,7 +1297,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
           if (state.can('memberSearch'))
             Row(
               children: [
@@ -1292,7 +1312,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _statChip('검색결과', '${state.members.length}명', Icons.search),
               ],
             ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           // 연회비 연도별 납부 인원 (작게)
           if (state.can('memberSearch'))
             HScrollMenu(
@@ -1325,7 +1345,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
           // 바로가기 — 행사관리를 맨 앞에 배치(가장 자주 쓰는 진입점).
           // 이어서 재무 바로가기(관리자·마스터 전용: 후원현황/수품구매/참가비/지출/결산/기본자료)
           HScrollMenu(
@@ -1398,7 +1418,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           if (state.can('memberSearch')) _donationBanner(state),
           // 개인 접근에서 HOME 으로 들어온 경우 되돌아가는 안내
           if (personalMain)
@@ -2310,7 +2330,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _statChip(String label, String value, IconData icon) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(12),
@@ -2349,14 +2369,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _filterBar(AppState state) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Column(
         children: [
           // ── 소속 필터 — 범스카우트/은하스카우트 통합검색 (요구: 은하도 명단검색) ──
           //   · 은하스카우트는 배출 중단된 별도 명단이지만, 모든 관리규칙은
           //     범스카우트와 동일하게 검색·말머리 노출한다.
           HScrollMenu(
-            height: 30,
+            height: 26,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2387,9 +2407,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 1),
           HScrollMenu(
-            height: 30,
+            height: 26,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2438,9 +2458,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 1),
           HScrollMenu(
-            height: 30,
+            height: 26,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
@@ -2478,9 +2498,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 1),
           HScrollMenu(
-            height: 30,
+            height: 26,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
