@@ -8,7 +8,7 @@ import '../models/member.dart';
 import '../services/app_config.dart';
 import '../services/app_state.dart';
 import '../services/nas_api.dart';
-import '../services/build_info.g.dart';
+import '../services/build_info.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
@@ -726,7 +726,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '통합 앱 · v${AppConfig.appVersion} · $kBuildShort',
+                      '통합 앱 · $versionName · $kBuildShort',
                       // (요구) 버전 표시를 우측 정렬하되, 우측 끝(QR/삼점)과 일정거리
                       //  유지 — 트레일링 여백으로 이격한다.
                       textAlign: TextAlign.right,

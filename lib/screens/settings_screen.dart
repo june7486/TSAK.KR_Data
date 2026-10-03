@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_config.dart';
 import '../services/app_state.dart';
-import '../services/build_info.g.dart';
+import '../services/build_info.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
@@ -619,7 +619,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionTitle('앱 정보 / 개발', Icons.info_outline),
             const SizedBox(height: 8),
             _kv('앱', '한국 범스카우트중앙회 통합 앱'),
-            _kv('버전', 'v${AppConfig.appVersion} · 빌드 $kBuildDisplay'),
+            _kv('버전', '$versionName · 빌드 $kBuildDisplay ($kCommit)'),
             _kv('개발', '${dev['name']} · ${dev['unit']}'),
             _kv('이메일', '${dev['email']}'),
             const SizedBox(height: 8),

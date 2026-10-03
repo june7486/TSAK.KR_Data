@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
-import '../services/app_config.dart';
 import '../services/build_info.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
@@ -491,7 +490,8 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('버전 정보'),
         content: Text(
-          '앱 버전: v${AppConfig.appVersion}\n'
+          '앱 버전: $versionName\n'
+          '커밋: $kCommit\n'
           '빌드: $kBuildDisplay',
         ),
         actions: [

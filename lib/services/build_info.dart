@@ -9,11 +9,23 @@ import 'build_info.g.dart';
 
 export 'build_info.g.dart';
 
-/// 짧은 버전 라벨 (앱바 등 좁은 공간용)  예: "v1.0.0 · 09-26 09:12"
-String get versionShortLabel => 'v${AppConfig.appVersion} · $kBuildShort';
+/// 표시용 버전 이름 — **커밋마다 자동으로 바뀐다**.
+///
+/// (요구) "버전 이름이 변경되지 않는데, 혹시 버그야?"
+///   기존에는 `AppConfig.appVersion`('1.0.0') 이 상수라 재빌드·커밋을 해도
+///   화면 버전 이름이 절대 바뀌지 않았다(옆의 빌드 시각만 바뀜).
+///   이제 버전 이름 = `앱버전+빌드넘버` 로 만들어, 커밋할 때마다 1씩 오른다.
+///   예: v1.0.0+34, v1.0.0+35 …
+String get versionName => 'v${AppConfig.appVersion}+$kBuildNumber';
 
-/// 전체 버전 라벨  예: "v1.0.0 · 2025-09-26 09:12"
-String get versionFullLabel => 'v${AppConfig.appVersion} · $kBuildDisplay';
+/// 커밋 표식 (변경 눈으로 확인용)  예: "a1b2c3d"
+String get buildCommit => kCommit;
+
+/// 짧은 버전 라벨 (앱바 등 좁은 공간용)  예: "v1.0.0+34 · 09-26 09:12"
+String get versionShortLabel => '$versionName · $kBuildShort';
+
+/// 전체 버전 라벨  예: "v1.0.0+34 · 2026-10-03 17:01"
+String get versionFullLabel => '$versionName · $kBuildDisplay';
 
 /// 서버(프록시) 버전 비교 결과.
 enum VersionStatus { unknown, upToDate, serverNewer, serverOlder }
