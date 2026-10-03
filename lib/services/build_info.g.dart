@@ -1,7 +1,7 @@
 // 자동 생성 파일 — scripts/gen_build_info.py 가 빌드 시 갱신합니다.
 // 직접 수정하지 마세요.
-const String kBuildStamp = '20261003133054';
-const int kBuildStampInt = 20261003133054;
+const String kBuildStamp = '20261003151023';
+const int kBuildStampInt = 20261003151023;
 const String kBuildStampKey = 'tsak_build_v';
-const String kBuildDisplay = '2026-10-03 13:30';
-const String kBuildShort = '10-03 13:30';
+const String kBuildDisplay = '2026-10-03 15:10';
+const String kBuildShort = '10-03 15:10';

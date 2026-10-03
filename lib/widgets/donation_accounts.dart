@@ -35,29 +35,37 @@ class DonationAccounts extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 4),
           child: Row(
             children: [
+              // 좌측 묶음: 계좌 이름 + 계좌번호를 나란히 붙여서 표시.
               Expanded(
-                child: Text(
-                  '${state.donations[index]['label']}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.lifetimeGold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  '${state.donations[index]['bank']} ${state.donations[index]['account']}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${state.donations[index]['label']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.lifetimeGold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      flex: 2,
+                      child: Text(
+                        '${state.donations[index]['bank']} ${state.donations[index]['account']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 6),
