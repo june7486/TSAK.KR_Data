@@ -21,6 +21,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_table_options.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
 import 'supplies_screen.dart';
@@ -98,6 +99,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   bool _ledgerSelMode = false;
   final Set<String> _ledgerSel = {};
   bool _ledgerBusy = false;
+
+  /// 출력 옵션(출력내용선택·위치이동·줄간격·글씨크기·용지) — 메뉴별로 기억.
+  final Map<String, TableOutputOptions> _outOpts = {};
   late final TextEditingController _ledgerYearCtl = TextEditingController(
     text: _ledgerYear,
   );
@@ -3075,6 +3079,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     const base = '수품_누적판매리포트';
     final meta = _reportMeta();
     final text = _reportText();
+    final o = _outOpts['report'];
     switch (format) {
       case TsakOutputFormat.pdf:
         return (
@@ -3082,6 +3087,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             meta: meta,
             text: text,
             footerLeft: '한국범스카우트중앙회 수품',
+            scale: o?.scale ?? 1.0,
+            rowSpaceMul: o?.rowSpaceMul ?? 1.0,
           ),
           ext: 'pdf',
           mime: 'application/pdf',
@@ -3091,6 +3098,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           meta: meta,
           text: text,
           footerLeft: '한국범스카우트중앙회 수품',
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
         );
         return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
       case TsakOutputFormat.excel:
@@ -3323,6 +3332,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   ) async {
     final meta = _stockMeta(stock);
     final text = _stockText(stock);
+    final o = _outOpts['stock'];
     switch (format) {
       case TsakOutputFormat.pdf:
         return (
@@ -3330,6 +3340,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             meta: meta,
             text: text,
             footerLeft: '한국범스카우트중앙회 수품',
+            scale: o?.scale ?? 1.0,
+            rowSpaceMul: o?.rowSpaceMul ?? 1.0,
           ),
           ext: 'pdf',
           mime: 'application/pdf',
@@ -3339,6 +3351,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           meta: meta,
           text: text,
           footerLeft: '한국범스카우트중앙회 수품',
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
         );
         return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
       case TsakOutputFormat.excel:
@@ -3433,6 +3447,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   ) async {
     final meta = _donationMeta();
     final text = _donationText();
+    final o = _outOpts['donation'];
     switch (format) {
       case TsakOutputFormat.pdf:
         return (
@@ -3440,6 +3455,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             meta: meta,
             text: text,
             footerLeft: '한국범스카우트중앙회 수품',
+            scale: o?.scale ?? 1.0,
+            rowSpaceMul: o?.rowSpaceMul ?? 1.0,
           ),
           ext: 'pdf',
           mime: 'application/pdf',
@@ -3449,6 +3466,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           meta: meta,
           text: text,
           footerLeft: '한국범스카우트중앙회 수품',
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
         );
         return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
       case TsakOutputFormat.excel:
@@ -3800,6 +3819,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onOpen: (f) => _openLedgerRows(f, rows: rows, selectedOnly: selectedOnly),
       onShareFormat: (f) =>
           _shareLedgerRows(rows, selectedOnly: selectedOnly, format: f),
+      // (요구) 출력내용선택·위치이동·줄간격 등 출력 옵션.
+      onOptions: () => _editLedgerOptions(
+        key: selectedOnly ? 'ledger.sel' : 'ledger.all',
+        columns: _ledgerDoc(rows: rows, selectedOnly: selectedOnly).columns,
+      ),
       onShareImage: () => _runLedgerOutput(
         TsakOutputFormat.jpg,
         rows: rows,
@@ -3808,6 +3832,24 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onShareLink: () =>
           showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
+  }
+
+  /// 수품 메뉴 공통 — 출력 옵션(출력내용선택·위치이동·줄간격·글씨크기·용지) 편집.
+  Future<void> _editLedgerOptions({
+    required String key,
+    required List<String> columns,
+  }) async {
+    final out = await showTsakTableOptions(
+      context,
+      title: '수품 출력 옵션',
+      subtitle: '출력 내용을 고르고, 순서를 옮기고, 줄 간격·글씨·용지를 정하세요.',
+      columns: columns,
+      initial: _outOpts[key],
+    );
+    if (out != null && mounted) {
+      setState(() => _outOpts[key] = out);
+      _snack('출력 옵션을 저장했습니다 · ${out.badge}');
+    }
   }
 
   /// 판매대장 문서(저장·프린트·공유 공용) — 선택/전체를 반영해 만든다.
@@ -3853,6 +3895,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       summary: _ledgerSummaryLines(rows),
       footerLeft: '한국범스카우트중앙회 수품',
       landscape: true,
+      // (요구) 출력내용선택·위치이동·줄간격·글씨크기·용지 옵션 반영.
+      options: _outOpts[selectedOnly ? 'ledger.sel' : 'ledger.all'],
     );
   }
 

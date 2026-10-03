@@ -69,6 +69,10 @@ class DocPdf {
   ///
   /// 샘플 규격(모든 출력 공통): 얇은 **테두리 박스** + 최상단 **레터헤드**(브랜드 +
   /// `N of M`) + 큰 **제목** + 메타 + **`PART 1`** 구분 라벨 + 표 + 합계 + 푸터.
+  ///
+  /// [scale] 글씨 크기 배율(작게 0.86 · 보통 1.0 · 크게 1.18).
+  /// [rowSpaceMul] 행 간격(밀도) 배율(좁게 0.72 · 보통 1.0 · 넓게 1.35).
+  /// [noWrapCols] 두줄 방지 열 인덱스 — 해당 열은 줄바꿈하지 않는다(글씨 자동 축소).
   static Future<Uint8List> build({
     required DocMeta meta,
     List<String> columns = const [],
@@ -76,6 +80,9 @@ class DocPdf {
     List<String> summary = const [],
     String footerLeft = '한국범스카우트중앙회',
     bool landscape = false,
+    double scale = 1.0,
+    double rowSpaceMul = 1.0,
+    Set<int> noWrapCols = const {},
   }) async {
     await _ensureFonts();
     final reg = _regular!;
@@ -85,8 +92,12 @@ class DocPdf {
 
     // (요구) 좁은 열(성명·인가년월일 등)이 **2줄로 접히지 않도록** 폰트를 8.5로
     //  낮추고 셀 좌우 패딩을 줄이며, 열 폭 계산에 패딩을 반영한다(_contentCols).
-    final base = pw.TextStyle(font: reg, fontSize: 8.5, color: _ink);
-    final baseBold = pw.TextStyle(font: bold, fontSize: 8.5, color: _ink);
+    //  (요구) 수품 출력에 글씨 크기·줄 간격 옵션 — 배율([scale]/[rowSpaceMul]) 반영.
+    final double cellPt = (8.5 * scale * 10).roundToDouble() / 10;
+    final int padV = (5 * rowSpaceMul).round().clamp(1, 14);
+    final int headV = (6 * rowSpaceMul).round().clamp(1, 16);
+    final base = pw.TextStyle(font: reg, fontSize: cellPt, color: _ink);
+    final baseBold = pw.TextStyle(font: bold, fontSize: cellPt, color: _ink);
 
     final doc = pw.Document();
 
@@ -198,12 +209,12 @@ class DocPdf {
               children: columns
                   .map(
                     (c) => pw.Padding(
-                      padding: const pw.EdgeInsets.fromLTRB(4, 6, 4, 6),
+                      padding: pw.EdgeInsets.fromLTRB(4, headV.toDouble(), 4, headV.toDouble()),
                       child: pw.Text(
                         c,
                         style: pw.TextStyle(
                           font: bold,
-                          fontSize: 8.5,
+                          fontSize: cellPt,
                           color: _strong,
                         ),
                       ),
@@ -213,36 +224,39 @@ class DocPdf {
             ),
           for (final r in rows)
             pw.TableRow(
-              children: r
+              children: r.asMap().entries
                   .map(
-                    (c) => pw.Container(
-                      padding: const pw.EdgeInsets.fromLTRB(4, 5, 4, 5),
-                      decoration: c.accent != null
+                    (e) => pw.Container(
+                      padding: pw.EdgeInsets.fromLTRB(4, padV.toDouble(), 4, padV.toDouble()),
+                      decoration: e.value.accent != null
                           ? pw.BoxDecoration(
                               border: pw.Border(
                                 left: pw.BorderSide(
-                                  color: _hex(c.accent!),
+                                  color: _hex(e.value.accent!),
                                   width: 2.4,
                                 ),
                               ),
                             )
                           : null,
                       child: pw.Column(
-                        crossAxisAlignment: _cross(c.align),
+                        crossAxisAlignment: _cross(e.value.align),
                         children: [
                           pw.Text(
-                            c.text,
-                            style: c.bold ? baseBold : base,
-                            textAlign: _align(c.align),
+                            e.value.text,
+                            style: e.value.bold ? baseBold : base,
+                            textAlign: _align(e.value.align),
+                            // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
+                            softWrap: !noWrapCols.contains(e.key),
+                            maxLines: noWrapCols.contains(e.key) ? 1 : null,
                           ),
-                          if (c.sub != null && c.sub!.trim().isNotEmpty)
+                          if (e.value.sub != null && e.value.sub!.trim().isNotEmpty)
                             pw.Padding(
                               padding: const pw.EdgeInsets.only(top: 1.5),
                               child: pw.Text(
-                                c.sub!,
+                                e.value.sub!,
                                 style: pw.TextStyle(
                                   font: reg,
-                                  fontSize: 7.5,
+                                  fontSize: (7.5 * scale * 10).roundToDouble() / 10,
                                   color: _gray,
                                 ),
                               ),
@@ -272,7 +286,11 @@ class DocPdf {
               .map(
                 (s) => pw.Text(
                   s,
-                  style: pw.TextStyle(font: bold, fontSize: 10, color: _ink),
+                  style: pw.TextStyle(
+                    font: bold,
+                    fontSize: (10 * scale * 10).roundToDouble() / 10,
+                    color: _ink,
+                  ),
                 ),
               )
               .toList(),
@@ -510,6 +528,9 @@ class DocPdf {
     String footerLeft = '한국범스카우트중앙회',
     bool landscape = false,
     String align = 'left',
+    double scale = 1.0,
+    double rowSpaceMul = 1.0,
+    Set<int> noWrapCols = const {},
   }) {
     final docRows = rows.asMap().entries.map((e) {
       final ac = kMujiAccents[e.key % kMujiAccents.length];
@@ -528,6 +549,9 @@ class DocPdf {
       summary: summary,
       footerLeft: footerLeft,
       landscape: landscape,
+      scale: scale,
+      rowSpaceMul: rowSpaceMul,
+      noWrapCols: noWrapCols,
     );
   }
 
@@ -862,9 +886,17 @@ class DocPdf {
     required DocMeta meta,
     required String text,
     String footerLeft = '한국범스카우트중앙회',
+    double scale = 1.0,
+    double rowSpaceMul = 1.0,
   }) {
     final lines = text.split('\n').map((l) => l.trimRight()).toList();
-    return build(meta: meta, summary: lines, footerLeft: footerLeft);
+    return build(
+      meta: meta,
+      summary: lines,
+      footerLeft: footerLeft,
+      scale: scale,
+      rowSpaceMul: rowSpaceMul,
+    );
   }
 }
 

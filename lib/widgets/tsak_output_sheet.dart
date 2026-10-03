@@ -44,6 +44,8 @@ Future<void> showTsakOutputSheet(
   VoidCallback? onShareLink,
   VoidCallback? onTxt,
   VoidCallback? onOnePage,
+  /// 출력 옵션(출력내용선택·위치이동·줄간격·글씨크기·용지) 편집을 연다.
+  VoidCallback? onOptions,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -180,6 +182,9 @@ Future<void> showTsakOutputSheet(
                       () => fire(onShare),
                       primary: true,
                     ),
+                  // (요구) 출력내용선택·위치이동·줄간격 등 출력 옵션 편집.
+                  if (onOptions != null)
+                    _act(Icons.tune, '출력 옵션', () => fire(onOptions)),
                   if (onPrint != null)
                     _act(Icons.print_outlined, '프린트', () => fire(onPrint)),
                   if (onEmail != null)

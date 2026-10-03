@@ -20,6 +20,7 @@ import 'mail_helper.dart';
 import 'output_formats.dart';
 import 'pdf_to_jpg.dart';
 import 'print_doc.dart';
+import 'table_options.dart';
 import 'web_nav.dart';
 
 /// 표 형식 문서 데이터(게시판/명단 공용).
@@ -35,6 +36,7 @@ class TsakTableDoc {
     this.summary = const [],
     this.footerLeft = '한국범스카우트중앙회',
     this.landscape = false,
+    this.options,
   });
 
   final String title;
@@ -48,6 +50,39 @@ class TsakTableDoc {
   final String footerLeft;
   final bool landscape;
 
+  /// 출력 옵션(출력내용선택·위치이동·글씨크기·줄간격·용지) — null 이면 기본.
+  ///
+  /// ## 규칙 (요구: "수품판매관리의 메뉴도 관리자명단출력처럼 출력내용선택,
+  /// 위치이동, 줄간격유지 항목등을 넣어줘")
+  final TableOutputOptions? options;
+
+  /// 옵션(선택·순서)을 적용한 **실제 출력 열**.
+  List<String> get viewColumns {
+    final o = options;
+    if (o == null || o.cols == null) return columns;
+    return applyTableOptions(
+      columns: columns,
+      rows: rows,
+      order: o.cols,
+      selected: o.cols!.toSet(),
+    ).columns;
+  }
+
+  /// 옵션(선택·순서)을 적용한 **실제 출력 행**.
+  List<List<String>> get viewRows {
+    final o = options;
+    if (o == null || o.cols == null) return rows;
+    return applyTableOptions(
+      columns: columns,
+      rows: rows,
+      order: o.cols,
+      selected: o.cols!.toSet(),
+    ).rows;
+  }
+
+  /// 옵션이 정한 용지 방향(없으면 문서 기본값).
+  bool get effectiveLandscape => options?.landscape ?? landscape;
+
   DocMeta get meta => DocMeta(
     title: title,
     subtitle: subtitle,
@@ -56,15 +91,17 @@ class TsakTableDoc {
     extra: extra,
   );
 
-  /// .txt 용 평문(제목/헤더/행/합계).
+  /// .txt 용 평문(제목/헤더/행/합계) — 옵션(선택·순서) 반영.
   String toPlainText() {
+    final cols = viewColumns;
+    final rs = viewRows;
     final b = StringBuffer();
     b.writeln(title);
     if (subtitle.trim().isNotEmpty) b.writeln(subtitle);
-    b.writeln('총 ${rows.length}건');
+    b.writeln('총 ${rs.length}건');
     b.writeln('─' * 40);
-    if (columns.isNotEmpty) b.writeln(columns.join(' | '));
-    for (final r in rows) {
+    if (cols.isNotEmpty) b.writeln(cols.join(' | '));
+    for (final r in rs) {
       b.writeln(r.join(' | '));
     }
     if (summary.isNotEmpty) {
@@ -76,35 +113,39 @@ class TsakTableDoc {
     return b.toString();
   }
 
-  /// 엑셀 붙여넣기/CSV — 헤더 + 행.
+  /// 엑셀 붙여넣기/CSV — 헤더 + 행. 옵션(선택·순서) 반영.
   String toCsv() {
+    final cols = viewColumns;
+    final rs = viewRows;
     String q(String s) {
       final v = s.replaceAll('"', '""');
       return '"$v"';
     }
 
     final b = StringBuffer();
-    if (columns.isNotEmpty) {
-      b.writeln(columns.map(q).join(','));
+    if (cols.isNotEmpty) {
+      b.writeln(cols.map(q).join(','));
     }
-    for (final r in rows) {
+    for (final r in rs) {
       b.writeln(r.map(q).join(','));
     }
     return b.toString();
   }
 
-  /// PPT/워드용 서식 텍스트(불릿 목록).
+  /// PPT/워드용 서식 텍스트(불릿 목록). 옵션(선택·순서) 반영.
   String toFormattedText(TsakOutputFormat f) {
+    final cols = viewColumns;
+    final rs = viewRows;
     final b = StringBuffer();
     b.writeln(f == TsakOutputFormat.ppt ? '$title (슬라이드용)' : '$title (문서용)');
     if (subtitle.trim().isNotEmpty) b.writeln(subtitle);
     b.writeln();
-    for (var i = 0; i < rows.length; i++) {
-      final r = rows[i];
+    for (var i = 0; i < rs.length; i++) {
+      final r = rs[i];
       final parts = <String>[];
       for (var c = 0; c < r.length; c++) {
         parts.add(
-          c == 0 ? r[c] : '${columns.length > c ? columns[c] : ''}=${r[c]}',
+          c == 0 ? r[c] : '${cols.length > c ? cols[c] : ''}=${r[c]}',
         );
       }
       b.writeln('${i + 1}. ${parts.join(' / ')}');
@@ -177,11 +218,13 @@ Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
       return (
         bytes: await DocPdf.buildSimple(
           meta: doc.meta,
-          columns: doc.columns,
-          rows: doc.rows,
+          columns: doc.viewColumns,
+          rows: doc.viewRows,
           summary: doc.summary,
           footerLeft: doc.footerLeft,
-          landscape: doc.landscape,
+          landscape: doc.effectiveLandscape,
+          scale: doc.options?.scale ?? 1.0,
+          rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
         ),
         ext: 'pdf',
         mime: 'application/pdf',
@@ -189,11 +232,13 @@ Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
     case TsakOutputFormat.jpg:
       final pdf = await DocPdf.buildSimple(
         meta: doc.meta,
-        columns: doc.columns,
-        rows: doc.rows,
+        columns: doc.viewColumns,
+        rows: doc.viewRows,
         summary: doc.summary,
         footerLeft: doc.footerLeft,
-        landscape: doc.landscape,
+        landscape: doc.effectiveLandscape,
+        scale: doc.options?.scale ?? 1.0,
+        rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
       );
       return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
     case TsakOutputFormat.excel:
