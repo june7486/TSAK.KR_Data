@@ -2874,7 +2874,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           const SizedBox(height: 8),
           TsakOutputBar(
             onFormat: (f) => _exportReport(f),
-            onShare: _shareReport,
+            onShare: () => _shareReport(),
             onShareImage: () => _exportReport(TsakOutputFormat.jpg),
             onShareLink: () => _exportReportLink(),
           ),
@@ -2886,8 +2886,96 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               _exportBtn(Icons.grid_on, '표 복사', () => _exportReportClip()),
             ],
           ),
+          const SizedBox(height: 10),
+          // (요구) PDF 전용이던 외부 열기/공유를 **모든 포맷**으로 확장.
+          const Text(
+            '모든 포맷 외부 열기 · 공유 (뷰어·인쇄·공유 시트)',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+          const SizedBox(height: 6),
+          _fmtChips(
+            onOpen: _openReport,
+            onShare: (f) => _shareReport(format: f),
+          ),
         ],
       ),
+    );
+  }
+
+  /// 모든 포맷 × 열기/공유 칩 줄 — 자체 출력 화면 공통(요구: 포맷전부 외부 내보내기).
+  Widget _fmtChips({
+    required void Function(TsakOutputFormat) onOpen,
+    required void Function(TsakOutputFormat) onShare,
+  }) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final f in kTsakOutputOrder)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2DCD2)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(f.icon, size: 16, color: AppColors.purple),
+                    const SizedBox(width: 5),
+                    Text(
+                      f.label,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        minimumSize: const Size(0, 30),
+                        foregroundColor: AppColors.purpleDark,
+                      ),
+                      onPressed: () => onOpen(f),
+                      icon: const Icon(Icons.open_in_new, size: 13),
+                      label: const Text(
+                        '열기',
+                        style: TextStyle(fontSize: 11.5),
+                      ),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        minimumSize: const Size(0, 30),
+                        foregroundColor: AppColors.purpleDark,
+                      ),
+                      onPressed: () => onShare(f),
+                      icon: const Icon(Icons.ios_share, size: 13),
+                      label: const Text(
+                        '공유',
+                        style: TextStyle(fontSize: 11.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -2955,6 +3043,85 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       case TsakOutputFormat.txt:
         await _saveText(_reportText(), '$base.txt', mime: 'text/plain');
         return;
+    }
+  }
+
+  /// 누적판매 리포트를 **지정 포맷**으로 만들어 **외부 프로그램**(뷰어·인쇄)으로
+  /// 연다 — PDF 전용이던 '외부 미리보기/인쇄'를 모든 포맷으로 확장.
+  Future<void> _openReport(
+    TsakOutputFormat format, {
+    bool share = false,
+  }) async {
+    if (share) return _shareReport(format: format);
+    const base = '수품_누적판매리포트';
+    final f = await _buildReportBytes(format);
+    final ok = openFileExternally(f.bytes, '$base.${f.ext}', f.mime);
+    if (mounted) {
+      _snack(
+        ok
+            ? '${format.label} 파일을 외부 프로그램으로 열었습니다'
+            : '외부 열기가 막혀 ${format.label} 파일로 저장했습니다',
+      );
+    }
+    if (!ok) {
+      await _saveBytes(f.bytes, '$base.${f.ext}', mime: f.mime, ask: false);
+    }
+  }
+
+  /// 누적판매 리포트를 지정 포맷 바이트로 만든다(저장·열기·공유 공용).
+  Future<({Uint8List bytes, String ext, String mime})> _buildReportBytes(
+    TsakOutputFormat format,
+  ) async {
+    const base = '수품_누적판매리포트';
+    final meta = _reportMeta();
+    final text = _reportText();
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        return (
+          bytes: await DocPdf.buildFromText(
+            meta: meta,
+            text: text,
+            footerLeft: '한국범스카우트중앙회 수품',
+          ),
+          ext: 'pdf',
+          mime: 'application/pdf',
+        );
+      case TsakOutputFormat.jpg:
+        final pdf = await DocPdf.buildFromText(
+          meta: meta,
+          text: text,
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
+      case TsakOutputFormat.excel:
+        return (
+          bytes: Uint8List.fromList([
+            0xEF,
+            0xBB,
+            0xBF,
+            ...utf8.encode(_reportCsvText()),
+          ]),
+          ext: 'csv',
+          mime: 'text/csv',
+        );
+      case TsakOutputFormat.ppt:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_reportPlainText(format))),
+          ext: 'ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+      case TsakOutputFormat.word:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_reportPlainText(format))),
+          ext: 'doc',
+          mime: 'application/msword',
+        );
+      case TsakOutputFormat.txt:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(text)),
+          ext: 'txt',
+          mime: 'text/plain;charset=utf-8',
+        );
     }
   }
 
@@ -3072,71 +3239,253 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
   }
 
-  /// 누적판매 리포트를 **OS 공유 시트**로 공유한다(PDF).
-  Future<void> _shareReport() async {
+  /// 누적판매 리포트를 **지정 포맷**(기본 PDF)으로 OS 공유 시트로 공유한다.
+  Future<void> _shareReport({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
     try {
-      final pdf = await DocPdf.buildFromText(
-        meta: _reportMeta(),
-        text: _reportText(),
-        footerLeft: '한국범스카우트중앙회 수품',
-      );
-      final res = await shareFileNamed(
-        bytes: pdf,
-        filename: '수품_누적판매리포트.pdf',
-        mime: 'application/pdf',
+      final f = await _buildReportBytes(format);
+      final res = await shareBytes(
+        bytes: f.bytes,
+        name: '수품_누적판매리포트',
+        ext: f.ext,
+        mime: f.mime,
         subject: '수품 누적판매 리포트',
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '누적판매 리포트 PDF'));
+      if (mounted) {
+        _snack(tsakShareMessage(res, what: '누적판매 리포트 ${format.label}'));
+      }
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
     }
   }
 
-  /// 재고 현황표를 **OS 공유 시트**로 공유한다(PDF).
-  Future<void> _shareStock(List<Map<String, dynamic>> stock) async {
+  /// 재고 현황표를 **지정 포맷**(기본 PDF)으로 OS 공유 시트로 공유한다.
+  Future<void> _shareStock(
+    List<Map<String, dynamic>> stock, {
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
     if (stock.isEmpty) {
       _snack('공유할 재고가 없습니다');
       return;
     }
     try {
-      final pdf = await DocPdf.buildFromText(
-        meta: _stockMeta(stock),
-        text: _stockText(stock),
-        footerLeft: '한국범스카우트중앙회 수품',
-      );
-      final res = await shareFileNamed(
-        bytes: pdf,
-        filename: '수품_재고현황표.pdf',
-        mime: 'application/pdf',
+      final f = await _buildStockBytes(stock, format);
+      final res = await shareBytes(
+        bytes: f.bytes,
+        name: '수품_재고현황표',
+        ext: f.ext,
+        mime: f.mime,
         subject: '수품 재고 현황표',
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '재고 현황표 PDF'));
+      if (mounted) _snack(tsakShareMessage(res, what: '재고 현황표 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
     }
   }
 
-  /// 공여 내역을 **OS 공유 시트**로 공유한다(PDF).
-  Future<void> _shareDonation() async {
+  /// 재고 현황표를 **지정 포맷**으로 만들어 **외부 프로그램**으로 연다(모든 포맷).
+  Future<void> _openStock(
+    List<Map<String, dynamic>> stock,
+    TsakOutputFormat format,
+  ) async {
+    if (stock.isEmpty) {
+      _snack('내보낼 재고가 없습니다');
+      return;
+    }
+    try {
+      final f = await _buildStockBytes(stock, format);
+      final ok = openFileExternally(f.bytes, '수품_재고현황표.${f.ext}', f.mime);
+      if (mounted) {
+        _snack(
+          ok
+              ? '${format.label} 파일을 외부 프로그램으로 열었습니다'
+              : '외부 열기가 막혀 ${format.label} 파일로 저장했습니다',
+        );
+      }
+      if (!ok) {
+        await _saveBytes(
+          f.bytes,
+          '수품_재고현황표.${f.ext}',
+          mime: f.mime,
+          ask: false,
+        );
+      }
+    } catch (e) {
+      if (mounted) _snack('열기 실패: $e');
+    }
+  }
+
+  /// 재고 현황표를 지정 포맷 바이트로 만든다(저장·열기·공유 공용).
+  Future<({Uint8List bytes, String ext, String mime})> _buildStockBytes(
+    List<Map<String, dynamic>> stock,
+    TsakOutputFormat format,
+  ) async {
+    final meta = _stockMeta(stock);
+    final text = _stockText(stock);
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        return (
+          bytes: await DocPdf.buildFromText(
+            meta: meta,
+            text: text,
+            footerLeft: '한국범스카우트중앙회 수품',
+          ),
+          ext: 'pdf',
+          mime: 'application/pdf',
+        );
+      case TsakOutputFormat.jpg:
+        final pdf = await DocPdf.buildFromText(
+          meta: meta,
+          text: text,
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
+      case TsakOutputFormat.excel:
+        return (
+          bytes: Uint8List.fromList([
+            0xEF,
+            0xBB,
+            0xBF,
+            ...utf8.encode(_stockCsvText(stock)),
+          ]),
+          ext: 'csv',
+          mime: 'text/csv',
+        );
+      case TsakOutputFormat.ppt:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_stockPlainText(stock, format))),
+          ext: 'ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+      case TsakOutputFormat.word:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_stockPlainText(stock, format))),
+          ext: 'doc',
+          mime: 'application/msword',
+        );
+      case TsakOutputFormat.txt:
+        return (
+          bytes: Uint8List.fromList(
+            utf8.encode(_stockPlainText(stock, TsakOutputFormat.txt)),
+          ),
+          ext: 'txt',
+          mime: 'text/plain;charset=utf-8',
+        );
+    }
+  }
+
+  /// 공여 내역을 **지정 포맷**(기본 PDF)으로 OS 공유 시트로 공유한다.
+  Future<void> _shareDonation({
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
     if (_donations.isEmpty) {
       _snack('공유할 공여 내역이 없습니다');
       return;
     }
     try {
-      final pdf = await DocPdf.buildFromText(
-        meta: _donationMeta(),
-        text: _donationText(),
-        footerLeft: '한국범스카우트중앙회 수품',
-      );
-      final res = await shareFileNamed(
-        bytes: pdf,
-        filename: '수품_공여내역.pdf',
-        mime: 'application/pdf',
+      final f = await _buildDonationBytes(format);
+      final res = await shareBytes(
+        bytes: f.bytes,
+        name: '수품_공여내역',
+        ext: f.ext,
+        mime: f.mime,
         subject: '수품 공여 내역',
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '공여 내역 PDF'));
+      if (mounted) _snack(tsakShareMessage(res, what: '공여 내역 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
+    }
+  }
+
+  /// 공여 내역을 **지정 포맷**으로 만들어 **외부 프로그램**으로 연다(모든 포맷).
+  Future<void> _openDonation(TsakOutputFormat format) async {
+    if (_donations.isEmpty) {
+      _snack('내보낼 공여 내역이 없습니다');
+      return;
+    }
+    try {
+      final f = await _buildDonationBytes(format);
+      final ok = openFileExternally(f.bytes, '수품_공여내역.${f.ext}', f.mime);
+      if (mounted) {
+        _snack(
+          ok
+              ? '${format.label} 파일을 외부 프로그램으로 열었습니다'
+              : '외부 열기가 막혀 ${format.label} 파일로 저장했습니다',
+        );
+      }
+      if (!ok) {
+        await _saveBytes(
+          f.bytes,
+          '수품_공여내역.${f.ext}',
+          mime: f.mime,
+          ask: false,
+        );
+      }
+    } catch (e) {
+      if (mounted) _snack('열기 실패: $e');
+    }
+  }
+
+  /// 공여 내역을 지정 포맷 바이트로 만든다(저장·열기·공유 공용).
+  Future<({Uint8List bytes, String ext, String mime})> _buildDonationBytes(
+    TsakOutputFormat format,
+  ) async {
+    final meta = _donationMeta();
+    final text = _donationText();
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        return (
+          bytes: await DocPdf.buildFromText(
+            meta: meta,
+            text: text,
+            footerLeft: '한국범스카우트중앙회 수품',
+          ),
+          ext: 'pdf',
+          mime: 'application/pdf',
+        );
+      case TsakOutputFormat.jpg:
+        final pdf = await DocPdf.buildFromText(
+          meta: meta,
+          text: text,
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
+      case TsakOutputFormat.excel:
+        return (
+          bytes: Uint8List.fromList([
+            0xEF,
+            0xBB,
+            0xBF,
+            ...utf8.encode(_donationCsvText()),
+          ]),
+          ext: 'csv',
+          mime: 'text/csv',
+        );
+      case TsakOutputFormat.ppt:
+        return (
+          bytes: Uint8List.fromList(
+            utf8.encode(_donationPlainText(format)),
+          ),
+          ext: 'ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+      case TsakOutputFormat.word:
+        return (
+          bytes: Uint8List.fromList(
+            utf8.encode(_donationPlainText(format)),
+          ),
+          ext: 'doc',
+          mime: 'application/msword',
+        );
+      case TsakOutputFormat.txt:
+        return (
+          bytes: Uint8List.fromList(
+            utf8.encode(_donationPlainText(TsakOutputFormat.txt)),
+          ),
+          ext: 'txt',
+          mime: 'text/plain;charset=utf-8',
+        );
     }
   }
 
@@ -5231,46 +5580,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       _snack('출력할 공여 내역이 없습니다');
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('공여 내역 출력 형식'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 12),
-            TsakOutputBar(
-              onFormat: (f) {
-                Navigator.pop(ctx);
-                _printDonation(format: f);
-              },
-              onShare: () {
-                Navigator.pop(ctx);
-                _shareDonation();
-              },
-              onShareImage: () {
-                Navigator.pop(ctx);
-                _printDonation(format: TsakOutputFormat.jpg);
-              },
-              onShareLink: () {
-                Navigator.pop(ctx);
-                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
+    await showTsakOutputSheet(
+      context,
+      title: '공여 내역 출력',
+      subtitle: '${_donations.length}건 · 행사·홍보 공여 내역',
+      onPick: (f) => _printDonation(format: f),
+      onOpen: _openDonation,
+      onShareFormat: (f) => _shareDonation(format: f),
+      onShare: () => _shareDonation(),
+      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
 
