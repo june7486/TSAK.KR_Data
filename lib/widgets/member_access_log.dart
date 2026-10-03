@@ -1,20 +1,14 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:provider/provider.dart';
-import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
-import '../services/doc_pdf.dart';
 import '../services/file_save.dart';
+import '../services/output_formats.dart';
+import '../services/table_export.dart';
 import '../theme/app_theme.dart';
+import 'tsak_output_sheet.dart';
+import 'tsak_table_options.dart';
 
 /// 회원 접속 로그 — 마스터 전용.
 ///
@@ -151,175 +145,206 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
-  // ---------------- 출력 / 공유 / 내보내기 ----------------
-  static pw.Font? _reg;
-  static pw.Font? _bold;
+  // ---------------- 출력 옵션 / 출력 / 공유 / 내보내기 ----------------
+  /// 출력 옵션(출력내용선택·위치이동·글씨크기·줄간격·용지) — 명부출력과 동일.
+  TableOutputOptions? _outOpts;
 
-  Future<void> _ensureFonts() async {
-    _reg ??= pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
-    );
-    _bold ??= pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
-    );
-  }
+  /// 회원 접속기록 표준 컬럼(명부출력과 동일 규칙).
+  static const List<String> _logCols = [
+    '일시',
+    '구분',
+    '이벤트',
+    '역할',
+    '열람자',
+    '기기',
+    'IP',
+  ];
 
-  Future<Uint8List> _pdf() async {
-    await _ensureFonts();
-    final reg = _reg!;
-    final bold = _bold!;
-    final doc = pw.Document();
-    final ink = PdfColor.fromInt(0xFF2A2A2A);
-    final gray = PdfColor.fromInt(0xFF7A7A7A);
-    final accent = PdfColor.fromInt(0xFF5B2C8D);
-    doc.addPage(
-      pw.MultiPage(
-        pageTheme: tsakPdfPageTheme(
-          format: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(28),
-        ),
-        footer: (ctx) => tsakPdfFooter(
-          pageNumber: ctx.pageNumber,
-          pagesCount: ctx.pagesCount,
-          left: '한국범스카우트중앙회 · 마스터 전용',
-          font: reg,
-        ),
-        build: (ctx) => [
-          pw.Text(
-            'TSAK 회원 접속 기록',
-            style: pw.TextStyle(font: bold, fontSize: 16, color: accent),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            '한국범스카우트중앙회 · 마스터 전용',
-            style: pw.TextStyle(font: reg, fontSize: 8, color: gray),
-          ),
-          pw.SizedBox(height: 10),
-          pw.Container(height: 0.8, color: accent),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            _title,
-            style: pw.TextStyle(font: bold, fontSize: 11, color: ink),
-          ),
-          pw.Text(
-            '총 ${_logs.length}건 · 출력일 '
-            '${DateTime.now().toString().substring(0, 16)}',
-            style: pw.TextStyle(font: reg, fontSize: 8, color: gray),
-          ),
-          pw.SizedBox(height: 10),
-          pw.Table.fromTextArray(
-            headers: const ['일시', '구분', '이벤트', '역할', '열람자', '기기', 'IP'],
-            data: [
-              for (final l in _logs)
-                [
-                  '${l['ts'] ?? ''}',
-                  l['self'] == true ? '본인' : '타인',
-                  '${l['event'] ?? ''}' == 'view' ? '열람' : '로그인',
-                  '${l['role'] ?? l['tier'] ?? ''}',
-                  '${l['viewer'] ?? ''}',
-                  '${l['device'] ?? ''}',
-                  '${l['ip'] ?? ''}',
-                ],
-            ],
-            headerStyle: pw.TextStyle(
-              font: bold,
-              fontSize: 8.5,
-              color: PdfColors.white,
-            ),
-            headerDecoration: pw.BoxDecoration(color: accent),
-            cellStyle: pw.TextStyle(font: reg, fontSize: 8, color: ink),
-            rowDecoration: const pw.BoxDecoration(
-              border: pw.Border(
-                bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.3),
-              ),
-            ),
-            cellPadding: const pw.EdgeInsets.symmetric(
-              horizontal: 4,
-              vertical: 3,
-            ),
-          ),
-          pw.SizedBox(height: 12),
-          pw.Text(
-            '※ 본 기록은 마스터만 열람할 수 있으며, 개인정보 보호를 위해 관리하십시오.',
-            style: pw.TextStyle(font: reg, fontSize: 7.5, color: gray),
-          ),
+  /// 본 회원의 접속기록 문서(선택 여부 반영).
+  TsakTableDoc _accessDoc({required bool selectedOnly}) {
+    final src = selectedOnly
+        ? [
+            for (final l in _logs)
+              if (_selected.contains(_key(l))) l,
+          ]
+        : _logs;
+    final rows = <List<String>>[
+      for (final l in src)
+        [
+          '${l['ts'] ?? ''}',
+          l['self'] == true ? '본인' : '타인',
+          '${l['event'] ?? ''}' == 'view' ? '열람' : '로그인',
+          '${l['role'] ?? l['tier'] ?? ''}',
+          '${l['viewer'] ?? ''}',
+          '${l['device'] ?? ''}',
+          '${l['ip'] ?? ''}',
         ],
-      ),
+    ];
+    return TsakTableDoc(
+      title: selectedOnly ? '회원 접속 기록 (선택)' : '회원 접속 기록',
+      subtitle: '한국범스카우트중앙회 · 마스터 전용',
+      description: '$_title 회원의 접속·열람 기록입니다.',
+      author: '마스터',
+      extra: {
+        '대상': _title,
+        '건수': selectedOnly ? '선택 ${rows.length}건' : '전체 ${rows.length}건',
+      },
+      columns: _logCols,
+      rows: rows,
+      summary: ['총 ${rows.length}건'],
+      footerLeft: '한국범스카우트중앙회 · 마스터 전용',
+      options: _outOpts,
     );
-    return doc.save();
   }
 
-  Future<void> _print() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await _pdf();
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
-    } catch (e) {
-      _snack('인쇄를 열 수 없습니다: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+  /// 출력 옵션 편집 — 명부출력과 동일 화면.
+  Future<void> _editOptions() async {
+    final out = await showTsakTableOptions(
+      context,
+      title: '접속기록 출력 옵션',
+      subtitle: '출력할 항목을 고르고, 순서를 옮기고, 줄 간격·글씨·용지를 정하세요.',
+      columns: _logCols,
+      initial: _outOpts,
+    );
+    if (out != null && mounted) {
+      setState(() => _outOpts = out);
+      _snack('출력 옵션을 저장했습니다 · ${out.badge}');
     }
   }
 
-  Future<void> _share() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await _pdf();
-      await Share.shareXFiles([
-        XFile.fromData(
-          bytes,
-          mimeType: 'application/pdf',
-          name:
-              '회원접속기록_${widget.member.number.isEmpty ? widget.member.loginId : widget.member.number}.pdf',
-        ),
-      ], subject: 'TSAK 회원 접속 기록 — ${widget.member.name}');
-    } catch (e) {
-      _snack('공유를 열 수 없습니다: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+  /// 출력 시트 — 명부출력과 동일 포맷(모든 포맷 저장/열기/공유 + 출력옵션).
+  Future<void> _openOutputSheet({bool selectedOnly = false}) async {
+    final rowsN = selectedOnly
+        ? _logs.where((l) => _selected.contains(_key(l))).length
+        : _logs.length;
+    if (rowsN == 0) {
+      _snack(selectedOnly ? '선택된 기록이 없습니다' : '출력할 기록이 없습니다');
+      return;
     }
+    await showTsakOutputSheet(
+      context,
+      title: selectedOnly ? '회원 접속기록 선택 출력' : '회원 접속기록 출력',
+      subtitle: selectedOnly ? '선택 $rowsN건' : '전체 $rowsN건',
+      onPick: (f) => _runOutput(selectedOnly: selectedOnly, format: f),
+      onOpen: (f) =>
+          _runOutput(selectedOnly: selectedOnly, format: f, open: true),
+      onShareFormat: (f) =>
+          _runOutput(selectedOnly: selectedOnly, format: f, share: true),
+      onPrint: () => _runOutput(
+        selectedOnly: selectedOnly,
+        format: TsakOutputFormat.pdf,
+        justPrint: true,
+      ),
+      onEmail: () => _emailOutput(selectedOnly: selectedOnly),
+      onShare: () => _runOutput(
+        selectedOnly: selectedOnly,
+        format: TsakOutputFormat.pdf,
+        share: true,
+      ),
+      onOptions: _editOptions,
+      onShareImage: () => _runOutput(
+        selectedOnly: selectedOnly,
+        format: TsakOutputFormat.jpg,
+        share: true,
+      ),
+      onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
+    );
   }
 
-  Future<void> _exportCsv() async {
-    setState(() => _busy = true);
-    try {
-      final b = StringBuffer();
-      b.writeln('일시,구분,이벤트,역할,열람자,기기,IP,UA');
-      for (final l in _logs) {
-        String q(Object? v) => '"${'${v ?? ''}'.replaceAll('"', '""')}"';
-        b.writeln(
-          [
-            q(l['ts']),
-            q(l['self'] == true ? '본인' : '타인'),
-            q('${l['event'] ?? ''}' == 'view' ? '열람' : '로그인'),
-            q(l['role'] ?? l['tier']),
-            q(l['viewer']),
-            q(l['device']),
-            q(l['ip']),
-            q(l['ua']),
-          ].join(','),
-        );
-      }
-      final name =
-          '회원접속기록_${widget.member.name}_${DateTime.now().toString().substring(0, 10)}';
-      // 엑셀 한글 깨짐 방지를 위해 UTF-8 BOM 을 붙인다.
-      final bytes = utf8.encode('\uFEFF${b.toString()}');
-      if (!mounted) return;
-      final choose = await askSaveLocation(context, info: '접속기록 (CSV)');
-      if (choose == null) return;
-      final ok = await saveFileNamed(
-        bytes: Uint8List.fromList(bytes),
-        filename: '$name.csv',
-        mime: 'text/csv;charset=utf-8',
-        mimeType: MimeType.csv,
-        choose: choose,
+  /// 지정 형식으로 저장/열기/공유/프린트(진행 대기창 포함) — 명부출력과 동일.
+  Future<void> _runOutput({
+    required bool selectedOnly,
+    required TsakOutputFormat format,
+    bool open = false,
+    bool share = false,
+    bool justPrint = false,
+  }) async {
+    final doc = _accessDoc(selectedOnly: selectedOnly);
+    if (doc.rows.isEmpty) {
+      _snack('출력할 기록이 없습니다');
+      return;
+    }
+    var choose = false;
+    if (!open && !share && !justPrint) {
+      final loc = await askTsakSaveLocation(
+        context,
+        info: '회원 접속기록 · ${format.label}',
       );
-      if (mounted) _snack(ok ? 'CSV 파일로 내보냈습니다' : '저장이 취소되었습니다');
+      if (loc == null) {
+        if (mounted) _snack('저장을 취소했습니다');
+        return;
+      }
+      choose = loc;
+    }
+    if (!mounted) return;
+    setState(() => _busy = true);
+    try {
+      await runWithTsakProgress(
+        context,
+        title: justPrint
+            ? '접속기록 프린트 준비'
+            : open
+            ? '접속기록 ${format.label} 외부 열기'
+            : '접속기록 ${format.label} 파일 생성',
+        note: '${doc.rows.length}건을 처리합니다.',
+        steps: justPrint
+            ? const ['문서 구성', '인쇄 창 열기']
+            : ['문서 구성', '${format.label} 생성', '파일 저장'],
+        task: (ctl) async {
+          ctl.update(
+            progress: 0.15,
+            message: '문서를 구성하는 중…',
+            stepIndex: 0,
+          );
+          if (justPrint) {
+            ctl.update(
+              progress: 0.6,
+              message: '인쇄 창을 여는 중…',
+              stepIndex: 1,
+            );
+            await printTsakTable(doc);
+            ctl.update(progress: 1.0, stepIndex: 2);
+            return;
+          }
+          ctl.update(
+            progress: 0.5,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
+          if (open) {
+            final res = await openTsakTableChosen(context, doc, format);
+            if (mounted) _snack(tsakShareMessage(res, what: '접속기록 ${format.label}'));
+          } else if (share) {
+            final res = await shareTsakTableChosen(context, doc, format);
+            if (mounted) _snack(tsakShareMessage(res, what: '접속기록 ${format.label}'));
+          } else {
+            final ok = await saveTsakTableChosen(
+              context,
+              doc,
+              format,
+              choose: choose,
+            );
+            if (ok && mounted) _snack('${format.label} 파일로 저장했습니다');
+          }
+          ctl.update(progress: 1.0, stepIndex: 2);
+        },
+      );
     } catch (e) {
       _snack('내보내기 실패: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 메일 본문으로 열기(명부출력과 동일).
+  Future<void> _emailOutput({required bool selectedOnly}) async {
+    final doc = _accessDoc(selectedOnly: selectedOnly);
+    await emailTsakTable(context, doc);
+  }
+
+  /// CSV(엑셀) — 저장위치 선택 + 아이폰 공유 대응.
+  Future<void> _exportCsv() async {
+    await _runOutput(selectedOnly: false, format: TsakOutputFormat.excel);
   }
 
   @override
@@ -385,20 +410,35 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                OutlinedButton.icon(
-                  onPressed: _busy || _logs.isEmpty ? null : _print,
-                  icon: const Icon(Icons.print, size: 17),
-                  label: const Text('출력'),
+                // (요구) 명부출력과 동일 포맷 — 모든 포맷 저장/외부열기/공유 + 옵션.
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                  ),
+                  onPressed: _busy || _logs.isEmpty
+                      ? null
+                      : () => _openOutputSheet(),
+                  icon: const Icon(Icons.ios_share, size: 17),
+                  label: const Text('출력/공유 (형식)'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _busy || _logs.isEmpty ? null : _share,
-                  icon: const Icon(Icons.ios_share, size: 17),
-                  label: const Text('공유'),
+                  onPressed: _busy || _selected.isEmpty
+                      ? null
+                      : () => _openOutputSheet(selectedOnly: true),
+                  icon: const Icon(Icons.checklist, size: 17),
+                  label: Text('선택 출력 (${_selected.length})'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _busy || _logs.isEmpty ? null : _exportCsv,
                   icon: const Icon(Icons.download, size: 17),
-                  label: const Text('파일로 내보내기'),
+                  label: const Text('CSV'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _editOptions,
+                  icon: const Icon(Icons.tune, size: 17),
+                  label: Text(
+                    _outOpts == null ? '출력 옵션' : '출력 옵션 · ${_outOpts!.badge}',
+                  ),
                 ),
                 if (_logs.isNotEmpty)
                   OutlinedButton.icon(
