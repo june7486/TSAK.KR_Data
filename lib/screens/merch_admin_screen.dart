@@ -2872,6 +2872,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           const SizedBox(height: 8),
           TsakOutputBar(
             onFormat: (f) => _exportReport(f),
+            onShare: _shareReport,
             onShareImage: () => _exportReport(TsakOutputFormat.jpg),
             onShareLink: () => _exportReportLink(),
           ),
@@ -3066,6 +3067,74 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       }
     } catch (e) {
       if (mounted) _snack('파일 저장 실패: $e');
+    }
+  }
+
+  /// 누적판매 리포트를 **OS 공유 시트**로 공유한다(PDF).
+  Future<void> _shareReport() async {
+    try {
+      final pdf = await DocPdf.buildFromText(
+        meta: _reportMeta(),
+        text: _reportText(),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      final res = await shareFileNamed(
+        bytes: pdf,
+        filename: '수품_누적판매리포트.pdf',
+        mime: 'application/pdf',
+        subject: '수품 누적판매 리포트',
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '누적판매 리포트 PDF'));
+    } catch (e) {
+      if (mounted) _snack('공유 실패: $e');
+    }
+  }
+
+  /// 재고 현황표를 **OS 공유 시트**로 공유한다(PDF).
+  Future<void> _shareStock(List<Map<String, dynamic>> stock) async {
+    if (stock.isEmpty) {
+      _snack('공유할 재고가 없습니다');
+      return;
+    }
+    try {
+      final pdf = await DocPdf.buildFromText(
+        meta: _stockMeta(stock),
+        text: _stockText(stock),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      final res = await shareFileNamed(
+        bytes: pdf,
+        filename: '수품_재고현황표.pdf',
+        mime: 'application/pdf',
+        subject: '수품 재고 현황표',
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '재고 현황표 PDF'));
+    } catch (e) {
+      if (mounted) _snack('공유 실패: $e');
+    }
+  }
+
+  /// 공여 내역을 **OS 공유 시트**로 공유한다(PDF).
+  Future<void> _shareDonation() async {
+    if (_donations.isEmpty) {
+      _snack('공유할 공여 내역이 없습니다');
+      return;
+    }
+    try {
+      final pdf = await DocPdf.buildFromText(
+        meta: _donationMeta(),
+        text: _donationText(),
+        footerLeft: '한국범스카우트중앙회 수품',
+      );
+      final res = await shareFileNamed(
+        bytes: pdf,
+        filename: '수품_공여내역.pdf',
+        mime: 'application/pdf',
+        subject: '수품 공여 내역',
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '공여 내역 PDF'));
+    } catch (e) {
+      if (mounted) _snack('공유 실패: $e');
     }
   }
 
@@ -4650,6 +4719,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 Navigator.pop(ctx);
                 _printStock(stock, format: f);
               },
+              onShare: () {
+                Navigator.pop(ctx);
+                _shareStock(stock);
+              },
               onShareImage: () {
                 Navigator.pop(ctx);
                 _printStock(stock, format: TsakOutputFormat.jpg);
@@ -5134,6 +5207,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               onFormat: (f) {
                 Navigator.pop(ctx);
                 _printDonation(format: f);
+              },
+              onShare: () {
+                Navigator.pop(ctx);
+                _shareDonation();
               },
               onShareImage: () {
                 Navigator.pop(ctx);
@@ -5841,6 +5918,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       invoiceMaker: m,
                       invoiceMade: made,
                     ),
+                    onShare: () {
+                      Navigator.pop(ctx);
+                      _exportMaker(
+                        invoiceMaker: m,
+                        invoiceMade: made,
+                        share: true,
+                      );
+                    },
                     onShareImage: () => _shareInvoiceAsImage(m, made),
                     onShareLink: () =>
                         showLinkShareDialog(context, _invoiceLink(m)),
@@ -6363,6 +6448,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     TsakOutputFormat format = TsakOutputFormat.pdf,
     Map<String, dynamic>? invoiceMaker,
     List<Map<String, dynamic>>? invoiceMade,
+    bool share = false,
   }) async {
     if (_makers.isEmpty) {
       _snack('제작자 목록이 없습니다');
@@ -6449,6 +6535,35 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
     // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
     const base = '수품_제작내역서';
+    // (요구) 모든 기기에 공유 시트 — 제작 내역서 PDF를 곧바로 공유.
+    if (share) {
+      final pdf = await DocPdf.build(
+        meta: meta,
+        columns: const [
+          '번호',
+          '제작자/담당',
+          '그룹·분류·규격',
+          '수량',
+          '단가',
+          '합계',
+          '제작일',
+          '메모',
+        ],
+        rows: rows,
+        summary: ['총 ${_makers.length}곳 · $madeCount건', '합계 ${_won(totalAmt)}'],
+        footerLeft: '한국범스카우트중앙회 수품',
+        landscape: true,
+      );
+      final res = await shareFileNamed(
+        bytes: pdf,
+        filename: '$base.pdf',
+        mime: 'application/pdf',
+        subject: meta.title,
+        text: '${meta.title} · 총 ${_makers.length}곳',
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '제작 내역서 PDF'));
+      return;
+    }
     switch (format) {
       case TsakOutputFormat.pdf:
         final bytes = await DocPdf.build(
