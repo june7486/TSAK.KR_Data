@@ -505,15 +505,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      if (_selMode)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 2),
-                          child: Checkbox(
-                            value: _selKeys.contains(k),
-                            onChanged: (_) => _toggleSel(k),
-                            visualDensity: VisualDensity.compact,
-                          ),
+                      // 좌측 선택박스 — 상시 노출(체크 시 선택모드 자동 진입).
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2),
+                        child: Checkbox(
+                          value: _selKeys.contains(k),
+                          onChanged: (_) => _toggleSel(k),
+                          visualDensity: VisualDensity.compact,
                         ),
+                      ),
                       Expanded(child: _groupCard(g, isReserve: false)),
                       // 우측 순서변경 손잡이 — 좌측 체크박스와 높이·정렬 통일(항상 노출)
                       ReorderableDragStartListener(
@@ -585,15 +585,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  if (_selMode)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: Checkbox(
-                        value: _selKeys.contains(_groupKeyOf(g.first)),
-                        onChanged: (_) => _toggleSel(_groupKeyOf(g.first)),
-                        visualDensity: VisualDensity.compact,
-                      ),
+                  // 좌측 선택박스 — 상시 노출.
+                  Padding(
+                    padding: const EdgeInsets.only(right: 2),
+                    child: Checkbox(
+                      value: _selKeys.contains(_groupKeyOf(g.first)),
+                      onChanged: (_) => _toggleSel(_groupKeyOf(g.first)),
+                      visualDensity: VisualDensity.compact,
                     ),
+                  ),
                   Expanded(child: _groupCard(g, isReserve: true)),
                 ],
               ),
@@ -1545,8 +1545,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     setState(() {
       if (_selKeys.contains(k)) {
         _selKeys.remove(k);
+        if (_selKeys.isEmpty) _selMode = false;
       } else {
         _selKeys.add(k);
+        _selMode = true;
       }
     });
   }
@@ -4160,30 +4162,30 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
     return _sectionBox('판매대장 (${_ledgerRows.length}건)', [
       for (final row in _ledgerRows)
-        if (!_ledgerSelMode)
-          _ledgerRow(row)
-        else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Checkbox(
-                  value: _ledgerSel.contains(_ledgerRowKey(row)),
-                  visualDensity: VisualDensity.compact,
-                  onChanged: (_) => setState(() {
-                    final k = _ledgerRowKey(row);
-                    if (_ledgerSel.contains(k)) {
-                      _ledgerSel.remove(k);
-                    } else {
-                      _ledgerSel.add(k);
-                    }
-                  }),
-                ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 좌측 선택박스 — 상시 노출.
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Checkbox(
+                value: _ledgerSel.contains(_ledgerRowKey(row)),
+                visualDensity: VisualDensity.compact,
+                onChanged: (_) => setState(() {
+                  final k = _ledgerRowKey(row);
+                  if (_ledgerSel.contains(k)) {
+                    _ledgerSel.remove(k);
+                    if (_ledgerSel.isEmpty) _ledgerSelMode = false;
+                  } else {
+                    _ledgerSel.add(k);
+                    _ledgerSelMode = true;
+                  }
+                }),
               ),
-              Expanded(child: _ledgerRow(row)),
-            ],
-          ),
+            ),
+            Expanded(child: _ledgerRow(row)),
+          ],
+        ),
     ]);
   }
 

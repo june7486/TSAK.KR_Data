@@ -8,6 +8,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
+import '../widgets/tsak_detail_sheet.dart';
 import '../widgets/member_registration_request_section.dart'
     show MemberRequestLabels;
 
@@ -522,6 +523,135 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     );
   }
 
+  /// 승인요청/연결요청 항목의 상세를 시트로 표시(카드 클릭).
+  void _showRequestDetail(
+    String key,
+    String kind,
+    Map<String, dynamic> m,
+  ) {
+    final color = _queueColor(key);
+    final name = '${m['name'] ?? '(이름없음)'}';
+    final number = '${m['number'] ?? m['ident'] ?? ''}';
+    final numLabel = Member.numLabelOf(number, '${m['corps'] ?? 'tsak'}');
+    final type = '${m['type'] ?? ''}';
+    final mentors =
+        ((m['mentorLabels'] as List?) ?? (m['mentors'] as List?) ?? [])
+            .map((e) => '$e')
+            .toList();
+    final parents =
+        ((m['parentLabels'] as List?) ?? (m['parents'] as List?) ?? [])
+            .map((e) => '$e')
+            .toList();
+    final children =
+        ((m['childLabels'] as List?) ?? (m['children'] as List?) ?? [])
+            .map((e) => '$e')
+            .toList();
+    showTsakDetailSheet(
+      context,
+      title: name,
+      subtitle: kind == 'link'
+          ? '연결 요청 · ${_linkKindLabel(m)}'
+          : '승인 요청 · ${MemberRequestLabels.label(type)}',
+      icon: kind == 'link'
+          ? Icons.link
+          : (type.isNotEmpty
+                ? MemberRequestLabels.icon(type)
+                : Icons.how_to_reg),
+      accent: color,
+      entries: tsakEntries([
+        TsakDetailEntry(
+          label: '구분',
+          value: kind == 'link' ? '연결 요청 (${_linkKindLabel(m)})' : '승인 요청',
+          icon: Icons.category_outlined,
+          color: color,
+          copyable: false,
+        ),
+        TsakDetailEntry(
+          label: '요청유형',
+          value: MemberRequestLabels.label(type),
+          icon: Icons.label_outline,
+          emphasize: type.isNotEmpty,
+        ),
+        TsakDetailEntry(
+          label: '인가번호',
+          value: numLabel.isEmpty ? number : numLabel,
+          icon: Icons.confirmation_number_outlined,
+          mono: true,
+        ),
+        TsakDetailEntry(
+          label: '연맹',
+          value: '${m['league'] ?? ''}',
+          icon: Icons.flag_outlined,
+        ),
+        TsakDetailEntry(
+          label: '소속대',
+          value: '${m['unit'] ?? ''}',
+          icon: Icons.groups_outlined,
+        ),
+        TsakDetailEntry(
+          label: '핸드폰',
+          value: '${m['phone'] ?? m['loginId'] ?? ''}',
+          icon: Icons.phone_outlined,
+          mono: true,
+        ),
+        TsakDetailEntry(
+          label: '아이디',
+          value: '${m['loginId'] ?? ''}',
+          icon: Icons.badge_outlined,
+          mono: true,
+        ),
+        TsakDetailEntry(label: '연도', value: '${m['year'] ?? ''}'),
+        TsakDetailEntry(label: '날짜', value: '${m['date'] ?? ''}'),
+        TsakDetailEntry(
+          label: '행사',
+          value: '${m['event'] ?? ''}',
+          icon: Icons.event_outlined,
+        ),
+        TsakDetailEntry(label: '메모', value: '${m['note'] ?? ''}'),
+        if (mentors.isNotEmpty)
+          TsakDetailEntry(
+            label: '지도자',
+            value: mentors.join(', '),
+            icon: Icons.school_outlined,
+          ),
+        if (parents.isNotEmpty)
+          TsakDetailEntry(
+            label: '부모',
+            value: parents.join(', '),
+            icon: Icons.family_restroom,
+          ),
+        if (children.isNotEmpty)
+          TsakDetailEntry(
+            label: '자녀',
+            value: children.join(', '),
+            icon: Icons.child_care_outlined,
+          ),
+        TsakDetailEntry(
+          label: '요청시각',
+          value: '${m['requestedAt'] ?? ''}',
+          icon: Icons.schedule,
+          mono: true,
+        ),
+        TsakDetailEntry(
+          label: '요청경로',
+          value: _reqSourceLabel(m),
+          icon: Icons.call_split,
+        ),
+        TsakDetailEntry(
+          label: '요청자',
+          value: (m['by'] is Map) ? _byLabel(m['by']) : '',
+          icon: Icons.person_outline,
+        ),
+        TsakDetailEntry(
+          label: '등록일',
+          value: '${m['created'] ?? ''}',
+          icon: Icons.calendar_today_outlined,
+          mono: true,
+        ),
+      ]),
+    );
+  }
+
   Widget _itemCard(String key, String kind, Map<String, dynamic> m, bool sel) {
     final id = _idOf(m);
     final color = _queueColor(key);
@@ -560,7 +690,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _toggle(key, id),
+        onTap: () => _showRequestDetail(key, kind, m),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -568,12 +698,20 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
             children: [
               Row(
                 children: [
-                  Icon(
-                    sel ? Icons.check_circle : Icons.circle_outlined,
-                    size: 18,
-                    color: sel ? AppColors.scoutGreen : AppColors.textGray,
+                  // 좌측 선택박스 — 상시 노출(체크 시 선택).
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: () => _toggle(key, id),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        sel ? Icons.check_box : Icons.check_box_outline_blank,
+                        size: 20,
+                        color: sel ? AppColors.scoutGreen : AppColors.textGray,
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       '$name${numLabel.isNotEmpty ? '  $numLabel' : ''}',

@@ -18,6 +18,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
+import '../widgets/tsak_detail_sheet.dart';
 
 /// 로그 확인 — 전체 회원 접속·열람 기록 (마스터 전용).
 ///
@@ -682,6 +683,77 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
     );
   }
 
+  /// 한 로그의 상세를 시트로 표시(행 클릭).
+  void _showLogDetail(Map<String, dynamic> l) {
+    final tier = '${l['tier'] ?? ''}';
+    final role = '${l['role'] ?? l['tier'] ?? ''}';
+    final isView = '${l['event'] ?? ''}' == 'view';
+    final isSelf = l['self'] == true;
+    Color c = AppColors.purple;
+    if (tier == 'master') c = AppColors.lifetimeGold;
+    if (tier == 'app') c = AppColors.taegeukBlue;
+    if (tier == 'guest') c = AppColors.scoutGreen;
+    final rowColor = isSelf ? AppColors.taegeukRed : c;
+    showTsakDetailSheet(
+      context,
+      title: '${l['name'] ?? '(이름없음)'}',
+      subtitle: '${isView ? '열람' : '로그인'} · $role',
+      icon: isView ? Icons.visibility_outlined : Icons.login,
+      accent: rowColor,
+      entries: tsakEntries([
+        TsakDetailEntry(
+          label: '구분',
+          value: isView ? '열람' : '로그인',
+          icon: isView ? Icons.visibility : Icons.login,
+          color: isView ? AppColors.purple : AppColors.scoutGreen,
+          copyable: false,
+        ),
+        TsakDetailEntry(
+          label: '본인여부',
+          value: isSelf ? '본인' : '타인',
+          icon: Icons.person_outline,
+          color: isSelf ? AppColors.taegeukRed : AppColors.textGray,
+          copyable: false,
+        ),
+        TsakDetailEntry(label: '역할', value: role, icon: Icons.badge_outlined),
+        TsakDetailEntry(
+          label: '회원구분',
+          value: tier,
+          icon: Icons.groups_outlined,
+        ),
+        TsakDetailEntry(
+          label: '열람대상',
+          value: '${l['viewer'] ?? ''}',
+          icon: Icons.person_search_outlined,
+        ),
+        TsakDetailEntry(
+          label: '식별번호',
+          value: '${l['ident'] ?? ''}',
+          icon: Icons.tag,
+          mono: true,
+        ),
+        TsakDetailEntry(label: '대상', value: '${l['who'] ?? ''}'),
+        TsakDetailEntry(
+          label: '기기',
+          value: '${l['device'] ?? ''}',
+          icon: Icons.devices_outlined,
+        ),
+        TsakDetailEntry(
+          label: 'IP 주소',
+          value: '${l['ip'] ?? ''}',
+          icon: Icons.public,
+          mono: true,
+        ),
+        TsakDetailEntry(
+          label: '시각',
+          value: '${l['ts'] ?? ''}',
+          icon: Icons.schedule,
+          mono: true,
+        ),
+      ]),
+    );
+  }
+
   Widget _logTile(Map<String, dynamic> l, int i) {
     final role = '${l['role'] ?? l['tier'] ?? ''}';
     final device = '${l['device'] ?? ''}';
@@ -719,19 +791,21 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
       ),
       child: Row(
         children: [
-          if (_selectMode)
-            Checkbox(
-              value: selected,
-              visualDensity: VisualDensity.compact,
-              activeColor: AppColors.purple,
-              onChanged: (_) => setState(() {
-                if (selected) {
-                  _selected.remove(_key(l));
-                } else {
-                  _selected.add(_key(l));
-                }
-              }),
-            ),
+          // 좌측 선택박스 — 상시 노출(체크 시 선택모드 자동 진입).
+          Checkbox(
+            value: selected,
+            visualDensity: VisualDensity.compact,
+            activeColor: AppColors.purple,
+            onChanged: (_) => setState(() {
+              if (selected) {
+                _selected.remove(_key(l));
+                if (_selected.isEmpty) _selectMode = false;
+              } else {
+                _selected.add(_key(l));
+                _selectMode = true;
+              }
+            }),
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
@@ -903,16 +977,10 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         ],
       ),
     );
-    if (!_selectMode) return tile;
+    // 행 클릭 → 상세 시트 (선택은 좌측 체크박스로).
     return InkWell(
       borderRadius: BorderRadius.circular(9),
-      onTap: () => setState(() {
-        if (selected) {
-          _selected.remove(_key(l));
-        } else {
-          _selected.add(_key(l));
-        }
-      }),
+      onTap: () => _showLogDetail(l),
       child: tile,
     );
   }
