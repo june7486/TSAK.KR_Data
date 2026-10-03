@@ -515,71 +515,27 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                   if (!v) _sel.clear();
                 }),
               ),
-              const Text(
-                '개별 선택 (관리 모드)',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              const Expanded(
+                child: Text(
+                  '표에서 개별 선택 (관리 모드)',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                ),
               ),
             ],
           ),
-          if (_selMode) ...[
-            const Divider(height: 10),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 300),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var i = 0; i < _items.length; i++)
-                      _selItem(_selKeys[i], _items[i], i),
-                  ],
-                ),
+          if (_selMode)
+            const Padding(
+              padding: EdgeInsets.only(top: 4, left: 2),
+              child: Text(
+                '· 표 행의 체크박스로 항목을 고르세요.',
+                style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
               ),
             ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _selItem(String key, Map<String, dynamic> s, int idx) {
-    final on = _sel.contains(key);
-    return InkWell(
-      onTap: () => setState(() {
-        if (on) {
-          _sel.remove(key);
-        } else {
-          _sel.add(key);
-        }
-      }),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1),
-        child: Row(
-          children: [
-            Checkbox(
-              value: on,
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              onChanged: (_) => setState(() {
-                if (on) {
-                  _sel.remove(key);
-                } else {
-                  _sel.add(key);
-                }
-              }),
-            ),
-            Expanded(
-              child: Text(
-                '${idx + 1}  ${s['name'] ?? ''}',
-                style: const TextStyle(fontSize: 11.5),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   // ==================== 출력 옵션 / 출력 / 공유 (명부출력과 동일) ====================
   TsakTableDoc _doc({required bool selectedOnly}) {

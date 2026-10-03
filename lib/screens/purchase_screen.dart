@@ -42,8 +42,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   String? _error;
   String _updated = '';
 
-  // 보기 모드: true=제작자별 구분 / false=전체보기(전체 항목 한번에)
-  bool _byMaker = true;
+  // 보기 모드: maker=제작자별 / date=날짜별 / flat=전체
+  String _viewMode = 'maker';
   // 다중 선택(취합·이동) 모드
   bool _selectMode = false;
   final Set<String> _selected = {};
@@ -123,6 +123,36 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       }
     }
     return '미배당';
+  }
+
+  Map<String, dynamic>? _mk(String id) {
+    for (final m in _makers) {
+      if ('${m['id']}' == id) return m;
+    }
+    return null;
+  }
+
+  /// 항목 날짜 — date 우선, 없으면 madeDate, 없으면 ''.
+  String _dateOf(Map<String, dynamic> p) {
+    final d = '${p['date'] ?? ''}'.trim();
+    if (d.isNotEmpty) return d;
+    return '${p['madeDate'] ?? ''}'.trim();
+  }
+
+  /// 날짜에서 연도(YYYY) 추출. 없으면 '미지정'.
+  String _yearOf(String d) {
+    final m = RegExp(r'(\d{4})').firstMatch(d);
+    return m?.group(1) ?? '미지정';
+  }
+
+  /// 날짜 라벨 정규화 — '2026.9.3' → '2026.09.03', 없으면 '날짜 미지정'.
+  String _dateLabel(String d) {
+    final t = d.trim();
+    if (t.isEmpty) return '날짜 미지정';
+    final m = RegExp(r'(\d{4})\D+(\d{1,2})\D+(\d{1,2})').firstMatch(t);
+    if (m == null) return t;
+    String p(String s) => s.padLeft(2, '0');
+    return '${m.group(1)}.${p(m.group(2)!)}.${p(m.group(3)!)}';
   }
 
   int get _total => _items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
@@ -798,16 +828,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     style: TextStyle(color: AppColors.textGray),
                   ),
                 )
-              : _byMaker
-              ? _byMakerList()
-              : _flatList(),
+              : _viewMode == 'maker'
+              ? _makerView()
+              : _viewMode == 'date'
+              ? _dateView()
+              : _flatView(),
         ),
       ],
     );
   }
 
   /// 제작자별 그룹핑 결과: [{makerId, label, items}]
-  List<Map<String, dynamic>> _groups() {
+  List<Map<String, dynamic>> _makerGroups() {
     final map = <String, List<Map<String, dynamic>>>{};
     for (final p in _items) {
       final mid = '${p['makerId'] ?? ''}'.trim();
@@ -826,8 +858,34 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     ];
   }
 
-  Widget _byMakerList() {
-    final groups = _groups();
+  /// 날짜별 그룹핑 결과: [{key, label, year, items}] — 최신 날짜 우선.
+  List<Map<String, dynamic>> _dateGroups() {
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final p in _items) {
+      final k = _dateLabel(_dateOf(p));
+      map.putIfAbsent(k, () => []).add(p);
+    }
+    final keys = map.keys.toList()
+      ..sort((a, b) {
+        // 미지정은 맨 아래, 그 외는 문자열 역순(최신 먼저).
+        if (a == '날짜 미지정') return 1;
+        if (b == '날짜 미지정') return -1;
+        return b.compareTo(a);
+      });
+    return [
+      for (final k in keys)
+        {
+          'key': k,
+          'label': k,
+          'year': _yearOf(k),
+          'items': map[k]!,
+        },
+    ];
+  }
+
+  /// 제작자별 뷰 — 제작자 카드(연락·대표 + 제작 수품 내역 + 소계).
+  Widget _makerView() {
+    final groups = _makerGroups();
     return ListView(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
       children: [
@@ -838,11 +896,83 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     );
   }
 
+  /// 날짜별 뷰 — 연도 → 날짜 카드(제작자·품목·소계).
+  Widget _dateView() {
+    final groups = _dateGroups();
+    final byYear = <String, List<Map<String, dynamic>>>{};
+    for (final g in groups) {
+      byYear.putIfAbsent('${g['year']}', () => []).add(g);
+    }
+    final years = byYear.keys.toList()
+      ..sort((a, b) {
+        if (a == '미지정') return 1;
+        if (b == '미지정') return -1;
+        return b.compareTo(a);
+      });
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
+      children: [
+        for (final y in years) ...[
+          _yearBand(y, byYear[y]!),
+          for (final g in byYear[y]!) _dateGroupCard(g),
+        ],
+        const SizedBox(height: 8),
+        _totalLine(),
+      ],
+    );
+  }
+
+  Widget _yearBand(String year, List<Map<String, dynamic>> gs) {
+    final n = gs.fold<int>(0, (a, g) => a + (g['items'] as List).length);
+    final sum = gs.fold<int>(
+      0,
+      (a, g) => a + (g['items'] as List).fold<int>(0, (x, e) => x + _wonInt(e['amount'])),
+    );
+    return Container(
+      margin: const EdgeInsets.fromLTRB(2, 10, 2, 6),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 16,
+            decoration: BoxDecoration(
+              color: AppColors.purple,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$year년',
+            style: const TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w900,
+              color: AppColors.purpleDark,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$n건 · ${_won(sum)}원',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _makerGroupCard(Map<String, dynamic> g) {
     final items = (g['items'] as List).cast<Map<String, dynamic>>();
     final sum = items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
     final qty = items.fold<int>(0, (a, e) => a + _wonInt(e['qty']));
-    final isNone = '${g['makerId']}'.isEmpty;
+    final mid = '${g['makerId']}';
+    final isNone = mid.isEmpty;
+    final m = isNone ? null : _mk(mid);
+    final contact = <String>[
+      if ((m?['ceo'] ?? '').toString().trim().isNotEmpty)
+        '대표 ${m?['ceo']}',
+      if ((m?['manager'] ?? '').toString().trim().isNotEmpty)
+        '담당 ${m?['manager']}',
+      if ((m?['phone'] ?? '').toString().trim().isNotEmpty) '${m?['phone']}',
+    ].join('  ·  ');
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -864,31 +994,51 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 top: Radius.circular(12),
               ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  isNone ? Icons.help_outline : Icons.factory_outlined,
-                  size: 17,
-                  color: isNone ? AppColors.textGray : AppColors.purple,
+                Row(
+                  children: [
+                    Icon(
+                      isNone ? Icons.help_outline : Icons.factory_outlined,
+                      size: 17,
+                      color: isNone ? AppColors.textGray : AppColors.purple,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        '${g['label']}',
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w900,
+                          color: isNone
+                              ? AppColors.textGray
+                              : AppColors.purpleDark,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${items.length}건 · ${_won(sum)}원',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    '${g['label']}',
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w900,
-                      color: isNone ? AppColors.textGray : AppColors.purpleDark,
+                if (contact.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 24),
+                    child: Text(
+                      contact,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.textGray,
+                      ),
                     ),
                   ),
-                ),
-                Text(
-                  '${items.length}종 · ${_won(sum)}원',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textGray,
-                  ),
-                ),
+                ],
               ],
             ),
           ),
@@ -912,7 +1062,87 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     );
   }
 
-  Widget _flatList() {
+  /// 날짜별 카드 — 날짜 헤더(제작자 요약) + 항목 + 소계.
+  Widget _dateGroupCard(Map<String, dynamic> g) {
+    final items = (g['items'] as List).cast<Map<String, dynamic>>();
+    final sum = items.fold<int>(0, (a, e) => a + _wonInt(e['amount']));
+    final qty = items.fold<int>(0, (a, e) => a + _wonInt(e['qty']));
+    final makers = <String>{
+      for (final p in items) _makerLabel('${p['makerId'] ?? ''}'),
+    }.toList();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
+            decoration: BoxDecoration(
+              color: AppColors.purple.withValues(alpha: 0.07),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_month_outlined,
+                  size: 16,
+                  color: AppColors.purple,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    '${g['label']}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.purpleDark,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${items.length}건 · ${_won(sum)}원',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Text(
+              '제작자  ${makers.join(' · ')}',
+              style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
+            ),
+          ),
+          for (var i = 0; i < items.length; i++)
+            _row(items[i], i, allowDrag: false),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+            child: Text(
+              '소계  수량 $qty · 금액 ${_won(sum)}원',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.taegeukBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _flatView() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
       children: [
@@ -944,21 +1174,26 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         runSpacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SegmentedButton<bool>(
+          SegmentedButton<String>(
             segments: const [
               ButtonSegment(
-                value: true,
+                value: 'maker',
                 label: Text('제작자별', style: TextStyle(fontSize: 12)),
                 icon: Icon(Icons.factory_outlined, size: 15),
               ),
               ButtonSegment(
-                value: false,
-                label: Text('전체보기', style: TextStyle(fontSize: 12)),
+                value: 'date',
+                label: Text('날짜별', style: TextStyle(fontSize: 12)),
+                icon: Icon(Icons.calendar_month_outlined, size: 15),
+              ),
+              ButtonSegment(
+                value: 'flat',
+                label: Text('전체', style: TextStyle(fontSize: 12)),
                 icon: Icon(Icons.view_list_outlined, size: 15),
               ),
             ],
-            selected: {_byMaker},
-            onSelectionChanged: (s) => setState(() => _byMaker = s.first),
+            selected: {_viewMode},
+            onSelectionChanged: (s) => setState(() => _viewMode = s.first),
             style: const ButtonStyle(
               visualDensity: VisualDensity.compact,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
