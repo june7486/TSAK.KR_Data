@@ -1,33 +1,30 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
-import '../services/doc_pdf.dart';
-import '../services/export_save.dart';
 import '../services/file_save.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
-import '../services/pdf_to_jpg.dart';
-import '../services/print_doc.dart';
 import '../services/output_formats.dart';
-import '../services/web_nav.dart';
+import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_table_options.dart';
 
 /// 중앙회 비품 재고 리스트 — 표 형식 관리 화면.
 ///
-/// - 품명 · 수량 · 비고 + **업데이트 날짜 / 재고 확인 날짜 / 확인자(인가번호·이름)**
-/// - 추가·수정·삭제, 좌측 손잡이로 순서 변경
-/// - MUJI 규칙(무인양품 + 다양한 색채) A4 세로 문서로 인쇄 / 메일 발송
+/// - 품명 · 구분 · 수량 · 비고 + 업데이트/확인 날짜 · 확인자(인가번호·이름)
+/// - 추가·수정·삭제, 좌측 손잡이로 **위치 이동**(순서 변경)
+/// - **선택 창**(전체선택/선택 해제/개별 선택) — 명부출력과 동일
+/// - **출력 옵션**(출력내용 선택·위치 이동·글씨크기·줄간격·가로/세로) — 명부출력과 동일
+/// - 모든 포맷(PDF·JPG·엑셀·PPT·워드·TXT) 저장·열기·공유(아이폰 포함) — 명부출력과 동일 틀
 ///
-/// [embedded] 가 true 이면 독립 Scaffold 없이 본문만 렌더한다
-/// (= 수품 판매관리 내부 탭에서 사용).
+/// [embedded] 가 true 이면 독립 Scaffold 없이 본문만 렌더한다(= 수품 판매관리 탭).
 class SuppliesScreen extends StatefulWidget {
   const SuppliesScreen({super.key, this.embedded = false});
 
@@ -42,6 +39,23 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   bool _loading = true;
   String? _error;
   String _updated = '';
+
+  // ── 명부출력식 선택/출력 상태 ──
+  final Set<String> _sel = {};
+  bool _selMode = false;
+  bool _busyBuilding = false;
+  TableOutputOptions? _outOpts;
+
+  /// 비품 표준 컬럼 — 명부출력과 동일 규칙(구분 포함).
+  static const List<String> _cols = [
+    '번호',
+    '구분',
+    '품명',
+    '수량',
+    '비고',
+    '확인일자',
+    '확인자',
+  ];
 
   NasApi get _nas => context.read<NasApi>();
 
@@ -69,6 +83,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         _items = items;
         _updated = '${cfg['suppliesUpdatedAt'] ?? ''}';
         _loading = false;
+        _sel.clear();
       });
     } catch (e) {
       if (!mounted) return;
@@ -102,6 +117,20 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     return '${d.year}.${p(d.month)}.${p(d.day)}';
   }
 
+  String _whoLabel(Map<String, dynamic> s) {
+    final by = '${s['checkedBy'] ?? ''}'.trim();
+    final nm = '${s['checkedByName'] ?? ''}'.trim();
+    return [
+      if (by.isNotEmpty) '범#$by',
+      if (nm.isNotEmpty) nm,
+    ].join(' ');
+  }
+
+  int get _total => _items.fold<int>(
+    0,
+    (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
+  );
+
   // ---------- 사진 업로드 ----------
   Future<String?> _pickPhoto() async {
     try {
@@ -124,11 +153,14 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     }
   }
 
-  // ---------- 추가 / 수정 ----------
+  // ---------- 추가 / 수정 (구분 포함) ----------
   Future<void> _edit({Map<String, dynamic>? existing}) async {
     final name = TextEditingController(text: '${existing?['name'] ?? ''}');
     final qty = TextEditingController(text: '${existing?['qty'] ?? ''}');
     final note = TextEditingController(text: '${existing?['note'] ?? ''}');
+    final category = TextEditingController(
+      text: '${existing?['category'] ?? ''}',
+    );
     final checked = TextEditingController(
       text: '${existing?['checkedAt'] ?? ''}'.isNotEmpty
           ? '${existing?['checkedAt']}'
@@ -144,7 +176,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 사진 미리보기 + 업로드
                 Row(
                   children: [
                     ClipRRect(
@@ -206,6 +237,32 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                   decoration: const InputDecoration(
                     labelText: '품명 *',
                     isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: category,
+                  decoration: const InputDecoration(
+                    labelText: '구분 (예: 잼버리 과정활동, 사무용품, 행사용품 등)',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: [
+                      for (final c in kSupplyCategories)
+                        ActionChip(
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          label: Text(c, style: const TextStyle(fontSize: 10.5)),
+                          onPressed: () => setDlg(() => category.text = c),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -275,6 +332,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       checkedAt: checked.text.trim(),
       whoName: _whoName,
       photo: photo.trim(),
+      category: category.text.trim(),
     );
     if (!mounted) return;
     _snack(r['ok'] == true ? '저장했습니다' : '저장 실패');
@@ -317,305 +375,368 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     if (!ok && mounted) _snack('순서 저장 실패');
   }
 
-  // ---------- MUJI 문서 ----------
-  String _docHtml() {
-    final total = _items.fold<int>(
-      0,
-      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
-    );
-    final rows = <List<DocCell>>[];
-    for (var i = 0; i < _items.length; i++) {
-      final s = _items[i];
-      final checkedBy = '${s['checkedBy'] ?? ''}'.trim();
-      final checkedName = '${s['checkedByName'] ?? ''}'.trim();
-      final who = [
-        if (checkedBy.isNotEmpty) '범#$checkedBy',
-        if (checkedName.isNotEmpty) checkedName,
-      ].join(' ');
-      rows.add([
-        DocCell('${i + 1}', align: 'center'),
-        DocCell(
-          '${s['name'] ?? ''}',
-          accent: kMujiAccents[i % kMujiAccents.length],
-          bold: true,
-        ),
-        DocCell('${s['qty'] ?? 0}', align: 'center'),
-        DocCell('${s['note'] ?? ''}'),
-        DocCell(
-          '${s['checkedAt'] ?? ''}'.isNotEmpty
-              ? '${s['checkedAt']}'
-              : '${s['updatedAt'] ?? ''}',
-          sub: who.isEmpty ? null : who,
-        ),
-      ]);
-    }
-    return buildMujiDoc(
-      meta: DocMeta(
-        title: '중앙회 비품 재고 리스트',
-        subtitle: '한국범스카우트중앙회 · 비품 재고 및 입출고 현황',
-        description: '아래 비품의 수량과 비고를 확인하고, 확인일자·확인자를 함께 기재합니다.',
-        author: _whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '',
-        extra: {
-          '총 항목': '${_items.length}건',
-          '총 수량': '$total',
-          if (_updated.isNotEmpty) '목록 갱신': _updated,
-        },
+  // ==================== 선택 창 (명부출력과 동일) ====================
+  List<String> get _selKeys => [for (var i = 0; i < _items.length; i++) 'r$i'];
+
+  List<Map<String, dynamic>> _selectedItems() => [
+    for (var i = 0; i < _items.length; i++)
+      if (_sel.contains('r$i')) _items[i],
+  ];
+
+  Widget _selPanel() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.22)),
       ),
-      columns: const ['번호', '품명', '수량', '비고', '확인일자 · 확인자'],
-      rows: rows,
-      summary:
-          '총 <b>${_items.length}</b>개 항목 · 총 수량 '
-          '<span class="g">$total</span>',
-      footerRight: '업데이트 ${_updated.isNotEmpty ? _updated : _today()}',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.checklist, size: 16, color: AppColors.purple),
+              const SizedBox(width: 5),
+              const Expanded(
+                child: Text(
+                  '선택 창',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
+                    color: AppColors.purpleDark,
+                  ),
+                ),
+              ),
+              Text(
+                '${_sel.length}건',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purpleDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                onPressed: () => setState(() {
+                  _selMode = true;
+                  _sel
+                    ..clear()
+                    ..addAll(_selKeys);
+                }),
+                child: const Text('전체선택', style: TextStyle(fontSize: 11.5)),
+              ),
+              const Spacer(),
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                onPressed: _sel.isEmpty
+                    ? null
+                    : () => setState(() => _sel.clear()),
+                child: const Text('선택 해제', style: TextStyle(fontSize: 11.5)),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.purple,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: _busyBuilding
+                  ? null
+                  : () => _openOutputSheet(selectedOnly: false),
+              icon: const Icon(Icons.ios_share, size: 16),
+              label: const Text(
+                '모두 출력 (형식)',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.purpleDark,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                side: BorderSide(
+                  color: AppColors.purple.withValues(alpha: 0.35),
+                ),
+              ),
+              onPressed: (_sel.isEmpty || _busyBuilding)
+                  ? null
+                  : () => _openOutputSheet(selectedOnly: true),
+              icon: const Icon(Icons.print_outlined, size: 16),
+              label: const Text(
+                '선택 항목 출력',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.purpleDark,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                side: BorderSide(
+                  color: AppColors.purple.withValues(alpha: 0.25),
+                ),
+              ),
+              onPressed: _busyBuilding ? null : _editOptions,
+              icon: const Icon(Icons.tune, size: 15),
+              label: const Text(
+                '출력 옵션',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Switch.adaptive(
+                value: _selMode,
+                onChanged: (v) => setState(() {
+                  _selMode = v;
+                  if (!v) _sel.clear();
+                }),
+              ),
+              const Text(
+                '개별 선택 (관리 모드)',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
+            ],
+          ),
+          if (_selMode) ...[
+            const Divider(height: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < _items.length; i++)
+                      _selItem(_selKeys[i], _items[i], i),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
-  /// 지정 포맷의 **파일 바이트**를 만든다(저장·공유·외부열기 공용).
-  Future<({Uint8List bytes, String ext, String mime})> _buildFormatBytes(
-    TsakOutputFormat format,
-  ) async {
-    final total = _items.fold<int>(
+  Widget _selItem(String key, Map<String, dynamic> s, int idx) {
+    final on = _sel.contains(key);
+    return InkWell(
+      onTap: () => setState(() {
+        if (on) {
+          _sel.remove(key);
+        } else {
+          _sel.add(key);
+        }
+      }),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Row(
+          children: [
+            Checkbox(
+              value: on,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (_) => setState(() {
+                if (on) {
+                  _sel.remove(key);
+                } else {
+                  _sel.add(key);
+                }
+              }),
+            ),
+            Expanded(
+              child: Text(
+                '${idx + 1}  ${s['name'] ?? ''}',
+                style: const TextStyle(fontSize: 11.5),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== 출력 옵션 / 출력 / 공유 (명부출력과 동일) ====================
+  TsakTableDoc _doc({required bool selectedOnly}) {
+    final src = selectedOnly ? _selectedItems() : _items;
+    final rows = <List<String>>[
+      for (var i = 0; i < src.length; i++)
+        [
+          '${i + 1}',
+          '${src[i]['category'] ?? ''}',
+          '${src[i]['name'] ?? ''}',
+          '${src[i]['qty'] ?? 0}',
+          '${src[i]['note'] ?? ''}',
+          '${src[i]['checkedAt'] ?? src[i]['updatedAt'] ?? ''}',
+          _whoLabel(src[i]),
+        ],
+    ];
+    final total = src.fold<int>(
       0,
       (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
     );
-    final meta = DocMeta(
-      title: '중앙회 비품 재고 리스트',
+    return TsakTableDoc(
+      title: selectedOnly ? '중앙회 비품 재고 (선택)' : '중앙회 비품 재고 리스트',
       subtitle: '한국범스카우트중앙회 · 비품 재고 및 입출고 현황',
-      description: '아래 비품의 수량과 비고를 확인하고, 확인일자·확인자를 함께 기재합니다.',
+      description: '아래 비품의 구분·수량·비고와 확인일자·확인자를 함께 기재합니다.',
       author: _whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '',
       extra: {
-        '총 항목': '${_items.length}건',
+        '총 항목': '${src.length}건',
         '총 수량': '$total',
         if (_updated.isNotEmpty) '목록 갱신': _updated,
+        '건수': selectedOnly ? '선택 ${src.length}건' : '전체 ${src.length}건',
       },
+      columns: _cols,
+      rows: rows,
+      summary: ['총 ${src.length}건 · 총 수량 $total'],
+      footerLeft: '한국범스카우트중앙회 · 비품 재고',
+      options: _outOpts,
     );
-    switch (format) {
-      case TsakOutputFormat.pdf:
-        return (
-          bytes: await DocPdf.buildFromText(
-            meta: meta,
-            text: _plainText(TsakOutputFormat.word),
-            footerLeft: '한국범스카우트중앙회',
-          ),
-          ext: 'pdf',
-          mime: 'application/pdf',
-        );
-      case TsakOutputFormat.jpg:
-        final pdfBytes = await DocPdf.buildFromText(
-          meta: meta,
-          text: _plainText(TsakOutputFormat.word),
-          footerLeft: '한국범스카우트중앙회',
-        );
-        return (
-          bytes: await pdfToJpg(pdfBytes),
-          ext: 'jpg',
-          mime: 'image/jpeg',
-        );
-      case TsakOutputFormat.excel:
-        return (
-          bytes: Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(_csvText())]),
-          ext: 'csv',
-          mime: 'text/csv',
-        );
-      case TsakOutputFormat.ppt:
-        return (
-          bytes: Uint8List.fromList(utf8.encode(_plainText(format))),
-          ext: 'ppt',
-          mime: 'application/vnd.ms-powerpoint',
-        );
-      case TsakOutputFormat.word:
-        return (
-          bytes: Uint8List.fromList(utf8.encode(_plainText(format))),
-          ext: 'doc',
-          mime: 'application/msword',
-        );
-      case TsakOutputFormat.txt:
-        return (
-          bytes: Uint8List.fromList(
-            utf8.encode(_plainText(TsakOutputFormat.txt)),
-          ),
-          ext: 'txt',
-          mime: 'text/plain;charset=utf-8',
-        );
-    }
   }
 
-  Future<void> _print({TsakOutputFormat format = TsakOutputFormat.pdf}) async {
-    if (_items.isEmpty) {
-      _snack('인쇄할 항목이 없습니다');
-      return;
-    }
-    try {
-      final f = await _buildFormatBytes(format);
-      await _saveBytes(f.bytes, '중앙회_비품_재고_리스트.${f.ext}', mime: f.mime);
-    } catch (e) {
-      _snack('${format.label} 생성 실패: $e');
-    }
-  }
-
-  /// 지정 포맷을 **외부 프로그램**(뷰어·인쇄·기본 앱)으로 연다 — 모든 포맷 공통.
-  Future<void> _openFormat(TsakOutputFormat format) async {
-    if (_items.isEmpty) {
-      _snack('내보낼 항목이 없습니다');
-      return;
-    }
-    try {
-      final f = await _buildFormatBytes(format);
-      final ok = openFileExternally(
-        f.bytes,
-        '중앙회_비품_재고_리스트.${f.ext}',
-        f.mime,
-      );
-      if (!ok) {
-        await _saveBytes(
-          f.bytes,
-          '중앙회_비품_재고_리스트.${f.ext}',
-          mime: f.mime,
-          ask: false,
-        );
-      }
-      _snack(
-        ok
-            ? '${format.label} 파일을 외부 프로그램으로 열었습니다'
-            : '외부 열기가 막혀 ${format.label} 파일로 저장했습니다',
-      );
-    } catch (e) {
-      _snack('열기 실패: $e');
-    }
-  }
-
-  /// 지정 포맷을 **OS 공유 시트**로 보낸다 — 모든 포맷 공통.
-  Future<void> _shareFormat(TsakOutputFormat format) async {
-    if (_items.isEmpty) {
-      _snack('공유할 항목이 없습니다');
-      return;
-    }
-    try {
-      final f = await _buildFormatBytes(format);
-      final res = await shareBytes(
-        bytes: f.bytes,
-        name: '중앙회_비품_재고_리스트',
-        ext: f.ext,
-        mime: f.mime,
-        subject: '중앙회 비품 재고 리스트',
-      );
-      _snack(tsakShareMessage(res, what: '${format.label} 비품 리스트'));
-    } catch (e) {
-      _snack('공유 실패: $e');
-    }
-  }
-
-  /// 바이트 파일 저장(웹) / 스낵바 안내.
-  Future<void> _saveBytes(
-    Uint8List bytes,
-    String filename, {
-    String? mime,
-    bool ask = true,
-  }) async {
-    final choose = ask ? await askSaveLocation(context) : false;
-    if (choose == null) return; // 취소
-    final ok = await saveFileNamed(
-      bytes: bytes,
-      filename: filename,
-      mime: mime ?? mimeForFilename(filename),
-      choose: choose,
+  Future<void> _editOptions() async {
+    final out = await showTsakTableOptions(
+      context,
+      title: '비품 재고 출력 옵션',
+      subtitle: '출력할 항목을 고르고, 순서를 옮기고, 줄 간격·글씨·용지를 정하세요.',
+      columns: _cols,
+      initial: _outOpts,
     );
-    _snack(ok ? '$filename 저장을 시작했습니다' : '저장이 취소되었습니다');
-  }
-
-  /// 비품 재고 → CSV(엑셀).
-  String _csvText() {
-    final buf = StringBuffer();
-    buf.writeln('번호,품명,수량,비고,확인일자,확인자');
-    for (var i = 0; i < _items.length; i++) {
-      final p = _items[i];
-      buf.writeln(
-        '${i + 1},${p['name'] ?? ''},${p['qty'] ?? 0},'
-        '${p['note'] ?? ''},${p['checked'] ?? ''},${p['whoName'] ?? ''}',
-      );
+    if (out != null && mounted) {
+      setState(() => _outOpts = out);
+      _snack('출력 옵션을 저장했습니다 · ${out.badge}');
     }
-    return buf.toString();
   }
 
-  /// 비품 재고 → PPT/워드 붙여넣기용 텍스트.
-  String _plainText(TsakOutputFormat format) {
-    final buf = StringBuffer();
-    buf.writeln(
-      format == TsakOutputFormat.ppt
-          ? '중앙회 비품 재고 (슬라이드용)'
-          : '중앙회 비품 재고 리스트 (문서용)',
-    );
-    buf.writeln(
-      '한국범스카우트중앙회 · ${_whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : ''}',
-    );
-    buf.writeln();
-    for (var i = 0; i < _items.length; i++) {
-      final p = _items[i];
-      buf.writeln(
-        '${i + 1}. ${p['name'] ?? ''} / ${p['qty'] ?? 0}개'
-        '${'${p['note'] ?? ''}'.trim().isEmpty ? '' : ' / ${p['note']}'}',
-      );
-    }
-    return buf.toString();
-  }
-
-  /// 출력 형식 선택 시트 (#14 규칙) — 모든 포맷 저장·열기·공유.
-  Future<void> _showOutputDialog() async {
-    if (_items.isEmpty) {
-      _snack('출력할 항목이 없습니다');
+  Future<void> _openOutputSheet({required bool selectedOnly}) async {
+    final n = selectedOnly ? _selectedItems().length : _items.length;
+    if (n == 0) {
+      _snack(selectedOnly ? '선택된 항목이 없습니다' : '출력할 항목이 없습니다');
       return;
     }
     await showTsakOutputSheet(
       context,
-      title: '중앙회 비품 재고 리스트 출력',
-      subtitle: '${_items.length}건 · 비품 재고 및 입출고 현황',
-      onPick: (f) => _print(format: f),
-      onOpen: _openFormat,
-      onShareFormat: _shareFormat,
-      onEmail: _email,
-      onShare: () => _shareFormat(TsakOutputFormat.pdf),
+      title: selectedOnly ? '비품 재고 선택 출력' : '중앙회 비품 재고 리스트 출력',
+      subtitle: selectedOnly ? '선택 $n건' : '전체 $n건 · 비품 재고 및 입출고 현황',
+      onPick: (f) => _runOutput(selectedOnly: selectedOnly, format: f),
+      onOpen: (f) =>
+          _runOutput(selectedOnly: selectedOnly, format: f, open: true),
+      onShareFormat: (f) =>
+          _runOutput(selectedOnly: selectedOnly, format: f, share: true),
+      onPrint: () => _runOutput(
+        selectedOnly: selectedOnly,
+        format: TsakOutputFormat.pdf,
+        justPrint: true,
+      ),
+      onEmail: () => _emailOutput(selectedOnly: selectedOnly),
+      onShare: () => _runOutput(
+        selectedOnly: selectedOnly,
+        format: TsakOutputFormat.pdf,
+        share: true,
+      ),
+      onOptions: _editOptions,
       onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/supplies'),
     );
   }
 
-  Future<void> _email() async {
-    if (_items.isEmpty) {
+  Future<void> _runOutput({
+    required bool selectedOnly,
+    required TsakOutputFormat format,
+    bool open = false,
+    bool share = false,
+    bool justPrint = false,
+  }) async {
+    final src = selectedOnly ? _selectedItems() : _items;
+    if (src.isEmpty) {
+      _snack('출력할 항목이 없습니다');
+      return;
+    }
+    final doc = _doc(selectedOnly: selectedOnly);
+    setState(() => _busyBuilding = true);
+    try {
+      // 1) 저장 위치를 진행창 이전에 먼저 확정(명부출력과 동일).
+      var choose = false;
+      if (!open && !share && !justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info: '중앙회 비품 재고 · ${src.length}건 · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return;
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      // 2) 진행창 + 생성/열기/공유/인쇄.
+      await runWithTsakProgress(
+        context,
+        title: justPrint
+            ? '비품 재고 프린트 준비'
+            : '${open ? '외부 열기' : share ? '공유' : '저장'} · 비품 재고 ${format.label}',
+        note: '${src.length}건 비품 목록을 처리합니다.',
+        steps: const ['문서 구성', '파일 생성', '내보내기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
+          if (justPrint) {
+            await printTsakTable(doc);
+          } else if (open) {
+            final res = await openTsakTableChosen(context, doc, format);
+            if (mounted) _snack(tsakShareMessage(res, what: '비품 ${format.label}'));
+          } else if (share) {
+            final res = await shareTsakTableChosen(context, doc, format);
+            if (mounted) _snack(tsakShareMessage(res, what: '비품 ${format.label}'));
+          } else {
+            await saveTsakTableChosen(context, doc, format, choose: choose);
+            if (mounted) _snack('${format.label} 저장을 시작했습니다');
+          }
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
+  }
+
+  Future<void> _emailOutput({required bool selectedOnly}) async {
+    final src = selectedOnly ? _selectedItems() : _items;
+    if (src.isEmpty) {
       _snack('메일로 보낼 항목이 없습니다');
       return;
     }
-    final total = _items.fold<int>(
-      0,
-      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
-    );
-    final b = StringBuffer();
-    b.writeln('중앙회 비품 재고 리스트');
-    b.writeln('업데이트: ${_updated.isNotEmpty ? _updated : _today()}');
-    b.writeln('확인자: ${_whoName.isNotEmpty ? '범#$_whoNumber $_whoName' : '-'}');
-    b.writeln('──────────────────────────────────');
-    b.writeln('연번 | 품명 | 수량 | 비고 | 확인일자 | 확인자');
-    for (var i = 0; i < _items.length; i++) {
-      final s = _items[i];
-      final who = [
-        if ('${s['checkedBy'] ?? ''}'.trim().isNotEmpty) '범#${s['checkedBy']}',
-        if ('${s['checkedByName'] ?? ''}'.trim().isNotEmpty)
-          '${s['checkedByName']}',
-      ].join(' ');
-      b.writeln(
-        '${i + 1}. ${s['name']} | ${s['qty']} | ${s['note'] ?? ''} | '
-        '${'${s['checkedAt'] ?? ''}'.isNotEmpty ? s['checkedAt'] : s['updatedAt'] ?? ''} | $who',
-      );
-    }
-    b.writeln('──────────────────────────────────');
-    b.writeln('총 ${_items.length}개 항목 · 총 수량 $total');
-    final subject =
-        '중앙회 비품 재고 리스트 (${_updated.isNotEmpty ? _updated : _today()})';
-    final uri =
-        'mailto:?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(b.toString())}';
-    if (isWebRuntime) {
-      openExternalUrl(uri);
-    } else {
-      _snack('메일 앱에서 전송하세요');
-    }
+    await emailTsakTable(context, _doc(selectedOnly: selectedOnly));
   }
 
   void _snack(String m) {
@@ -625,10 +746,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final total = _items.fold<int>(
-      0,
-      (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
-    );
     final content = Stack(
       children: [
         _loading
@@ -653,7 +770,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                   ],
                 ),
               )
-            : _body(total),
+            : _body(),
         BusyOverlay(
           visible: _loading,
           title: '비품 재고를 불러오는 중입니다',
@@ -693,12 +810,19 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
           const AppHomeEmblem(size: 22),
           IconButton(
             tooltip: '출력 (형식 선택)',
-            onPressed: _showOutputDialog,
+            onPressed: _busyBuilding
+                ? null
+                : () => _openOutputSheet(selectedOnly: false),
             icon: const Icon(Icons.print_outlined),
           ),
           IconButton(
+            tooltip: '출력 옵션',
+            onPressed: _busyBuilding ? null : _editOptions,
+            icon: const Icon(Icons.tune),
+          ),
+          IconButton(
             tooltip: '메일 발송',
-            onPressed: _email,
+            onPressed: () => _emailOutput(selectedOnly: false),
             icon: const Icon(Icons.email_outlined),
           ),
           IconButton(
@@ -718,10 +842,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-  Widget _body(int total) {
+  Widget _body() {
     return Column(
       children: [
-        _headerBox(total),
+        _headerBox(),
         Expanded(
           child: _items.isEmpty
               ? const Center(
@@ -730,72 +854,101 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                     style: TextStyle(color: AppColors.textGray),
                   ),
                 )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
-                  children: [
-                    _tableHead(),
-                    ReorderableListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      itemCount: _items.length,
-                      onReorder: _onReorder,
-                      itemBuilder: (ctx, i) {
-                        final s = _items[i];
-                        return Container(
-                          key: ValueKey('sp-${s['id']}'),
-                          decoration: const BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(color: Color(0xFFEDEAE3)),
-                            ),
-                          ),
-                          child: IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                ReorderableDragStartListener(
-                                  index: i,
-                                  child: MouseRegion(
-                                    cursor: SystemMouseCursors.grab,
-                                    child: Container(
-                                      width: 30,
-                                      alignment: Alignment.center,
-                                      // (p.30) 좌측 컬러 바 제거 — 심플하게.
-                                      color: Colors.transparent,
-                                      child: Icon(
-                                        Icons.drag_indicator,
-                                        size: 18,
-                                        color: AppColors.textGray.withValues(
-                                          alpha: 0.55,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(child: _row(s, i)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '총 ${_items.length}개 항목 · 총 수량 $total',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.purpleDark,
-                      ),
-                    ),
-                  ],
-                ),
+              : _tableWrap(),
         ),
       ],
     );
   }
 
-  Widget _headerBox(int total) {
+  /// 선택창 + 표 (넓으면 좌우, 좁으면 상하) — 명부출력과 동일 배치.
+  Widget _tableWrap() {
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final wide = c.maxWidth >= 760;
+          final panel = _selPanel();
+          final table = _table();
+          if (wide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 240, child: panel),
+                const SizedBox(width: 10),
+                Expanded(child: table),
+              ],
+            );
+          }
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 90),
+            children: [panel, const SizedBox(height: 10), table],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _table() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tableHead(),
+        ReorderableListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false,
+          itemCount: _items.length,
+          onReorder: _onReorder,
+          itemBuilder: (ctx, i) {
+            final s = _items[i];
+            final key = 'r$i';
+            return Container(
+              key: ValueKey('sp-${s['id']}'),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFEDEAE3))),
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 위치 이동 손잡이 (명부출력과 동일한 관리 모드).
+                    ReorderableDragStartListener(
+                      index: i,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Container(
+                          width: 30,
+                          alignment: Alignment.center,
+                          color: Colors.transparent,
+                          child: Icon(
+                            Icons.drag_indicator,
+                            size: 18,
+                            color: AppColors.textGray.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(child: _row(s, i, key)),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '총 ${_items.length}개 항목 · 총 수량 $_total',
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.purpleDark,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _headerBox() {
     return Container(
       width: double.infinity,
       color: Colors.white,
@@ -818,29 +971,35 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                 ),
               ),
               Text(
-                '${_items.length}건 · $total개',
+                '${_items.length}건 · $_total개',
                 style: const TextStyle(fontSize: 12, color: AppColors.textGray),
               ),
-              if (widget.embedded) ...[
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: '출력 (형식 선택)',
-                  onPressed: _showOutputDialog,
-                  icon: const Icon(Icons.print_outlined, size: 20),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: '메일',
-                  onPressed: _email,
-                  icon: const Icon(Icons.email_outlined, size: 20),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: '새로고침',
-                  onPressed: _load,
-                  icon: const Icon(Icons.refresh, size: 20),
-                ),
-              ],
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '출력 (형식 선택)',
+                onPressed: _busyBuilding
+                    ? null
+                    : () => _openOutputSheet(selectedOnly: false),
+                icon: const Icon(Icons.print_outlined, size: 20),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '출력 옵션',
+                onPressed: _busyBuilding ? null : _editOptions,
+                icon: const Icon(Icons.tune, size: 20),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '메일',
+                onPressed: () => _emailOutput(selectedOnly: false),
+                icon: const Icon(Icons.email_outlined, size: 20),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '새로고침',
+                onPressed: _load,
+                icon: const Icon(Icons.refresh, size: 20),
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -869,18 +1028,18 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       ),
       child: const Row(
         children: [
-          SizedBox(width: 34),
+          SizedBox(width: 30),
           SizedBox(width: 30, child: Text('No', style: style)),
           SizedBox(
             width: 46,
             child: Text('사진', style: style, textAlign: TextAlign.center),
           ),
-          Expanded(flex: 4, child: Text('품명', style: style)),
+          Expanded(flex: 5, child: Text('품명 / 구분', style: style)),
           SizedBox(
             width: 60,
             child: Text('수량', style: style, textAlign: TextAlign.center),
           ),
-          SizedBox(width: 14),
+          SizedBox(width: 22),
           Expanded(flex: 3, child: Text('비고', style: style)),
           SizedBox(width: 44),
         ],
@@ -888,7 +1047,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-  /// 수량 셀 — 화면에서 바로 수정(인라인 편집) 가능.
   Widget _qtyCell(Map<String, dynamic> s) {
     return _InlineQty(
       value: (s['qty'] as num?)?.toInt() ?? 0,
@@ -896,7 +1054,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-  /// 인라인 수량 저장 — 품명 등 나머지 정보는 유지한 채 수량만 갱신.
   Future<void> _saveQty(Map<String, dynamic> s, int qty) async {
     if (qty < 0) return;
     final r = await _nas.merchSaveSupply(
@@ -907,6 +1064,7 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
       checkedAt: '${s['checkedAt'] ?? ''}',
       whoName: _whoName,
       photo: '${s['photo'] ?? ''}',
+      category: '${s['category'] ?? ''}',
     );
     if (!mounted) return;
     if (r['ok'] != true) {
@@ -917,41 +1075,65 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     _snack('수량을 $qty개로 저장했습니다');
   }
 
-  Widget _row(Map<String, dynamic> s, int i) {
+  Widget _row(Map<String, dynamic> s, int i, String key) {
     final checkedAt = '${s['checkedAt'] ?? ''}'.trim();
     final updatedAt = '${s['updatedAt'] ?? ''}'.trim();
-    final checkedBy = '${s['checkedBy'] ?? ''}'.trim();
-    final checkedName = '${s['checkedByName'] ?? ''}'.trim();
-    final who = [
-      if (checkedBy.isNotEmpty) '범#$checkedBy',
-      if (checkedName.isNotEmpty) checkedName,
-    ].join(' ');
+    final who = _whoLabel(s);
+    final category = '${s['category'] ?? ''}'.trim();
+    final on = _sel.contains(key);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 30,
-            child: Text(
-              '${i + 1}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textGray,
+          // 관리 모드일 때만 체크박스 노출(명부출력과 동일).
+          if (_selMode)
+            SizedBox(
+              width: 30,
+              child: Checkbox(
+                value: on,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (_) => setState(() {
+                  if (on) {
+                    _sel.remove(key);
+                  } else {
+                    _sel.add(key);
+                  }
+                }),
+              ),
+            )
+          else
+            SizedBox(
+              width: 30,
+              child: Text(
+                '${i + 1}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textGray,
+                ),
               ),
             ),
-          ),
           SizedBox(width: 46, child: _photoThumb(s)),
           Expanded(
-            flex: 4,
+            flex: 5,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => _edit(existing: s),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (category.isNotEmpty)
+                    Text(
+                      category,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purple,
+                      ),
+                    ),
                   Text(
                     '${s['name'] ?? ''}',
                     style: const TextStyle(
@@ -1009,7 +1191,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-  /// 비품 사진 썸네일 — 없으면 흐린 아이콘, 있으면 탭하여 확대.
   Widget _photoThumb(Map<String, dynamic> s) {
     final photo = '${s['photo'] ?? ''}'.trim();
     if (photo.isEmpty) {
@@ -1079,9 +1260,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
 }
 
 /// 재고 수량 인라인 편집 위젯 — 숫자를 누르면 바로 입력/저장.
-///
-/// 화면(표) 안에서 각 비품의 수량을 즉시 수정할 수 있어, 항목을 열지 않고도
-/// 재고를 관리할 수 있게 한다. 값이 바뀌면 [onChanged]로 저장한다.
 class _InlineQty extends StatefulWidget {
   const _InlineQty({required this.value, required this.onChanged});
 
@@ -1132,7 +1310,6 @@ class _InlineQtyState extends State<_InlineQty> {
   @override
   Widget build(BuildContext context) {
     if (!_editing) {
-      // (p.30) 별도 아이콘 없이 숫자만 — 탭하면 즉시 편집(심플).
       return InkWell(
         onTap: _start,
         borderRadius: BorderRadius.circular(6),
@@ -1181,3 +1358,14 @@ class _InlineQtyState extends State<_InlineQty> {
     );
   }
 }
+
+/// 구분(카테고리) 프리셋 — 비품 등록 시 빠른 선택용.
+const List<String> kSupplyCategories = [
+  '잼버리 과정활동',
+  '사무용품',
+  '행사용품',
+  '배너·현수막',
+  '액자·기념',
+  '포장·정리',
+  '기타',
+];
