@@ -3,6 +3,37 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 
+/// 출력 내보내기 방식 — 저장 · 외부 열기 · 공유 시트.
+///
+/// ## 규칙 (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+/// 자체 출력 화면(수품·구매·기획 등)은 `_saveBytes`·`_saveText` 로 **저장**만
+/// 했고, 공유는 **PDF 전용**이었다. [TsakOutputMode] 를 [TsakOutputBar] 에
+/// 넘겨 **모든 포맷**을 저장/외부 열기/공유 시트로 내보낼 수 있게 한다.
+enum TsakOutputMode {
+  /// 파일로 저장(기본 폴더/위치 선택).
+  save,
+
+  /// 외부 프로그램/뷰어로 열기(웹 새 탭 · 네이티브 공유 시트 폴백).
+  open,
+
+  /// OS 공유 시트로 보내기(카톡·메일·드라이브 등).
+  share,
+}
+
+extension TsakOutputModeX on TsakOutputMode {
+  String get label => switch (this) {
+    TsakOutputMode.save => '저장',
+    TsakOutputMode.open => '열기',
+    TsakOutputMode.share => '공유',
+  };
+
+  IconData get icon => switch (this) {
+    TsakOutputMode.save => Icons.download_outlined,
+    TsakOutputMode.open => Icons.open_in_new,
+    TsakOutputMode.share => Icons.ios_share,
+  };
+}
+
 /// 출력 형식 — 프로젝트 규칙(#14): **PDF → JPG → 엑셀 → PPT → 워드 → TXT** 순서.
 enum TsakOutputFormat { pdf, jpg, excel, ppt, word, txt }
 
@@ -55,6 +86,7 @@ class TsakOutputBar extends StatelessWidget {
   const TsakOutputBar({
     super.key,
     required this.onFormat,
+    this.onMode,
     this.onShare,
     this.onShareImage,
     this.onShareLink,
@@ -62,6 +94,13 @@ class TsakOutputBar extends StatelessWidget {
   });
 
   final void Function(TsakOutputFormat) onFormat;
+
+  /// 형식 + 방식(저장/열기/공유) 콜백.
+  ///
+  /// ## 규칙 (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+  /// 주어지면 **저장·열기·공유** 버튼을 함께 노출해, 자체 출력 화면도
+  /// **모든 포맷**을 저장·외부 열기·공유 시트로 내보낼 수 있게 한다.
+  final void Function(TsakOutputFormat, TsakOutputMode)? onMode;
 
   /// 파일 공유(OS 공유 시트) — 모든 기기 공통.
   final VoidCallback? onShare;
@@ -83,8 +122,39 @@ class TsakOutputBar extends StatelessWidget {
               child: _fmtChip(f, active == f),
             ),
           const SizedBox(width: 4),
+          // (요구) 모든 포맷 × 저장/열기/공유 — 방식별 버튼.
+          if (onMode != null) ...[
+            for (final m in TsakOutputMode.values)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: (m == TsakOutputMode.share
+                    ? FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.purple,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => onMode!(active ?? kTsakOutputOrder.first, m),
+                        icon: Icon(m.icon, size: 15),
+                        label: Text(
+                          '${m.label} 시트',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      )
+                    : OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => onMode!(active ?? kTsakOutputOrder.first, m),
+                        icon: Icon(m.icon, size: 15),
+                        label: Text(
+                          m.label,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      )),
+              ),
+          ],
           // (요구) 모든 기기에 OS 공유 시트 — 파일을 곧바로 공유한다.
-          if (onShare != null) ...[
+          if (onMode == null && onShare != null) ...[
             FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.purple,
@@ -96,7 +166,7 @@ class TsakOutputBar extends StatelessWidget {
             ),
             const SizedBox(width: 6),
           ],
-          if (onShareImage != null) ...[
+          if (onMode == null && onShareImage != null) ...[
             OutlinedButton.icon(
               onPressed: onShareImage,
               icon: const Icon(Icons.image_outlined, size: 15),
@@ -104,7 +174,7 @@ class TsakOutputBar extends StatelessWidget {
             ),
             const SizedBox(width: 6),
           ],
-          if (onShareLink != null)
+          if (onMode == null && onShareLink != null)
             OutlinedButton.icon(
               onPressed: onShareLink,
               icon: const Icon(Icons.link, size: 15),

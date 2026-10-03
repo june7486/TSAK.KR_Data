@@ -16,6 +16,7 @@ import '../services/print_doc.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/busy_overlay.dart';
+import '../widgets/tsak_output_sheet.dart';
 import 'merch_detail_screen.dart';
 
 /// 기획실 — 신규 수품 아이템 기획 관리 화면(관리자·마스터 전용, 탭 내장형).
@@ -926,6 +927,64 @@ class _PlansTabState extends State<PlansTab> {
   }
 
   /// 기획안 목록 출력 — 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
+  /// 지정 포맷의 **파일 바이트**를 만든다(저장·공유·외부열기 공용).
+  Future<({Uint8List bytes, String ext, String mime})> _buildFormatBytes(
+    TsakOutputFormat format,
+  ) async {
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        return (
+          bytes: await DocPdf.build(
+            meta: _plansMeta(),
+            columns: _plansColumns,
+            rows: _plansRows(),
+            footerLeft: '한국범스카우트중앙회 수품',
+          ),
+          ext: 'pdf',
+          mime: 'application/pdf',
+        );
+      case TsakOutputFormat.jpg:
+        final bytes = await DocPdf.build(
+          meta: _plansMeta(),
+          columns: _plansColumns,
+          rows: _plansRows(),
+          footerLeft: '한국범스카우트중앙회 수품',
+        );
+        return (bytes: await pdfToJpg(bytes), ext: 'jpg', mime: 'image/jpeg');
+      case TsakOutputFormat.excel:
+        return (
+          bytes: Uint8List.fromList([
+            0xEF,
+            0xBB,
+            0xBF,
+            ...utf8.encode(_plansCsvText()),
+          ]),
+          ext: 'csv',
+          mime: 'text/csv',
+        );
+      case TsakOutputFormat.ppt:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_plansPlainText(format))),
+          ext: 'ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+      case TsakOutputFormat.word:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_plansPlainText(format))),
+          ext: 'doc',
+          mime: 'application/msword',
+        );
+      case TsakOutputFormat.txt:
+        return (
+          bytes: Uint8List.fromList(
+            utf8.encode(_plansPlainText(TsakOutputFormat.txt)),
+          ),
+          ext: 'txt',
+          mime: 'text/plain;charset=utf-8',
+        );
+    }
+  }
+
   Future<void> _printPlans({
     TsakOutputFormat format = TsakOutputFormat.pdf,
   }) async {
@@ -933,51 +992,54 @@ class _PlansTabState extends State<PlansTab> {
       _snack('출력할 기획안이 없습니다');
       return;
     }
-    if (isWebRuntime) {
-      switch (format) {
-        case TsakOutputFormat.pdf:
-          // 규칙: 실제 PDF 파일로 저장.
-          try {
-            final bytes = await DocPdf.build(
-              meta: _plansMeta(),
-              columns: _plansColumns,
-              rows: _plansRows(),
-              footerLeft: '한국범스카우트중앙회 수품',
-            );
-            await _saveBytes(bytes, '수품_기획안목록.pdf');
-          } catch (e) {
-            _snack('PDF 생성 실패: $e');
-          }
-          return;
-        case TsakOutputFormat.jpg:
-          // 규칙: 실제 .jpg 파일로 저장(인쇄창 불필요).
-          try {
-            final bytes = await DocPdf.build(
-              meta: _plansMeta(),
-              columns: _plansColumns,
-              rows: _plansRows(),
-              footerLeft: '한국범스카우트중앙회 수품',
-            );
-            final jpg = await pdfToJpg(bytes);
-            await _saveBytes(jpg, '수품_기획안목록.jpg', mime: 'image/jpeg');
-          } catch (e) {
-            _snack('JPG 생성 실패: $e');
-          }
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _plansCsvText()));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-        case TsakOutputFormat.txt:
-          await Clipboard.setData(ClipboardData(text: _plansPlainText(format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
+    try {
+      final f = await _buildFormatBytes(format);
+      await _saveBytes(f.bytes, '수품_기획안목록.${f.ext}', mime: f.mime);
+    } catch (e) {
+      _snack('${format.label} 생성 실패: $e');
+    }
+  }
+
+  /// 지정 포맷을 **외부 프로그램**(뷰어·인쇄·기본 앱)으로 연다 — 모든 포맷 공통.
+  Future<void> _openFormat(TsakOutputFormat format) async {
+    if (_plans.isEmpty) {
+      _snack('내보낼 기획안이 없습니다');
+      return;
+    }
+    try {
+      final f = await _buildFormatBytes(format);
+      final ok = openFileExternally(f.bytes, '수품_기획안목록.${f.ext}', f.mime);
+      if (!ok) {
+        await _saveBytes(f.bytes, '수품_기획안목록.${f.ext}', mime: f.mime);
       }
-    } else {
-      await Clipboard.setData(ClipboardData(text: _plansPlainText(format)));
-      _snack('기획안 목록을 복사했습니다');
+      _snack(
+        ok
+            ? '${format.label} 파일을 외부 프로그램으로 열었습니다'
+            : '외부 열기가 막혀 ${format.label} 파일로 저장했습니다',
+      );
+    } catch (e) {
+      _snack('열기 실패: $e');
+    }
+  }
+
+  /// 지정 포맷을 **OS 공유 시트**로 보낸다 — 모든 포맷 공통.
+  Future<void> _shareFormat(TsakOutputFormat format) async {
+    if (_plans.isEmpty) {
+      _snack('공유할 기획안이 없습니다');
+      return;
+    }
+    try {
+      final f = await _buildFormatBytes(format);
+      final res = await shareBytes(
+        bytes: f.bytes,
+        name: '수품_기획안목록',
+        ext: f.ext,
+        mime: f.mime,
+        subject: '수품 기획안 목록',
+      );
+      _snack(tsakShareMessage(res, what: '${format.label} 기획안 목록'));
+    } catch (e) {
+      _snack('공유 실패: $e');
     }
   }
 
@@ -999,78 +1061,21 @@ class _PlansTabState extends State<PlansTab> {
     }
   }
 
-  /// 기획안 목록을 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
-  Future<void> _sharePlans() async {
-    if (_plans.isEmpty) {
-      _snack('공유할 기획안이 없습니다');
-      return;
-    }
-    try {
-      final bytes = await DocPdf.build(
-        meta: _plansMeta(),
-        columns: _plansColumns,
-        rows: _plansRows(),
-        footerLeft: '한국범스카우트중앙회 수품',
-      );
-      final res = await shareFileNamed(
-        bytes: bytes,
-        filename: '수품_기획안목록.pdf',
-        mime: 'application/pdf',
-        subject: '수품 기획안 목록',
-        text: '수품 기획안 목록 · ${_plans.length}건',
-      );
-      _snack(tsakShareMessage(res, what: '기획안 목록 PDF'));
-    } catch (e) {
-      _snack('공유 실패: $e');
-    }
-  }
-
-  /// 기획안 출력 형식 선택 다이얼로그 (#14 규칙).
+  /// 기획안 출력 형식 선택 시트 (#14 규칙) — 모든 포맷 저장·열기·공유.
   Future<void> _showPlansOutputDialog() async {
     if (_plans.isEmpty) {
       _snack('출력할 기획안이 없습니다');
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('기획안 목록 출력 형식'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 12),
-            TsakOutputBar(
-              onFormat: (f) {
-                Navigator.pop(ctx);
-                _printPlans(format: f);
-              },
-              onShare: () {
-                Navigator.pop(ctx);
-                _sharePlans();
-              },
-              onShareImage: () {
-                Navigator.pop(ctx);
-                _printPlans(format: TsakOutputFormat.jpg);
-              },
-              onShareLink: () {
-                Navigator.pop(ctx);
-                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
+    await showTsakOutputSheet(
+      context,
+      title: '수품 기획안 목록 출력',
+      subtitle: '${_plans.length}건 · 기획실',
+      onPick: (f) => _printPlans(format: f),
+      onOpen: _openFormat,
+      onShareFormat: _shareFormat,
+      onShare: () => _shareFormat(TsakOutputFormat.pdf),
+      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
 

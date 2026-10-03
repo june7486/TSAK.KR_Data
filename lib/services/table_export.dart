@@ -265,6 +265,42 @@ Future<TsakShareResult> shareTsakTableChosen(
   );
 }
 
+/// 문서를 지정 형식으로 만들어 **외부 프로그램/뷰어로 연다** — 모든 포맷 공통.
+///
+/// ## 규칙 (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+/// 지금까지 'PDF 미리보기 / 인쇄'는 **PDF 전용**이었다. 이 함수는 동일한
+/// '외부로 열기' 흐름을 **JPG·엑셀·PPT·워드·TXT 등 모든 포맷**에 제공한다.
+///
+/// - **웹**: Blob URL 을 새 탭으로 열어 브라우저/기본 앱이 처리하게 한다.
+///   PDF→PDF 뷰어·인쇄, JPG→이미지 뷰어, CSV/DOC/PPT/TXT→다운로드 후 기본 앱.
+/// - **네이티브(안드로이드 등)**: 새 탭 개념이 없으므로 **OS 공유/열기 시트**로
+///   폴백한다([shareTsakTableChosen]) — 사용자가 열 앱·보낼 앱을 직접 고른다.
+///
+/// 반환: [TsakShareResult] — 호출부는 [tsakShareMessage] 로 안내 문구를 만든다.
+///   웹에서 새 창을 열면 [TsakShareResult.shared] 로 간주한다.
+Future<TsakShareResult> openTsakTableChosen(
+  BuildContext context,
+  TsakTableDoc doc,
+  TsakOutputFormat format, {
+  VoidCallback? onStep,
+}) async {
+  onStep?.call();
+  final base = doc.baseName();
+  final f = await buildTsakTableFile(doc, format);
+  // 웹: 외부 뷰어/앱으로 새 창에서 연다(모든 포맷 공통).
+  final opened = openFileExternally(f.bytes, '$base.${f.ext}', f.mime);
+  if (opened) return TsakShareResult.shared;
+  // 네이티브(또는 팝업 차단): OS 공유/열기 시트로 폴백.
+  return shareBytes(
+    bytes: f.bytes,
+    name: base,
+    ext: f.ext,
+    mime: f.mime,
+    subject: doc.title,
+    text: '${doc.title} · ${doc.rows.length}건',
+  );
+}
+
 /// 문서를 메일 본문으로 열기(공용).
 Future<void> emailTsakTable(BuildContext context, TsakTableDoc doc) async {
   final body = doc.toPlainText();

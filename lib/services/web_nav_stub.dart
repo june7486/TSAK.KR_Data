@@ -38,6 +38,10 @@ bool downloadTextFile(String content, String filename, String mime) => false;
 /// 바이너리 파일 다운로드 — 네이티브에서는 no-op.
 void downloadBytesFile(Uint8List bytes, String filename, String mime) {}
 
+/// 임의 파일을 외부 앱/뷰어로 연다 — 웹 전용.
+/// 네이티브에서는 새 탭 개념이 없어 false 를 반환한다(호출부가 OS 공유/열기 시트로 폴백).
+bool openFileExternally(Uint8List bytes, String filename, String mime) => false;
+
 /// 네이티브는 OS 저장 대화상자를 file_saver 가 처리하므로 위치 선택 불필요.
 bool get supportsSaveFilePicker => false;
 

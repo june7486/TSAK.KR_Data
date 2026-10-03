@@ -150,6 +150,35 @@ bool downloadTextFile(String content, String filename, String mime) {
   }
 }
 
+/// 임의 파일(모든 포맷)을 **외부 프로그램/뷰어로** 연다 — 웹 전용.
+///
+/// PDF·이미지·오피스 문서 등을 Blob URL 로 만들어 새 탭/창에서 열면,
+/// 브라우저가 해당 포맷을 처리하는 **외부 앱(뷰어·편집기·인쇄 창)** 으로 넘긴다.
+/// (예: PDF → 브라우저 PDF 뷰어/인쇄, CSV·DOC → 다운로드 후 기본 앱)
+///
+/// 반환: 새 창을 열었으면 true. 팝업 차단 등으로 실패하면 false(호출부가 폴백).
+///
+/// ## 규칙 (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+/// PDF 전용 미리보기/인쇄에만 있던 '외부 프로그램으로 열기' 흐름을
+/// **모든 출력 포맷**에 동일하게 제공한다.
+bool openFileExternally(Uint8List bytes, String filename, String mime) {
+  try {
+    final parts = <JSAny>[bytes.toJS].toJS;
+    final optMap = <String, String>{
+      'type': mime.isEmpty ? 'application/octet-stream' : mime,
+    };
+    final blob = _Blob(parts, optMap.jsify()! as JSObject);
+    final url = _URL.createObjectURL(blob);
+    // 새 창을 연다(외부 뷰어/앱이 처리). 현재 앱(SPA) 상태는 보존된다.
+    _window.open(url, '_blank');
+    // 메모리 정리(창이 로드될 시간을 준 뒤 해제).
+    _setTimeout((() => _URL.revokeObjectURL(url)).toJS, 60000);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// 바이너리(엑셀·PDF·이미지 등)를 파일로 다운로드한다.
 /// (Blob + <a download>) — PC 브라우저에서는 기본 저장 폴더(다운로드)로 저장된다.
 void downloadBytesFile(Uint8List bytes, String filename, String mime) {

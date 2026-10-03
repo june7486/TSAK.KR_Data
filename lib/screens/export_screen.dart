@@ -11,6 +11,7 @@ import '../models/member.dart';
 import '../services/contact_service.dart';
 import '../services/export_service.dart';
 import '../services/file_save.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
@@ -331,6 +332,41 @@ class _ExportScreenState extends State<ExportScreen>
             label: const Text('PDF 미리보기 / 인쇄'),
           ),
         ],
+        // (요구) 모든 포맷을 외부 프로그램(OS 공유 시트 · 뷰어)으로 내보낸다.
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  foregroundColor: AppColors.purple,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: _busy ? null : _openCurrent,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: Text('${_format.label} 외부로 열기'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.taegeukBlue,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: _busy ? null : _shareCurrent,
+                icon: const Icon(Icons.ios_share, size: 18),
+                label: const Text('공유 시트로 보내기'),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 26),
         _sectionTitle('미리보기 (상위 30명)'),
         const SizedBox(height: 8),
@@ -1441,6 +1477,146 @@ class _ExportScreenState extends State<ExportScreen>
       _snack('저장이 취소되었습니다');
     } else {
       _snack('내보내기 완료 ($saved개 파일 · ${_format.label})');
+    }
+  }
+
+  /// 선택 형식의 **첫 파일 바이트와 이름/확장자/MIME**을 만든다(저장·공유·열기 공용).
+  ///
+  /// JPG 는 PDF 를 만들어 첫 페이지를 래스터화한다([_doExport] 와 동일 규칙).
+  Future<({Uint8List bytes, String name, String ext, String mime})> _buildFirstFile(
+    List<Member> list,
+    List<String> fields,
+    String baseName,
+    int suffix,
+  ) async {
+    final name = '$baseName$suffix';
+    final bytes = await _buildBytesFor(_format, list, fields);
+    return (bytes: bytes, name: name, ext: _format.extension, mime: _mimeStr(_format));
+  }
+
+  /// 형식별 바이트 생성(저장/공유/열기 공용).
+  Future<Uint8List> _buildBytesFor(
+    ExportFormat fmt,
+    List<Member> list,
+    List<String> fields,
+  ) async {
+    switch (fmt) {
+      case ExportFormat.excel:
+        return ExportService.buildExcel(list, fieldKeys: fields);
+      case ExportFormat.pdf:
+      case ExportFormat.jpg:
+        final pdf = await ExportService.buildPdf(
+          list,
+          fieldKeys: fields,
+          landscape: _landscape,
+          style: _tableStyle,
+          fontSize: _fontSize,
+          rowSpace: _rowSpace,
+          noWrapKeys: _noWrap,
+        );
+        if (fmt == ExportFormat.jpg) {
+          final raster = await Printing.raster(pdf, dpi: 150).first;
+          final im = img.Image.fromBytes(
+            width: raster.width,
+            height: raster.height,
+            bytes: raster.pixels.buffer,
+            numChannels: 4,
+          );
+          return img.encodeJpg(im, quality: 88);
+        }
+        return pdf;
+      case ExportFormat.word:
+        return ExportService.buildWord(list, fieldKeys: fields);
+      case ExportFormat.txt:
+        return ExportService.buildTxt(list, fieldKeys: fields);
+      case ExportFormat.ppt:
+        return ExportService.buildPpt(list, fieldKeys: fields);
+    }
+  }
+
+  /// 생성한 파일을 **OS 공유 시트**(모든 기기)로 바로 보낸다 — 모든 형식 공통.
+  ///
+  /// (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+  Future<void> _shareCurrent() async {
+    if (_visible.isEmpty) {
+      _snack('선택된 인가자가 없습니다');
+      return;
+    }
+    final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
+    setState(() => _busy = true);
+    try {
+      late TsakShareResult res;
+      await runWithTsakProgress(
+        context,
+        title: '명단 ${_format.label} 공유 준비',
+        note: '${_visible.length}명 명단을 ${_format.label}(으)로 만들어 공유합니다.',
+        steps: ['문서 구성', '${_format.label} 생성', '공유 시트 열기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.6, message: '${_format.label} 생성 중…', stepIndex: 1);
+          final f = await _buildFirstFile(_visible, fields, _baseName(), 0);
+          res = await shareBytes(
+            bytes: f.bytes,
+            name: f.name,
+            ext: f.ext,
+            mime: f.mime,
+            subject: 'TSAK 인가자 명단',
+            text: '명단 ${_visible.length}명 · ${_format.label}',
+          );
+          ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
+        },
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '명단 ${_format.label}'));
+    } catch (e) {
+      if (mounted) _snack('공유 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 생성한 파일을 **외부 프로그램/뷰어로 연다** — 모든 형식 공통(웹은 새 탭).
+  ///
+  /// (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+  Future<void> _openCurrent() async {
+    if (_visible.isEmpty) {
+      _snack('선택된 인가자가 없습니다');
+      return;
+    }
+    final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
+    setState(() => _busy = true);
+    try {
+      late TsakShareResult res;
+      await runWithTsakProgress(
+        context,
+        title: '명단 ${_format.label} 외부 열기',
+        note: '${_visible.length}명 명단을 ${_format.label}(으)로 만들어 엽니다.',
+        steps: ['문서 구성', '${_format.label} 생성', '외부 프로그램 열기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.6, message: '${_format.label} 생성 중…', stepIndex: 1);
+          final f = await _buildFirstFile(_visible, fields, _baseName(), 0);
+          final opened = openFileExternally(
+            f.bytes,
+            '${f.name}.${f.ext}',
+            f.mime,
+          );
+          res = opened
+              ? TsakShareResult.shared
+              : await shareBytes(
+                  bytes: f.bytes,
+                  name: f.name,
+                  ext: f.ext,
+                  mime: f.mime,
+                  subject: 'TSAK 인가자 명단',
+                );
+          ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
+        },
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '명단 ${_format.label}'));
+    } catch (e) {
+      if (mounted) _snack('열기 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 

@@ -11,6 +11,11 @@ import '../theme/app_theme.dart';
 /// 노출하고, 형식 선택과 함께 **인쇄 · 이메일 · 이미지 공유 · 링크 공유**를
 /// 같은 시트에서 바로 실행할 수 있게 한다.
 ///
+/// ## 규칙 (요구: "모든 포맷도 외부 공유 프로그램으로 내보낼 수 있게")
+/// 카드를 누르면 **저장**되고, 카드 위의 **열기 / 공유** 버튼으로 **모든 포맷**을
+/// 외부 프로그램(뷰어·인쇄·OS 공유 시트)으로 곧바로 내보낼 수 있다.
+/// ([onOpen]/[onShareFormat] 을 주면 각 카드에 노출된다.)
+///
 /// 사용 예:
 /// ```dart
 /// showTsakOutputSheet(
@@ -18,6 +23,8 @@ import '../theme/app_theme.dart';
 ///   title: '판매대장 출력',
 ///   subtitle: '2026년 · 주문·예약 통합 장부',
 ///   onPick: (f) => _printLedger(format: f),
+///   onOpen: (f) => _openLedger(format: f),      // 외부 프로그램으로 열기
+///   onShareFormat: (f) => _shareLedger(format: f), // 해당 포맷으로 공유
 ///   onPrint: () => _printLedger(),
 ///   onEmail: _emailLedger,
 ///   onShareLink: () => showLinkShareDialog(context, url),
@@ -28,6 +35,8 @@ Future<void> showTsakOutputSheet(
   required String title,
   String subtitle = '',
   void Function(TsakOutputFormat)? onPick,
+  void Function(TsakOutputFormat)? onOpen,
+  void Function(TsakOutputFormat)? onShareFormat,
   VoidCallback? onPrint,
   VoidCallback? onEmail,
   VoidCallback? onShare,
@@ -100,6 +109,18 @@ Future<void> showTsakOutputSheet(
                   ),
                 ),
               ),
+              if (onOpen != null || onShareFormat != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3, left: 25),
+                  child: Text(
+                    '카드를 누르면 저장 · 카드 위 열기/공유 버튼으로 외부 프로그램에 바로 내보내기',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.purple.withValues(alpha: 0.85),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               // ── '명부 A4 한 장' 강조 버튼(명단 화면 전용) ──
               if (onOnePage != null) ...[
@@ -130,7 +151,16 @@ Future<void> showTsakOutputSheet(
                   runSpacing: 8,
                   children: [
                     for (final f in kTsakOutputOrder)
-                      _FmtCard(f: f, onTap: () => fire(() => onPick(f))),
+                      _FmtCard(
+                        f: f,
+                        onTap: () => fire(() => onPick(f)),
+                        onOpen: onOpen == null
+                            ? null
+                            : () => fire(() => onOpen(f)),
+                        onShare: onShareFormat == null
+                            ? null
+                            : () => fire(() => onShareFormat(f)),
+                      ),
                   ],
                 ),
               const SizedBox(height: 14),
@@ -213,18 +243,30 @@ Widget _act(
 }
 
 class _FmtCard extends StatelessWidget {
-  const _FmtCard({required this.f, required this.onTap});
+  const _FmtCard({
+    required this.f,
+    required this.onTap,
+    this.onOpen,
+    this.onShare,
+  });
 
   final TsakOutputFormat f;
   final VoidCallback onTap;
 
+  /// 외부 프로그램/뷰어로 열기(모든 포맷 공통). null 이면 버튼 숨김.
+  final VoidCallback? onOpen;
+
+  /// 해당 포맷 파일로 OS 공유 시트 열기. null 이면 버튼 숨김.
+  final VoidCallback? onShare;
+
   @override
   Widget build(BuildContext context) {
+    final hasActions = onOpen != null || onShare != null;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 104,
+        width: hasActions ? 116 : 104,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -234,7 +276,20 @@ class _FmtCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(f.icon, size: 20, color: AppColors.purple),
+            Row(
+              children: [
+                Icon(f.icon, size: 20, color: AppColors.purple),
+                const Spacer(),
+                Text(
+                  '저장',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textGray.withValues(alpha: 0.9),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 7),
             Text(
               f.label,
@@ -247,6 +302,70 @@ class _FmtCard extends StatelessWidget {
             Text(
               _desc(f),
               style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+            ),
+            if (hasActions) ...[
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  if (onOpen != null)
+                    Expanded(
+                      child: _miniAct(
+                        Icons.open_in_new,
+                        '열기',
+                        onOpen!,
+                        primary: true,
+                      ),
+                    ),
+                  if (onOpen != null && onShare != null)
+                    const SizedBox(width: 5),
+                  if (onShare != null)
+                    Expanded(
+                      child: _miniAct(Icons.ios_share, '공유', onShare!),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniAct(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool primary = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        decoration: BoxDecoration(
+          color: primary ? AppColors.purple : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: primary
+                ? AppColors.purple
+                : AppColors.purple.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 11,
+              color: primary ? Colors.white : AppColors.purpleDark,
+            ),
+            const SizedBox(width: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+                color: primary ? Colors.white : AppColors.purpleDark,
+              ),
             ),
           ],
         ),

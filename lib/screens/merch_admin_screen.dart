@@ -3447,6 +3447,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onEmail: () => _emailLedgerRows(rows),
       onShare: () =>
           _shareLedgerRows(rows, selectedOnly: selectedOnly),
+      // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
+      onOpen: (f) => _openLedgerRows(f, rows: rows, selectedOnly: selectedOnly),
+      onShareFormat: (f) =>
+          _shareLedgerRows(rows, selectedOnly: selectedOnly, format: f),
       onShareImage: () => _runLedgerOutput(
         TsakOutputFormat.jpg,
         rows: rows,
@@ -3503,10 +3507,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
   }
 
-  /// 판매대장을 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  /// 판매대장을 **OS 공유 시트**(모든 기기)로 공유한다 — 지정 형식(기본 PDF)으로 전송.
   Future<void> _shareLedgerRows(
     List<Map<String, dynamic>> rows, {
     bool selectedOnly = false,
+    TsakOutputFormat format = TsakOutputFormat.pdf,
   }) async {
     if (rows.isEmpty) {
       _snack('공유할 판매대장이 없습니다');
@@ -3519,18 +3524,52 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       await runWithTsakProgress(
         context,
         title: '판매대장 공유 준비',
-        note: '${rows.length}건을 PDF로 만들어 공유합니다.',
-        steps: const ['문서 구성', 'PDF 생성', '공유 시트 열기'],
+        note: '${rows.length}건을 ${format.label}(으)로 만들어 공유합니다.',
+        steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: 'PDF 생성 중…', stepIndex: 1);
-          res = await shareTsakTableChosen(context, doc, TsakOutputFormat.pdf);
+          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '판매대장 PDF'));
+      if (mounted) _snack(tsakShareMessage(res, what: '판매대장 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
+    } finally {
+      if (mounted) setState(() => _ledgerBusy = false);
+    }
+  }
+
+  /// 판매대장을 지정 형식으로 만들어 **외부 프로그램**으로 연다(모든 포맷 공통).
+  Future<void> _openLedgerRows(
+    TsakOutputFormat format, {
+    required List<Map<String, dynamic>> rows,
+    bool selectedOnly = false,
+  }) async {
+    if (rows.isEmpty) {
+      _snack('내보낼 판매대장이 없습니다');
+      return;
+    }
+    final doc = _ledgerDoc(rows: rows, selectedOnly: selectedOnly);
+    setState(() => _ledgerBusy = true);
+    try {
+      late TsakShareResult res;
+      await runWithTsakProgress(
+        context,
+        title: '판매대장 ${format.label} 외부 열기',
+        note: '${rows.length}건을 ${format.label}(으)로 만들어 엽니다.',
+        steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          res = await openTsakTableChosen(context, doc, format);
+          ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
+        },
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '판매대장 ${format.label}'));
+    } catch (e) {
+      if (mounted) _snack('열기 실패: $e');
     } finally {
       if (mounted) setState(() => _ledgerBusy = false);
     }

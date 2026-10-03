@@ -247,6 +247,9 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
           _runOutput(title, headers, rows, TsakOutputFormat.pdf, justPrint: true),
       onEmail: () => _emailOutput(title, headers, rows),
       onShare: () => _shareOutput(title, headers, rows),
+      // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
+      onOpen: (f) => _openOutputFile(title, headers, rows, f),
+      onShareFormat: (f) => _shareOutput(title, headers, rows, format: f),
       onOnePage: () => _runOnePage(_atasAll(context.read<AppState>())),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
@@ -397,12 +400,13 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
     await emailTsakTable(context, doc);
   }
 
-  /// 명부를 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
+  /// 명부를 **OS 공유 시트**(모든 기기)로 공유한다 — 지정 형식(기본 PDF)으로 전송.
   Future<void> _shareOutput(
     String title,
     List<String> headers,
-    List<List<String>> rows,
-  ) async {
+    List<List<String>> rows, {
+    TsakOutputFormat format = TsakOutputFormat.pdf,
+  }) async {
     if (rows.isEmpty) {
       _snack('공유할 명부가 없습니다');
       return;
@@ -422,18 +426,61 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
       await runWithTsakProgress(
         context,
         title: '아타스 명부 공유 준비',
-        note: '${rows.length}명 명부를 PDF로 만들어 공유합니다.',
-        steps: const ['문서 구성', 'PDF 생성', '공유 시트 열기'],
+        note: '${rows.length}명 명부를 ${format.label}(으)로 만들어 공유합니다.',
+        steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: 'PDF 생성 중…', stepIndex: 1);
-          res = await shareTsakTableChosen(context, doc, TsakOutputFormat.pdf);
+          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '아타스 명부 PDF'));
+      if (mounted) _snack(tsakShareMessage(res, what: '아타스 명부 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busyBuilding = false);
+    }
+  }
+
+  /// 명부를 지정 형식으로 만들어 **외부 프로그램**으로 연다(모든 포맷 공통).
+  Future<void> _openOutputFile(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+    TsakOutputFormat format,
+  ) async {
+    if (rows.isEmpty) {
+      _snack('내보낼 명부가 없습니다');
+      return;
+    }
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '아타스 · 명부관리',
+      description: '아타스(ATAS) 명부입니다.',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}명'],
+      footerLeft: '한국범스카우트중앙회 · 아타스',
+    );
+    setState(() => _busyBuilding = true);
+    try {
+      late TsakShareResult res;
+      await runWithTsakProgress(
+        context,
+        title: '아타스 명부 ${format.label} 외부 열기',
+        note: '${rows.length}명 명부를 ${format.label}(으)로 만들어 엽니다.',
+        steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          res = await openTsakTableChosen(context, doc, format);
+          ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
+        },
+      );
+      if (mounted) _snack(tsakShareMessage(res, what: '아타스 명부 ${format.label}'));
+    } catch (e) {
+      if (mounted) _snack('열기 실패: $e');
     } finally {
       if (mounted) setState(() => _busyBuilding = false);
     }

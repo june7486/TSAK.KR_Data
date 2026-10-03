@@ -18,6 +18,7 @@ import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
+import '../widgets/tsak_output_sheet.dart';
 
 /// 중앙회 물건 결제 리스트 — 표 형식 관리 화면.
 ///
@@ -502,63 +503,120 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     );
   }
 
+  /// 지정 포맷의 **파일 바이트**를 만든다(저장·공유·외부열기 공용).
+  Future<({Uint8List bytes, String ext, String mime})> _buildFormatBytes(
+    TsakOutputFormat format,
+  ) async {
+    switch (format) {
+      case TsakOutputFormat.pdf:
+        return (
+          bytes: await DocPdf.build(
+            meta: _meta(),
+            columns: _columns,
+            rows: _rows(),
+            summary: _pdfSummary(),
+          ),
+          ext: 'pdf',
+          mime: 'application/pdf',
+        );
+      case TsakOutputFormat.jpg:
+        final bytes = await DocPdf.build(
+          meta: _meta(),
+          columns: _columns,
+          rows: _rows(),
+          summary: _pdfSummary(),
+        );
+        return (bytes: await pdfToJpg(bytes), ext: 'jpg', mime: 'image/jpeg');
+      case TsakOutputFormat.excel:
+        return (
+          bytes: Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(_csvText())]),
+          ext: 'csv',
+          mime: 'text/csv',
+        );
+      case TsakOutputFormat.ppt:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_plainText(format))),
+          ext: 'ppt',
+          mime: 'application/vnd.ms-powerpoint',
+        );
+      case TsakOutputFormat.word:
+        return (
+          bytes: Uint8List.fromList(utf8.encode(_plainText(format))),
+          ext: 'doc',
+          mime: 'application/msword',
+        );
+      case TsakOutputFormat.txt:
+        return (
+          bytes: Uint8List.fromList(
+            utf8.encode(_plainText(TsakOutputFormat.txt)),
+          ),
+          ext: 'txt',
+          mime: 'text/plain;charset=utf-8',
+        );
+    }
+  }
+
   Future<void> _print({TsakOutputFormat format = TsakOutputFormat.pdf}) async {
     if (_items.isEmpty) {
       _snack('인쇄할 항목이 없습니다');
       return;
     }
-    final html = _docHtml();
-    if (isWebRuntime) {
-      // 규칙(#14): 형식 순서 PDF→JPG→엑셀→PPT→워드.
-      switch (format) {
-        case TsakOutputFormat.pdf:
-          // 규칙: 실제 PDF 파일로 저장.
-          try {
-            final bytes = await DocPdf.build(
-              meta: _meta(),
-              columns: _columns,
-              rows: _rows(),
-              summary: _pdfSummary(),
-            );
-            await _saveBytes(bytes, '중앙회_물건_결제_내역.pdf');
-          } catch (e) {
-            _snack('PDF 생성 실패: $e');
-          }
-          return;
-        case TsakOutputFormat.jpg:
-          // 규칙: 실제 .jpg 파일로 저장.
-          try {
-            final bytes = await DocPdf.build(
-              meta: _meta(),
-              columns: _columns,
-              rows: _rows(),
-              summary: _pdfSummary(),
-            );
-            final jpg = await pdfToJpg(bytes);
-            await _saveBytes(jpg, '중앙회_물건_결제_내역.jpg', mime: 'image/jpeg');
-          } catch (e) {
-            _snack('JPG 생성 실패: $e');
-          }
-          return;
-        case TsakOutputFormat.excel:
-          await Clipboard.setData(ClipboardData(text: _csvText()));
-          _snack('엑셀용 데이터를 복사했습니다 (붙여넣기)');
-          return;
-        case TsakOutputFormat.ppt:
-        case TsakOutputFormat.word:
-        case TsakOutputFormat.txt:
-          await Clipboard.setData(ClipboardData(text: _plainText(format)));
-          _snack('${format.label}용 텍스트를 복사했습니다 (붙여넣기)');
-          return;
-      }
-    } else {
-      await saveText(
-        content: html,
-        name: '중앙회_물건_결제_내역_${_today().replaceAll('.', '')}',
-        ext: 'html',
-        mime: 'text/html;charset=utf-8',
+    try {
+      final f = await _buildFormatBytes(format);
+      await _saveBytes(f.bytes, '중앙회_물건_결제_내역.${f.ext}', mime: f.mime);
+    } catch (e) {
+      _snack('${format.label} 생성 실패: $e');
+    }
+  }
+
+  /// 지정 포맷을 **외부 프로그램**(뷰어·인쇄·기본 앱)으로 연다 — 모든 포맷 공통.
+  Future<void> _openFormat(TsakOutputFormat format) async {
+    if (_items.isEmpty) {
+      _snack('내보낼 항목이 없습니다');
+      return;
+    }
+    try {
+      final f = await _buildFormatBytes(format);
+      final ok = openFileExternally(
+        f.bytes,
+        '중앙회_물건_결제_내역.${f.ext}',
+        f.mime,
       );
-      _snack('문서를 저장했습니다');
+      if (!ok) {
+        await _saveBytes(
+          f.bytes,
+          '중앙회_물건_결제_내역.${f.ext}',
+          mime: f.mime,
+        );
+      }
+      _snack(
+        ok
+            ? '${format.label} 파일을 외부 프로그램으로 열었습니다'
+            : '외부 열기가 막혀 ${format.label} 파일로 저장했습니다',
+      );
+    } catch (e) {
+      _snack('열기 실패: $e');
+    }
+  }
+
+  /// 지정 포맷을 **OS 공유 시트**로 보낸다 — 모든 포맷 공통.
+  Future<void> _shareFormat(TsakOutputFormat format) async {
+    if (_items.isEmpty) {
+      _snack('공유할 항목이 없습니다');
+      return;
+    }
+    try {
+      final f = await _buildFormatBytes(format);
+      final res = await shareBytes(
+        bytes: f.bytes,
+        name: '중앙회_물건_결제_내역',
+        ext: f.ext,
+        mime: f.mime,
+        subject: '중앙회 물건 결제 내역',
+      );
+      _snack(tsakShareMessage(res, what: '${format.label} 물건 결제 내역'));
+    } catch (e) {
+      _snack('공유 실패: $e');
     }
   }
 
@@ -577,32 +635,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       _snack(ok ? '$filename 저장을 시작했습니다' : '저장하지 못했습니다');
     } catch (e) {
       _snack('저장 실패: $e');
-    }
-  }
-
-  /// 물건 결제 내역을 **OS 공유 시트**(모든 기기)로 공유한다 — PDF 파일로 바로 전송.
-  Future<void> _share() async {
-    if (_items.isEmpty) {
-      _snack('공유할 항목이 없습니다');
-      return;
-    }
-    try {
-      final bytes = await DocPdf.build(
-        meta: _meta(),
-        columns: _columns,
-        rows: _rows(),
-        summary: _pdfSummary(),
-      );
-      final res = await shareFileNamed(
-        bytes: bytes,
-        filename: '중앙회_물건_결제_내역.pdf',
-        mime: 'application/pdf',
-        subject: '중앙회 물건 결제 내역',
-        text: '중앙회 물건 결제 내역 · ${_items.length}건',
-      );
-      _snack(tsakShareMessage(res, what: '물건 결제 내역 PDF'));
-    } catch (e) {
-      _snack('공유 실패: $e');
     }
   }
 
@@ -645,52 +677,21 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     return buf.toString();
   }
 
-  /// 출력 형식 선택 다이얼로그 (#14 규칙).
+  /// 출력 형식 선택 시트 (#14 규칙) — 모든 포맷 저장·열기·공유.
   Future<void> _showOutputDialog() async {
     if (_items.isEmpty) {
       _snack('출력할 항목이 없습니다');
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('출력 형식 선택'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 12),
-            TsakOutputBar(
-              onFormat: (f) {
-                Navigator.pop(ctx);
-                _print(format: f);
-              },
-              onShare: () {
-                Navigator.pop(ctx);
-                _share();
-              },
-              onShareImage: () {
-                Navigator.pop(ctx);
-                _print(format: TsakOutputFormat.jpg);
-              },
-              onShareLink: () {
-                Navigator.pop(ctx);
-                showLinkShareDialog(context, '${_nas.baseUrl}/#/purchase');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
+    await showTsakOutputSheet(
+      context,
+      title: '중앙회 물건 결제 내역 출력',
+      subtitle: '${_items.length}건 · 총 ${_won(_total)}',
+      onPick: (f) => _print(format: f),
+      onOpen: _openFormat,
+      onShareFormat: _shareFormat,
+      onShare: () => _shareFormat(TsakOutputFormat.pdf),
+      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/purchase'),
     );
   }
 
