@@ -43,6 +43,12 @@ class _ExportScreenState extends State<ExportScreen>
   /// 표 스타일(감격/강조) — 머리글·테두리 강조 정도.
   ExportTableStyle _tableStyle = ExportTableStyle.accent;
 
+  /// 글씨 크기 — 표 본문/머리글/제목 폰트 크기 프리셋.
+  ExportFontSize _fontSize = ExportFontSize.normal;
+
+  /// 행 간격(밀도) — 셀 안쪽 여백 프리셋.
+  ExportRowSpace _rowSpace = ExportRowSpace.normal;
+
   /// 상단에 노출되는 메뉴(열) 순서 — 전체 항목 key 를 담으며 사용자가 재정렬한다.
   /// 실제 출력 열 순서 = `_order` 중 선택된 항목만(순서 유지).
   List<String> _order = kExportFields.map((f) => f.key).toList();
@@ -225,6 +231,26 @@ class _ExportScreenState extends State<ExportScreen>
         _sectionTitle('표 스타일 · 감격'),
         const SizedBox(height: 6),
         _tableStyleRow(),
+        const SizedBox(height: 18),
+        _sectionTitle('글씨 크기'),
+        const SizedBox(height: 6),
+        _segmented<ExportFontSize>(
+          ExportFontSize.values,
+          _fontSize,
+          (v) => v.label,
+          (v) => v.note,
+          (v) => setState(() => _fontSize = v),
+        ),
+        const SizedBox(height: 18),
+        _sectionTitle('행 간격 (밀도)'),
+        const SizedBox(height: 6),
+        _segmented<ExportRowSpace>(
+          ExportRowSpace.values,
+          _rowSpace,
+          (v) => v.label,
+          (v) => v.note,
+          (v) => setState(() => _rowSpace = v),
+        ),
         const SizedBox(height: 18),
         _sectionTitle('출력 용지 방향'),
         const SizedBox(height: 6),
@@ -543,6 +569,75 @@ class _ExportScreenState extends State<ExportScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 3분할 세그먼트 컨트롤 — 라벨 + 보조설명. 글씨 크기/간격 선택 공용.
+  Widget _segmented<T>(
+    List<T> values,
+    T current,
+    String Function(T) label,
+    String Function(T) note,
+    ValueChanged<T> onPick,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          for (final v in values)
+            Expanded(
+              child: InkWell(
+                onTap: () => onPick(v),
+                borderRadius: BorderRadius.circular(8),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 130),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 7,
+                    horizontal: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: current == v ? AppColors.purple : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        label(v),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: current == v
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: current == v
+                              ? Colors.white
+                              : AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        note(v),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: current == v
+                              ? Colors.white.withValues(alpha: 0.85)
+                              : AppColors.textGray,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -916,16 +1011,23 @@ class _ExportScreenState extends State<ExportScreen>
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    _previewBadge('${_visible.length}명'),
-                    const SizedBox(width: 6),
-                    _previewBadge(_landscape ? '가로' : '세로'),
-                    const SizedBox(width: 6),
-                    _previewBadge(_tableStyle.label),
-                    const SizedBox(width: 6),
-                    _previewBadge('${heads.length}개 항목'),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _previewBadge('${_visible.length}명'),
+                      const SizedBox(width: 6),
+                      _previewBadge(_landscape ? '가로' : '세로'),
+                      const SizedBox(width: 6),
+                      _previewBadge(_tableStyle.label),
+                      const SizedBox(width: 6),
+                      _previewBadge('글씨 ${_fontSize.label}'),
+                      const SizedBox(width: 6),
+                      _previewBadge('간격 ${_rowSpace.label}'),
+                      const SizedBox(width: 6),
+                      _previewBadge('${heads.length}개 항목'),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1157,6 +1259,8 @@ class _ExportScreenState extends State<ExportScreen>
                   fieldKeys: fields,
                   landscape: _landscape,
                   style: _tableStyle,
+                  fontSize: _fontSize,
+                  rowSpace: _rowSpace,
                 );
                 break;
               case ExportFormat.word:
@@ -1174,6 +1278,8 @@ class _ExportScreenState extends State<ExportScreen>
                   fieldKeys: fields,
                   landscape: _landscape,
                   style: _tableStyle,
+                  fontSize: _fontSize,
+                  rowSpace: _rowSpace,
                 );
                 break;
             }
@@ -1342,6 +1448,8 @@ class _ExportScreenState extends State<ExportScreen>
         fieldKeys: _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys,
         landscape: _landscape,
         style: _tableStyle,
+        fontSize: _fontSize,
+        rowSpace: _rowSpace,
       );
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {

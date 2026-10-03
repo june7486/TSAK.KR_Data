@@ -98,6 +98,115 @@ extension ExportTableStyleX on ExportTableStyle {
   }
 }
 
+/// 글씨 크기 — 출력물(표) 본문/머리글/제목 폰트 크기 프리셋.
+enum ExportFontSize { small, normal, large }
+
+extension ExportFontSizeX on ExportFontSize {
+  String get label {
+    switch (this) {
+      case ExportFontSize.small:
+        return '작게';
+      case ExportFontSize.normal:
+        return '보통';
+      case ExportFontSize.large:
+        return '크게';
+    }
+  }
+
+  double get cell {
+    switch (this) {
+      case ExportFontSize.small:
+        return 6.2;
+      case ExportFontSize.normal:
+        return 7.4;
+      case ExportFontSize.large:
+        return 8.8;
+    }
+  }
+
+  double get head {
+    switch (this) {
+      case ExportFontSize.small:
+        return 7.0;
+      case ExportFontSize.normal:
+        return 8.0;
+      case ExportFontSize.large:
+        return 9.6;
+    }
+  }
+
+  double get title {
+    switch (this) {
+      case ExportFontSize.small:
+        return 13;
+      case ExportFontSize.normal:
+        return 14;
+      case ExportFontSize.large:
+        return 16;
+    }
+  }
+
+  String get note {
+    switch (this) {
+      case ExportFontSize.small:
+        return '한 페이지에 많이 · 잘림 최소';
+      case ExportFontSize.normal:
+        return '가독·밀도 균형 · 기본';
+      case ExportFontSize.large:
+        return '크게 읽기 편함';
+    }
+  }
+}
+
+/// 행 간격(밀도) — 셀 안쪽 여백(세로/가로) 프리셋.
+enum ExportRowSpace { tight, normal, loose }
+
+extension ExportRowSpaceX on ExportRowSpace {
+  String get label {
+    switch (this) {
+      case ExportRowSpace.tight:
+        return '좁게';
+      case ExportRowSpace.normal:
+        return '보통';
+      case ExportRowSpace.loose:
+        return '넓게';
+    }
+  }
+
+  double get vPad {
+    switch (this) {
+      case ExportRowSpace.tight:
+        return 1.6;
+      case ExportRowSpace.normal:
+        return 3.0;
+      case ExportRowSpace.loose:
+        return 5.2;
+    }
+  }
+
+  double get hPad {
+    switch (this) {
+      case ExportRowSpace.tight:
+        return 3.0;
+      case ExportRowSpace.normal:
+        return 4.0;
+      case ExportRowSpace.loose:
+        return 6.0;
+    }
+  }
+
+  String get note {
+    switch (this) {
+      case ExportRowSpace.tight:
+        return '행 높이 최소 · 한 장에 최대';
+      case ExportRowSpace.normal:
+        return '표준 간격 · 기본';
+      case ExportRowSpace.loose:
+        return '숨 쉬는 간격';
+    }
+  }
+}
+
 /// 내보낼 개인정보 항목 정의 (선택 가능)
 class ExportField {
   const ExportField(this.key, this.label, [this.group = '기타']);
@@ -506,6 +615,8 @@ class ExportService {
     List<String>? fieldKeys,
     bool landscape = true,
     ExportTableStyle style = ExportTableStyle.accent,
+    ExportFontSize fontSize = ExportFontSize.normal,
+    ExportRowSpace rowSpace = ExportRowSpace.normal,
   }) async {
     final keys = fieldKeys ?? kDefaultFieldKeys;
     return buildPdfFromRows(
@@ -514,12 +625,15 @@ class ExportService {
       title: title,
       landscape: landscape,
       style: style,
+      fontSize: fontSize,
+      rowSpace: rowSpace,
     );
   }
 
   /// 표 형식 PDF 바이트 생성 (제네릭 — 헤더·행 직접 지정).
   ///
-  /// [landscape]=가로(false=세로) · [style]=표 강조(감격) 정도.
+  /// [landscape]=가로(false=세로) · [style]=표 강조(감격) 정도 ·
+  /// [fontSize]=글씨 크기 · [rowSpace]=행 간격(밀도).
   /// 한글 폰트(나눔고딕) 임베딩 필수 — 미지정 시 □ 로 깨진다.
   static Future<Uint8List> buildPdfFromRows({
     required List<String> headers,
@@ -527,6 +641,8 @@ class ExportService {
     String title = '한국범스카우트 중앙회 인가자 명단',
     bool landscape = true,
     ExportTableStyle style = ExportTableStyle.accent,
+    ExportFontSize fontSize = ExportFontSize.normal,
+    ExportRowSpace rowSpace = ExportRowSpace.normal,
   }) async {
     await _ensurePdfFonts();
     final reg = _pdfReg!;
@@ -540,25 +656,29 @@ class ExportService {
     final zebraTint = PdfColor.fromInt(0xFFF3EFF9);
     final framedHead = PdfColor.fromInt(0xFFEDEAE3);
 
-    // 본문 스타일 (규칙: 브랜드 퍼플 + 얇은 테두리, 저채도)
+    // 본문 스타일 (규칙: 브랜드 퍼플 + 얇은 테두리, 저채도) — 크기는 fontSize.
     final titleStyle = pw.TextStyle(
       font: bold,
-      fontSize: 14,
+      fontSize: fontSize.title,
       color: PdfColor.fromInt(0xFF3D1B63),
     );
     final metaStyle = pw.TextStyle(
       font: reg,
-      fontSize: 9,
+      fontSize: fontSize.head + 1,
       color: PdfColor.fromInt(0xFF6E6A7C),
     );
     final headStyle = style == ExportTableStyle.framed
         ? pw.TextStyle(
             font: bold,
-            fontSize: 8,
+            fontSize: fontSize.head,
             color: PdfColor.fromInt(0xFF3A3A3A),
           )
-        : pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white);
-    final cellStyle = pw.TextStyle(font: reg, fontSize: 7.2);
+        : pw.TextStyle(
+            font: bold,
+            fontSize: fontSize.head,
+            color: PdfColors.white,
+          );
+    final cellStyle = pw.TextStyle(font: reg, fontSize: fontSize.cell);
 
     // 표 강조(감격) 분기.
     pw.BoxDecoration? headDeco;
@@ -603,6 +723,7 @@ class ExportService {
             pw.SizedBox(height: 3),
             pw.Text(
               '총 ${rows.length}명  ·  ${landscape ? '가로' : '세로'}  ·  '
+              '글씨 ${fontSize.label} · 간격 ${rowSpace.label}  ·  '
               '출력일: ${_today()}',
               style: metaStyle,
             ),
@@ -629,9 +750,9 @@ class ExportService {
             headerAlignment: pw.Alignment.center,
             cellStyle: cellStyle,
             cellAlignment: pw.Alignment.centerLeft,
-            cellPadding: const pw.EdgeInsets.symmetric(
-              horizontal: 4,
-              vertical: 3,
+            cellPadding: pw.EdgeInsets.symmetric(
+              horizontal: rowSpace.hPad,
+              vertical: rowSpace.vPad,
             ),
             border: tableBorder,
             oddRowDecoration: oddRowDeco,
