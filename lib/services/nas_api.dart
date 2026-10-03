@@ -2506,6 +2506,7 @@ class NasApi {
     bool forSale = true,
     String soldStart = '',
     int soldBase = 0,
+    String category = '',
   }) async {
     final r = await http
         .post(
@@ -2532,6 +2533,7 @@ class NasApi {
             'forSale': forSale,
             'soldStart': soldStart,
             'soldBase': soldBase,
+            'category': category,
           }),
         )
         .timeout(const Duration(seconds: 40));
@@ -2574,6 +2576,7 @@ class NasApi {
     String checkedAt = '',
     String whoName = '',
     String photo = '',
+    String category = '',
   }) async {
     final r = await http
         .post(
@@ -2587,6 +2590,7 @@ class NasApi {
             if (checkedAt.isNotEmpty) 'checkedAt': checkedAt,
             if (whoName.isNotEmpty) 'whoName': whoName,
             'photo': photo,
+            'category': category,
           }),
         )
         .timeout(const Duration(seconds: 40));

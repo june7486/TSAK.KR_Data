@@ -2281,6 +2281,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     bool credentialOnly = existing?['credentialOnly'] == true;
     // 상품판매 여부 — 재고표 [V] 및 쇼핑몰 노출 여부(기획실 "상품판매" 개념).
     bool forSale = existing?['forSale'] != false;
+    // 구분(카테고리) — 인수인계 대장 4구분 + 세트.
+    String category = '${existing?['category'] ?? ''}';
     // 견적서 기반 세부항목(사양/옵션) — 마스터만 편집. [{label, value, note}]
     final bool isMaster = context.read<AppState>().isMaster;
     final List<Map<String, String>> specList =
@@ -2422,6 +2424,38 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 const SizedBox(height: 8),
                 _dlgField(name, '소품명'),
                 _dlgField(kind, '종류 · 추가설명 (예: 각인 가능, 세트)'),
+                DropdownButtonFormField<String>(
+                  initialValue: category.isEmpty ? '' : category,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '구분 (재고 분류)',
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: '', child: Text('미분류')),
+                    DropdownMenuItem(
+                      value: '세트·멤버십',
+                      child: Text('세트·멤버십'),
+                    ),
+                    DropdownMenuItem(
+                      value: '의류·착용류',
+                      child: Text('의류·착용류'),
+                    ),
+                    DropdownMenuItem(
+                      value: '배지·패치·조임류',
+                      child: Text('배지·패치·조임류'),
+                    ),
+                    DropdownMenuItem(
+                      value: '약장·메달·기념품',
+                      child: Text('약장·메달·기념품'),
+                    ),
+                    DropdownMenuItem(
+                      value: '기타·열전사·포장',
+                      child: Text('기타·열전사·포장'),
+                    ),
+                  ],
+                  onChanged: (v) => setDlg(() => category = v ?? ''),
+                ),
                 _dlgField(price, '가격 (원)', number: true),
                 _dlgField(stock, '재고 수량', number: true),
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L / 58,60)'),
@@ -2727,6 +2761,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         active: active,
         credentialOnly: credentialOnly,
         forSale: forSale,
+        category: category,
         soldBase: (existing?['soldBase'] as num?)?.toInt() ?? 0,
         soldStart: '${existing?['soldStart'] ?? ''}',
       );
@@ -5069,7 +5104,42 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           )
         else ...[
           _stockTableHead(),
-          for (final s in stock) _stockRow(s),
+          // 구분(카테고리)별 그룹 — 인수인계 대장 4구분 순서.
+          for (final grp in _stockGroups(stock)) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 12, 2, 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 15,
+                    decoration: BoxDecoration(
+                      color: AppColors.purple,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    grp.$1,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purpleDark,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${grp.$2.length}종',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            for (final s in grp.$2) _stockRow(s),
+          ],
           const SizedBox(height: 8),
           Text(
             '총 ${stock.length}종 · 총 재고 $total',
@@ -5108,6 +5178,31 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ],
       ],
     );
+  }
+
+  /// 재고 목록을 구분(카테고리)별로 묶어 인수인계 대장 순서로 반환.
+  List<(String, List<Map<String, dynamic>>)> _stockGroups(
+    List<Map<String, dynamic>> stock,
+  ) {
+    const order = [
+      '세트·멤버십',
+      '의류·착용류',
+      '배지·패치·조임류',
+      '약장·메달·기념품',
+      '기타·열전사·포장',
+    ];
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final s in stock) {
+      final p = _productOf(s);
+      final c = '${p?['category'] ?? ''}'.trim();
+      final key = c.isEmpty ? '미분류' : c;
+      map.putIfAbsent(key, () => []).add(s);
+    }
+    final keys = <String>[
+      ...order.where(map.containsKey),
+      ...map.keys.where((k) => !order.contains(k)),
+    ];
+    return [for (final k in keys) (k, map[k]!)];
   }
 
   Widget _stockTableHead() {
@@ -5736,6 +5831,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         active: p['active'] != false,
         credentialOnly: p['credentialOnly'] == true,
         forSale: on,
+        category: '${p['category'] ?? ''}',
         soldStart: '${p['soldStart'] ?? ''}',
         soldBase: (p['soldBase'] as num?)?.toInt() ?? 0,
       );
