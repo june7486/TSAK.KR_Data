@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -207,6 +208,18 @@ extension ExportRowSpaceX on ExportRowSpace {
   }
 }
 
+/// 두줄 방지 대상 후보 — 이름·인가번호·핸드폰번호·이메일.
+/// (줄바꿈이 생기면 표가 지저분해지는 핵심 항목)
+const List<String> kNoWrapCandidates = ['name', 'number', 'phone', 'email'];
+
+/// 두줄 방지 옵션 라벨(key → 화면 표기).
+const Map<String, String> kNoWrapLabels = {
+  'name': '이름',
+  'number': '인가번호',
+  'phone': '핸드폰',
+  'email': '이메일',
+};
+
 /// 내보낼 개인정보 항목 정의 (선택 가능)
 class ExportField {
   const ExportField(this.key, this.label, [this.group = '기타']);
@@ -372,13 +385,37 @@ class ExportService {
   static pw.Font? _pdfReg;
   static pw.Font? _pdfBold;
 
+  // 실제 폰트 메트릭(문자 폭) 측정용. 두줄 방지 열의 정확한 너비 계산에 사용.
+  static ByteData? _pdfRegBytes;
+  static TtfParser? _pdfRegParser;
+
   static Future<void> _ensurePdfFonts() async {
-    _pdfReg ??= pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf'),
-    );
+    if (_pdfReg == null || _pdfRegBytes == null) {
+      final b = await rootBundle.load('assets/fonts/NanumGothic-Regular-s.ttf');
+      _pdfRegBytes = b;
+      _pdfReg = pw.Font.ttf(b);
+      _pdfRegParser = TtfParser(b);
+    }
     _pdfBold ??= pw.Font.ttf(
       await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
     );
+  }
+
+  /// 검증/미리보기 생성기용 — 에셋 번들 없이(순수 Dart) 폰트를 주입한다.
+  /// (테스트 훅: 설정하면 [_ensurePdfFonts] 는 rootBundle 을 건드리지 않는다.)
+  /// [regularBytes] 를 주면 실제 메트릭 기반 두줄 방지 폭 계산도 활성화된다.
+  @visibleForTesting
+  static void debugSetPdfFonts({
+    required pw.Font regular,
+    required pw.Font bold,
+    ByteData? regularBytes,
+  }) {
+    _pdfReg = regular;
+    _pdfBold = bold;
+    if (regularBytes != null) {
+      _pdfRegBytes = regularBytes;
+      _pdfRegParser = TtfParser(regularBytes);
+    }
   }
 
   static const headers = [
@@ -617,6 +654,7 @@ class ExportService {
     ExportTableStyle style = ExportTableStyle.accent,
     ExportFontSize fontSize = ExportFontSize.normal,
     ExportRowSpace rowSpace = ExportRowSpace.normal,
+    Set<String> noWrapKeys = const {},
   }) async {
     final keys = fieldKeys ?? kDefaultFieldKeys;
     return buildPdfFromRows(
@@ -627,13 +665,15 @@ class ExportService {
       style: style,
       fontSize: fontSize,
       rowSpace: rowSpace,
+      noWrapKeys: noWrapKeys,
     );
   }
 
   /// 표 형식 PDF 바이트 생성 (제네릭 — 헤더·행 직접 지정).
   ///
   /// [landscape]=가로(false=세로) · [style]=표 강조(감격) 정도 ·
-  /// [fontSize]=글씨 크기 · [rowSpace]=행 간격(밀도).
+  /// [fontSize]=글씨 크기 · [rowSpace]=행 간격(밀도) ·
+  /// [noWrapKeys]=두줄 방지 열(헤더 라벨 기준, 줄바꿈 금지 + 열 너비 자동 확보).
   /// 한글 폰트(나눔고딕) 임베딩 필수 — 미지정 시 □ 로 깨진다.
   static Future<Uint8List> buildPdfFromRows({
     required List<String> headers,
@@ -643,6 +683,7 @@ class ExportService {
     ExportTableStyle style = ExportTableStyle.accent,
     ExportFontSize fontSize = ExportFontSize.normal,
     ExportRowSpace rowSpace = ExportRowSpace.normal,
+    Set<String> noWrapKeys = const {},
   }) async {
     await _ensurePdfFonts();
     final reg = _pdfReg!;
@@ -710,6 +751,24 @@ class ExportService {
         ? pw.BoxDecoration(color: zebraTint)
         : null;
 
+    // 두줄 방지 열 인덱스 + 실측 기반 열 너비.
+    // 표 폭이 페이지를 넘으면 pdf 패키지가 전체 열을 비례 축소하므로,
+    // 총합을 페이지 안에 맞춰 두줄 방지 열의 예약 폭이 깎이지 않게 한다.
+    final noWrapLabels = noWrapKeys.map(_labelFor).toSet();
+    final noWrapCols = <int>{};
+    for (var i = 0; i < headers.length; i++) {
+      if (noWrapLabels.contains(headers[i])) noWrapCols.add(i);
+    }
+    final colWidths = _computeColumnWidths(
+      headers: headers,
+      rows: rows,
+      cellStyle: cellStyle,
+      headStyle: headStyle,
+      hPad: rowSpace.hPad,
+      noWrapCols: noWrapCols,
+      maxTotal: pageFormat.width - 36, // 좌우 여백 18pt × 2
+    );
+
     doc.addPage(
       pw.MultiPage(
         pageTheme: tsakPdfPageTheme(
@@ -754,16 +813,146 @@ class ExportService {
               horizontal: rowSpace.hPad,
               vertical: rowSpace.vPad,
             ),
+            columnWidths: colWidths,
             border: tableBorder,
             oddRowDecoration: oddRowDeco,
-            data: rows
-                .map((r) => r.map((v) => pw.Text(v, style: cellStyle)).toList())
-                .toList(),
+            cellBuilder: (cu, data, rowNum) {
+              final col = cu - 1; // 1-based 열 인덱스 → 0-based
+              if (!noWrapCols.contains(col)) return null; // 기본 셀(줄바꿈 허용)
+              // softWrap:false 만이 줄바꿈을 막는다(maxLines 는 잘림만 유발).
+              return pw.Text(
+                data?.toString() ?? '',
+                style: cellStyle,
+                softWrap: false,
+              );
+            },
+            data: rows,
           ),
         ],
       ),
     );
     return doc.save();
+  }
+
+  /// key → 표 헤더 라벨(kExportFields 기준). 두줄 방지 열 매칭에 사용.
+  static String _labelFor(String key) => kExportFields
+      .firstWhere((f) => f.key == key, orElse: () => ExportField(key, key))
+      .label;
+
+  /// 모든 열의 고정 너비를 실측해 배분한다.
+  ///
+  /// 핵심: 총합을 페이지 안에 맞춰 표의 비례 축소를 원천 차단한다.
+  /// 두줄 방지 열([noWrapCols])은 한 줄 폭을 온전히 확보하고,
+  /// 나머지 열이 남는 폭을 내용 비례로 나눠 갖는다.
+  static Map<int, pw.TableColumnWidth> _computeColumnWidths({
+    required List<String> headers,
+    required List<List<String>> rows,
+    required pw.TextStyle cellStyle,
+    required pw.TextStyle headStyle,
+    required double hPad,
+    required Set<int> noWrapCols,
+    required double maxTotal,
+  }) {
+    final n = headers.length;
+    final cellFs = cellStyle.fontSize ?? 7.4;
+    final headFs = headStyle.fontSize ?? 7.4;
+    final pad = hPad * 2 + 2.5; // 좌우 패딩 + 테두리 여유
+
+    // 실제 폰트 메트릭(있으면)으로 문자 폭 합을 계산.
+    double measure(String s, double fs) {
+      final parser = _pdfRegParser;
+      if (parser == null) return _unitsWidth(s, fs);
+      var w = 0.0;
+      for (final code in s.runes) {
+        final g = parser.charToGlyphIndexMap[code];
+        if (g == null) continue;
+        w += (parser.glyphInfoMap[g]?.advanceWidth ?? 0) * fs;
+      }
+      return w;
+    }
+
+    // 열별 최대 내용 폭(헤더 포함).
+    final content = List<double>.filled(n, 0);
+    for (var i = 0; i < n; i++) {
+      var maxW = measure(headers[i], headFs);
+      for (final r in rows) {
+        if (i >= r.length) continue;
+        final w = measure(r[i].toString(), cellFs);
+        if (w > maxW) maxW = w;
+      }
+      content[i] = maxW;
+    }
+
+    final width = List<double>.generate(n, (i) => content[i] + pad);
+    final total = width.fold(0.0, (s, e) => s + e);
+    if (total > maxTotal) {
+      // 1) 두줄 방지 열은 온전히 보존.
+      var fixed = 0.0;
+      final shrinkable = <int>[];
+      for (var i = 0; i < n; i++) {
+        if (noWrapCols.contains(i)) {
+          fixed += width[i];
+        } else {
+          shrinkable.add(i);
+        }
+      }
+      // 2) 나머지 열 최소폭(두 줄 감당) = 내용의 55% 또는 22pt.
+      final minW = List<double>.generate(n, (i) {
+        final m = content[i] * 0.55;
+        return m < 22 ? 22 : m;
+      });
+      var minSum = 0.0;
+      for (final i in shrinkable) {
+        minSum += minW[i];
+      }
+      final avail = maxTotal - fixed;
+      if (avail <= minSum) {
+        for (final i in shrinkable) {
+          width[i] = minW[i];
+        }
+        // 그래도 넘치면 두줄 방지 열을 아주 약간만 줄여 페이지 안에 맞춘다.
+        var over = fixed + minSum - maxTotal;
+        for (var i = 0; i < n && over > 0.5; i++) {
+          if (!noWrapCols.contains(i)) continue;
+          final floor = content[i] * 0.92 + pad;
+          final cut = (width[i] - floor).clamp(0.0, over);
+          width[i] -= cut;
+          over -= cut;
+        }
+      } else {
+        var flexSum = 0.0;
+        for (final i in shrinkable) {
+          flexSum += content[i];
+        }
+        for (final i in shrinkable) {
+          final ratio = flexSum > 0 ? content[i] / flexSum : 1 / shrinkable.length;
+          width[i] = (avail * ratio).clamp(minW[i], width[i]);
+        }
+      }
+    }
+
+    return <int, pw.TableColumnWidth>{
+      for (var i = 0; i < n; i++) i: pw.FixedColumnWidth(width[i]),
+    };
+  }
+
+  /// 텍스트 폭(pt 근사) — 나눔고딕 기준, 잘림 방지를 위해 약간 넉넉히.
+  static double _unitsWidth(String s, double fs) {
+    // 폰트 메트릭이 없으므로 문자 종류별 계수로 폭을 근사한다.
+    var units = 0.0;
+    for (final ch in s.runes) {
+      final c = String.fromCharCode(ch);
+      if (RegExp(r'[0-9]').hasMatch(c)) {
+        units += fs * 0.62; // 숫자
+      } else if (RegExp(r'[A-Za-z]').hasMatch(c)) {
+        units += fs * 0.66; // 영문
+      } else if (ch > 0x2E80) {
+        units += fs * 1.02; // 한글·한자 등 전각
+      } else {
+        units += fs * 0.5; // 기호(-, ., @ 등)
+      }
+    }
+    return units + 2;
   }
 
   /// 워드(DOC) — HTML 기반 .doc (Word에서 정상 열림)

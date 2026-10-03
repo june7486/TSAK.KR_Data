@@ -49,6 +49,10 @@ class _ExportScreenState extends State<ExportScreen>
   /// 행 간격(밀도) — 셀 안쪽 여백 프리셋.
   ExportRowSpace _rowSpace = ExportRowSpace.normal;
 
+  /// 두줄 방지 대상 열 — 켜면 해당 열은 줄바꿈하지 않고 열 너비를 확보한다.
+  /// 기본: 이름·인가번호·핸드폰·이메일 4개 모두 방지.
+  final Set<String> _noWrap = {...kNoWrapCandidates};
+
   /// 상단에 노출되는 메뉴(열) 순서 — 전체 항목 key 를 담으며 사용자가 재정렬한다.
   /// 실제 출력 열 순서 = `_order` 중 선택된 항목만(순서 유지).
   List<String> _order = kExportFields.map((f) => f.key).toList();
@@ -251,6 +255,24 @@ class _ExportScreenState extends State<ExportScreen>
           (v) => v.note,
           (v) => setState(() => _rowSpace = v),
         ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            _sectionTitle('두줄 방지 (줄바꿈 금지)'),
+            const Spacer(),
+            _miniTextButton('전체', () {
+              setState(() => _noWrap.addAll(kNoWrapCandidates));
+            }),
+            _miniTextButton('해제', () => setState(() => _noWrap.clear())),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          '켠 항목은 두 줄로 깨지지 않고, 값이 한 줄에 들어가도록 열 너비를 자동 확보합니다. (PDF·이미지)',
+          style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+        ),
+        const SizedBox(height: 6),
+        _noWrapPanel(),
         const SizedBox(height: 18),
         _sectionTitle('출력 용지 방향'),
         const SizedBox(height: 6),
@@ -565,6 +587,90 @@ class _ExportScreenState extends State<ExportScreen>
                   color: AppColors.purple,
                   fontWeight: FontWeight.w700,
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 두줄 방지 — 이름/인가번호/핸드폰/이메일을 문서형 V체크로 켜고 끈다.
+  Widget _noWrapPanel() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < kNoWrapCandidates.length; i++) ...[
+            if (i > 0)
+              const Divider(height: 1, thickness: 1, color: Color(0xFFEEEBF3)),
+            _noWrapRow(kNoWrapCandidates[i], i + 1),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _noWrapRow(String key, int no) {
+    final on = _noWrap.contains(key);
+    return InkWell(
+      onTap: () => setState(() {
+        if (on) {
+          _noWrap.remove(key);
+        } else {
+          _noWrap.add(key);
+        }
+      }),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 17,
+              height: 17,
+              child: on
+                  ? const Icon(Icons.check, size: 16, color: AppColors.purple)
+                  : Icon(
+                      Icons.check_box_outline_blank,
+                      size: 15,
+                      color: AppColors.purple.withValues(alpha: 0.35),
+                    ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 20,
+              child: Text(
+                '$no',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textGray,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                kNoWrapLabels[key] ?? key,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: on ? AppColors.textDark : AppColors.textGray,
+                  fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+            const Text(
+              '줄바꿈 금지',
+              style: TextStyle(
+                fontSize: 9.5,
+                color: AppColors.purple,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
@@ -1025,6 +1131,8 @@ class _ExportScreenState extends State<ExportScreen>
                       const SizedBox(width: 6),
                       _previewBadge('간격 ${_rowSpace.label}'),
                       const SizedBox(width: 6),
+                      _previewBadge('두줄방지 ${_noWrap.length}'),
+                      const SizedBox(width: 6),
                       _previewBadge('${heads.length}개 항목'),
                     ],
                   ),
@@ -1261,6 +1369,7 @@ class _ExportScreenState extends State<ExportScreen>
                   style: _tableStyle,
                   fontSize: _fontSize,
                   rowSpace: _rowSpace,
+                  noWrapKeys: _noWrap,
                 );
                 break;
               case ExportFormat.word:
@@ -1280,6 +1389,7 @@ class _ExportScreenState extends State<ExportScreen>
                   style: _tableStyle,
                   fontSize: _fontSize,
                   rowSpace: _rowSpace,
+                  noWrapKeys: _noWrap,
                 );
                 break;
             }
@@ -1450,6 +1560,7 @@ class _ExportScreenState extends State<ExportScreen>
         style: _tableStyle,
         fontSize: _fontSize,
         rowSpace: _rowSpace,
+        noWrapKeys: _noWrap,
       );
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {
