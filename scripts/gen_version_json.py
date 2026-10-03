@@ -26,6 +26,12 @@ if not m:
 stamp = m.group(1)
 stamp_int = int(stamp)
 
+# 자동 증가 빌드 넘버(커밋 수) — 앱 표시 버전(v1.0.0+NNN)과 일치시킨다.
+mb = re.search(r"kBuildNumber\s*=\s*(\d+)", txt)
+build_number = mb.group(1) if mb else "0"
+mc = re.search(r"kCommit\s*=\s*'([^']*)'", txt)
+commit = mc.group(1) if mc else ""
+
 out = os.path.abspath(os.path.join(here, "..", "build", "web", "version.json"))
 prev = {}
 try:
@@ -35,6 +41,9 @@ except Exception:
 
 prev["build_id"] = stamp_int
 prev["version"] = str(stamp_int)
+prev["build_number"] = build_number
+if commit:
+    prev["commit"] = commit
 prev.setdefault("app_name", "tsak_credential_manager")
 
 os.makedirs(os.path.dirname(out), exist_ok=True)
