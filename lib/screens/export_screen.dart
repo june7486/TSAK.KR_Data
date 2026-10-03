@@ -37,6 +37,16 @@ class _ExportScreenState extends State<ExportScreen>
   bool _busy = false;
   ExportFormat _format = ExportFormat.excel;
 
+  /// 용지 방향 — true: A4 가로(landscape) / false: A4 세로(portrait).
+  bool _landscape = true;
+
+  /// 표 스타일(감격/강조) — 머리글·테두리 강조 정도.
+  ExportTableStyle _tableStyle = ExportTableStyle.accent;
+
+  /// 상단에 노출되는 메뉴(열) 순서 — 전체 항목 key 를 담으며 사용자가 재정렬한다.
+  /// 실제 출력 열 순서 = `_order` 중 선택된 항목만(순서 유지).
+  List<String> _order = kExportFields.map((f) => f.key).toList();
+
   /// 선택된 개인정보 항목 (기본: 전체)
   final Set<String> _selectedFields = {...kDefaultFieldKeys};
 
@@ -58,8 +68,7 @@ class _ExportScreenState extends State<ExportScreen>
     if (_cats.length == _catDefs.length) return widget.members;
     return widget.members.where((m) {
       // 서포터츠(비인가/일반회원): 전화 기반 계정.
-      final isSupporter =
-          m.isRegular || m.accessPhone.trim().isNotEmpty;
+      final isSupporter = m.isRegular || m.accessPhone.trim().isNotEmpty;
       if (m.corps == 'eunha') return _cats.contains('eunha');
       if (isSupporter) return _cats.contains('supporters');
       final hasMentee = m.mentees.isNotEmpty;
@@ -77,12 +86,21 @@ class _ExportScreenState extends State<ExportScreen>
   }
 
   List<String> get _fieldKeys {
-    // kExportFields 순서를 유지하며 선택된 항목만
-    return kExportFields
-        .map((f) => f.key)
-        .where(_selectedFields.contains)
-        .toList();
+    // 사용자가 정한 열 순서(_order)를 따르며 선택된 항목만.
+    final sel = _order.where(_selectedFields.contains).toList();
+    // 혹시 누락된 항목이 있으면 뒤에 붙여 안전하게.
+    for (final f in kExportFields) {
+      if (_selectedFields.contains(f.key) && !sel.contains(f.key)) {
+        sel.add(f.key);
+      }
+    }
+    return sel;
   }
+
+  /// 라벨 조회 헬퍼 — key → 표시명.
+  String _labelOf(String key) => kExportFields
+      .firstWhere((f) => f.key == key, orElse: () => ExportField(key, key))
+      .label;
 
   @override
   void dispose() {
@@ -177,8 +195,8 @@ class _ExportScreenState extends State<ExportScreen>
         ),
         const SizedBox(height: 4),
         const Text(
-          '선택한 항목만 명단(모든 형식)에 포함됩니다.',
-          style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          'V 표시된 항목만 명단(모든 형식)에 포함됩니다. 항목을 눌러 켜고 끄세요.',
+          style: TextStyle(fontSize: 11, color: AppColors.textGray),
         ),
         const SizedBox(height: 6),
         Row(
@@ -197,13 +215,36 @@ class _ExportScreenState extends State<ExportScreen>
               '해제',
               () => setState(() => _selectedFields.clear()),
             ),
+            const Spacer(),
+            _miniTextButton('열 순서', _editOrder),
           ],
         ),
         const SizedBox(height: 6),
-        _fieldGroups(),
+        _fieldPanel(),
+        const SizedBox(height: 18),
+        _sectionTitle('표 스타일 · 감격'),
+        const SizedBox(height: 6),
+        _tableStyleRow(),
+        const SizedBox(height: 18),
+        _sectionTitle('출력 용지 방향'),
+        const SizedBox(height: 6),
+        _orientationRow(),
         const SizedBox(height: 20),
         _chunkSwitch(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.purple,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: _busy ? null : _showPreview,
+          icon: const Icon(Icons.table_view, size: 18),
+          label: const Text('출력 미리보기 (예상)'),
+        ),
+        const SizedBox(height: 10),
         FilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.purple,
@@ -267,8 +308,11 @@ class _ExportScreenState extends State<ExportScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.filter_alt_outlined,
-                size: 15, color: AppColors.purple),
+            const Icon(
+              Icons.filter_alt_outlined,
+              size: 15,
+              color: AppColors.purple,
+            ),
             const SizedBox(width: 5),
             const Text(
               '구분 (복수선택 가능)',
@@ -375,50 +419,629 @@ class _ExportScreenState extends State<ExportScreen>
     ),
   );
 
-  /// 항목을 그룹별로 나누어 간결하게 표시.
-  Widget _fieldGroups() {
+  /// 항목 선택 — 문서형(작은 글씨·V 체크) 목록. 버튼식 칩 대신 표 한 줄.
+  ///
+  /// · 왼쪽: V 체크박스(선택 표시) · 가운데: 번호 · 항목명 · 오른쪽: 그룹 태그.
+  /// · 그룹(기본/연락/주소/자격/회비/기타)마다 얇은 머리글 줄로 구분한다.
+  Widget _fieldPanel() {
     const order = ['기본', '연락', '주소', '자격', '회비', '기타'];
     final groups = <String, List<ExportField>>{};
     for (final f in kExportFields) {
       groups.putIfAbsent(f.group, () => []).add(f);
     }
-    final keys = order.where(groups.containsKey).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final g in keys) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 10, bottom: 5),
-            child: Text(
-              g,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.purple,
+    final groupKeys = order.where(groups.containsKey).toList();
+    var rowNo = 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var gi = 0; gi < groupKeys.length; gi++) ...[
+            if (gi > 0)
+              const Divider(height: 1, thickness: 1, color: Color(0xFFEEEBF3)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 7, 10, 5),
+              child: Row(
+                children: [
+                  Text(
+                    groupKeys[gi],
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purple,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${groups[groupKeys[gi]]!.length}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final f in groups[g]!)
-                _chip(
-                  f.label,
-                  _selectedFields.contains(f.key),
-                  () => setState(() {
-                    if (_selectedFields.contains(f.key)) {
-                      _selectedFields.remove(f.key);
-                    } else {
-                      _selectedFields.add(f.key);
-                    }
-                  }),
-                ),
-            ],
-          ),
+            for (final f in groups[groupKeys[gi]]!) _fieldDocRow(f, ++rowNo),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// 항목 한 줄 — V 체크 + 순번 + 항목명 + 그룹 태그. 글씨 최소화·아이콘 없음.
+  Widget _fieldDocRow(ExportField f, int no) {
+    final on = _selectedFields.contains(f.key);
+    return InkWell(
+      onTap: () => setState(() {
+        if (on) {
+          _selectedFields.remove(f.key);
+        } else {
+          _selectedFields.add(f.key);
+        }
+      }),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Row(
+          children: [
+            // V 표 체크 — 선택 시만 보라 V, 미선택 시 옅은 빈 상자.
+            SizedBox(
+              width: 17,
+              height: 17,
+              child: on
+                  ? const Icon(Icons.check, size: 16, color: AppColors.purple)
+                  : Icon(
+                      Icons.check_box_outline_blank,
+                      size: 15,
+                      color: AppColors.purple.withValues(alpha: 0.35),
+                    ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 20,
+              child: Text(
+                '$no',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textGray,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                f.label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: on ? AppColors.textDark : AppColors.textGray,
+                  fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.purple.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                f.group,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  color: AppColors.purple,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 표 스타일(감격/강조) 선택 — 가로 스크롤 소형 텍스트 라디오.
+  Widget _tableStyleRow() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final s in ExportTableStyle.values)
+            InkWell(
+              onTap: () => setState(() => _tableStyle = s),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _tableStyle == s
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 16,
+                      color: _tableStyle == s
+                          ? AppColors.purple
+                          : AppColors.purple.withValues(alpha: 0.35),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      s.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: _tableStyle == s
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: _tableStyle == s
+                            ? AppColors.textDark
+                            : AppColors.textGray,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      s.note,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 용지 방향 선택 — 가로/세로.
+  Widget _orientationRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: _orientTile(
+            '가로 (A4 가로)',
+            '항목이 많을 때 · 기본',
+            Icons.stay_current_landscape,
+            true,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _orientTile(
+            '세로 (A4 세로)',
+            '항목이 적을 때',
+            Icons.stay_current_portrait,
+            false,
+          ),
+        ),
       ],
     );
+  }
+
+  Widget _orientTile(String title, String sub, IconData icon, bool value) {
+    final on = _landscape == value;
+    return InkWell(
+      onTap: () => setState(() => _landscape = value),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: on ? AppColors.purple.withValues(alpha: 0.07) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: on
+                ? AppColors.purple
+                : AppColors.purple.withValues(alpha: 0.18),
+            width: on ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: on ? AppColors.purple : AppColors.textGray,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: on ? FontWeight.w800 : FontWeight.w600,
+                      color: on ? AppColors.purpleDark : AppColors.textDark,
+                    ),
+                  ),
+                  Text(
+                    sub,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (on)
+              const Icon(Icons.check_circle, size: 16, color: AppColors.purple),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 열(메뉴) 순서 편집 — 바텀시트에서 위/아래로 재정렬.
+  /// 이 순서가 그대로 출력물 상단 메뉴 순서가 된다.
+  Future<void> _editOrder() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void move(int i, int d) {
+            final to = i + d;
+            if (to < 0 || to >= _order.length) return;
+            setState(() {
+              final it = _order.removeAt(i);
+              _order.insert(to, it);
+            });
+            setSheet(() {});
+          }
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * 0.82,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '열(메뉴) 순서',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => setState(
+                            () => _order = kExportFields
+                                .map((f) => f.key)
+                                .toList(),
+                          ),
+                          child: const Text(
+                            '기본 순서',
+                            style: TextStyle(fontSize: 12.5),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '위·아래로 옮겨 출력물 상단 메뉴 순서를 정하세요. '
+                        'V 표시된 항목만 실제로 출력됩니다.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: _order.length,
+                      onReorder: (oldI, newI) => setSheet(() {
+                        setState(() {
+                          if (newI > oldI) newI -= 1;
+                          final it = _order.removeAt(oldI);
+                          _order.insert(newI, it);
+                        });
+                      }),
+                      itemBuilder: (ctx, i) {
+                        final key = _order[i];
+                        final on = _selectedFields.contains(key);
+                        return ListTile(
+                          key: ValueKey(key),
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          leading: SizedBox(
+                            width: 34,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${i + 1}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textGray,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(width: 3),
+                                Icon(
+                                  on
+                                      ? Icons.check
+                                      : Icons.check_box_outline_blank,
+                                  size: 14,
+                                  color: on
+                                      ? AppColors.purple
+                                      : AppColors.purple.withValues(alpha: 0.3),
+                                ),
+                              ],
+                            ),
+                          ),
+                          title: Text(
+                            _labelOf(key),
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_up,
+                                  size: 18,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 30,
+                                  minHeight: 30,
+                                ),
+                                onPressed: i == 0 ? null : () => move(i, -1),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_down,
+                                  size: 18,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 30,
+                                  minHeight: 30,
+                                ),
+                                onPressed: i == _order.length - 1
+                                    ? null
+                                    : () => move(i, 1),
+                              ),
+                              const Icon(
+                                Icons.drag_handle,
+                                size: 18,
+                                color: AppColors.textGray,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.purple,
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('적용'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 출력 전 예상 — 선택 항목·순서·방향·표 스타일을 반영한 표 미리보기.
+  Future<void> _showPreview() async {
+    if (_visible.isEmpty) {
+      _snack('선택된 인가자가 없습니다');
+      return;
+    }
+    final keys = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
+    final heads = keys.map(_labelOf).toList();
+    final sample = _visible.take(12).toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.86,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '출력 미리보기',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    _previewBadge('${_visible.length}명'),
+                    const SizedBox(width: 6),
+                    _previewBadge(_landscape ? '가로' : '세로'),
+                    const SizedBox(width: 6),
+                    _previewBadge(_tableStyle.label),
+                    const SizedBox(width: 6),
+                    _previewBadge('${heads.length}개 항목'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '상위 12명만 예시로 표시합니다. (실제 출력은 전체 대상)',
+                    style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowHeight: 34,
+                      dataRowMinHeight: 30,
+                      dataRowMaxHeight: 40,
+                      horizontalMargin: 10,
+                      columnSpacing: 14,
+                      headingRowColor: WidgetStateProperty.all(
+                        _tableStyle == ExportTableStyle.framed
+                            ? const Color(0xFFEDEAE3)
+                            : AppColors.purple.withValues(alpha: 0.10),
+                      ),
+                      border: TableBorder.all(
+                        color: AppColors.purple.withValues(alpha: 0.25),
+                        width: 0.6,
+                      ),
+                      columns: [
+                        const DataColumn(
+                          label: Text(
+                            '#',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        for (final h in heads)
+                          DataColumn(
+                            label: Text(
+                              h,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.purpleDark,
+                              ),
+                            ),
+                          ),
+                      ],
+                      rows: [
+                        for (var i = 0; i < sample.length; i++)
+                          DataRow(
+                            color:
+                                (_tableStyle == ExportTableStyle.zebra &&
+                                    i.isOdd)
+                                ? WidgetStateProperty.all(
+                                    AppColors.purple.withValues(alpha: 0.05),
+                                  )
+                                : null,
+                            cells: [
+                              DataCell(
+                                Text(
+                                  '${i + 1}',
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                              ),
+                              for (final k in keys)
+                                DataCell(
+                                  Text(
+                                    _short(exportValueOf(sample[i], k)),
+                                    style: const TextStyle(fontSize: 10.5),
+                                  ),
+                                ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _previewBadge(String t) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: AppColors.purple.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      t,
+      style: const TextStyle(
+        fontSize: 10.5,
+        color: AppColors.purple,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  String _short(String v) {
+    final s = v.trim();
+    if (s.isEmpty) return '-';
+    return s.length > 14 ? '${s.substring(0, 13)}…' : s;
   }
 
   /// 선택 인원 요약 — 그라데이션 배너 대신 한 줄 요약.
@@ -505,15 +1128,12 @@ class _ExportScreenState extends State<ExportScreen>
       await runWithTsakProgress(
         context,
         title: '명단 ${_format.label} 생성',
-        note: '${_visible.length}명 · $total개 파일'
+        note:
+            '${_visible.length}명 · $total개 파일'
             '${_chunk100 ? ' (100명 분할)' : ''}',
         steps: const ['문서 구성', '파일 생성', '파일 저장'],
         task: (ctl) async {
-          ctl.update(
-            progress: 0.05,
-            message: '문서를 구성하는 중…',
-            stepIndex: 0,
-          );
+          ctl.update(progress: 0.05, message: '문서를 구성하는 중…', stepIndex: 0);
           for (var i = 0; i < chunks.length; i++) {
             final list = chunks[i];
             final suffix = chunks.length > 1 ? '_${i + 1}' : '';
@@ -521,7 +1141,8 @@ class _ExportScreenState extends State<ExportScreen>
             final frac = (i + 1) / total;
             ctl.update(
               progress: 0.10 + 0.80 * (i / total),
-              message: '$total개 중 ${i + 1}번째 파일 생성 중…'
+              message:
+                  '$total개 중 ${i + 1}번째 파일 생성 중…'
                   ' (${list.length}명)',
               stepIndex: 1,
             );
@@ -531,7 +1152,12 @@ class _ExportScreenState extends State<ExportScreen>
                 bytes = ExportService.buildExcel(list, fieldKeys: fields);
                 break;
               case ExportFormat.pdf:
-                bytes = await ExportService.buildPdf(list, fieldKeys: fields);
+                bytes = await ExportService.buildPdf(
+                  list,
+                  fieldKeys: fields,
+                  landscape: _landscape,
+                  style: _tableStyle,
+                );
                 break;
               case ExportFormat.word:
                 bytes = ExportService.buildWord(list, fieldKeys: fields);
@@ -543,7 +1169,12 @@ class _ExportScreenState extends State<ExportScreen>
                 bytes = ExportService.buildPpt(list, fieldKeys: fields);
                 break;
               case ExportFormat.jpg:
-                bytes = await ExportService.buildPdf(list, fieldKeys: fields);
+                bytes = await ExportService.buildPdf(
+                  list,
+                  fieldKeys: fields,
+                  landscape: _landscape,
+                  style: _tableStyle,
+                );
                 break;
             }
             ctl.update(
@@ -706,7 +1337,12 @@ class _ExportScreenState extends State<ExportScreen>
   Future<void> _previewPdf() async {
     setState(() => _busy = true);
     try {
-      final bytes = await ExportService.buildPdf(_visible);
+      final bytes = await ExportService.buildPdf(
+        _visible,
+        fieldKeys: _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys,
+        landscape: _landscape,
+        style: _tableStyle,
+      );
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {
       _snack('미리보기 실패: $e');

@@ -66,6 +66,38 @@ extension ExportFormatX on ExportFormat {
   }
 }
 
+/// 표 스타일(감격/강조) — 머리글·행·테두리 강조 정도를 결정한다.
+enum ExportTableStyle { plain, framed, accent, zebra }
+
+extension ExportTableStyleX on ExportTableStyle {
+  String get label {
+    switch (this) {
+      case ExportTableStyle.plain:
+        return '민무늬';
+      case ExportTableStyle.framed:
+        return '기본 격자';
+      case ExportTableStyle.accent:
+        return '강조 머리글';
+      case ExportTableStyle.zebra:
+        return '교차 음영';
+    }
+  }
+
+  /// 문서 하단에 표기할 규칙 문구.
+  String get note {
+    switch (this) {
+      case ExportTableStyle.plain:
+        return '머리글 강조 · 얇은 구분선';
+      case ExportTableStyle.framed:
+        return '격자 테두리 · 흑백 머리글';
+      case ExportTableStyle.accent:
+        return '브랜드 퍼플 머리글 · 굵은 구분선';
+      case ExportTableStyle.zebra:
+        return '머리글 강조 · 홀수행 음영';
+    }
+  }
+}
+
 /// 내보낼 개인정보 항목 정의 (선택 가능)
 class ExportField {
   const ExportField(this.key, this.label, [this.group = '기타']);
@@ -472,13 +504,42 @@ class ExportService {
     List<Member> members, {
     String title = '한국범스카우트 중앙회 인가자 명단',
     List<String>? fieldKeys,
+    bool landscape = true,
+    ExportTableStyle style = ExportTableStyle.accent,
+  }) async {
+    final keys = fieldKeys ?? kDefaultFieldKeys;
+    return buildPdfFromRows(
+      headers: headersFor(keys),
+      rows: members.map((m) => rowFor(m, keys)).toList(),
+      title: title,
+      landscape: landscape,
+      style: style,
+    );
+  }
+
+  /// 표 형식 PDF 바이트 생성 (제네릭 — 헤더·행 직접 지정).
+  ///
+  /// [landscape]=가로(false=세로) · [style]=표 강조(감격) 정도.
+  /// 한글 폰트(나눔고딕) 임베딩 필수 — 미지정 시 □ 로 깨진다.
+  static Future<Uint8List> buildPdfFromRows({
+    required List<String> headers,
+    required List<List<String>> rows,
+    String title = '한국범스카우트 중앙회 인가자 명단',
+    bool landscape = true,
+    ExportTableStyle style = ExportTableStyle.accent,
   }) async {
     await _ensurePdfFonts();
     final reg = _pdfReg!;
     final bold = _pdfBold!;
-    final keys = fieldKeys ?? kDefaultFieldKeys;
-    final heads = headersFor(keys);
     final doc = pw.Document();
+    final pageFormat = landscape
+        ? PdfPageFormat.a4.landscape
+        : PdfPageFormat.a4;
+    final line = PdfColor.fromInt(0xFFD9D2E6);
+    final purple = PdfColor.fromInt(0xFF5B2C8D);
+    final zebraTint = PdfColor.fromInt(0xFFF3EFF9);
+    final framedHead = PdfColor.fromInt(0xFFEDEAE3);
+
     // 본문 스타일 (규칙: 브랜드 퍼플 + 얇은 테두리, 저채도)
     final titleStyle = pw.TextStyle(
       font: bold,
@@ -490,16 +551,49 @@ class ExportService {
       fontSize: 9,
       color: PdfColor.fromInt(0xFF6E6A7C),
     );
-    final headStyle = pw.TextStyle(
-      font: bold,
-      fontSize: 8,
-      color: PdfColors.white,
-    );
+    final headStyle = style == ExportTableStyle.framed
+        ? pw.TextStyle(
+            font: bold,
+            fontSize: 8,
+            color: PdfColor.fromInt(0xFF3A3A3A),
+          )
+        : pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white);
     final cellStyle = pw.TextStyle(font: reg, fontSize: 7.2);
+
+    // 표 강조(감격) 분기.
+    pw.BoxDecoration? headDeco;
+    switch (style) {
+      case ExportTableStyle.plain:
+        headDeco = null;
+        break;
+      case ExportTableStyle.framed:
+        headDeco = pw.BoxDecoration(
+          color: framedHead,
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+        );
+        break;
+      case ExportTableStyle.accent:
+      case ExportTableStyle.zebra:
+        headDeco = pw.BoxDecoration(
+          color: purple,
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+        );
+        break;
+    }
+    final tableBorder = style == ExportTableStyle.framed
+        ? pw.TableBorder.all(color: line, width: 0.5)
+        : pw.TableBorder(
+            horizontalInside: pw.BorderSide(color: line, width: 0.4),
+            bottom: pw.BorderSide(color: line, width: 0.6),
+          );
+    final oddRowDeco = style == ExportTableStyle.zebra
+        ? pw.BoxDecoration(color: zebraTint)
+        : null;
+
     doc.addPage(
       pw.MultiPage(
         pageTheme: tsakPdfPageTheme(
-          format: PdfPageFormat.a4.landscape,
+          format: pageFormat,
           margin: const pw.EdgeInsets.all(18),
         ),
         header: (ctx) => pw.Column(
@@ -508,17 +602,18 @@ class ExportService {
             pw.Text(title, style: titleStyle),
             pw.SizedBox(height: 3),
             pw.Text(
-              '총 ${members.length}명  ·  출력일: ${_today()}',
+              '총 ${rows.length}명  ·  ${landscape ? '가로' : '세로'}  ·  '
+              '출력일: ${_today()}',
               style: metaStyle,
             ),
             pw.SizedBox(height: 5),
-            pw.Divider(color: PdfColor.fromInt(0xFFD9D2E6), thickness: 0.8),
+            pw.Divider(color: line, thickness: 0.8),
           ],
         ),
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
-            '출력규칙 · 보고서 · ${ctx.pageNumber}/${ctx.pagesCount}',
+            '출력규칙 · ${style.note} · ${ctx.pageNumber}/${ctx.pagesCount}',
             style: pw.TextStyle(
               font: reg,
               fontSize: 8,
@@ -528,12 +623,9 @@ class ExportService {
         ),
         build: (ctx) => [
           pw.TableHelper.fromTextArray(
-            headers: heads,
+            headers: headers,
             headerStyle: headStyle,
-            headerDecoration: pw.BoxDecoration(
-              color: PdfColor.fromInt(0xFF5B2C8D),
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
-            ),
+            headerDecoration: headDeco,
             headerAlignment: pw.Alignment.center,
             cellStyle: cellStyle,
             cellAlignment: pw.Alignment.centerLeft,
@@ -541,20 +633,10 @@ class ExportService {
               horizontal: 4,
               vertical: 3,
             ),
-            border: pw.TableBorder.all(
-              color: PdfColor.fromInt(0xFFD9D2E6),
-              width: 0.5,
-            ),
-            oddRowDecoration: pw.BoxDecoration(
-              color: PdfColor.fromInt(0xFFF3EFF9),
-            ),
-            data: members
-                .map(
-                  (m) => rowFor(
-                    m,
-                    keys,
-                  ).map((v) => pw.Text(v, style: cellStyle)).toList(),
-                )
+            border: tableBorder,
+            oddRowDecoration: oddRowDeco,
+            data: rows
+                .map((r) => r.map((v) => pw.Text(v, style: cellStyle)).toList())
                 .toList(),
           ),
         ],
