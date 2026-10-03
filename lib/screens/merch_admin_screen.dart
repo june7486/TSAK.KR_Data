@@ -5091,46 +5091,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       _snack('출력할 재고가 없습니다');
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('재고 현황표 출력 형식'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '규칙 순서: PDF → JPG → 엑셀 → PPT → 워드',
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-            const SizedBox(height: 12),
-            TsakOutputBar(
-              onFormat: (f) {
-                Navigator.pop(ctx);
-                _printStock(stock, format: f);
-              },
-              onShare: () {
-                Navigator.pop(ctx);
-                _shareStock(stock);
-              },
-              onShareImage: () {
-                Navigator.pop(ctx);
-                _printStock(stock, format: TsakOutputFormat.jpg);
-              },
-              onShareLink: () {
-                Navigator.pop(ctx);
-                showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
+    await showTsakOutputSheet(
+      context,
+      title: '재고 현황표 출력',
+      subtitle: '${stock.length}종 · 재고 및 누적판매',
+      onPick: (f) => _printStock(stock, format: f),
+      onOpen: (f) => _openStock(stock, f),
+      onShareFormat: (f) => _shareStock(stock, format: f),
+      onEmail: () => _emailStock(stock),
+      onShare: () => _shareStock(stock),
+      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
 
