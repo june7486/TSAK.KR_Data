@@ -21,6 +21,8 @@ Future<TableOutputOptions?> showTsakTableOptions(
   required List<String> columns,
   TableOutputOptions? initial,
   bool allowLandscape = true,
+  /// false 면 출력내용선택·위치이동 패널을 숨긴다(표가 아닌 텍스트 출력용).
+  bool allowColumns = true,
 }) {
   return showModalBottomSheet<TableOutputOptions>(
     context: context,
@@ -149,6 +151,7 @@ Future<TableOutputOptions?> showTsakTableOptions(
                           ],
                           const SizedBox(height: 18),
                           // ── 출력내용 선택 · 위치이동 ──
+                          if (allowColumns) ...[
                           Row(
                             children: [
                               _sec('출력내용 선택 · 위치이동'),
@@ -237,6 +240,7 @@ Future<TableOutputOptions?> showTsakTableOptions(
                               ],
                             ),
                           ),
+                          ],
                         ],
                       ),
                     ),

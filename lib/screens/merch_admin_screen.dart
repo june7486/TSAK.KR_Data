@@ -2888,6 +2888,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             runSpacing: 6,
             children: [
               _exportBtn(Icons.grid_on, '표 복사', () => _exportReportClip()),
+              // (요구) 관리자명단출력처럼 출력내용선택·위치이동·줄간격 항목 제공.
+              _exportBtn(
+                Icons.tune,
+                _outOpts['report'] == null
+                    ? '출력 옵션'
+                    : '출력 옵션 · ${_outOpts['report']!.badge}',
+                () => _editSimpleOptions(
+                  key: 'report',
+                  title: '수품 누적판매 리포트 출력 옵션',
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -3007,11 +3018,14 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     // 규칙(#14): PDF → JPG → 엑셀 → PPT → 워드.
     //  p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**로 변경.
     final base = '수품_누적판매리포트';
+    final o = _outOpts['report'];
     Future<void> pdf() async {
       final bytes = await DocPdf.buildFromText(
         meta: _reportMeta(),
         text: _reportText(),
         footerLeft: '한국범스카우트중앙회 수품',
+        scale: o?.scale ?? 1.0,
+        rowSpaceMul: o?.rowSpaceMul ?? 1.0,
       );
       await _saveBytes(bytes, '$base.pdf');
     }
@@ -3024,6 +3038,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveJpgFromDoc(
           meta: _reportMeta(),
           summary: _reportText().split('\n'),
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
           filename: '$base.jpg',
         );
         return;
@@ -3076,7 +3092,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Future<({Uint8List bytes, String ext, String mime})> _buildReportBytes(
     TsakOutputFormat format,
   ) async {
-    const base = '수품_누적판매리포트';
     final meta = _reportMeta();
     final text = _reportText();
     final o = _outOpts['report'];
@@ -3519,6 +3534,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     List<String> summary = const [],
     String footerLeft = '한국범스카우트중앙회 수품',
     bool landscape = false,
+    double scale = 1.0,
+    double rowSpaceMul = 1.0,
     required String filename,
   }) async {
     if (!isWebRuntime) {
@@ -3534,6 +3551,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         summary: summary,
         footerLeft: footerLeft,
         landscape: landscape,
+        scale: scale,
+        rowSpaceMul: rowSpaceMul,
       );
       final jpg = await pdfToJpg(pdf);
       await _saveBytes(jpg, filename, mime: 'image/jpeg');
@@ -3547,6 +3566,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     required DocMeta meta,
     required String text,
     String footerLeft = '한국범스카우트중앙회 수품',
+    double scale = 1.0,
+    double rowSpaceMul = 1.0,
     required String filename,
   }) async {
     if (!isWebRuntime) {
@@ -3559,6 +3580,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         meta: meta,
         text: text,
         footerLeft: footerLeft,
+        scale: scale,
+        rowSpaceMul: rowSpaceMul,
       );
       final jpg = await pdfToJpg(pdf);
       await _saveBytes(jpg, filename, mime: 'image/jpeg');
@@ -3844,6 +3867,25 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       title: '수품 출력 옵션',
       subtitle: '출력 내용을 고르고, 순서를 옮기고, 줄 간격·글씨·용지를 정하세요.',
       columns: columns,
+      initial: _outOpts[key],
+    );
+    if (out != null && mounted) {
+      setState(() => _outOpts[key] = out);
+      _snack('출력 옵션을 저장했습니다 · ${out.badge}');
+    }
+  }
+
+  /// 표가 아닌 텍스트 출력(재고·공여·리포트) 옵션 — 글씨·줄간격·용지.
+  Future<void> _editSimpleOptions({
+    required String key,
+    required String title,
+  }) async {
+    final out = await showTsakTableOptions(
+      context,
+      title: title,
+      subtitle: '글씨 크기·줄 간격·용지 방향을 정하세요.',
+      columns: const [],
+      allowColumns: false,
       initial: _outOpts[key],
     );
     if (out != null && mounted) {
@@ -5086,12 +5128,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
     // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
     const base = '수품_재고현황표';
+    final o = _outOpts['stock'];
     switch (format) {
       case TsakOutputFormat.pdf:
         final bytes = await DocPdf.buildFromText(
           meta: _stockMeta(stock),
           text: _stockText(stock),
           footerLeft: '한국범스카우트중앙회 수품',
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
         );
         await _saveBytes(bytes, '$base.pdf');
         return;
@@ -5099,6 +5144,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveJpgFromText(
           meta: _stockMeta(stock),
           text: _stockText(stock),
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
           filename: '$base.jpg',
         );
         return;
@@ -5144,6 +5191,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onShareFormat: (f) => _shareStock(stock, format: f),
       onEmail: () => _emailStock(stock),
       onShare: () => _shareStock(stock),
+      onOptions: () => _editSimpleOptions(key: 'stock', title: '수품 재고 출력 옵션'),
       onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
@@ -5545,12 +5593,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     }
     // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
     const base = '수품_공여내역';
+    final o = _outOpts['donation'];
     switch (format) {
       case TsakOutputFormat.pdf:
         final bytes = await DocPdf.buildFromText(
           meta: _donationMeta(),
           text: _donationText(),
           footerLeft: '한국범스카우트중앙회 수품',
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
         );
         await _saveBytes(bytes, '$base.pdf');
         return;
@@ -5558,6 +5609,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         await _saveJpgFromText(
           meta: _donationMeta(),
           text: _donationText(),
+          scale: o?.scale ?? 1.0,
+          rowSpaceMul: o?.rowSpaceMul ?? 1.0,
           filename: '$base.jpg',
         );
         return;
@@ -5602,6 +5655,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onOpen: _openDonation,
       onShareFormat: (f) => _shareDonation(format: f),
       onShare: () => _shareDonation(),
+      onOptions: () =>
+          _editSimpleOptions(key: 'donation', title: '수품 공여 출력 옵션'),
       onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
@@ -6303,6 +6358,26 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     onShareLink: () =>
                         showLinkShareDialog(context, _invoiceLink(m)),
                   ),
+                  const SizedBox(height: 6),
+                  // (요구) 관리자명단출력처럼 글씨·줄간격·용지 출력 옵션 제공.
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _editSimpleOptions(
+                        key: 'maker',
+                        title: '수품 제작내역서 출력 옵션',
+                      ),
+                      icon: const Icon(Icons.tune, size: 15),
+                      label: Text(
+                        _outOpts['maker'] == null
+                            ? '출력 옵션'
+                            : '출력 옵션 · ${_outOpts['maker']!.badge}',
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -6908,6 +6983,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     );
     // p.28: 클립보드 복사(저장 안 됨) → **실제 파일 다운로드**.
     const base = '수품_제작내역서';
+    final o = _outOpts['maker'];
+    final mScale = o?.scale ?? 1.0;
+    final mRow = o?.rowSpaceMul ?? 1.0;
     // (요구) 모든 기기에 공유 시트 — 제작 내역서 PDF를 곧바로 공유.
     if (share) {
       final pdf = await DocPdf.build(
@@ -6925,7 +7003,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         rows: rows,
         summary: ['총 ${_makers.length}곳 · $madeCount건', '합계 ${_won(totalAmt)}'],
         footerLeft: '한국범스카우트중앙회 수품',
-        landscape: true,
+        landscape: o?.landscape ?? true,
+        scale: mScale,
+        rowSpaceMul: mRow,
       );
       final res = await shareFileNamed(
         bytes: pdf,
@@ -6957,7 +7037,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             '합계 ${_won(totalAmt)}',
           ],
           footerLeft: '한국범스카우트중앙회 수품',
-          landscape: true,
+          landscape: o?.landscape ?? true,
+          scale: mScale,
+          rowSpaceMul: mRow,
         );
         await _saveBytes(bytes, '$base.pdf');
         return;
@@ -6979,7 +7061,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             '총 ${_makers.length}곳 · $madeCount건',
             '합계 ${_won(totalAmt)}',
           ],
-          landscape: true,
+          landscape: o?.landscape ?? true,
+          scale: mScale,
+          rowSpaceMul: mRow,
           filename: '$base.jpg',
         );
         return;
