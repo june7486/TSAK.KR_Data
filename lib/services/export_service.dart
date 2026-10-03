@@ -208,16 +208,43 @@ extension ExportRowSpaceX on ExportRowSpace {
   }
 }
 
-/// 두줄 방지 대상 후보 — 이름·인가번호·핸드폰번호·이메일.
+/// 두줄 방지 대상 후보 — 이름·인가번호(범/아타스/은하)·핸드폰·이메일·소속대·연맹·주소·생년월일.
 /// (줄바꿈이 생기면 표가 지저분해지는 핵심 항목)
-const List<String> kNoWrapCandidates = ['name', 'number', 'phone', 'email'];
+const List<String> kNoWrapCandidates = [
+  'name',
+  'number',
+  'atasNo',
+  'eunhaNo',
+  'phone',
+  'email',
+  'unit',
+  'league',
+  'address',
+  'birthday',
+];
+
+/// 두줄 방지 기본 선택 — 식별자·연락 핵심(주소·소속대·연맹·생년월일은 필요 시 켬).
+const Set<String> kNoWrapDefault = {
+  'name',
+  'number',
+  'atasNo',
+  'eunhaNo',
+  'phone',
+  'email',
+};
 
 /// 두줄 방지 옵션 라벨(key → 화면 표기).
 const Map<String, String> kNoWrapLabels = {
   'name': '이름',
-  'number': '인가번호',
-  'phone': '핸드폰',
+  'number': '범인가번호',
+  'atasNo': '아타스인가번호',
+  'eunhaNo': '은하인가번호',
+  'phone': '핸드폰번호',
   'email': '이메일',
+  'unit': '소속대',
+  'league': '연맹',
+  'address': '주소',
+  'birthday': '생년월일',
 };
 
 /// 내보낼 개인정보 항목 정의 (선택 가능)
@@ -754,7 +781,10 @@ class ExportService {
     // 두줄 방지 열 인덱스 + 실측 기반 열 너비.
     // 표 폭이 페이지를 넘으면 pdf 패키지가 전체 열을 비례 축소하므로,
     // 총합을 페이지 안에 맞춰 두줄 방지 열의 예약 폭이 깎이지 않게 한다.
-    final noWrapLabels = noWrapKeys.map(_labelFor).toSet();
+    final noWrapLabels = <String>{};
+    for (final k in noWrapKeys) {
+      noWrapLabels.addAll(_headersForNoWrapKey(k));
+    }
     final noWrapCols = <int>{};
     for (var i = 0; i < headers.length; i++) {
       if (noWrapLabels.contains(headers[i])) noWrapCols.add(i);
@@ -838,6 +868,22 @@ class ExportService {
   static String _labelFor(String key) => kExportFields
       .firstWhere((f) => f.key == key, orElse: () => ExportField(key, key))
       .label;
+
+  /// 두줄 방지 키 → 보호할 표 열 헤더 라벨(들).
+  ///
+  /// '범인가번호'·'은하인가번호'는 export 표에서 하나의 '인가번호' 열을 공유하고,
+  /// '아타스인가번호'는 'ATAS 인가번호' 열에 대응한다.
+  static List<String> _headersForNoWrapKey(String key) {
+    switch (key) {
+      case 'number':
+      case 'eunhaNo':
+        return const ['인가번호'];
+      case 'atasNo':
+        return const ['ATAS 인가번호'];
+      default:
+        return [_labelFor(key)];
+    }
+  }
 
   /// 모든 열의 고정 너비를 실측해 배분한다.
   ///

@@ -50,8 +50,8 @@ class _ExportScreenState extends State<ExportScreen>
   ExportRowSpace _rowSpace = ExportRowSpace.normal;
 
   /// 두줄 방지 대상 열 — 켜면 해당 열은 줄바꿈하지 않고 열 너비를 확보한다.
-  /// 기본: 이름·인가번호·핸드폰·이메일 4개 모두 방지.
-  final Set<String> _noWrap = {...kNoWrapCandidates};
+  /// 기본: 이름·범/아타스/은하 인가번호·핸드폰·이메일 6개.
+  final Set<String> _noWrap = {...kNoWrapDefault};
 
   /// 상단에 노출되는 메뉴(열) 순서 — 전체 항목 key 를 담으며 사용자가 재정렬한다.
   /// 실제 출력 열 순서 = `_order` 중 선택된 항목만(순서 유지).

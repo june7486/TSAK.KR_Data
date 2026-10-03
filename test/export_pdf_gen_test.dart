@@ -123,6 +123,47 @@ void main() {
 
     expect(off.isNotEmpty, isTrue);
     expect(onFn.isNotEmpty, isTrue);
+
+    // (라) 두줄 방지 10개 전체 — 이름·범/아타스/은하 인가번호·핸드폰·이메일·소속대·연맹·주소·생년월일
+    const tenHeaders = [
+      '인가번호',
+      'ATAS 인가번호',
+      '성명',
+      '핸드폰',
+      '이메일',
+      '소속대',
+      '연맹',
+      '주소',
+      '생일',
+    ];
+    final tenRows = <List<String>>[
+      [
+        '은하46', 'Z307-304', '김용우', '010-9188-3784', 'jood@kepco.co.kr',
+        '제484대 연장대', '전남연맹', '전남 목포시 북교동 115', '1960.10.12',
+      ],
+      [
+        '185', 'Z307-310', '김진국', '011-652-6428', 'shinny@hanmail.net',
+        '제501대 연장대', '서울연맹', '서울 서초구 반포대로 1', '1977-11-28',
+      ],
+      [
+        '206', '', '백노현', '011-590-9062', 'nhbark@daum.net',
+        '제1373대 연장대', '경기연맹', '경기 고양시 일산동구 20', '1978-12-22',
+      ],
+      [
+        '402', 'Z307-402', '박종한', '041-363-8832', 'jhpark@kmcvalue.co.kr',
+        '제817단 연장대', '충남연맹', '충남 천안시 동남구 33', '1990-09-28',
+      ],
+    ];
+    final ten = await ExportService.buildPdfFromRows(
+      headers: tenHeaders,
+      rows: tenRows,
+      title: '두줄 방지 10개 전체 (범/아타스/은하 인가번호·소속대·연맹·주소·생일 포함)',
+      landscape: true,
+      noWrapKeys: kNoWrapCandidates.toSet(),
+    );
+    File('/tmp/pdf_nowrap_ten.pdf').writeAsBytesSync(ten.buffer.asUint8List());
+    expect(ten.isNotEmpty, isTrue);
+
     print('생성: /tmp/pdf_*.pdf');
   });
 }
