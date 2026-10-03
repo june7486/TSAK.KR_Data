@@ -2503,6 +2503,9 @@ class NasApi {
     String quoteFileName = '',
     bool active = true,
     bool credentialOnly = false,
+    bool forSale = true,
+    String soldStart = '',
+    int soldBase = 0,
   }) async {
     final r = await http
         .post(
@@ -2526,6 +2529,9 @@ class NasApi {
             'quoteFileName': quoteFileName,
             'active': active,
             'credentialOnly': credentialOnly,
+            'forSale': forSale,
+            'soldStart': soldStart,
+            'soldBase': soldBase,
           }),
         )
         .timeout(const Duration(seconds: 40));
@@ -2984,6 +2990,7 @@ class NasApi {
     Map<String, dynamic>? guide,
     bool? makerFileAdminAllowed,
     bool? quoteSpecAdminAllowed,
+    bool? costVisibleToMaster,
   }) async {
     final r = await http
         .post(
@@ -3004,6 +3011,8 @@ class NasApi {
               'makerFileAdminAllowed': makerFileAdminAllowed,
             if (quoteSpecAdminAllowed != null)
               'quoteSpecAdminAllowed': quoteSpecAdminAllowed,
+            if (costVisibleToMaster != null)
+              'costVisibleToMaster': costVisibleToMaster,
           }),
         )
         .timeout(const Duration(seconds: 40));
