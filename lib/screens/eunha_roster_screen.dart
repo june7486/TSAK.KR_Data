@@ -257,8 +257,9 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
     for (final m in list) {
       rows.add([
         '은하${m.number}',
-        // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
-        m.nameEn.trim().isEmpty ? m.name : '${m.name} (${m.nameEn.trim()})',
+        // (요구) 이름은 '한글 (영어)'로 합치지 않는다 — 합치면 두 줄로 접혀
+        //       표가 지저분해진다. 성명·영문 이름을 별도 열로 분리한다.
+        m.name,
         m.nameEn.trim(),
         m.unit.trim(),
         m.birthday.trim(),

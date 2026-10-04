@@ -212,6 +212,7 @@ extension ExportRowSpaceX on ExportRowSpace {
 /// (줄바꿈이 생기면 표가 지저분해지는 핵심 항목)
 const List<String> kNoWrapCandidates = [
   'name',
+  'nameEn',
   'number',
   'atasNo',
   'eunhaNo',
@@ -224,8 +225,10 @@ const List<String> kNoWrapCandidates = [
 ];
 
 /// 두줄 방지 기본 선택 — 식별자·연락 핵심(주소·소속대·연맹·생년월일은 필요 시 켬).
+///  · 이름(name)·영어이름(nameEn)은 신원 핵심이라 기본으로 켜 줄바꿈을 막는다.
 const Set<String> kNoWrapDefault = {
   'name',
+  'nameEn',
   'number',
   'atasNo',
   'eunhaNo',
@@ -236,6 +239,7 @@ const Set<String> kNoWrapDefault = {
 /// 두줄 방지 옵션 라벨(key → 화면 표기).
 const Map<String, String> kNoWrapLabels = {
   'name': '이름',
+  'nameEn': '영어이름',
   'number': '범인가번호',
   'atasNo': '아타스인가번호',
   'eunhaNo': '은하인가번호',
@@ -265,6 +269,7 @@ const List<ExportField> kExportFields = [
   ExportField('scoutNo', '스카우트 고유번호', '기본'),
   ExportField('atasNo', 'ATAS 인가번호', '기본'),
   ExportField('name', '성명', '기본'),
+  ExportField('nameEn', '영어이름', '기본'),
   ExportField('gender', '성별', '기본'),
   ExportField('league', '연맹', '기본'),
   ExportField('unit', '소속대', '기본'),
@@ -328,6 +333,8 @@ String exportValueOf(Member m, String key) {
       return m.scoutNo;
     case 'name':
       return m.name;
+    case 'nameEn':
+      return m.nameEn;
     case 'gender':
       return m.gender;
     case 'league':
