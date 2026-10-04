@@ -507,6 +507,10 @@ class AppState extends ChangeNotifier {
     if ((isApp || isMaster) && _eunhaMembers.isEmpty) {
       unawaited(loadEunhaMembers());
     }
+    // 서버 photos/ 파일이 있는데 photoPath 가 빈 회원(예: 1346)의 사진을 채운다.
+    if (isApp || isMaster) {
+      unawaited(syncPhotos());
+    }
     refresh();
     notifyListeners();
   }
@@ -1386,6 +1390,46 @@ class AppState extends ChangeNotifier {
   /// 은하 명단이 비어 있으면 다시 불러온다(은하 화면 진입·새로고침용).
   void reloadEunhaMembers() {
     if (isApp || isMaster) unawaited(loadEunhaMembers());
+  }
+
+  // ---------- 사진 복원 (서버 photos/ 파일 → photoPath 폴백) ----------
+  /// 서버(photos/ 폴더)에 실제 파일이 있는 인가번호 집합.
+  ///
+  /// [원인 진단] 1346 양다솜처럼 DB 의 `photoPath` 가 빈 값인데도 NAS
+  ///  `photos/<번호>.jpg` 파일은 존재하는 경우가 있다. 앱은 photoPath 만 보고
+  ///  그리므로 사진이 안 뜬다. 서버에 파일이 있으면 `/api/photo/<번호>` 로
+  ///  불러오게 하기 위해 보유 목록을 미리 받아 둔다.
+  Set<String> _photoHave = <String>{};
+  Set<String> get photoHave => _photoHave;
+  bool _photoHaveLoaded = false;
+  bool get photoHaveLoaded => _photoHaveLoaded;
+
+  /// 서버 사진 보유 목록을 불러온다(관리자·마스터). 위젯이
+  /// [serverPhotoUrlFor] 로 photoPath 가 빈 회원의 사진을 찾아 표시한다.
+  Future<void> syncPhotos({bool force = false}) async {
+    if (!repo.isNasMode || !(isApp || isMaster)) return;
+    if (_photoHaveLoaded && !force) return;
+    try {
+      if (nas.sessionId.trim().isEmpty) await _waitForSession(12);
+      final have = await nas.fetchPhotoHave();
+      if (have.isEmpty && !force) return;
+      _photoHaveLoaded = true;
+      _photoHave = have.keys.toSet();
+      // 서버 사진 유무가 화면에 반영되도록 목록을 다시 그린다.
+      refresh();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// 사진이 비어 있지만 서버에 파일이 있으면 즉시 URL 을 돌려준다(위젯 폴백용).
+  ///  syncPhotos() 를 기다리지 않고도 화면에서 바로 사진을 찾을 수 있게 한다.
+  String? serverPhotoUrlFor(String number) {
+    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (n.isEmpty) return null;
+    if (_photoHave.isNotEmpty && _photoHave.contains(n)) {
+      return nas.photoUrl(n);
+    }
+    return null;
   }
 
   void setCorpsFilter(String v) {

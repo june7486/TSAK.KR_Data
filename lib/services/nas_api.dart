@@ -642,6 +642,26 @@ class NasApi {
 
   String photoUrl(String number) => '$_base/api/photo/$number';
 
+  /// 서버(photos/ 폴더)에 **실제 사진 파일이 있는 인가번호** 목록.
+  ///
+  /// 요구: DB 의 photoPath 가 비어 있어도 서버에 사진이 있으면 화면에 뜨게 한다
+  ///  (예: 1346 양다솜 — 파일은 있으나 photoPath 가 빈 값이던 문제).
+  /// 반환: {번호: 확장자} 맵. 실패 시 빈 맵.
+  Future<Map<String, String>> fetchPhotoHave() async {
+    try {
+      final r = await http
+          .get(_uri('/api/photo/have'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) return const {};
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      if (j['ok'] != true) return const {};
+      final have = (j['have'] as Map?) ?? const {};
+      return have.map((k, v) => MapEntry('$k', '$v'));
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// 사진/동영상/첨부 파일의 실제 바이트를 프록시에서 받아온다.
   ///   · 인증 쿠키가 유지되므로 launchUrl(externalApplication) 없이
   ///     파일을 **직접 저장**(저장 위치 선택창 연동)할 수 있다.

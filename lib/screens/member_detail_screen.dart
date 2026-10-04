@@ -355,6 +355,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 MemberAvatar(
                   name: m.name,
                   photoPath: m.photoPath,
+                  fallbackPhotoUrl:
+                      context.watch<AppState>().serverPhotoUrlFor(m.number) ??
+                      '',
                   league: m.league,
                   number: m.number,
                   showNumber: false,

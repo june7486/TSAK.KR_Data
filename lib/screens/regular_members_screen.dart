@@ -184,6 +184,8 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
               MemberAvatar(
                 name: m.name,
                 photoPath: m.photoPath,
+                fallbackPhotoUrl:
+                    context.watch<AppState>().serverPhotoUrlFor(m.number) ?? '',
                 league: m.league,
                 size: 30,
                 number: '',

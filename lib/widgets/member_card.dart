@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/member.dart';
+import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import 'member_avatar.dart';
 
@@ -123,6 +125,9 @@ class MemberCard extends StatelessWidget {
               MemberAvatar(
                 name: member.name,
                 photoPath: member.photoPath,
+                fallbackPhotoUrl:
+                    context.watch<AppState>().serverPhotoUrlFor(member.number) ??
+                    '',
                 league: member.league,
                 // 편집 박스 높이에 맞춰 원형 사진을 확대해 균형·식별성 향상
                 size: 52 * s,

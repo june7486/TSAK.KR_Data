@@ -15,6 +15,7 @@ class MemberAvatar extends StatelessWidget {
     super.key,
     required this.name,
     this.photoPath = '',
+    this.fallbackPhotoUrl = '',
     this.size = 52,
     this.league = '',
     this.number = '',
@@ -25,6 +26,11 @@ class MemberAvatar extends StatelessWidget {
 
   final String name;
   final String photoPath;
+
+  /// photoPath 가 비어 있을 때 대신 시도할 서버 사진 URL(예: `/api/photo/1346`).
+  ///  요구: DB photoPath 는 비었지만 서버 photos/ 에 파일이 있는 회원의 사진 복원.
+  final String fallbackPhotoUrl;
+
   final double size;
   final String league;
 
@@ -45,9 +51,14 @@ class MemberAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final border = leagueColor(league);
 
+    // 사진 소스: photoPath 우선, 없으면 서버 폴백 URL(photos/ 파일 보유 시).
+    final src = photoPath.trim().isNotEmpty
+        ? photoPath.trim()
+        : fallbackPhotoUrl.trim();
+
     Widget child;
-    if (photoPath.isNotEmpty) {
-      child = _buildImage();
+    if (src.isNotEmpty) {
+      child = _buildImage(src);
     } else if (!useTigerDefault) {
       // 비회원(일반회원) — 호랑이 이미지 대신 기본 사람 아이콘
       child = Stack(
@@ -131,7 +142,7 @@ class MemberAvatar extends StatelessWidget {
     );
   }
 
-  Widget _buildImage() {
+  Widget _buildImage(String photoPath) {
     // base64 data URI
     if (photoPath.startsWith('data:image') ||
         (photoPath.length > 200 && !photoPath.contains('/'))) {
@@ -151,6 +162,16 @@ class MemberAvatar extends StatelessWidget {
       }
     }
     if (kIsWeb) {
+      return Image.network(
+        photoPath,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _fallback(),
+      );
+    }
+    // 비웹(모바일): 'http' URL 은 네트워크로, 그 외 경로는 파일로 로드한다.
+    if (photoPath.startsWith('http')) {
       return Image.network(
         photoPath,
         width: size,
