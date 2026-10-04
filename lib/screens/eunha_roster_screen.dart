@@ -66,7 +66,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<AppState>().loadEunhaMembers(),
+      (_) => context.read<AppState>().reloadEunhaMembers(),
     );
   }
 
@@ -97,6 +97,13 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
       appBar: TsakAppBar(
         title: const Text('은하스카우트 명단'),
         actions: [
+          IconButton(
+            tooltip: '명단 새로고침',
+            onPressed: state.eunhaLoading
+                ? null
+                : () => context.read<AppState>().reloadEunhaMembers(),
+            icon: const Icon(Icons.refresh),
+          ),
           IconButton(
             tooltip: _sel.isEmpty ? '출력 (PDF·엑셀 등)' : '선택 ${_sel.length}명 출력',
             onPressed: _busyBuilding
@@ -187,10 +194,29 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
             child: state.eunhaLoading && all.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : list.isEmpty
-                    ? const Center(
-                        child: Text(
-                          '은하스카우트 명단이 없습니다.',
-                          style: TextStyle(color: AppColors.textGray),
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.groups_outlined,
+                                size: 46, color: AppColors.textGray),
+                            const SizedBox(height: 10),
+                            Text(
+                              _q.trim().isEmpty
+                                  ? '은하스카우트 명단이 없습니다.'
+                                  : '검색 결과가 없습니다.',
+                              style: const TextStyle(color: AppColors.textGray),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: state.eunhaLoading
+                                  ? null
+                                  : () =>
+                                      context.read<AppState>().reloadEunhaMembers(),
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('명단 다시 불러오기'),
+                            ),
+                          ],
                         ),
                       )
                     : ListView.separated(

@@ -503,6 +503,10 @@ class AppState extends ChangeNotifier {
         await finance?.load();
       } catch (_) {}
     }
+    // 세션이 확실히 붙은 시점에 은하 명단도 함께 로드(콜드 스타트 401 방지).
+    if ((isApp || isMaster) && _eunhaMembers.isEmpty) {
+      unawaited(loadEunhaMembers());
+    }
     refresh();
     notifyListeners();
   }
@@ -1316,21 +1320,54 @@ class AppState extends ChangeNotifier {
   int get eunhaTotal => _eunhaMembers.length;
 
   /// 은하스카우트 명단을 서버에서 불러온다(관리자·마스터 전용).
-  ///  실패(권한/오프라인) 시 빈 목록을 유지한다.
-  Future<void> loadEunhaMembers() async {
+  ///
+  /// [원인 진단] 종전에는 오류를 조용히 삼키고 빈 목록([])으로 고정했다.
+  ///  · 앱 시작 시 `restoreSession()` 이 세션토큰(nas.sessionId)을 복원하기
+  ///    *전에* 홈 화면의 `ensureEunhaForSearch()` 가 먼저 실행되면,
+  ///    인증헤더가 비어 있는 채로 요청이 나가 **401** 이 되고,그 결과가
+  ///    `catch (_) { _eunhaMembers = []; }` 로 굳어 '은하 0명'이 되었다.
+  ///
+  /// [자동 복구] 세션을 최대 [waitSec] 초까지 대기한 뒤 요청하고, 실패하면
+  ///  몇 차례 재시도한다. 실패 시에는 캐시를 **비워** 이후 호출에서 재시도되게
+  ///  한다(=0으로 고정하지 않는다).
+  Future<void> loadEunhaMembers({int retries = 3, int waitSec = 12}) async {
     if (!repo.isNasMode || !(isApp || isMaster)) return;
     _eunhaLoading = true;
     notifyListeners();
-    try {
-      final list = await nas.fetchEunhaMembers();
-      _eunhaMembers = list;
-    } catch (_) {
+    List<Member>? loaded;
+    for (var i = 0; i < retries && loaded == null; i++) {
+      try {
+        // 세션토큰이 복원될 때까지 잠깐 대기(콜드 스타트 경쟁 방지).
+        if (nas.sessionId.trim().isEmpty) {
+          await _waitForSession(waitSec);
+        }
+        loaded = await nas.fetchEunhaMembers();
+      } catch (_) {
+        loaded = null;
+      }
+      if (loaded == null && i < retries - 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      }
+    }
+    if (loaded != null) {
+      _eunhaMembers = loaded;
+    } else {
+      // 실패 → 0으로 고정하지 않는다(캐시 비움 = 다음 호출에서 자동 재시도).
       _eunhaMembers = [];
     }
     _eunhaLoading = false;
     // 은하(느린 네트워크) 로드 후 조건이 걸려 있으면 목록에 반영한다.
     if (_corpsFilter == 'eunha') refresh();
     notifyListeners();
+  }
+
+  /// 세션토큰이 채워질 때까지(최대 [secs] 초) 폴링 대기한다.
+  ///  restoreSession()/login() 이 진행 중일 때 401 로 굳는 것을 방지.
+  Future<void> _waitForSession(int secs) async {
+    for (var i = 0; i < secs * 4; i++) {
+      if (nas.sessionId.trim().isNotEmpty) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
   }
 
   /// 소속 필터: '' (전체 = 범+은하) | 'tsak' (범스카우트) | 'eunha' (은하스카우트).
@@ -1344,6 +1381,11 @@ class AppState extends ChangeNotifier {
     if ((isApp || isMaster) && _eunhaMembers.isEmpty && !_eunhaLoading) {
       unawaited(loadEunhaMembers());
     }
+  }
+
+  /// 은하 명단이 비어 있으면 다시 불러온다(은하 화면 진입·새로고침용).
+  void reloadEunhaMembers() {
+    if (isApp || isMaster) unawaited(loadEunhaMembers());
   }
 
   void setCorpsFilter(String v) {
