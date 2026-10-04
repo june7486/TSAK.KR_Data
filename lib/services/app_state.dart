@@ -1403,6 +1403,7 @@ class AppState extends ChangeNotifier {
   Set<String> get photoHave => _photoHave;
   bool _photoHaveLoaded = false;
   bool get photoHaveLoaded => _photoHaveLoaded;
+  bool _photoSyncStarted = false;
 
   /// 서버 사진 보유 목록을 불러온다(관리자·마스터). 위젯이
   /// [serverPhotoUrlFor] 로 photoPath 가 빈 회원의 사진을 찾아 표시한다.
@@ -1424,6 +1425,12 @@ class AppState extends ChangeNotifier {
   /// 사진이 비어 있지만 서버에 파일이 있으면 즉시 URL 을 돌려준다(위젯 폴백용).
   ///  syncPhotos() 를 기다리지 않고도 화면에서 바로 사진을 찾을 수 있게 한다.
   String? serverPhotoUrlFor(String number) {
+    // 아직 보유목록을 안 받았고 로그인 상태면, 화면 프레임 이후 1회 지연 로드.
+    //  (빌드 중 notifyListeners 를 피하려 Future 로 미룬다.)
+    if (!_photoHaveLoaded && !_photoSyncStarted && (isApp || isMaster)) {
+      _photoSyncStarted = true;
+      Future<void>(() => syncPhotos());
+    }
     final n = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (n.isEmpty) return null;
     if (_photoHave.isNotEmpty && _photoHave.contains(n)) {

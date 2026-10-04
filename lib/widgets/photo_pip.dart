@@ -24,6 +24,7 @@ Future<void> showPhotoPip(
   String unit = '',
   Uint8List? photoBytes,
   String photoPath = '',
+  String fallbackPhotoUrl = '',
 }) {
   return showDialog<void>(
     context: context,
@@ -36,6 +37,7 @@ Future<void> showPhotoPip(
       unit: unit,
       photoBytes: photoBytes,
       photoPath: photoPath,
+      fallbackPhotoUrl: fallbackPhotoUrl,
     ),
   );
 }
@@ -49,6 +51,7 @@ class _PhotoPip extends StatefulWidget {
     required this.unit,
     required this.photoBytes,
     required this.photoPath,
+    required this.fallbackPhotoUrl,
   });
 
   final String name;
@@ -58,6 +61,10 @@ class _PhotoPip extends StatefulWidget {
   final String unit;
   final Uint8List? photoBytes;
   final String photoPath;
+
+  /// photoPath 가 비어 있을 때 대신 쓸 서버 사진 URL(예: `/api/photo/1346`).
+  ///  (요구: 사진 확대 시 파일이 있는데도 실루엣만 뜨던 문제 복원)
+  final String fallbackPhotoUrl;
 
   @override
   State<_PhotoPip> createState() => _PhotoPipState();
@@ -75,8 +82,15 @@ class _PhotoPipState extends State<_PhotoPip> {
   }
 
   /// 사진 소스 정리 (data URI/base64 → 바이트, URL은 그대로 위젯에서 로드)
+  /// 실제 사용할 사진 소스 — photoPath 우선, 없으면 서버 폴백 URL.
+  String get _src {
+    final p = widget.photoPath.trim();
+    if (p.isNotEmpty) return p;
+    return widget.fallbackPhotoUrl.trim();
+  }
+
   Future<void> _resolveImage() async {
-    final p = widget.photoPath;
+    final p = _src;
     try {
       if (widget.photoBytes != null && widget.photoBytes!.isNotEmpty) {
         _imgBytes = widget.photoBytes;
@@ -91,8 +105,8 @@ class _PhotoPipState extends State<_PhotoPip> {
 
   bool get _hasPhoto =>
       (_imgBytes != null && _imgBytes!.isNotEmpty) ||
-      widget.photoPath.startsWith('http') ||
-      (widget.photoPath.isNotEmpty && widget.photoPath.contains('/'));
+      _src.startsWith('http') ||
+      (_src.isNotEmpty && _src.contains('/'));
 
   @override
   Widget build(BuildContext context) {
@@ -151,7 +165,7 @@ class _PhotoPipState extends State<_PhotoPip> {
                 ? (_imgBytes != null
                       ? Image.memory(_imgBytes!, fit: BoxFit.cover)
                       : Image.network(
-                          widget.photoPath,
+                          _src,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => _placeholder(),
                         ))

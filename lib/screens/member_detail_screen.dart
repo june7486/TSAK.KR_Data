@@ -348,6 +348,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               league: m.league,
               unit: m.unit,
               photoPath: m.photoPath,
+              fallbackPhotoUrl:
+                  context.read<AppState>().serverPhotoUrlFor(m.number) ?? '',
             ),
             child: Stack(
               alignment: Alignment.bottomRight,
