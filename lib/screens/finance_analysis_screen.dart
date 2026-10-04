@@ -8,11 +8,13 @@ import 'package:file_saver/file_saver.dart';
 
 import '../services/app_state.dart';
 import '../services/file_save.dart';
+import '../services/finance_export.dart';
 import '../services/finance_report.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
+import '../widgets/finance_export_sheet.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
@@ -164,6 +166,156 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
     );
+  }
+
+  // ==========================================================================
+  //  다중 포맷 내보내기 — 분석 데이터를 명단출력과 동일한 구성(요약·연도별·분류별·
+  //  행사별·원본파일)으로 엑셀·PDF·워드·TXT·PPT·CSV·JPG 로 출력한다.
+  // ==========================================================================
+  void _openExportSheet() {
+    if (_a.isEmpty) {
+      _snack('분석 데이터가 없습니다');
+      return;
+    }
+    showFinanceExportSheet(context, data: _buildAnalysisExportData());
+  }
+
+  /// 분석 결과(_a) → FinanceExportData(표 묶음).
+  FinanceExportData _buildAnalysisExportData() {
+    final t = (_a['totals'] as Map?)?.cast<String, dynamic>() ?? {};
+    final years = (_a['years'] as Map?)?.cast<String, dynamic>() ?? {};
+    final files = (_a['files'] as List?) ?? [];
+    final events = (_a['events'] as Map?)?.cast<String, dynamic>() ?? {};
+    final yearKeys = years.keys.toList()..sort((x, y) => y.compareTo(x));
+
+    final tables = <FinanceTable>[];
+
+    // 1) 요약
+    final income = (t['income'] ?? 0) as num;
+    final expense = (t['expense'] ?? 0) as num;
+    final net = (t['net'] ?? (income - expense)) as num;
+    tables.add(
+      FinanceTable(
+        title: '요약',
+        headers: const ['항목', '값'],
+        rows: [
+          ['기간', '${t['from'] ?? ''} – ${t['to'] ?? ''}년 (${t['yearCount'] ?? 0}개 연도)'],
+          ['총 수입', _money(income)],
+          ['총 지출', _money(expense)],
+          ['순액', _money(net)],
+          ['분석 건수', '${t['rows'] ?? 0}건'],
+        ],
+      ),
+    );
+
+    // 2) 연도별 요약
+    final yearRows = <List<String>>[];
+    for (final y in yearKeys) {
+      final b = (years[y] as Map).cast<String, dynamic>();
+      yearRows.add([
+        '$y년',
+        _money((b['income'] ?? 0) as num),
+        _money((b['expense'] ?? 0) as num),
+        _money((b['net'] ?? 0) as num),
+        '${b['count'] ?? 0}건',
+      ]);
+    }
+    tables.add(
+      FinanceTable(
+        title: '연도별 요약',
+        headers: const ['연도', '수입', '지출', '순액', '건수'],
+        rows: yearRows,
+      ),
+    );
+
+    // 3) 연도별 분류 상세
+    final catRows = <List<String>>[];
+    for (final y in yearKeys) {
+      final b = (years[y] as Map).cast<String, dynamic>();
+      final cats = (b['byCategory'] as Map?)?.cast<String, dynamic>() ?? {};
+      final entries = cats.entries.toList()
+        ..sort((x, yy) => (yy.value as num).compareTo(x.value as num));
+      for (final e in entries) {
+        final isExp = e.key.startsWith('지출:');
+        catRows.add([
+          '$y년',
+          isExp ? '지출' : '수입',
+          e.key.split(':').last,
+          _money(e.value as num),
+        ]);
+      }
+    }
+    if (catRows.isNotEmpty) {
+      tables.add(
+        FinanceTable(
+          title: '연도별 분류 상세',
+          headers: const ['연도', '구분', '분류', '금액'],
+          rows: catRows,
+        ),
+      );
+    }
+
+    // 4) 행사별 분석
+    final evList = events.values.toList();
+    evList.sort(
+      (x, y) => (((y['income'] as num) + (y['expense'] as num))).compareTo(
+        ((x['income'] as num) + (x['expense'] as num)),
+      ),
+    );
+    if (evList.isNotEmpty) {
+      tables.add(
+        FinanceTable(
+          title: '행사별 분석',
+          headers: const ['행사', '수입', '지출', '순액'],
+          rows: [
+            for (final e in evList)
+              [
+                '${e['title'] ?? e['name'] ?? ''}',
+                _money((e['income'] ?? 0) as num),
+                _money((e['expense'] ?? 0) as num),
+                _money(((e['income'] ?? 0) as num) - ((e['expense'] ?? 0) as num)),
+              ],
+          ],
+        ),
+      );
+    }
+
+    // 5) 분석 원본 파일
+    if (files.isNotEmpty) {
+      tables.add(
+        FinanceTable(
+          title: '분석 원본 파일',
+          headers: const ['파일', '건수', '상태'],
+          rows: [
+            for (final f in files)
+              if (f is Map)
+                [
+                  '${f['name'] ?? f['file'] ?? ''}',
+                  '${f['count'] ?? f['rows'] ?? ''}',
+                  '${f['status'] ?? ''}',
+                ],
+          ],
+        ),
+      );
+    }
+
+    return FinanceExportData(
+      title: '은행거래 종합분석 보고서',
+      subtitle: '한국범스카우트중앙회 · ${t['from'] ?? ''} – ${t['to'] ?? ''}년',
+      tables: tables,
+      footnote: '출력일 기준 · 기본자료 폴더 분석 결과 (마스터 전용)',
+    );
+  }
+
+  static String _money(num v) {
+    final neg = v < 0;
+    final n = v.abs().round().toString();
+    final b = StringBuffer();
+    for (int i = 0; i < n.length; i++) {
+      if (i > 0 && (n.length - i) % 3 == 0) b.write(',');
+      b.write(n[i]);
+    }
+    return '${neg ? '-' : ''}$b원';
   }
 
   @override
@@ -845,9 +997,15 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
             ),
             const SizedBox(width: 8),
             IconButton.filledTonal(
+              tooltip: '내보내기 (엑셀·PDF·워드·PPT·CSV·TXT·JPG)',
+              onPressed: _building ? null : _openExportSheet,
+              icon: const Icon(Icons.ios_share),
+            ),
+            const SizedBox(width: 6),
+            IconButton.filledTonal(
               tooltip: '공유',
               onPressed: _building ? null : _share,
-              icon: const Icon(Icons.ios_share),
+              icon: const Icon(Icons.share_outlined),
             ),
             const SizedBox(width: 6),
             IconButton.filledTonal(

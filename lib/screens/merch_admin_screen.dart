@@ -6339,6 +6339,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               Icons.factory_outlined,
             ),
             const SizedBox(height: 8),
+            // ── 명부출력 틀 — 제작자별 제작 수품 내역을 모든 포맷으로 출력.
+            //    (요구: 관리자·아타스 명부처럼 저장·외부 열기·공유·옵션 제공)
+            if (_makers.isNotEmpty) _makerOutputBar(),
+            const SizedBox(height: 4),
             if (_makers.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16),
@@ -6364,6 +6368,205 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         ),
       ],
     );
+  }
+
+  /// 제작자 탭 출력 툴바 — 명부출력과 동일한 「출력」 버튼.
+  Widget _makerOutputBar() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.purple,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+              ),
+              onPressed: () => _showMakerOutputSheet(),
+              icon: const Icon(Icons.ios_share, size: 18),
+              label: const Text(
+                '「제작 수품 내역」 출력 (PDF·JPG·엑셀·PPT·워드·TXT)',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 제작자별 제작 수품 내역 출력 시트 — 저장·외부 열기·공유·옵션.
+  Future<void> _showMakerOutputSheet() async {
+    final madeCount = _purchases
+        .where(
+          (p) => _makers.any((m) => '${p['makerId'] ?? ''}' == '${m['id'] ?? ''}'),
+        )
+        .length;
+    if (_makers.isEmpty || madeCount == 0) {
+      _snack('출력할 제작 내역이 없습니다');
+      return;
+    }
+    await showTsakOutputSheet(
+      context,
+      title: '수품 제작 내역서',
+      subtitle: '제작자 ${_makers.length}곳 · 제작 $madeCount건',
+      onPick: (f) => _runMakerOutput(f),
+      onOpen: (f) => _runMakerOutput(f, open: true),
+      onShareFormat: (f) => _runMakerOutput(f, share: true),
+      onPrint: () => _runMakerOutput(TsakOutputFormat.pdf, justPrint: true),
+      onEmail: _emailMaker,
+      onShare: () => _runMakerOutput(TsakOutputFormat.pdf, share: true),
+      onOptions: () => _editSimpleOptions(
+        key: 'maker',
+        title: '수품 제작내역서 출력 옵션',
+      ),
+      onShareLink: () => showLinkShareDialog(context, _nas.baseUrl),
+    );
+  }
+
+  /// 제작자별 제작 수품 내역 → TsakTableDoc(표).
+  TsakTableDoc _makerDoc() {
+    final columns = const [
+      '번호',
+      '제작자/담당',
+      '그룹·분류·규격',
+      '수량',
+      '단가',
+      '합계',
+      '제작일',
+      '메모',
+    ];
+    final rows = <List<String>>[];
+    var totalQty = 0;
+    var totalAmt = 0;
+    for (var i = 0; i < _makers.length; i++) {
+      final m = _makers[i];
+      final mid = '${m['id'] ?? ''}';
+      final company = '${m['company'] ?? m['name'] ?? ''}';
+      final contact = [
+        if ('${m['ceo'] ?? ''}'.isNotEmpty) '대표 ${m['ceo']}',
+        if ('${m['manager'] ?? ''}'.isNotEmpty) '담당 ${m['manager']}',
+        if ('${m['phone'] ?? ''}'.isNotEmpty) '${m['phone']}',
+      ].join(' · ');
+      final made = _purchases
+          .where((p) => '${p['makerId'] ?? ''}' == mid)
+          .toList();
+      if (made.isEmpty) {
+        rows.add([
+          '${i + 1}',
+          company,
+          '${m['category'] ?? ''}',
+          '—',
+          '',
+          '',
+          '',
+          '제작 내역 없음',
+        ]);
+        continue;
+      }
+      for (var k = 0; k < made.length; k++) {
+        final p = made[k];
+        totalQty += (p['qty'] as num?)?.toInt() ?? 0;
+        totalAmt += (p['amount'] as num?)?.toInt() ?? 0;
+        final spec = [
+          if ('${p['group'] ?? ''}'.isNotEmpty) '${p['group']}',
+          if ('${p['category'] ?? ''}'.isNotEmpty) '${p['category']}',
+          if ('${p['size'] ?? ''}'.isNotEmpty) '${p['size']}',
+        ].join(' · ');
+        rows.add([
+          '${i + 1}',
+          k == 0 ? (contact.isEmpty ? company : '$company\n$contact') : '↳',
+          spec,
+          '${(p['qty'] as num?)?.toInt() ?? 0}',
+          _won((p['unitPrice'] as num?)?.toInt() ?? 0),
+          _won((p['amount'] as num?)?.toInt() ?? 0),
+          '${p['date'] ?? '-'}',
+          '${p['note'] ?? ''}',
+        ]);
+      }
+    }
+    return TsakTableDoc(
+      title: '수품 제작 내역서',
+      subtitle: '한국범스카우트중앙회 · 제작자별 제작 수품',
+      description:
+          '제작자(업체)별로 제작한 수품의 규격·수량·단가·합계·제작일 내역입니다. (결제·입금 정보 제외)',
+      author: _whoName(),
+      extra: {
+        '제작자': '${_makers.length}곳',
+        '총 수량': '$totalQty개',
+        '총 합계': '${_won(totalAmt)}원',
+      },
+      columns: columns,
+      rows: rows,
+      summary: ['총 ${_makers.length}곳', '합계 ${_won(totalAmt)}원'],
+      footerLeft: '한국범스카우트중앙회 수품',
+      landscape: true,
+      options: _outOpts['maker'],
+    );
+  }
+
+  /// 제작 내역서를 지정 포맷으로 저장·외부 열기·공유·인쇄.
+  Future<void> _runMakerOutput(
+    TsakOutputFormat format, {
+    bool open = false,
+    bool share = false,
+    bool justPrint = false,
+  }) async {
+    final doc = _makerDoc();
+    try {
+      var choose = false;
+      if (!open && !share && !justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info: '수품 제작 내역서 · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return;
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      await runWithTsakProgress(
+        context,
+        title: justPrint
+            ? '제작 내역서 프린트 준비'
+            : '${open ? '외부 열기' : share ? '공유' : '저장'} · 제작 내역서 ${format.label}',
+        note: '제작자 ${_makers.length}곳의 제작 내역을 처리합니다.',
+        steps: const ['문서 구성', '파일 생성', '내보내기'],
+        task: (ctl) async {
+          ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
+          if (justPrint) {
+            await printTsakTable(doc);
+          } else if (open) {
+            final res = await openTsakTableChosen(context, doc, format);
+            if (mounted) _snack(tsakShareMessage(res, what: '제작 내역서 ${format.label}'));
+          } else if (share) {
+            final res = await shareTsakTableChosen(context, doc, format);
+            if (mounted) _snack(tsakShareMessage(res, what: '제작 내역서 ${format.label}'));
+          } else {
+            await saveTsakTableChosen(context, doc, format, choose: choose);
+            if (mounted) _snack('${format.label} 저장을 시작했습니다');
+          }
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    }
+  }
+
+  Future<void> _emailMaker() async {
+    if (_makers.isEmpty) {
+      _snack('메일로 보낼 제작 내역이 없습니다');
+      return;
+    }
+    await emailTsakTable(context, _makerDoc());
   }
 
   Widget _makerCard(Map<String, dynamic> m) {
