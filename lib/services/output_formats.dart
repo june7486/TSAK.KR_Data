@@ -133,7 +133,8 @@ class TsakOutputBar extends StatelessWidget {
                           backgroundColor: AppColors.purple,
                           visualDensity: VisualDensity.compact,
                         ),
-                        onPressed: () => onMode!(active ?? kTsakOutputOrder.first, m),
+                        onPressed: () =>
+                            onMode!(active ?? kTsakOutputOrder.first, m),
                         icon: Icon(m.icon, size: 15),
                         label: Text(
                           '${m.label} 시트',
@@ -144,7 +145,8 @@ class TsakOutputBar extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                         ),
-                        onPressed: () => onMode!(active ?? kTsakOutputOrder.first, m),
+                        onPressed: () =>
+                            onMode!(active ?? kTsakOutputOrder.first, m),
                         icon: Icon(m.icon, size: 15),
                         label: Text(
                           m.label,

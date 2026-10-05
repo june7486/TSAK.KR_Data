@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -693,10 +694,9 @@ class _PlansTabState extends State<PlansTab> {
                     ),
                     const SizedBox(height: 3),
                     if ('${p['desc'] ?? ''}'.isNotEmpty)
-                      Text(
+                      MarqueeText(
                         '${p['desc']}',
                         maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textDark,
@@ -1075,7 +1075,8 @@ class _PlansTabState extends State<PlansTab> {
       onOpen: _openFormat,
       onShareFormat: _shareFormat,
       onShare: () => _shareFormat(TsakOutputFormat.pdf),
-      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
+      onShareLink: () =>
+          showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
 

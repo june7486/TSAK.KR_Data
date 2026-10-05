@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
@@ -189,17 +190,16 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                MarqueeText(
                   title,
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textDark,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
                 if (period.isNotEmpty || place.isNotEmpty)
-                  Text(
+                  MarqueeText(
                     [
                       if (period.isNotEmpty) period,
                       if (place.isNotEmpty) place,
@@ -208,7 +208,6 @@ class _AllPhotosScreenState extends State<AllPhotosScreen> {
                       fontSize: 11,
                       color: AppColors.textGray,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
               ],
             ),
@@ -438,10 +437,9 @@ class _AllPhotosViewerState extends State<_AllPhotosViewer> {
       appBar: TsakAppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(
+        title: MarqueeText(
           '${widget.title}  (${_index + 1}/${widget.photos.length})',
           style: const TextStyle(fontSize: 14),
-          overflow: TextOverflow.ellipsis,
         ),
       ),
       body: PageView.builder(

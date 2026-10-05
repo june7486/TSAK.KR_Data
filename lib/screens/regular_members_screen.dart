@@ -8,6 +8,7 @@ import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/marquee_text.dart';
 import 'member_detail_screen.dart';
 
 /// 일반회원(비인가자) 관리 — 목록/검색/인가자 승격. (관리자·마스터 전용)
@@ -199,14 +200,13 @@ class _RegularMembersScreenState extends State<RegularMembersScreen> {
                     Row(
                       children: [
                         Flexible(
-                          child: Text(
+                          child: MarqueeText(
                             m.name.isEmpty ? '(이름없음)' : m.name,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: AppColors.textDark,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 6),

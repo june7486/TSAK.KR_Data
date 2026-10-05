@@ -278,8 +278,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String tier, String value,
-      {String id = '', String corps = 'tsak'}) async {
+  Future<bool> login(
+    String tier,
+    String value, {
+    String id = '',
+    String corps = 'tsak',
+  }) async {
     bool ok;
     // 로그인 소속(범스카우트/은하스카우트) — 별도 관리.
     //  · 명시 corps 우선. 단, ID 가 '은하N' 형식이면 항상 은하스카우트.
@@ -373,7 +377,12 @@ class AppState extends ChangeNotifier {
         ok = false;
         if (repo.isNasMode && (value.isNotEmpty || id.isNotEmpty)) {
           try {
-            final r = await nas.login('personal', value, id: id, corps: 'eunha');
+            final r = await nas.login(
+              'personal',
+              value,
+              id: id,
+              corps: 'eunha',
+            );
             if (r['ok'] == true) ok = true;
           } catch (_) {}
         }
@@ -402,8 +411,12 @@ class AppState extends ChangeNotifier {
         if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
           for (final c in candidates) {
             try {
-              final r = await nas.login('personal', c,
-                  id: personalNo, corps: 'tsak');
+              final r = await nas.login(
+                'personal',
+                c,
+                id: personalNo,
+                corps: 'tsak',
+              );
               if (r['ok'] == true) {
                 ok = true;
                 break;
@@ -1494,7 +1507,10 @@ class AppState extends ChangeNotifier {
       case 'eunha':
         return _eunhaMembers.where((m) => !m.isRegular).length;
       case 'tsak':
-        return repo.all().where((m) => m.corps != 'eunha' && !m.isRegular).length;
+        return repo
+            .all()
+            .where((m) => m.corps != 'eunha' && !m.isRegular)
+            .length;
       default:
         return repo.all().where((m) => !m.isRegular).length +
             _eunhaMembers.where((m) => !m.isRegular).length;
@@ -1583,8 +1599,7 @@ class AppState extends ChangeNotifier {
   List<MapEntry<String, int>> get feeCounts => repo.feeCountsByYear();
 
   int get total => repo.count;
-  int get lifetimeCount =>
-      _searchBase().where((m) => m.lifetimeMember).length;
+  int get lifetimeCount => _searchBase().where((m) => m.lifetimeMember).length;
   Map<String, int> get feeCountMap => {
     for (final e in repo.feeCountsByYear()) e.key: e.value,
   };
@@ -1777,7 +1792,8 @@ class AppState extends ChangeNotifier {
   }
 
   Member? byId(String id) => repo.byId(id) ?? _eunhaById(id);
-  Member? byNumber(String number) => repo.byNumber(number) ?? _eunhaByNumber(number);
+  Member? byNumber(String number) =>
+      repo.byNumber(number) ?? _eunhaByNumber(number);
   Member? byName(String name) => repo.byName(name) ?? _eunhaByName(name);
 
   /// 은하스카우트 캐시에서 조회(통합 검색 목록에 노출되는 은하 회원 해석용).

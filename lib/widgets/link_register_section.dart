@@ -109,7 +109,9 @@ class LinkRegisterSection extends StatelessWidget {
                     : badgeSuffix.trim(),
                 style: TextStyle(
                   fontSize: 10.5,
-                  fontWeight: badgeSuffix.isEmpty ? FontWeight.normal : FontWeight.w800,
+                  fontWeight: badgeSuffix.isEmpty
+                      ? FontWeight.normal
+                      : FontWeight.w800,
                   color: badgeSuffix.isEmpty ? AppColors.textGray : _accent,
                 ),
               ),

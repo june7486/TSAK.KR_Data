@@ -55,10 +55,9 @@ class DonationAccounts extends StatelessWidget {
                     const SizedBox(width: 6),
                     Flexible(
                       flex: 2,
-                      child: Text(
+                      child: MarqueeText(
                         '${state.donations[index]['bank']} ${state.donations[index]['account']}',
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: fontSize,
                           fontWeight: FontWeight.w700,

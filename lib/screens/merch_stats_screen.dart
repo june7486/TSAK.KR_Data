@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -808,11 +809,10 @@ class _MerchStatsScreenState extends State<MerchStatsScreen> {
           ),
           const SizedBox(width: 5),
           Expanded(
-            child: Text(
+            child: MarqueeText(
               '${o['orderNo'] ?? ''} · ${o['buyerName'] ?? ''}',
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(

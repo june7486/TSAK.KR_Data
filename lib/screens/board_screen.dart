@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -373,7 +374,11 @@ class _BoardScreenState extends State<BoardScreen> {
         steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
@@ -416,7 +421,11 @@ class _BoardScreenState extends State<BoardScreen> {
         steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await openTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
         },
@@ -555,10 +564,9 @@ class _BoardScreenState extends State<BoardScreen> {
                     ],
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         title.isEmpty ? '(제목 없음)' : title,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -599,12 +607,11 @@ class _BoardScreenState extends State<BoardScreen> {
                     ],
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         updated.isNotEmpty && updated != created
                             ? '$created (수정)'
                             : created,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textGray,
@@ -1136,9 +1143,8 @@ class _BoardScreenState extends State<BoardScreen> {
             const Icon(Icons.link, size: 14, color: AppColors.taegeukBlue),
             const SizedBox(width: 4),
             Flexible(
-              child: Text(
+              child: MarqueeText(
                 url,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 11.5,
                   color: AppColors.taegeukBlue,
@@ -1412,9 +1418,8 @@ class _BoardScreenState extends State<BoardScreen> {
                         children: [
                           for (final u in writeLinks)
                             InputChip(
-                              label: Text(
+                              label: MarqueeText(
                                 u,
-                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11),
                               ),
                               avatar: const Icon(

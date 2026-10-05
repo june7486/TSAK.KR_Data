@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
@@ -271,8 +272,11 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
       // 모든 포맷 → OS 공유 시트(아이폰 포함 카톡·메일·드라이브로 바로 전송).
       onShareFormat: (f) =>
           _runOutput(selectedOnly: selectedOnly, format: f, share: true),
-      onPrint: () =>
-          _runOutput(selectedOnly: selectedOnly, format: TsakOutputFormat.pdf, justPrint: true),
+      onPrint: () => _runOutput(
+        selectedOnly: selectedOnly,
+        format: TsakOutputFormat.pdf,
+        justPrint: true,
+      ),
       onEmail: () => _emailOutput(selectedOnly: selectedOnly),
       onShare: () => _runOutput(
         selectedOnly: selectedOnly,
@@ -285,8 +289,7 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         format: TsakOutputFormat.jpg,
         share: true,
       ),
-      onShareLink: () =>
-          showLinkShareDialog(context, Uri.base.toString()),
+      onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
   }
 
@@ -332,17 +335,9 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
             ? const ['문서 구성', '인쇄 창 열기']
             : ['문서 구성', '${format.label} 생성', '파일 저장'],
         task: (ctl) async {
-          ctl.update(
-            progress: 0.15,
-            message: '문서를 구성하는 중…',
-            stepIndex: 0,
-          );
+          ctl.update(progress: 0.15, message: '문서를 구성하는 중…', stepIndex: 0);
           if (justPrint) {
-            ctl.update(
-              progress: 0.6,
-              message: '인쇄 창을 여는 중…',
-              stepIndex: 1,
-            );
+            ctl.update(progress: 0.6, message: '인쇄 창을 여는 중…', stepIndex: 1);
             await printTsakTable(doc);
             ctl.update(progress: 1.0, stepIndex: 2);
             return;
@@ -354,10 +349,12 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
           );
           if (open) {
             final res = await openTsakTableChosen(context, doc, format);
-            if (mounted) _snack(tsakShareMessage(res, what: '접속기록 ${format.label}'));
+            if (mounted)
+              _snack(tsakShareMessage(res, what: '접속기록 ${format.label}'));
           } else if (share) {
             final res = await shareTsakTableChosen(context, doc, format);
-            if (mounted) _snack(tsakShareMessage(res, what: '접속기록 ${format.label}'));
+            if (mounted)
+              _snack(tsakShareMessage(res, what: '접속기록 ${format.label}'));
           } else {
             final ok = await saveTsakTableChosen(
               context,
@@ -966,7 +963,7 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                       ),
                       const SizedBox(width: 4),
                       Expanded(
-                        child: Text(
+                        child: MarqueeText(
                           isView
                               ? '대상 ${name.isEmpty ? '(${l['ident'] ?? ''})' : name}'
                                     '${viewer.isNotEmpty ? '  ·  열람자 $viewer' : ''}'
@@ -974,7 +971,6 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                                     ? '(${l['who'] ?? l['ident'] ?? ''})'
                                     : name),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: isSelf
@@ -999,10 +995,9 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
                     ),
                     const SizedBox(width: 4),
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         device,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: isSelf

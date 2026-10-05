@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 
 import '../models/finance_transaction.dart';
 import '../models/member.dart';
@@ -342,11 +343,7 @@ class _MemberPickerSheetState extends State<_MemberPickerSheet> {
                 return ListTile(
                   dense: true,
                   title: Text('${m.name} (${m.numberLabel})'),
-                  subtitle: Text(
-                    '${m.league} ${m.unit}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  subtitle: MarqueeText('${m.league} ${m.unit}', maxLines: 1),
                   onTap: () => Navigator.pop(context, m),
                 );
               },

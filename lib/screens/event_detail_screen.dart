@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -205,10 +206,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  MarqueeText(
                     widget.title,
                     style: const TextStyle(fontSize: 16),
-                    overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     '${widget.year}'
@@ -977,10 +977,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           title: Row(
             children: [
               Flexible(
-                child: Text(
+                child: MarqueeText(
                   '${a['name'] ?? ''}',
                   style: const TextStyle(fontWeight: FontWeight.w800),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (ident.isNotEmpty) ...[
@@ -1313,7 +1312,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                 return ListTile(
                                   dense: true,
                                   leading: const Icon(Icons.person_outline),
-                                  title: Text('${r['name']} · ${Member.numLabelOf('${r['number'] ?? ''}', '${r['corps'] ?? 'tsak'}')}'),
+                                  title: Text(
+                                    '${r['name']} · ${Member.numLabelOf('${r['number'] ?? ''}', '${r['corps'] ?? 'tsak'}')}',
+                                  ),
                                   subtitle: Text(
                                     '${r['unit'] ?? ''}',
                                     style: const TextStyle(fontSize: 11),
@@ -1487,7 +1488,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         }
                                       });
                                     },
-                              title: Text('${r['name']} · ${Member.numLabelOf('${r['number'] ?? ''}', '${r['corps'] ?? 'tsak'}')}'),
+                              title: Text(
+                                '${r['name']} · ${Member.numLabelOf('${r['number'] ?? ''}', '${r['corps'] ?? 'tsak'}')}',
+                              ),
                               subtitle: Text(
                                 '${already ? '이미 등록됨 · ' : ''}${r['unit'] ?? ''}',
                                 style: TextStyle(
@@ -2180,11 +2183,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text(
+                  child: MarqueeText(
                     name,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
+                    align: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -2208,11 +2210,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     ),
                   ),
                 const SizedBox(height: 2),
-                Text(
+                MarqueeText(
                   _uploaderLabel('${m['uploader'] ?? ''}'),
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
+                  align: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textGray,
@@ -2328,11 +2329,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ),
             // 업로더 이름 (사진 아래, 구글포토식)
             const SizedBox(height: 2),
-            Text(
+            MarqueeText(
               uploader,
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+              align: TextAlign.center,
               style: const TextStyle(
                 fontSize: 10.5,
                 color: AppColors.textGray,

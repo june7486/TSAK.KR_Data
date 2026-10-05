@@ -11,6 +11,7 @@ import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
 import 'member_detail_screen.dart';
@@ -80,10 +81,12 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
     final q = _q.trim().toLowerCase();
     if (q.isEmpty) return ms;
     return ms
-        .where((m) =>
-            m.searchText.contains(q) ||
-            '은하${m.number}'.contains(q) ||
-            m.name.contains(q))
+        .where(
+          (m) =>
+              m.searchText.contains(q) ||
+              '은하${m.number}'.contains(q) ||
+              m.name.contains(q),
+        )
         .toList();
   }
 
@@ -125,81 +128,90 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    onChanged: (v) => setState(() => _q = v),
-                    decoration: InputDecoration(
-                      hintText: '이름 · 은하번호 · 소속 검색',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      isDense: true,
-                      suffixIcon: _q.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() => _q = '');
-                              },
-                            ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        onChanged: (v) => setState(() => _q = v),
+                        decoration: InputDecoration(
+                          hintText: '이름 · 은하번호 · 소속 검색',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          isDense: true,
+                          suffixIcon: _q.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() => _q = '');
+                                  },
+                                ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                const Icon(Icons.groups, size: 16, color: AppColors.taegeukBlue),
-                const SizedBox(width: 6),
-                Text(
-                  '전체 ${all.length}명${_q.isEmpty ? '' : ' · 검색 ${list.length}명'}'
-                  '${_sel.isEmpty ? '' : ' · 선택 ${_sel.length}명'}',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.groups,
+                      size: 16,
+                      color: AppColors.taegeukBlue,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '전체 ${all.length}명${_q.isEmpty ? '' : ' · 검색 ${list.length}명'}'
+                      '${_sel.isEmpty ? '' : ' · 선택 ${_sel.length}명'}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const Spacer(),
+                    // 좌측 선택박스 전체선택/해제 — 선택 시 그 항목만 출력한다.
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        foregroundColor: AppColors.taegeukBlue,
+                      ),
+                      onPressed: list.isEmpty ? null : () => _toggleAll(list),
+                      icon: Icon(
+                        _sel.isNotEmpty && _sel.length == list.length
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        size: 16,
+                      ),
+                      label: Text(
+                        _sel.isNotEmpty && _sel.length == list.length
+                            ? '전체해제'
+                            : '전체선택',
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                // 좌측 선택박스 전체선택/해제 — 선택 시 그 항목만 출력한다.
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    foregroundColor: AppColors.taegeukBlue,
-                  ),
-                  onPressed: list.isEmpty ? null : () => _toggleAll(list),
-                  icon: Icon(
-                    _sel.isNotEmpty && _sel.length == list.length
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank,
-                    size: 16,
-                  ),
-                  label: Text(
-                    _sel.isNotEmpty && _sel.length == list.length ? '전체해제' : '전체선택',
-                    style: const TextStyle(fontSize: 11.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Divider(height: 1),
-          Expanded(
-            child: state.eunhaLoading && all.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : list.isEmpty
+              ),
+              const SizedBox(height: 6),
+              const Divider(height: 1),
+              Expanded(
+                child: state.eunhaLoading && all.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : list.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.groups_outlined,
-                                size: 46, color: AppColors.textGray),
+                            const Icon(
+                              Icons.groups_outlined,
+                              size: 46,
+                              color: AppColors.textGray,
+                            ),
                             const SizedBox(height: 10),
                             Text(
                               _q.trim().isEmpty
@@ -211,8 +223,9 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
                             OutlinedButton.icon(
                               onPressed: state.eunhaLoading
                                   ? null
-                                  : () =>
-                                      context.read<AppState>().reloadEunhaMembers(),
+                                  : () => context
+                                        .read<AppState>()
+                                        .reloadEunhaMembers(),
                               icon: const Icon(Icons.refresh, size: 18),
                               label: const Text('명단 다시 불러오기'),
                             ),
@@ -225,7 +238,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (_, i) => _row(list[i], i),
                       ),
-          ),
+              ),
             ],
           ),
           BusyOverlay(
@@ -266,7 +279,8 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         m.date.trim(),
       ]);
     }
-    final title = '은하스카우트 명단'
+    final title =
+        '은하스카우트 명단'
         '${_q.isEmpty ? '' : ' (검색 ${list.length}명)'}';
     await showTsakOutputSheet(
       context,
@@ -285,8 +299,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
       onOpen: (f) => _openOutputFile(title, headers, rows, f),
       onShareFormat: (f) => _shareOutput(title, headers, rows, format: f),
-      onOnePage: () =>
-          _runOnePage(context.read<AppState>().eunhaMembers),
+      onOnePage: () => _runOnePage(context.read<AppState>().eunhaMembers),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
   }
@@ -320,10 +333,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '열·글자 크기를 계산하는 중…', stepIndex: 0);
           final pdf = await DocPdf.buildRosterOnePage(
-            meta: const DocMeta(
-              title: '은하스카우트 명부',
-              subtitle: '소속 은하스카우트',
-            ),
+            meta: const DocMeta(title: '은하스카우트 명부', subtitle: '소속 은하스카우트'),
             rows: [
               // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
               for (final m in members)
@@ -472,12 +482,17 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '은하스카우트 명단 ${format.label}'));
+      if (mounted)
+        _snack(tsakShareMessage(res, what: '은하스카우트 명단 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
     } finally {
@@ -515,12 +530,17 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await openTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
         },
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '은하스카우트 명단 ${format.label}'));
+      if (mounted)
+        _snack(tsakShareMessage(res, what: '은하스카우트 명단 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('열기 실패: $e');
     } finally {
@@ -587,9 +607,8 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
           if (m.nameEn.trim().isNotEmpty) ...[
             const SizedBox(width: 6),
             Flexible(
-              child: Text(
+              child: MarqueeText(
                 m.nameEn.trim(),
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,

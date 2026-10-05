@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -199,7 +200,10 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
         title: '요약',
         headers: const ['항목', '값'],
         rows: [
-          ['기간', '${t['from'] ?? ''} – ${t['to'] ?? ''}년 (${t['yearCount'] ?? 0}개 연도)'],
+          [
+            '기간',
+            '${t['from'] ?? ''} – ${t['to'] ?? ''}년 (${t['yearCount'] ?? 0}개 연도)',
+          ],
           ['총 수입', _money(income)],
           ['총 지출', _money(expense)],
           ['순액', _money(net)],
@@ -273,7 +277,9 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
                 '${e['title'] ?? e['name'] ?? ''}',
                 _money((e['income'] ?? 0) as num),
                 _money((e['expense'] ?? 0) as num),
-                _money(((e['income'] ?? 0) as num) - ((e['expense'] ?? 0) as num)),
+                _money(
+                  ((e['income'] ?? 0) as num) - ((e['expense'] ?? 0) as num),
+                ),
               ],
           ],
         ),
@@ -828,13 +834,12 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
                       ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Text(
+                        child: MarqueeText(
                           '${e['event'] ?? '미분류'}',
                           style: const TextStyle(
                             fontSize: 12.5,
                             color: AppColors.textDark,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Text(
@@ -910,13 +915,12 @@ class _FinanceAnalysisScreenState extends State<FinanceAnalysisScreen> {
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       '${m['name']}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textDark,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(

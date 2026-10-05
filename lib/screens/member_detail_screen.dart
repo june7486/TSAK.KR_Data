@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/member_access_log.dart';
 import '../widgets/link_code_field.dart';
 import '../widgets/link_register_section.dart';
@@ -286,14 +287,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(
+                      child: MarqueeText(
                         m.name.isEmpty ? '(이름없음)' : m.name,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (m.lifetimeMember) ...[
@@ -309,14 +309,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 const SizedBox(height: 4),
                 // 범인가시(인가 당시) 소속 — 현재활동과 구분.
                 if (m.league.isNotEmpty || m.unit.isNotEmpty)
-                  Text(
+                  MarqueeText(
                     '인가시: ${[m.league, m.unit].where((e) => e.isNotEmpty).join(' · ')}',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 // 현재활동 소속 — 인가시와 다르거나 값이 있으면 노출.
                 if ((m.regLeague.isNotEmpty && m.regLeague != m.league) ||
@@ -324,14 +323,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     m.position.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(
+                    child: MarqueeText(
                       '현재활동: ${[if (m.regLeague.isNotEmpty) m.regLeague, if (m.regUnit.isNotEmpty) m.regUnit, if (m.position.isNotEmpty) m.position].join(' · ')}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
               ],
@@ -987,13 +985,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         p,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           color: AppColors.textDark,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Container(
@@ -1687,13 +1684,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(
+            child: MarqueeText(
               [
                 product,
                 if (detail.isNotEmpty) detail,
               ].where((s) => s.isNotEmpty).join(' · '),
               style: const TextStyle(fontSize: 11.5, color: AppColors.textDark),
-              overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(
@@ -1909,7 +1905,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final nextParents = parents ?? List<String>.from(m.parents);
     final nextMentees = mentees ?? List<String>.from(m.mentees);
     final nextChildren = children ?? List<String>.from(m.children);
-    final hasLinks = nextMentors.isNotEmpty ||
+    final hasLinks =
+        nextMentors.isNotEmpty ||
         nextParents.isNotEmpty ||
         nextMentees.isNotEmpty ||
         nextChildren.isNotEmpty;
@@ -2410,11 +2407,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.help_outline,
-                size: 15,
-                color: AppColors.lifetimeGold,
-              ),
+              Icon(Icons.help_outline, size: 15, color: AppColors.lifetimeGold),
               SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -2587,9 +2580,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final err = await context.read<AppState>().requestPasswordReset();
     if (!mounted) return;
     _snack(
-      err == null
-          ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.'
-          : '요청 실패: $err',
+      err == null ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.' : '요청 실패: $err',
     );
   }
 

@@ -19,6 +19,8 @@ class MarqueeText extends StatefulWidget {
     this.pause = const Duration(milliseconds: 1400),
     this.gap = 32,
     this.maxLines = 1,
+    this.align = TextAlign.start,
+    this.height,
   });
 
   final String text;
@@ -34,6 +36,12 @@ class MarqueeText extends StatefulWidget {
   final double gap;
 
   final int maxLines;
+
+  /// 넘치지 않을 때의 정렬. 넘칠 때는 항상 좌측 기준으로 흐른다.
+  final TextAlign align;
+
+  /// 지정 시 고정 높이(넘침 경고 방지). 미지정 시 텍스트 높이 자동 계산.
+  final double? height;
 
   @override
   State<MarqueeText> createState() => _MarqueeTextState();
@@ -59,22 +67,29 @@ class _MarqueeTextState extends State<MarqueeText>
     super.dispose();
   }
 
-  double _measureText(String text) {
+  double _measureText(String text, TextStyle style) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: widget.style),
+      text: TextSpan(text: text, style: style),
       maxLines: widget.maxLines,
       textDirection: TextDirection.ltr,
     )..layout();
     return tp.width;
   }
 
-  double _textHeight() {
+  double _textHeight(TextStyle style) {
     final tp = TextPainter(
-      text: TextSpan(text: '가', style: widget.style),
+      text: TextSpan(text: '가', style: style),
       maxLines: widget.maxLines,
       textDirection: TextDirection.ltr,
     )..layout();
     return tp.height;
+  }
+
+  /// 실제 렌더에 쓰일 스타일(테마 DefaultTextStyle + 위젯 style 병합) —
+  /// 폰트 패밀리/크기가 테마에만 있어도 정확히 측정하기 위함.
+  TextStyle _effectiveStyle(BuildContext context) {
+    final base = DefaultTextStyle.of(context).style;
+    return widget.style == null ? base : base.merge(widget.style);
   }
 
   /// 넘칠 때 애니메이션 준비(속도·주기 계산 후 반복 시작).
@@ -107,28 +122,19 @@ class _MarqueeTextState extends State<MarqueeText>
         // 폭이 무한(제약 없음)이면 흐를 필요 없음 → 정적 표시.
         if (!viewWidth.isFinite || viewWidth <= 0) {
           _ensureStopped();
-          return Text(
-            widget.text,
-            style: widget.style,
-            maxLines: widget.maxLines,
-            overflow: TextOverflow.ellipsis,
-          );
+          return _staticText();
         }
-        final textWidth = _measureText(widget.text);
+        final style = _effectiveStyle(context);
+        final textWidth = _measureText(widget.text, style);
         final overflows = textWidth > viewWidth + 0.5;
         if (!overflows) {
           _ensureStopped();
-          return Text(
-            widget.text,
-            style: widget.style,
-            maxLines: widget.maxLines,
-            overflow: TextOverflow.ellipsis,
-          );
+          return _staticText(width: viewWidth);
         }
 
         _ensureRunning(textWidth);
         final cycleDist = textWidth + widget.gap;
-        final lineHeight = _textHeight();
+        final lineHeight = widget.height ?? _textHeight(style);
 
         return SizedBox(
           height: lineHeight,
@@ -168,6 +174,18 @@ class _MarqueeTextState extends State<MarqueeText>
         );
       },
     );
+  }
+
+  /// 넘치지 않을 때의 정적 텍스트(정렬 반영).
+  Widget _staticText({double? width}) {
+    final t = Text(
+      widget.text,
+      style: widget.style,
+      maxLines: widget.maxLines,
+      overflow: TextOverflow.ellipsis,
+      textAlign: widget.align,
+    );
+    return width != null ? SizedBox(width: width, child: t) : t;
   }
 
   Widget _fixedText() => Text(

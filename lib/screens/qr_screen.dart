@@ -57,12 +57,11 @@ class _QrGenerateView extends StatelessWidget {
     if (!state.isMaster && !isSelf) {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (_) =>
-            _QrLoginDialog(
-              number: member.number,
-              name: member.name,
-              corps: member.corps,
-            ),
+        builder: (_) => _QrLoginDialog(
+          number: member.number,
+          name: member.name,
+          corps: member.corps,
+        ),
       );
       if (ok != true) return;
     }

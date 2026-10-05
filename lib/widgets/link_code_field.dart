@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
@@ -142,7 +143,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
               ),
               const SizedBox(width: 6),
               Flexible(
-                child: Text(
+                child: MarqueeText(
                   widget.kind == 'mentor'
                       ? '인가번호(멘티) · 이름(멘토) · 소속정보(현재활동)'
                       : '인가번호 · 이름(페런츠) · 소속정보(현재활동)',
@@ -150,7 +151,6 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     fontSize: 10.5,
                     color: AppColors.textGray,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Spacer(),
@@ -255,7 +255,11 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             IconButton(
               tooltip: '삭제',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.close, size: 16, color: AppColors.textGray),
+              icon: const Icon(
+                Icons.close,
+                size: 16,
+                color: AppColors.textGray,
+              ),
               onPressed: () {
                 final next = List<String>.from(widget.codes)..remove(code);
                 widget.onChanged(next);

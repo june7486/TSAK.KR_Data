@@ -978,7 +978,9 @@ class ExportService {
           flexSum += content[i];
         }
         for (final i in shrinkable) {
-          final ratio = flexSum > 0 ? content[i] / flexSum : 1 / shrinkable.length;
+          final ratio = flexSum > 0
+              ? content[i] / flexSum
+              : 1 / shrinkable.length;
           width[i] = (avail * ratio).clamp(minW[i], width[i]);
         }
       }

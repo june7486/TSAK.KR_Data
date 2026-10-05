@@ -13,6 +13,7 @@ import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/donation_accounts.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/member_card.dart';
 import '../widgets/scroll_down_hint.dart';
 import '../widgets/hscroll_menu.dart';
@@ -34,7 +35,8 @@ import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
 import 'qr_screen.dart';
 import 'regular_members_screen.dart';
-import 'roster_admin_screen.dart';import 'member_request_screen.dart';
+import 'roster_admin_screen.dart';
+import 'member_request_screen.dart';
 import 'settings_screen.dart';
 import 'master_console_screen.dart';
 import 'source_folder_screen.dart';
@@ -319,343 +321,341 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _buildAppBarActions(AppState state) {
     final members = state.members;
     return [
-            if (_selectMode) ...[
-              IconButton(
-                tooltip: '전체 선택',
-                icon: const Icon(Icons.select_all),
-                onPressed: () {
-                  setState(() {
-                    if (_selected.length == members.length) {
-                      _selected.clear();
-                    } else {
-                      _selected
-                        ..clear()
-                        ..addAll(members.map((e) => e.id));
-                    }
-                  });
-                },
+      if (_selectMode) ...[
+        IconButton(
+          tooltip: '전체 선택',
+          icon: const Icon(Icons.select_all),
+          onPressed: () {
+            setState(() {
+              if (_selected.length == members.length) {
+                _selected.clear();
+              } else {
+                _selected
+                  ..clear()
+                  ..addAll(members.map((e) => e.id));
+              }
+            });
+          },
+        ),
+        IconButton(
+          tooltip: '닫기',
+          icon: const Icon(Icons.close),
+          onPressed: () => setState(() {
+            _selectMode = false;
+            _selected.clear();
+          }),
+        ),
+      ] else ...[
+        // 권한이 허용하는 메뉴만 아이콘으로 노출한다.
+        if (state.can('bulk'))
+          IconButton(
+            tooltip: '단체 소식/문자',
+            icon: const Icon(Icons.campaign),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BulkScreen()),
+            ),
+          ),
+        if (state.can('stats'))
+          IconButton(
+            tooltip: '통계',
+            icon: const Icon(Icons.insights),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const StatsScreen()),
+            ),
+          ),
+        // 은하스카우트 명단 — 별도 관리 · 관리자 이상
+        if (state.isApp || state.isMaster)
+          IconButton(
+            tooltip: '은하스카우트 명단',
+            icon: const Icon(Icons.list_alt),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EunhaRosterScreen()),
+            ),
+          ),
+        // 명단 선택 (일괄작업) — 관리자 이상
+        if (state.can('bulk'))
+          IconButton(
+            tooltip: '명단 선택 (일괄작업)',
+            icon: const Icon(Icons.checklist),
+            onPressed: () => setState(() => _selectMode = true),
+          ),
+        // 게시판 — 새 글 알림 배지 표시
+        if (state.can('board'))
+          IconButton(
+            tooltip: '게시판',
+            icon: Badge(
+              isLabelVisible: _boardUnread > 0,
+              label: Text('$_boardUnread'),
+              child: const Icon(Icons.forum_outlined),
+            ),
+            onPressed: () async {
+              final st = context.read<AppState>();
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BoardScreen()),
+              );
+              // 게시판을 확인했으므로 해당 아이디 기준 읽음 처리 → 배지 차감.
+              await st.markBadgeSeen(kind: 'board');
+              _loadBoardUnread();
+            },
+          ),
+        // 통합승인관리 — 대기 항목 배지(붉은 원형 숫자, 관리자·마스터 전용)
+        if (state.isApp || state.isMaster) _approvalAppbarIcon(),
+        if (personaForPersonal(state) && !_showMainHome)
+          IconButton(
+            tooltip: '메인 홈으로',
+            icon: const Icon(Icons.home_filled),
+            onPressed: () {
+              state.setPersonalBrowse(true);
+              setState(() => _showMainHome = true);
+            },
+          ),
+        if (state.isSelfAccess && !_showMainHome)
+          IconButton(
+            tooltip: '본인 정보 편집',
+            // 흰색 연필 — 보라 앱바 배경에 자연스럽게 어울리도록 복원.
+            icon: const Icon(Icons.edit, color: Colors.white),
+            onPressed: () => _openMyEdit(state),
+          ),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (v) {
+            switch (v) {
+              case 'settings':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+                break;
+              case 'admin':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminScreen()),
+                );
+                break;
+              case 'master_console':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MasterConsoleScreen(),
+                  ),
+                );
+                break;
+              case 'member_request':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MemberRequestScreen(),
+                  ),
+                );
+                break;
+              case 'import':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ImportScreen()),
+                );
+                break;
+              case 'finance':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FinanceScreen()),
+                );
+                break;
+              case 'source':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SourceFolderScreen()),
+                );
+                break;
+              case 'select':
+                setState(() => _selectMode = true);
+                break;
+              case 'refresh':
+                context.read<AppState>().refreshFromNas();
+                break;
+              case 'donate':
+                showDonateSheet(context);
+                break;
+              case 'inquiry':
+                showInquirySheet(context);
+                break;
+              case 'lock':
+                context.read<AppState>().lock();
+                break;
+              case 'home':
+                _searchCtrl.clear();
+                context.read<AppState>().clearFilters();
+                if (_scroll.hasClients) {
+                  _scroll.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                  );
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('초기 화면으로 이동했습니다'),
+                    duration: Duration(milliseconds: 900),
+                  ),
+                );
+                break;
+              case 'myqr':
+                final me = state.who.isNotEmpty
+                    ? state.byNumber(state.who)
+                    : (members.isNotEmpty ? members.first : null);
+                if (me != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                  );
+                }
+                break;
+            }
+          },
+          itemBuilder: (ctx) => [
+            if (state.isMaster)
+              const PopupMenuItem(
+                value: 'admin',
+                child: _MenuItem(
+                  icon: Icons.admin_panel_settings,
+                  label: '앱 관리 — 앱접근 비번 변경/정지/복구',
+                  color: AppColors.taegeukRed,
+                  role: '마스터',
+                ),
               ),
-              IconButton(
-                tooltip: '닫기',
-                icon: const Icon(Icons.close),
-                onPressed: () => setState(() {
-                  _selectMode = false;
-                  _selected.clear();
-                }),
+            if (state.isMaster)
+              const PopupMenuItem(
+                value: 'master_console',
+                child: _MenuItem(
+                  icon: Icons.workspace_premium,
+                  label: '마스터 관리창 — 백업/회원/권한/로그/재무',
+                  color: AppColors.taegeukRed,
+                  role: '마스터',
+                ),
               ),
-            ] else ...[
-              // 권한이 허용하는 메뉴만 아이콘으로 노출한다.
-              if (state.can('bulk'))
-                IconButton(
-                  tooltip: '단체 소식/문자',
-                  icon: const Icon(Icons.campaign),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const BulkScreen()),
-                  ),
+            if (state.isApp || state.isMaster)
+              const PopupMenuItem(
+                value: 'member_request',
+                child: _MenuItem(
+                  icon: Icons.app_registration,
+                  label: '등록요청 승인 — 평생회원·연회비·자격',
+                  color: AppColors.lifetimeGold,
+                  role: '관리자',
                 ),
-              if (state.can('stats'))
-                IconButton(
-                  tooltip: '통계',
-                  icon: const Icon(Icons.insights),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const StatsScreen()),
-                  ),
+              ),
+            if (!state.isSelfAccess) ...[
+              const PopupMenuItem(
+                value: 'finance',
+                child: _MenuItem(
+                  icon: Icons.account_balance_wallet,
+                  label: '재무 관리 (후원·수품·참가비)',
+                  color: AppColors.taegeukBlue,
+                  role: '관리자',
                 ),
-              // 은하스카우트 명단 — 별도 관리 · 관리자 이상
-              if (state.isApp || state.isMaster)
-                IconButton(
-                  tooltip: '은하스카우트 명단',
-                  icon: const Icon(Icons.list_alt),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const EunhaRosterScreen()),
-                  ),
+              ),
+              const PopupMenuItem(
+                value: 'import',
+                child: _MenuItem(
+                  icon: Icons.auto_awesome,
+                  label: '자료 가져오기 (AI 인식)',
+                  color: AppColors.taegeukBlue,
+                  role: '관리자',
                 ),
-              // 명단 선택 (일괄작업) — 관리자 이상
-              if (state.can('bulk'))
-                IconButton(
-                  tooltip: '명단 선택 (일괄작업)',
-                  icon: const Icon(Icons.checklist),
-                  onPressed: () => setState(() => _selectMode = true),
-                ),
-              // 게시판 — 새 글 알림 배지 표시
-              if (state.can('board'))
-                IconButton(
-                  tooltip: '게시판',
-                  icon: Badge(
-                    isLabelVisible: _boardUnread > 0,
-                    label: Text('$_boardUnread'),
-                    child: const Icon(Icons.forum_outlined),
-                  ),
-                  onPressed: () async {
-                    final st = context.read<AppState>();
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const BoardScreen()),
-                    );
-                    // 게시판을 확인했으므로 해당 아이디 기준 읽음 처리 → 배지 차감.
-                    await st.markBadgeSeen(kind: 'board');
-                    _loadBoardUnread();
-                  },
-                ),
-              // 통합승인관리 — 대기 항목 배지(붉은 원형 숫자, 관리자·마스터 전용)
-              if (state.isApp || state.isMaster) _approvalAppbarIcon(),
-              if (personaForPersonal(state) && !_showMainHome)
-                IconButton(
-                  tooltip: '메인 홈으로',
-                  icon: const Icon(Icons.home_filled),
-                  onPressed: () {
-                    state.setPersonalBrowse(true);
-                    setState(() => _showMainHome = true);
-                  },
-                ),
-              if (state.isSelfAccess && !_showMainHome)
-                IconButton(
-                  tooltip: '본인 정보 편집',
-                  // 흰색 연필 — 보라 앱바 배경에 자연스럽게 어울리도록 복원.
-                  icon: const Icon(Icons.edit, color: Colors.white),
-                  onPressed: () => _openMyEdit(state),
-                ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                onSelected: (v) {
-                  switch (v) {
-                    case 'settings':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                      );
-                      break;
-                    case 'admin':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AdminScreen()),
-                      );
-                      break;
-                    case 'master_console':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const MasterConsoleScreen(),
-                        ),
-                      );
-                      break;
-                    case 'member_request':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const MemberRequestScreen(),
-                        ),
-                      );
-                      break;
-                    case 'import':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ImportScreen()),
-                      );
-                      break;
-                    case 'finance':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const FinanceScreen()),
-                      );
-                      break;
-                    case 'source':
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SourceFolderScreen(),
-                        ),
-                      );
-                      break;
-                    case 'select':
-                      setState(() => _selectMode = true);
-                      break;
-                    case 'refresh':
-                      context.read<AppState>().refreshFromNas();
-                      break;
-                    case 'donate':
-                      showDonateSheet(context);
-                      break;
-                    case 'inquiry':
-                      showInquirySheet(context);
-                      break;
-                    case 'lock':
-                      context.read<AppState>().lock();
-                      break;
-                    case 'home':
-                      _searchCtrl.clear();
-                      context.read<AppState>().clearFilters();
-                      if (_scroll.hasClients) {
-                        _scroll.animateTo(
-                          0,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOut,
-                        );
-                      }
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('초기 화면으로 이동했습니다'),
-                          duration: Duration(milliseconds: 900),
-                        ),
-                      );
-                      break;
-                    case 'myqr':
-                      final me = state.who.isNotEmpty
-                          ? state.byNumber(state.who)
-                          : (members.isNotEmpty ? members.first : null);
-                      if (me != null) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => QrScreen(member: me)),
-                        );
-                      }
-                      break;
-                  }
-                },
-                itemBuilder: (ctx) => [
-                  if (state.isMaster)
-                    const PopupMenuItem(
-                      value: 'admin',
-                      child: _MenuItem(
-                        icon: Icons.admin_panel_settings,
-                        label: '앱 관리 — 앱접근 비번 변경/정지/복구',
-                        color: AppColors.taegeukRed,
-                        role: '마스터',
-                      ),
-                    ),
-                  if (state.isMaster)
-                    const PopupMenuItem(
-                      value: 'master_console',
-                      child: _MenuItem(
-                        icon: Icons.workspace_premium,
-                        label: '마스터 관리창 — 백업/회원/권한/로그/재무',
-                        color: AppColors.taegeukRed,
-                        role: '마스터',
-                      ),
-                    ),
-                  if (state.isApp || state.isMaster)
-                    const PopupMenuItem(
-                      value: 'member_request',
-                      child: _MenuItem(
-                        icon: Icons.app_registration,
-                        label: '등록요청 승인 — 평생회원·연회비·자격',
-                        color: AppColors.lifetimeGold,
-                        role: '관리자',
-                      ),
-                    ),
-                  if (!state.isSelfAccess) ...[
-                    const PopupMenuItem(
-                      value: 'finance',
-                      child: _MenuItem(
-                        icon: Icons.account_balance_wallet,
-                        label: '재무 관리 (후원·수품·참가비)',
-                        color: AppColors.taegeukBlue,
-                        role: '관리자',
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'import',
-                      child: _MenuItem(
-                        icon: Icons.auto_awesome,
-                        label: '자료 가져오기 (AI 인식)',
-                        color: AppColors.taegeukBlue,
-                        role: '관리자',
-                      ),
-                    ),
-                  ],
-                  // 기본자료 폴더 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
-                  if (state.isMaster)
-                    const PopupMenuItem(
-                      value: 'source',
-                      child: _MenuItem(
-                        icon: Icons.folder_special,
-                        label: '기본자료 폴더 (첨부·자동분석)',
-                        color: AppColors.taegeukRed,
-                        role: '마스터',
-                      ),
-                    ),
-                  if (state.isMaster)
-                    const PopupMenuItem(
-                      value: 'settings',
-                      child: _MenuItem(
-                        icon: Icons.settings,
-                        label: '설정 · 백업/복원',
-                        color: AppColors.taegeukRed,
-                        role: '마스터',
-                      ),
-                    ),
-                  if (!state.isSelfAccess) ...[
-                    const PopupMenuItem(
-                      value: 'refresh',
-                      child: _MenuItem(
-                        icon: Icons.cloud_download,
-                        label: 'NAS 최신 데이터 불러오기',
-                        color: AppColors.taegeukBlue,
-                        role: '관리자',
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'select',
-                      child: _MenuItem(
-                        icon: Icons.checklist,
-                        label: '명단 선택 (일괄작업)',
-                        color: AppColors.taegeukBlue,
-                        role: '관리자',
-                      ),
-                    ),
-                  ],
-                  // 첫 화면으로 이동 (모든 접근 등급)
-                  const PopupMenuItem(
-                    value: 'home',
-                    child: _MenuItem(
-                      icon: Icons.home_outlined,
-                      label: '첫 화면으로 이동',
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  // 내 QR 표시 (본인 인가자) — QR 아이콘을 삼점(⋮) 위치로 옮기며
-                  //  메뉴로도 접근 가능하게 한다(요구).
-                  if (state.isSelfAccess)
-                    const PopupMenuItem(
-                      value: 'myqr',
-                      child: _MenuItem(
-                        icon: Icons.qr_code_2,
-                        label: '내 QR 표시',
-                        color: AppColors.taegeukBlue,
-                      ),
-                    ),
-                  // 개발자 후원 (모든 접근 등급)
-                  const PopupMenuItem(
-                    value: 'donate',
-                    child: _MenuItem(
-                      icon: Icons.favorite,
-                      label: '개발자 후원',
-                      color: AppColors.lifetimeGold,
-                    ),
-                  ),
-                  // 문의 (모든 접근 등급)
-                  const PopupMenuItem(
-                    value: 'inquiry',
-                    child: _MenuItem(
-                      icon: Icons.mail_outline,
-                      label: '문의하기',
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'lock',
-                    child: _MenuItem(
-                      icon: Icons.lock_outline,
-                      label: '로그아웃',
-                      color: AppColors.taegeukRed,
-                    ),
-                  ),
-                ],
               ),
             ],
+            // 기본자료 폴더 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
+            if (state.isMaster)
+              const PopupMenuItem(
+                value: 'source',
+                child: _MenuItem(
+                  icon: Icons.folder_special,
+                  label: '기본자료 폴더 (첨부·자동분석)',
+                  color: AppColors.taegeukRed,
+                  role: '마스터',
+                ),
+              ),
+            if (state.isMaster)
+              const PopupMenuItem(
+                value: 'settings',
+                child: _MenuItem(
+                  icon: Icons.settings,
+                  label: '설정 · 백업/복원',
+                  color: AppColors.taegeukRed,
+                  role: '마스터',
+                ),
+              ),
+            if (!state.isSelfAccess) ...[
+              const PopupMenuItem(
+                value: 'refresh',
+                child: _MenuItem(
+                  icon: Icons.cloud_download,
+                  label: 'NAS 최신 데이터 불러오기',
+                  color: AppColors.taegeukBlue,
+                  role: '관리자',
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'select',
+                child: _MenuItem(
+                  icon: Icons.checklist,
+                  label: '명단 선택 (일괄작업)',
+                  color: AppColors.taegeukBlue,
+                  role: '관리자',
+                ),
+              ),
+            ],
+            // 첫 화면으로 이동 (모든 접근 등급)
+            const PopupMenuItem(
+              value: 'home',
+              child: _MenuItem(
+                icon: Icons.home_outlined,
+                label: '첫 화면으로 이동',
+                color: AppColors.textDark,
+              ),
+            ),
+            // 내 QR 표시 (본인 인가자) — QR 아이콘을 삼점(⋮) 위치로 옮기며
+            //  메뉴로도 접근 가능하게 한다(요구).
+            if (state.isSelfAccess)
+              const PopupMenuItem(
+                value: 'myqr',
+                child: _MenuItem(
+                  icon: Icons.qr_code_2,
+                  label: '내 QR 표시',
+                  color: AppColors.taegeukBlue,
+                ),
+              ),
+            // 개발자 후원 (모든 접근 등급)
+            const PopupMenuItem(
+              value: 'donate',
+              child: _MenuItem(
+                icon: Icons.favorite,
+                label: '개발자 후원',
+                color: AppColors.lifetimeGold,
+              ),
+            ),
+            // 문의 (모든 접근 등급)
+            const PopupMenuItem(
+              value: 'inquiry',
+              child: _MenuItem(
+                icon: Icons.mail_outline,
+                label: '문의하기',
+                color: AppColors.textDark,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'lock',
+              child: _MenuItem(
+                icon: Icons.lock_outline,
+                label: '로그아웃',
+                color: AppColors.taegeukRed,
+              ),
+            ),
+          ],
+        ),
+      ],
     ];
   }
 
@@ -718,9 +718,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     child: Text(
-                      state.isEunha
-                          ? '한국은하스카우트중앙회'
-                          : '한국 범스카우트중앙회',
+                      state.isEunha ? '한국은하스카우트중앙회' : '한국 범스카우트중앙회',
                       style: const TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
@@ -729,13 +727,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       '통합 앱 · $versionName · $kBuildShort',
                       // (요구) 버전 표시를 우측 정렬하되, 우측 끝(QR/삼점)과 일정거리
                       //  유지 — 트레일링 여백으로 이격한다.
-                      textAlign: TextAlign.right,
+                      align: TextAlign.right,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 9,
                         color: Colors.white.withValues(alpha: 0.8),
@@ -763,7 +760,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (me != null) {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => QrScreen(member: me)),
+                          MaterialPageRoute(
+                            builder: (_) => QrScreen(member: me),
+                          ),
                         );
                       } else {
                         Navigator.push(
@@ -808,8 +807,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // 후원계좌 흰 카드 하단의 보라색 갭(헤더 그라데이션) 바로 아래에 오는 '흰색 갭'.
           //  (요구: "후원계좌 하단 보라색 갭 '만큼' 아래 흰색 갭을 둔다" → 두 갭 두께 동일)
           //  실측 보라 띠 = 5px 이므로 흰색 갭도 5px 로 맞춘다(참조 이미지의 얇은 띠 구조와 일치).
-          if (!selfView && state.can('memberSearch'))
-            const SizedBox(height: 5),
+          if (!selfView && state.can('memberSearch')) const SizedBox(height: 5),
           // 검색·필터는 명단검색 권한이 있을 때만 노출(개인정보 보호)
           if (!selfView && state.can('memberSearch')) _filterBar(state),
           const SizedBox(height: 2),
@@ -1179,9 +1177,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(width: 3),
                     Flexible(
-                      child: Text(
+                      child: MarqueeText(
                         _selfAccountLabel(state),
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w800,
@@ -1539,9 +1536,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const Spacer(),
               // 계좌주명 — 좁은 화면에서 버튼과 겹치지 않도록 유연하게 축소.
               Flexible(
-                child: Text(
+                child: MarqueeText(
                   state.donationHolder,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 9.5,
                     color: AppColors.textGray,
@@ -1579,9 +1575,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                collapsed
-                    ? Icons.keyboard_arrow_down
-                    : Icons.keyboard_arrow_up,
+                collapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
                 color: AppColors.purple,
                 size: 16,
               ),
@@ -1617,9 +1611,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 6),
               // (p.29) 좁은 화면에서도 버튼이 잘리지 않도록 라벨은 유연하게 축소.
               const Flexible(
-                child: Text(
+                child: MarqueeText(
                   '개인 접근',
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -1695,9 +1688,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             SizedBox(width: 4),
                             Flexible(
-                              child: Text(
+                              child: MarqueeText(
                                 '본인 정보 편집',
-                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: AppColors.scoutGreen,
                                   fontSize: 11.5,
@@ -2790,11 +2782,12 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('아래 계정을 완전히 삭제합니다.',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              '아래 계정을 완전히 삭제합니다.',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text(preview.toString(),
-                style: const TextStyle(fontSize: 12.5)),
+            Text(preview.toString(), style: const TextStyle(fontSize: 12.5)),
             const SizedBox(height: 12),
             const Text(
               '※ 삭제한 계정은 복구할 수 없습니다 (서버 백업은 자동 생성).',
@@ -3049,7 +3042,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.lock_reset, color: AppColors.tigerGold, size: 32),
+        icon: const Icon(
+          Icons.lock_reset,
+          color: AppColors.tigerGold,
+          size: 32,
+        ),
         title: const Text('비밀번호 초기화 요청'),
         content: const Text(
           '관리자·마스터에게 비밀번호 초기화를 요청하시겠습니까?\n\n'
@@ -3073,9 +3070,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final err = await state.requestPasswordReset();
     if (!mounted) return;
     _snack(
-      err == null
-          ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.'
-          : '요청 실패: $err',
+      err == null ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.' : '요청 실패: $err',
     );
   }
 

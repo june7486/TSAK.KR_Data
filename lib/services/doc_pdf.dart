@@ -209,7 +209,12 @@ class DocPdf {
               children: columns
                   .map(
                     (c) => pw.Padding(
-                      padding: pw.EdgeInsets.fromLTRB(4, headV.toDouble(), 4, headV.toDouble()),
+                      padding: pw.EdgeInsets.fromLTRB(
+                        4,
+                        headV.toDouble(),
+                        4,
+                        headV.toDouble(),
+                      ),
                       child: pw.Text(
                         c,
                         style: pw.TextStyle(
@@ -224,10 +229,17 @@ class DocPdf {
             ),
           for (final r in rows)
             pw.TableRow(
-              children: r.asMap().entries
+              children: r
+                  .asMap()
+                  .entries
                   .map(
                     (e) => pw.Container(
-                      padding: pw.EdgeInsets.fromLTRB(4, padV.toDouble(), 4, padV.toDouble()),
+                      padding: pw.EdgeInsets.fromLTRB(
+                        4,
+                        padV.toDouble(),
+                        4,
+                        padV.toDouble(),
+                      ),
                       decoration: e.value.accent != null
                           ? pw.BoxDecoration(
                               border: pw.Border(
@@ -249,14 +261,16 @@ class DocPdf {
                             softWrap: !noWrapCols.contains(e.key),
                             maxLines: noWrapCols.contains(e.key) ? 1 : null,
                           ),
-                          if (e.value.sub != null && e.value.sub!.trim().isNotEmpty)
+                          if (e.value.sub != null &&
+                              e.value.sub!.trim().isNotEmpty)
                             pw.Padding(
                               padding: const pw.EdgeInsets.only(top: 1.5),
                               child: pw.Text(
                                 e.value.sub!,
                                 style: pw.TextStyle(
                                   font: reg,
-                                  fontSize: (7.5 * scale * 10).roundToDouble() / 10,
+                                  fontSize:
+                                      (7.5 * scale * 10).roundToDouble() / 10,
                                   color: _gray,
                                 ),
                               ),
@@ -445,10 +459,10 @@ class DocPdf {
     //  좁은 열(예: 성명·인가년월일)이 셀 패딩에 잠식되어 글자가 2줄로 접히는
     //  문제를 막기 위해, 먼저 각 열에 "줄바꿈 없이 필요한 최소 폭"을 배정한 뒤
     //  남는 폭만 내용 비율대로 나눠 준다.
-    const double fontPt = 8.5;   // 셀 본문 폰트
-    const double padU = 8.0;     // 셀 좌우 패딩 합(좌 4 + 우 4)
-    const double lead = 3.0;     // 헤어라인/렌더 오차 여유
-    const double avail = 517.0;  // 페이지 폭 − 좌우 여백 − 테두리(≈ 595 − 36·2 − 여유)
+    const double fontPt = 8.5; // 셀 본문 폰트
+    const double padU = 8.0; // 셀 좌우 패딩 합(좌 4 + 우 4)
+    const double lead = 3.0; // 헤어라인/렌더 오차 여유
+    const double avail = 517.0; // 페이지 폭 − 좌우 여백 − 테두리(≈ 595 − 36·2 − 여유)
     final req = <double>[
       for (var i = 0; i < n; i++) units[i] * fontPt + padU + lead,
     ];
@@ -463,7 +477,9 @@ class DocPdf {
         band = req[i] + extra;
       } else {
         // 폭이 부족한 극단적 경우엔 내용 비율대로 축소(최소 10pt 보장).
-        band = avail * (units[i] + padU) /
+        band =
+            avail *
+            (units[i] + padU) /
             (unitSum + padU * n).clamp(1.0, double.infinity);
       }
       m[i] = pw.FlexColumnWidth(band.clamp(10.0, 300.0));
@@ -626,9 +642,7 @@ class DocPdf {
       if (r.isNotEmpty) {
         final u = _nameUnits(r.length > 1 ? r[1] : '');
         if (u > maxNameU) maxNameU = u;
-        final num = int.tryParse(
-          (r[0]).replaceAll(RegExp(r'[^0-9]'), ''),
-        );
+        final num = int.tryParse((r[0]).replaceAll(RegExp(r'[^0-9]'), ''));
         if (num != null && num > maxNum) maxNum = num;
       }
     }
@@ -746,7 +760,11 @@ class DocPdf {
                     alignment: pw.Alignment.centerLeft,
                     child: pw.Text(
                       rows[idx].length > 1 ? rows[idx][1] : '',
-                      style: pw.TextStyle(font: bold, fontSize: pt, color: _ink),
+                      style: pw.TextStyle(
+                        font: bold,
+                        fontSize: pt,
+                        color: _ink,
+                      ),
                       maxLines: 1,
                     ),
                   ),
@@ -847,11 +865,7 @@ class DocPdf {
             ],
           ),
           pw.SizedBox(height: 4),
-          pw.Wrap(
-            spacing: _rosterGap,
-            runSpacing: 0,
-            children: cells,
-          ),
+          pw.Wrap(spacing: _rosterGap, runSpacing: 0, children: cells),
           pw.SizedBox(height: 4),
           // 푸터
           pw.Container(

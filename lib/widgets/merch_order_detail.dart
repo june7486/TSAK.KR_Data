@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -643,7 +644,7 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
+                    MarqueeText(
                       steps[i],
                       style: TextStyle(
                         fontSize: 8,
@@ -654,9 +655,8 @@ class _MerchOrderDetailDialogState extends State<_MerchOrderDetailDialog> {
                             ? FontWeight.w800
                             : FontWeight.w400,
                       ),
-                      textAlign: TextAlign.center,
+                      align: TextAlign.center,
                       maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

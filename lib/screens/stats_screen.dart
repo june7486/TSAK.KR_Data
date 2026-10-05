@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
@@ -248,7 +249,10 @@ class _StatsScreenState extends State<StatsScreen> {
 
     final eunhaOnly = _scope == 1;
     final eunhaList = state.eunhaMembers;
-    final eunhaSrc = _sortDist(_eunhaLeagueCounts(eunhaList), _sortMode['eunha'] ?? 0);
+    final eunhaSrc = _sortDist(
+      _eunhaLeagueCounts(eunhaList),
+      _sortMode['eunha'] ?? 0,
+    );
     final eunhaYears = <int, int>{};
     for (final m in eunhaList) {
       final y = _yearOf(m.date);
@@ -280,11 +284,19 @@ class _StatsScreenState extends State<StatsScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    _statBox('은하 인가자', '${eunhaList.length}', Icons.groups_2_outlined,
-                        AppColors.taegeukBlue),
+                    _statBox(
+                      '은하 인가자',
+                      '${eunhaList.length}',
+                      Icons.groups_2_outlined,
+                      AppColors.taegeukBlue,
+                    ),
                     _divider(),
-                    _statBox('연맹 수', '${_eunhaLeagueCounts(eunhaList).length}',
-                        Icons.public, AppColors.purple),
+                    _statBox(
+                      '연맹 수',
+                      '${_eunhaLeagueCounts(eunhaList).length}',
+                      Icons.public,
+                      AppColors.purple,
+                    ),
                   ],
                 ),
               ),
@@ -298,14 +310,17 @@ class _StatsScreenState extends State<StatsScreen> {
             if (sortedEunhaYears.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(12),
-                child: Text('연도 데이터가 없습니다.',
-                    style: TextStyle(color: AppColors.textGray)),
+                child: Text(
+                  '연도 데이터가 없습니다.',
+                  style: TextStyle(color: AppColors.textGray),
+                ),
               )
             else
               ...sortedEunhaYears.reversed.map((y) {
                 final v = eunhaYears[y]!;
-                final maxYear =
-                    eunhaYears.values.reduce((a, b) => a > b ? a : b);
+                final maxYear = eunhaYears.values.reduce(
+                  (a, b) => a > b ? a : b,
+                );
                 return _barRow(
                   context: context,
                   label: '$y년',
@@ -315,76 +330,74 @@ class _StatsScreenState extends State<StatsScreen> {
                 );
               }),
           ] else ...[
-          _sectionTitle('회원 유형 분포'),
-          _typeDistribution(state),
-          const SizedBox(height: 12),
-          _sectionTitle('멘토 · 페런츠 연결 현황'),
-          _linkStatus(state),
-          const SizedBox(height: 12),
+            _sectionTitle('회원 유형 분포'),
+            _typeDistribution(state),
+            const SizedBox(height: 12),
+            _sectionTitle('멘토 · 페런츠 연결 현황'),
+            _linkStatus(state),
+            const SizedBox(height: 12),
 
-          // ---- ① 연맹별 인가자 분포 (신분 탭) ----
-          _sectionTitle('연맹별 인가자 분포'),
-          _gapTabs(),
-          const SizedBox(height: 4),
-          _basisTabs(state),
-          _distTabs('gap$_gap'),
-          _distRows(mainSrc),
+            // ---- ① 연맹별 인가자 분포 (신분 탭) ----
+            _sectionTitle('연맹별 인가자 분포'),
+            _gapTabs(),
+            const SizedBox(height: 4),
+            _basisTabs(state),
+            _distTabs('gap$_gap'),
+            _distRows(mainSrc),
 
-          // ---- 추가: 멘토 대장 / 페런츠 / 서포터즈-일반 (2026년 이후) ----
-          const SizedBox(height: 16),
-          _sectionTitle('연맹별 멘토 대장 분포 (2026년 이후 인가 기준)'),
-          _distTabs('mentor'),
-          _distRows(mentorSrc),
-          const SizedBox(height: 16),
-          _sectionTitle('연맹별 페런츠 분포 (2026년 이후 인가 기준)'),
-          _distTabs('parent'),
-          _distRows(parentSrc),
-          const SizedBox(height: 16),
-          _sectionTitle('연맹별 서포터즈-일반 분포 (2026년 이후 인가 기준)'),
-          _distTabs('supporter'),
-          _distRows(supporterSrc),
-          ],
-
-          const SizedBox(height: 16),
-          if (!eunhaOnly)
-          if (state.positions.isNotEmpty) ...[
-            _sectionTitle('직위 분포 (현재활동)'),
-            ...state.positions.entries.map(
-              (e) => _barRow(
-                context: context,
-                label: e.key,
-                value: e.value,
-                max: state.positions.values.reduce((a, b) => a > b ? a : b),
-                color: AppColors.purple,
-              ),
-            ),
+            // ---- 추가: 멘토 대장 / 페런츠 / 서포터즈-일반 (2026년 이후) ----
             const SizedBox(height: 16),
+            _sectionTitle('연맹별 멘토 대장 분포 (2026년 이후 인가 기준)'),
+            _distTabs('mentor'),
+            _distRows(mentorSrc),
+            const SizedBox(height: 16),
+            _sectionTitle('연맹별 페런츠 분포 (2026년 이후 인가 기준)'),
+            _distTabs('parent'),
+            _distRows(parentSrc),
+            const SizedBox(height: 16),
+            _sectionTitle('연맹별 서포터즈-일반 분포 (2026년 이후 인가 기준)'),
+            _distTabs('supporter'),
+            _distRows(supporterSrc),
           ],
-          if (!eunhaOnly)
-          _sectionTitle('연간회비 납부 현황'),
-          if (!eunhaOnly)
-          ...feeYears.map((y) {
-            final paid = state.members
-                .where((m) => m.feeYears[y] == true)
-                .length;
-            final total = state.total;
-            return _feeRow(y, paid, total);
-          }),
+
           const SizedBox(height: 16),
           if (!eunhaOnly)
-          _sectionTitle('연도별 인가 현황 (2004~2025)'),
+            if (state.positions.isNotEmpty) ...[
+              _sectionTitle('직위 분포 (현재활동)'),
+              ...state.positions.entries.map(
+                (e) => _barRow(
+                  context: context,
+                  label: e.key,
+                  value: e.value,
+                  max: state.positions.values.reduce((a, b) => a > b ? a : b),
+                  color: AppColors.purple,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          if (!eunhaOnly) _sectionTitle('연간회비 납부 현황'),
           if (!eunhaOnly)
-          ...sortedYears.reversed.map((y) {
-            final v = years[y]!;
-            final maxYear = years.values.reduce((a, b) => a > b ? a : b);
-            return _barRow(
-              context: context,
-              label: '$y년',
-              value: v,
-              max: maxYear,
-              color: AppColors.taegeukBlue,
-            );
-          }),
+            ...feeYears.map((y) {
+              final paid = state.members
+                  .where((m) => m.feeYears[y] == true)
+                  .length;
+              final total = state.total;
+              return _feeRow(y, paid, total);
+            }),
+          const SizedBox(height: 16),
+          if (!eunhaOnly) _sectionTitle('연도별 인가 현황 (2004~2025)'),
+          if (!eunhaOnly)
+            ...sortedYears.reversed.map((y) {
+              final v = years[y]!;
+              final maxYear = years.values.reduce((a, b) => a > b ? a : b);
+              return _barRow(
+                context: context,
+                label: '$y년',
+                value: v,
+                max: maxYear,
+                color: AppColors.taegeukBlue,
+              );
+            }),
           const SizedBox(height: 30),
         ],
       ),
@@ -1021,14 +1034,13 @@ class _StatsScreenState extends State<StatsScreen> {
             children: [
               SizedBox(
                 width: _labelW,
-                child: Text(
+                child: MarqueeText(
                   label,
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                   ),
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               Expanded(
@@ -1059,7 +1071,7 @@ class _StatsScreenState extends State<StatsScreen> {
           if (subLabel != null)
             Padding(
               padding: const EdgeInsets.only(left: _labelW - 8, top: 2),
-              child: Text(
+              child: MarqueeText(
                 subLabel,
                 style: const TextStyle(
                   fontSize: 10,
@@ -1067,7 +1079,6 @@ class _StatsScreenState extends State<StatsScreen> {
                   height: 1.15,
                 ),
                 maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
         ],

@@ -44,6 +44,7 @@ Future<void> showTsakOutputSheet(
   VoidCallback? onShareLink,
   VoidCallback? onTxt,
   VoidCallback? onOnePage,
+
   /// 출력 옵션(출력내용선택·위치이동·줄간격·글씨크기·용지) 편집을 연다.
   VoidCallback? onOptions,
 }) {
@@ -324,9 +325,7 @@ class _FmtCard extends StatelessWidget {
                   if (onOpen != null && onShare != null)
                     const SizedBox(width: 5),
                   if (onShare != null)
-                    Expanded(
-                      child: _miniAct(Icons.ios_share, '공유', onShare!),
-                    ),
+                    Expanded(child: _miniAct(Icons.ios_share, '공유', onShare!)),
                 ],
               ),
             ],

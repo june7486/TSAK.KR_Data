@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
@@ -524,11 +525,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
   }
 
   /// 승인요청/연결요청 항목의 상세를 시트로 표시(카드 클릭).
-  void _showRequestDetail(
-    String key,
-    String kind,
-    Map<String, dynamic> m,
-  ) {
+  void _showRequestDetail(String key, String kind, Map<String, dynamic> m) {
     final color = _queueColor(key);
     final name = '${m['name'] ?? '(이름없음)'}';
     final number = '${m['number'] ?? m['ident'] ?? ''}';
@@ -657,8 +654,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     final color = _queueColor(key);
     final name = '${m['name'] ?? '(이름없음)'}';
     final number = '${m['number'] ?? m['ident'] ?? ''}';
-    final numLabel =
-        Member.numLabelOf(number, '${m['corps'] ?? 'tsak'}');
+    final numLabel = Member.numLabelOf(number, '${m['corps'] ?? 'tsak'}');
     final phone = '${m['phone'] ?? m['loginId'] ?? ''}';
     final type = '${m['type'] ?? ''}';
     final year = '${m['year'] ?? ''}'.trim();
@@ -838,27 +834,31 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   _linkRow('페런츠', parents, AppColors.taegeukBlue),
                 // (요구 #3) 멘티·자녀대원 등록정보 — 본인이 멘토/페런츠로서 등록.
                 if ((((m['menteeLabels'] as List?) ??
-                        (m['mentees'] as List?) ??
-                        [])
-                    .map((e) => '$e')
-                    .toList())
+                            (m['mentees'] as List?) ??
+                            [])
+                        .map((e) => '$e')
+                        .toList())
                     .isNotEmpty)
                   _linkRow(
                     '멘티대원',
-                    ((m['menteeLabels'] as List?) ?? (m['mentees'] as List?) ?? [])
+                    ((m['menteeLabels'] as List?) ??
+                            (m['mentees'] as List?) ??
+                            [])
                         .map((e) => '$e')
                         .toList(),
                     AppColors.purple,
                   ),
                 if ((((m['childLabels'] as List?) ??
-                        (m['children'] as List?) ??
-                        [])
-                    .map((e) => '$e')
-                    .toList())
+                            (m['children'] as List?) ??
+                            [])
+                        .map((e) => '$e')
+                        .toList())
                     .isNotEmpty)
                   _linkRow(
                     '자녀대원',
-                    ((m['childLabels'] as List?) ?? (m['children'] as List?) ?? [])
+                    ((m['childLabels'] as List?) ??
+                            (m['children'] as List?) ??
+                            [])
                         .map((e) => '$e')
                         .toList(),
                     AppColors.taegeukBlue,
@@ -1325,13 +1325,12 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   ],
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       '$title  $name${numLabel.isNotEmpty ? ' $numLabel' : ''}',
                       style: const TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w800,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Icon(

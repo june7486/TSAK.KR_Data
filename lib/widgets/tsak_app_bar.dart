@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 
 /// 전 화면 공통 상단바 — TSAK 브랜드를 동일하게 노출한다.
 ///
@@ -89,10 +90,9 @@ class TsakAppBar extends StatelessWidget implements PreferredSizeWidget {
               child: title!,
             ),
           if (title != null) const SizedBox(height: 1),
-          Text(
+          MarqueeText(
             brandLabel,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 9,

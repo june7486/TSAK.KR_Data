@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import 'marquee_text.dart';
 import 'member_avatar.dart';
 
 /// 컬러풀 리스트용 인가자 카드
@@ -126,7 +127,9 @@ class MemberCard extends StatelessWidget {
                 name: member.name,
                 photoPath: member.photoPath,
                 fallbackPhotoUrl:
-                    context.watch<AppState>().serverPhotoUrlFor(member.number) ??
+                    context.watch<AppState>().serverPhotoUrlFor(
+                      member.number,
+                    ) ??
                     '',
                 league: member.league,
                 // 편집 박스 높이에 맞춰 원형 사진을 확대해 균형·식별성 향상
@@ -144,14 +147,13 @@ class MemberCard extends StatelessWidget {
                     Row(
                       children: [
                         Flexible(
-                          child: Text(
+                          child: MarqueeText(
                             member.displayName(canSeeRealName: canSeeRealName),
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 19 * s,
                               color: AppColors.textDark,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         SizedBox(width: 6 * s),
@@ -237,13 +239,12 @@ class MemberCard extends StatelessWidget {
                         if (member.unit.isNotEmpty) ...[
                           SizedBox(width: 5 * s),
                           Flexible(
-                            child: Text(
+                            child: MarqueeText(
                               member.unit,
                               style: TextStyle(
                                 color: AppColors.textGray,
                                 fontSize: 12.5 * s,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -261,21 +262,20 @@ class MemberCard extends StatelessWidget {
                             member.regUnit != member.unit) ...[
                           SizedBox(width: 5 * s),
                           Flexible(
-                            child: Text(
+                            child: MarqueeText(
                               member.regUnit,
                               style: TextStyle(
                                 color: AppColors.taegeukBlue,
                                 fontSize: 12 * s,
                                 fontWeight: FontWeight.w600,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                         if (member.date.isNotEmpty) ...[
                           SizedBox(width: 8 * s),
                           Flexible(
-                            child: Text(
+                            child: MarqueeText(
                               '인가 ${member.date}',
                               style: TextStyle(
                                 color: AppColors.textGray.withValues(
@@ -283,7 +283,6 @@ class MemberCard extends StatelessWidget {
                                 ),
                                 fontSize: 11 * s,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],

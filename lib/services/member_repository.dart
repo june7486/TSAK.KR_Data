@@ -450,12 +450,14 @@ class MemberRepository {
       if (updated.corps == 'eunha') {
         // 은하스카우트 회원: 범스카우트 DB 오염 방지를 위해 **단건 부분 저장**만
         //  수행한다(서버가 corps='eunha' 를 보고 은하 DB로 라우팅).
-        unawaited(_saveOne(
-          updated,
-          linkRequestSource: linkRequestSource,
-          corps: 'eunha',
-          by: 'app',
-        ));
+        unawaited(
+          _saveOne(
+            updated,
+            linkRequestSource: linkRequestSource,
+            corps: 'eunha',
+            by: 'app',
+          ),
+        );
       } else if (isRestricted) {
         // 개인 접근: 본인 1건만 부분 저장 (연결 승인요청방법 전달).
         unawaited(_saveOne(updated, linkRequestSource: linkRequestSource));

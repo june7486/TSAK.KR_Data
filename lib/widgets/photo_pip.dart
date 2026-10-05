@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -209,10 +210,9 @@ class _PhotoPipState extends State<_PhotoPip> {
                         ],
                       ),
                       const SizedBox(height: 6),
-                      Text(
+                      MarqueeText(
                         widget.name,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'NanumGothic',
                           fontWeight: FontWeight.w700,
@@ -222,13 +222,12 @@ class _PhotoPipState extends State<_PhotoPip> {
                       ),
                       if ((widget.unit.isNotEmpty) ||
                           (widget.league.isNotEmpty))
-                        Text(
+                        MarqueeText(
                           [
                             widget.league,
                             widget.unit,
                           ].where((e) => e.isNotEmpty).join(' · '),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontFamily: 'NanumGothic',
                             color: Colors.white70,

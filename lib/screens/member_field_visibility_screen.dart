@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
@@ -192,11 +193,7 @@ class _MemberFieldVisibilityScreenState
       title: Row(
         children: [
           Flexible(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 14),
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: MarqueeText(label, style: const TextStyle(fontSize: 14)),
           ),
           if (sensitive) ...[
             const SizedBox(width: 6),

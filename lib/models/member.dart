@@ -314,13 +314,11 @@ class Member {
   String get corpsFullName => corps == 'eunha' ? '은하스카우트' : '범스카우트';
 
   /// 소속 중앙회 명칭 — 은하스카우트 개인창 헤더용.
-  String get corpsOrgName =>
-      corps == 'eunha' ? '한국은하스카우트중앙회' : '한국범스카우트중앙회';
+  String get corpsOrgName => corps == 'eunha' ? '한국은하스카우트중앙회' : '한국범스카우트중앙회';
 
   /// 인가번호 표기 라벨 — 은하스카우트는 '은하#43', 범스카우트는 '범#43'.
   ///   (요구: "은하스카우트는 #43 → 은하#43, 모든 창에서 그렇게 표시")
-  String get numberLabel =>
-      number.trim().isEmpty ? '' : '$corpsPrefix#$number';
+  String get numberLabel => number.trim().isEmpty ? '' : '$corpsPrefix#$number';
 
   /// 소속 말머리를 붙인 번호(은하#43). [prefixHash] 면 '#' 표기, 아니면 '은하43'.
   String numPrefix({bool prefixHash = true}) {
@@ -332,8 +330,9 @@ class Member {
   ///   범스카우트는 기존처럼 번호만(예: 46). '#' 없이 붙여 쓴다.
   ///   (요구: "은하스카우트의 모든 창에는 인가번호 앞에 은하 접두어를 넣을 것
   ///    '은하'+'n', 예)은하46 … 그래야 범스카우트랑 헷갈리지 않아")
-  String get displayNumber =>
-      corps == 'eunha' ? '은하${number.replaceAll(RegExp(r'[^0-9]'), '')}' : number;
+  String get displayNumber => corps == 'eunha'
+      ? '은하${number.replaceAll(RegExp(r'[^0-9]'), '')}'
+      : number;
 
   /// (정적) Raw 값용 인가번호 표기 — 서버 map 등 Member 미생성 데이터용.
   ///   예: ['43','eunha'] → '은하#43', ['43'] → '범#43'.

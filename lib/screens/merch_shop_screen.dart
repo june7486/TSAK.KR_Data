@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -515,20 +516,18 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       ),
                     ),
                   ),
-                Text(
+                MarqueeText(
                   '${p['name'] ?? ''}',
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
+                MarqueeText(
                   '${p['desc'] ?? ''}',
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textGray,
@@ -1433,10 +1432,9 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   ),
                   const SizedBox(width: 4),
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       video,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.textGray,

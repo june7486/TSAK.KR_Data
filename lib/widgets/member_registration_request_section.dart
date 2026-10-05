@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../models/member.dart';
@@ -350,7 +351,11 @@ class _MemberRegistrationRequestSectionState
     );
   }
 
-  Widget _requestHistory(Member m, {required bool isAdmin, required bool canDelete}) {
+  Widget _requestHistory(
+    Member m, {
+    required bool isAdmin,
+    required bool canDelete,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -391,10 +396,9 @@ class _MemberRegistrationRequestSectionState
                 Icon(icon, size: 13, color: AppColors.textGray),
                 const SizedBox(width: 5),
                 Expanded(
-                  child: Text(
+                  child: MarqueeText(
                     '$label${detail.isNotEmpty ? ' ($detail)' : ''}',
                     style: const TextStyle(fontSize: 12.5),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Container(

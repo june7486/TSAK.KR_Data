@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 
 import '../theme/app_theme.dart';
 
@@ -83,10 +84,9 @@ class MiniBarChart extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
+                    MarqueeText(
                       e.key,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 9,
                         color: AppColors.textGray,
@@ -200,10 +200,9 @@ class MiniDonut extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: Text(
+                          child: MarqueeText(
                             entries[i].key,
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.textDark,
@@ -291,10 +290,9 @@ class MiniRankBar extends StatelessWidget {
         children: [
           SizedBox(
             width: 70,
-            child: Text(
+            child: MarqueeText(
               label,
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w600,

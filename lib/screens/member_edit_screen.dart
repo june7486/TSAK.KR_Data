@@ -684,8 +684,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
                     obscured ? Icons.visibility : Icons.visibility_off,
                     size: 17,
                   ),
-                  onPressed: () =>
-                      setState(() => _pwObscured = !_pwObscured),
+                  onPressed: () => setState(() => _pwObscured = !_pwObscured),
                 ),
                 IconButton(
                   tooltip: '복사',
@@ -808,7 +807,11 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.lock_reset, color: AppColors.tigerGold, size: 32),
+        icon: const Icon(
+          Icons.lock_reset,
+          color: AppColors.tigerGold,
+          size: 32,
+        ),
         title: const Text('비밀번호 초기화 요청'),
         content: const Text(
           '관리자·마스터에게 비밀번호 초기화를 요청하시겠습니까?\n\n'
@@ -832,9 +835,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     final err = await context.read<AppState>().requestPasswordReset();
     if (!mounted) return;
     _snack(
-      err == null
-          ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.'
-          : '요청 실패: $err',
+      err == null ? '초기화 요청을 접수했습니다. 관리자·마스터 승인 후 초기화됩니다.' : '요청 실패: $err',
     );
   }
 
@@ -856,7 +857,9 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('초기화'),
           ),
@@ -864,7 +867,10 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    final err = await context.read<AppState>().setMemberPassword(m, reset: true);
+    final err = await context.read<AppState>().setMemberPassword(
+      m,
+      reset: true,
+    );
     if (!mounted) return;
     _snack(err == null ? '비밀번호를 초기화했습니다 ($target)' : '실패: $err');
   }

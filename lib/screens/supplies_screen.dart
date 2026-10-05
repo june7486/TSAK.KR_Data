@@ -120,16 +120,11 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
   String _whoLabel(Map<String, dynamic> s) {
     final by = '${s['checkedBy'] ?? ''}'.trim();
     final nm = '${s['checkedByName'] ?? ''}'.trim();
-    return [
-      if (by.isNotEmpty) '범#$by',
-      if (nm.isNotEmpty) nm,
-    ].join(' ');
+    return [if (by.isNotEmpty) '범#$by', if (nm.isNotEmpty) nm].join(' ');
   }
 
-  int get _total => _items.fold<int>(
-    0,
-    (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0),
-  );
+  int get _total =>
+      _items.fold<int>(0, (a, e) => a + ((e['qty'] as num?)?.toInt() ?? 0));
 
   // ---------- 사진 업로드 ----------
   Future<String?> _pickPhoto() async {
@@ -259,7 +254,10 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
                           visualDensity: VisualDensity.compact,
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
-                          label: Text(c, style: const TextStyle(fontSize: 10.5)),
+                          label: Text(
+                            c,
+                            style: const TextStyle(fontSize: 10.5),
+                          ),
                           onPressed: () => setDlg(() => category.text = c),
                         ),
                     ],
@@ -536,7 +534,6 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
     );
   }
 
-
   // ==================== 출력 옵션 / 출력 / 공유 (명부출력과 동일) ====================
   TsakTableDoc _doc({required bool selectedOnly}) {
     final src = selectedOnly ? _selectedItems() : _items;
@@ -616,7 +613,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         share: true,
       ),
       onOptions: _editOptions,
-      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/supplies'),
+      onShareLink: () =>
+          showLinkShareDialog(context, '${_nas.baseUrl}/#/supplies'),
     );
   }
 
@@ -654,7 +652,11 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         context,
         title: justPrint
             ? '비품 재고 프린트 준비'
-            : '${open ? '외부 열기' : share ? '공유' : '저장'} · 비품 재고 ${format.label}',
+            : '${open
+                  ? '외부 열기'
+                  : share
+                  ? '공유'
+                  : '저장'} · 비품 재고 ${format.label}',
         note: '${src.length}건 비품 목록을 처리합니다.',
         steps: const ['문서 구성', '파일 생성', '내보내기'],
         task: (ctl) async {
@@ -668,10 +670,12 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
             await printTsakTable(doc);
           } else if (open) {
             final res = await openTsakTableChosen(context, doc, format);
-            if (mounted) _snack(tsakShareMessage(res, what: '비품 ${format.label}'));
+            if (mounted)
+              _snack(tsakShareMessage(res, what: '비품 ${format.label}'));
           } else if (share) {
             final res = await shareTsakTableChosen(context, doc, format);
-            if (mounted) _snack(tsakShareMessage(res, what: '비품 ${format.label}'));
+            if (mounted)
+              _snack(tsakShareMessage(res, what: '비품 ${format.label}'));
           } else {
             await saveTsakTableChosen(context, doc, format, choose: choose);
             if (mounted) _snack('${format.label} 저장을 시작했습니다');

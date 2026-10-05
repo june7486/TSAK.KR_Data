@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/order_detail_screen.dart';
@@ -325,14 +326,13 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(
@@ -356,7 +356,7 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
                   ),
                   const SizedBox(width: 4),
                   Flexible(
-                    child: Text(
+                    child: MarqueeText(
                       '${isReserve ? '예약번호' : '주문번호'} ${orderNo.isEmpty ? '-' : orderNo}',
                       style: const TextStyle(
                         fontSize: 11,
@@ -365,7 +365,6 @@ class _MerchActivitySectionState extends State<MerchActivitySection> {
                         letterSpacing: 0.2,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -467,7 +466,7 @@ class _ProgressBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
+                MarqueeText(
                   steps[i],
                   style: TextStyle(
                     fontSize: 8,
@@ -478,9 +477,8 @@ class _ProgressBar extends StatelessWidget {
                         ? FontWeight.w800
                         : FontWeight.w400,
                   ),
-                  textAlign: TextAlign.center,
+                  align: TextAlign.center,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -181,8 +182,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   bool get _quoteSpecAdminAllowed => _config['quoteSpecAdminAllowed'] == true;
 
   /// 재고표 "단가(원가)" 컬럼의 마스터 노출 여부(마스터가 직접 선택).
-  bool get _costVisible =>
-      _config['costVisibleToMaster'] == true;
+  bool get _costVisible => _config['costVisibleToMaster'] == true;
   Map<String, dynamic> get _account =>
       ((_config['account'] as Map?) ?? {}).cast<String, dynamic>();
   Map<String, dynamic> get _guide =>
@@ -705,7 +705,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 ),
                 const SizedBox(width: 5),
                 Expanded(
-                  child: Text(
+                  child: MarqueeText(
                     orderNo.isEmpty ? '(번호없음) ' : orderNo,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
@@ -714,7 +714,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       letterSpacing: 0.2,
                     ),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 _pill('${items.length}항목', AppColors.textGray),
@@ -723,7 +722,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             if (buyer.isNotEmpty || created.isNotEmpty || bundle != null)
               Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: Text(
+                child: MarqueeText(
                   '$buyer'
                   '${created.isNotEmpty ? ' · $created' : ''}'
                   '${bundle != null ? ' · 묶음:$bundle' : ''}',
@@ -732,7 +731,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     color: AppColors.textGray,
                   ),
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             const Divider(height: 14),
@@ -761,7 +759,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         '${o['product'] ?? o['productName'] ?? '수품'} '
                         '×${(o['qty'] as num?)?.toInt() ?? 1}'
                         '${('${o['option'] ?? ''}'.trim()).isEmpty ? '' : ' / ${o['option']}'}',
@@ -770,7 +768,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                           color: AppColors.textDark,
                         ),
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (!isReserve) ...[
@@ -1234,16 +1231,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  MarqueeText(
                     orderNo.isEmpty ? '(번호없음)' : orderNo,
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
+                  MarqueeText(
                     '${e.isReserve ? '예약·수요조사' : '주문'} · '
                     '${buyer.isEmpty ? '구매자 미상' : buyer} · ${e.items.length}항목',
                     style: const TextStyle(
@@ -1251,7 +1247,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       color: AppColors.textGray,
                     ),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -1484,11 +1479,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
           ),
           const SizedBox(width: 5),
           Expanded(
-            child: Text(
+            child: MarqueeText(
               '${a['orderNo'] ?? ''} · ${a['buyerName'] ?? ''} · ${a['product'] ?? ''}',
               style: const TextStyle(fontSize: 12),
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(
@@ -1811,7 +1805,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                   const SizedBox(width: 5),
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       orderNo.isEmpty
                           ? (isReserve ? '(예약번호 없음)' : '(주문번호 없음)')
                           : '${isReserve ? '예약' : '주문'} $orderNo',
@@ -1822,7 +1816,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         letterSpacing: 0.2,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   if (!isReserve)
@@ -1867,7 +1860,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         style: TextStyle(color: AppColors.textGray),
                       ),
                       Expanded(
-                        child: Text(
+                        child: MarqueeText(
                           '${o['product'] ?? o['productName'] ?? '수품'} '
                           '×${(o['qty'] as num?)?.toInt() ?? 1}'
                           '${('${o['option'] ?? ''}'.trim()).isEmpty ? '' : ' / ${o['option']}'}',
@@ -1876,7 +1869,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                             color: AppColors.textDark,
                           ),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (!isReserve) ...[
@@ -1909,7 +1901,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                   const SizedBox(width: 3),
                   Expanded(
-                    child: Text(
+                    child: MarqueeText(
                       '${buyer.isEmpty ? '구매자 미상' : buyer}'
                       '${buyerNo.isEmpty ? '' : ' · $buyerNo'}'
                       '${buyerPhone.isEmpty ? '' : ' · $buyerPhone'}',
@@ -1918,19 +1910,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         color: AppColors.textDark,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Flexible(
-                    child: Text(
+                    child: MarqueeText(
                       created,
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.textGray,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2131,10 +2121,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         ),
                       ],
                       Expanded(
-                        child: Text(
+                        child: MarqueeText(
                           '${p['name'] ?? ''}',
                           maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 14.5,
@@ -2232,14 +2221,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         ),
                         const SizedBox(width: 3),
                         Expanded(
-                          child: Text(
+                          child: MarqueeText(
                             '견적 세부항목 ${specList.length}건'
                             '${quoteName.isNotEmpty ? ' · $quoteName' : ''}',
                             style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.tigerGold,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -2433,14 +2421,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                   items: const [
                     DropdownMenuItem(value: '', child: Text('미분류')),
-                    DropdownMenuItem(
-                      value: '세트·멤버십',
-                      child: Text('세트·멤버십'),
-                    ),
-                    DropdownMenuItem(
-                      value: '의류·착용류',
-                      child: Text('의류·착용류'),
-                    ),
+                    DropdownMenuItem(value: '세트·멤버십', child: Text('세트·멤버십')),
+                    DropdownMenuItem(value: '의류·착용류', child: Text('의류·착용류')),
                     DropdownMenuItem(
                       value: '배지·패치·조임류',
                       child: Text('배지·패치·조임류'),
@@ -2512,9 +2494,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       for (final m in _makers)
                         DropdownMenuItem(
                           value: '${m['id']}',
-                          child: Text(
+                          child: MarqueeText(
                             '${m['company'] ?? m['name'] ?? m['id']}',
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                     ],
@@ -2613,7 +2594,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       ),
                       const SizedBox(width: 4),
                       Expanded(
-                        child: Text(
+                        child: MarqueeText(
                           quoteFileName.isEmpty
                               ? '견적서 파일 없음'
                               : '견적서: $quoteFileName',
@@ -2621,7 +2602,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                             fontSize: 11.5,
                             color: AppColors.textGray,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       TextButton.icon(
@@ -3024,10 +3004,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       ),
                       onPressed: () => onOpen(f),
                       icon: const Icon(Icons.open_in_new, size: 13),
-                      label: const Text(
-                        '열기',
-                        style: TextStyle(fontSize: 11.5),
-                      ),
+                      label: const Text('열기', style: TextStyle(fontSize: 11.5)),
                     ),
                     TextButton.icon(
                       style: TextButton.styleFrom(
@@ -3038,10 +3015,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       ),
                       onPressed: () => onShare(f),
                       icon: const Icon(Icons.ios_share, size: 13),
-                      label: const Text(
-                        '공유',
-                        style: TextStyle(fontSize: 11.5),
-                      ),
+                      label: const Text('공유', style: TextStyle(fontSize: 11.5)),
                     ),
                   ],
                 ),
@@ -3360,7 +3334,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         mime: f.mime,
         subject: '수품 재고 현황표',
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '재고 현황표 ${format.label}'));
+      if (mounted)
+        _snack(tsakShareMessage(res, what: '재고 현황표 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
     }
@@ -3441,13 +3416,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         );
       case TsakOutputFormat.ppt:
         return (
-          bytes: Uint8List.fromList(utf8.encode(_stockPlainText(stock, format))),
+          bytes: Uint8List.fromList(
+            utf8.encode(_stockPlainText(stock, format)),
+          ),
           ext: 'ppt',
           mime: 'application/vnd.ms-powerpoint',
         );
       case TsakOutputFormat.word:
         return (
-          bytes: Uint8List.fromList(utf8.encode(_stockPlainText(stock, format))),
+          bytes: Uint8List.fromList(
+            utf8.encode(_stockPlainText(stock, format)),
+          ),
           ext: 'doc',
           mime: 'application/msword',
         );
@@ -3502,12 +3481,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         );
       }
       if (!ok) {
-        await _saveBytes(
-          f.bytes,
-          '수품_공여내역.${f.ext}',
-          mime: f.mime,
-          ask: false,
-        );
+        await _saveBytes(f.bytes, '수품_공여내역.${f.ext}', mime: f.mime, ask: false);
       }
     } catch (e) {
       if (mounted) _snack('열기 실패: $e');
@@ -3556,17 +3530,13 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         );
       case TsakOutputFormat.ppt:
         return (
-          bytes: Uint8List.fromList(
-            utf8.encode(_donationPlainText(format)),
-          ),
+          bytes: Uint8List.fromList(utf8.encode(_donationPlainText(format))),
           ext: 'ppt',
           mime: 'application/vnd.ms-powerpoint',
         );
       case TsakOutputFormat.word:
         return (
-          bytes: Uint8List.fromList(
-            utf8.encode(_donationPlainText(format)),
-          ),
+          bytes: Uint8List.fromList(utf8.encode(_donationPlainText(format))),
           ext: 'doc',
           mime: 'application/msword',
         );
@@ -3894,8 +3864,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         justPrint: true,
       ),
       onEmail: () => _emailLedgerRows(rows),
-      onShare: () =>
-          _shareLedgerRows(rows, selectedOnly: selectedOnly),
+      onShare: () => _shareLedgerRows(rows, selectedOnly: selectedOnly),
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
       onOpen: (f) => _openLedgerRows(f, rows: rows, selectedOnly: selectedOnly),
       onShareFormat: (f) =>
@@ -4021,7 +3990,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
@@ -4055,7 +4028,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await openTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
         },
@@ -4779,7 +4756,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 child: InkWell(
                   onTap: () => _showOrderDetail(row, isReserve: !isOrder),
                   borderRadius: BorderRadius.circular(6),
-                  child: Text(
+                  child: MarqueeText(
                     orderNo.isEmpty ? '(번호 없음)' : '$orderNo  ›',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
@@ -4788,7 +4765,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       letterSpacing: 0.2,
                     ),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
@@ -4819,7 +4795,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ),
                   const SizedBox(width: 4),
                   Flexible(
-                    child: Text(
+                    child: MarqueeText(
                       '${buyer.isEmpty ? '주문자 미상' : buyer} · '
                       '${product.isEmpty ? '상품' : product}${qty > 1 ? ' ×$qty' : ''}',
                       style: const TextStyle(
@@ -4828,7 +4804,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         color: AppColors.taegeukBlue,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const Text(
@@ -5013,7 +4988,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(
+                  MarqueeText(
                     '${r['product'] ?? ''}'
                     '${(r['qty'] as num?)?.toInt() != null ? ' ×${r['qty']}' : ''}'
                     ' · ${r['created'] ?? ''}',
@@ -5022,7 +4997,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                       color: AppColors.textGray,
                     ),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -5184,13 +5158,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   List<(String, List<Map<String, dynamic>>)> _stockGroups(
     List<Map<String, dynamic>> stock,
   ) {
-    const order = [
-      '세트·멤버십',
-      '의류·착용류',
-      '배지·패치·조임류',
-      '약장·메달·기념품',
-      '기타·열전사·포장',
-    ];
+    const order = ['세트·멤버십', '의류·착용류', '배지·패치·조임류', '약장·메달·기념품', '기타·열전사·포장'];
     final map = <String, List<Map<String, dynamic>>>{};
     for (final s in stock) {
       final p = _productOf(s);
@@ -5323,7 +5291,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onEmail: () => _emailStock(stock),
       onShare: () => _shareStock(stock),
       onOptions: () => _editSimpleOptions(key: 'stock', title: '수품 재고 출력 옵션'),
-      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
+      onShareLink: () =>
+          showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
 
@@ -5535,7 +5504,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                         if (makerName.isNotEmpty)
                           GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => _openMakerPip('${product?['makerId']}'),
+                            onTap: () =>
+                                _openMakerPip('${product?['makerId']}'),
                             child: Text(
                               '제작 $makerName',
                               style: const TextStyle(
@@ -5577,9 +5547,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   ? null
                   : () => _toggleForSale(product, !forSale),
               icon: Icon(
-                forSale
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
+                forSale ? Icons.check_box : Icons.check_box_outline_blank,
                 size: 20,
                 color: forSale ? AppColors.scoutGreen : AppColors.textGray,
               ),
@@ -5644,7 +5612,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   child: Text(forSale ? '상품판매 해제' : '상품판매 설정'),
                 ),
                 const PopupMenuDivider(),
-                const PopupMenuItem(value: 'edit', child: Text('상품 수정 (사진·정보)')),
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Text('상품 수정 (사진·정보)'),
+                ),
                 const PopupMenuItem(value: 'del', child: Text('상품 삭제')),
               ],
             ),
@@ -6067,7 +6038,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onShare: () => _shareDonation(),
       onOptions: () =>
           _editSimpleOptions(key: 'donation', title: '수품 공여 출력 옵션'),
-      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
+      onShareLink: () =>
+          showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
   }
 
@@ -6399,7 +6371,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Future<void> _showMakerOutputSheet() async {
     final madeCount = _purchases
         .where(
-          (p) => _makers.any((m) => '${p['makerId'] ?? ''}' == '${m['id'] ?? ''}'),
+          (p) =>
+              _makers.any((m) => '${p['makerId'] ?? ''}' == '${m['id'] ?? ''}'),
         )
         .length;
     if (_makers.isEmpty || madeCount == 0) {
@@ -6416,10 +6389,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onPrint: () => _runMakerOutput(TsakOutputFormat.pdf, justPrint: true),
       onEmail: _emailMaker,
       onShare: () => _runMakerOutput(TsakOutputFormat.pdf, share: true),
-      onOptions: () => _editSimpleOptions(
-        key: 'maker',
-        title: '수품 제작내역서 출력 옵션',
-      ),
+      onOptions: () =>
+          _editSimpleOptions(key: 'maker', title: '수품 제작내역서 출력 옵션'),
       onShareLink: () => showLinkShareDialog(context, _nas.baseUrl),
     );
   }
@@ -6488,8 +6459,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     return TsakTableDoc(
       title: '수품 제작 내역서',
       subtitle: '한국범스카우트중앙회 · 제작자별 제작 수품',
-      description:
-          '제작자(업체)별로 제작한 수품의 규격·수량·단가·합계·제작일 내역입니다. (결제·입금 정보 제외)',
+      description: '제작자(업체)별로 제작한 수품의 규격·수량·단가·합계·제작일 내역입니다. (결제·입금 정보 제외)',
       author: _whoName(),
       extra: {
         '제작자': '${_makers.length}곳',
@@ -6531,7 +6501,11 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         context,
         title: justPrint
             ? '제작 내역서 프린트 준비'
-            : '${open ? '외부 열기' : share ? '공유' : '저장'} · 제작 내역서 ${format.label}',
+            : '${open
+                  ? '외부 열기'
+                  : share
+                  ? '공유'
+                  : '저장'} · 제작 내역서 ${format.label}',
         note: '제작자 ${_makers.length}곳의 제작 내역을 처리합니다.',
         steps: const ['문서 구성', '파일 생성', '내보내기'],
         task: (ctl) async {
@@ -6545,10 +6519,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             await printTsakTable(doc);
           } else if (open) {
             final res = await openTsakTableChosen(context, doc, format);
-            if (mounted) _snack(tsakShareMessage(res, what: '제작 내역서 ${format.label}'));
+            if (mounted)
+              _snack(tsakShareMessage(res, what: '제작 내역서 ${format.label}'));
           } else if (share) {
             final res = await shareTsakTableChosen(context, doc, format);
-            if (mounted) _snack(tsakShareMessage(res, what: '제작 내역서 ${format.label}'));
+            if (mounted)
+              _snack(tsakShareMessage(res, what: '제작 내역서 ${format.label}'));
           } else {
             await saveTsakTableChosen(context, doc, format, choose: choose);
             if (mounted) _snack('${format.label} 저장을 시작했습니다');
@@ -7393,13 +7369,12 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       child: Row(
         children: [
           Expanded(
-            child: Text(
+            child: MarqueeText(
               value.isEmpty ? '$label (없음)' : '$label: $value',
               style: TextStyle(
                 fontSize: 12,
                 color: value.isEmpty ? AppColors.textGray : AppColors.textDark,
               ),
-              overflow: TextOverflow.ellipsis,
             ),
           ),
           TextButton(

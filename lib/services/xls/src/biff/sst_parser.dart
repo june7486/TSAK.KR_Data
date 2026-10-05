@@ -89,8 +89,9 @@ class SstParser {
       value = String.fromCharCodes(chars);
     } else {
       // Latin-1 encoding
-      final endPos =
-          pos + charCount > data.length ? data.length : pos + charCount;
+      final endPos = pos + charCount > data.length
+          ? data.length
+          : pos + charCount;
       value = String.fromCharCodes(data.sublist(pos, endPos));
       pos = endPos;
     }
@@ -145,8 +146,9 @@ class BiffStringReader {
       }
       value = String.fromCharCodes(chars);
     } else {
-      final endPos =
-          pos + charCount > data.length ? data.length : pos + charCount;
+      final endPos = pos + charCount > data.length
+          ? data.length
+          : pos + charCount;
       value = String.fromCharCodes(data.sublist(pos, endPos));
       pos = endPos;
     }

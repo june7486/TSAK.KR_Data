@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
@@ -252,10 +253,9 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                       const SizedBox(width: 5),
                     ],
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         title.isEmpty ? '(내용 없음)' : title,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -296,12 +296,11 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                     ],
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
+                      child: MarqueeText(
                         updated.isNotEmpty && updated != created
                             ? '$created (수정)'
                             : created,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textGray,

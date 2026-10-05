@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:printing/printing.dart';
 
@@ -100,13 +101,12 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
+                        child: MarqueeText(
                           d.title,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],

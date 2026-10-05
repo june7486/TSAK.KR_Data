@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -351,9 +352,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     for (final m in _makers)
                       DropdownMenuItem(
                         value: '${m['id']}',
-                        child: Text(
+                        child: MarqueeText(
                           '${m['company'] ?? m['name'] ?? m['id']}',
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                   ],
@@ -559,7 +559,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         return (bytes: await pdfToJpg(bytes), ext: 'jpg', mime: 'image/jpeg');
       case TsakOutputFormat.excel:
         return (
-          bytes: Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(_csvText())]),
+          bytes: Uint8List.fromList([
+            0xEF,
+            0xBB,
+            0xBF,
+            ...utf8.encode(_csvText()),
+          ]),
           ext: 'csv',
           mime: 'text/csv',
         );
@@ -607,17 +612,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     }
     try {
       final f = await _buildFormatBytes(format);
-      final ok = openFileExternally(
-        f.bytes,
-        '중앙회_물건_결제_내역.${f.ext}',
-        f.mime,
-      );
+      final ok = openFileExternally(f.bytes, '중앙회_물건_결제_내역.${f.ext}', f.mime);
       if (!ok) {
-        await _saveBytes(
-          f.bytes,
-          '중앙회_물건_결제_내역.${f.ext}',
-          mime: f.mime,
-        );
+        await _saveBytes(f.bytes, '중앙회_물건_결제_내역.${f.ext}', mime: f.mime);
       }
       _snack(
         ok
@@ -721,7 +718,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       onOpen: _openFormat,
       onShareFormat: _shareFormat,
       onShare: () => _shareFormat(TsakOutputFormat.pdf),
-      onShareLink: () => showLinkShareDialog(context, '${_nas.baseUrl}/#/purchase'),
+      onShareLink: () =>
+          showLinkShareDialog(context, '${_nas.baseUrl}/#/purchase'),
     );
   }
 
@@ -874,12 +872,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       });
     return [
       for (final k in keys)
-        {
-          'key': k,
-          'label': k,
-          'year': _yearOf(k),
-          'items': map[k]!,
-        },
+        {'key': k, 'label': k, 'year': _yearOf(k), 'items': map[k]!},
     ];
   }
 
@@ -926,7 +919,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final n = gs.fold<int>(0, (a, g) => a + (g['items'] as List).length);
     final sum = gs.fold<int>(
       0,
-      (a, g) => a + (g['items'] as List).fold<int>(0, (x, e) => x + _wonInt(e['amount'])),
+      (a, g) =>
+          a +
+          (g['items'] as List).fold<int>(0, (x, e) => x + _wonInt(e['amount'])),
     );
     return Container(
       margin: const EdgeInsets.fromLTRB(2, 10, 2, 6),
@@ -967,8 +962,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final isNone = mid.isEmpty;
     final m = isNone ? null : _mk(mid);
     final contact = <String>[
-      if ((m?['ceo'] ?? '').toString().trim().isNotEmpty)
-        '대표 ${m?['ceo']}',
+      if ((m?['ceo'] ?? '').toString().trim().isNotEmpty) '대표 ${m?['ceo']}',
       if ((m?['manager'] ?? '').toString().trim().isNotEmpty)
         '담당 ${m?['manager']}',
       if ((m?['phone'] ?? '').toString().trim().isNotEmpty) '${m?['phone']}',
@@ -1340,10 +1334,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               for (final m in _makers)
                 DropdownMenuItem(
                   value: '${m['id']}',
-                  child: Text(
-                    '${m['company'] ?? m['name'] ?? m['id']}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: MarqueeText('${m['company'] ?? m['name'] ?? m['id']}'),
                 ),
             ],
             onChanged: (v) => setDlg(() => target = v ?? ''),
@@ -1553,10 +1544,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     ),
                   ),
                   if (note.isNotEmpty)
-                    Text(
+                    MarqueeText(
                       note,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 10.5,
                         color: AppColors.scoutGreen,
@@ -1705,10 +1695,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               for (final m in _makers)
                 DropdownMenuItem(
                   value: '${m['id']}',
-                  child: Text(
-                    '${m['company'] ?? m['name'] ?? m['id']}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: MarqueeText('${m['company'] ?? m['name'] ?? m['id']}'),
                 ),
             ],
             onChanged: (v) => setDlg(() => target = v ?? ''),

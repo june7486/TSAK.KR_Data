@@ -21,6 +21,7 @@ Future<TableOutputOptions?> showTsakTableOptions(
   required List<String> columns,
   TableOutputOptions? initial,
   bool allowLandscape = true,
+
   /// false 면 출력내용선택·위치이동 패널을 숨긴다(표가 아닌 텍스트 출력용).
   bool allowColumns = true,
 }) {
@@ -67,11 +68,7 @@ Future<TableOutputOptions?> showTsakTableOptions(
                 children: [
                   Row(
                     children: [
-                      const Icon(
-                        Icons.tune,
-                        size: 18,
-                        color: AppColors.purple,
-                      ),
+                      const Icon(Icons.tune, size: 18, color: AppColors.purple),
                       const SizedBox(width: 7),
                       Expanded(
                         child: Text(
@@ -152,94 +149,96 @@ Future<TableOutputOptions?> showTsakTableOptions(
                           const SizedBox(height: 18),
                           // ── 출력내용 선택 · 위치이동 ──
                           if (allowColumns) ...[
-                          Row(
-                            children: [
-                              _sec('출력내용 선택 · 위치이동'),
-                              const Spacer(),
-                              Text(
-                                '${sel.length}/${columns.length}',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: AppColors.textGray,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          const Text(
-                            'V 표시된 항목만 출력됩니다. 화살표(▲▼)로 순서를 옮기세요.',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: AppColors.textGray,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              _mini('전체', () {
-                                setSheet(() {
-                                  sel
-                                    ..clear()
-                                    ..addAll(
-                                      List<int>.generate(
-                                        columns.length,
-                                        (i) => i,
-                                      ),
-                                    );
-                                });
-                              }),
-                              _mini('해제', () => setSheet(() => sel.clear())),
-                              _mini('기본', () {
-                                setSheet(() {
-                                  sel
-                                    ..clear()
-                                    ..addAll(
-                                      List<int>.generate(
-                                        columns.length,
-                                        (i) => i,
-                                      ),
-                                    );
-                                  order = List<int>.generate(
-                                    columns.length,
-                                    (i) => i,
-                                  );
-                                });
-                              }),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: AppColors.purple.withValues(alpha: 0.18),
-                              ),
-                            ),
-                            child: Column(
+                            Row(
                               children: [
-                                for (var i = 0; i < order.length; i++)
-                                  _colRow(
-                                    no: i + 1,
-                                    index: order[i],
-                                    name: columns[order[i]],
-                                    on: sel.contains(order[i]),
-                                    onTap: () => setSheet(() {
-                                      if (sel.contains(order[i])) {
-                                        sel.remove(order[i]);
-                                      } else {
-                                        sel.add(order[i]);
-                                      }
-                                    }),
-                                    onUp: i > 0 ? () => move(i, -1) : null,
-                                    onDown: i < order.length - 1
-                                        ? () => move(i, 1)
-                                        : null,
+                                _sec('출력내용 선택 · 위치이동'),
+                                const Spacer(),
+                                Text(
+                                  '${sel.length}/${columns.length}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: AppColors.textGray,
+                                    fontWeight: FontWeight.w700,
                                   ),
+                                ),
                               ],
                             ),
-                          ),
+                            const SizedBox(height: 3),
+                            const Text(
+                              'V 표시된 항목만 출력됩니다. 화살표(▲▼)로 순서를 옮기세요.',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.textGray,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                _mini('전체', () {
+                                  setSheet(() {
+                                    sel
+                                      ..clear()
+                                      ..addAll(
+                                        List<int>.generate(
+                                          columns.length,
+                                          (i) => i,
+                                        ),
+                                      );
+                                  });
+                                }),
+                                _mini('해제', () => setSheet(() => sel.clear())),
+                                _mini('기본', () {
+                                  setSheet(() {
+                                    sel
+                                      ..clear()
+                                      ..addAll(
+                                        List<int>.generate(
+                                          columns.length,
+                                          (i) => i,
+                                        ),
+                                      );
+                                    order = List<int>.generate(
+                                      columns.length,
+                                      (i) => i,
+                                    );
+                                  });
+                                }),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: AppColors.purple.withValues(
+                                    alpha: 0.18,
+                                  ),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  for (var i = 0; i < order.length; i++)
+                                    _colRow(
+                                      no: i + 1,
+                                      index: order[i],
+                                      name: columns[order[i]],
+                                      on: sel.contains(order[i]),
+                                      onTap: () => setSheet(() {
+                                        if (sel.contains(order[i])) {
+                                          sel.remove(order[i]);
+                                        } else {
+                                          sel.add(order[i]);
+                                        }
+                                      }),
+                                      onUp: i > 0 ? () => move(i, -1) : null,
+                                      onDown: i < order.length - 1
+                                          ? () => move(i, 1)
+                                          : null,
+                                    ),
+                                ],
+                              ),
+                            ),
                           ],
                         ],
                       ),
@@ -379,11 +378,7 @@ Widget _orient(String label, IconData icon, bool on, VoidCallback onTap) {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: on ? Colors.white : AppColors.textDark,
-          ),
+          Icon(icon, size: 16, color: on ? Colors.white : AppColors.textDark),
           const SizedBox(width: 6),
           Text(
             label,

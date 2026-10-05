@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -1597,14 +1598,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                MarqueeText(
                   _s(o, 'product').isEmpty ? '(상품명 없음)' : _s(o, 'product'),
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 13.5,
                   ),
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 // 항목이 속한 주문번호(묶음 주문 시 항목별로 다를 수 있음)
                 if (_s(o, 'orderNo').isNotEmpty)

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image/image.dart' as img;
 import 'package:printing/printing.dart';
@@ -762,11 +763,10 @@ class _ExportScreenState extends State<ExportScreen>
                         ),
                       ),
                       const SizedBox(height: 1),
-                      Text(
+                      MarqueeText(
                         note(v),
-                        textAlign: TextAlign.center,
+                        align: TextAlign.center,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 9,
                           color: current == v
@@ -1483,7 +1483,8 @@ class _ExportScreenState extends State<ExportScreen>
   /// 선택 형식의 **첫 파일 바이트와 이름/확장자/MIME**을 만든다(저장·공유·열기 공용).
   ///
   /// JPG 는 PDF 를 만들어 첫 페이지를 래스터화한다([_doExport] 와 동일 규칙).
-  Future<({Uint8List bytes, String name, String ext, String mime})> _buildFirstFile(
+  Future<({Uint8List bytes, String name, String ext, String mime})>
+  _buildFirstFile(
     List<Member> list,
     List<String> fields,
     String baseName,
@@ -1491,7 +1492,12 @@ class _ExportScreenState extends State<ExportScreen>
   ) async {
     final name = '$baseName$suffix';
     final bytes = await _buildBytesFor(_format, list, fields);
-    return (bytes: bytes, name: name, ext: _format.extension, mime: _mimeStr(_format));
+    return (
+      bytes: bytes,
+      name: name,
+      ext: _format.extension,
+      mime: _mimeStr(_format),
+    );
   }
 
   /// 형식별 바이트 생성(저장/공유/열기 공용).
@@ -1553,7 +1559,11 @@ class _ExportScreenState extends State<ExportScreen>
         steps: ['문서 구성', '${_format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${_format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${_format.label} 생성 중…',
+            stepIndex: 1,
+          );
           final f = await _buildFirstFile(_visible, fields, _baseName(), 0);
           res = await shareBytes(
             bytes: f.bytes,
@@ -1593,7 +1603,11 @@ class _ExportScreenState extends State<ExportScreen>
         steps: ['문서 구성', '${_format.label} 생성', '외부 프로그램 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${_format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${_format.label} 생성 중…',
+            stepIndex: 1,
+          );
           final f = await _buildFirstFile(_visible, fields, _baseName(), 0);
           final opened = openFileExternally(
             f.bytes,

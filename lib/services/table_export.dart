@@ -144,9 +144,7 @@ class TsakTableDoc {
       final r = rs[i];
       final parts = <String>[];
       for (var c = 0; c < r.length; c++) {
-        parts.add(
-          c == 0 ? r[c] : '${cols.length > c ? cols[c] : ''}=${r[c]}',
-        );
+        parts.add(c == 0 ? r[c] : '${cols.length > c ? cols[c] : ''}=${r[c]}');
       }
       b.writeln('${i + 1}. ${parts.join(' / ')}');
     }
@@ -257,11 +255,7 @@ Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
         mime: 'application/msword',
       );
     case TsakOutputFormat.txt:
-      return (
-        bytes: _bytes(doc.toPlainText()),
-        ext: 'txt',
-        mime: 'text/plain',
-      );
+      return (bytes: _bytes(doc.toPlainText()), ext: 'txt', mime: 'text/plain');
   }
 }
 

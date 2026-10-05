@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/hscroll_menu.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/scroll_arrows.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
@@ -288,7 +289,15 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
           preferredSize: const Size.fromHeight(50),
           child: HsTabStrip(
             controller: _tab,
-            labels: ['범인가자', '멘토 대장', '페런츠', '서포터즈', if (isMaster) '관리자', 'ATAS', '은하스카우트'],
+            labels: [
+              '범인가자',
+              '멘토 대장',
+              '페런츠',
+              '서포터즈',
+              if (isMaster) '관리자',
+              'ATAS',
+              '은하스카우트',
+            ],
             bg: AppColors.purple,
           ),
         ),
@@ -613,11 +622,10 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
               }),
             ),
             Expanded(
-              child: Text(
+              child: MarqueeText(
                 '$no  $name',
                 style: const TextStyle(fontSize: 11.5),
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -812,7 +820,11 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await openTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
         },
@@ -936,7 +948,11 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
@@ -954,16 +970,14 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     final buf = StringBuffer(headers.join('\t'));
     buf.writeln();
     for (final r in rows) {
-      final cells = r
-          .where((w) => w is! Checkbox)
-          .map((w) {
-            if (w is Text) return w.data ?? '';
-            if (w is Row) {
-              final t = w.children.whereType<Text>().firstOrNull;
-              return t?.data ?? '';
-            }
-            return '';
-          });
+      final cells = r.where((w) => w is! Checkbox).map((w) {
+        if (w is Text) return w.data ?? '';
+        if (w is Row) {
+          final t = w.children.whereType<Text>().firstOrNull;
+          return t?.data ?? '';
+        }
+        return '';
+      });
       buf.writeln(cells.join('\t'));
     }
     await Clipboard.setData(ClipboardData(text: buf.toString()));
@@ -994,9 +1008,9 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
 
   /// 회원 id 로 상세화면 이동.
   void _openDetailById(String id) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: id)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: id)));
   }
 
   /// 클릭 가능한 이름 셀(회원 객체) — 탭하면 개인정보 화면으로 이동한다(요구).

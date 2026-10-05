@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:flutter/services.dart'
     show Clipboard, ClipboardData, TextInputFormatter, TextEditingValue;
 import 'package:qr_flutter/qr_flutter.dart';
@@ -695,11 +696,10 @@ class _TransferSheetState extends State<_TransferSheet> {
               ],
             ),
             const SizedBox(height: 3),
-            Text(
+            MarqueeText(
               b['name']!,
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+              align: TextAlign.center,
               style: const TextStyle(fontSize: 9.5, color: AppColors.textDark),
             ),
             Text(

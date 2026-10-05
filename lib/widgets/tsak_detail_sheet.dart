@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marquee_text.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
@@ -107,10 +108,9 @@ Widget _header(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              MarqueeText(
                 title,
                 maxLines: 2,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -119,10 +119,9 @@ Widget _header(
               ),
               if (subtitle != null && subtitle.trim().isNotEmpty) ...[
                 const SizedBox(height: 2),
-                Text(
+                MarqueeText(
                   subtitle,
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.85),
                     fontSize: 12,
@@ -205,7 +204,9 @@ Widget _entryRow(BuildContext ctx, TsakDetailEntry e, Color accent) {
                 style: TextStyle(
                   fontSize: e.emphasize ? 14 : 13,
                   fontWeight: e.emphasize ? FontWeight.w800 : FontWeight.w500,
-                  color: value.isEmpty ? AppColors.textGray : AppColors.textDark,
+                  color: value.isEmpty
+                      ? AppColors.textGray
+                      : AppColors.textDark,
                   fontFeatures: e.mono
                       ? const [FontFeature.tabularFigures()]
                       : null,

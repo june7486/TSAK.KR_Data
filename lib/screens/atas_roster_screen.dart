@@ -11,6 +11,7 @@ import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
 import 'member_detail_screen.dart';
@@ -77,11 +78,13 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
     final q = _q.trim().toLowerCase();
     if (q.isEmpty) return ms;
     return ms
-        .where((m) =>
-            m.searchText.contains(q) ||
-            'atas${m.atasNo}'.contains(q) ||
-            m.atasNo.contains(q) ||
-            m.name.contains(q))
+        .where(
+          (m) =>
+              m.searchText.contains(q) ||
+              'atas${m.atasNo}'.contains(q) ||
+              m.atasNo.contains(q) ||
+              m.name.contains(q),
+        )
         .toList();
   }
 
@@ -145,8 +148,11 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    const Icon(Icons.military_tech,
-                        size: 16, color: AppColors.tigerGold),
+                    const Icon(
+                      Icons.military_tech,
+                      size: 16,
+                      color: AppColors.tigerGold,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       'ATAS 명부 ${all.length}명'
@@ -236,15 +242,19 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
         m.date.trim(),
       ]);
     }
-    final title =
-        '아타스(ATAS) 명부${_q.isEmpty ? '' : ' (검색 ${list.length}명)'}';
+    final title = '아타스(ATAS) 명부${_q.isEmpty ? '' : ' (검색 ${list.length}명)'}';
     await showTsakOutputSheet(
       context,
       title: '아타스 명부 출력',
       subtitle: 'ATAS ${list.length}명 · 범스카우트',
       onPick: (f) => _runOutput(title, headers, rows, f),
-      onPrint: () =>
-          _runOutput(title, headers, rows, TsakOutputFormat.pdf, justPrint: true),
+      onPrint: () => _runOutput(
+        title,
+        headers,
+        rows,
+        TsakOutputFormat.pdf,
+        justPrint: true,
+      ),
       onEmail: () => _emailOutput(title, headers, rows),
       onShare: () => _shareOutput(title, headers, rows),
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
@@ -278,13 +288,9 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
         note: '전원 ${members.length}명을 한 장에 맞춥니다.',
         steps: const ['레이아웃 계산', 'PDF 생성', '파일 저장'],
         task: (ctl) async {
-          ctl.update(
-              progress: 0.2, message: '열·글자 크기를 계산하는 중…', stepIndex: 0);
+          ctl.update(progress: 0.2, message: '열·글자 크기를 계산하는 중…', stepIndex: 0);
           final pdf = await DocPdf.buildRosterOnePage(
-            meta: const DocMeta(
-              title: '아타스(ATAS) 명부',
-              subtitle: '범스카우트 인가자',
-            ),
+            meta: const DocMeta(title: '아타스(ATAS) 명부', subtitle: '범스카우트 인가자'),
             rows: [
               // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
               for (final m in members)
@@ -367,9 +373,10 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
             return;
           }
           ctl.update(
-              progress: 0.5,
-              message: '${format.label} 생성 중…',
-              stepIndex: 1);
+            progress: 0.5,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           await saveTsakTableChosen(context, doc, format, choose: choose);
           ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
         },
@@ -430,12 +437,17 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
         steps: ['문서 구성', '${format.label} 생성', '공유 시트 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await shareTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '공유 시트를 엽니다', stepIndex: 2);
         },
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '아타스 명부 ${format.label}'));
+      if (mounted)
+        _snack(tsakShareMessage(res, what: '아타스 명부 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('공유 실패: $e');
     } finally {
@@ -473,12 +485,17 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
         steps: ['문서 구성', '${format.label} 생성', '외부 프로그램 열기'],
         task: (ctl) async {
           ctl.update(progress: 0.2, message: '문서를 구성하는 중…', stepIndex: 0);
-          ctl.update(progress: 0.6, message: '${format.label} 생성 중…', stepIndex: 1);
+          ctl.update(
+            progress: 0.6,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
           res = await openTsakTableChosen(context, doc, format);
           ctl.update(progress: 1.0, message: '외부 프로그램을 엽니다', stepIndex: 2);
         },
       );
-      if (mounted) _snack(tsakShareMessage(res, what: '아타스 명부 ${format.label}'));
+      if (mounted)
+        _snack(tsakShareMessage(res, what: '아타스 명부 ${format.label}'));
     } catch (e) {
       if (mounted) _snack('열기 실패: $e');
     } finally {
@@ -545,14 +562,13 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
           if (m.nameEn.trim().isNotEmpty) ...[
             const SizedBox(width: 6),
             Flexible(
-              child: Text(
+              child: MarqueeText(
                 m.nameEn.trim(),
                 style: const TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textGray,
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

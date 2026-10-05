@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/marquee_text.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -264,13 +265,12 @@ class _AdminScreenState extends State<AdminScreen> {
                     fontSize: 13,
                   ),
                 ),
-                Text(
+                MarqueeText(
                   name.isEmpty ? '이름 미확인' : name,
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textGray,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -914,10 +914,9 @@ class _AdminScreenState extends State<AdminScreen> {
                                     ' · ${m.numberLabel}',
                                     style: const TextStyle(fontSize: 13),
                                   ),
-                                  subtitle: Text(
+                                  subtitle: MarqueeText(
                                     m.unit,
                                     style: const TextStyle(fontSize: 11),
-                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   onTap: () => Navigator.pop(ctx, m),
                                 );
