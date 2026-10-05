@@ -78,6 +78,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 범스카우트/개인 접근에서 HOME 버튼을 눌러 메인 홈을 볼 때 true.
   /// (권한이 허용하는 범위까지만 노출된다.)
   bool _showMainHome = false;
+
+  /// 홈 첫 페이지 후원 계좌 접힘 상태 — 기본값 false(모두 노출).
+  /// (요구: "후원계좌는 기본값이 모두 노출이지만, 접어두기 버튼으로 접고 펼칠 수 있게")
+  bool _donationCollapsed = false;
   // 게시판/주문 등 관리자 이상 알림 배지
   int _boardUnread = 0;
   // 승인관리 대기 배지(비인가회원·행사·연회비·평생 등 통합)
@@ -1500,6 +1504,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 홈 첫 페이지 후원 안내 — 3개 계좌를 작은 글씨로 한눈에(스크롤 없음) + 복사 버튼
+  ///
+  /// 요구: "후원계좌는 기본값이 모두 노출이지만, 접어두기 버튼이 있어서 접고 펼칠 수
+  /// 있도록 해줘. 현재 레이아웃 변경없이 후원계좌 옆에 버튼만 넣어서 기능 구현."
+  ///  → 헤더 우측(계좌주명 왼쪽)에 접기/펴기 토글 버튼만 추가하고, 기존 레이아웃은 유지.
   Widget _donationBanner(AppState state) {
     return Container(
       width: double.infinity,
@@ -1529,19 +1537,66 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Spacer(),
+              // 계좌주명 — 좁은 화면에서 버튼과 겹치지 않도록 유연하게 축소.
+              Flexible(
+                child: Text(
+                  state.donationHolder,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // 접기/펴기 토글 — 기존 레이아웃에 버튼만 추가.
+              _donationToggleBtn(),
+            ],
+          ),
+          // 접힘 상태가 아닐 때만 계좌 목록 노출 (기본값: 펼침).
+          if (!_donationCollapsed) ...[
+            const SizedBox(height: 5),
+            // 3개 계좌를 세로로 동시에 표시 (스크롤 없음)
+            const DonationAccounts(fontSize: 11),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 후원 계좌 접기/펴기 버튼 — 아이콘 + 라벨. 현재 상태에 따라 문구·방향 전환.
+  Widget _donationToggleBtn() {
+    final collapsed = _donationCollapsed;
+    return Material(
+      color: AppColors.purple.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => setState(() => _donationCollapsed = !collapsed),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                collapsed
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_up,
+                color: AppColors.purple,
+                size: 16,
+              ),
+              const SizedBox(width: 2),
               Text(
-                state.donationHolder,
+                collapsed ? '펼치기' : '접어두기',
                 style: const TextStyle(
-                  fontSize: 9.5,
-                  color: AppColors.textGray,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          // 3개 계좌를 세로로 동시에 표시 (스크롤 없음)
-          const DonationAccounts(fontSize: 11),
-        ],
+        ),
       ),
     );
   }
