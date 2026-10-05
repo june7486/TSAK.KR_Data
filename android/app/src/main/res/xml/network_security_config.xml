@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  네트워크 보안 설정 — TSAK 인가자 관리
+  · 자체 호스팅 NAS 프록시/DSM 서버(사용자가 설정에서 입력)와 통신 위해
+    평문(http) 및 자체 서명 인증서(HTTPS) 환경을 허용한다.
+  · 보안: 앱은 별도 네이티브 신뢰 인증서를 요구하지 않으므로,
+    사용자가 지정한 서버 주소로의 통신을 폭넓게 허용(사용자 신뢰 기반).
+-->
+<network-security-config>
+    <!-- 모든 도메인 평문(http) 트래픽 허용 (사용자가 지정한 자체 서버) -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>
