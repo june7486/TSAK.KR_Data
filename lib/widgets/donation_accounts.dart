@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import 'marquee_text.dart';
 import 'transfer_sheet.dart';
 
 /// 중앙회 계좌 목록(3개) — 각 계좌에 「송금」·「복사」 버튼.
@@ -40,10 +41,10 @@ class DonationAccounts extends StatelessWidget {
                 child: Row(
                   children: [
                     Flexible(
-                      child: Text(
+                      // 넘치면 좌우로 흐르는 마퀴(요구: "글자가 짤리면 슬라이딩").
+                      child: MarqueeText(
                         '${state.donations[index]['label']}',
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: fontSize,
                           fontWeight: FontWeight.w800,
