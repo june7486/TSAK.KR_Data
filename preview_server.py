@@ -33,6 +33,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def _safe_write(self, data):
+        """클라이언트가 끊겨도(BrokenPipe) 서버가 죽지 않게 보호."""
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            self.close_connection = True
+
+    def handle_one_request(self):
+        """연결 끊김(BrokenPipe/Reset)은 조용히 무시 — 서버 생존."""
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
+    def handle_error(self, request, client_address):
+        """예외로 스레드가 죽어도 서버(메인 루프)는 계속 돈다."""
+        import sys
+        et = sys.exc_info()[0]
+        if et in (BrokenPipeError, ConnectionResetError):
+            return
+
     def _is_static(self, path):
         p = path.split('?', 1)[0].lstrip('/')
         if p == '' or p == 'index.html':
@@ -68,19 +89,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 for c in sc:
                     self.send_header('Set-Cookie', c)
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
         except urllib.error.HTTPError as e:
             data = e.read()
             self.send_response(e.code)
             self.send_header('Content-Type', e.headers.get('Content-Type', 'application/json'))
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            self._safe_write(data)
         except Exception as e:
             self.send_response(502)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({'ok': False, 'err': str(e)}).encode())
+            self._safe_write(json.dumps({'ok': False, 'err': str(e)}).encode())
 
     def do_GET(self):
         self._proxy('GET')
