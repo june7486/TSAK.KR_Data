@@ -17,6 +17,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
+import '../widgets/confirm.dart';
 import '../widgets/hscroll_menu.dart';
 import 'roster_screen.dart';
 import 'event_review_screen.dart';
@@ -659,6 +660,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('이름 변경'),
         content: TextField(
           controller: ctrl,
@@ -1044,6 +1047,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     if (v == 'edit') {
                       await _manualAddAttendee(editIndex: i);
                     } else if (v == 'del') {
+                      // (요구) 삭제 전 한 번 더 확인.
+                      final ok = await confirmDialog(
+                        context,
+                        title: '참가자 삭제',
+                        message: '${a['name'] ?? ''} 님을 참가자 명단에서 삭제할까요?',
+                      );
+                      if (!ok) return;
                       setState(() => _attendees.removeAt(i));
                       await _saveAttendees();
                     }
@@ -1627,6 +1637,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
+          // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+          scrollable: true,
           title: Text(editIndex != null ? '참석자 수정' : '참석자 수동 입력'),
           content: SizedBox(
             width: 360,
@@ -2007,6 +2019,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('새 폴더 만들기'),
         content: TextField(
           controller: ctrl,
@@ -2823,6 +2837,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('메뉴 추가'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2874,6 +2890,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('메뉴 편집'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

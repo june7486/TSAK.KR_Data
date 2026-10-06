@@ -1613,6 +1613,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: Text('금액 수정 · ${p['category'] ?? p['group'] ?? ''}'),
         content: TextField(
           controller: c,

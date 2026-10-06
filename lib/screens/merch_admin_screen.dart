@@ -1642,6 +1642,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('주문 합치기 (묶음)'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -5872,6 +5874,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: Text('재고 조정 · ${s['name']}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

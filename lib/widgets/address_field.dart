@@ -66,6 +66,8 @@ class _AddressFieldState extends State<AddressField> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('상세주소 입력'),
         content: TextField(
           controller: c,
@@ -96,6 +98,8 @@ class _AddressFieldState extends State<AddressField> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('주소 입력'),
         content: TextField(
           controller: c,

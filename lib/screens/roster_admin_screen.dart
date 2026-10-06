@@ -203,6 +203,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     final r = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: Text('받는분의 범인가번호 — ${prof['name'] ?? ''}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

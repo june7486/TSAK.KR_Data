@@ -6,6 +6,7 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import 'confirm.dart';
 import 'link_member_picker.dart';
 
 /// 멘토·페런츠 인적사항 입력 필드.
@@ -260,7 +261,14 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 size: 16,
                 color: AppColors.textGray,
               ),
-              onPressed: () {
+              onPressed: () async {
+                // (요구) 삭제 전 한 번 더 확인.
+                final ok = await confirmDialog(
+                  context,
+                  title: '인가번호 삭제',
+                  message: '${_numBadge(code)} 인가번호 연결을 삭제할까요?',
+                );
+                if (!ok) return;
                 final next = List<String>.from(widget.codes)..remove(code);
                 widget.onChanged(next);
               },
@@ -292,155 +300,168 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             final previewPhone = phoneCtrl.text;
             final (pid, ppw) = _genCred(previewPhone);
             return AlertDialog(
+              // (요구) 키보드가 올라오면 창이 줄어들어 입력칸이 잘리고
+              //  오버플로 에러가 나던 문제 → 내용을 **스크롤 가능**하게 하고,
+              //  키보드(뷰인셋)만큼 **창을 위로 올려** 입력칸·버튼이 항상 보이게 한다.
+              scrollable: true,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 16,
+              ),
               title: Text(isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인적사항'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: noCtrl,
-                      enabled: !isEdit,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: isMentor
-                            ? '범인가자번호 (멘티) *'
-                            // 요구: 페런츠가 범스카우트 인가자인 경우에만 입력(선택).
-                            : '인가번호 (페런츠가 범스카우트일 경우 입력) (선택)',
-                        hintText: isMentor ? null : '모르면 비워두세요 (선택사항)',
-                        isDense: true,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: noCtrl,
+                    enabled: !isEdit,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: isMentor
+                          ? '범인가자번호 (멘티) *'
+                          // 요구: 페런츠가 범스카우트 인가자인 경우에만 입력(선택).
+                          : '인가번호 (페런츠가 범스카우트일 경우 입력) (선택)',
+                      hintText: isMentor ? null : '모르면 비워두세요 (선택사항)',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  // 요구: 멘토·페런츠 개인정보 입력 시 '범스카우트 인가정보 연동'
+                  //   창(선택)으로 기존 인가자 정보를 불러와 자동 채운다.
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _accent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _linkFromScout(
+                        noCtrl,
+                        nameCtrl,
+                        phoneCtrl,
+                        leagueCtrl,
+                        unitCtrl,
+                        setDlg,
+                      ),
+                      icon: const Icon(Icons.manage_search, size: 16),
+                      label: const Text(
+                        '범스카우트 인가정보 연동 (선택)',
+                        style: TextStyle(fontSize: 11.5),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    // 요구: 멘토·페런츠 개인정보 입력 시 '범스카우트 인가정보 연동'
-                    //   창(선택)으로 기존 인가자 정보를 불러와 자동 채운다.
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _accent,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 2,
-                          ),
-                          visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: isMentor ? '이름 (멘토) *' : '이름 (페런츠) *',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) => setDlg(() {}),
+                    decoration: InputDecoration(
+                      labelText: isMentor ? '전화번호 (멘토) *' : '전화번호 (페런츠) *',
+                      hintText: '010-0000-0000',
+                      isDense: true,
+                    ),
+                  ),
+                  // 멘토·페런츠 **동일 폼** — 소속연맹·소속단위대.
+                  //  (요구: "페런츠 인가사항 입력란을 멘토랑 동일한 폼으로 구성")
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: leagueCtrl,
+                    decoration: InputDecoration(
+                      labelText: isMentor ? '소속연맹 (멘토)' : '소속연맹 (페런츠)',
+                      // 요구: 페런츠는 비었을 때 인가자(본인) 연맹을 안내/저장.
+                      hintText: widget.defaultLeague.isNotEmpty
+                          ? '없을시 인가자 연맹: ${widget.defaultLeague}'
+                          : '예: 서울남부 / 인천',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: unitCtrl,
+                    decoration: InputDecoration(
+                      labelText: isMentor ? '소속단위대 (멘토)' : '소속단위대 (페런츠)',
+                      // 요구: 페런츠는 비었을 때 인가자(본인) 단위대를 안내/저장.
+                      hintText: widget.defaultUnit.isNotEmpty
+                          ? '없을시 인가자 단위대: ${widget.defaultUnit}'
+                          : '예: 샘물지역대',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // 요구: 페런츠가 범스카우트 인가자인 경우 그 페이지(자녀대원)와
+                  //   연동됨을 안내. 인가번호 입력은 **선택사항**이다.
+                  if (!isMentor)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.tigerGold.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.tigerGold.withValues(alpha: 0.5),
                         ),
-                        onPressed: () => _linkFromScout(
-                          noCtrl,
-                          nameCtrl,
-                          phoneCtrl,
-                          leagueCtrl,
-                          unitCtrl,
-                          setDlg,
-                        ),
-                        icon: const Icon(Icons.manage_search, size: 16),
-                        label: const Text(
-                          '범스카우트 인가정보 연동 (선택)',
-                          style: TextStyle(fontSize: 11.5),
+                      ),
+                      child: const Text(
+                        '인가번호는 페런츠가 범스카우트 인가자일 때 입력합니다(선택).\n'
+                        '인가번호를 입력하면 그 인가자 페이지의 [자녀대원 등록정보]에 '
+                        '이 대원이 자동 연동됩니다.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.4,
+                          color: AppColors.textDark,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: InputDecoration(
-                        labelText: isMentor ? '이름 (멘토) *' : '이름 (페런츠) *',
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: phoneCtrl,
-                      keyboardType: TextInputType.phone,
-                      onChanged: (_) => setDlg(() {}),
-                      decoration: InputDecoration(
-                        labelText: isMentor ? '전화번호 (멘토) *' : '전화번호 (페런츠) *',
-                        hintText: '010-0000-0000',
-                        isDense: true,
-                      ),
-                    ),
-                    // 멘토·페런츠 **동일 폼** — 소속연맹·소속단위대.
-                    //  (요구: "페런츠 인가사항 입력란을 멘토랑 동일한 폼으로 구성")
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: leagueCtrl,
-                      decoration: InputDecoration(
-                        labelText: isMentor ? '소속연맹 (멘토)' : '소속연맹 (페런츠)',
-                        // 요구: 페런츠는 비었을 때 인가자(본인) 연맹을 안내/저장.
-                        hintText: widget.defaultLeague.isNotEmpty
-                            ? '없을시 인가자 연맹: ${widget.defaultLeague}'
-                            : '예: 서울남부 / 인천',
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: unitCtrl,
-                      decoration: InputDecoration(
-                        labelText: isMentor ? '소속단위대 (멘토)' : '소속단위대 (페런츠)',
-                        // 요구: 페런츠는 비었을 때 인가자(본인) 단위대를 안내/저장.
-                        hintText: widget.defaultUnit.isNotEmpty
-                            ? '없을시 인가자 단위대: ${widget.defaultUnit}'
-                            : '예: 샘물지역대',
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // 요구: 페런츠가 범스카우트 인가자인 경우 그 페이지(자녀대원)와
-                    //   연동됨을 안내. 인가번호 입력은 **선택사항**이다.
-                    if (!isMentor)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.tigerGold.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: AppColors.tigerGold.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        child: const Text(
-                          '인가번호는 페런츠가 범스카우트 인가자일 때 입력합니다(선택).\n'
-                          '인가번호를 입력하면 그 인가자 페이지의 [자녀대원 등록정보]에 '
-                          '이 대원이 자동 연동됩니다.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            height: 1.4,
-                            color: AppColors.textDark,
-                          ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '전화번호로 아이디·비밀번호 자동 생성',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.scoutGreen,
                         ),
                       ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '전화번호로 아이디·비밀번호 자동 생성',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.scoutGreen,
-                          ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '아이디 : ${pid.isEmpty ? '(전화번호 입력)' : pid}\n'
+                        '비밀번호 : ${ppw.isEmpty ? '(전화번호 입력)' : ppw}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: AppColors.textDark,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '아이디 : ${pid.isEmpty ? '(전화번호 입력)' : pid}\n'
-                          '비밀번호 : ${ppw.isEmpty ? '(전화번호 입력)' : ppw}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
               actions: [
                 if (isEdit)
                   TextButton(
                     onPressed: () async {
+                      // (요구) 삭제 전 한 번 더 확인.
+                      final ok = await confirmDialog(
+                        ctx,
+                        title: '인적사항 삭제',
+                        message: '이 인적사항(아이디·비밀번호 포함)을 삭제할까요?',
+                      );
+                      if (!ok) return;
                       await _nas.linkProfileDelete(_clean(existing));
                       if (!ctx.mounted) return;
                       Navigator.pop(ctx, true);

@@ -7,6 +7,7 @@ import '../services/nas_api.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/confirm.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
@@ -967,7 +968,13 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                                     visualDensity: VisualDensity.compact,
                                     foregroundColor: AppColors.taegeukRed,
                                   ),
-                                  onPressed: () {
+                                  onPressed: () async {
+                                    final ok = await confirmDialog(
+                                      context,
+                                      title: '장바구니 삭제',
+                                      message: '이 항목을 장바구니에서 삭제할까요?',
+                                    );
+                                    if (!ok) return;
                                     setState(() => _cart.removeAt(i));
                                     setSheet(() {});
                                   },

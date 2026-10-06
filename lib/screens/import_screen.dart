@@ -312,6 +312,8 @@ class _ImportScreenState extends State<ImportScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('텍스트 붙여넣기로 인식'),
         content: SizedBox(
           width: double.maxFinite,

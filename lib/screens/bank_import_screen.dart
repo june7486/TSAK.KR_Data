@@ -479,6 +479,8 @@ class _BankImportScreenState extends State<BankImportScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('분류 수정'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

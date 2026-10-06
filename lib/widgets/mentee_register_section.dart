@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import 'confirm.dart';
 
 /// 멘티대원 / 자녀대원 등록정보 창.
 ///
@@ -197,7 +198,14 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
                 size: 16,
                 color: AppColors.textGray,
               ),
-              onPressed: () {
+              onPressed: () async {
+                // (요구) 삭제 전 한 번 더 확인.
+                final ok = await confirmDialog(
+                  context,
+                  title: '인가번호 삭제',
+                  message: '범#$code 인가번호 연결을 삭제할까요?',
+                );
+                if (!ok) return;
                 final next = List<String>.from(widget.codes)..remove(code);
                 widget.onChanged(next);
               },
@@ -217,100 +225,105 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) {
           return AlertDialog(
+            // (요구) 키보드가 올라오면 창이 줄어들어 입력칸이 잘리던 문제 →
+            //  내용을 스크롤 가능하게 하고, 키보드만큼 창을 위로 올린다.
+            scrollable: true,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
             title: Text('$_title 등록'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _isMentee
-                        ? '본인이 멘토인 멘티대원의 범스카우트 인가번호를 입력하세요.'
-                        : '본인이 페런츠(보호자)인 자녀대원의 범스카우트 인가번호를 입력하세요.',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.textGray,
-                      height: 1.4,
-                    ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isMentee
+                      ? '본인이 멘토인 멘티대원의 범스카우트 인가번호를 입력하세요.'
+                      : '본인이 페런츠(보호자)인 자녀대원의 범스카우트 인가번호를 입력하세요.',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textGray,
+                    height: 1.4,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noCtrl,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final d = v.replaceAll(RegExp(r'[^0-9]'), '');
-                      final found = context.read<AppState>().byNumber(d);
-                      final nm2 = found?.name.trim() ?? '';
-                      final infoParts = <String>[];
-                      if ((found?.league.trim() ?? '').isNotEmpty) {
-                        infoParts.add(found!.league.trim());
-                      }
-                      if ((found?.unit.trim() ?? '').isNotEmpty) {
-                        infoParts.add(found!.unit.trim());
-                      }
-                      setDlg(() {
-                        resolved = nm2;
-                        resolvedInfo = infoParts.join(' · ');
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: '$_codeLabel *',
-                      hintText: '예: 2186',
-                      isDense: true,
-                    ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: noCtrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) {
+                    final d = v.replaceAll(RegExp(r'[^0-9]'), '');
+                    final found = context.read<AppState>().byNumber(d);
+                    final nm2 = found?.name.trim() ?? '';
+                    final infoParts = <String>[];
+                    if ((found?.league.trim() ?? '').isNotEmpty) {
+                      infoParts.add(found!.league.trim());
+                    }
+                    if ((found?.unit.trim() ?? '').isNotEmpty) {
+                      infoParts.add(found!.unit.trim());
+                    }
+                    setDlg(() {
+                      resolved = nm2;
+                      resolvedInfo = infoParts.join(' · ');
+                    });
+                  },
+                  decoration: InputDecoration(
+                    labelText: '$_codeLabel *',
+                    hintText: '예: 2186',
+                    isDense: true,
                   ),
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: resolved.isNotEmpty
-                          ? AppColors.scoutGreen.withValues(alpha: 0.10)
-                          : AppColors.tigerGold.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: resolved.isNotEmpty
+                        ? AppColors.scoutGreen.withValues(alpha: 0.10)
+                        : AppColors.tigerGold.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        resolved.isNotEmpty
+                            ? Icons.verified_user
+                            : Icons.info_outline,
+                        size: 16,
+                        color: resolved.isNotEmpty
+                            ? AppColors.scoutGreen
+                            : AppColors.tigerGold,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
                           resolved.isNotEmpty
-                              ? Icons.verified_user
-                              : Icons.info_outline,
-                          size: 16,
-                          color: resolved.isNotEmpty
-                              ? AppColors.scoutGreen
-                              : AppColors.tigerGold,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            resolved.isNotEmpty
-                                ? '이름 : $resolved (명단에서 확인됨)'
-                                      '${resolvedInfo.isEmpty ? '' : '\n인가정보 : $resolvedInfo'}'
-                                : '인가번호를 입력하면 이름·인가정보(연맹·단위대)가 자동으로 채워집니다.',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              height: 1.4,
-                              color: AppColors.textDark,
-                            ),
+                              ? '이름 : $resolved (명단에서 확인됨)'
+                                    '${resolvedInfo.isEmpty ? '' : '\n인가정보 : $resolvedInfo'}'
+                              : '인가번호를 입력하면 이름·인가정보(연맹·단위대)가 자동으로 채워집니다.',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            height: 1.4,
+                            color: AppColors.textDark,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    '등록하면 관리자·마스터 승인 대기중으로 표시되며, '
-                    '통합승인관리 창에서 승인되면 정식 등록됩니다.',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textGray,
-                      height: 1.4,
-                    ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  '등록하면 관리자·마스터 승인 대기중으로 표시되며, '
+                  '통합승인관리 창에서 승인되면 정식 등록됩니다.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                    height: 1.4,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             actions: [
               TextButton(

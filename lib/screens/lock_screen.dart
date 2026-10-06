@@ -170,6 +170,8 @@ class _LockScreenState extends State<LockScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
+          // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+          scrollable: true,
           title: const Text('신규회원 생성'),
           content: SizedBox(
             width: 460,

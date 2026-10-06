@@ -318,6 +318,8 @@ class _AdminScreenState extends State<AdminScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('관리자 계정 생성'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -559,6 +561,8 @@ class _AdminScreenState extends State<AdminScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: Text('관리자 #$no 암호 지정'),
         content: TextField(
           controller: pwCtrl,
@@ -737,6 +741,8 @@ class _AdminScreenState extends State<AdminScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('앱 접근 비밀번호 변경'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -952,6 +958,8 @@ class _AdminScreenState extends State<AdminScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: Text(reset ? '개인 비밀번호 초기화' : '개인 비밀번호 재설정'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1155,6 +1163,8 @@ class _AdminScreenState extends State<AdminScreen> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('마스터 확인'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

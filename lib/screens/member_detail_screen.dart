@@ -913,6 +913,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('수품구매현황'),
         content: TextField(
           controller: ctrl,
@@ -2701,6 +2703,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final nw = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: Text('비밀번호 강제 변경 — ${m.name}'),
         content: TextField(
           controller: ctrl,

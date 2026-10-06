@@ -100,6 +100,10 @@ class _LinkMemberPickerDialogState extends State<_LinkMemberPickerDialog> {
   Widget build(BuildContext context) {
     final h = MediaQuery.of(context).size.height;
     return AlertDialog(
+      // (요구) 키보드가 올라오면 창이 줄어들어 목록·입력이 잘리던 문제 →
+      //  창을 키보드만큼 올리고, 내용을 스크롤 가능하게 한다.
+      scrollable: true,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       title: Row(
         children: [
           Icon(Icons.link, size: 20, color: _accent),

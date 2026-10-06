@@ -1526,6 +1526,8 @@ class _BoardScreenState extends State<BoardScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+        scrollable: true,
         title: const Text('댓글 달기'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1612,6 +1614,8 @@ class _BoardScreenState extends State<BoardScreen> {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
+          // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+          scrollable: true,
           title: const Text('비밀번호 확인'),
           content: TextField(
             controller: ctrl,

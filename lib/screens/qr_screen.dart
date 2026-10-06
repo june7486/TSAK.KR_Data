@@ -381,6 +381,8 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
+      scrollable: true,
       icon: const Icon(Icons.lock_open, color: AppColors.purple, size: 30),
       title: const Text('인가자 정보 접속', textAlign: TextAlign.center),
       content: SizedBox(
