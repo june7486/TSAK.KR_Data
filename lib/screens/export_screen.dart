@@ -55,6 +55,9 @@ class _ExportScreenState extends State<ExportScreen>
   /// 기본: 이름·범/아타스/은하 인가번호·핸드폰·이메일 6개.
   final Set<String> _noWrap = {...kNoWrapDefault};
 
+  /// 표 맨 앞에 연번(순번) 열을 넣을지 — 사용자 선택(기본 꺼짐).
+  bool _numbering = false;
+
   /// 상단에 노출되는 메뉴(열) 순서 — 전체 항목 key 를 담으며 사용자가 재정렬한다.
   /// 실제 출력 열 순서 = `_order` 중 선택된 항목만(순서 유지).
   List<String> _order = kExportFields.map((f) => f.key).toList();
@@ -279,6 +282,8 @@ class _ExportScreenState extends State<ExportScreen>
         _sectionTitle('출력 용지 방향'),
         const SizedBox(height: 6),
         _orientationRow(),
+        const SizedBox(height: 20),
+        _numberingSwitch(),
         const SizedBox(height: 20),
         _chunkSwitch(),
         const SizedBox(height: 20),
@@ -1169,6 +1174,8 @@ class _ExportScreenState extends State<ExportScreen>
                       const SizedBox(width: 6),
                       _previewBadge('두줄방지 ${_noWrap.length}'),
                       const SizedBox(width: 6),
+                      _previewBadge(_numbering ? '연번 있음' : '연번 없음'),
+                      const SizedBox(width: 6),
                       _previewBadge('${heads.length}개 항목'),
                     ],
                   ),
@@ -1209,15 +1216,16 @@ class _ExportScreenState extends State<ExportScreen>
                         width: 0.6,
                       ),
                       columns: [
-                        const DataColumn(
-                          label: Text(
-                            '#',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
+                        if (_numbering)
+                          const DataColumn(
+                            label: Text(
+                              '연번',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
-                        ),
                         for (final h in heads)
                           DataColumn(
                             label: Text(
@@ -1241,12 +1249,13 @@ class _ExportScreenState extends State<ExportScreen>
                                   )
                                 : null,
                             cells: [
-                              DataCell(
-                                Text(
-                                  '${i + 1}',
-                                  style: const TextStyle(fontSize: 10.5),
+                              if (_numbering)
+                                DataCell(
+                                  Text(
+                                    '${i + 1}',
+                                    style: const TextStyle(fontSize: 10.5),
+                                  ),
                                 ),
-                              ),
                               for (final k in keys)
                                 DataCell(
                                   Text(
@@ -1352,6 +1361,32 @@ class _ExportScreenState extends State<ExportScreen>
     );
   }
 
+  /// 연번(표 맨 앞 순번) 열 포함 여부 — 사용자 선택.
+  Widget _numberingSwitch() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: SwitchListTile(
+        value: _numbering,
+        activeThumbColor: AppColors.purple,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+        title: const Text(
+          '표 맨 앞에 연번(순번) 표시',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+        ),
+        subtitle: Text(
+          _numbering ? '맨 앞에 1부터 시작하는 연번 열을 넣습니다' : '연번 없이 항목만 표시합니다',
+          style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+        ),
+        onChanged: (v) => setState(() => _numbering = v),
+      ),
+    );
+  }
+
   Future<void> _doExport() async {
     if (_visible.isEmpty) {
       _snack('선택된 인가자가 없습니다');
@@ -1369,6 +1404,7 @@ class _ExportScreenState extends State<ExportScreen>
     final fields = _fieldKeys.isEmpty ? kDefaultFieldKeys : _fieldKeys;
     final baseName = _baseName();
     final total = chunks.length;
+    var numStart = 1; // 분할 출력 시 연번 이어짐(청크별 시작 번호)
     var failed = false;
     try {
       await runWithTsakProgress(
@@ -1395,7 +1431,12 @@ class _ExportScreenState extends State<ExportScreen>
             Uint8List bytes;
             switch (_format) {
               case ExportFormat.excel:
-                bytes = ExportService.buildExcel(list, fieldKeys: fields);
+                bytes = ExportService.buildExcel(
+                  list,
+                  fieldKeys: fields,
+                  numbering: _numbering,
+                  numberingStart: numStart,
+                );
                 break;
               case ExportFormat.pdf:
                 bytes = await ExportService.buildPdf(
@@ -1406,16 +1447,33 @@ class _ExportScreenState extends State<ExportScreen>
                   fontSize: _fontSize,
                   rowSpace: _rowSpace,
                   noWrapKeys: _noWrap,
+                  numbering: _numbering,
+                  numberingStart: numStart,
                 );
                 break;
               case ExportFormat.word:
-                bytes = ExportService.buildWord(list, fieldKeys: fields);
+                bytes = ExportService.buildWord(
+                  list,
+                  fieldKeys: fields,
+                  numbering: _numbering,
+                  numberingStart: numStart,
+                );
                 break;
               case ExportFormat.txt:
-                bytes = ExportService.buildTxt(list, fieldKeys: fields);
+                bytes = ExportService.buildTxt(
+                  list,
+                  fieldKeys: fields,
+                  numbering: _numbering,
+                  numberingStart: numStart,
+                );
                 break;
               case ExportFormat.ppt:
-                bytes = ExportService.buildPpt(list, fieldKeys: fields);
+                bytes = ExportService.buildPpt(
+                  list,
+                  fieldKeys: fields,
+                  numbering: _numbering,
+                  numberingStart: numStart,
+                );
                 break;
               case ExportFormat.jpg:
                 bytes = await ExportService.buildPdf(
@@ -1426,9 +1484,12 @@ class _ExportScreenState extends State<ExportScreen>
                   fontSize: _fontSize,
                   rowSpace: _rowSpace,
                   noWrapKeys: _noWrap,
+                  numbering: _numbering,
+                  numberingStart: numStart,
                 );
                 break;
             }
+            numStart += list.length; // 다음 청크 연번 시작
             ctl.update(
               progress: 0.10 + 0.80 * frac,
               message: '파일 저장 중… ($name.${_format.extension})',
@@ -1508,7 +1569,11 @@ class _ExportScreenState extends State<ExportScreen>
   ) async {
     switch (fmt) {
       case ExportFormat.excel:
-        return ExportService.buildExcel(list, fieldKeys: fields);
+        return ExportService.buildExcel(
+          list,
+          fieldKeys: fields,
+          numbering: _numbering,
+        );
       case ExportFormat.pdf:
       case ExportFormat.jpg:
         final pdf = await ExportService.buildPdf(
@@ -1519,6 +1584,7 @@ class _ExportScreenState extends State<ExportScreen>
           fontSize: _fontSize,
           rowSpace: _rowSpace,
           noWrapKeys: _noWrap,
+          numbering: _numbering,
         );
         if (fmt == ExportFormat.jpg) {
           final raster = await Printing.raster(pdf, dpi: 150).first;
@@ -1532,11 +1598,23 @@ class _ExportScreenState extends State<ExportScreen>
         }
         return pdf;
       case ExportFormat.word:
-        return ExportService.buildWord(list, fieldKeys: fields);
+        return ExportService.buildWord(
+          list,
+          fieldKeys: fields,
+          numbering: _numbering,
+        );
       case ExportFormat.txt:
-        return ExportService.buildTxt(list, fieldKeys: fields);
+        return ExportService.buildTxt(
+          list,
+          fieldKeys: fields,
+          numbering: _numbering,
+        );
       case ExportFormat.ppt:
-        return ExportService.buildPpt(list, fieldKeys: fields);
+        return ExportService.buildPpt(
+          list,
+          fieldKeys: fields,
+          numbering: _numbering,
+        );
     }
   }
 
@@ -1751,6 +1829,7 @@ class _ExportScreenState extends State<ExportScreen>
         fontSize: _fontSize,
         rowSpace: _rowSpace,
         noWrapKeys: _noWrap,
+        numbering: _numbering,
       );
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {

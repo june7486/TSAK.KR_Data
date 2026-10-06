@@ -208,7 +208,7 @@ extension ExportRowSpaceX on ExportRowSpace {
   }
 }
 
-/// 두줄 방지 대상 후보 — 이름·인가번호(범/아타스/은하)·핸드폰·이메일·소속대·연맹·주소·생년월일.
+/// 두줄 방지 대상 후보 — 이름·인가번호(범/아타스/은하)·핸드폰·이메일·소속대·연맹·주소·생년월일·인가일.
 /// (줄바꿈이 생기면 표가 지저분해지는 핵심 항목)
 const List<String> kNoWrapCandidates = [
   'name',
@@ -222,10 +222,12 @@ const List<String> kNoWrapCandidates = [
   'league',
   'address',
   'birthday',
+  'date',
 ];
 
-/// 두줄 방지 기본 선택 — 식별자·연락 핵심(주소·소속대·연맹·생년월일은 필요 시 켬).
+/// 두줄 방지 기본 선택 — 식별자·연락·인가일 핵심(주소·소속대·연맹·생년월일은 필요 시 켬).
 ///  · 이름(name)·영어이름(nameEn)은 신원 핵심이라 기본으로 켜 줄바꿈을 막는다.
+///  · 인가일(date)은 'YYYY-MM-DD' 날짜가 두 줄로 깨지기 쉬워 기본으로 켠다.
 const Set<String> kNoWrapDefault = {
   'name',
   'nameEn',
@@ -234,6 +236,7 @@ const Set<String> kNoWrapDefault = {
   'eunhaNo',
   'phone',
   'email',
+  'date',
 };
 
 /// 두줄 방지 옵션 라벨(key → 화면 표기).
@@ -249,6 +252,7 @@ const Map<String, String> kNoWrapLabels = {
   'league': '연맹',
   'address': '주소',
   'birthday': '생년월일',
+  'date': '인가일',
 };
 
 /// 내보낼 개인정보 항목 정의 (선택 가능)
@@ -484,14 +488,34 @@ class ExportService {
   static List<String> rowFor(Member m, List<String> keys) =>
       keys.map((k) => exportValueOf(m, k)).toList();
 
+  /// 연번(표 맨 앞 순번) 열 헤더 라벨.
+  static const String kIndexHeader = '연번';
+
+  /// 연번 열을 선택적으로 포함한 헤더 목록.
+  /// [numbering]=true 면 맨 앞에 '연번' 열을 붙인다.
+  static List<String> headersWithIndex(
+    List<String> keys, {
+    bool numbering = false,
+  }) => numbering ? [kIndexHeader, ...headersFor(keys)] : headersFor(keys);
+
+  /// 연번(1-based)을 선택적으로 포함한 행.
+  static List<String> rowWithIndex(
+    Member m,
+    List<String> keys,
+    int index, {
+    bool numbering = false,
+  }) => numbering ? ['$index', ...rowFor(m, keys)] : rowFor(m, keys);
+
   /// 엑셀 XLSX 바이트 생성 — 표 폼 디자인(테마 색) + 상단 필터 + 머리글 고정.
   static Uint8List buildExcel(
     List<Member> members, {
     List<String>? fieldKeys,
     String title = '인가자 명단',
+    bool numbering = false,
+    int numberingStart = 1,
   }) {
     final keys = fieldKeys ?? kDefaultFieldKeys;
-    final heads = headersFor(keys);
+    final heads = headersWithIndex(keys, numbering: numbering);
     final cols = heads.length;
     final excel = Excel.createExcel();
     final sheetName = excel.getDefaultSheet() ?? 'Sheet1';
@@ -545,7 +569,14 @@ class ExportService {
     // 본문
     var rowIndex = 1;
     for (final m in members) {
-      sheet.appendRow(rowFor(m, keys).map((v) => TextCellValue(v)).toList());
+      sheet.appendRow(
+        rowWithIndex(
+          m,
+          keys,
+          numberingStart + rowIndex - 1,
+          numbering: numbering,
+        ).map((v) => TextCellValue(v)).toList(),
+      );
       final st = bodyStyle(rowIndex);
       for (var c = 0; c < cols; c++) {
         sheet
@@ -689,11 +720,21 @@ class ExportService {
     ExportFontSize fontSize = ExportFontSize.normal,
     ExportRowSpace rowSpace = ExportRowSpace.normal,
     Set<String> noWrapKeys = const {},
+    bool numbering = false,
+    int numberingStart = 1,
   }) async {
     final keys = fieldKeys ?? kDefaultFieldKeys;
     return buildPdfFromRows(
-      headers: headersFor(keys),
-      rows: members.map((m) => rowFor(m, keys)).toList(),
+      headers: headersWithIndex(keys, numbering: numbering),
+      rows: [
+        for (var i = 0; i < members.length; i++)
+          rowWithIndex(
+            members[i],
+            keys,
+            numberingStart + i,
+            numbering: numbering,
+          ),
+      ],
       title: title,
       landscape: landscape,
       style: style,
@@ -1015,6 +1056,8 @@ class ExportService {
     List<Member> members, {
     String title = '한국범스카우트 중앙회 인가자 명단',
     List<String>? fieldKeys,
+    bool numbering = false,
+    int numberingStart = 1,
   }) {
     final keys = fieldKeys ?? kDefaultFieldKeys;
     final buf = StringBuffer();
@@ -1027,13 +1070,18 @@ class ExportService {
       'style="border-collapse:collapse;font-size:10pt">',
     );
     buf.write('<tr style="background:#5B2C8D;color:#fff">');
-    for (final h in headersFor(keys)) {
+    for (final h in headersWithIndex(keys, numbering: numbering)) {
       buf.write('<th>$h</th>');
     }
     buf.write('</tr>');
-    for (final m in members) {
+    for (var i = 0; i < members.length; i++) {
       buf.write('<tr>');
-      for (final v in rowFor(m, keys)) {
+      for (final v in rowWithIndex(
+        members[i],
+        keys,
+        numberingStart + i,
+        numbering: numbering,
+      )) {
         buf.write('<td>${_escape(v)}</td>');
       }
       buf.write('</tr>');
@@ -1050,9 +1098,11 @@ class ExportService {
     List<Member> members, {
     String title = '한국범스카우트 중앙회 인가자 명단',
     List<String>? fieldKeys,
+    bool numbering = false,
+    int numberingStart = 1,
   }) {
     final keys = fieldKeys ?? kDefaultFieldKeys;
-    final heads = headersFor(keys);
+    final heads = headersWithIndex(keys, numbering: numbering);
 
     // 한 슬라이드당 약 12행 (제목 1줄 포함)
     const rowsPerSlide = 12;
@@ -1062,7 +1112,16 @@ class ExportService {
         i,
         (i + rowsPerSlide > members.length) ? members.length : i + rowsPerSlide,
       );
-      final grid = <List<String>>[heads, ...chunk.map((m) => rowFor(m, keys))];
+      final grid = <List<String>>[
+        heads,
+        for (var j = 0; j < chunk.length; j++)
+          rowWithIndex(
+            chunk[j],
+            keys,
+            numberingStart + i + j,
+            numbering: numbering,
+          ),
+      ];
       slideRows.add(grid);
     }
     if (slideRows.isEmpty) slideRows.add([heads]);
@@ -1295,14 +1354,23 @@ class ExportService {
     List<Member> members, {
     String title = '한국범스카우트 중앙회 인가자 명단',
     List<String>? fieldKeys,
+    bool numbering = false,
+    int numberingStart = 1,
   }) {
     final keys = fieldKeys ?? kDefaultFieldKeys;
     final buf = StringBuffer();
     buf.writeln(title);
     buf.writeln('총 ${members.length}명 | 출력일: ${_today()}');
     buf.writeln('=' * 60);
-    for (final m in members) {
-      buf.writeln(rowFor(m, keys).join('  '));
+    for (var i = 0; i < members.length; i++) {
+      buf.writeln(
+        rowWithIndex(
+          members[i],
+          keys,
+          numberingStart + i,
+          numbering: numbering,
+        ).join('  '),
+      );
     }
     return Uint8List.fromList(utf8.encode(buf.toString()));
   }

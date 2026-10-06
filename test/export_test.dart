@@ -55,4 +55,37 @@ void main() {
     expect(ContactService.phones(members).length, 2); // 2 unique
     expect(ContactService.emails(members), ['a@example.com']);
   });
+
+  test('연번 옵션 — Word 헤더/본문에 순번 포함(기본은 미포함)', () {
+    final off = utf8.decode(ExportService.buildWord(sample));
+    expect(off.contains('<th>연번</th>'), isFalse);
+
+    final on = utf8.decode(ExportService.buildWord(sample, numbering: true));
+    expect(on.contains('<th>연번</th>'), isTrue);
+    expect(on.contains('<td>1</td>'), isTrue);
+    expect(on.contains('<td>2</td>'), isTrue);
+  });
+
+  test('연번 시작값(numberingStart) — 분할 출력 시 이어짐', () {
+    final on = utf8.decode(
+      ExportService.buildWord(sample, numbering: true, numberingStart: 101),
+    );
+    expect(on.contains('<td>101</td>'), isTrue);
+    expect(on.contains('<td>102</td>'), isTrue);
+  });
+
+  test('인가일(date)이 두줄 방지 후보·기본 선택에 포함', () {
+    expect(kNoWrapCandidates.contains('date'), isTrue);
+    expect(kNoWrapDefault.contains('date'), isTrue);
+    expect(kNoWrapLabels['date'], '인가일');
+  });
+
+  test('headersWithIndex/rowWithIndex 헬퍼 — 연번 선택', () {
+    expect(ExportService.headersWithIndex(['name']).first, '성명');
+    expect(ExportService.headersWithIndex(['name'], numbering: true).first, '연번');
+    final row = ExportService.rowWithIndex(sample[0], ['name'], 7,
+        numbering: true);
+    expect(row.first, '7');
+    expect(row[1], '현지환');
+  });
 }
