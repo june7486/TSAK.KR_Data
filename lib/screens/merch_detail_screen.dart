@@ -45,7 +45,8 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
     final video = _s('video');
     final photo = widget.isSurvey ? _s('photo') : _s('image');
     final price = (it['price'] as num?)?.toInt() ?? 0;
-    final stock = (it['stock'] as num?)?.toInt() ?? 0;
+    // 판매가능재고 — 수품구매에 노출되는 판매 가능 수량(관리자 직접입력, 기본 999).
+    final sellable = (it['sellableStock'] as num?)?.toInt() ?? 999;
     final minQty = (it['minQty'] as num?)?.toInt() ?? 0;
     final count =
         (it['count'] as num?)?.toInt() ??
@@ -65,7 +66,8 @@ class _MerchDetailScreenState extends State<MerchDetailScreen> {
         MapEntry('가격', '${_won(price)}원')
       else
         const MapEntry('가격', '가격문의'),
-      if (!widget.isSurvey) MapEntry('재고', stock > 0 ? '$stock개' : '품절'),
+      if (!widget.isSurvey)
+        MapEntry('판매가능재고', sellable > 0 ? '$sellable개' : '품절'),
       if (widget.isSurvey) MapEntry('신청 현황', '$count명 신청 / 최소 제작 착수 $minQty명'),
       if (options.isNotEmpty) MapEntry('옵션', options.join(' · ')),
       if (video.isNotEmpty) MapEntry('영상', video),

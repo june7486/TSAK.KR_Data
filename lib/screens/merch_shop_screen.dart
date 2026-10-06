@@ -413,11 +413,11 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
 
   Widget _productCard(Map<String, dynamic> p) {
     final price = (p['price'] as num?)?.toInt() ?? 0;
-    final stock = (p['stock'] as num?)?.toInt() ?? 0;
+    final sellable = (p['sellableStock'] as num?)?.toInt() ?? 999;
     final options = ((p['options'] as List?) ?? []).map((e) => '$e').toList();
     final imgUrl = _nas.merchImageUrl('${p['image'] ?? ''}');
     final kind = '${p['kind'] ?? ''}';
-    final soldOut = stock <= 0;
+    final soldOut = sellable <= 0;
     final qty = _qtyOf(p);
     final credentialOnly = p['credentialOnly'] == true;
     return Container(
@@ -574,7 +574,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       ),
                     ),
                     Text(
-                      soldOut ? '품절' : '재고 $stock',
+                      soldOut ? '품절' : '판매가능 $sellable',
                       style: TextStyle(
                         fontSize: 10,
                         color: soldOut
@@ -604,7 +604,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                       ),
                     ),
                     _qtyBtn('+', () {
-                      final max = stock > 0 ? stock : 99;
+                      final max = sellable > 0 ? sellable : 99;
                       if (qty < max)
                         setState(() => _cardQty['${p['id']}'] = qty + 1);
                     }),

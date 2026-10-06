@@ -2259,6 +2259,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     final kind = TextEditingController(text: '${existing?['kind'] ?? ''}');
     final price = TextEditingController(text: '${existing?['price'] ?? ''}');
     final stock = TextEditingController(text: '${existing?['stock'] ?? ''}');
+    // 판매가능재고 — 수품구매(쇼핑몰)에 노출되는 판매 가능 수량. 직접입력(기본 999).
+    final sellable = TextEditingController(
+      text: '${existing?['sellableStock'] ?? 999}',
+    );
     final desc = TextEditingController(text: '${existing?['desc'] ?? ''}');
     String image = '${existing?['image'] ?? ''}';
     final size = TextEditingController(text: '${existing?['size'] ?? ''}');
@@ -2442,6 +2446,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 ),
                 _dlgField(price, '가격 (원)', number: true),
                 _dlgField(stock, '재고 수량', number: true),
+                // 판매가능재고 — 수품구매(쇼핑몰) 노출 수량. 직접입력(기본 999).
+                _dlgField(sellable, '판매가능재고 (쇼핑몰 노출 · 기본 999)', number: true),
                 _dlgField(options, '옵션 (쉼표 구분, 예: S,M,L / 58,60)'),
                 _dlgField(size, '사이즈 안내 (자유 텍스트)'),
                 _dlgField(desc, '설명'),
@@ -2720,6 +2726,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         kind: kind.text.trim(),
         price: int.tryParse(price.text.trim()) ?? 0,
         stock: int.tryParse(stock.text.trim()) ?? 0,
+        sellableStock:
+            int.tryParse(sellable.text.replaceAll(RegExp(r'[^0-9]'), '')) ??
+            999,
         options: optList,
         size: size.text.trim(),
         image: image.trim(),
@@ -5200,12 +5209,17 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             child: Text('품명 / 누적·판매가·제작자·생산일', style: style),
           ),
           const SizedBox(
-            width: 46,
+            width: 40,
             child: Text('상품판매', style: style, textAlign: TextAlign.center),
           ),
           const SizedBox(
-            width: 60,
+            width: 54,
             child: Text('재고', style: style, textAlign: TextAlign.center),
+          ),
+          // 판매가능재고 — 수품구매(쇼핑몰)에 노출되는 판매 가능 수량(직접입력).
+          const SizedBox(
+            width: 56,
+            child: Text('판매가능', style: style, textAlign: TextAlign.center),
           ),
           if (master && _costVisible)
             const SizedBox(
@@ -5449,6 +5463,8 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   Widget _stockRow(Map<String, dynamic> s) {
     final name = '${s['name'] ?? ''}';
     final stock = (s['stock'] as num?)?.toInt() ?? 0;
+    // 판매가능재고(쇼핑몰 노출 수량) — 미설정이면 기본 999.
+    final sellable = (s['sellableStock'] as num?)?.toInt() ?? 999;
     final sold = (s['sold'] as num?)?.toInt() ?? 0;
     final low = stock <= 5;
     final product = _productOf(s);
@@ -5540,7 +5556,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
           ),
           SizedBox(
-            width: 46,
+            width: 40,
             child: IconButton(
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
@@ -5556,7 +5572,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
             ),
           ),
           SizedBox(
-            width: 60,
+            width: 54,
             child: _StockQty(
               value: stock,
               onChanged: (v) async {
@@ -5569,6 +5585,24 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                   _load();
                 } else {
                   _snack('조정 실패');
+                }
+              },
+            ),
+          ),
+          // 판매가능재고 — 수품구매(쇼핑몰) 노출 수량(직접입력, 0 허용).
+          SizedBox(
+            width: 56,
+            child: _StockQty(
+              value: sellable,
+              onChanged: (v) async {
+                if (v == sellable) return;
+                final r = await _saveProductField(product, 'sellableStock', v);
+                if (!mounted) return;
+                if (r) {
+                  _snack('판매가능재고를 $v개로 저장했습니다');
+                  _load();
+                } else {
+                  _snack('저장 실패');
                 }
               },
             ),
@@ -5788,6 +5822,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         kind: '${p['kind'] ?? ''}',
         price: (p['price'] as num?)?.toInt() ?? 0,
         stock: (p['stock'] as num?)?.toInt() ?? 0,
+        sellableStock: (p['sellableStock'] as num?)?.toInt() ?? 999,
         options: ((p['options'] as List?) ?? []).map((e) => '$e').toList(),
         image: '${p['image'] ?? ''}',
         desc: '${p['desc'] ?? ''}',
@@ -5817,6 +5852,50 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       }
     } catch (e) {
       if (mounted) _snack('변경 오류: $e');
+    }
+  }
+
+  /// 상품의 단일 필드만 저장한다(sellableStock 등 — 재고표 인라인 입력용).
+  ///  상품(product)이 없으면(재고표에만 있는 항목) 저장할 수 없다.
+  Future<bool> _saveProductField(
+    Map<String, dynamic>? p,
+    String field,
+    int value,
+  ) async {
+    if (p == null) return false;
+    try {
+      final r = await _nas.merchSaveProduct(
+        id: '${p['id']}',
+        name: '${p['name'] ?? ''}',
+        kind: '${p['kind'] ?? ''}',
+        price: (p['price'] as num?)?.toInt() ?? 0,
+        stock: (p['stock'] as num?)?.toInt() ?? 0,
+        sellableStock: field == 'sellableStock'
+            ? value
+            : ((p['sellableStock'] as num?)?.toInt() ?? 999),
+        options: ((p['options'] as List?) ?? []).map((e) => '$e').toList(),
+        image: '${p['image'] ?? ''}',
+        desc: '${p['desc'] ?? ''}',
+        size: '${p['size'] ?? ''}',
+        makerId: '${p['makerId'] ?? ''}',
+        cost: (p['cost'] as num?)?.toInt() ?? 0,
+        madeDate: '${p['madeDate'] ?? ''}',
+        specList: ((p['specList'] as List?) ?? [])
+            .whereType<Map>()
+            .map((e) => e.map((k, v) => MapEntry('$k', '${v ?? ''}')))
+            .toList(),
+        quoteFile: '${p['quoteFile'] ?? ''}',
+        quoteFileName: '${p['quoteFileName'] ?? ''}',
+        active: p['active'] != false,
+        credentialOnly: p['credentialOnly'] == true,
+        forSale: p['forSale'] != false,
+        category: '${p['category'] ?? ''}',
+        soldStart: '${p['soldStart'] ?? ''}',
+        soldBase: (p['soldBase'] as num?)?.toInt() ?? 0,
+      );
+      return r['ok'] == true;
+    } catch (_) {
+      return false;
     }
   }
 

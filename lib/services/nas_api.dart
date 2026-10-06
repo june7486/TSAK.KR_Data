@@ -2511,6 +2511,8 @@ class NasApi {
     String kind = '',
     int price = 0,
     int stock = 0,
+    // 판매가능재고 — 수품구매(쇼핑몰)에 노출되는 판매 가능 수량(기본 999).
+    int sellableStock = 999,
     List<String> options = const [],
     String image = '',
     String desc = '',
@@ -2538,6 +2540,7 @@ class NasApi {
             'kind': kind,
             'price': price,
             'stock': stock,
+            'sellableStock': sellableStock,
             'options': options,
             'image': image,
             'desc': desc,
