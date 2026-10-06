@@ -86,6 +86,7 @@ class AppState extends ChangeNotifier {
       case 'finance':
       case 'merchMgmt':
       case 'memberAdd':
+      case 'supplies':
         return isApp || isMaster;
       case 'memberDetail':
         return !(_tier == 'personal' || _tier == 'guest' || _isSupporter) ||

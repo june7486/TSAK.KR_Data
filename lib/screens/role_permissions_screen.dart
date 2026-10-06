@@ -61,6 +61,12 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
       'icon': Icons.inventory_2,
     },
     {
+      'key': 'supplies',
+      'label': '비품재고 관리',
+      'desc': '중앙회 비품 리스트 등록·수정·삭제·정렬',
+      'icon': Icons.inventory,
+    },
+    {
       'key': 'finance',
       'label': '재무관리',
       'desc': '참가비·지출·결산 (기본자료는 마스터 전용)',
@@ -220,7 +226,8 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
                 SizedBox(height: 3),
                 Text(
                   '스위치를 켜고 끄면 서버에 즉시 저장되어 모든 기기에 반영됩니다.\n'
-                  '범스카우트 인가자는 기본적으로 수품구매·행사관리·게시판만 허용됩니다.',
+                  '범스카우트 인가자는 기본적으로 수품구매·행사관리·게시판만 허용되며, '
+                  '비품재고 관리·수품관리는 관리자에게 기본 부여됩니다.',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 11.5,

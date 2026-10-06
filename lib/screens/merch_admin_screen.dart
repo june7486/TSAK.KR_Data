@@ -219,14 +219,20 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isMaster = context.watch<AppState>().isMaster;
-    // #9: 마스터가 아니면 마스터 전용 탭을 숨긴다.
+    final appState = context.watch<AppState>();
+    final isMaster = appState.isMaster;
+    // 비품재고 관리 권한(마스터 + 'supplies' 권한을 받은 관리자).
+    final canSupplies = appState.can('supplies');
+    // 마스터 전용 탭은 마스터에게만, 비품재고 탭은 권한 보유자에게 노출한다.
     final visibleIndexes = <int>[
       for (int i = 0; i < _tabLabels.length; i++)
-        if (isMaster || !_masterOnlyTabs.contains(i)) i,
+        if (_masterOnlyTabs.contains(i)
+            ? isMaster
+            : (i == _suppliesTab ? canSupplies : true))
+          i,
     ];
     if (!visibleIndexes.contains(_tab.index)) {
-      // 비마스터가 숨겨진 탭에 머무르면 첫 탭으로 이동.
+      // 권한 없는 탭에 머무르면 첫 탭으로 이동.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _tab.index = 0);
       });
@@ -305,7 +311,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
                 _reportsTab(),
                 _ledgerTab(),
                 _stockTab(),
-                isMaster
+                canSupplies
                     ? const SuppliesScreen(embedded: true)
                     : _masterOnlyNotice(),
                 isMaster
@@ -350,7 +356,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   ];
 
   /// 마스터 전용 탭 인덱스 (#9: 수품제작 리스트 등은 마스터만 접근).
-  static const Set<int> _masterOnlyTabs = {6, 7, 10};
+  static const Set<int> _masterOnlyTabs = {7, 10};
+
+  /// '비품재고' 탭 인덱스 — 마스터가 역할권한('supplies')을 켠 관리자도 관리 가능.
+  static const int _suppliesTab = 6;
 
   Widget _errorView() => Center(
     child: Column(
