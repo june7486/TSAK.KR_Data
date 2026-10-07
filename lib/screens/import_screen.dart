@@ -2,10 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart';
 
 import '../models/member.dart';
-import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/import_parser.dart';
 import '../theme/app_theme.dart';
@@ -15,6 +13,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/member_avatar.dart';
+import 'import_review_screen.dart';
 
 /// 자료 가져오기 (AI 자동 인식)
 /// PDF/엑셀/워드/텍스트/JPG/카메라 → 목록 자동 인식 → 승인/수정 → DB 저장
@@ -235,7 +234,7 @@ class _ImportScreenState extends State<ImportScreen> {
             children: [
               Expanded(
                 child: Text(
-                  '총 ${_recognized.length}건을 NAS DB에 추가합니다',
+                  '총 ${_recognized.length}건 · 병합 검토 후 반영',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textGray,
@@ -246,8 +245,8 @@ class _ImportScreenState extends State<ImportScreen> {
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.scoutGreen,
                 ),
-                onPressed: _busy ? null : _saveAll,
-                icon: const Icon(Icons.save),
+                onPressed: _busy ? null : _review,
+                icon: const Icon(Icons.check),
                 label: const Text('승인 후 저장'),
               ),
             ],
@@ -255,6 +254,26 @@ class _ImportScreenState extends State<ImportScreen> {
         ),
       ),
     );
+  }
+
+  /// 병합 검토 화면으로 이동 — 중복/신규를 비교하고 등록/업데이트를 확정한다.
+  Future<void> _review() async {
+    if (_recognized.isEmpty) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImportReviewScreen(
+          recognized: _recognized,
+          sourceName: _sourceName.isEmpty ? '자료 가져오기' : _sourceName,
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() {
+        _recognized = [];
+        _sourceName = '';
+      });
+    }
   }
 
   // ---------- 파일/이미지 선택 ----------
@@ -410,30 +429,6 @@ class _ImportScreenState extends State<ImportScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _saveAll() async {
-    setState(() => _busy = true);
-    final state = context.read<AppState>();
-    var added = 0;
-    for (final m in _recognized) {
-      // 인가번호 중복 시 새 번호 부여
-      var member = m;
-      if (member.number.trim().isEmpty ||
-          state.byNumber(member.number) != null) {
-        final next = await state.nextNumber();
-        member = member.copyWith(number: '$next');
-      }
-      await state.save(member);
-      added++;
-    }
-    if (mounted) {
-      setState(() {
-        _busy = false;
-        _recognized = [];
-      });
-      _snack('$added건을 저장했습니다 (NAS 동기화)');
-    }
   }
 
   void _snack(String msg) {

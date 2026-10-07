@@ -1010,6 +1010,65 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  // ---- 자료 가져오기 (AI 인식) — 등록/업데이트 · 감사로그 · 복원 ----
+  /// 인식 자료를 NAS에 적용(등록/업데이트).
+  ///  [rows] 각 항목: {number, name, league, unit, ..., action('add'|'update'|'skip'),
+  ///                  fields('쉼표로 구분한 반영 허용 필드', 없으면 전체)}
+  ///  dry=true 면 비교/미리보기만.
+  ///  반환: {ok, added, updated, skipped, changes:[{number,name,diffs:[...]}]}
+  Future<Map<String, dynamic>> importApply(
+    List<Map<String, dynamic>> rows, {
+    String source = '',
+    bool dry = false,
+    String id = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/import/apply'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'rows': rows,
+            'source': source,
+            'dry': dry,
+            if (id.isNotEmpty) 'id': id,
+          }),
+        )
+        .timeout(const Duration(seconds: 180));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 자료 가져오기(업데이트) 감사로그 — 관리자·마스터.
+  Future<Map<String, dynamic>> importLog() async {
+    try {
+      final r = await http
+          .get(_uri('/api/import/log'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 30));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false, 'items': []};
+    }
+  }
+
+  /// (마스터) 감사로그의 이전값으로 복원.
+  ///  [restoreItems] 지정 시 그 회원 id 들만, 미지정 시 해당 항목 전체 복원.
+  Future<Map<String, dynamic>> importRestore(
+    String id, {
+    List<String>? restoreItems,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/import/restore'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'id': id,
+            if (restoreItems != null && restoreItems.isNotEmpty)
+              'restoreItems': restoreItems,
+          }),
+        )
+        .timeout(const Duration(seconds: 120));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   // ---- 행사관리 (행사 사진·동영상 갤러리) ----
   /// 행사관리 폴더의 미디어 목록 (사진/동영상)
   Future<List<Map<String, dynamic>>> eventList() async {

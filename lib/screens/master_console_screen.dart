@@ -17,6 +17,7 @@ import 'event_year_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'finance_ledger_screen.dart';
+import 'import_log_screen.dart';
 import 'merch_admin_screen.dart';
 import 'member_request_screen.dart';
 import 'member_field_visibility_screen.dart';
@@ -211,6 +212,12 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   Icons.cloud_sync,
                   AppColors.taegeukBlue,
                   () => _push(const StorageScreen()),
+                ),
+                _tile(
+                  '자료 가져오기 로그 · 복원',
+                  Icons.restore_page,
+                  AppColors.taegeukRed,
+                  () => _push(const ImportLogScreen()),
                 ),
                 _tile(
                   '수품 재고 확인',
