@@ -907,7 +907,79 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  // ---------- 마스터 앱관리 ----------
+  // ---------- 후원 안내 편집 (마스터) ----------
+  /// 후원계좌 목록을 서버에 저장하고 로컬 설정에 반영한다.
+  Future<bool> saveDonationAccounts({
+    required String action,
+    List<Map<String, dynamic>>? donations,
+    Map<String, dynamic>? account,
+    int? index,
+    String? holder,
+  }) async {
+    if (!repo.isNasMode) return false;
+    try {
+      final r = await nas.saveDonationAccounts(
+        action: action,
+        donations: donations,
+        account: account,
+        index: index,
+        holder: holder,
+      );
+      if (r['ok'] != true) return false;
+      final next = Map<String, dynamic>.from(_config);
+      if (r['donations'] is List) {
+        next['donations'] = (r['donations'] as List)
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+      }
+      if (r.containsKey('donationHolder')) {
+        next['donationHolder'] = r['donationHolder'];
+      }
+      _config = next;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ---------- 아이디/암호 관리자 계정 (마스터) ----------
+  /// 관리자 계정 목록 조회. 반환: [{username,password,note,created}]
+  Future<List<Map<String, dynamic>>> fetchAdminAccounts() async {
+    if (!repo.isNasMode) return [];
+    try {
+      final r = await nas.fetchAdminAccounts();
+      final list = r['accounts'];
+      if (list is List) {
+        return list
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 관리자 계정 생성/수정/삭제. 성공 시 null, 실패 시 오류 메시지 반환.
+  Future<String?> saveAdminAccount({
+    required String action,
+    required String username,
+    String? password,
+    String? note,
+  }) async {
+    if (!repo.isNasMode) return 'NAS 모드가 아닙니다';
+    try {
+      final r = await nas.saveAdminAccount(
+        action: action,
+        username: username,
+        password: password,
+        note: note,
+      );
+      if (r['ok'] == true) return null;
+      return '${r['error'] ?? '실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
   Map<String, dynamic> _admin = {};
   Map<String, dynamic> get adminState => _admin;
   bool get serverPaused => _admin['serverPaused'] == true;

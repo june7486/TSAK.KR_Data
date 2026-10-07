@@ -512,13 +512,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _donationCard(AppState state) {
+    final canEdit = state.isMaster;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _sectionTitle('후원 안내', Icons.volunteer_activism),
+            Row(
+              children: [
+                Expanded(child: _sectionTitle('후원 안내', Icons.volunteer_activism)),
+                if (canEdit)
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                    ),
+                    onPressed: _busy ? null : () => _addDonationAccount(state),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('계좌 추가'),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             for (var di = 0; di < state.donations.length; di++)
               Padding(
@@ -578,36 +595,248 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: const Icon(Icons.send_rounded, size: 15),
                       label: const Text('송금'),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 18),
-                      onPressed: () async {
-                        await Clipboard.setData(
-                          ClipboardData(
-                            text: '${state.donations[di]['account']}',
-                          ),
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                '${state.donations[di]['account']} 복사됨',
-                              ),
+                    if (canEdit) ...[
+                      IconButton(
+                        tooltip: '계좌 수정',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.edit, size: 18),
+                        onPressed: _busy
+                            ? null
+                            : () => _editDonationAccount(state, di),
+                      ),
+                      IconButton(
+                        tooltip: '계좌 삭제',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          size: 18,
+                          color: AppColors.taegeukRed,
+                        ),
+                        onPressed: _busy
+                            ? null
+                            : () => _deleteDonationAccount(state, di),
+                      ),
+                    ] else
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 18),
+                        onPressed: () async {
+                          await Clipboard.setData(
+                            ClipboardData(
+                              text: '${state.donations[di]['account']}',
                             ),
                           );
-                        }
-                      },
-                    ),
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '${state.donations[di]['account']} 복사됨',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
                   ],
                 ),
               ),
             const Divider(),
-            Text(
-              '예금주: ${state.donationHolder}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '예금주: ${state.donationHolder}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (canEdit)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                    ),
+                    onPressed: _busy ? null : () => _editDonationHolder(state),
+                    icon: const Icon(Icons.person_outline, size: 15),
+                    label: const Text('예금주 변경'),
+                  ),
+              ],
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// 계좌 1건 입력 다이얼로그 (추가/수정 공용). 반환: {label,bank,account} 또는 null.
+  Future<Map<String, String>?> _donationAccountDialog({
+    String title = '후원 계좌',
+    String label = '',
+    String bank = '',
+    String account = '',
+  }) async {
+    final lc = TextEditingController(text: label);
+    final bc = TextEditingController(text: bank);
+    final ac = TextEditingController(text: account);
+    final r = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: lc,
+              decoration: const InputDecoration(
+                labelText: '계좌 이름',
+                hintText: '예: 대표 (참가비·후원 등)',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: bc,
+              decoration: const InputDecoration(
+                labelText: '은행',
+                hintText: '예: 우리은행',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ac,
+              keyboardType: TextInputType.text,
+              decoration: const InputDecoration(
+                labelText: '계좌번호',
+                hintText: '예: 1005-202-281140',
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, {
+              'label': lc.text.trim(),
+              'bank': bc.text.trim(),
+              'account': ac.text.trim(),
+            }),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    if (r == null) return null;
+    if (r['label']!.isEmpty && r['account']!.isEmpty) return null;
+    return r;
+  }
+
+  Future<void> _addDonationAccount(AppState state) async {
+    final a = await _donationAccountDialog(title: '후원 계좌 추가');
+    if (a == null || !mounted) return;
+    setState(() => _busy = true);
+    final ok = await state.saveDonationAccounts(action: 'save', account: a);
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    _snack(ok ? '후원 계좌를 추가했습니다' : '저장에 실패했습니다 (마스터 권한 확인)');
+  }
+
+  Future<void> _editDonationAccount(AppState state, int index) async {
+    final cur = state.donations[index];
+    final a = await _donationAccountDialog(
+      title: '후원 계좌 수정',
+      label: '${cur['label'] ?? ''}',
+      bank: '${cur['bank'] ?? ''}',
+      account: '${cur['account'] ?? ''}',
+    );
+    if (a == null || !mounted) return;
+    setState(() => _busy = true);
+    final ok = await state.saveDonationAccounts(
+      action: 'save',
+      index: index,
+      account: a,
+    );
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    _snack(ok ? '후원 계좌를 수정했습니다' : '저장에 실패했습니다');
+  }
+
+  Future<void> _deleteDonationAccount(AppState state, int index) async {
+    final cur = state.donations[index];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('계좌 삭제'),
+        content: Text(
+          '「${cur['label']}」 ${cur['bank']} ${cur['account']} 계좌를 삭제할까요?',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    final done = await state.saveDonationAccounts(action: 'delete', index: index);
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    _snack(done ? '계좌를 삭제했습니다' : '삭제에 실패했습니다');
+  }
+
+  Future<void> _editDonationHolder(AppState state) async {
+    final ctrl = TextEditingController(text: state.donationHolder);
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: const Text('예금주 변경'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '예금주',
+            hintText: '예: 한국범스카우트중앙회',
+            isDense: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    if (v == null || v.isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    final ok = await state.saveDonationAccounts(action: 'holder', holder: v);
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    _snack(ok ? '예금주를 변경했습니다' : '변경에 실패했습니다');
+  }
+
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
     );
   }
 

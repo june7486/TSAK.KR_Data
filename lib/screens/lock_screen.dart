@@ -145,8 +145,11 @@ class _LockScreenState extends State<LockScreen> {
     });
     _startLoginBusy();
     final state = context.read<AppState>();
-    // 관리자는 ID 고정(TSAK), 그 외는 입력값 사용
-    final idInput = _tier == 'app' ? 'TSAK' : _idCtrl.text.trim();
+    // 관리자(app): 입력한 아이디(task/tsak 등)를 그대로 사용해 계정별 로그인.
+    //  (빈칸이면 'TSAK' 공용 관리자로 처리)
+    final idInput = _tier == 'app'
+        ? (_idCtrl.text.trim().isEmpty ? 'TSAK' : _idCtrl.text.trim())
+        : _idCtrl.text.trim();
     // 은하스카우트는 개인 로그인이지만 소속(corps)이 달라 별도 검증된다.
     final ok = _tier == 'eunha'
         ? await state.login('personal', v, id: idInput, corps: 'eunha')
@@ -458,7 +461,9 @@ class _LockScreenState extends State<LockScreen> {
                                 decoration: InputDecoration(
                                   labelText: _tier == 'guest'
                                       ? 'ID (전화번호)'
-                                      : 'ID',
+                                      : (_tier == 'app'
+                                          ? '관리자 아이디'
+                                          : 'ID'),
                                   prefixIcon: const Icon(Icons.badge_outlined),
                                 ),
                               ),

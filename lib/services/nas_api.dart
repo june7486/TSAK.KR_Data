@@ -597,6 +597,43 @@ class NasApi {
         .toList();
   }
 
+  // ---- 후원 안내 (계좌 목록 · 예금주) ----
+  /// 후원계좌 목록 + 예금주 조회.
+  Future<Map<String, dynamic>> fetchDonationAccounts() async {
+    try {
+      final r = await http
+          .get(_uri('/api/donation/accounts'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
+  /// 후원 안내 저장 (마스터 전용).
+  /// [action]: set(목록 전체) | save(단일 추가·수정) | delete(삭제) | holder(예금주)
+  Future<Map<String, dynamic>> saveDonationAccounts({
+    required String action,
+    List<Map<String, dynamic>>? donations,
+    Map<String, dynamic>? account,
+    int? index,
+    String? holder,
+  }) async {
+    final body = <String, dynamic>{'action': action};
+    if (donations != null) body['donations'] = donations;
+    if (account != null) body['account'] = account;
+    if (index != null) body['index'] = index;
+    if (holder != null) body['donationHolder'] = holder;
+    final r = await http
+        .post(
+          _uri('/api/donation/accounts/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   Future<String?> createBackup([String? name]) async {
     final r = await http
         .post(
@@ -3101,6 +3138,49 @@ class NasApi {
         .timeout(const Duration(seconds: 20));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     return j['ok'] == true;
+  }
+
+  /// 마스터: 아이디/암호 기반 관리자 계정 목록.
+  /// 반환: { ok, accounts:[{username,password,note,created}] }
+  Future<Map<String, dynamic>> fetchAdminAccounts() async {
+    try {
+      final r = await http
+          .get(_uri('/api/admin/accounts'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j.cast<String, dynamic>();
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
+  /// 마스터: 아이디/암호 관리자 계정 생성·수정·삭제.
+  /// action = 'create' | 'update' | 'delete'.
+  /// 반환: 서버 응답 전체({ok, accounts, error}) — UI에서 오류 메시지 표시용.
+  Future<Map<String, dynamic>> saveAdminAccount({
+    required String action,
+    required String username,
+    String? password,
+    String? note,
+  }) async {
+    try {
+      final r = await http
+          .post(
+            _uri('/api/admin/accounts'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({
+              'action': action,
+              'username': username,
+              if (password != null) 'password': password,
+              if (note != null) 'note': note,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j.cast<String, dynamic>();
+    } catch (_) {
+      return {'ok': false, 'error': '네트워크 오류'};
+    }
   }
 
   /// 관리자: 연회비 금액 / 판매창 오픈 / 수품계좌 설정.
