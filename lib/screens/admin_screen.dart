@@ -33,6 +33,7 @@ class _AdminScreenState extends State<AdminScreen> {
       context.read<AppState>().loadAdmin();
       context.read<AppState>().refreshServerPaused();
       _loadAdmins();
+      _loadIdAccounts();
     });
   }
 
@@ -55,6 +56,8 @@ class _AdminScreenState extends State<AdminScreen> {
           _serverPauseCard(state),
           const SizedBox(height: 12),
           _grantAdminCard(state),
+          const SizedBox(height: 12),
+          _idAdminCard(state),
           const SizedBox(height: 12),
           _appPasswordCard(state),
           const SizedBox(height: 12),
@@ -82,6 +85,10 @@ class _AdminScreenState extends State<AdminScreen> {
   List<String> _adminNumbers = [];
   final TextEditingController _grantCtrl = TextEditingController();
 
+  // ---- 아이디/암호 관리자 계정 (기존 인가번호 체계와 공존) ----
+  bool _idAccLoading = true;
+  List<Map<String, dynamic>> _idAccounts = [];
+
   @override
   void dispose() {
     _grantCtrl.dispose();
@@ -107,6 +114,17 @@ class _AdminScreenState extends State<AdminScreen> {
     setState(() {
       _adminNumbers = lst;
       _adminsLoading = false;
+    });
+  }
+
+  /// 아이디/암호 관리자 계정 목록 로드.
+  Future<void> _loadIdAccounts() async {
+    setState(() => _idAccLoading = true);
+    final lst = await context.read<AppState>().fetchAdminAccounts();
+    if (!mounted) return;
+    setState(() {
+      _idAccounts = lst;
+      _idAccLoading = false;
     });
   }
 
@@ -335,6 +353,342 @@ class _AdminScreenState extends State<AdminScreen> {
         builder: (_) => AdminPermScreen(number: no, name: name),
       ),
     );
+  }
+
+  // ===================== 아이디/암호 관리자 계정 =====================
+  /// 기존 인가번호 관리자 체계는 그대로 두고, 아이디/암호 관리자를 추가 관리.
+  /// 각 계정 아이디를 누르면 그 계정 전용 권한 설정 창이 열린다.
+  Widget _idAdminCard(AppState state) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _title('아이디/암호 관리자 계정', Icons.manage_accounts, AppColors.taegeukBlue),
+            const SizedBox(height: 6),
+            const Text(
+              '인가번호 관리자와 별개로, 로그인용 「아이디 + 암호」를 새로 만들어 '
+              '관리자로 쓸 수 있습니다. 아이디를 누르면 그 아이디 전용 권한 설정 '
+              '창이 열립니다.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : () => _idAccountDialog(state),
+                    icon: const Icon(Icons.person_add_alt_1, size: 18),
+                    label: const Text('아이디/암호 추가'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: _busy ? null : () => _loadIdAccounts(),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('새로고침'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(
+                  Icons.vpn_key_outlined,
+                  size: 16,
+                  color: AppColors.taegeukBlue,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '아이디 계정',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '(${_idAccounts.length})',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (_idAccLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_idAccounts.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  '생성된 아이디 계정이 없습니다.',
+                  style: TextStyle(fontSize: 12.5, color: AppColors.textGray),
+                ),
+              )
+            else
+              Column(
+                children: [
+                  for (final a in _idAccounts) _idAccountTile(state, a),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 아이디 계정 1행 — 아이디 탭 시 권한 설정, 우측 버튼으로 수정·삭제·복사.
+  Widget _idAccountTile(AppState state, Map<String, dynamic> a) {
+    final uname = '${a['username'] ?? ''}'.trim();
+    final note = '${a['note'] ?? ''}'.trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.taegeukBlue.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.taegeukBlue.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.badge_outlined, size: 18, color: AppColors.taegeukBlue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _busy
+                  ? null
+                  : () => _openAdminPermsForUsername(state, uname),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      uname,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            note.isEmpty ? '아이디/암호 관리자' : note,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                        ),
+                        const Text(
+                          '권한 설정 ▸',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.taegeukBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '아이디 복사',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: uname));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('아이디($uname)를 복사했습니다')));
+            },
+            icon: const Icon(Icons.copy, size: 17),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '수정 (암호·메모)',
+            onPressed: _busy ? null : () => _idAccountDialog(state, account: a),
+            icon: const Icon(Icons.edit, size: 17),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '삭제',
+            onPressed: _busy ? null : () => _deleteIdAccount(state, uname),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: AppColors.taegeukRed,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openAdminPermsForUsername(AppState state, String uname) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminPermScreen(
+          number: uname,
+          name: '아이디 관리자',
+          isUsername: true,
+        ),
+      ),
+    );
+  }
+
+  /// 아이디/암호 계정 생성(account=null) 또는 수정.
+  Future<void> _idAccountDialog(
+    AppState state, {
+    Map<String, dynamic>? account,
+  }) async {
+    final isEdit = account != null;
+    final uCtrl = TextEditingController(
+      text: isEdit ? '${account['username'] ?? ''}' : '',
+    );
+    final pCtrl = TextEditingController();
+    final nCtrl = TextEditingController(
+      text: isEdit ? '${account['note'] ?? ''}' : '',
+    );
+    bool obscure = true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setInner) => AlertDialog(
+          scrollable: true,
+          title: Text(isEdit ? '아이디 계정 수정' : '아이디/암호 관리자 추가'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '이 아이디와 암호로 앱 로그인(관리자) 시 사용할 수 있습니다.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: uCtrl,
+                enabled: !isEdit,
+                decoration: const InputDecoration(
+                  labelText: '아이디 (영문/숫자 2~24자)',
+                  hintText: '예: tsak',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: pCtrl,
+                obscureText: obscure,
+                decoration: InputDecoration(
+                  labelText: isEdit ? '새 암호 (비우면 유지)' : '암호',
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscure ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () => setInner(() => obscure = !obscure),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nCtrl,
+                decoration: const InputDecoration(
+                  labelText: '메모 (선택)',
+                  hintText: '예: 사무국 담당',
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(isEdit ? '저장' : '추가'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final uname = uCtrl.text.trim();
+    final pw = pCtrl.text.trim();
+    final note = nCtrl.text.trim();
+    if (uname.isEmpty) {
+      _snack('아이디를 입력하세요');
+      return;
+    }
+    if (!isEdit && pw.isEmpty) {
+      _snack('암호를 입력하세요');
+      return;
+    }
+    setState(() => _busy = true);
+    final err = await state.saveAdminAccount(
+      action: isEdit ? 'update' : 'create',
+      username: uname,
+      password: pw.isEmpty ? null : pw,
+      note: note,
+    );
+    if (mounted) setState(() => _busy = false);
+    if (err == null) {
+      await _loadIdAccounts();
+      _snack(isEdit ? '아이디 계정을 수정했습니다' : '아이디/암호 관리자를 추가했습니다');
+    } else {
+      _snack('실패: $err');
+    }
+  }
+
+  Future<void> _deleteIdAccount(AppState state, String uname) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('아이디 계정 삭제'),
+        content: Text(
+          "아이디 '$uname' 계정을 삭제합니다. 이 아이디로는 더 이상 로그인할 수 "
+          '없고, 설정된 개별 권한도 함께 삭제됩니다.',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    final err = await state.saveAdminAccount(action: 'delete', username: uname);
+    if (mounted) setState(() => _busy = false);
+    if (err == null) {
+      await _loadIdAccounts();
+      _snack("아이디 '$uname' 계정을 삭제했습니다");
+    } else {
+      _snack('실패: $err');
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   String _memberName(AppState state, String no) {

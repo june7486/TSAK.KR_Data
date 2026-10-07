@@ -14,13 +14,21 @@ import '../widgets/tsak_app_bar.dart';
 /// 서버(/api/admin/perms/set)에 인가번호별 override 로 저장되어, 그 관리자가
 /// 개인 로그인으로 접속해도 지정한 범위까지만 기능이 열린다.
 class AdminPermScreen extends StatefulWidget {
-  const AdminPermScreen({super.key, required this.number, this.name = ''});
+  const AdminPermScreen({
+    super.key,
+    required this.number,
+    this.name = '',
+    this.isUsername = false,
+  });
 
-  /// 관리자 인가번호(아이디).
+  /// 관리자 아이디 (인가번호 또는 아이디/암호 계정의 username).
   final String number;
 
   /// 표시용 이름(없으면 미확인).
   final String name;
+
+  /// true 이면 아이디/암호 관리자 계정(username), false 이면 인가번호 관리자.
+  final bool isUsername;
 
   @override
   State<AdminPermScreen> createState() => _AdminPermScreenState();
@@ -59,6 +67,10 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  /// 서버 adminPermissions 키 정규화값 — 아이디 계정은 소문자로 저장된다.
+  String get _key =>
+      widget.isUsername ? widget.number.toLowerCase() : widget.number;
+
   Future<void> _load() async {
     final state = context.read<AppState>();
     setState(() => _busy = true);
@@ -73,7 +85,7 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
       defaults.putIfAbsent(m['key'] as String, () => false);
     }
     final ap = (r['adminPerms'] as Map?) ?? {};
-    final ov = ap[widget.number] as Map?;
+    final ov = ap[_key] as Map?;
     final effective = <String, bool>{...defaults};
     final customized = <String>{};
     if (ov != null) {
@@ -111,13 +123,13 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
     final updates = <String, bool>{
       for (final m in _menus) m['key'] as String: _effective[m['key']] == true,
     };
-    final ok = await state.nas.setAdminPerms(widget.number, updates);
+    final ok = await state.nas.setAdminPerms(_key, updates);
     if (!mounted) return;
     if (ok) {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('관리자 #${widget.number} 권한을 저장했습니다')),
+        SnackBar(content: Text('관리자 ${_label()} 권한을 저장했습니다')),
       );
     } else {
       setState(() => _busy = false);
@@ -134,7 +146,7 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('기본값으로 되돌리기'),
         content: Text(
-          '관리자 #${widget.number} 의 개별 권한을 모두 지우고 '
+          '관리자 ${_label()} 의 개별 권한을 모두 지우고 '
           '역할 기본값(관리자 기본 권한)으로 되돌립니다.',
           style: const TextStyle(fontSize: 13),
         ),
@@ -152,7 +164,7 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
     );
     if (ok != true) return;
     setState(() => _busy = true);
-    final done = await state.nas.resetAdminPerms(widget.number);
+    final done = await state.nas.resetAdminPerms(_key);
     if (!mounted) return;
     if (done) {
       await _load();
@@ -167,6 +179,10 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
       );
     }
   }
+
+  /// 화면 제목·안내용 라벨 (아이디 계정 vs 인가번호 관리자).
+  String _label() =>
+      widget.isUsername ? "'${widget.number}'" : '#${widget.number}';
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +200,7 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
       appBar: TsakAppBar(
         leading: const AppBackButton(label: '뒤로'),
         leadingWidth: 84,
-        title: Text('관리자 #${widget.number} 권한'),
+        title: Text('관리자 ${_label()} 권한'),
         actions: const [AppHomeEmblem(size: 26)],
       ),
       body: Stack(
