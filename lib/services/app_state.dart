@@ -358,6 +358,8 @@ class AppState extends ChangeNotifier {
     _corps = (corps == 'eunha' || idSaysEunha) ? 'eunha' : 'tsak';
     // 개인 접근에서 입력된 인가번호 (ID 필드)
     String personalNo = '';
+    // 아이디/암호 관리자 계정명 (app 로그인 시 계정별 권한 적용용)
+    String adminIdent = '';
     if (tier == 'master') {
       // 마스터는 서버 검증(있으면) 우선, 없으면 로컬 상수
       ok = value == AppConfig.masterPassword;
@@ -368,20 +370,27 @@ class AppState extends ChangeNotifier {
         } catch (_) {}
       }
     } else if (tier == 'app') {
-      // 앱 접근: ID 는 "TSAK" (대문자, 고정) + 앱 비밀번호
-      final idOk = id.trim().toUpperCase() == 'TSAK';
+      // 앱 접근: (1) 공용 관리자 ID "TSAK" + 앱 비밀번호, 또는
+      //          (2) 마스터가 만든 아이디/암호 관리자 계정(예: task / tsak437).
+      // 두 경우 모두 서버(/api/login)에 위임해 검증한다. 서버는 앱 공용
+      // 비번과 아이디/암호 계정을 모두 처리한다.
+      final idTrim = id.trim();
+      final isShared = idTrim.toUpperCase() == 'TSAK';
+      adminIdent = isShared ? '' : idTrim;
       ok = false;
-      if (idOk) {
-        // NAS 모드에서는 서버에 설정된 (마스터가 변경한) 비번으로 검증
-        if (repo.isNasMode) {
-          try {
-            final r = await nas.login('app', value);
-            ok = r['ok'] == true;
-          } catch (_) {}
-        }
-        // 서버 미연결/오프라인이면 로컬 상수로 폴백
-        if (!ok) ok = value == AppConfig.appPassword;
+      if (repo.isNasMode) {
+        try {
+          final r = await nas.login(
+            'app',
+            value,
+            id: idTrim.isEmpty ? 'TSAK' : idTrim,
+          );
+          ok = r['ok'] == true;
+        } catch (_) {}
       }
+      // 서버 미연결/오프라인이면 공용 ID일 때만 로컬 상수로 폴백
+      //  (아이디/암호 계정은 서버 없이는 검증 불가 → 통과시키지 않음).
+      if (!ok && isShared) ok = value == AppConfig.appPassword;
     } else if (tier == 'guest') {
       // 비인가자(일반회원) 접근: ID = 휴대폰 전화번호, PW = 전화번호 뒤 4자리
       final phone = id.replaceAll(RegExp(r'[^0-9]'), '');
@@ -537,7 +546,9 @@ class AppState extends ChangeNotifier {
       _unlocked = true;
       _tier = finalTier;
       // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
-      _who = (tier == 'personal' || tier == 'guest') ? personalNo : '';
+      _who = (tier == 'personal' || tier == 'guest')
+          ? personalNo
+          : (tier == 'app' && adminIdent.isNotEmpty ? adminIdent : '');
       _sessionStart = DateTime.now();
       _personalBrowse = false;
       _applyAccessScope();
