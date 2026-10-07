@@ -209,11 +209,11 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
   }
 
   Future<void> _doExport() async {
-    final choose = await askSaveLocation(
+    final opt = await askSaveOption(
       context,
       info: '재무 보고서 (${_format.label})',
     );
-    if (choose == null) return; // 취소
+    if (opt == null) return; // 취소
     setState(() => _busy = true);
     try {
       final d = widget.data;
@@ -245,20 +245,20 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
       if (_format == FinanceFormat.jpg) {
         // 규칙: 실제 .jpg 파일로 저장(기존 PNG → JPG 통일).
         final jpg = await pdfToJpg(bytes);
-        await saveFileNamed(
+        await saveFileOption(
           bytes: jpg,
           filename: '$name.jpg',
           mime: 'image/jpeg',
           mimeType: MimeType.jpeg,
-          choose: choose,
+          option: opt,
         );
       } else {
-        await saveFileNamed(
+        await saveFileOption(
           bytes: bytes,
           filename: '$name.${_format.extension}',
           mime: _mimeStr(_format),
           mimeType: _mimeOf(_format),
-          choose: choose,
+          option: opt,
         );
       }
       _snack('출력 완료: $name.${_format.extension}');

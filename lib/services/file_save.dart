@@ -32,6 +32,10 @@ Future<void> saveBytes({
       final saved = await saveViaFilePicker(bytes, '$name.$ext', mime);
       if (saved) return;
     }
+    // 아이폰·아이패드: 다운로드 폴더가 없어 Blob 저장이 실패 → 공유 시트로 내보낸다.
+    if (isAppleMobileWeb) {
+      if (await _appleMobileSaveToShare(bytes, '$name.$ext', mime)) return;
+    }
     downloadBytesFile(bytes, '$name.$ext', mime);
     return;
   }
@@ -49,6 +53,152 @@ Future<void> saveBytes({
 /// - **웹(사파리·파이어폭스)**: 미지원 → false (기본 다운로드만 가능)
 /// - **안드로이드·아이폰(iOS)·데스크톱 네이티브**: OS 저장 대화상자 → true
 bool get supportsLocationPicker => isWebRuntime ? supportsSaveFilePicker : true;
+
+/// 이 환경이 **공유 시트로 내보내기**를 지원하는지.
+///
+/// - **아이폰·안드로이드 모바일 웹**: Web Share API → true
+/// - **PC 웹(파일 공유 미지원/불필요)**: false (기존 위치 선택·기본 저장 유지)
+/// - **네이티브(안드로이드·아이폰)**: OS 공유 시트 → true
+bool get supportsShareExport =>
+    isWebRuntime ? (webSupportsShareFiles && isMobileWeb) : true;
+
+/// 이 환경이 **애플 모바일(아이폰·아이패드)** 인지.
+///
+/// 아이폰·아이패드는 다운로드(Downloads) 폴더가 없어 Blob `<a download>` 저장이
+/// 실패한다 → '저장 방법 선택' 창에서 **공유 시트(사진에 저장)** 를 기본으로 권한다.
+bool get isAppleMobile => isWebRuntime && isAppleMobileWeb;
+
+// ─────────────────────────────────────────────────────────────────────────
+// 저장 방법 선택 (취소 / 위치 직접 선택 / 공유·내보내기 / 기본 폴더)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// '저장 방법 선택' 창의 사용자 선택 결과.
+enum TsakSaveOption {
+  /// 선택한 위치·앱으로 저장(위치 피커 / 시스템 저장 대화상자).
+  choose,
+
+  /// 기기 기본 폴더(다운로드)로 바로 저장.
+  defaultFolder,
+
+  /// **공유 시트로 내보내기** — 아이폰 '사진에 저장(이미지 저장)'·외부앱 공유.
+  share,
+}
+
+/// 아이폰·아이패드에서 Blob 저장이 안 되는 문제를 **공유 시트로 우회**한다.
+///
+/// 반환: 공유 시트를 띄웠으면 true(호출부는 다운로드로 폴백하지 않음).
+Future<bool> _appleMobileSaveToShare(
+  Uint8List bytes,
+  String filename,
+  String mime,
+) async {
+  if (!webSupportsShareFiles) return false;
+  try {
+    final r = await shareFileNamed(bytes: bytes, filename: filename, mime: mime);
+    // 공유 시트가 떴거나 사용자가 닫았으면 다운로드 폴백을 하지 않는다.
+    return r == TsakShareResult.shared || r == TsakShareResult.dismissed;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// 저장 방법·위치를 묻는 창 (PC·안드로이드·**아이폰** 공통).
+///
+/// 반환: [TsakSaveOption] — 취소하면 null.
+///
+/// ## 요구: "개인사진 다운시 아이폰은 기본폴더 오류가 있음.
+/// 저장위치 지정 또는 외부앱, 내사진에 저장 같은 선택지가 필요함"
+/// 아이폰(사파리)은 File System Access API 가 없고 다운로드 폴더도 없어,
+/// 기존에는 [기본 폴더에 저장]만 뜨고 그 경로(Blob)가 실패했다. 이제
+/// **공유 시트(사진에 저장·외부앱)** 선택지를 추가하고, 애플 기기에서는
+/// 그 선택지를 기본(강조)으로 제시한다.
+Future<TsakSaveOption?> askSaveOption(BuildContext context, {String? info}) async {
+  final canPick = supportsLocationPicker;
+  final canShare = supportsShareExport;
+  final apple = isAppleMobile;
+  return showDialog<TsakSaveOption>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
+      title: const Text('저장 방법 선택'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (info != null && info.isNotEmpty) ...[
+            Text(
+              info,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Text(
+            apple
+                ? '아이폰·아이패드는 다운로드 폴더가 없어 기본 저장이 실패할 수 있습니다. '
+                      '[공유·내보내기]를 누른 뒤 「이미지 저장」을 고르면 사진 앱에 저장됩니다.'
+                : '저장 위치를 직접 고르거나, 기기 기본 폴더에 바로 저장할 수 있습니다.',
+            style: const TextStyle(fontSize: 12.5, height: 1.5),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            <String>[
+              if (canPick)
+                apple
+                    ? '* [위치 직접 선택] → 파일 앱·드라이브 등 저장 위치를 고릅니다.'
+                    : '* [위치 직접 선택] → 저장 위치·앱을 고릅니다(PC: 폴더·파일명).',
+              if (canShare)
+                '* [공유·내보내기] → 카톡·메일·드라이브, 아이폰은 「이미지 저장」·「사진에 저장」.',
+              '* [기본 폴더에 저장] → 다운로드(Downloads) 폴더에 바로 저장.',
+            ].join('\n'),
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, null),
+          child: const Text('취소'),
+        ),
+        if (canPick)
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(ctx, TsakSaveOption.choose),
+            icon: const Icon(Icons.folder_open, size: 17),
+            label: const Text('위치 직접 선택'),
+          ),
+        if (canShare)
+          apple
+              ? FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+                  onPressed: () => Navigator.pop(ctx, TsakSaveOption.share),
+                  icon: const Icon(Icons.ios_share, size: 17),
+                  label: const Text('공유·내보내기'),
+                )
+              : OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(ctx, TsakSaveOption.share),
+                  icon: const Icon(Icons.ios_share, size: 17),
+                  label: const Text('공유·내보내기'),
+                ),
+        apple
+            ? OutlinedButton.icon(
+                onPressed: () => Navigator.pop(ctx, TsakSaveOption.defaultFolder),
+                icon: const Icon(Icons.download, size: 17),
+                label: const Text('기본 폴더에 저장'),
+              )
+            : FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                ),
+                onPressed: () => Navigator.pop(ctx, TsakSaveOption.defaultFolder),
+                icon: const Icon(Icons.download, size: 17),
+                label: const Text('기본 폴더에 저장'),
+              ),
+      ],
+    ),
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // 공유 시트 (OS 공유 대화상자) — **모든 기기 공통**
@@ -198,64 +348,21 @@ Future<bool> saveFileNamed({
 ///
 /// 반환: false=기본 폴더로 저장 / true=위치 직접 선택 / null=취소.
 /// 위치 선택 미지원(사파리·파폭)이면 안내 문구를 띄우고 기본 저장만 제안한다.
+/// 저장 방법·위치 선택 창 (PC·안드로이드·**아이폰** 공통) — **하위호환 shim**.
+///
+/// 반환: false=기본 폴더로 저장 / true=위치 직접 선택 / null=취소.
+/// 내부적으로 [askSaveOption] 을 사용한다(아이폰은 공유·내보내기 선택지 제공).
+/// 공유 옵션은 bool 로 표현할 수 없어, 공유를 고르면 '위치 직접 선택'(true)으로
+/// 매핑한다([saveBytesChoose] 의 애플 자동 공유 폴백이 처리). 새 코드는
+/// [askSaveOption] + [saveFileOption] 을 쓴다.
 Future<bool?> askSaveLocation(BuildContext context, {String? info}) async {
-  final canPick = supportsLocationPicker;
-  return showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
-      title: const Text('저장 방법 선택'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (info != null && info.isNotEmpty) ...[
-            Text(
-              info,
-              style: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          const Text(
-            '저장 위치를 직접 고르거나, 기기 기본 폴더에 바로 저장할 수 있습니다.',
-            style: TextStyle(fontSize: 12.5, height: 1.5),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            canPick
-                ? '* [위치 직접 선택] → 저장 위치·앱을 고를 수 있습니다.\n'
-                      '  · PC: 폴더·파일명 지정\n'
-                      '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
-                      '* [기본 폴더에 저장] → 다운로드(Downloads) 폴더에 바로 저장.'
-                : '* 이 브라우저는 위치 선택을 지원하지 않아\n'
-                      '  다운로드(Downloads) 폴더에 저장됩니다.',
-            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, null),
-          child: const Text('취소'),
-        ),
-        if (canPick)
-          OutlinedButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.folder_open, size: 17),
-            label: const Text('위치 직접 선택'),
-          ),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-          onPressed: () => Navigator.pop(ctx, false),
-          icon: const Icon(Icons.download, size: 17),
-          label: const Text('기본 폴더에 저장'),
-        ),
-      ],
-    ),
-  );
+  final opt = await askSaveOption(context, info: info);
+  return switch (opt) {
+    null => null,
+    TsakSaveOption.defaultFolder => false,
+    TsakSaveOption.choose => true,
+    TsakSaveOption.share => true,
+  };
 }
 
 /// 저장 방법을 지정해 저장한다 (PC·**모든 모바일(안드로이드·아이폰)** 공통).
@@ -278,6 +385,10 @@ Future<bool> saveBytesChoose({
     if (choose && supportsSaveFilePicker) {
       // 취소 시 false 를 그대로 반환(의도적 취소 → 다운로드 폴백 안 함).
       return await saveViaFilePicker(bytes, '$name.$ext', mime);
+    }
+    // 아이폰·아이패드: 기본 다운로드 폴더(Blob)가 실패하므로 공유 시트로 대체한다.
+    if (isAppleMobileWeb) {
+      if (await _appleMobileSaveToShare(bytes, '$name.$ext', mime)) return true;
     }
     downloadBytesFile(bytes, '$name.$ext', mime);
     return true;
@@ -304,6 +415,57 @@ Future<bool> saveBytesChoose({
     mimeType: mimeType ?? MimeType.other,
   );
   return true;
+}
+
+/// [askSaveOption] 의 결과([TsakSaveOption])대로 저장·공유한다 (PC·모든 모바일 공통).
+///
+/// - [TsakSaveOption.share] → OS 공유 시트(아이폰 「이미지 저장」·카톡·메일·드라이브).
+/// - [TsakSaveOption.choose] → 위치 직접 선택(웹: File System Access API).
+/// - [TsakSaveOption.defaultFolder] → 기기 기본(다운로드) 폴더.
+///
+/// 반환: 저장/공유를 시작했으면 true, 사용자가 취소했으면 false.
+Future<bool> saveFileOption({
+  required Uint8List bytes,
+  required String filename,
+  required String mime,
+  MimeType? mimeType,
+  required TsakSaveOption option,
+}) async {
+  final i = filename.lastIndexOf('.');
+  final hasExt = i > 0;
+  final base = hasExt ? filename.substring(0, i) : filename;
+  final ext = hasExt ? filename.substring(i + 1) : 'dat';
+  switch (option) {
+    case TsakSaveOption.share:
+      final r = await shareFileNamed(
+        bytes: bytes,
+        filename: filename,
+        mime: mime,
+      );
+      // 공유 시트가 떴거나, 미지원이라 다운로드로 폴백했거나, 사용자가 닫은 경우 모두
+      // "저장 흐름을 사용자에게 넘겼다"고 본다(실패만 false).
+      return r == TsakShareResult.shared ||
+          r == TsakShareResult.downloaded ||
+          r == TsakShareResult.dismissed;
+    case TsakSaveOption.choose:
+      return saveBytesChoose(
+        bytes: bytes,
+        name: base,
+        ext: ext,
+        mime: mime,
+        mimeType: mimeType,
+        choose: true,
+      );
+    case TsakSaveOption.defaultFolder:
+      return saveBytesChoose(
+        bytes: bytes,
+        name: base,
+        ext: ext,
+        mime: mime,
+        mimeType: mimeType,
+        choose: false,
+      );
+  }
 }
 
 /// 문자열(CSV·TXT·HTML) 저장 — 웹에서 확실히 동작.

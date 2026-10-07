@@ -1140,16 +1140,16 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
     final mime = isImg
         ? (imgMimes[ext] ?? 'image/jpeg')
         : 'application/octet-stream';
-    final choose = await askSaveLocation(context, info: name);
-    if (choose == null) return; // 취소
+    final opt = await askSaveOption(context, info: name);
+    if (opt == null) return; // 취소
     try {
       final (bytes, ct) = await _nas.fetchBytes(url);
       if (!mounted) return;
-      final ok = await saveFileNamed(
+      final ok = await saveFileOption(
         bytes: bytes,
         filename: name,
         mime: ct.isNotEmpty && ct != 'application/octet-stream' ? ct : mime,
-        choose: choose,
+        option: opt,
       );
       if (mounted && ok) _snack('$name 저장을 시작했습니다');
     } catch (e) {

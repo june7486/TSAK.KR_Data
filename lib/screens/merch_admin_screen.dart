@@ -3298,14 +3298,16 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     bool ask = true,
   }) async {
     // 저장 방법·위치 선택 (PC + 모든 모바일/아이폰). ask=false 면 바로 저장.
-    final choose = ask ? await askSaveLocation(context) : false;
-    if (choose == null) return; // 취소
+    final opt = ask
+        ? await askSaveOption(context)
+        : TsakSaveOption.defaultFolder;
+    if (opt == null) return; // 취소
     try {
-      final ok = await saveFileNamed(
+      final ok = await saveFileOption(
         bytes: bytes,
         filename: filename,
         mime: mime ?? mimeForFilename(filename),
-        choose: choose,
+        option: opt,
       );
       if (mounted) {
         _snack(ok ? '$filename 저장을 시작했습니다' : '저장이 취소되었습니다');

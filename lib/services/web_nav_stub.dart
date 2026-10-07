@@ -45,6 +45,13 @@ bool openFileExternally(Uint8List bytes, String filename, String mime) => false;
 /// 네이티브는 OS 저장 대화상자를 file_saver 가 처리하므로 위치 선택 불필요.
 bool get supportsSaveFilePicker => false;
 
+/// 네이티브(안드로이드·아이폰)는 OS 공유 시트를 항상 쓸 수 있다.
+/// (아이폰 사진 저장 = 공유 시트 → '이미지 저장')
+bool get webSupportsShareFiles => false;
+
+/// 네이티브에서는 애플 '웹' 구분이 무의미하므로 false.
+bool get isAppleMobileWeb => false;
+
 /// 네이티브에서는 대상 아님(항상 false).
 Future<bool> saveViaFilePicker(
   Uint8List bytes,

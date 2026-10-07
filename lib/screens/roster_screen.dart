@@ -217,18 +217,33 @@ class _RosterScreenState extends State<RosterScreen> {
       }
       // (요구 #17) 저장위치 확인 창 — 기본값 안내 후 확인 시 저장.
       //  'choose' 선택 시 저장 폴더/위치를 직접 고른다(PC·모든 모바일).
+      //  'share'  선택 시 OS 공유 시트(아이폰 「이미지 저장」·외부앱)로 내보낸다.
       final choice = await _confirmSaveLocation(fmt);
       if (choice == null) return;
-      final ok = await saveBytesChoose(
-        bytes: bytes,
-        name: name,
-        ext: ext,
-        mime: ext == 'xls'
-            ? 'application/vnd.ms-excel'
-            : (ext == 'doc' ? 'application/msword' : 'image/jpeg'),
-        mimeType: mime,
-        choose: choice == 'choose',
-      );
+      final String fMime = ext == 'xls'
+          ? 'application/vnd.ms-excel'
+          : (ext == 'doc' ? 'application/msword' : 'image/jpeg');
+      final bool ok;
+      if (choice == 'share') {
+        final r = await shareBytes(
+          bytes: bytes,
+          name: name,
+          ext: ext,
+          mime: fMime,
+        );
+        ok = r == TsakShareResult.shared ||
+            r == TsakShareResult.downloaded ||
+            r == TsakShareResult.dismissed;
+      } else {
+        ok = await saveBytesChoose(
+          bytes: bytes,
+          name: name,
+          ext: ext,
+          mime: fMime,
+          mimeType: mime,
+          choose: choice == 'choose',
+        );
+      }
       _snack(ok ? '저장했습니다 ($name.$ext)' : '저장이 취소되었습니다');
     } catch (e) {
       _snack('저장 실패: $e');
@@ -266,9 +281,11 @@ class _RosterScreenState extends State<RosterScreen> {
                   ? '* 기본값: 기기 기본 폴더(다운로드)\n'
                         '  [위치 직접 선택]을 누르면 저장 위치·앱을 직접 지정합니다.\n'
                         '  · PC: 폴더·파일명 지정\n'
-                        '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택'
+                        '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
+                        '  [공유·내보내기] → 카톡·메일·드라이브, 아이폰은 「이미지 저장」.'
                   : '* 이 브라우저는 위치 선택을 지원하지 않습니다.\n'
-                        '  기본 저장 위치는 기기 기본(다운로드) 폴더입니다.',
+                        '  기본 저장 위치는 기기 기본(다운로드) 폴더입니다.\n'
+                        '  아이폰은 [공유·내보내기] → 「이미지 저장」을 쓰세요.',
               style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
           ],
@@ -283,6 +300,14 @@ class _RosterScreenState extends State<RosterScreen> {
               onPressed: () => Navigator.pop(ctx, 'choose'),
               icon: const Icon(Icons.folder_open, size: 17),
               label: const Text('위치 직접 선택'),
+            ),
+          // 아이폰·안드로이드: 다운로드 폴더가 없어 저장이 실패할 수 있다 →
+          //  공유 시트(아이폰 「이미지 저장」)로 내보내는 선택지를 제공한다.
+          if (supportsShareExport)
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(ctx, 'share'),
+              icon: const Icon(Icons.ios_share, size: 17),
+              label: const Text('공유·내보내기'),
             ),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: AppColors.purple),

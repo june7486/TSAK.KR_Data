@@ -51,9 +51,11 @@ extension type _Caches(JSObject _) implements JSObject {
   external JSPromise<JSBoolean> delete(JSString key);
 }
 
-// navigator.serviceWorker
+// navigator.serviceWorker / navigator.userAgent / navigator.share
 extension type _Navigator(JSObject _) implements JSObject {
   external _ServiceWorkerContainer get serviceWorker;
+  external String? get userAgent;
+  external JSAny? get share;
 }
 
 extension type _ServiceWorkerContainer(JSObject _) implements JSObject {
@@ -224,6 +226,42 @@ bool get supportsSaveFilePicker {
   try {
     final v = globalContext.getProperty('showSaveFilePicker'.toJS);
     return v.isA<JSFunction>();
+  } catch (_) {
+    return false;
+  }
+}
+
+/// 이 브라우저가 **파일 공유**(Web Share API, Level 2)를 지원하는지.
+///
+/// - **모바일 사파리(아이폰·아이패드)**: true → OS 공유 시트를 열어
+///   '사진에 저장'(이미지 저장)·카톡·메일·드라이브 등으로 내보낼 수 있다.
+///   아이폰은 다운로드(Downloads) 폴더가 없어 `<a download>` 가 동작하지
+///   않으므로, 이 공유 경로가 **아이폰 사진 저장의 정답**이다.
+/// - **안드로이드 크롬**: true (공유 시트 ↔ 파일 앱/포토 등).
+/// - **PC 브라우저**: 파일 공유 미지원 → false (기본 다운로드 사용).
+bool get webSupportsShareFiles {
+  try {
+    return _navigator.share.isA<JSFunction>();
+  } catch (_) {
+    return false;
+  }
+}
+
+/// 이 브라우저가 **애플 모바일**(아이폰·아이패드)인지.
+///
+/// 아이폰·아이패드는 다운로드(Downloads) 폴더 개념이 없어
+/// Blob `<a download>` 저장이 실패(무반응/오류)한다. 이 경우 '기본 폴더 저장'
+/// 대신 **공유 시트(사진에 저장)** 를 기본으로 안내한다.
+bool get isAppleMobileWeb {
+  try {
+    final ua = _navigator.userAgent ?? '';
+    if (RegExp(r'iPhone|iPad|iPod').hasMatch(ua)) return true;
+    // iPadOS 13+ 는 데스크톱 사파리처럼 'Macintosh' 로 위장하지만 터치가 있다.
+    if (RegExp(r'Macintosh').hasMatch(ua)) {
+      final touch = globalContext.getProperty('ontouchstart'.toJS);
+      if (touch.isDefinedAndNotNull) return true;
+    }
+    return false;
   } catch (_) {
     return false;
   }

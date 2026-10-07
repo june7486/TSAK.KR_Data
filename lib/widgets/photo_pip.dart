@@ -308,20 +308,23 @@ class _PhotoPipState extends State<_PhotoPip> {
 
       // 저장 위치·방법을 먼저 묻는다(공용 규칙) —
       //   요구: "사진 저장위치 선택창이 안나오니 이것도 조정해줘요".
-      //   · [위치 직접 선택] → 폴더/파일명 지정(크롬·엣지·안드로이드·아이폰)
+      //   요구: "개인사진 다운시 아이폰은 기본폴더 오류가 있음.
+      //        저장위치 지정 또는 외부앱, 내사진에 저장 같은 선택지가 필요함"
+      //   · [위치 직접 선택] → 폴더/파일명 지정(크롬·엣지·안드로이드)
+      //   · [공유·내보내기]  → 아이폰 「이미지 저장(사진 앱)」·외부앱·카톡·메일
       //   · [기본 폴더에 저장] → 다운로드(Downloads) 폴더로 바로 저장
-      final choose = await askSaveLocation(context, info: '$fname.png');
-      if (choose == null) return; // 사용자 취소
+      final opt = await askSaveOption(context, info: '$fname.png');
+      if (opt == null) return; // 사용자 취소
       if (!mounted) return;
 
-      // 웹: 선택한 위치/기본 폴더로 저장 / 모바일: 시스템 저장(실패 시 공유 시트)
+      // 웹: 선택한 방법/위치로 저장 / 모바일: 시스템 저장(실패 시 공유 시트)
       try {
-        await saveFileNamed(
+        await saveFileOption(
           bytes: png,
           filename: '$fname.png',
           mime: 'image/png',
           mimeType: MimeType.png,
-          choose: choose,
+          option: opt,
         );
       } catch (_) {
         // 폴백: 임시 파일로 저장 후 공유 시트

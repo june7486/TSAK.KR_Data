@@ -3151,16 +3151,16 @@ class _MediaViewerState extends State<_MediaViewer> {
     final mime = kind == 'video'
         ? 'video/$ext'
         : (ext == 'png' ? 'image/png' : 'image/jpeg');
-    final choose = await askSaveLocation(context, info: name);
-    if (choose == null) return; // 사용자 취소
+    final opt = await askSaveOption(context, info: name);
+    if (opt == null) return; // 사용자 취소
     try {
       final (bytes, ct) = await _nas.fetchBytes(url);
       if (!mounted) return;
-      final ok = await saveFileNamed(
+      final ok = await saveFileOption(
         bytes: bytes,
         filename: name,
         mime: ct.startsWith('image/') || ct.startsWith('video/') ? ct : mime,
-        choose: choose,
+        option: opt,
       );
       if (!mounted) return;
       if (ok) {
