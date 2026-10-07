@@ -734,6 +734,155 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  // ---- 재무 그룹핑 목록 (전체/연도/월/항목) + 첨부 개수 ----
+  Future<Map<String, dynamic>> fetchFinanceList() async {
+    final r = await http
+        .get(_uri('/api/finance/list'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  // ---- 재무 거래별 첨부파일 ----
+  Future<List<Map<String, dynamic>>> fetchFinanceAttach(String txid) async {
+    try {
+      final r = await http
+          .get(_uri('/api/finance/attach?txid=${Uri.encodeComponent(txid)}'),
+              headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      final list = j['files'];
+      if (list is List) {
+        return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 첨부 업로드(스트리밍 바디). 모든 포맷 허용.
+  Future<List<Map<String, dynamic>>> uploadFinanceAttach(
+    String txid,
+    String name,
+    List<int> bytes,
+  ) async {
+    final q = 'txid=${Uri.encodeComponent(txid)}&name=${Uri.encodeComponent(name)}';
+    final r = await http
+        .post(
+          _uri('/api/finance/attach/upload?$q'),
+          headers: {
+            ..._authHeaders,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(seconds: 180));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final list = j['files'];
+    if (list is List) {
+      return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> renameFinanceAttach(
+    String txid,
+    String name,
+    String newName,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/finance/attach/rename'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'txid': txid, 'name': name, 'newName': newName}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final list = j['files'];
+    if (list is List) {
+      return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> deleteFinanceAttach(
+    String txid,
+    String name,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/finance/attach/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'txid': txid, 'name': name}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final list = j['files'];
+    if (list is List) {
+      return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+    }
+    return [];
+  }
+
+  /// 첨부 다운로드/공유용 URL(직접 열기).
+  String financeAttachUrl(String txid, String name) =>
+      '$_base/api/finance/attach/download?txid=${Uri.encodeComponent(txid)}'
+      '&name=${Uri.encodeComponent(name)}';
+
+  // ---- 자료 저장공간 (마스터) ----
+  Future<Map<String, dynamic>> fetchStorage() async {
+    try {
+      final r = await http
+          .get(_uri('/api/storage'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
+  Future<Map<String, dynamic>> saveStorage(
+    Map<String, dynamic> payload,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/storage/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode(payload),
+        )
+        .timeout(const Duration(seconds: 30));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 저장공간 이관(자료 복사) 또는 통계(sweep).
+  Future<Map<String, dynamic>> migrateStorage(
+    String target, {
+    bool sweep = false,
+    bool deleteOld = false,
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/storage/migrate'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'target': target,
+            'sweep': sweep,
+            'deleteOld': deleteOld,
+          }),
+        )
+        .timeout(const Duration(seconds: 300));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> purgeOldStorage([String which = 'nas']) async {
+    final r = await http
+        .post(
+          _uri('/api/storage/purge-old'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'which': which}),
+        )
+        .timeout(const Duration(seconds: 120));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> fetchRules() async {
     final r = await http
         .get(_uri('/api/finance/rules'), headers: _authHeaders)

@@ -90,6 +90,30 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
       'desc': '범스카우트 인가자 신규 등록',
       'icon': Icons.person_add_alt_1,
     },
+    {
+      'key': 'finIncome',
+      'label': '재무 · 입금 입력',
+      'desc': '입금내역 입력·수정 (재무 하위)',
+      'icon': Icons.south_west,
+    },
+    {
+      'key': 'finExpense',
+      'label': '재무 · 지출 입력',
+      'desc': '지출내역 입력·수정 (재무 하위)',
+      'icon': Icons.north_east,
+    },
+    {
+      'key': 'finAttach',
+      'label': '재무 · 첨부파일',
+      'desc': '첨부 업로드·확인·다운로드·공유',
+      'icon': Icons.attach_file,
+    },
+    {
+      'key': 'finOutput',
+      'label': '재무 · 출력',
+      'desc': '재무 항목 출력(PDF·엑셀·PPT 등)',
+      'icon': Icons.ios_share,
+    },
   ];
 
   /// 역할 키 → 표시 이름/설명/색

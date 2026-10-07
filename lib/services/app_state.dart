@@ -127,6 +127,71 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // ---------- 자료 저장공간 (마스터) ----------
+  Map<String, dynamic> _storage = {};
+  Map<String, dynamic> get storage => _storage;
+  String get storageActive => '${_storage['active'] ?? 'nas'}';
+  Map<String, dynamic> get storageSpaces =>
+      (_storage['spaces'] as Map?)?.cast<String, dynamic>() ?? {};
+
+  Future<void> loadStorage() async {
+    if (!repo.isNasMode) return;
+    try {
+      final r = await nas.fetchStorage();
+      if (r['ok'] == true && r['storage'] is Map) {
+        _storage = (r['storage'] as Map).cast<String, dynamic>();
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// 저장공간 설정 저장(아이디/비번/폴더URL/라벨 등).
+  Future<String?> saveStorage(Map<String, dynamic> payload) async {
+    try {
+      final r = await nas.saveStorage(payload);
+      if (r['ok'] == true && r['storage'] is Map) {
+        _storage = (r['storage'] as Map).cast<String, dynamic>();
+        notifyListeners();
+        return null;
+      }
+      return '${r['error'] ?? '실패'}';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  /// 저장공간 전환(자료 이관). 반환: 서버 응답(복사/보류/실패 통계 포함).
+  Future<Map<String, dynamic>> migrateStorage(
+    String target, {
+    bool sweep = false,
+    bool deleteOld = false,
+  }) async {
+    try {
+      final r = await nas.migrateStorage(
+        target,
+        sweep: sweep,
+        deleteOld: deleteOld,
+      );
+      if (r['ok'] == true && r['active'] != null) {
+        _storage['active'] = r['active'];
+        notifyListeners();
+      }
+      return r;
+    } catch (e) {
+      return {'ok': false, 'error': '$e'};
+    }
+  }
+
+  /// 이관 후 기존 저장공간 자료 삭제(선택).
+  Future<int> purgeOldStorage([String which = 'nas']) async {
+    try {
+      final r = await nas.purgeOldStorage(which);
+      return (r['deleted'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   bool get isPersonal => _tier == 'personal';
 
   /// 관리자(app) 등급 — 마스터는 관리자의 모든 권한을 상속한다.
