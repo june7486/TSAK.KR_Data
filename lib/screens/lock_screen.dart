@@ -13,8 +13,9 @@ import '../widgets/privacy_consent.dart';
 import 'merch_shop_screen.dart';
 
 /// 앱 잠금(인증) 화면
-///  - 관리자 접근: ID "TSAK"(대문자) + 앱 비밀번호 (Tsak1988!!)
 ///  - 범스카우트 접근: ID "인가번호" + 개인 비밀번호 (예: 인가번호 000 → 000!@@)
+///    · 관리자 로그인 창은 제거됨 — 같은 ID 칸에 관리자 아이디(task/tsak437 등)를
+///      입력하면 서버가 관리자 계정으로 인증한다(통합 로그인).
 ///  - 비인가자 접근: ID "휴대폰 전화번호" + 비밀번호(뒤 4자리) / 신규회원 생성
 ///  - 마스터 접근: Corbuser7!@@ (모든 기능/통제, 불변)
 class LockScreen extends StatefulWidget {
@@ -145,11 +146,9 @@ class _LockScreenState extends State<LockScreen> {
     });
     _startLoginBusy();
     final state = context.read<AppState>();
-    // 관리자(app): 입력한 아이디(task/tsak 등)를 그대로 사용해 계정별 로그인.
-    //  (빈칸이면 'TSAK' 공용 관리자로 처리)
-    final idInput = _tier == 'app'
-        ? (_idCtrl.text.trim().isEmpty ? 'TSAK' : _idCtrl.text.trim())
-        : _idCtrl.text.trim();
+    // (요구) 관리자 로그인 창 제거 — 범스카우트 탭의 ID 칸 하나로 관리자
+    //  아이디(task/tsak437 등)도 받는다. 서버가 인가번호/관리자 계정을 모두 검증.
+    final idInput = _idCtrl.text.trim();
     // 은하스카우트는 개인 로그인이지만 소속(corps)이 달라 별도 검증된다.
     final ok = _tier == 'eunha'
         ? await state.login('personal', v, id: idInput, corps: 'eunha')
@@ -272,7 +271,7 @@ class _LockScreenState extends State<LockScreen> {
       case 'eunha':
         return 'ID(은하번호) 또는 비밀번호가 올바르지 않습니다';
       case 'personal':
-        return 'ID(인가번호) 또는 비밀번호가 올바르지 않습니다';
+        return 'ID(인가번호·관리자 아이디) 또는 비밀번호가 올바르지 않습니다';
       case 'guest':
         return 'ID(전화번호) 또는 비밀번호(뒤 4자리)가 올바르지 않습니다';
       default:
@@ -461,9 +460,7 @@ class _LockScreenState extends State<LockScreen> {
                                 decoration: InputDecoration(
                                   labelText: _tier == 'guest'
                                       ? 'ID (전화번호)'
-                                      : (_tier == 'app'
-                                          ? '관리자 아이디'
-                                          : 'ID'),
+                                      : 'ID (인가번호 · 관리자 아이디)',
                                   prefixIcon: const Icon(Icons.badge_outlined),
                                 ),
                               ),
@@ -761,7 +758,6 @@ class _LockScreenState extends State<LockScreen> {
     final tabs = [
       ('personal', '범스카우트', Icons.person),
       ('guest', '비인가자', Icons.person_outline),
-      ('app', '관리자', Icons.admin_panel_settings),
       ('master', '마스터', Icons.workspace_premium),
     ];
     return Row(children: [for (final t in tabs) _tierChip(t)]);
@@ -813,7 +809,7 @@ class _LockScreenState extends State<LockScreen> {
         text = '모든 기능·초기화·통제 권한 (변경 불가)';
         break;
       case 'personal':
-        text = 'ID에 본인 인가번호를 입력하세요';
+        text = 'ID에 본인 인가번호 또는 관리자 아이디를 입력하세요';
         break;
       case 'eunha':
         // 은하스카우트 — 비밀번호 규칙은 절대 노출하지 않는다(요구).

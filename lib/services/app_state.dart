@@ -358,8 +358,10 @@ class AppState extends ChangeNotifier {
     _corps = (corps == 'eunha' || idSaysEunha) ? 'eunha' : 'tsak';
     // 개인 접근에서 입력된 인가번호 (ID 필드)
     String personalNo = '';
-    // 아이디/암호 관리자 계정명 (app 로그인 시 계정별 권한 적용용)
+    // 아이디/암호 관리자 계정명 (app 로그인 및 통합 로그인 시 계정별 권한 적용용)
     String adminIdent = '';
+    // 범스카우트 탭에서 관리자 계정으로 인증된 경우(통합 로그인) 표시.
+    bool asAdmin = false;
     if (tier == 'master') {
       // 마스터는 서버 검증(있으면) 우선, 없으면 로컬 상수
       ok = value == AppConfig.masterPassword;
@@ -505,6 +507,20 @@ class AppState extends ChangeNotifier {
           _grantedAdmin = nas.lastLoginAdmin;
           _isSupporter = nas.lastLoginSupporter;
         }
+        // (요구) 관리자 로그인 창을 없애고 범스카우트 인가자 ID칸 하나로 통합.
+        //  아이디/암호 관리자 계정(예: task/tsak437)은 순수 숫자 인가번호가
+        //  아니므로, 인가번호 규칙으로 실패하면 관리자 계정으로 재검증한다.
+        if (!ok && idRaw.isNotEmpty && repo.isNasMode &&
+            !RegExp(r'^\d+$').hasMatch(idRaw)) {
+          try {
+            final ar = await nas.login('app', value, id: idRaw);
+            if (ar['ok'] == true) {
+              ok = true;
+              asAdmin = true;
+              adminIdent = idRaw;
+            }
+          } catch (_) {}
+        }
       }
     }
     if (ok) {
@@ -515,6 +531,8 @@ class AppState extends ChangeNotifier {
           AppConfig.isPermanentMaster(personalNo)) {
         finalTier = 'master';
       }
+      // 범스카우트 탭에서 관리자 계정으로 인증된 경우 app 등급으로 승격.
+      if (asAdmin) finalTier = 'app';
       // [보안] 서버측 세션이 없으면 반드시 확보한다.
       //  앱은 일부 자격(예: 개인 415!@@)을 로컬에서 검증하므로 서버 세션이
       //  비어 있을 수 있다. 세션 없으면 이후 민감 API 가 전부 401 이 된다.
@@ -546,8 +564,9 @@ class AppState extends ChangeNotifier {
       _unlocked = true;
       _tier = finalTier;
       // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
+      //  · 관리자 계정(통합 로그인 포함)은 계정명을 who 로 두어 계정별 권한 적용.
       _who = (tier == 'personal' || tier == 'guest')
-          ? personalNo
+          ? (asAdmin ? adminIdent : personalNo)
           : (tier == 'app' && adminIdent.isNotEmpty ? adminIdent : '');
       _sessionStart = DateTime.now();
       _personalBrowse = false;
