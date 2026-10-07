@@ -26,10 +26,16 @@ class EventYearScreen extends StatefulWidget {
 
 class _EventYearScreenState extends State<EventYearScreen> {
   List<Map<String, dynamic>> _events = [];
+
+  /// 휴지통(삭제한 행사) — 소프트 삭제되어 복구 가능한 목록.
+  List<Map<String, dynamic>> _trash = [];
   bool _loading = true;
   String? _error;
   String _year = '';
   bool _backfillBusy = false;
+
+  /// 휴지통 펼침 여부 — 실수 삭제 대비, 기본은 접어 둔다.
+  bool _trashOpen = false;
 
   /// true = 최신순 전체 리스트(연도 무관), false = 연도별 탭 보기
   bool _recentMode = true;
@@ -49,8 +55,20 @@ class _EventYearScreenState extends State<EventYearScreen> {
       final ev = await context.read<NasApi>().eventList2();
       // (요구 #12) 행사관리창의 행사는 모든 회원에게 노출된다.
       //  — 개인/일반회원도 전체 행사 목록을 열람할 수 있다(관리·편집은 권한별 제한).
+      // 휴지통 목록은 관리자·마스터만 조회 가능(실패해도 무시).
+      List<Map<String, dynamic>> trash = const [];
+      final state = context.read<AppState>();
+      if (state.isApp || state.isMaster) {
+        try {
+          trash = await context.read<NasApi>().eventTrashList();
+        } catch (_) {
+          trash = const [];
+        }
+      }
+      if (!mounted) return;
       setState(() {
         _events = ev;
+        _trash = trash;
         _loading = false;
         final years = _yearsOf(ev);
         if (_year.isEmpty || !years.contains(_year)) {
@@ -268,9 +286,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
                                         : ListView.builder(
                                             padding: const EdgeInsets.fromLTRB(
                                               14,
-                                              10,
+                                              8,
                                               14,
-                                              90,
+                                              24,
                                             ),
                                             itemCount: recent.length,
                                             itemBuilder: (_, i) =>
@@ -281,9 +299,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
                                         : ListView.builder(
                                             padding: const EdgeInsets.fromLTRB(
                                               14,
-                                              10,
+                                              8,
                                               14,
-                                              90,
+                                              24,
                                             ),
                                             itemCount: inYear.length,
                                             itemBuilder: (_, i) =>
@@ -291,6 +309,8 @@ class _EventYearScreenState extends State<EventYearScreen> {
                                           )),
                             ),
                           ),
+                          // (요구) 하단 '삭제한 행사' 리스트 — 복구/완전삭제.
+                          if (_canManage(state)) _trashPanel(state),
                         ],
                       ),
               ),
@@ -442,13 +462,19 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final photos = (media['photo'] as num?)?.toInt() ?? 0;
     final videos = (media['video'] as num?)?.toInt() ?? 0;
     final mine = _isMyEvent(state, e);
+    final manage = _canManage(state);
+    // (요구) 편집·삭제 버튼을 카드 '상단(제목 줄)' 우측 상단으로 올린다.
+    //  · 아이콘을 조밀(compact)하게 만들어 한 줄에 더 많은 행사가 보이도록 한다.
+    final hasHeaderActions =
+        manage && (defined || pending);
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      // 더 많은 행사가 보이도록 카드 여백·하단 간격을 줄인다.
+      margin: const EdgeInsets.only(bottom: 7),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         onTap: () async {
           // (요구 #9) 개인제안 심사중 행사 — 관리자·마스터는 승인/반려 처리.
-          if (pending && _canManage(state)) {
+          if (pending && manage) {
             await _reviewPrivate(e);
             return;
           }
@@ -466,173 +492,173 @@ class _EventYearScreenState extends State<EventYearScreen> {
               builder: (_) => EventDetailScreen(
                 year: year,
                 title: title,
-                canManage: _canManage(state),
+                canManage: manage,
               ),
             ),
           );
           _load();
         },
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(12, 8, 6, 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ---- 제목 줄: [연도] 제목 … 배지 … 편집/삭제(상단) ----
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
+                      horizontal: 7,
+                      vertical: 2,
                     ),
                     decoration: BoxDecoration(
                       color: defined
                           ? AppColors.purple.withValues(alpha: 0.1)
                           : AppColors.textGray.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(7),
                     ),
                     child: Text(
                       defined && year.isNotEmpty ? year : '연도미정',
                       style: TextStyle(
                         color: defined ? AppColors.purple : AppColors.textGray,
                         fontWeight: FontWeight.w800,
-                        fontSize: 12,
+                        fontSize: 11.5,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 7),
                   Expanded(
                     child: Text(
                       title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.w800,
+                        height: 1.15,
                       ),
                     ),
                   ),
-                  if (pending)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.tigerGold.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.tigerGold.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      child: const Text(
-                        '관리목록누락행사-심사중',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.lifetimeGold,
-                        ),
-                      ),
-                    )
-                  else if (!defined)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.tigerGold.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.tigerGold.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      child: const Text(
-                        '(관리목록누락)',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.lifetimeGold,
-                        ),
+                  if (!manage && defined && mine)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 4, right: 4),
+                      child: Icon(
+                        Icons.photo_library,
+                        size: 16,
+                        color: AppColors.scoutGreen,
                       ),
                     ),
-                  if (defined && !_canManage(state) && mine)
-                    const Icon(
-                      Icons.photo_library,
-                      size: 18,
-                      color: AppColors.scoutGreen,
+                  if (hasHeaderActions)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (defined)
+                          _cardIconBtn(
+                            tooltip: '이름/연도 변경',
+                            icon: Icons.edit_outlined,
+                            color: AppColors.purple,
+                            onTap: () => _renameEvent(e),
+                          ),
+                        if (pending)
+                          _cardIconBtn(
+                            tooltip: '심사중 제안행사 처리 (승인/반려)',
+                            icon: Icons.rule,
+                            color: AppColors.purple,
+                            onTap: () => _reviewPrivate(e),
+                          ),
+                        if (!pending)
+                          _cardIconBtn(
+                            tooltip: defined
+                                ? '삭제 (휴지통으로 이동 — 복구 가능)'
+                                : '삭제 (개인프로필 행사명)',
+                            icon: Icons.delete_outline,
+                            color: AppColors.taegeukRed,
+                            onTap: () => _deleteEvent(e),
+                          ),
+                      ],
                     ),
                 ],
               ),
+              // ---- 배지(심사중/관리목록누락) ----
+              if (pending || !defined) ...[
+                const SizedBox(height: 3),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.tigerGold.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: AppColors.tigerGold.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Text(
+                      pending ? '관리목록누락행사-심사중' : '(관리목록누락)',
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.lifetimeGold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              // ---- 메타: 기간·장소 + 인원/사진/동영상 (한 줄로 조밀하게) ----
               if (period.isNotEmpty || place.isNotEmpty) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 3),
                 Text(
                   [
                     if (period.isNotEmpty) '🗓 $period',
                     if (place.isNotEmpty) '📍 $place',
                   ].join('   '),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textGray,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _metaChip(Icons.people_alt_outlined, '참가인원 $count명'),
-                  _metaChip(Icons.photo_camera_outlined, '사진 $photos장'),
-                  _metaChip(Icons.videocam_outlined, '동영상 $videos개'),
-                  if (place.isNotEmpty) _metaChip(Icons.place_outlined, place),
-                ],
-              ),
-              if (createdBy.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '생성자: $createdBy',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.textGray,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
-              const SizedBox(height: 6),
-              Row(
+              const SizedBox(height: 5),
+              Wrap(
+                spacing: 10,
+                runSpacing: 2,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Spacer(),
-                  if (_canManage(state) && defined)
-                    IconButton(
-                      tooltip: '이름/연도 변경',
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      onPressed: () => _renameEvent(e),
-                    ),
-                  if (_canManage(state) && pending)
-                    IconButton(
-                      tooltip: '심사중 제안행사 처리 (승인/반려)',
-                      icon: const Icon(
-                        Icons.rule,
-                        size: 18,
-                        color: AppColors.purple,
-                      ),
-                      onPressed: () => _reviewPrivate(e),
-                    ),
-                  if (_canManage(state) && !pending)
-                    IconButton(
-                      tooltip: defined ? '삭제 (행사 + 개인프로필)' : '삭제 (개인프로필 행사명)',
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 18,
-                        color: AppColors.taegeukRed,
-                      ),
-                      onPressed: () => _deleteEvent(e),
-                    ),
+                  _metaChip(Icons.people_alt_outlined, '참가 $count명'),
+                  _metaChip(Icons.photo_camera_outlined, '$photos장'),
+                  _metaChip(Icons.videocam_outlined, '$videos개'),
+                  if (createdBy.isNotEmpty)
+                    _metaChip(Icons.person_outline, createdBy),
                 ],
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 카드 상단용 조밀 아이콘 버튼 — 2줄 카드가 되지 않도록 작게 유지.
+  Widget _cardIconBtn({
+    required String tooltip,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, size: 17, color: color),
+      onPressed: onTap,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      splashRadius: 18,
     );
   }
 
@@ -915,17 +941,32 @@ class _EventYearScreenState extends State<EventYearScreen> {
   Future<void> _deleteEvent(Map<String, dynamic> e) async {
     final defined = e['defined'] != false;
     final title = '${e['title']}';
+    // (요구) 실수 삭제 방지 — 확인창을 띄우고, 삭제는 '휴지통으로 이동'(복구 가능).
     final msg = defined
-        ? '“$title” 행사와 모든 파일을 삭제할까요?\n'
-              '개인 프로필(행사참가)에 등록된 같은 행사명도 함께 삭제됩니다.\n'
-              '이 작업은 되돌릴 수 없습니다.'
-        : '“$title” 은(는) 행사관리 목록에 없는 행사입니다.\n'
-              '개인 프로필(행사참가)에서 이 행사명을 삭제할까요?';
+        ? '“$title” 행사를 삭제할까요?\n\n'
+              '삭제한 행사는 하단 「삭제한 행사」 목록(휴지통)으로 이동합니다. '
+              '거기서 복구하거나 완전 삭제할 수 있습니다. '
+              '(파일은 완전 삭제 전까지 보존됩니다.)'
+        : '“$title” 은(는) 행사관리 목록에 없는 행사입니다.\n\n'
+              '개인 프로필(행사참가)에서 이 행사명을 삭제할까요?\n'
+              '이 항목은 휴지통으로 이동합니다.';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(defined ? '행사 삭제' : '행사명 삭제 (관리목록누락)'),
-        content: Text(msg),
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.taegeukRed,
+          size: 28,
+        ),
+        title: Text(
+          defined ? '행사 삭제 (휴지통으로 이동)' : '행사명 삭제 (관리목록누락)',
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          msg,
+          style: const TextStyle(fontSize: 13.5, height: 1.45),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -936,23 +977,29 @@ class _EventYearScreenState extends State<EventYearScreen> {
               backgroundColor: AppColors.taegeukRed,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('삭제'),
+            child: const Text('삭제 (휴지통)'),
           ),
         ],
       ),
     );
     if (ok != true) return;
     final nas = context.read<NasApi>();
+    final by = _operatorLabel();
     try {
       if (defined) {
-        await nas.eventDelete('${e['year']}', title);
+        await nas.eventArchive('${e['year']}', title, by: by);
       } else {
+        // 관리목록누락(프로필에만 있는) 행사명 — 프로필에서 제거.
         await nas.eventNameDelete([title]);
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('“$title” 삭제했습니다')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              defined ? '“$title” 을(를) 휴지통으로 옮겼습니다 (복구 가능)' : '“$title” 행사명을 삭제했습니다',
+            ),
+          ),
+        );
       }
     } catch (err) {
       if (mounted) {
@@ -960,6 +1007,267 @@ class _EventYearScreenState extends State<EventYearScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('삭제 실패: $err')));
       }
+    }
+    await _load();
+  }
+
+  /// 삭제자 표기 — 관리자/마스터 로그인 정보.
+  String _operatorLabel() {
+    final s = context.read<AppState>();
+    final who = s.who.trim();
+    if (who.isNotEmpty) return who;
+    if (s.isMaster) return '마스터';
+    return s.isApp ? '관리자' : '';
+  }
+
+  // ======================== 하단 '삭제한 행사'(휴지통) ========================
+
+  /// 하단 휴지통 패널 — 관리자·마스터만 노출.
+  Widget _trashPanel(AppState state) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE9E4F2), width: 1.2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _trashOpen = !_trashOpen),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(
+                    _trashOpen ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: AppColors.taegeukRed,
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    Icons.delete_sweep_outlined,
+                    size: 18,
+                    color: AppColors.taegeukRed,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    '삭제한 행사 (휴지통)',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.taegeukRed,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.taegeukRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${_trash.length}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.taegeukRed,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  const Text(
+                    '복구 / 완전삭제',
+                    style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_trashOpen)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: _trash.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '삭제한 행사가 없습니다.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                      itemCount: _trash.length,
+                      itemBuilder: (_, i) => _trashRow(state, _trash[i]),
+                    ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 휴지통 한 줄 — 제목/연도/삭제시각 + 복구·완전삭제 버튼.
+  Widget _trashRow(AppState state, Map<String, dynamic> t) {
+    final title = '${t['title'] ?? ''}';
+    final year = '${t['year'] ?? ''}';
+    final deletedAt = '${t['deletedAt'] ?? ''}';
+    final deletedBy = '${t['deletedBy'] ?? ''}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: AppColors.taegeukRed.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AppColors.taegeukRed.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (year.isNotEmpty && year != '무제')
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.textGray.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          year,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.lineThrough,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (deletedAt.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '삭제: $deletedAt${deletedBy.isNotEmpty ? ' · $deletedBy' : ''}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => _restoreEvent(t),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.scoutGreen,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32),
+            ),
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text('복구', style: TextStyle(fontSize: 12)),
+          ),
+          TextButton.icon(
+            onPressed: () => _purgeEvent(t),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.taegeukRed,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32),
+            ),
+            icon: const Icon(Icons.delete_forever, size: 16),
+            label: const Text('완전삭제', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _restoreEvent(Map<String, dynamic> t) async {
+    final id = '${t['id'] ?? ''}';
+    final title = '${t['title'] ?? ''}';
+    try {
+      await context.read<NasApi>().eventRestore(id);
+      if (mounted) _snack('“$title” 을(를) 복구했습니다');
+    } catch (e) {
+      if (mounted) _snack('복구 실패: $e');
+    }
+    await _load();
+  }
+
+  Future<void> _purgeEvent(Map<String, dynamic> t) async {
+    final id = '${t['id'] ?? ''}';
+    final title = '${t['title'] ?? ''}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(
+          Icons.delete_forever,
+          color: AppColors.taegeukRed,
+          size: 30,
+        ),
+        title: const Text('완전 삭제', textAlign: TextAlign.center),
+        content: Text(
+          '“$title” 을(를) 완전히 삭제할까요?\n\n'
+          '저장된 사진·동영상 파일과 개인 프로필의 행사 이력까지 모두 지워집니다.\n'
+          '이 작업은 되돌릴 수 없습니다.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 13.5, height: 1.45),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('완전 삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await context.read<NasApi>().eventPurge([id]);
+      if (mounted) _snack('“$title” 을(를) 완전 삭제했습니다');
+    } catch (e) {
+      if (mounted) _snack('완전 삭제 실패: $e');
     }
     await _load();
   }

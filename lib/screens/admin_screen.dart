@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import 'admin_perm_screen.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
@@ -235,7 +236,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  /// 관리자 계정 1행 — 아이디/권한/암호 조작 진입.
+  /// 관리자 계정 1행 — 아이디 탭 시 권한 설정, 우측 버튼으로 복사·계정 관리.
   Widget _adminAccountTile(AppState state, String no) {
     final name = _memberName(state, no);
     return Container(
@@ -255,24 +256,53 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '아이디 #$no',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _busy
+                  ? null
+                  : () => _openAdminPerms(state, no),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '아이디 #$no',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.tune,
+                          size: 12,
+                          color: AppColors.purple.withValues(alpha: 0.7),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: MarqueeText(
+                            name.isEmpty ? '이름 미확인' : name,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                        ),
+                        const Text(
+                          '권한 설정 ▸',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                MarqueeText(
-                  name.isEmpty ? '이름 미확인' : name,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textGray,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           IconButton(
@@ -293,6 +323,16 @@ class _AdminScreenState extends State<AdminScreen> {
             icon: const Icon(Icons.tune, size: 18),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 아이디 탭 → 그 관리자 전용 권한 설정 창을 연다.
+  Future<void> _openAdminPerms(AppState state, String no) async {
+    final name = _memberName(state, no);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminPermScreen(number: no, name: name),
       ),
     );
   }
@@ -452,6 +492,21 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
               ),
               const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.taegeukBlue,
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _openAdminPerms(state, no);
+                  },
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('메뉴 권한 설정 (어디까지 허용할지)'),
+                ),
+              ),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(

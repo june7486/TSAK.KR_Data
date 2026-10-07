@@ -1135,6 +1135,65 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 행사 소프트 삭제 — 휴지통으로 이동(파일 보존, 복구 가능).
+  /// [by] 삭제자 표기(예: 마스터/관리자 인가번호).
+  Future<bool> eventArchive(
+    String year,
+    String title, {
+    String by = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/event/archive'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'year': year, 'title': title, 'by': by}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 휴지통에서 행사 복구 — 활성 목록으로 되돌린다.
+  Future<bool> eventRestore(String id) async {
+    final r = await http
+        .post(
+          _uri('/api/event/restore'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 휴지통(삭제한 행사) 목록.
+  Future<List<Map<String, dynamic>>> eventTrashList() async {
+    final r = await http
+        .post(
+          _uri('/api/event/trash/list'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({}),
+        )
+        .timeout(const Duration(seconds: 40));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['trash'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 휴지통에서 완전 삭제 — NAS 파일/썸네일/개인프로필까지 제거(되돌릴 수 없음).
+  Future<bool> eventPurge(List<String> ids) async {
+    final r = await http
+        .post(
+          _uri('/api/event/purge'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ids': ids}),
+        )
+        .timeout(const Duration(seconds: 90));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
   /// 참석자 목록 저장 (+회원 프로필 자동 반영)
   Future<bool> eventSetAttendees(
     String year,
@@ -3002,6 +3061,46 @@ class NasApi {
         )
         .timeout(const Duration(seconds: 30));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 마스터: 관리자별(인가번호) 개별 메뉴권한 + 기본 권한표 조회.
+  /// 반환: { ok, defaults:{menuKey:bool}, adminPerms:{ '번호':{menuKey:bool} }, perms:{...} }
+  Future<Map<String, dynamic>> fetchAdminPerms() async {
+    try {
+      final r = await http
+          .get(_uri('/api/admin/perms'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      return j.cast<String, dynamic>();
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
+  /// 마스터: 특정 관리자(인가번호)의 개별 메뉴권한 일부 변경.
+  Future<bool> setAdminPerms(String number, Map<String, bool> updates) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/perms/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'number': number, 'updates': updates}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// 마스터: 특정 관리자의 개별 메뉴권한을 기본값(역할 app)으로 되돌린다.
+  Future<bool> resetAdminPerms(String number) async {
+    final r = await http
+        .post(
+          _uri('/api/admin/perms/reset'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'number': number}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
   }
 
   /// 관리자: 연회비 금액 / 판매창 오픈 / 수품계좌 설정.
