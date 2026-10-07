@@ -422,7 +422,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
-          onSelected: (v) {
+          onSelected: (v) async {
             switch (v) {
               case 'settings':
                 Navigator.push(
@@ -474,7 +474,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 setState(() => _selectMode = true);
                 break;
               case 'refresh':
-                context.read<AppState>().refreshFromNas();
+                final st = context.read<AppState>();
+                if (st.isMaster || st.can('nasRefresh')) {
+                  await st.refreshFromNas();
+                }
                 break;
               case 'donate':
                 showDonateSheet(context);
@@ -588,15 +591,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             if (!state.isSelfAccess) ...[
-              const PopupMenuItem(
-                value: 'refresh',
-                child: _MenuItem(
-                  icon: Icons.cloud_download,
-                  label: 'NAS 최신 데이터 불러오기',
-                  color: AppColors.taegeukBlue,
-                  role: '관리자',
+              // NAS 최신 데이터 불러오기 — 기본은 마스터 전용이며,
+              //  [메뉴 접근권한]에서 마스터가 관리자에게 선택 부여할 수 있다.
+              if (state.isMaster || state.can('nasRefresh'))
+                const PopupMenuItem(
+                  value: 'refresh',
+                  child: _MenuItem(
+                    icon: Icons.cloud_download,
+                    label: 'NAS 최신 데이터 불러오기',
+                    color: AppColors.taegeukBlue,
+                    role: '마스터',
+                  ),
                 ),
-              ),
               const PopupMenuItem(
                 value: 'select',
                 child: _MenuItem(

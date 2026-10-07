@@ -63,6 +63,7 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
     {'key': 'finExpense', 'label': '재무 · 지출 입력', 'desc': '지출내역 입력·수정 (재무 하위)', 'icon': Icons.north_east},
     {'key': 'finAttach', 'label': '재무 · 첨부파일', 'desc': '첨부 업로드·확인·다운로드·공유', 'icon': Icons.attach_file},
     {'key': 'finOutput', 'label': '재무 · 출력', 'desc': '재무 항목 출력(PDF·엑셀·PPT 등)', 'icon': Icons.ios_share},
+    {'key': 'nasRefresh', 'label': 'NAS 최신 데이터 불러오기', 'desc': '기본은 마스터 전용 · 관리자에게 선택 부여', 'icon': Icons.cloud_download},
   ];
 
   @override

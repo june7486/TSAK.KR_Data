@@ -114,6 +114,12 @@ class _RolePermissionsScreenState extends State<RolePermissionsScreen> {
       'desc': '재무 항목 출력(PDF·엑셀·PPT 등)',
       'icon': Icons.ios_share,
     },
+    {
+      'key': 'nasRefresh',
+      'label': 'NAS 최신 데이터 불러오기',
+      'desc': '기본은 마스터 전용 · 관리자에게 선택 부여',
+      'icon': Icons.cloud_download,
+    },
   ];
 
   /// 역할 키 → 표시 이름/설명/색
