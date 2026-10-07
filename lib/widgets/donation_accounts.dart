@@ -13,7 +13,12 @@ import 'transfer_sheet.dart';
 /// - 좌측 라벨(한 줄, 넘치면 말줄임)
 /// - 우측 계좌번호
 /// - 송금(토스/카카오/은행앱 딥링크 시트) · 복사
-class DonationAccounts extends StatelessWidget {
+///
+/// ## 규칙 (요구: "모든 회원 창에서 계좌창에서 접기 펼치기 버튼 넣어주고")
+/// 제목이 있는 계좌 박스([title] 지정)는 헤더 우측에 **접기/펼치기 버튼**을
+/// 자동으로 넣는다(기본값: 펼침). 제목 없는 순수 목록(홈 대형 배너)은
+/// 호출부가 자체 토글을 관리하므로 이 위젯은 헤더·토글을 그리지 않는다.
+class DonationAccounts extends StatefulWidget {
   const DonationAccounts({
     super.key,
     this.fontSize = 11,
@@ -26,6 +31,14 @@ class DonationAccounts extends StatelessWidget {
   /// 지정 시 상단에 제목 줄을 함께 표시 (예: '참가비·후원 납부 계좌').
   final String? title;
   final bool showHolder;
+
+  @override
+  State<DonationAccounts> createState() => _DonationAccountsState();
+}
+
+class _DonationAccountsState extends State<DonationAccounts> {
+  /// 접힘 상태 — 기본값 펼침(false).
+  bool _collapsed = false;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +59,7 @@ class DonationAccounts extends StatelessWidget {
                         '${state.donations[index]['label']}',
                         maxLines: 1,
                         style: TextStyle(
-                          fontSize: fontSize,
+                          fontSize: widget.fontSize,
                           fontWeight: FontWeight.w800,
                           color: AppColors.lifetimeGold,
                         ),
@@ -59,7 +72,7 @@ class DonationAccounts extends StatelessWidget {
                         '${state.donations[index]['bank']} ${state.donations[index]['account']}',
                         maxLines: 1,
                         style: TextStyle(
-                          fontSize: fontSize,
+                          fontSize: widget.fontSize,
                           fontWeight: FontWeight.w700,
                           color: AppColors.textDark,
                         ),
@@ -110,7 +123,7 @@ class DonationAccounts extends StatelessWidget {
         ),
     ];
 
-    if (title == null) {
+    if (widget.title == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: rows,
@@ -136,28 +149,73 @@ class DonationAccounts extends StatelessWidget {
               ),
               const SizedBox(width: 5),
               Text(
-                title!,
+                widget.title!,
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
                   color: AppColors.textDark,
                 ),
               ),
-              if (showHolder) ...[
+              if (widget.showHolder) ...[
                 const Spacer(),
-                Text(
-                  state.donationHolder,
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    color: AppColors.textGray,
+                Flexible(
+                  child: MarqueeText(
+                    state.donationHolder,
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      color: AppColors.textGray,
+                    ),
                   ),
                 ),
-              ],
+              ] else
+                const Spacer(),
+              const SizedBox(width: 4),
+              // 접기/펼치기 토글 — 모든 회원 창의 계좌 박스에 자동 제공.
+              _toggleBtn(),
             ],
           ),
-          const SizedBox(height: 6),
-          ...rows,
+          // 접힘 상태가 아닐 때만 계좌 목록 노출 (기본값: 펼침).
+          if (!_collapsed) ...[
+            const SizedBox(height: 6),
+            ...rows,
+          ],
         ],
+      ),
+    );
+  }
+
+  /// 접기/펼치기 버튼 — 아이콘 + 라벨. 상태에 따라 문구·방향 전환.
+  Widget _toggleBtn() {
+    return Material(
+      color: AppColors.purple.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => setState(() => _collapsed = !_collapsed),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _collapsed
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_up,
+                color: AppColors.purple,
+                size: 16,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                _collapsed ? '펼치기' : '접어두기',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.purple,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

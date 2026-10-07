@@ -13,6 +13,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_detail_sheet.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_table_options.dart';
 
 /// 로그 확인 — 전체 회원 접속·열람 기록 (마스터 전용).
@@ -284,6 +285,10 @@ class _AccessLogScreenState extends State<AccessLogScreen> {
         share: true,
       ),
       onOptions: _editOptions,
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: _accessDoc(selectedOnly: selectedOnly),
+      ),
       onShareImage: () => _runOutput(
         selectedOnly: selectedOnly,
         format: TsakOutputFormat.jpg,

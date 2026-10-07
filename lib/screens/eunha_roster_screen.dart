@@ -14,6 +14,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import 'member_detail_screen.dart';
 
 /// 은하스카우트 명단 — 범스카우트와 **분리 관리**되는 별도 명단.
@@ -299,6 +300,18 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
       onOpen: (f) => _openOutputFile(title, headers, rows, f),
       onShareFormat: (f) => _shareOutput(title, headers, rows, format: f),
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: TsakTableDoc(
+          title: title,
+          subtitle: '은하스카우트 · 명부관리',
+          description: '은하스카우트 명부 출력물입니다.',
+          columns: headers,
+          rows: rows,
+          summary: ['총 ${rows.length}명'],
+          footerLeft: '한국범스카우트중앙회 · 은하스카우트',
+        ),
+      ),
       onOnePage: () => _runOnePage(context.read<AppState>().eunhaMembers),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );

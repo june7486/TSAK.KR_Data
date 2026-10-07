@@ -15,6 +15,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/scroll_arrows.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import 'member_detail_screen.dart';
 
 /// 명부관리 — (관리자·마스터, 관리자 명부는 마스터 전용)
@@ -788,6 +789,17 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
       onOpen: (f) => _openRoster(title, headers, rows, f),
       onShareFormat: (f) => _shareRoster(title, headers, rows, format: f),
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: TsakTableDoc(
+          title: title,
+          subtitle: '한국범스카우트중앙회 · 명부',
+          columns: headers,
+          rows: rows,
+          summary: ['총 ${rows.length}명'],
+          footerLeft: '한국범스카우트중앙회 · 명부',
+        ),
+      ),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
   }

@@ -9,6 +9,7 @@ import '../services/output_formats.dart';
 import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import 'tsak_output_sheet.dart';
+import 'tsak_output_preview.dart';
 import 'tsak_table_options.dart';
 
 /// 회원 접속 로그 — 마스터 전용.
@@ -243,6 +244,10 @@ class _MemberAccessLogSectionState extends State<MemberAccessLogSection> {
         share: true,
       ),
       onOptions: _editOptions,
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: _accessDoc(selectedOnly: selectedOnly),
+      ),
       onShareImage: () => _runOutput(
         selectedOnly: selectedOnly,
         format: TsakOutputFormat.jpg,

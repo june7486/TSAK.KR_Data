@@ -14,10 +14,12 @@ import '../services/nas_api.dart';
 import '../services/output_formats.dart';
 import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
+import '../services/table_export.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import 'merch_detail_screen.dart';
 
 /// 기획실 — 신규 수품 아이템 기획 관리 화면(관리자·마스터 전용, 탭 내장형).
@@ -1075,9 +1077,41 @@ class _PlansTabState extends State<PlansTab> {
       onOpen: _openFormat,
       onShareFormat: _shareFormat,
       onShare: () => _shareFormat(TsakOutputFormat.pdf),
+      onPreview: () => showTsakOutputPreview(context, doc: _plansDoc()),
       onShareLink: () =>
           showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
     );
+  }
+
+  /// 실시간 출력 미리보기용 표 문서.
+  TsakTableDoc _plansDoc() => TsakTableDoc(
+    title: '수품 기획안 목록',
+    subtitle: '한국범스카우트중앙회 · 기획실',
+    columns: _plansColumns,
+    rows: _plansStrRows(),
+    summary: ['총 ${_plans.length}건'],
+    footerLeft: '한국범스카우트중앙회 수품',
+    landscape: true,
+  );
+
+  /// 미리보기·표 출력용 문자열 행(CSV 와 동일 값).
+  List<List<String>> _plansStrRows() {
+    final rows = <List<String>>[];
+    for (var i = 0; i < _plans.length; i++) {
+      final p = _plans[i];
+      final apps = (p['applicants'] as List?) ?? [];
+      final minQty = (p['minQty'] as num?)?.toInt() ?? 0;
+      rows.add([
+        '${i + 1}',
+        '${p['name'] ?? ''}',
+        '${p['maker'] ?? ''}',
+        _won((p['price'] as num?)?.toInt() ?? 0),
+        '${p['submittedAt'] ?? ''}',
+        '${p['progress'] ?? ''}',
+        '${apps.length}${minQty > 0 ? ' / $minQty' : ''}명',
+      ]);
+    }
+    return rows;
   }
 
   /// 기획안 목록 → CSV(엑셀).

@@ -15,11 +15,13 @@ import '../services/nas_api.dart';
 import '../services/pdf_to_jpg.dart';
 import '../services/print_doc.dart';
 import '../services/output_formats.dart';
+import '../services/table_export.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 
 /// 중앙회 물건 결제 리스트 — 표 형식 관리 화면.
 ///
@@ -718,9 +720,39 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       onOpen: _openFormat,
       onShareFormat: _shareFormat,
       onShare: () => _shareFormat(TsakOutputFormat.pdf),
+      onPreview: () => showTsakOutputPreview(context, doc: _doc()),
       onShareLink: () =>
           showLinkShareDialog(context, '${_nas.baseUrl}/#/purchase'),
     );
+  }
+
+  /// 실시간 출력 미리보기용 표 문서.
+  TsakTableDoc _doc() => TsakTableDoc(
+    title: '중앙회 물건 결제 내역',
+    subtitle: '한국범스카우트중앙회 · 구매',
+    columns: _columns,
+    rows: _strRows(),
+    summary: _pdfSummary(),
+    footerLeft: '한국범스카우트중앙회 · 구매',
+    landscape: true,
+  );
+
+  /// 미리보기·표 출력용 문자열 행.
+  List<List<String>> _strRows() {
+    final rows = <List<String>>[];
+    for (var i = 0; i < _items.length; i++) {
+      final p = _items[i];
+      rows.add([
+        '${i + 1}',
+        '${p['group'] ?? ''}',
+        '${p['category'] ?? ''}',
+        '${p['size'] ?? ''}',
+        '${p['qty'] ?? 0}',
+        _won(p['unitPrice']),
+        _won(p['amount']),
+      ]);
+    }
+    return rows;
   }
 
   void _snack(String m) {

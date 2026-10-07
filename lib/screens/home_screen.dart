@@ -2003,22 +2003,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Spacer(),
-              Text(
-                state.donationHolder,
-                style: const TextStyle(
-                  fontSize: 9.5,
-                  color: AppColors.textGray,
+              Flexible(
+                child: Text(
+                  state.donationHolder,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    color: AppColors.textGray,
+                  ),
                 ),
               ),
+              const SizedBox(width: 6),
+              // 접기/펼치기 — 모든 회원 창의 계좌 박스와 동일한 토글.
+              _donationToggleBtn(),
             ],
           ),
-          const SizedBox(height: 6),
-          const DonationAccounts(fontSize: 11.5),
-          const SizedBox(height: 2),
-          const Text(
-            '※ 참가비·후원금은 위 계좌로 납부해 주세요.',
-            style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
-          ),
+          if (!_donationCollapsed) ...[
+            const SizedBox(height: 6),
+            const DonationAccounts(fontSize: 11.5),
+            const SizedBox(height: 2),
+            const Text(
+              '※ 참가비·후원금은 위 계좌로 납부해 주세요.',
+              style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
+            ),
+          ],
         ],
       ),
     );

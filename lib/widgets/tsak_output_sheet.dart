@@ -47,6 +47,10 @@ Future<void> showTsakOutputSheet(
 
   /// 출력 옵션(출력내용선택·위치이동·줄간격·글씨크기·용지) 편집을 연다.
   VoidCallback? onOptions,
+
+  /// **실시간 출력 미리보기** — 줄간격·글자 크기를 조절하며 결과물을 확인 후
+  /// PDF·이미지·인쇄로 내보낸다. (요구: "미리보기 창에서 실시간 확인 후 출력")
+  VoidCallback? onPreview,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -174,6 +178,14 @@ Future<void> showTsakOutputSheet(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  // (요구) 실시간 미리보기 — 출력 옵션·내보내기를 한 창에서.
+                  if (onPreview != null)
+                    _act(
+                      Icons.visibility_outlined,
+                      '미리보기',
+                      () => fire(onPreview),
+                      primary: onShare == null,
+                    ),
                   // (요구) 모든 기기에 OS 공유 시트 — PDF(기본) 파일을 곧바로
                   //   카톡·메일·드라이브 등으로 보낸다. 가장 눈에 띄게(강조) 배치.
                   if (onShare != null)

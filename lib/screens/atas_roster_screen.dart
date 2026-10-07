@@ -14,6 +14,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import 'member_detail_screen.dart';
 
 /// 아타스(ATAS) 명부 — 범스카우트 인가자 중 **ATAS 인가번호**를 보유한 대원 명단.
@@ -260,6 +261,18 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
       onOpen: (f) => _openOutputFile(title, headers, rows, f),
       onShareFormat: (f) => _shareOutput(title, headers, rows, format: f),
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: TsakTableDoc(
+          title: title,
+          subtitle: '아타스 · 명부관리',
+          description: '아타스(ATAS) 명부 출력물입니다.',
+          columns: headers,
+          rows: rows,
+          summary: ['총 ${rows.length}명'],
+          footerLeft: '한국범스카우트중앙회 · 아타스',
+        ),
+      ),
       onOnePage: () => _runOnePage(_atasAll(context.read<AppState>())),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );

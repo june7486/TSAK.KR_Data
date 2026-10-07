@@ -22,6 +22,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_table_options.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
@@ -3896,6 +3897,10 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         key: selectedOnly ? 'ledger.sel' : 'ledger.all',
         columns: _ledgerDoc(rows: rows, selectedOnly: selectedOnly).columns,
       ),
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: _ledgerDoc(rows: rows, selectedOnly: selectedOnly),
+      ),
       onShareImage: () => _runLedgerOutput(
         TsakOutputFormat.jpg,
         rows: rows,
@@ -5317,6 +5322,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onShareFormat: (f) => _shareStock(stock, format: f),
       onEmail: () => _emailStock(stock),
       onShare: () => _shareStock(stock),
+      onPreview: () => showTsakOutputPreview(context, doc: _stockDoc(stock)),
       onOptions: () => _editSimpleOptions(key: 'stock', title: '수품 재고 출력 옵션'),
       onShareLink: () =>
           showLinkShareDialog(context, '${_nas.baseUrl}/#/merch-admin'),
@@ -5405,6 +5411,73 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     b.writeln('────────────────────────────');
     b.writeln('총 ${stock.length}개 상품 · 총 재고 $total');
     return b.toString();
+  }
+
+
+  /// 재고 현황표 → 실시간 미리보기용 표 문서.
+  TsakTableDoc _stockDoc(List<Map<String, dynamic>> stock) {
+    final total = stock.fold<int>(
+      0,
+      (a, e) => a + ((e['stock'] as num?)?.toInt() ?? 0),
+    );
+    final rows = <List<String>>[
+      for (var i = 0; i < stock.length; i++)
+        [
+          '${i + 1}',
+          '${stock[i]['name'] ?? ''}',
+          '${(stock[i]['stock'] as num?)?.toInt() ?? 0}',
+          '${(stock[i]['sold'] as num?)?.toInt() ?? 0}',
+        ],
+    ];
+    return TsakTableDoc(
+      title: '수품 재고 현황표',
+      subtitle: '한국범스카우트중앙회 · 수품 재고 및 누적판매',
+      description: '상품별 현재 재고와 누적판매 수량입니다.',
+      author: _whoName(),
+      extra: {'총 상품': '${stock.length}종', '총 재고': '$total'},
+      columns: const ['번호', '품명', '재고', '누적판매'],
+      rows: rows,
+      summary: ['총 ${stock.length}종 · 총 재고 $total'],
+      footerLeft: '한국범스카우트중앙회 · 수품 재고',
+    );
+  }
+
+  /// 공여 내역 → 실시간 미리보기용 표 문서.
+  TsakTableDoc _donationDoc() {
+    var totalAmt = 0;
+    var totalQty = 0;
+    final rows = <List<String>>[];
+    for (var i = 0; i < _donations.length; i++) {
+      final d = _donations[i];
+      final qty = (d['qty'] as num?)?.toInt() ?? 0;
+      final amt = (d['amount'] as num?)?.toInt() ?? 0;
+      totalAmt += amt;
+      totalQty += qty;
+      rows.add([
+        '${i + 1}',
+        '${d['product'] ?? ''}',
+        '${d['kind'] ?? d['category'] ?? '공여'}',
+        '$qty',
+        amt > 0 ? _won(amt) : '-',
+        '${d['recipient'] ?? d['event'] ?? ''}',
+        '${d['date'] ?? d['created'] ?? ''}',
+      ]);
+    }
+    return TsakTableDoc(
+      title: '수품 공여 내역',
+      subtitle: '한국범스카우트중앙회 · 행사·홍보 무상 제공',
+      description: '행사·홍보 목적으로 무상 제공한 수품 내역입니다.',
+      author: _whoName(),
+      extra: {
+        '총 건수': '${_donations.length}건',
+        '총 수량': '$totalQty개',
+        '금액 합계': _won(totalAmt),
+      },
+      columns: const ['번호', '품명', '구분', '수량', '금액', '수령처/행사', '일자'],
+      rows: rows,
+      summary: ['총 ${_donations.length}건 · 수량 $totalQty개 · 금액 ${_won(totalAmt)}'],
+      footerLeft: '한국범스카우트중앙회 · 수품',
+    );
   }
 
   /// 재고 현황표 MUJI 메타 (HTML/PDF 공용).
@@ -6130,6 +6203,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onOpen: _openDonation,
       onShareFormat: (f) => _shareDonation(format: f),
       onShare: () => _shareDonation(),
+      onPreview: () => showTsakOutputPreview(context, doc: _donationDoc()),
       onOptions: () =>
           _editSimpleOptions(key: 'donation', title: '수품 공여 출력 옵션'),
       onShareLink: () =>
@@ -6483,6 +6557,7 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       onPrint: () => _runMakerOutput(TsakOutputFormat.pdf, justPrint: true),
       onEmail: _emailMaker,
       onShare: () => _runMakerOutput(TsakOutputFormat.pdf, share: true),
+      onPreview: () => showTsakOutputPreview(context, doc: _makerDoc()),
       onOptions: () =>
           _editSimpleOptions(key: 'maker', title: '수품 제작내역서 출력 옵션'),
       onShareLink: () => showLinkShareDialog(context, _nas.baseUrl),

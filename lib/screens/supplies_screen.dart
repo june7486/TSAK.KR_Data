@@ -14,6 +14,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_table_options.dart';
 
 /// 중앙회 비품 재고 리스트 — 표 형식 관리 화면.
@@ -613,6 +614,8 @@ class _SuppliesScreenState extends State<SuppliesScreen> {
         share: true,
       ),
       onOptions: _editOptions,
+      onPreview: () =>
+          showTsakOutputPreview(context, doc: _doc(selectedOnly: selectedOnly)),
       onShareLink: () =>
           showLinkShareDialog(context, '${_nas.baseUrl}/#/supplies'),
     );

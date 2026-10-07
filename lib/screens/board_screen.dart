@@ -17,6 +17,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
 
 /// 게시판 (#12).
 /// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호.
@@ -256,8 +257,28 @@ class _BoardScreenState extends State<BoardScreen> {
       // (요구) 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
       onOpen: (f) => _openOutputFile(title, headers, rows, f),
       onShareFormat: (f) => _shareOutput(title, headers, rows, format: f),
+      onPreview: () => _previewOutput(title, headers, rows),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
+  }
+
+  /// 실시간 출력 미리보기 — 줄간격·글자 크기를 조절하며 확인 후 내보낸다.
+  Future<void> _previewOutput(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+  ) async {
+    final doc = TsakTableDoc(
+      title: title,
+      subtitle: '한국범스카우트중앙회 · 게시판',
+      description: '게시판 게시글 목록 출력물입니다.',
+      columns: headers,
+      rows: rows,
+      summary: ['총 ${rows.length}건'],
+      footerLeft: '한국범스카우트중앙회 · 게시판',
+      landscape: true,
+    );
+    await showTsakOutputPreview(context, doc: doc);
   }
 
   Future<void> _runOutput(
