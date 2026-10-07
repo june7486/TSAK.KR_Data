@@ -16,12 +16,14 @@ import 'eunha_roster_screen.dart';
 import 'event_year_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
+import 'finance_ledger_screen.dart';
 import 'merch_admin_screen.dart';
 import 'member_request_screen.dart';
 import 'member_field_visibility_screen.dart';
 import 'regular_members_screen.dart';
 import 'role_permissions_screen.dart';
 import 'settings_screen.dart';
+import 'storage_screen.dart';
 import '../widgets/busy_overlay.dart';
 import 'stats_screen.dart';
 
@@ -197,6 +199,18 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   Icons.account_balance_wallet,
                   AppColors.tigerGold,
                   () => _push(const FinanceScreen()),
+                ),
+                _tile(
+                  '재무 원장 (입금·지출 · 첨부 관리)',
+                  Icons.receipt_long_outlined,
+                  AppColors.tigerGold,
+                  () => _push(const FinanceLedgerScreen()),
+                ),
+                _tile(
+                  '자료 저장공간 (NAS · 구글드라이브)',
+                  Icons.cloud_sync,
+                  AppColors.taegeukBlue,
+                  () => _push(const StorageScreen()),
                 ),
                 _tile(
                   '수품 재고 확인',

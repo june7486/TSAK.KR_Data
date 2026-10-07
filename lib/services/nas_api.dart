@@ -38,6 +38,9 @@ class NasApi {
   Map<String, String> get _authHeaders =>
       sessionId.isEmpty ? const {} : {'X-TSAK-Session': sessionId};
 
+  /// 외부 위젯(Image.network 등)에서 인증 헤더가 필요할 때 공개 접근자.
+  Map<String, String> get authHeaderMap => _authHeaders;
+
   set baseUrl(String v) => _base = v.replaceAll(RegExp(r'/+$'), '');
 
   Uri _uri(String path) => Uri.parse('$_base$path');

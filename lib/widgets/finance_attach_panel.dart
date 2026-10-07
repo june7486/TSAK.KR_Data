@@ -241,8 +241,10 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
   }
 
   Future<void> _share(String name, String url) async {
-    final s = context.read<AppState>();
-    await showLinkShareDialog(context, name, url, extraHeaders: s.nas.authHeaderMap);
+    // 다운로드 후 저장/공유 — 다른 앱으로 넘길 수 있게 파일 저장 창을 띄운다.
+    await _download(
+      {'name': name, 'size': 0},
+    );
   }
 
   Future<void> _rename(Map<String, dynamic> f) async {

@@ -14,6 +14,7 @@ import '../widgets/finance_export_sheet.dart';
 import '../widgets/hscroll_menu.dart';
 import '../widgets/mini_charts.dart';
 import 'bank_import_screen.dart';
+import 'finance_ledger_screen.dart';
 import 'finance_transaction_edit_screen.dart';
 
 /// 재무 대시보드 — 후원현황 / 수품구매 / 참가비 / 지출현황 / 행사별 결산
@@ -107,12 +108,22 @@ class _FinanceScreenState extends State<FinanceScreen>
                 case 'add':
                   _editTransaction(context);
                   break;
+                case 'ledger':
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FinanceLedgerScreen(),
+                    ),
+                  );
+                  if (context.mounted) fs.load();
+                  break;
               }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'add', child: Text('입금/지출 직접 입력')),
               PopupMenuItem(value: 'bank', child: Text('은행거래파일 자동분류')),
               PopupMenuItem(value: 'excel', child: Text('통합 엑셀 내려받기')),
+              PopupMenuItem(value: 'ledger', child: Text('재무 원장 (항목별 · 첨부파일)')),
             ],
           ),
         ],
