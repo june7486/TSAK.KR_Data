@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -482,7 +483,7 @@ Future<void> saveText({
   }
   await FileSaver.instance.saveFile(
     name: name,
-    bytes: Uint8List.fromList(content.codeUnits),
+    bytes: Uint8List.fromList(utf8.encode(content)),
     ext: ext,
     mimeType: mimeType ?? MimeType.text,
   );

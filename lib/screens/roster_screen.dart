@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_saver/file_saver.dart';
@@ -183,17 +184,19 @@ class _RosterScreenState extends State<RosterScreen> {
         mime = MimeType.pdf;
       } else if (fmt == 'txt') {
         bytes = Uint8List.fromList(
-          RosterService.buildText(
-            title: widget.title,
-            period: _period,
-            place: widget.place,
-            desc: widget.desc,
-            attendees: widget.attendees,
-            year: widget.year,
-            showEventFee: _showEventFee,
-            showLifetime: _showLifetime,
-            showYearFee: _showYearFee,
-          ).codeUnits,
+          utf8.encode(
+            RosterService.buildText(
+              title: widget.title,
+              period: _period,
+              place: widget.place,
+              desc: widget.desc,
+              attendees: widget.attendees,
+              year: widget.year,
+              showEventFee: _showEventFee,
+              showLifetime: _showLifetime,
+              showYearFee: _showYearFee,
+            ),
+          ),
         );
         ext = 'txt';
         mime = MimeType.text;
@@ -209,7 +212,7 @@ class _RosterScreenState extends State<RosterScreen> {
           showLifetime: _showLifetime,
           showYearFee: _showYearFee,
         );
-        bytes = Uint8List.fromList(content.codeUnits);
+        bytes = Uint8List.fromList(utf8.encode(content));
         ext = fmt == 'excel' ? 'xls' : 'doc';
         mime = fmt == 'excel'
             ? MimeType.microsoftExcel

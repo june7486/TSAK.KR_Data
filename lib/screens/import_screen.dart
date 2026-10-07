@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -366,7 +367,10 @@ class _ImportScreenState extends State<ImportScreen> {
   void _parsePasted() {
     final text = _pasteCtrl.text.trim();
     if (text.isEmpty) return;
-    final bytes = Uint8List.fromList(text.codeUnits);
+    // 한글 손상 방지 — 반드시 UTF-8 바이트로 인코딩한다.
+    //  (codeUnits 를 그대로 쓰면 UTF-16 코드유닛이 바이트로 오인되어
+    //   '현지환'→'AX' 처럼 한글이 깨진다.)
+    final bytes = Uint8List.fromList(utf8.encode(text));
     final parsed = ImportParser.parse('pasted.txt', bytes);
     setState(() {
       _recognized = parsed;
