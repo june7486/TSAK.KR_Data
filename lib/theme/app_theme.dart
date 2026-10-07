@@ -18,6 +18,13 @@ class AppColors {
   static const textDark = Color(0xFF1F1A2E);
   static const textGray = Color(0xFF6E6A7C);
 
+  /// 역할 배지용 세련된 저채도 팔레트 — 원색 대신 딥톤 글자 + 옅은 틴트.
+  ///  (마스터=딥 와인 / 관리자=딥 슬레이트 인디고)
+  static const masterInk = Color(0xFF7B2635);
+  static const masterTint = Color(0xFFF6E8EA);
+  static const adminInk = Color(0xFF2E3E63);
+  static const adminTint = Color(0xFFE9EDF6);
+
   static const brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,

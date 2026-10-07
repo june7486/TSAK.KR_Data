@@ -3381,7 +3381,8 @@ class _MenuItem extends StatelessWidget {
   }
 }
 
-/// 권한 구분용 작은 원형 배지 — 관리자(파랑) / 마스터(빨강).
+/// 권한 구분용 배지 — 마스터(딥 와인) / 관리자(딥 슬레이트).
+///  원색 채움 대신 옅은 틴트 배경 + 얇은 테두리 + 딥톤 글자로 정제된 느낌.
 class _RoleBadge extends StatelessWidget {
   const _RoleBadge({required this.role});
 
@@ -3390,28 +3391,23 @@ class _RoleBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMaster = role == '마스터';
-    final bg = isMaster ? AppColors.taegeukRed : AppColors.taegeukBlue;
+    final ink = isMaster ? AppColors.masterInk : AppColors.adminInk;
+    final tint = isMaster ? AppColors.masterTint : AppColors.adminTint;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            color: bg.withValues(alpha: 0.35),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        color: tint,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: ink.withValues(alpha: 0.26), width: 1),
       ),
       child: Text(
         role,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: ink,
           fontSize: 9.5,
-          fontWeight: FontWeight.w800,
-          height: 1.25,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+          letterSpacing: 0.1,
         ),
       ),
     );
