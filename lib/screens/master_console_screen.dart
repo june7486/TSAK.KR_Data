@@ -17,6 +17,7 @@ import 'event_year_screen.dart';
 import 'export_screen.dart';
 import 'finance_screen.dart';
 import 'finance_ledger_screen.dart';
+import 'home_menu_perm_screen.dart';
 import 'import_log_screen.dart';
 import 'merch_admin_screen.dart';
 import 'member_request_screen.dart';
@@ -149,6 +150,12 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   Icons.tune,
                   AppColors.purple,
                   () => _push(const RolePermissionsScreen()),
+                ),
+                _tile(
+                  '홈 메뉴 노출권한 (마스터/관리자)',
+                  Icons.visibility_outlined,
+                  AppColors.taegeukBlue,
+                  () => _push(const HomeMenuPermScreen()),
                 ),
                 _tile(
                   '개인정보 기본 노출 설정',

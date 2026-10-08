@@ -127,6 +127,49 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // ---------- 홈 오버플로 메뉴 노출 설정 ----------
+  /// 홈(⋮) 메뉴별 노출 설정. 메뉴 키 → { label, icon, master, admin }.
+  Map<String, Map<String, dynamic>> _homeMenus = {};
+  Map<String, Map<String, dynamic>> get homeMenus => _homeMenus;
+
+  /// 서버 홈 메뉴 노출 설정 로드.
+  Future<void> loadHomeMenus() async {
+    if (!repo.isNasMode) return;
+    try {
+      final m = await nas.fetchHomeMenus();
+      if (m.isNotEmpty) {
+        _homeMenus = m;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// 마스터가 홈 메뉴 노출 설정을 변경(서버 저장 후 로컬 반영).
+  Future<bool> setHomeMenus(Map<String, Map<String, bool>> updates) async {
+    if (!isMaster || !repo.isNasMode) return false;
+    try {
+      final m = await nas.setHomeMenus(updates);
+      if (m.isNotEmpty) {
+        _homeMenus = m;
+        notifyListeners();
+      }
+      return m.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 홈 메뉴 노출 여부 — 홈 오버플로 메뉴가 이 항목을 표시해야 하는가?
+  ///  · 마스터  → master 플래그가 켜진 항목만 표시.
+  ///  · 관리자  → admin 플래그가 켜진 항목만 표시.
+  ///  (배치 위치는 메뉴 구역(마스터/관리자)이 고정한다.)
+  ///  설정 미수신 시 [fallback] 으로 기존 동작을 보존한다.
+  bool canSeeMenu(String key, {bool fallback = true}) {
+    final m = _homeMenus[key];
+    if (m == null) return fallback;
+    return isMaster ? m['master'] == true : m['admin'] == true;
+  }
+
   // ---------- 자료 저장공간 (마스터) ----------
   Map<String, dynamic> _storage = {};
   Map<String, dynamic> get storage => _storage;
@@ -575,6 +618,8 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       // 역할별 메뉴권한표 로드(마스터가 설정한 값 반영).
       if (repo.isNasMode) unawaited(loadRolePermissions());
+      // 홈 오버플로 메뉴 노출 설정 로드.
+      if (repo.isNasMode) unawaited(loadHomeMenus());
       // [보안] 로그인 전에는 서버가 데이터를 주지 않는다(401). 로그인 직후
       //  세션이 붙은 상태에서 서버 데이터를 다시 불러온다.
       if (repo.isNasMode) {

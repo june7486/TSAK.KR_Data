@@ -249,6 +249,65 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  // ---- 홈 오버플로 메뉴 노출 설정 (마스터 전용) ----
+  /// 홈 메뉴별 노출 설정 조회.
+  /// 반환: { menuKey: { label, icon, master: bool, admin: bool }, ... }
+  Future<Map<String, Map<String, dynamic>>> fetchHomeMenus() async {
+    try {
+      final r = await http
+          .get(_uri('/api/home/menus'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      final raw = (j['menus'] as Map?) ?? {};
+      final out = <String, Map<String, dynamic>>{};
+      raw.forEach((k, v) {
+        if (v is Map) {
+          out['$k'] = {
+            'label': '${v['label'] ?? ''}',
+            'icon': '${v['icon'] ?? ''}',
+            'master': v['master'] == true,
+            'admin': v['admin'] == true,
+          };
+        }
+      });
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 홈 메뉴 노출 설정 변경 (마스터 전용).
+  /// [updates] = { menuKey: { 'master': bool, 'admin': bool } }
+  Future<Map<String, Map<String, dynamic>>> setHomeMenus(
+    Map<String, Map<String, bool>> updates,
+  ) async {
+    try {
+      final r = await http
+          .post(
+            _uri('/api/home/menus/set'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: json.encode({'updates': updates}),
+          )
+          .timeout(const Duration(seconds: 20));
+      final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+      final raw = (j['menus'] as Map?) ?? {};
+      final out = <String, Map<String, dynamic>>{};
+      raw.forEach((k, v) {
+        if (v is Map) {
+          out['$k'] = {
+            'label': '${v['label'] ?? ''}',
+            'icon': '${v['icon'] ?? ''}',
+            'master': v['master'] == true,
+            'admin': v['admin'] == true,
+          };
+        }
+      });
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
   // ---- 회원 등록요청 (평생회원·연회비·자격) ----
   /// 등록요청 제출. type: lifetime | fee | qualification
   Future<Map<String, dynamic>> memberRequestSubmit({

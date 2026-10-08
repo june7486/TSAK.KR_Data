@@ -518,148 +518,155 @@ class _HomeScreenState extends State<HomeScreen> {
                 break;
             }
           },
-          itemBuilder: (ctx) => [
-            if (state.isMaster)
-              const PopupMenuItem(
-                value: 'admin',
-                child: _MenuItem(
-                  icon: Icons.admin_panel_settings,
-                  label: '앱 관리 — 앱접근 비번 변경/정지/복구',
-                  color: AppColors.taegeukRed,
-                  role: '마스터',
+          itemBuilder: (ctx) {
+            final isMaster = state.isMaster;
+            final isApp = state.isApp || state.isMaster;
+
+            // ---- 마스터 구역 (상단) ----
+            final masterEntries = <PopupMenuEntry<String>>[
+              if (isMaster && state.canSeeMenu('admin'))
+                const PopupMenuItem(
+                  value: 'admin',
+                  child: _MenuItem(
+                    icon: Icons.admin_panel_settings,
+                    label: '앱 관리 — 앱접근 비번 변경/정지/복구',
+                    color: AppColors.masterInk,
+                  ),
                 ),
-              ),
-            if (state.isMaster)
-              const PopupMenuItem(
-                value: 'master_console',
-                child: _MenuItem(
-                  icon: Icons.workspace_premium,
-                  label: '마스터 관리창 — 백업/회원/권한/로그/재무',
-                  color: AppColors.taegeukRed,
-                  role: '마스터',
+              if (isMaster && state.canSeeMenu('master_console'))
+                const PopupMenuItem(
+                  value: 'master_console',
+                  child: _MenuItem(
+                    icon: Icons.workspace_premium,
+                    label: '마스터 관리창 — 백업/회원/권한/로그/재무',
+                    color: AppColors.masterInk,
+                  ),
                 ),
-              ),
-            if (state.isApp || state.isMaster)
-              const PopupMenuItem(
-                value: 'member_request',
-                child: _MenuItem(
-                  icon: Icons.app_registration,
-                  label: '등록요청 승인 — 평생회원·연회비·자격',
-                  color: AppColors.lifetimeGold,
-                  role: '관리자',
+              if (isMaster && state.canSeeMenu('source'))
+                const PopupMenuItem(
+                  value: 'source',
+                  child: _MenuItem(
+                    icon: Icons.folder_special,
+                    label: '기본자료 폴더 (첨부·자동분석)',
+                    color: AppColors.masterInk,
+                  ),
                 ),
-              ),
-            if (!state.isSelfAccess) ...[
-              const PopupMenuItem(
-                value: 'finance',
-                child: _MenuItem(
-                  icon: Icons.account_balance_wallet,
-                  label: '재무 관리 (후원·수품·참가비)',
-                  color: AppColors.taegeukBlue,
-                  role: '관리자',
+              if (isMaster && state.canSeeMenu('settings'))
+                const PopupMenuItem(
+                  value: 'settings',
+                  child: _MenuItem(
+                    icon: Icons.settings,
+                    label: '설정 · 백업/복원',
+                    color: AppColors.masterInk,
+                  ),
                 ),
-              ),
-              const PopupMenuItem(
-                value: 'import',
-                child: _MenuItem(
-                  icon: Icons.auto_awesome,
-                  label: '자료 가져오기 (AI 인식)',
-                  color: AppColors.taegeukBlue,
-                  role: '관리자',
-                ),
-              ),
-            ],
-            // 기본자료 폴더 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
-            if (state.isMaster)
-              const PopupMenuItem(
-                value: 'source',
-                child: _MenuItem(
-                  icon: Icons.folder_special,
-                  label: '기본자료 폴더 (첨부·자동분석)',
-                  color: AppColors.taegeukRed,
-                  role: '마스터',
-                ),
-              ),
-            if (state.isMaster)
-              const PopupMenuItem(
-                value: 'settings',
-                child: _MenuItem(
-                  icon: Icons.settings,
-                  label: '설정 · 백업/복원',
-                  color: AppColors.taegeukRed,
-                  role: '마스터',
-                ),
-              ),
-            if (!state.isSelfAccess) ...[
-              // NAS 최신 데이터 불러오기 — 기본은 마스터 전용이며,
-              //  [메뉴 접근권한]에서 마스터가 관리자에게 선택 부여할 수 있다.
-              if (state.isMaster || state.can('nasRefresh'))
+              if (!state.isSelfAccess &&
+                  (isMaster || state.can('nasRefresh')) &&
+                  state.canSeeMenu('refresh'))
                 const PopupMenuItem(
                   value: 'refresh',
                   child: _MenuItem(
                     icon: Icons.cloud_download,
                     label: 'NAS 최신 데이터 불러오기',
-                    color: AppColors.taegeukBlue,
-                    role: '마스터',
+                    color: AppColors.masterInk,
                   ),
                 ),
+            ];
+
+            // ---- 관리자 구역 (하단) ----
+            final adminEntries = <PopupMenuEntry<String>>[
+              if (isApp && state.canSeeMenu('member_request'))
+                const PopupMenuItem(
+                  value: 'member_request',
+                  child: _MenuItem(
+                    icon: Icons.app_registration,
+                    label: '등록요청 승인 — 평생회원·연회비·자격',
+                    color: AppColors.adminInk,
+                  ),
+                ),
+              if (!state.isSelfAccess && state.canSeeMenu('finance'))
+                const PopupMenuItem(
+                  value: 'finance',
+                  child: _MenuItem(
+                    icon: Icons.account_balance_wallet,
+                    label: '재무 관리 (후원·수품·참가비)',
+                    color: AppColors.adminInk,
+                  ),
+                ),
+              if (!state.isSelfAccess && state.canSeeMenu('import'))
+                const PopupMenuItem(
+                  value: 'import',
+                  child: _MenuItem(
+                    icon: Icons.auto_awesome,
+                    label: '자료 가져오기 (AI 인식)',
+                    color: AppColors.adminInk,
+                  ),
+                ),
+              if (!state.isSelfAccess && state.canSeeMenu('select'))
+                const PopupMenuItem(
+                  value: 'select',
+                  child: _MenuItem(
+                    icon: Icons.checklist,
+                    label: '명단 선택 (일괄작업)',
+                    color: AppColors.adminInk,
+                  ),
+                ),
+            ];
+
+            return [
+              if (masterEntries.isNotEmpty)
+                _menuHeader('마스터', AppColors.masterInk),
+              ...masterEntries,
+              if (adminEntries.isNotEmpty)
+                _menuHeader('관리자', AppColors.adminInk),
+              ...adminEntries,
+              // 첫 화면으로 이동 (모든 접근 등급)
               const PopupMenuItem(
-                value: 'select',
+                value: 'home',
                 child: _MenuItem(
-                  icon: Icons.checklist,
-                  label: '명단 선택 (일괄작업)',
-                  color: AppColors.taegeukBlue,
-                  role: '관리자',
+                  icon: Icons.home_outlined,
+                  label: '첫 화면으로 이동',
+                  color: AppColors.textDark,
                 ),
               ),
-            ],
-            // 첫 화면으로 이동 (모든 접근 등급)
-            const PopupMenuItem(
-              value: 'home',
-              child: _MenuItem(
-                icon: Icons.home_outlined,
-                label: '첫 화면으로 이동',
-                color: AppColors.textDark,
-              ),
-            ),
-            // 내 QR 표시 (본인 인가자) — QR 아이콘을 삼점(⋮) 위치로 옮기며
-            //  메뉴로도 접근 가능하게 한다(요구).
-            if (state.isSelfAccess)
+              // 내 QR 표시 (본인 인가자)
+              if (state.isSelfAccess)
+                const PopupMenuItem(
+                  value: 'myqr',
+                  child: _MenuItem(
+                    icon: Icons.qr_code_2,
+                    label: '내 QR 표시',
+                    color: AppColors.adminInk,
+                  ),
+                ),
+              // 개발자 후원
               const PopupMenuItem(
-                value: 'myqr',
+                value: 'donate',
                 child: _MenuItem(
-                  icon: Icons.qr_code_2,
-                  label: '내 QR 표시',
-                  color: AppColors.taegeukBlue,
+                  icon: Icons.favorite,
+                  label: '개발자 후원',
+                  color: AppColors.lifetimeGold,
                 ),
               ),
-            // 개발자 후원 (모든 접근 등급)
-            const PopupMenuItem(
-              value: 'donate',
-              child: _MenuItem(
-                icon: Icons.favorite,
-                label: '개발자 후원',
-                color: AppColors.lifetimeGold,
+              // 문의
+              const PopupMenuItem(
+                value: 'inquiry',
+                child: _MenuItem(
+                  icon: Icons.mail_outline,
+                  label: '문의하기',
+                  color: AppColors.textDark,
+                ),
               ),
-            ),
-            // 문의 (모든 접근 등급)
-            const PopupMenuItem(
-              value: 'inquiry',
-              child: _MenuItem(
-                icon: Icons.mail_outline,
-                label: '문의하기',
-                color: AppColors.textDark,
+              const PopupMenuItem(
+                value: 'lock',
+                child: _MenuItem(
+                  icon: Icons.lock_outline,
+                  label: '로그아웃',
+                  color: AppColors.textGray,
+                ),
               ),
-            ),
-            const PopupMenuItem(
-              value: 'lock',
-              child: _MenuItem(
-                icon: Icons.lock_outline,
-                label: '로그아웃',
-                color: AppColors.taegeukRed,
-              ),
-            ),
-          ],
+            ];
+          },
         ),
       ],
     ];
@@ -3340,21 +3347,17 @@ class _PersonalEditSheet extends StatelessWidget {
   }
 }
 
-/// 팝업 메뉴 항목 — 관리자 전용/일반 항목을 색·아이콘으로 구분.
+/// 팝업 메뉴 항목 — 아이콘·라벨.
 class _MenuItem extends StatelessWidget {
   const _MenuItem({
     required this.icon,
     required this.label,
     required this.color,
-    this.role,
   });
 
   final IconData icon;
   final String label;
   final Color color;
-
-  /// 권한 배지 — '관리자' 또는 '마스터'. null이면 배지 없음.
-  final String? role;
 
   @override
   Widget build(BuildContext context) {
@@ -3372,44 +3375,38 @@ class _MenuItem extends StatelessWidget {
             ),
           ),
         ),
-        if (role != null) ...[
-          const SizedBox(width: 6),
-          _RoleBadge(role: role!),
-        ],
       ],
     );
   }
 }
 
-/// 권한 구분용 배지 — 마스터(딥 와인) / 관리자(딥 슬레이트).
-///  원색 채움 대신 옅은 틴트 배경 + 얇은 테두리 + 딥톤 글자로 정제된 느낌.
-class _RoleBadge extends StatelessWidget {
-  const _RoleBadge({required this.role});
-
-  final String role;
-
-  @override
-  Widget build(BuildContext context) {
-    final isMaster = role == '마스터';
-    final ink = isMaster ? AppColors.masterInk : AppColors.adminInk;
-    final tint = isMaster ? AppColors.masterTint : AppColors.adminTint;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-      decoration: BoxDecoration(
-        color: tint,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: ink.withValues(alpha: 0.26), width: 1),
-      ),
-      child: Text(
-        role,
-        style: TextStyle(
-          color: ink,
-          fontSize: 9.5,
-          fontWeight: FontWeight.w700,
-          height: 1.2,
-          letterSpacing: 0.1,
+/// 팝업 메뉴 구역 헤더('마스터' / '관리자') — 선택 불가 라벨.
+PopupMenuEntry<String> _menuHeader(String label, Color color) {
+  return PopupMenuItem<String>(
+    enabled: false,
+    height: 30,
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+    child: Row(
+      children: [
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(2),
+          ),
         ),
-      ),
-    );
-  }
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            color: color,
+            letterSpacing: 0.6,
+          ),
+        ),
+      ],
+    ),
+  );
 }
