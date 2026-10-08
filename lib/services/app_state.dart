@@ -1780,7 +1780,7 @@ class AppState extends ChangeNotifier {
   bool _onlyLifetime = false;
 
   /// 회원 구분 필터: '' (전체) | 'credential' (인가자) | 'regular' (일반회원)
-  ///                    | 'mentor' (멘토 지정) | 'parent' (보호자 지정)
+  ///                    | 'mentor' (멘토) | 'mentee' (멘티) | 'parent' (보호자 지정)
   String _kindFilter = '';
 
   List<Member> get members => _members;
@@ -1850,6 +1850,11 @@ class AppState extends ChangeNotifier {
         list = list.where((m) => m.isRegular).toList();
         break;
       case 'mentor':
+        // 멘토 = 멘티대원을 둔(지도하는) 회원.
+        list = list.where((m) => m.mentees.isNotEmpty).toList();
+        break;
+      case 'mentee':
+        // 멘티 = 멘토를 가진(지도받는) 회원.
         list = list.where((m) => m.mentors.isNotEmpty).toList();
         break;
       case 'parent':
