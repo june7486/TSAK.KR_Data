@@ -410,6 +410,8 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     if (key.contains('lifetime')) return Icons.star;
     if (key.contains('fee')) return Icons.card_membership;
     if (key.contains('event')) return Icons.event_available;
+    if (key.contains('donation')) return Icons.volunteer_activism;
+    if (key.contains('supply')) return Icons.card_giftcard;
     if (key.contains('link')) return Icons.family_restroom;
     return Icons.rule;
   }
@@ -419,6 +421,8 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     if (key.contains('lifetime')) return AppColors.lifetimeGold;
     if (key.contains('fee')) return AppColors.scoutGreen;
     if (key.contains('event')) return AppColors.taegeukBlue;
+    if (key.contains('donation')) return AppColors.taegeukRed;
+    if (key.contains('supply')) return AppColors.taegeukBlue;
     if (key.contains('link')) return AppColors.purple;
     return AppColors.textGray;
   }
@@ -875,6 +879,24 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                       _meta(Icons.event_available, '납부일자 $date'),
                     if (type == 'event' && event.isNotEmpty)
                       _meta(Icons.celebration, event),
+                    // 후원금·후원물품 — 항목/금액/후원일 표시.
+                    if ((type == 'donation' || type == 'supply') &&
+                        '${m['item'] ?? ''}'.trim().isNotEmpty)
+                      _meta(
+                        type == 'donation'
+                            ? Icons.volunteer_activism
+                            : Icons.card_giftcard,
+                        '${m['item']}',
+                      ),
+                    if ((type == 'donation' || type == 'supply') &&
+                        ((m['amount'] as num?)?.toInt() ?? 0) > 0)
+                      _meta(
+                        Icons.payments,
+                        '${_won((m['amount'] as num).toInt())}원',
+                      ),
+                    if ((type == 'donation' || type == 'supply') &&
+                        date.isNotEmpty)
+                      _meta(Icons.event, '후원일 $date'),
                     if (created.isNotEmpty)
                       _meta(Icons.schedule, '요청 $created'),
                     if (by.isNotEmpty) _meta(Icons.person, '$by 요청'),
@@ -1057,6 +1079,18 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       if (s.isNotEmpty) return s;
     }
     return '';
+  }
+
+  /// 금액 천단위 콤마 표기.
+  String _won(int v) {
+    final neg = v < 0;
+    final s = v.abs().toString();
+    final b = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+      b.write(s[i]);
+    }
+    return '${neg ? '-' : ''}$b';
   }
 
   /// 인적사항 라벨 목록 추출 — *Labels(이름·소속·전화 보강) 우선, 없으면 번호.

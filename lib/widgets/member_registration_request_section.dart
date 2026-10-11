@@ -640,6 +640,8 @@ class MemberRequestLabels {
     'event' => '행사 참가 등록',
     'regular' => '비인가회원 등록',
     'qualification' => '자격 지정',
+    'donation' => '후원금 등록',
+    'supply' => '후원물품 등록',
     _ => t,
   };
 
@@ -649,6 +651,8 @@ class MemberRequestLabels {
     'event' => Icons.event_available,
     'regular' => Icons.person_add,
     'qualification' => Icons.workspace_premium,
+    'donation' => Icons.volunteer_activism,
+    'supply' => Icons.card_giftcard,
     _ => Icons.rule,
   };
 
@@ -658,6 +662,8 @@ class MemberRequestLabels {
     'event' => AppColors.taegeukBlue,
     'regular' => AppColors.purple,
     'qualification' => AppColors.purple,
+    'donation' => AppColors.taegeukRed,
+    'supply' => AppColors.taegeukBlue,
     _ => AppColors.textGray,
   };
 }

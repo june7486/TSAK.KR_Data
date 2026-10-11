@@ -24,6 +24,7 @@ import '../widgets/hscroll_menu.dart';
 import '../widgets/tsak_output_sheet.dart';
 import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_table_options.dart';
+import 'merch_stats_screen.dart';
 import '../widgets/merch_order_detail.dart';
 import 'order_detail_screen.dart';
 import 'supplies_screen.dart';
@@ -244,6 +245,15 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         title: const Text('수품 판매관리'),
         actions: [
           const AppHomeEmblem(size: 22),
+          // (요구 #5-3) 수품통계를 수품판매관리 페이지로 이동.
+          IconButton(
+            tooltip: '수품통계',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MerchStatsScreen()),
+            ),
+            icon: const Icon(Icons.insights),
+          ),
           IconButton(
             tooltip: '새로고침',
             onPressed: _load,
@@ -5413,7 +5423,6 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
     return b.toString();
   }
 
-
   /// 재고 현황표 → 실시간 미리보기용 표 문서.
   TsakTableDoc _stockDoc(List<Map<String, dynamic>> stock) {
     final total = stock.fold<int>(
@@ -5475,7 +5484,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
       },
       columns: const ['번호', '품명', '구분', '수량', '금액', '수령처/행사', '일자'],
       rows: rows,
-      summary: ['총 ${_donations.length}건 · 수량 $totalQty개 · 금액 ${_won(totalAmt)}'],
+      summary: [
+        '총 ${_donations.length}건 · 수량 $totalQty개 · 금액 ${_won(totalAmt)}',
+      ],
       footerLeft: '한국범스카우트중앙회 · 수품',
     );
   }

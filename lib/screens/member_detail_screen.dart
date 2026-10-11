@@ -229,6 +229,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     member: m,
                     isSelf: context.watch<AppState>().isSelfNumber(m.number),
                   ),
+                  // (요구 #5-1) 후원금·후원물품 이력 — 수동입력 + 관리자·마스터 인증요청.
+                  _donationSection(m),
                   _eventSection(m),
                   _depositSection(m),
                   MerchActivitySection(
@@ -2759,6 +2761,311 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final err = await context.read<AppState>().setMemberPassword(m, value: nw);
     if (!mounted) return;
     _snack(err == null ? '비밀번호를 변경했습니다' : '실패: $err');
+  }
+
+  // ================= 후원금 · 후원물품 이력 =================
+  //  요구: "후원금/후원물품 이력 추가(수동입력) → 관리자·마스터 인증요청버튼 →
+  //  통합승인관리에 승인항목 표시 및 승인 / 이력 하단에 합계 표시."
+  //   · 승인된 이력만 목록에 나타나고, 수동입력은 승인요청 큐로 접수된다.
+  Widget _donationSection(Member m) {
+    final state = context.watch<AppState>();
+    final canEdit = state.isApp || state.isMaster || state.isSelfAccess;
+    final items = m.donations;
+    final donations = items.where((d) => '${d['kind']}' == 'donation').toList();
+    final supplies = items.where((d) => '${d['kind']}' == 'supply').toList();
+    return _section(
+      title: '후원금 · 후원물품 이력',
+      icon: Icons.volunteer_activism,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _donationChip('후원금', donations.length, AppColors.taegeukRed),
+              const SizedBox(width: 6),
+              _donationChip('후원물품', supplies.length, AppColors.taegeukBlue),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                '등록된 후원 이력이 없습니다',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+            )
+          else
+            for (final d in items) _donationRow(d),
+          // ── 합계 ──
+          const Divider(height: 22),
+          _donationTotalRow('후원금 합계', m.donationTotal, AppColors.taegeukRed),
+          const SizedBox(height: 4),
+          _donationTotalRow('후원물품 합계', m.supplyTotal, AppColors.taegeukBlue),
+          const SizedBox(height: 4),
+          _donationTotalRow(
+            '총 합계',
+            m.donationTotal + m.supplyTotal,
+            AppColors.purple,
+            strong: true,
+          ),
+          if (canEdit) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.purple,
+                  side: const BorderSide(color: AppColors.purple),
+                ),
+                onPressed: () => _addDonationDialog(m),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('후원금·후원물품 입력 (인증요청)'),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '※ 입력하면 관리자·마스터의 통합승인관리에서 승인 후 이력에 반영됩니다.',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _donationChip(String label, int n, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        '$label $n건',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _donationRow(Map<String, dynamic> d) {
+    final isDon = '${d['kind']}' == 'donation';
+    final color = isDon ? AppColors.taegeukRed : AppColors.taegeukBlue;
+    final item = '${d['item'] ?? ''}'.trim();
+    final amount = (d['amount'] as num?)?.toInt() ?? 0;
+    final date = '${d['date'] ?? ''}'.trim();
+    final note = '${d['note'] ?? ''}'.trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isDon ? Icons.volunteer_activism : Icons.card_giftcard,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.isNotEmpty ? item : (isDon ? '후원금' : '후원물품'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (date.isNotEmpty || note.isNotEmpty)
+                  Text(
+                    [
+                      if (date.isNotEmpty) date,
+                      if (note.isNotEmpty) note,
+                    ].join(' · '),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            amount > 0 ? '${_won(amount)}원' : '-',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _donationTotalRow(
+    String label,
+    int value,
+    Color color, {
+    bool strong = false,
+  }) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: strong ? 13.5 : 12.5,
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+            color: strong ? AppColors.textDark : AppColors.textGray,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '${_won(value)}원',
+          style: TextStyle(
+            fontSize: strong ? 14 : 12.5,
+            fontWeight: FontWeight.w900,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 후원금·후원물품 수동 입력 → 관리자·마스터 인증요청.
+  Future<void> _addDonationDialog(Member m) async {
+    String kind = 'donation';
+    final itemCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    final dateCtrl = TextEditingController(
+      text: DateTime.now().toIso8601String().substring(0, 10),
+    );
+    final noteCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('후원금 · 후원물품 입력'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('후원금'),
+                      selected: kind == 'donation',
+                      onSelected: (_) => setS(() => kind = 'donation'),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('후원물품'),
+                      selected: kind == 'supply',
+                      onSelected: (_) => setS(() => kind = 'supply'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: itemCtrl,
+                  decoration: InputDecoration(
+                    labelText: kind == 'donation' ? '후원 항목/내용' : '후원물품명',
+                    hintText: kind == 'donation' ? '예: 정기후원' : '예: 스카우트 셔츠 10벌',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '금액 (원)',
+                    hintText: '예: 100000',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: dateCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '후원일',
+                    hintText: '예: 2026-10-11',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: noteCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: '비고 (선택)',
+                    hintText: '예: 입금자명, 영수증 번호 등',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('인증요청'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) {
+      itemCtrl.dispose();
+      amountCtrl.dispose();
+      dateCtrl.dispose();
+      noteCtrl.dispose();
+      return;
+    }
+    final amount =
+        int.tryParse(amountCtrl.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    if (itemCtrl.text.trim().isEmpty && amount <= 0) {
+      _snack('항목 또는 금액을 입력하세요');
+      itemCtrl.dispose();
+      amountCtrl.dispose();
+      dateCtrl.dispose();
+      noteCtrl.dispose();
+      return;
+    }
+    try {
+      final r = await context.read<NasApi>().memberRequestSubmit(
+        type: kind,
+        ident: m.number.isNotEmpty ? m.number : m.accessPhone,
+        item: itemCtrl.text.trim(),
+        amount: amount,
+        date: dateCtrl.text.trim(),
+        note: noteCtrl.text.trim(),
+      );
+      if (r['ok'] == true) {
+        _snack('후원 이력을 인증요청했습니다 (관리자·마스터 승인 대기)');
+      } else {
+        _snack('요청 실패: ${r['error'] ?? '알 수 없음'}');
+      }
+    } catch (e) {
+      _snack('요청 오류: $e');
+    }
+    itemCtrl.dispose();
+    amountCtrl.dispose();
+    dateCtrl.dispose();
+    noteCtrl.dispose();
   }
 
   Widget _section({

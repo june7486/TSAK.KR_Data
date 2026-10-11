@@ -309,7 +309,7 @@ class NasApi {
   }
 
   // ---- 회원 등록요청 (평생회원·연회비·자격) ----
-  /// 등록요청 제출. type: lifetime | fee | qualification
+  /// 등록요청 제출. type: lifetime | fee | qualification | event | donation | supply
   Future<Map<String, dynamic>> memberRequestSubmit({
     required String type,
     String ident = '',
@@ -318,6 +318,8 @@ class NasApi {
     String note = '',
     String newNumber = '',
     String event = '',
+    String item = '',
+    int amount = 0,
   }) async {
     final r = await http
         .post(
@@ -331,6 +333,8 @@ class NasApi {
             if (note.isNotEmpty) 'note': note,
             if (newNumber.isNotEmpty) 'newNumber': newNumber,
             if (event.isNotEmpty) 'event': event,
+            if (item.isNotEmpty) 'item': item,
+            if (amount != 0) 'amount': amount,
           }),
         )
         .timeout(const Duration(seconds: 20));
@@ -808,8 +812,10 @@ class NasApi {
   Future<List<Map<String, dynamic>>> fetchFinanceAttach(String txid) async {
     try {
       final r = await http
-          .get(_uri('/api/finance/attach?txid=${Uri.encodeComponent(txid)}'),
-              headers: _authHeaders)
+          .get(
+            _uri('/api/finance/attach?txid=${Uri.encodeComponent(txid)}'),
+            headers: _authHeaders,
+          )
           .timeout(const Duration(seconds: 20));
       final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
       final list = j['files'];
@@ -826,7 +832,8 @@ class NasApi {
     String name,
     List<int> bytes,
   ) async {
-    final q = 'txid=${Uri.encodeComponent(txid)}&name=${Uri.encodeComponent(name)}';
+    final q =
+        'txid=${Uri.encodeComponent(txid)}&name=${Uri.encodeComponent(name)}';
     final r = await http
         .post(
           _uri('/api/finance/attach/upload?$q'),
@@ -901,9 +908,7 @@ class NasApi {
     }
   }
 
-  Future<Map<String, dynamic>> saveStorage(
-    Map<String, dynamic> payload,
-  ) async {
+  Future<Map<String, dynamic>> saveStorage(Map<String, dynamic> payload) async {
     final r = await http
         .post(
           _uri('/api/storage/set'),
@@ -1444,11 +1449,7 @@ class NasApi {
 
   /// 행사 소프트 삭제 — 휴지통으로 이동(파일 보존, 복구 가능).
   /// [by] 삭제자 표기(예: 마스터/관리자 인가번호).
-  Future<bool> eventArchive(
-    String year,
-    String title, {
-    String by = '',
-  }) async {
+  Future<bool> eventArchive(String year, String title, {String by = ''}) async {
     final r = await http
         .post(
           _uri('/api/event/archive'),

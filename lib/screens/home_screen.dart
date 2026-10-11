@@ -1426,24 +1426,24 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.only(right: 8),
             child: Row(
               children: [
-                // (0) 행사+수품판매 게시판 — 행사관리 앞에 배치(요구 #12)
+                // (요구 #5-3) 버튼 순서: 게시판 → 행사관리 → 통합승인관리 →
+                //  수품판매 → 수품구매 → 참가비 → 후원금 → 명부관리 → 아타스 →
+                //  일반회원. (수품통계는 수품판매관리 페이지로 이동)
+                // (1) 게시판(행사+수품)
                 if (state.can('board')) _boardButton(),
-                // (1) 행사관리 — 가장 자주 쓰는 진입점
+                // (2) 행사관리
                 if (state.can('events')) _eventButton(),
-                if (state.isApp || state.isMaster) ...[
-                  // 통합승인관리 — 승인(멘토·페런츠 연결 포함)이 모두 취합되므로
-                  // 별도 '연결승인' 버튼은 두지 않는다(요구: 통합승인으로 취합).
-                  _approvalButton(),
-                  // (3) 일반회원 (관리자·마스터)
-                  _regularMembersButton(),
-                  // (3-1) 명부관리 (관리자·마스터, 관리자 명부는 마스터 전용) — 별도 창
-                  _rosterAdminButton(),
-                  // (3-2) 아타스(ATAS) 명부 — 요구: "아타스 은하버튼 추가"
-                  _atasRosterButton(),
-                  // (3-3) 은하스카우트 명부 — 요구: "아타스 은하버튼 추가"
-                  _eunhaRosterButton(),
-                ],
-                // (4) 수품 구매 — 권한 허용 시 노출
+                // (3) 통합승인관리
+                if (state.isApp || state.isMaster) _approvalButton(),
+                // (4) 수품판매관리
+                if (state.can('merchMgmt'))
+                  _finButton(
+                    '수품판매관리',
+                    Icons.shopping_bag,
+                    AppColors.taegeukBlue,
+                    -2,
+                  ),
+                // (5) 수품 구매
                 if (state.can('merchBuy'))
                   _finButton(
                     '수품 구매',
@@ -1451,41 +1451,42 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Color(0xFF6D4C41),
                     -4,
                   ),
-                if (state.can('merchMgmt')) ...[
-                  // (5) 수품판매관리
-                  _finButton(
-                    '수품판매관리',
-                    Icons.shopping_bag,
-                    AppColors.taegeukBlue,
-                    -2,
-                  ),
-                  // (6) 수품통계
-                  _finButton(
-                    '수품통계',
-                    Icons.insights,
-                    const Color(0xFF6A1B9A),
-                    -3,
-                  ),
-                ],
+                // (6) 참가비 / (7) 후원금
                 if (state.can('finance')) ...[
-                  // (7) 참가비
                   _finButton(
                     '참가비',
                     Icons.event_available,
                     AppColors.tigerGold,
-                    3,
+                    4,
                   ),
-                  // (8) 지출현황
+                  _finButton(
+                    '후원금',
+                    Icons.volunteer_activism,
+                    AppColors.taegeukRed,
+                    2,
+                  ),
+                ],
+                if (state.isApp || state.isMaster) ...[
+                  // (8) 명부관리
+                  _rosterAdminButton(),
+                  // (9) 아타스(ATAS) 명부
+                  _atasRosterButton(),
+                  // (10) 일반회원 (관리자·마스터)
+                  _regularMembersButton(),
+                  // (추가) 은하스카우트 명부 — 기존 기능 유지
+                  _eunhaRosterButton(),
+                ],
+                // (추가) 지출현황 / 결산 — 기존 기능 유지
+                if (state.can('finance')) ...[
                   _finButton(
                     '지출현황',
                     Icons.payments,
                     const Color(0xFF00838F),
-                    4,
+                    7,
                   ),
-                  // (9) 결산
-                  _finButton('결산', Icons.calculate, AppColors.scoutGreen, 5),
+                  _finButton('결산', Icons.calculate, AppColors.scoutGreen, 8),
                 ],
-                // (10) 기본자료 — 마스터 전용(요구: "기본자료 항목은 마스터만 볼 수 있음")
+                // (추가) 기본자료 — 마스터 전용
                 if (state.isMaster)
                   _finButton('기본자료', Icons.folder_open, AppColors.purple, -1),
               ],

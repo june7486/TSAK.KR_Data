@@ -58,6 +58,7 @@ class Member {
     Map<String, bool>? eventAttend,
     List<String>? pendingEventNames,
     Map<String, String>? fieldPerms,
+    List<Map<String, dynamic>>? donations,
     this.sample = false,
     this.nameVisible = true,
     this.gender = '',
@@ -70,7 +71,8 @@ class Member {
        feeYears = feeYears ?? <String, bool>{},
        eventAttend = eventAttend ?? <String, bool>{},
        pendingEventNames = pendingEventNames ?? <String>[],
-       fieldPerms = fieldPerms ?? <String, String>{};
+       fieldPerms = fieldPerms ?? <String, String>{},
+       donations = donations ?? <Map<String, dynamic>>[];
 
   /// 내부 고유 ID
   String id;
@@ -213,6 +215,20 @@ class Member {
   /// 자녀대원 인가번호 목록 — 본인이 **페런츠**로서 등록한 자녀대원들의 인가번호.
   /// (요구: 페런츠 인가자 개인창의 '자녀대원 등록정보 창')
   List<String> children;
+
+  /// 후원금·후원물품 이력 — 수동입력 후 관리자·마스터 승인 시 기록된다.
+  ///  각 항목: {kind:'donation'|'supply', item, amount, date, note, status, ...}
+  List<Map<String, dynamic>> donations;
+
+  /// 후원금 합계(승인된 금액 합).
+  int get donationTotal => donations
+      .where((d) => '${d['kind']}' == 'donation')
+      .fold<int>(0, (p, d) => p + ((d['amount'] as num?)?.toInt() ?? 0));
+
+  /// 후원물품 합계(승인된 금액 합).
+  int get supplyTotal => donations
+      .where((d) => '${d['kind']}' == 'supply')
+      .fold<int>(0, (p, d) => p + ((d['amount'] as num?)?.toInt() ?? 0));
 
   /// 멘토·페런츠 연결 상태: ''(미요청) | 'pending'(요청) | 'approved'(승인) | 'held'(보류)
   /// 한 대상(멘토/페런츠)을 가리키는 연결 단위 상태.
@@ -398,6 +414,7 @@ class Member {
     'parents': parents,
     'mentees': mentees,
     'children': children,
+    'donations': donations,
     'linkApprovalStatus': linkApprovalStatus,
     'linkRequestSource': linkRequestSource,
     'linkRequestedAt': linkRequestedAt,
@@ -479,6 +496,16 @@ class Member {
       parents: castStrList(map['parents']),
       mentees: castStrList(map['mentees']),
       children: castStrList(map['children']),
+      donations: () {
+        final out = <Map<String, dynamic>>[];
+        final v = map['donations'];
+        if (v is List) {
+          for (final e in v) {
+            if (e is Map) out.add(e.cast<String, dynamic>());
+          }
+        }
+        return out;
+      }(),
       linkApprovalStatus: '${map['linkApprovalStatus'] ?? ''}',
       linkRequestSource: '${map['linkRequestSource'] ?? ''}',
       linkRequestedAt: '${map['linkRequestedAt'] ?? ''}',
@@ -558,6 +585,7 @@ class Member {
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     Map<String, String>? fieldPerms,
+    List<Map<String, dynamic>>? donations,
     bool? sample,
     bool? nameVisible,
     String? gender,
@@ -608,6 +636,7 @@ class Member {
       parents: parents ?? List<String>.from(this.parents),
       mentees: mentees ?? List<String>.from(this.mentees),
       children: children ?? List<String>.from(this.children),
+      donations: donations ?? List<Map<String, dynamic>>.from(this.donations),
       linkApprovalStatus: linkApprovalStatus ?? this.linkApprovalStatus,
       linkRequestSource: linkRequestSource ?? this.linkRequestSource,
       linkRequestedAt: linkRequestedAt ?? this.linkRequestedAt,
