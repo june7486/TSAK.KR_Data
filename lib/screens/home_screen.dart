@@ -33,6 +33,8 @@ import 'finance_screen.dart';
 import 'import_screen.dart';
 import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
+import 'member_drafts_screen.dart';
+import '../services/member_draft_store.dart';
 import 'qr_screen.dart';
 import 'regular_members_screen.dart';
 import 'roster_admin_screen.dart';
@@ -473,6 +475,26 @@ class _HomeScreenState extends State<HomeScreen> {
               case 'select':
                 setState(() => _selectMode = true);
                 break;
+              case 'drafts':
+                final res = await Navigator.push<MemberDraft>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MemberDraftsScreen()),
+                );
+                if (!context.mounted || res == null) break;
+                if (res.isNew) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MemberEditScreen()),
+                  );
+                } else if (res.memberId.isNotEmpty) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MemberEditScreen(memberId: res.memberId),
+                    ),
+                  );
+                }
+                break;
               case 'refresh':
                 final st = context.read<AppState>();
                 if (st.isMaster || st.can('nasRefresh')) {
@@ -608,6 +630,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: _MenuItem(
                     icon: Icons.checklist,
                     label: '명단 선택 (일괄작업)',
+                    color: AppColors.adminInk,
+                  ),
+                ),
+              if (isApp)
+                const PopupMenuItem(
+                  value: 'drafts',
+                  child: _MenuItem(
+                    icon: Icons.bookmark_added_outlined,
+                    label: '임시저장 불러오기 (작성중 복원)',
                     color: AppColors.adminInk,
                   ),
                 ),

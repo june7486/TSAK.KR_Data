@@ -8,6 +8,7 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/finance_service.dart';
 import '../services/nas_api.dart';
+import '../services/member_draft_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
@@ -25,6 +26,7 @@ import '../widgets/scroll_down_hint.dart';
 import 'finance_transaction_edit_screen.dart';
 import 'export_screen.dart';
 import 'member_edit_screen.dart';
+import 'member_drafts_screen.dart';
 import 'qr_screen.dart';
 
 class MemberDetailScreen extends StatefulWidget {
@@ -55,6 +57,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Map<String, dynamic> _linkProfilesCache = {};
   final Map<String, Future<Map<String, dynamic>>> _medalFuture = {};
 
+  /// 임시저장(초안) 개수 — 상단 버튼 배지용(관리자·마스터 전용).
+  int _draftCount = 0;
+
   Future<void> _loadLinkProfiles() async {
     final p = await context.read<NasApi>().linkProfiles();
     if (mounted) setState(() => _linkProfilesCache = p);
@@ -67,7 +72,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       _loadKnownEvents();
       _loadLinkProfiles();
       _logView();
+      _loadDraftCount();
     });
+  }
+
+  /// 관리자·마스터에게 임시저장 개수를 알린다(상단 버튼 배지).
+  Future<void> _loadDraftCount() async {
+    final state = context.read<AppState>();
+    if (!(state.isApp || state.isMaster)) return;
+    final list = await MemberDraftStore.list();
+    if (mounted) setState(() => _draftCount = list.length);
   }
 
   /// 프로필 열람 로그 기록 — 마스터/관리자/다른 회원이 본 이력을 남긴다.
@@ -157,6 +171,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   icon: const Icon(Icons.home_filled),
                   onPressed: _goHome,
                 ),
+                // 임시저장 불러오기 — 관리자·마스터 전용(작성중 복원).
+                if (context.watch<AppState>().isApp ||
+                    context.watch<AppState>().isMaster)
+                  IconButton(
+                    tooltip: '임시저장 불러오기',
+                    icon: Badge(
+                      isLabelVisible: _draftCount > 0,
+                      label: Text('$_draftCount'),
+                      child: const Icon(Icons.bookmark_added_outlined),
+                    ),
+                    onPressed: _openDrafts,
+                  ),
                 // (요구 복원) 개인정보 수정 버튼.
                 IconButton(
                   tooltip: '개인정보 수정',
@@ -2794,6 +2820,32 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       context,
       MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
     );
+    if (mounted) context.read<AppState>().refresh();
+    _loadDraftCount();
+  }
+
+  /// 임시저장 목록 열기 — 선택한 초안을 편집 화면으로 복원한다(관리자·마스터).
+  Future<void> _openDrafts() async {
+    final res = await Navigator.push<MemberDraft>(
+      context,
+      MaterialPageRoute(builder: (_) => const MemberDraftsScreen()),
+    );
+    if (!mounted) return;
+    await _loadDraftCount();
+    if (res == null) return;
+    if (res.isNew) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const MemberEditScreen()),
+      );
+    } else if (res.memberId.isNotEmpty) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MemberEditScreen(memberId: res.memberId),
+        ),
+      );
+    }
     if (mounted) context.read<AppState>().refresh();
   }
 

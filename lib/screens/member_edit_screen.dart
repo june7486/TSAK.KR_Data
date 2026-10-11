@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/league_names.dart';
+import '../services/member_draft_store.dart';
 import '../services/phone_format.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
@@ -18,6 +20,7 @@ import '../widgets/member_avatar.dart';
 import '../widgets/link_code_field.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/unsaved_guard.dart';
+import 'member_drafts_screen.dart';
 
 class MemberEditScreen extends StatefulWidget {
   const MemberEditScreen({super.key, this.memberId, this.suggestedNumber});
@@ -29,7 +32,8 @@ class MemberEditScreen extends StatefulWidget {
   State<MemberEditScreen> createState() => _MemberEditScreenState();
 }
 
-class _MemberEditScreenState extends State<MemberEditScreen> {
+class _MemberEditScreenState extends State<MemberEditScreen>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _number,
       _name,
@@ -61,6 +65,25 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
   bool _lifetime = false;
   Map<String, bool> _fees = {};
   Member? _existing;
+
+  // ---- 자동 임시저장(초안) ----
+  /// 초안 저장 디바운스 타이머(입력 멈춤 후 저장).
+  Timer? _draftDebounce;
+
+  /// 주기 저장 타이머(프로그램적 값 변경·연결정보 변경 대비).
+  Timer? _draftPeriodic;
+
+  /// 마지막으로 저장한 폼 서명(중복 저장 방지).
+  String _lastDraftSig = '';
+
+  /// 임시저장 저장자(로그인 식별자) — dispose 시에도 안전하도록 캐시.
+  String _draftSavedBy = '';
+
+  /// 임시저장이 존재하는 상태인지(배지/표시용).
+  bool _draftSaved = false;
+
+  /// 진입 시 발견된 미저장 초안(불러오기 배너용).
+  MemberDraft? _pendingDraft;
 
   /// 마스터 비밀번호 열람 시 가림 여부(기본: 가림).
   bool _pwObscured = true;
@@ -132,10 +155,72 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     _privacyAgreedAt = m?.privacyAgreedAt ?? '';
     _gender = m?.gender ?? '';
     _genderVisible = m?.genderVisible ?? false;
+
+    // ---- 자동 임시저장 초기화 ----
+    WidgetsBinding.instance.addObserver(this);
+    _draftSavedBy = state.who.isNotEmpty
+        ? state.who
+        : (state.isMaster ? '마스터' : (state.isApp ? '관리자' : '사용자'));
+    // 폼 값이 바뀔 때마다(모든 컨트롤러) 디바운스 저장 예약.
+    for (final c in _allControllers) {
+      c.addListener(_scheduleDraft);
+    }
+    // 진입 시 기존 초안이 있으면 배너로 알린다(불러오기/삭제 제공).
+    _loadPendingDraft();
+    // 값 직접조작(연결·요금 등) 대비 주기 저장(15초).
+    _draftPeriodic = Timer.periodic(const Duration(seconds: 15), (_) {
+      _scheduleDraft();
+    });
+  }
+
+  List<TextEditingController> get _allControllers => [
+    _number,
+    _name,
+    _nameEn,
+    _league,
+    _unit,
+    _regLeague,
+    _regUnit,
+    _address,
+    _zipCode,
+    _phone,
+    _tel,
+    _email,
+    _residentNo,
+    _scoutNo,
+    _date,
+    _atas,
+    _activity,
+    _position,
+    _bio,
+    _memo,
+    _birthday,
+    _anniversary,
+    _awards,
+    _specialty,
+    _purchases,
+  ];
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 백그라운드로 내려가거나 종료될 때 즉시 임시저장.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _flushDraft();
+    }
   }
 
   @override
   void dispose() {
+    // 창을 닫을 때 저장되지 않은 내용을 임시저장으로 남긴다.
+    _flushDraft();
+    _draftDebounce?.cancel();
+    _draftPeriodic?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    for (final c in _allControllers) {
+      c.removeListener(_scheduleDraft);
+    }
     for (final c in [
       _number,
       _name,
@@ -201,6 +286,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
           leadingWidth: 84,
           title: Text(isNew ? '인가자 추가' : '인가자 편집'),
           actions: [
+            _draftMenuButton(),
             const AppHomeEmblem(size: 24),
             TextButton(
               onPressed: _save,
@@ -219,6 +305,7 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
           child: ListView(
             padding: const EdgeInsets.all(14),
             children: [
+              _draftBanner(),
               _photoPicker(),
               const SizedBox(height: 12),
               _privacyStatusBanner(state),
@@ -919,6 +1006,331 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // ================= 자동 임시저장(초안) =================
+  //  요구: "회원정보 수정 시 저장하지 못하고 창을 닫는 경우가 있음. 작성 중이거나
+  //  저장하지 않은 경우에도 자동으로 임시저장. 관리자는 임시저장 항목을 조회·저장."
+  //   · 입력이 멈추면(1.2초) 자동 저장, 15초 주기 저장, 창을 닫거나 백그라운드로
+  //     내려갈 때 즉시 저장한다.
+  //   · 저장 성공 시에는 초안을 자동 정리(불필요한 잔여 초안 방지).
+
+  /// 이 편집화면의 초안 키(기존 회원=id, 신규=new).
+  String get _draftKey => _existing != null
+      ? MemberDraftStore.keyForMember(_existing!.id)
+      : MemberDraftStore.newKey;
+
+  /// 폼 전체를 초안 맵으로 직렬화.
+  Map<String, dynamic> _formMap() => {
+    'number': _number.text,
+    'name': _name.text,
+    'nameEn': _nameEn.text,
+    'league': _league.text,
+    'unit': _unit.text,
+    'regLeague': _regLeague.text,
+    'regUnit': _regUnit.text,
+    'address': _address.text,
+    'zipCode': _zipCode.text,
+    'phone': _phone.text,
+    'tel': _tel.text,
+    'email': _email.text,
+    'residentNo': _residentNo.text,
+    'scoutNo': _scoutNo.text,
+    'date': _date.text,
+    'atas': _atas.text,
+    'activity': _activity.text,
+    'position': _position.text,
+    'bio': _bio.text,
+    'memo': _memo.text,
+    'birthday': _birthday.text,
+    'anniversary': _anniversary.text,
+    'awards': _awards.text,
+    'specialty': _specialty.text,
+    'purchases': _purchases.text,
+    'photoPath': _photoPath,
+    'trainingStatus': _trainingStatus,
+    'lifetime': _lifetime,
+    'fees': _fees,
+    'mentors': _mentors,
+    'parents': _parents,
+    'privacyAgreed': _privacyAgreed,
+    'gender': _gender,
+    'genderVisible': _genderVisible,
+  };
+
+  /// 신규 작성 시 '의미 있는 내용'이 있는지(빈 폼은 저장하지 않음).
+  bool _hasContent() {
+    return _name.text.trim().isNotEmpty ||
+        _number.text.trim().isNotEmpty ||
+        _phone.text.trim().isNotEmpty ||
+        _mentors.isNotEmpty ||
+        _parents.isNotEmpty;
+  }
+
+  /// 입력 멈춤/변경 시 디바운스 저장 예약.
+  void _scheduleDraft() {
+    _draftDebounce?.cancel();
+    _draftDebounce = Timer(const Duration(milliseconds: 1200), _flushDraft);
+  }
+
+  /// 실제 임시저장 수행(중복 방지 포함).
+  Future<void> _flushDraft() async {
+    try {
+      final dirty = _isDirty();
+      final hasContent = _existing != null || _hasContent();
+      if (!dirty || !hasContent) {
+        // 저장할 변경이 없으면 잔여 초안을 정리한다.
+        if (_draftSaved) {
+          await MemberDraftStore.delete(_draftKey);
+          _draftSaved = false;
+          _lastDraftSig = '';
+          if (mounted) setState(() {});
+        }
+        return;
+      }
+      final form = _formMap();
+      final sig = json.encode(form);
+      if (sig == _lastDraftSig) return; // 변화 없음 — 저장 생략
+      await MemberDraftStore.save(
+        key: _draftKey,
+        form: form,
+        memberId: _existing?.id ?? '',
+        isNew: _existing == null,
+        name: _name.text.trim(),
+        number: _number.text.trim(),
+        savedBy: _draftSavedBy,
+      );
+      _lastDraftSig = sig;
+      if (!_draftSaved && mounted) {
+        setState(() => _draftSaved = true);
+      } else {
+        _draftSaved = true;
+      }
+    } catch (_) {}
+  }
+
+  /// 진입 시 기존 초안 확인 — 있으면 불러오기 배너를 띄운다.
+  Future<void> _loadPendingDraft() async {
+    final d = await MemberDraftStore.get(_draftKey);
+    if (!mounted || d == null) return;
+    setState(() {
+      _pendingDraft = d;
+      _draftSaved = true;
+    });
+  }
+
+  /// 초안을 폼에 채워 넣는다.
+  void _applyDraft(MemberDraft d) {
+    final f = d.form;
+    String s(String k) => '${f[k] ?? ''}';
+    _number.text = s('number');
+    _name.text = s('name');
+    _nameEn.text = s('nameEn');
+    _league.text = s('league');
+    _unit.text = s('unit');
+    _regLeague.text = s('regLeague');
+    _regUnit.text = s('regUnit');
+    _address.text = s('address');
+    _zipCode.text = s('zipCode');
+    _phone.text = s('phone');
+    _tel.text = s('tel');
+    _email.text = s('email');
+    _residentNo.text = s('residentNo');
+    _scoutNo.text = s('scoutNo');
+    _date.text = s('date');
+    _atas.text = s('atas');
+    _activity.text = s('activity');
+    _position.text = s('position');
+    _bio.text = s('bio');
+    _memo.text = s('memo');
+    _birthday.text = s('birthday');
+    _anniversary.text = s('anniversary');
+    _awards.text = s('awards');
+    _specialty.text = s('specialty');
+    _purchases.text = s('purchases');
+    _photoPath = s('photoPath');
+    _trainingStatus = s('trainingStatus');
+    _lifetime = f['lifetime'] == true;
+    final men = f['mentors'];
+    _mentors = men is List ? men.map((e) => '$e').toList() : <String>[];
+    final par = f['parents'];
+    _parents = par is List ? par.map((e) => '$e').toList() : <String>[];
+    final fees = f['fees'];
+    _fees = fees is Map
+        ? {for (final e in fees.entries) '${e.key}': e.value == true}
+        : <String, bool>{};
+    _privacyAgreed = f['privacyAgreed'] == true;
+    _gender = s('gender');
+    _genderVisible = f['genderVisible'] == true;
+    setState(() => _pendingDraft = null);
+    _snack('임시저장 내용을 불러왔습니다');
+  }
+
+  /// 현재 회원의 초안 삭제.
+  Future<void> _discardDraft() async {
+    await MemberDraftStore.delete(_draftKey);
+    if (!mounted) return;
+    setState(() {
+      _pendingDraft = null;
+      _draftSaved = false;
+      _lastDraftSig = '';
+    });
+    _snack('임시저장을 삭제했습니다');
+  }
+
+  /// 임시저장 버튼 → 이 회원 초안 즉시 불러오기(확인 후).
+  Future<void> _loadDraftNow() async {
+    final d = await MemberDraftStore.get(_draftKey);
+    if (!mounted) return;
+    if (d == null) {
+      _snack('이 회원의 임시저장이 없습니다');
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('임시저장 불러오기'),
+        content: Text(
+          '${d.savedAtLabel}에 저장된 임시저장 내용을 불러옵니다.\n'
+          '현재 입력 중인 내용은 덮어써집니다. 진행할까요?',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('불러오기'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) _applyDraft(d);
+  }
+
+  /// 전체 임시저장 목록 화면으로 이동(관리자·마스터용).
+  Future<void> _openAllDrafts() async {
+    final res = await Navigator.push<MemberDraft>(
+      context,
+      MaterialPageRoute(builder: (_) => const MemberDraftsScreen()),
+    );
+    if (!mounted || res == null) return;
+    if (res.key == _draftKey) {
+      _applyDraft(res);
+    } else if (res.isNew) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const MemberEditScreen()),
+      );
+    } else if (res.memberId.isNotEmpty) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MemberEditScreen(memberId: res.memberId),
+        ),
+      );
+    }
+  }
+
+  /// 상단 임시저장 메뉴 버튼.
+  Widget _draftMenuButton() {
+    return PopupMenuButton<String>(
+      tooltip: '임시저장',
+      icon: Icon(
+        _draftSaved ? Icons.bookmark_added : Icons.bookmark_border,
+        color: Colors.white,
+      ),
+      onSelected: (v) async {
+        switch (v) {
+          case 'load':
+            await _loadDraftNow();
+            break;
+          case 'delete':
+            await _discardDraft();
+            break;
+          case 'all':
+            await _openAllDrafts();
+            break;
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'load',
+          enabled: _draftSaved,
+          child: Text(_draftSaved ? '이 회원 임시저장 불러오기' : '임시저장 없음'),
+        ),
+        if (_draftSaved)
+          const PopupMenuItem(value: 'delete', child: Text('임시저장 삭제')),
+        const PopupMenuItem(value: 'all', child: Text('전체 임시저장 목록')),
+      ],
+    );
+  }
+
+  /// 진입 시 초안이 있을 때 표시하는 안내 배너.
+  Widget _draftBanner() {
+    final d = _pendingDraft;
+    if (d == null) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.tigerGold.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.history_edu,
+                size: 18,
+                color: AppColors.textDark,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '작성 중 임시저장된 내용이 있습니다 (${d.savedAtLabel})',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _applyDraft(d),
+                icon: const Icon(Icons.restore, size: 15),
+                label: const Text('불러오기', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.taegeukRed,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: _discardDraft,
+                icon: const Icon(Icons.delete_outline, size: 15),
+                label: const Text('삭제', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 수정 여부 판정 (원본과 비교)
   bool _isDirty() {
     final m = _existing;
@@ -1606,7 +2018,20 @@ class _MemberEditScreenState extends State<MemberEditScreen> {
     );
     // 연결 승인요청방법 — 이 화면은 직접 입력이므로 'direct'(요구).
     await state.save(member, linkRequestSource: 'direct');
+    // 저장 완료 — 임시저장(초안)을 정리한다. (신규는 'new' 키로 저장돼 있으므로
+    //  _existing 갱신 전에 키를 캡처해 둔다.)
+    final cleanupKey = _draftKey;
     _existing = member; // 이후 dirty 비교 기준 갱신
+    _draftDebounce?.cancel();
+    _lastDraftSig = '';
+    if (_draftSaved || await MemberDraftStore.exists(cleanupKey)) {
+      try {
+        await MemberDraftStore.delete(cleanupKey);
+        await MemberDraftStore.delete(MemberDraftStore.newKey);
+      } catch (_) {}
+      _draftSaved = false;
+    }
+    if (mounted) setState(() => _pendingDraft = null);
 
     // 사진이 있으면 NAS 서버에도 업로드 (인가번호 기준)
     if (_photoPath.startsWith('data:image') &&
