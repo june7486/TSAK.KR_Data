@@ -431,11 +431,8 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                   ],
                 ),
                 const SizedBox(height: 7),
-                // 수품구매계좌 우선 노출 + 대표 계좌(참가비·후원 등)도 함께 안내.
-                const DonationAccounts(
-                  fontSize: 11.5,
-                  labels: ['수품구매계좌', '대표 (참가비·후원 등)'],
-                ),
+                // 대표(참가비·후원) · 수품구매 · 행사비 계좌 모두 노출.
+                const DonationAccounts(fontSize: 11.5),
               ],
             ),
           ),
