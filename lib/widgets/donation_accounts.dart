@@ -24,6 +24,7 @@ class DonationAccounts extends StatefulWidget {
     this.fontSize = 11,
     this.title,
     this.showHolder = false,
+    this.labels,
   });
 
   final double fontSize;
@@ -31,6 +32,9 @@ class DonationAccounts extends StatefulWidget {
   /// 지정 시 상단에 제목 줄을 함께 표시 (예: '참가비·후원 납부 계좌').
   final String? title;
   final bool showHolder;
+
+  /// 지정 시 해당 라벨의 계좌만 표시 (예: ['수품구매계좌']). null이면 전체.
+  final List<String>? labels;
 
   @override
   State<DonationAccounts> createState() => _DonationAccountsState();
@@ -43,8 +47,13 @@ class _DonationAccountsState extends State<DonationAccounts> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final accounts = widget.labels == null
+        ? state.donations
+        : state.donations
+              .where((a) => widget.labels!.contains('${a['label']}'))
+              .toList();
     final rows = <Widget>[
-      for (var index = 0; index < state.donations.length; index++)
+      for (var index = 0; index < accounts.length; index++)
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Row(
@@ -56,7 +65,7 @@ class _DonationAccountsState extends State<DonationAccounts> {
                     Flexible(
                       // 넘치면 좌우로 흐르는 마퀴(요구: "글자가 짤리면 슬라이딩").
                       child: MarqueeText(
-                        '${state.donations[index]['label']}',
+                        '${accounts[index]['label']}',
                         maxLines: 1,
                         style: TextStyle(
                           fontSize: widget.fontSize,
@@ -69,7 +78,7 @@ class _DonationAccountsState extends State<DonationAccounts> {
                     Flexible(
                       flex: 2,
                       child: MarqueeText(
-                        '${state.donations[index]['bank']} ${state.donations[index]['account']}',
+                        '${accounts[index]['bank']} ${accounts[index]['account']}',
                         maxLines: 1,
                         style: TextStyle(
                           fontSize: widget.fontSize,
@@ -88,13 +97,13 @@ class _DonationAccountsState extends State<DonationAccounts> {
                 color: AppColors.scoutGreen,
                 onTap: () => showTransferSheet(
                   context,
-                  label: '${state.donations[index]['label']}',
-                  bank: '${state.donations[index]['bank']}',
-                  account: '${state.donations[index]['account']}',
+                  label: '${accounts[index]['label']}',
+                  bank: '${accounts[index]['bank']}',
+                  account: '${accounts[index]['account']}',
                   holder: state.donationHolder,
-                  accounts: state.donations,
+                  accounts: accounts,
                   initialIndex: index,
-                  memo: '${state.donations[index]['label']}',
+                  memo: '${accounts[index]['label']}',
                 ),
               ),
               const SizedBox(width: 4),
@@ -104,13 +113,13 @@ class _DonationAccountsState extends State<DonationAccounts> {
                 color: AppColors.purple,
                 onTap: () async {
                   await Clipboard.setData(
-                    ClipboardData(text: '${state.donations[index]['account']}'),
+                    ClipboardData(text: '${accounts[index]['account']}'),
                   );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          '${state.donations[index]['label']} ${state.donations[index]['account']} 복사됨',
+                          '${accounts[index]['label']} ${accounts[index]['account']} 복사됨',
                         ),
                         duration: const Duration(milliseconds: 900),
                       ),

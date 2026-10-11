@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/confirm.dart';
+import '../widgets/donation_accounts.dart';
 import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/hscroll_menu.dart';
@@ -387,6 +388,57 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
               ),
             ),
           ],
+          // ── 수품구매 계좌 (안내 하단에 계좌정보 노출) ──
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.tigerGold.withValues(alpha: 0.6),
+                width: 1.4,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.account_balance,
+                      color: AppColors.purple,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      '수품구매 계좌',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                        color: AppColors.purpleDark,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      context.watch<AppState>().donationHolder,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                // 수품구매계좌 우선 노출 + 대표 계좌(참가비·후원 등)도 함께 안내.
+                const DonationAccounts(
+                  fontSize: 11.5,
+                  labels: ['수품구매계좌', '대표 (참가비·후원 등)'],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
