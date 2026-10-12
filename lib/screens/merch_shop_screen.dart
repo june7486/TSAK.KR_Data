@@ -413,7 +413,7 @@ class _MerchShopScreenState extends State<MerchShopScreen> {
                     ),
                     const SizedBox(width: 5),
                     const Text(
-                      '수품구매 계좌',
+                      '범스카우트 계좌',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 12.5,
