@@ -2575,7 +2575,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 5),
                 _filterChip(
-                  label: '멘토',
+                  label: '멘토 (범을 배출한 대장)',
                   selected: state.kindFilter == 'mentor',
                   color: AppColors.scoutGreen,
                   onTap: () => state.setKind(
@@ -2584,7 +2584,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 5),
                 _filterChip(
-                  label: '멘티',
+                  label: '멘티 (내가 만든 범 대원)',
                   selected: state.kindFilter == 'mentee',
                   color: AppColors.purpleLight,
                   onTap: () => state.setKind(

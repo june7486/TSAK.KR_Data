@@ -44,9 +44,9 @@ class LinkRegisterSection extends StatelessWidget {
   IconData get _icon =>
       _isMentor ? Icons.supervisor_account : Icons.family_restroom;
   String get _title => _isMentor ? '멘토 등록정보' : '페런츠 등록정보';
-  String get _codeLabel => _isMentor ? '인가번호(멘티)' : '인가번호';
+  String get _codeLabel => _isMentor ? '멘토' : '인가번호';
   String get _emptyText =>
-      _isMentor ? '등록된 멘토 없음 (복수 등록 가능)' : '등록된 페런츠 없음 (복수 등록 가능)';
+      _isMentor ? '등록된 멘토(범을 배출한 대장) 없음 (복수 등록 가능)' : '등록된 페런츠 없음 (복수 등록 가능)';
 
   Map<String, dynamic> _profileOf(String code) {
     final key = code.replaceAll(RegExp(r'[^0-9]'), '');
@@ -68,7 +68,7 @@ class LinkRegisterSection extends StatelessWidget {
       m = null;
     }
     final prefix = (m?.corps == 'eunha') ? '은하' : '범';
-    return _isMentor ? '멘티 $prefix#$shown' : '$prefix#$shown';
+    return _isMentor ? '멘티(본인) $prefix#$shown' : '$prefix#$shown';
   }
 
   /// 이름 바로 아래 소속정보 = 인적사항의 소속연맹·소속단위대(현재활동 등록정보).
@@ -105,7 +105,9 @@ class LinkRegisterSection extends StatelessWidget {
             Expanded(
               child: Text(
                 badgeSuffix.isEmpty
-                    ? '($_codeLabel · 이름 · 현재활동 등록정보)'
+                    ? (_isMentor
+                          ? '(이 회원을 배출한 지도 대장 · 이름 · 소속)'
+                          : '($_codeLabel · 이름 · 현재활동 등록정보)')
                     : badgeSuffix.trim(),
                 style: TextStyle(
                   fontSize: 10.5,

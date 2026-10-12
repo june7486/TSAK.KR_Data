@@ -452,7 +452,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 maxLines: 2,
               ),
               LinkCodeField(
-                label: '멘토',
+                label: '멘토 (범을 배출한 대장)',
                 icon: Icons.supervisor_account,
                 kind: 'mentor',
                 codes: _mentors,

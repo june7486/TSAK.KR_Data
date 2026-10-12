@@ -833,7 +833,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   ),
                 ),
                 if (mentors.isNotEmpty)
-                  _linkRow('멘토', mentors, AppColors.purple),
+                  _linkRow('멘토 (범을 배출한 대장)', mentors, AppColors.purple),
                 if (parents.isNotEmpty)
                   _linkRow('페런츠', parents, AppColors.taegeukBlue),
                 // (요구 #3) 멘티·자녀대원 등록정보 — 본인이 멘토/페런츠로서 등록.
@@ -844,7 +844,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                         .toList())
                     .isNotEmpty)
                   _linkRow(
-                    '멘티대원',
+                    '멘티대원 (내가 만든 범 대원)',
                     ((m['menteeLabels'] as List?) ??
                             (m['mentees'] as List?) ??
                             [])
@@ -1524,8 +1524,8 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       final mentees = _labelsOf(ms, 'mentees', 'menteeLabels');
       final children = _labelsOf(ms, 'children', 'childLabels');
       // 멘토·멘티·페런츠·자녀대원 **모든 사람의 정보**(이름·소속·전화)를 노출.
-      kv('멘토', mentors.join('\n'));
-      kv('멘티대원', mentees.join('\n'));
+      kv('멘토 (범을 배출한 대장)', mentors.join('\n'));
+      kv('멘티대원 (내가 만든 범 대원)', mentees.join('\n'));
       kv('페런츠', parents.join('\n'));
       kv('자녀대원', children.join('\n'));
       kv('메모', '${ms['note'] ?? ''}');

@@ -1888,7 +1888,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '멘토·페런츠 등록 (복수 입력 가능)',
+          '멘토(범을 배출한 대장)·페런츠 등록 (복수 입력 가능)',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w800,
@@ -1897,7 +1897,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         ),
         const SizedBox(height: 6),
         LinkCodeField(
-          label: '멘토',
+          label: '멘토 (범을 배출한 대장)',
           icon: Icons.supervisor_account,
           kind: 'mentor',
           codes: m.mentors,

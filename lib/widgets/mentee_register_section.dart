@@ -48,7 +48,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
   Color get _accent => _isMentee ? AppColors.purple : AppColors.taegeukBlue;
   IconData get _icon =>
       _isMentee ? Icons.supervisor_account : Icons.family_restroom;
-  String get _title => _isMentee ? '멘티 등록정보' : '자녀대원 등록정보';
+  String get _title => _isMentee ? '멘티 등록정보 (내가 만든 범 대원)' : '자녀대원 등록정보';
   String get _codeLabel => _isMentee ? '멘티대원 인가번호' : '자녀대원 인가번호';
 
   String _nameOf(String code) {
@@ -97,7 +97,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
             const SizedBox(width: 6),
             Text(
               _isMentee
-                  ? '($_codeLabel · 이름 · 현재활동 등록정보)'
+                  ? '($_codeLabel · 이름 · 현재활동 등록정보) · 본인이 배출한 범 대원'
                   : '($_codeLabel · 이름 · 현재활동 등록정보)',
               style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
             ),
@@ -120,7 +120,9 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
           Padding(
             padding: const EdgeInsets.only(left: 20, top: 2, bottom: 2),
             child: Text(
-              _isMentee ? '등록된 멘티대원 없음 (복수 등록 가능)' : '등록된 자녀대원 없음 (복수 등록 가능)',
+              _isMentee
+                  ? '본인이 만든(배출한) 범 대원 없음 (복수 등록 가능)'
+                  : '등록된 자녀대원 없음 (복수 등록 가능)',
               style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
             ),
           )
@@ -239,7 +241,7 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
               children: [
                 Text(
                   _isMentee
-                      ? '본인이 멘토인 멘티대원의 범스카우트 인가번호를 입력하세요.'
+                      ? '본인이 멘토(배출 대장)로서 만든 범 대원의 범 인가번호를 입력하세요.'
                       : '본인이 페런츠(보호자)인 자녀대원의 범스카우트 인가번호를 입력하세요.',
                   style: const TextStyle(
                     fontSize: 11.5,

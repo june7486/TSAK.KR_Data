@@ -146,7 +146,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
               Flexible(
                 child: MarqueeText(
                   widget.kind == 'mentor'
-                      ? '인가번호(멘티) · 이름(멘토) · 소속정보(현재활동)'
+                      ? '인가번호(멘티=본인) · 이름(멘토=범을 배출한 대장) · 소속'
                       : '인가번호 · 이름(페런츠) · 소속정보(현재활동)',
                   style: const TextStyle(
                     fontSize: 10.5,
@@ -190,12 +190,32 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     );
   }
 
+  /// 표시용 [이름, 소속정보] — **멘토·페런츠는 인적사항 프로필을 우선** 사용한다.
+  ///   · 멘토: 저장 코드가 **멘티(본인) 번호**이므로, 회원 명단에서 이름을 찾으면
+  ///     멘티(본인) 이름이 노출되는 오류가 있었다.
+  ///     (요구: "멘토이름에는 범 인가자가 아니라 멘토의 이름과 소속을 노출해야 함")
+  ///     → 멘토 프로필(이름·소속연맹·소속단위대)을 사용하고, 없을 때만 명단으로 폴백.
+  ///   · 페런츠: 인가번호로 조회되는 회원(현재활동)을 우선, 없으면 프로필 정보.
+  (String, String) _displayOf(String code) {
+    final p = _profileOf(code);
+    final pName = '${p['name'] ?? ''}'.trim();
+    final pInfo = [
+      '${p['league'] ?? ''}'.trim(),
+      '${p['unit'] ?? ''}'.trim(),
+    ].where((s) => s.isNotEmpty).join(' · ');
+    if (widget.kind == 'mentor') return (pName, pInfo);
+    // 페런츠
+    final m = _memberOf(code);
+    final nm = (m?.name ?? '').trim();
+    if (nm.isNotEmpty) return (nm, _activityInfo(m));
+    if (pName.isNotEmpty || pInfo.isNotEmpty) return (pName, pInfo);
+    return ('', '');
+  }
+
   /// 멘티 등록정보와 **동일한 형식** — [인가번호 배지] [이름 / 소속정보] [수정·삭제].
   ///   (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출")
   Widget _row(String code) {
-    final m = _memberOf(code);
-    final nm = (m?.name ?? '').trim();
-    final info = _activityInfo(m);
+    final (nm, info) = _displayOf(code);
     return Padding(
       padding: const EdgeInsets.only(left: 20, top: 3, bottom: 3),
       child: Row(
@@ -308,18 +328,45 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 horizontal: 20,
                 vertical: 16,
               ),
-              title: Text(isMentor ? '멘토 인적사항 · 멘티 인가번호' : '페런츠 인적사항'),
+              title: Text(
+                isMentor ? '멘토 인적사항 · 본인(멘티) 인가번호' : '페런츠 인적사항',
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 요구: 멘토=범을 배출한 대장 / 멘티=내가 만든 범 대원 —
+                  //   혼동 방지를 위해 입력 항목의 의미를 먼저 안내한다.
+                  if (isMentor)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.purple.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.purple.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: const Text(
+                        '멘토 = 이 회원(멘티)을 배출한 지도 대장입니다.\n'
+                        '· 인가번호(멘티) : 이 회원 본인의 범 인가번호 (자동 입력)\n'
+                        '· 이름(멘토) : 지도한 대장(멘토)의 이름·소속을 입력하세요.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.45,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
                   TextField(
                     controller: noCtrl,
                     enabled: !isEdit,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: isMentor
-                          ? '범인가자번호 (멘티) *'
+                          ? '본인(멘티) 범 인가번호 *'
                           // 요구: 페런츠가 범스카우트 인가자인 경우에만 입력(선택).
                           : '인가번호 (페런츠가 범스카우트일 경우 입력) (선택)',
                       hintText: isMentor ? null : '모르면 비워두세요 (선택사항)',
@@ -359,7 +406,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                   TextField(
                     controller: nameCtrl,
                     decoration: InputDecoration(
-                      labelText: isMentor ? '이름 (멘토) *' : '이름 (페런츠) *',
+                      labelText: isMentor
+                          ? '이름 (멘토 · 범을 배출한 대장) *'
+                          : '이름 (페런츠) *',
                       isDense: true,
                     ),
                   ),
