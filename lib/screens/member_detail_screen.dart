@@ -1906,7 +1906,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           onChanged: (v) => _saveLinks(m, mentors: v),
         ),
         LinkCodeField(
-          label: '페런츠',
+          label: '페런츠 (범을 배출한 부모님)',
           icon: Icons.family_restroom,
           kind: 'parent',
           codes: m.parents,

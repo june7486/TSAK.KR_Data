@@ -43,10 +43,12 @@ class LinkRegisterSection extends StatelessWidget {
   Color get _accent => _isMentor ? AppColors.purple : AppColors.taegeukBlue;
   IconData get _icon =>
       _isMentor ? Icons.supervisor_account : Icons.family_restroom;
-  String get _title => _isMentor ? '멘토 등록정보' : '페런츠 등록정보';
-  String get _codeLabel => _isMentor ? '멘토' : '인가번호';
+  String get _title =>
+      _isMentor ? '멘토 등록정보' : '페런츠 등록정보 (범을 배출한 부모님)';
   String get _emptyText =>
-      _isMentor ? '등록된 멘토(범을 배출한 대장) 없음 (복수 등록 가능)' : '등록된 페런츠 없음 (복수 등록 가능)';
+      _isMentor
+      ? '등록된 멘토(범을 배출한 대장) 없음 (복수 등록 가능)'
+      : '등록된 페런츠(범을 배출한 부모님) 없음 (복수 등록 가능)';
 
   Map<String, dynamic> _profileOf(String code) {
     final key = code.replaceAll(RegExp(r'[^0-9]'), '');
@@ -107,7 +109,7 @@ class LinkRegisterSection extends StatelessWidget {
                 badgeSuffix.isEmpty
                     ? (_isMentor
                           ? '(이 회원을 배출한 지도 대장 · 이름 · 소속)'
-                          : '($_codeLabel · 이름 · 현재활동 등록정보)')
+                          : '(범을 배출한 부모님 · 이름 · 소속)')
                     : badgeSuffix.trim(),
                 style: TextStyle(
                   fontSize: 10.5,

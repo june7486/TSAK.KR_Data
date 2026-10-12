@@ -147,7 +147,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 child: MarqueeText(
                   widget.kind == 'mentor'
                       ? '인가번호(멘티=본인) · 이름(멘토=범을 배출한 대장) · 소속'
-                      : '인가번호 · 이름(페런츠) · 소속정보(현재활동)',
+                      : '인가번호 · 이름(페런츠=범을 배출한 부모님) · 소속',
                   style: const TextStyle(
                     fontSize: 10.5,
                     color: AppColors.textGray,
@@ -170,11 +170,16 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             ],
           ),
           if (widget.codes.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(left: 20, top: 2, bottom: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: 20, top: 2, bottom: 2),
               child: Text(
-                '등록된 인가번호 없음 (복수 입력 가능)',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                widget.kind == 'mentor'
+                    ? '등록된 멘토(범을 배출한 대장) 없음 (복수 등록 가능)'
+                    : '등록된 페런츠(범을 배출한 부모님) 없음 (복수 등록 가능)',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textGray,
+                ),
               ),
             )
           else
@@ -329,7 +334,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 vertical: 16,
               ),
               title: Text(
-                isMentor ? '멘토 인적사항 · 본인(멘티) 인가번호' : '페런츠 인적사항',
+                isMentor
+                    ? '멘토 인적사항 · 본인(멘티) 인가번호'
+                    : '페런츠 인적사항 (범을 배출한 부모님)',
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -408,7 +415,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     decoration: InputDecoration(
                       labelText: isMentor
                           ? '이름 (멘토 · 범을 배출한 대장) *'
-                          : '이름 (페런츠) *',
+                          : '이름 (페런츠 · 범을 배출한 부모님) *',
                       isDense: true,
                     ),
                   ),
@@ -418,7 +425,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     keyboardType: TextInputType.phone,
                     onChanged: (_) => setDlg(() {}),
                     decoration: InputDecoration(
-                      labelText: isMentor ? '전화번호 (멘토) *' : '전화번호 (페런츠) *',
+                      labelText: isMentor
+                          ? '전화번호 (멘토) *'
+                          : '전화번호 (페런츠 · 범을 배출한 부모님) *',
                       hintText: '010-0000-0000',
                       isDense: true,
                     ),
@@ -603,7 +612,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
       kind: widget.kind,
       hint: isMentor
           ? '멘토 본인의 인가정보를 선택하세요. (멘티 번호는 그대로 유지됩니다)'
-          : '페런츠의 인가정보를 선택하세요. (인가번호까지 채워집니다)',
+          : '페런츠(범을 배출한 부모님)의 인가정보를 선택하세요. (인가번호까지 채워집니다)',
     );
     if (picked == null || !mounted) return;
     final name = '${picked['name'] ?? ''}'.trim();
