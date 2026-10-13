@@ -16,7 +16,7 @@ import '../widgets/member_avatar.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/member_access_log.dart';
 import '../widgets/link_code_field.dart';
-import '../widgets/link_register_section.dart';
+import '../widgets/link_people_tiles.dart';
 import '../widgets/mentee_register_section.dart';
 import '../widgets/member_registration_request_section.dart';
 import '../widgets/fee_payment_request.dart';
@@ -1625,20 +1625,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// 멘토·페런츠 연결 승인 상태 뱃지(라벨) — 승인대기/보류/승인.
-  String _linkBadge(Member m) {
-    switch (m.linkApprovalStatus) {
-      case 'pending':
-        return '  [승인대기]';
-      case 'held':
-        return '  [보류]';
-      case 'approved':
-        return '  [승인됨]';
-      default:
-        return '';
-    }
-  }
-
   /// 각인 메달(멘토·페런츠) 수상/수여 기록 — 개인프로필 연동.
   ///   · 받은 메달(awards) : 본인이 수여받은 각인 메달
   ///   · 수여한 메달(granted): 본인 이름·인가번호가 각인돼 남에게 준 메달
@@ -1814,37 +1800,35 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           //  (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출해줘",
           //         "이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
           //
-          //  (요구) 중복 노출 제거: 편집 권한자에게는 **편집기(LinkCodeField)** 하나만,
-          //  열람자에게는 **읽기전용 표시**만 보여준다 → 같은 내용이 두 번 나오지 않음.
+          // (요구) 중복 노출 제거: 편집 권한자에게는 편집기(LinkCodeField)를 더하고,
+          //  열람자에게는 읽기전용 표시만 보여준다.
+          //
+          //  (요구) 멘티/멘토/페런츠 **3개 항목**을 노출하고, 이름을 누르면
+          //  그 인가자 개인페이지로 이동한다. 카드가 없으면 등록을 유도한다.
           const Divider(height: 22),
-          if (!canEdit) ...[
-            LinkRegisterSection(
-              kind: 'mentor',
-              codes: m.mentors,
-              profiles: _linkProfilesCache,
-              badgeSuffix: _linkBadge(m),
-            ),
-            const SizedBox(height: 8),
-            LinkRegisterSection(
-              kind: 'parent',
-              codes: m.parents,
-              profiles: _linkProfilesCache,
-            ),
-          ],
+          LinkPeopleTiles(
+            member: m,
+            profiles: _linkProfilesCache,
+            canEdit: canEdit,
+          ),
           // 승인대기중 안내 — 관리자·마스터 승인 전까지 명확히 표시(요구).
           if (m.linkApprovalStatus == 'pending') _linkPendingNotice(m),
           // (요구 #3) 멘티·자녀대원 등록정보 — 인가자 본인이 직접 등록/승인요청.
-          //  · 멘토=멘티=페런츠 데이터 상호 연동(승인 시 통합승인관리에서 처리).
+          //  · 멘티 표시는 위 [멘티·멘토·페런츠] 타일에서 하고, 여기서는
+          //    **편집 권한자에게만** 멘티 편집기를 더한다(중복 표시 방지).
+          //  · 자녀대원은 항상 표시한다.
           if (!m.isRegular) ...[
             const Divider(height: 22),
-            MenteeRegisterSection(
-              member: m,
-              kind: 'mentee',
-              codes: m.mentees,
-              canEdit: canEdit,
-              onChanged: (v) => _saveLinks(m, mentees: v),
-            ),
-            const SizedBox(height: 8),
+            if (canEdit) ...[
+              MenteeRegisterSection(
+                member: m,
+                kind: 'mentee',
+                codes: m.mentees,
+                canEdit: canEdit,
+                onChanged: (v) => _saveLinks(m, mentees: v),
+              ),
+              const SizedBox(height: 8),
+            ],
             MenteeRegisterSection(
               member: m,
               kind: 'child',
@@ -1853,7 +1837,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               onChanged: (v) => _saveLinks(m, children: v),
             ),
           ],
-          // 편집 권한자에게는 **편집기 하나만** 노출(위 읽기전용 표시와 중복 방지).
+          // 편집 권한자에게는 **편집기**를 더한다(3-항목 타일과 역할이 다름).
           if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
         ],
       ),
@@ -1862,8 +1846,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   /// 멘토·페런츠 연결 '승인대기중' 안내 — 관리자·마스터 승인 전 상태 설명(요구).
   Widget _linkPendingNotice(Member m) {
-    final held = false;
-    final color = held ? AppColors.taegeukRed : AppColors.tigerGold;
+    const color = AppColors.tigerGold;
     final src = m.linkRequestSource == 'merch' ? '수품신청시' : '직접입력';
     final at = m.linkRequestedAt;
     return Container(
