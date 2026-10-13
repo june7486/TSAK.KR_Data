@@ -150,7 +150,8 @@ Future<bool> showFeePaymentRequestSheet(
                         isLifetime ? AppColors.lifetimeGold : AppColors.scoutGreen;
                     return ChoiceChip(
                       selected: sel,
-                      onSelected: (_) => setSheet(() => timing = o.$1),
+                      // 한 번 더 누르면 선택 취소(토글).
+                      onSelected: (_) => setSheet(() => timing = sel ? '' : o.$1),
                       avatar: Icon(
                         o.$3,
                         size: 15,
@@ -221,11 +222,16 @@ Future<bool> showFeePaymentRequestSheet(
                       backgroundColor: AppColors.purple,
                       padding: const EdgeInsets.symmetric(vertical: 13),
                     ),
-                    onPressed: () => Navigator.pop(ctx, true),
+                    // 납부 여부를 선택하지 않으면(칩을 한 번 더 눌러 취소) 제출 불가.
+                    onPressed: timing.isEmpty
+                        ? null
+                        : () => Navigator.pop(ctx, true),
                     icon: const Icon(Icons.send, size: 18),
-                    label: const Text(
-                      '등록요청 제출',
-                      style: TextStyle(fontWeight: FontWeight.w800),
+                    label: Text(
+                      timing.isEmpty
+                          ? '납부 여부를 선택하세요'
+                          : '등록요청 제출',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),
