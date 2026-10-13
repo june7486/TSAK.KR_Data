@@ -477,10 +477,15 @@ class _LinkLedgerScreenState extends State<LinkLedgerScreen>
     final state = context.watch<AppState>();
     final num = '${e['number'] ?? ''}'.trim();
     final member = num.isEmpty ? null : state.byNumber(num);
-    final canSeeRealName = state.isApp || state.isMaster;
-    final name = member?.name.isNotEmpty == true
-        ? member!.displayName(canSeeRealName: canSeeRealName)
-        : (('${e['name'] ?? ''}'.trim().isEmpty) ? '(이름 미확인)' : '${e['name']}');
+    // 멘토는 number 가 **멘티(받는분) 번호**이므로(기존 link_profiles 규칙),
+    //  회원 조회명을 그대로 쓰면 멘티 이름이 노출된다 → 멘토 이름(e['name']) 우선.
+    //  (페런츠·멘티는 number 가 본인 번호이므로 회원 조회명을 그대로 사용 — 노출기준 동일)
+    final useMember = kind != 'mentor' && member != null;
+    final name = useMember
+        ? member.displayName(canSeeRealName: state.isApp || state.isMaster)
+        : (('${e['name'] ?? ''}'.trim().isEmpty)
+              ? '(이름 미확인)'
+              : '${e['name']}'.trim());
     final annual = _annual(e);
     final life = annual['life'] == true;
     final key = _keyOf(kind, idx);
@@ -536,7 +541,7 @@ class _LinkLedgerScreenState extends State<LinkLedgerScreen>
                         ),
                       ),
                     ),
-                  _avatar(state, member, e, num),
+                  _avatar(state, member, e, num, name),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -651,9 +656,10 @@ class _LinkLedgerScreenState extends State<LinkLedgerScreen>
     Member? member,
     Map<String, dynamic> e,
     String num,
+    String name,
   ) {
     return MemberAvatar(
-      name: member?.name ?? '${e['name'] ?? ''}',
+      name: name,
       photoPath: member?.photoPath ?? '',
       fallbackPhotoUrl: num.isEmpty ? '' : (state.serverPhotoUrlFor(num) ?? ''),
       league: '${e['league'] ?? ''}',
