@@ -1813,19 +1813,24 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           // 멘토대장·페런츠 등록정보 — **멘티 등록정보와 동일한 형식**으로 노출.
           //  (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출해줘",
           //         "이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
+          //
+          //  (요구) 중복 노출 제거: 편집 권한자에게는 **편집기(LinkCodeField)** 하나만,
+          //  열람자에게는 **읽기전용 표시**만 보여준다 → 같은 내용이 두 번 나오지 않음.
           const Divider(height: 22),
-          LinkRegisterSection(
-            kind: 'mentor',
-            codes: m.mentors,
-            profiles: _linkProfilesCache,
-            badgeSuffix: _linkBadge(m),
-          ),
-          const SizedBox(height: 8),
-          LinkRegisterSection(
-            kind: 'parent',
-            codes: m.parents,
-            profiles: _linkProfilesCache,
-          ),
+          if (!canEdit) ...[
+            LinkRegisterSection(
+              kind: 'mentor',
+              codes: m.mentors,
+              profiles: _linkProfilesCache,
+              badgeSuffix: _linkBadge(m),
+            ),
+            const SizedBox(height: 8),
+            LinkRegisterSection(
+              kind: 'parent',
+              codes: m.parents,
+              profiles: _linkProfilesCache,
+            ),
+          ],
           // 승인대기중 안내 — 관리자·마스터 승인 전까지 명확히 표시(요구).
           if (m.linkApprovalStatus == 'pending') _linkPendingNotice(m),
           // (요구 #3) 멘티·자녀대원 등록정보 — 인가자 본인이 직접 등록/승인요청.
@@ -1848,7 +1853,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               onChanged: (v) => _saveLinks(m, children: v),
             ),
           ],
-          // (복원) 편집 권한자에게는 그 자리에서 입력하는 멘토·페런츠 입력창을 노출.
+          // 편집 권한자에게는 **편집기 하나만** 노출(위 읽기전용 표시와 중복 방지).
           if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
         ],
       ),
