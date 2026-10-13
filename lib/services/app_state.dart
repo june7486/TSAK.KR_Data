@@ -1466,7 +1466,22 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 은행거래 종합분석 — 캐시 우선(force=재분석).
+  /// [요구] 정보 수정요청 메모 전송 — 비인가회원(본인)이 관리자·마스터에게
+  ///  정보 수정을 요청한다. 성공 시 통합승인 '정보 수정요청' 큐에 반영된다.
+  Future<bool> sendLinkFixNote({
+    String ident = '',
+    required String note,
+    String scope = '',
+  }) async {
+    if (!repo.isNasMode || note.trim().isEmpty) return false;
+    try {
+      final r = await nas.linkNote(ident: ident, note: note, scope: scope);
+      return r['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Map<String, dynamic> _financeAnalysis = {};
 
   Map<String, dynamic> get financeAnalysis => _financeAnalysis;

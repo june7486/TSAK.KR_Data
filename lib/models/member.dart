@@ -54,6 +54,10 @@ class Member {
     this.linkRequestedAt = '',
     this.linkApprovedAt = '',
     this.linkApprovedBy = '',
+    this.linkFixNote = '',
+    this.linkFixRequestedAt = '',
+    this.linkFixRequestedBy = '',
+    this.linkFixScope = '',
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     List<String>? pendingEventNames,
@@ -247,6 +251,15 @@ class Member {
   String linkApprovedAt;
   String linkApprovedBy;
 
+  /// [요구] 정보 수정요청 메모 — 비인가회원(본인)이 관리자·마스터에게 정보
+  ///  수정을 요청한 내용. 처리(승인/보류/거절) 또는 실제 수정 시 해제된다.
+  String linkFixNote;
+  String linkFixRequestedAt;
+  String linkFixRequestedBy;
+  String linkFixScope;
+
+  bool get hasLinkFixNote => linkFixNote.trim().isNotEmpty;
+
   /// 연간회비 납부 이력: {"2024": true, "2025": true, ...}
   Map<String, bool> feeYears;
 
@@ -421,6 +434,10 @@ class Member {
     'linkApprovalNote': linkApprovalNote,
     'linkApprovedAt': linkApprovedAt,
     'linkApprovedBy': linkApprovedBy,
+    'linkFixNote': linkFixNote,
+    'linkFixRequestedAt': linkFixRequestedAt,
+    'linkFixRequestedBy': linkFixRequestedBy,
+    'linkFixScope': linkFixScope,
     'feeYears': feeYears,
     'eventAttend': eventAttend,
     'pendingEventNames': pendingEventNames,
@@ -512,6 +529,10 @@ class Member {
       linkApprovalNote: '${map['linkApprovalNote'] ?? ''}',
       linkApprovedAt: '${map['linkApprovedAt'] ?? ''}',
       linkApprovedBy: '${map['linkApprovedBy'] ?? ''}',
+      linkFixNote: '${map['linkFixNote'] ?? ''}',
+      linkFixRequestedAt: '${map['linkFixRequestedAt'] ?? ''}',
+      linkFixRequestedBy: '${map['linkFixRequestedBy'] ?? ''}',
+      linkFixScope: '${map['linkFixScope'] ?? ''}',
       feeYears: castBoolMap(map['feeYears']),
       eventAttend: castBoolMap(map['eventAttend']),
       pendingEventNames: castStrList(map['pendingEventNames']),
@@ -582,6 +603,10 @@ class Member {
     String? linkApprovalNote,
     String? linkApprovedAt,
     String? linkApprovedBy,
+    String? linkFixNote,
+    String? linkFixRequestedAt,
+    String? linkFixRequestedBy,
+    String? linkFixScope,
     Map<String, bool>? feeYears,
     Map<String, bool>? eventAttend,
     Map<String, String>? fieldPerms,
@@ -643,6 +668,10 @@ class Member {
       linkApprovalNote: linkApprovalNote ?? this.linkApprovalNote,
       linkApprovedAt: linkApprovedAt ?? this.linkApprovedAt,
       linkApprovedBy: linkApprovedBy ?? this.linkApprovedBy,
+      linkFixNote: linkFixNote ?? this.linkFixNote,
+      linkFixRequestedAt: linkFixRequestedAt ?? this.linkFixRequestedAt,
+      linkFixRequestedBy: linkFixRequestedBy ?? this.linkFixRequestedBy,
+      linkFixScope: linkFixScope ?? this.linkFixScope,
       feeYears: feeYears ?? Map<String, bool>.from(this.feeYears),
       eventAttend: eventAttend ?? Map<String, bool>.from(this.eventAttend),
       fieldPerms: fieldPerms ?? Map<String, String>.from(this.fieldPerms),

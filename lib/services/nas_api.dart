@@ -2207,6 +2207,38 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// [요구] 정보 수정요청 메모 — 비인가회원(본인)이 관리자·마스터에게 정보 수정을
+  ///  요청한다. 등록되면 통합승인 '정보 수정요청' 큐에 노출된다.
+  Future<Map<String, dynamic>> linkNote({
+    String ident = '',
+    required String note,
+    String scope = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/link/note'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ident': ident, 'note': note, 'scope': scope}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// [요구] 정보 수정요청(메모) 처리 — 관리자·마스터가 확인 후 해제.
+  Future<Map<String, dynamic>> approvalNoteClear({
+    String ident = '',
+    String id = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/approval/note/clear'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'ident': ident, 'id': id}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 은행거래 종합분석 (캐시) — 관리자·마스터.
   Future<Map<String, dynamic>> financeAnalysis({bool force = false}) async {
     final r = await http

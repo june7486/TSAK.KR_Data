@@ -1826,9 +1826,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             member: m,
             profiles: _linkProfilesCache,
             canEdit: canEdit,
+            onChanged: () {
+              _loadLinkProfiles();
+              context.read<AppState>().refresh();
+            },
           ),
           // 승인대기중 안내 — 관리자·마스터 승인 전까지 명확히 표시(요구).
           if (m.linkApprovalStatus == 'pending') _linkPendingNotice(m),
+          // [요구] 비인가회원 정보 수정요청 — 본인은 메모로 요청, 관리자·마스터는
+          //  확인·수정. (본인+관리자+마스터 외에는 정보 수정 불가)
+          _linkFixRequestSection(m),
           // (요구 #3) 멘티·자녀대원 등록정보 — 인가자 본인이 직접 등록/승인요청.
           //  · 멘티 표시는 위 [멘티·멘토·페런츠] 타일에서 하고, 여기서는
           //    **편집 권한자에게만** 멘티 편집기를 더한다(중복 표시 방지).
@@ -1860,6 +1867,181 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// [요구] 비인가회원 **정보 수정요청 메모**.
+  ///   · 본인(비인가 포함) : 관리자·마스터에게 수정요청 메모를 보낼 수 있다.
+  ///     (본인+관리자+마스터 외에는 정보 수정 불가 → 메모로 요청)
+  ///   · 관리자·마스터     : 도착한 메모를 확인하고 직접 수정할 수 있다.
+  ///   · 메모가 있으면 통합승인 '정보 수정요청' 큐에도 노출된다.
+  Widget _linkFixRequestSection(Member m) {
+    final state = context.watch<AppState>();
+    final isAdmin = state.isApp || state.isMaster;
+    final isSelf = state.isSelfNumber(m.number);
+    final hasNote = m.hasLinkFixNote;
+    // 관련자(본인·관리자·마스터)가 아니고 메모도 없으면 노출하지 않는다.
+    if (!isAdmin && !isSelf && !hasNote) return const SizedBox.shrink();
+    const color = AppColors.tigerGold;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.edit_note, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                hasNote ? '정보 수정요청 도착' : '정보 수정요청 (메모 보내기)',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+              const Spacer(),
+              if (isAdmin && hasNote)
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 28),
+                    foregroundColor: AppColors.purple,
+                  ),
+                  onPressed: () => _edit(m),
+                  icon: const Icon(Icons.edit, size: 15),
+                  label: const Text('직접 수정', style: TextStyle(fontSize: 11.5)),
+                ),
+            ],
+          ),
+          if (hasNote) ...[
+            const SizedBox(height: 4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    m.linkFixNote,
+                    style: const TextStyle(fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '요청: ${m.linkFixRequestedBy.isEmpty ? '본인' : m.linkFixRequestedBy}'
+                    '${m.linkFixRequestedAt.trim().isEmpty ? '' : ' · ${m.linkFixRequestedAt}'}'
+                    '${m.linkFixScope.trim().isEmpty ? '' : ' · ${m.linkFixScope}'}',
+                    style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 4),
+            const Text(
+              '멘토·페런츠·멘티 정보는 본인·관리자·마스터만 수정할 수 있습니다. '
+              '수정이 필요하면 아래에 요청 내용을 남겨주세요. 관리자·마스터가 '
+              '통합승인에서 확인하고 직접 수정합니다.',
+              style: TextStyle(fontSize: 11, height: 1.4),
+            ),
+          ],
+          if (isSelf || isAdmin) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color.withValues(alpha: 0.6)),
+                ),
+                onPressed: () => _sendFixNote(m),
+                icon: const Icon(Icons.send, size: 16),
+                label: Text(
+                  hasNote ? '수정요청 메모 수정·재전송' : '정보 수정요청 메모 보내기',
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 정보 수정요청 메모 작성·전송.
+  Future<void> _sendFixNote(Member m) async {
+    final ctrl = TextEditingController(text: m.linkFixNote);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: const Text('정보 수정요청 메모'),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '수정이 필요한 내용을 구체적으로 적어주세요. '
+                '(예: 멘토 이름 변경, 페런츠 전화번호 오류 등)',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                maxLines: 4,
+                minLines: 2,
+                decoration: const InputDecoration(
+                  hintText: '수정 요청 내용을 입력하세요',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('보내기'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final note = ctrl.text.trim();
+    if (note.isEmpty) {
+      _snack('요청 내용을 입력하세요');
+      return;
+    }
+    final state = context.read<AppState>();
+    final sent = await state.sendLinkFixNote(
+      ident: m.number.isNotEmpty ? m.number : m.phone,
+      note: note,
+      scope: '인가정보 수정',
+    );
+    if (!mounted) return;
+    if (sent) {
+      _snack('정보 수정요청을 보냈습니다 (관리자·마스터 확인 대기)');
+      state.refresh();
+      await _loadLinkProfiles();
+      if (mounted) setState(() {});
+    } else {
+      _snack('요청 전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   /// 멘토·페런츠 연결 '승인대기중' 안내 — 관리자·마스터 승인 전 상태 설명(요구).
