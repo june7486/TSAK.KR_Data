@@ -228,10 +228,18 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
       '${p['unit'] ?? ''}'.trim(),
     ].where((s) => s.isNotEmpty).join(' · ');
     if (pName.isNotEmpty || pInfo.isNotEmpty) return (pName, pInfo);
-    // 멘토는 프로필이 없으면 명단 폴백을 쓰지 않는다(명단은 '멘티=본인'이라
-    //  본인 이름이 노출되므로 오히려 오표시). 미입력 상태로 안내한다.
-    if (widget.kind == 'mentor') return ('', '');
-    // 페런츠는 프로필이 없을 때만 명단으로 폴백(소속정보는 현재활동 등록정보).
+    // 프로필이 없을 때의 폴백:
+    //  · 멘토: 저장 코드가 **멘티(본인) 번호**이므로 명단 조회는 본인 이름이 된다.
+    //    (a) 코드 == 본인 번호 → '내가 나의 멘토'는 불가능하므로 폴백하지 않음(빈값).
+    //    (b) 코드가 다른 인가자 → 그 대장 이름으로 폴백(공유).
+    if (widget.kind == 'mentor') {
+      if (_clean(code) == _clean(widget.menteeNumber)) return ('', '');
+      final mm = _memberOf(code);
+      final mmn = (mm?.name ?? '').trim();
+      if (mmn.isNotEmpty) return (mmn, _activityInfo(mm));
+      return ('', '');
+    }
+    // 페런츠: 프로필이 없을 때만 명단으로 폴백(소속정보는 현재활동 등록정보).
     final m = _memberOf(code);
     final nm = (m?.name ?? '').trim();
     if (nm.isNotEmpty) return (nm, _activityInfo(m));

@@ -45,6 +45,18 @@ class MenteeRegisterSection extends StatefulWidget {
 class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
   bool get _isMentee => widget.kind == 'mentee';
 
+  static String _digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+
+  /// 표시·저장 대상 코드 — **본인 인가번호는 제외**한다(자기참조 방지).
+  ///   멘토의 number 는 '자기(멘티) 번호'이므로 "내가 나를 배출한 대장"이 될 수 없다.
+  ///   (요구: 노현아는 배출한 대장/부모가 아니므로 멘티·자녀대원이 비어 있어야 함)
+  List<String> get _effectiveCodes {
+    final self = _digits(widget.member.number);
+    return widget.codes
+        .where((c) => self.isEmpty || _digits(c) != self)
+        .toList();
+  }
+
   Color get _accent => _isMentee ? AppColors.purple : AppColors.taegeukBlue;
   IconData get _icon =>
       _isMentee ? Icons.supervisor_account : Icons.family_restroom;
@@ -131,7 +143,21 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
             padding: const EdgeInsets.only(top: 2),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [for (final code in widget.codes) _row(code)],
+              children: [
+                // 본인 번호(자기참조)는 표시하지 않는다.
+                for (final code in _effectiveCodes) _row(code),
+                if (_effectiveCodes.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 0, top: 2, bottom: 2),
+                    child: Text(
+                      '등록된 대원 없음 (자기 자신은 등록 대상이 아닙니다)',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
       ],
@@ -346,6 +372,11 @@ class _MenteeRegisterSectionState extends State<MenteeRegisterSection> {
     final code = noCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (code.isEmpty) {
       _snack('인가번호를 입력하세요.');
+      return;
+    }
+    // 자기 자신은 멘티/자녀대원이 될 수 없다(자기참조 방지).
+    if (code == _digits(widget.member.number)) {
+      _snack('본인 인가번호는 등록할 수 없습니다.');
       return;
     }
     if (widget.codes.contains(code)) {

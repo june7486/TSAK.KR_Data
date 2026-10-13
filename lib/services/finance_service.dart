@@ -18,6 +18,8 @@ class FinanceService extends ChangeNotifier {
   final NasApi nas;
 
   List<FinanceTransaction> _tx = [];
+  /// 삭제 예약 id — 저장 시 서버에 deletedIds 로 전달(전체 교체 대신).
+  final Set<String> _deletedIds = {};
   List<String> _incomeCats = ['후원', '수품구매', '참가비', '연회비', '평생회비', '기타'];
   List<String> _expenseCats = ['행사비', '운영비', '수품구매', '후원금집행', '기타'];
   Map<String, String> _aliases = {}; // 입금자 별칭 → 인가번호
@@ -72,7 +74,17 @@ class FinanceService extends ChangeNotifier {
   void _apply(Map<String, dynamic> fin) {
     final list = fin['transactions'];
     if (list is List) {
-      _tx = list.map((e) => FinanceTransaction.fromMap(e as Map)).toList();
+      final server = list.map((e) => FinanceTransaction.fromMap(e as Map)).toList();
+      final serverIds = {for (final t in server) t.id};
+      // 서버 값 기준으로 병합 — 로컬에만 있고 삭제 예약도 아닌 거래는 보존
+      //  (전체 교체/스코핑으로 응답에서 빠져도 소실되지 않게).
+      final keepLocal = _tx
+          .where((t) =>
+              t.id.isNotEmpty &&
+              !serverIds.contains(t.id) &&
+              !_deletedIds.contains(t.id))
+          .toList();
+      _tx = [...server, ...keepLocal];
     }
     if (fin['income_categories'] is List) {
       _incomeCats = (fin['income_categories'] as List)
@@ -102,7 +114,10 @@ class FinanceService extends ChangeNotifier {
         'transactions': _tx.map((t) => t.toMap()).toList(),
         'income_categories': _incomeCats,
         'expense_categories': _expenseCats,
+        // 명시적 삭제만 서버에서 제거(빈 덮어쓰기로 인한 소실 방지).
+        'deletedIds': _deletedIds.toList(),
       });
+      _deletedIds.clear();
       final fin = r['finance'];
       if (fin is Map) _apply(fin.cast<String, dynamic>());
       _status = 'saved';
@@ -144,6 +159,7 @@ class FinanceService extends ChangeNotifier {
 
   void removeTransaction(String id) {
     _tx.removeWhere((e) => e.id == id);
+    if (id.isNotEmpty) _deletedIds.add(id);
     notifyListeners();
   }
 
