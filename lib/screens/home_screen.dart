@@ -36,6 +36,7 @@ import 'member_edit_screen.dart';
 import 'member_drafts_screen.dart';
 import '../services/member_draft_store.dart';
 import 'qr_screen.dart';
+import 'link_ledger_screen.dart';
 import 'regular_members_screen.dart';
 import 'roster_admin_screen.dart';
 import 'member_request_screen.dart';
@@ -1469,6 +1470,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.isApp || state.isMaster) ...[
                   // (8) 명부관리
                   _rosterAdminButton(),
+                  // (8-1) 멘토·페런츠·멘티 장부
+                  _linkLedgerButton(),
                   // (9) 아타스(ATAS) 명부
                   _atasRosterButton(),
                   // (10) 일반회원 (관리자·마스터)
@@ -2320,6 +2323,42 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(width: 4),
               Text(
                 '명부관리',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 멘토·페런츠·멘티 장부 진입 버튼 — 관리자·마스터 전용.
+  /// (요구: "멘토장부, 페런츠 장부, 멘티장부 모두 존재해야함")
+  Widget _linkLedgerButton() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LinkLedgerScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.menu_book, size: 15, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '장부',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 11.5,

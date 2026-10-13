@@ -2081,6 +2081,21 @@ class NasApi {
     }
   }
 
+  /// 멘토장부 · 페런츠장부 · 멘티장부 — 관리자·마스터 전용.
+  ///   각 항목: 번호·이름·연락처·소속 + 멘토/페런츠메달 구매여부·시점 +
+  ///   중앙회 항건 구매여부·시점 + 연차등록 여부 (+ 파생 연결 수/배출 멘토).
+  Future<Map<String, dynamic>> linkLedger({String kind = ''}) async {
+    try {
+      final q = kind.isNotEmpty ? '?kind=${Uri.encodeComponent(kind)}' : '';
+      final r = await http
+          .get(_uri('/api/link/ledger$q'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 30));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return {'ok': false, 'mentor': [], 'parent': [], 'mentee': []};
+    }
+  }
+
   /// 멘토·페런츠(수동 등록) 인적사항 저장/삭제 —
   ///   전화번호 기반 아이디/비번을 서버가 생성해 돌려준다.
   ///   action: 'save'(기본) | 'delete'
