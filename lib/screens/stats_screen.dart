@@ -66,6 +66,9 @@ class _StatsScreenState extends State<StatsScreen> {
   /// 멘토·페런츠 인적사항(소속연맹) — 통계용. 인가번호 → 프로필.
   Map<String, dynamic> _linkProfiles = {};
 
+  /// 연령 통계 대상 — 0=전체, 1=인가자만, 2=일반회원만.
+  int _ageScope = 0;
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +92,206 @@ class _StatsScreenState extends State<StatsScreen> {
   int _yearOf(String? s) {
     final m = RegExp(r'(19|20)\d{2}').firstMatch(s ?? '');
     return m == null ? 0 : int.parse(m.group(0)!);
+  }
+
+  /// 생년월일 문자열 → (연,월,일). 4자리 연도가 없으면 null.
+  ///   '1980.05.14' / '2010.10.06.' / '1991-03-21' / '20260729'(콤팩트) 등 모두 허용.
+  List<int>? _ymdOf(String? s) {
+    final raw = (s ?? '').trim();
+    if (raw.isEmpty) return null;
+    // ① 콤팩트 8자리(YYYYMMDD) — 구분자가 없는 경우.
+    final only = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (RegExp(r'^(19|20)\d{6}$').hasMatch(only)) {
+      return [
+        int.parse(only.substring(0, 4)),
+        int.parse(only.substring(4, 6)),
+        int.parse(only.substring(6, 8)),
+      ];
+    }
+    // ② 구분자 있는 형식('1991-03-21', '2026.09.30 13:30' 등).
+    final digits = RegExp(
+      r'[0-9]+',
+    ).allMatches(raw).map((m) => m.group(0)!).toList();
+    if (digits.isEmpty) return null;
+    final year = _yearOf(raw);
+    if (year <= 0) return null;
+    final rest = <int>[];
+    for (final d in digits) {
+      if (d.length == 4) continue; // 연도
+      rest.add(int.parse(d));
+      if (rest.length == 2) break;
+    }
+    final mo = rest.isNotEmpty ? rest[0] : 0;
+    final da = rest.length >= 2 ? rest[1] : 0;
+    return [year, mo, da];
+  }
+
+  /// 생년월일 + 기준일 → **만 나이**. 월·일 정보가 없으면 연도 차이로 근사한다.
+  int _ageOf(String? birthday, DateTime on) {
+    final b = _ymdOf(birthday);
+    if (b == null) return -1;
+    var age = on.year - b[0];
+    if (b[1] > 0 && b[2] > 0) {
+      if (on.month < b[1] || (on.month == b[1] && on.day < b[2])) age -= 1;
+    }
+    return age;
+  }
+
+  /// 생년별(출생연도) 분포 — 라벨은 'YYYY년(만 N세)'.
+  Map<String, int> _birthYearDist(AppState state) {
+    final now = DateTime.now();
+    final map = <String, int>{};
+    for (final m in _ageBaseMembers(state, gaps: null)) {
+      final y = _ymdOf(m.birthday)?[0] ?? 0;
+      if (y <= 0) continue;
+      final age = now.year - y;
+      final key = '$y년 (만 $age세)';
+      map[key] = (map[key] ?? 0) + 1;
+    }
+    return _finalizeKeepLabel(map);
+  }
+
+  /// 연령별(현재 나이) 분포 — 10세 구간.
+  static const List<String> _brackets = [
+    '10대 이하',
+    '20대',
+    '30대',
+    '40대',
+    '50대',
+    '60대',
+    '70대 이상',
+  ];
+
+  String _bracketOf(int age) {
+    if (age < 0) return '(미지정)';
+    if (age < 20) return '10대 이하';
+    if (age < 30) return '20대';
+    if (age < 40) return '30대';
+    if (age < 50) return '40대';
+    if (age < 60) return '50대';
+    if (age < 70) return '60대';
+    return '70대 이상';
+  }
+
+  static const List<Color> _ageColors = [
+    AppColors.taegeukBlue,
+    AppColors.purple,
+    AppColors.scoutGreen,
+    AppColors.tigerGold,
+    AppColors.taegeukRed,
+    Color(0xFF26A69A),
+    Color(0xFF8D6E63),
+  ];
+
+  Color _ageColor(String label) {
+    final i = _brackets.indexOf(label);
+    return i >= 0 ? _ageColors[i % _ageColors.length] : AppColors.textGray;
+  }
+
+  /// 현재 나이 분포(10세 구간) — 고정 순서(10대→70대)로, 미지정은 맨 뒤.
+  Map<String, int> _currentAgeDist(AppState state) {
+    final now = DateTime.now();
+    final map = <String, int>{};
+    var unknown = 0;
+    for (final m in _ageBaseMembers(state, gaps: null)) {
+      final age = _ageOf(m.birthday, now);
+      if (age < 0) {
+        unknown++;
+        continue;
+      }
+      final b = _bracketOf(age);
+      map[b] = (map[b] ?? 0) + 1;
+    }
+    final out = <String, int>{};
+    for (final b in _brackets) {
+      if ((map[b] ?? 0) > 0) out[b] = map[b]!;
+    }
+    if (unknown > 0) out['(미지정)'] = unknown;
+    return out;
+  }
+
+  /// 인가시 나이 분포(10세 구간) — 인가일(date) 기준. 데이터가 없으면 (미지정).
+  Map<String, int> _inductionAgeDist(AppState state) {
+    final map = <String, int>{};
+    var unknown = 0;
+    var any = false;
+    for (final m in _ageBaseMembers(state, gaps: null)) {
+      final ind = _parseDate(m.date);
+      if (ind == null) {
+        unknown++;
+        continue;
+      }
+      final age = _ageOf(m.birthday, ind);
+      if (age < 0) {
+        unknown++;
+        continue;
+      }
+      any = true;
+      final b = _bracketOf(age);
+      map[b] = (map[b] ?? 0) + 1;
+    }
+    final out = <String, int>{};
+    if (any) {
+      for (final b in _brackets) {
+        if ((map[b] ?? 0) > 0) out[b] = map[b]!;
+      }
+    }
+    if (unknown > 0) out['(미지정)'] = unknown;
+    if (out.isEmpty) return const {};
+    return out;
+  }
+
+  /// 연도별 평균 인가 나이 — 인가연도 → 평균 (만)나이.
+  Map<String, double> _inductionAvgByYear(AppState state) {
+    final sum = <int, int>{};
+    final cnt = <int, int>{};
+    for (final m in _ageBaseMembers(state, gaps: null)) {
+      final ind = _parseDate(m.date);
+      if (ind == null) continue;
+      final age = _ageOf(m.birthday, ind);
+      if (age < 0) continue;
+      sum[ind.year] = (sum[ind.year] ?? 0) + age;
+      cnt[ind.year] = (cnt[ind.year] ?? 0) + 1;
+    }
+    final out = <String, double>{};
+    for (final y in sum.keys) {
+      out['$y년'] = sum[y]! / cnt[y]!;
+    }
+    return out;
+  }
+
+  /// 인가일 문자열 → DateTime. '2026-07-29' / '2026.07.29' / '20260729' 등 허용.
+  DateTime? _parseDate(String? s) {
+    final b = _ymdOf(s);
+    if (b == null) return null;
+    final mo = b[1] == 0 ? 1 : b[1];
+    final da = b[2] == 0 ? 1 : b[2];
+    if (mo < 1 || mo > 12 || da < 1 || da > 31) return null;
+    return DateTime(b[0], mo, da);
+  }
+
+  /// 연령 통계 대상 회원 — [gaps] 지정 시 해당 신분만(0=범,3=일반), null이면 전체.
+  ///   · 은하스카우트 소속은 범 통계와 무관하므로 제외한다.
+  ///   · _ageScope(0=전체/1=인가자/2=일반) 필터를 적용한다.
+  List<Member> _ageBaseMembers(AppState state, {required List<int>? gaps}) {
+    final out = <Member>[];
+    for (final m in state.allMembers) {
+      if (m.corps == 'eunha') continue;
+      if (gaps != null) {
+        final g = m.isRegular ? 3 : 0;
+        if (!gaps.contains(g)) continue;
+      }
+      if (_ageScope == 1 && m.isRegular) continue;
+      if (_ageScope == 2 && !m.isRegular) continue;
+      out.add(m);
+    }
+    return out;
+  }
+
+  /// 라벨을 유지한 채 정렬(생년 등) — 값이 0이면 버리고, 라벨 문자열 오름차순.
+  Map<String, int> _finalizeKeepLabel(Map<String, int> map) {
+    final keys = map.keys.toList()..sort();
+    return {for (final k in keys) k: map[k]!};
   }
 
   /// 카운트 맵 마무리 — 인원 내림차순 정렬, '(미지정)'은 항상 마지막.
@@ -398,8 +601,210 @@ class _StatsScreenState extends State<StatsScreen> {
                 color: AppColors.taegeukBlue,
               );
             }),
+          if (!eunhaOnly) ...[const SizedBox(height: 24), _ageSection(state)],
           const SizedBox(height: 30),
         ],
+      ),
+    );
+  }
+
+  /// 연령 통계 — 인가시 나이 · 현재 나이 · 생년별 · 연령별(요구).
+  ///   · 대상 범위 탭: 전체 / 인가자 / 일반회원.
+  ///   · 모든 집계는 회원 생년월일(birthday) 기반, 인가시 나이는 인가일(date) 기준.
+  Widget _ageSection(AppState state) {
+    final now = DateTime.now();
+    final base = _ageBaseMembers(state, gaps: null);
+    final withBirth = base.where((m) => _ymdOf(m.birthday) != null).toList();
+    final missing = base.length - withBirth.length;
+
+    var sumCur = 0, nCur = 0, sumInd = 0, nInd = 0;
+    for (final m in withBirth) {
+      final ca = _ageOf(m.birthday, now);
+      if (ca >= 0) {
+        sumCur += ca;
+        nCur++;
+      }
+      final ind = _parseDate(m.date);
+      if (ind != null) {
+        final ia = _ageOf(m.birthday, ind);
+        if (ia >= 0) {
+          sumInd += ia;
+          nInd++;
+        }
+      }
+    }
+    final avgCur = nCur == 0 ? '-' : (sumCur / nCur).toStringAsFixed(1);
+    final avgInd = nInd == 0 ? '-' : (sumInd / nInd).toStringAsFixed(1);
+
+    final curDist = _currentAgeDist(state);
+    final indDist = _inductionAgeDist(state);
+    final birthDist = _birthYearDist(state);
+    final avgByYear = _inductionAvgByYear(state);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('연령 통계 (인가시 나이 · 현재 나이 · 생년별 · 연령별)'),
+        // 대상 범위 탭
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(
+                  value: 0,
+                  label: Text('전체', style: TextStyle(fontSize: 11.5)),
+                ),
+                ButtonSegment(
+                  value: 1,
+                  label: Text('인가자', style: TextStyle(fontSize: 11.5)),
+                ),
+                ButtonSegment(
+                  value: 2,
+                  label: Text('일반회원', style: TextStyle(fontSize: 11.5)),
+                ),
+              ],
+              selected: {_ageScope},
+              showSelectedIcon: false,
+              style: const ButtonStyle(
+                visualDensity: VisualDensity(horizontal: -3, vertical: -2),
+                padding: WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 2),
+                ),
+              ),
+              onSelectionChanged: (s) => setState(() => _ageScope = s.first),
+            ),
+          ),
+        ),
+        // 요약
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                _statBox(
+                  '평균 현재 나이',
+                  '$avgCur세',
+                  Icons.cake_outlined,
+                  AppColors.purple,
+                ),
+                _divider(),
+                _statBox(
+                  '평균 인가 나이',
+                  '$avgInd세',
+                  Icons.emoji_events_outlined,
+                  AppColors.tigerGold,
+                ),
+                _divider(),
+                _statBox(
+                  '생년 기재',
+                  '${withBirth.length}명',
+                  Icons.event_available,
+                  AppColors.taegeukBlue,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (missing > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, top: 6),
+            child: Text(
+              '· 생년월일 미기재 $missing명은 연령 집계에서 제외되었습니다.',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
+          ),
+        const SizedBox(height: 14),
+        // 연령별(현재 나이)
+        _sectionTitle('연령별 분포 (현재 나이 · 10세 구간)'),
+        if (curDist.isEmpty)
+          _emptyRow('연령 데이터가 없습니다 (생년월일 미기재).')
+        else
+          ..._ageRows(curDist, '명'),
+        const SizedBox(height: 16),
+        // 인가시 나이 구간
+        _sectionTitle('인가시 나이 분포 (인가 당시 연령 · 10세 구간)'),
+        if (indDist.isEmpty)
+          _emptyRow('인가시 나이 데이터가 없습니다 (생년월일 또는 인가일 미기재).')
+        else
+          ..._ageRows(indDist, '명'),
+        const SizedBox(height: 16),
+        // 생년별
+        _sectionTitle('생년별 분포 (출생연도별)'),
+        if (birthDist.isEmpty)
+          _emptyRow('생년 데이터가 없습니다.')
+        else
+          ..._birthYearRows(birthDist),
+        const SizedBox(height: 16),
+        // 연도별 평균 인가 나이
+        _sectionTitle('연도별 평균 인가 나이 (추세)'),
+        if (avgByYear.isEmpty)
+          _emptyRow('연도별 평균 인가 나이 데이터가 없습니다.')
+        else
+          ..._avgYearRows(avgByYear),
+      ],
+    );
+  }
+
+  Widget _emptyRow(String text) => Padding(
+    padding: const EdgeInsets.all(12),
+    child: Text(text, style: const TextStyle(color: AppColors.textGray)),
+  );
+
+  /// 연령 구간(10대~70대) 막대 — 고정 순서 색상.
+  Iterable<Widget> _ageRows(Map<String, int> src, String unit) {
+    final maxVal = src.values.reduce((a, b) => a > b ? a : b);
+    return src.entries.map(
+      (e) => _barRow(
+        context: context,
+        label: e.key,
+        value: e.value,
+        max: maxVal,
+        color: _ageColor(e.key),
+      ),
+    );
+  }
+
+  /// 생년별 막대 — 라벨 'YYYY년 (만 N세)', 인원 많은 순 상위 25개만 노출(가독성).
+  Iterable<Widget> _birthYearRows(Map<String, int> src) {
+    final entries = src.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final maxVal = entries.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final shown = entries.length > 25 ? entries.sublist(0, 25) : entries;
+    return [
+      ...shown.map(
+        (e) => _barRow(
+          context: context,
+          label: e.key,
+          value: e.value,
+          max: maxVal,
+          color: AppColors.scoutGreen,
+        ),
+      ),
+      if (entries.length > 25)
+        Padding(
+          padding: const EdgeInsets.only(left: 4, top: 4),
+          child: Text(
+            '· 인원 상위 25개 생년만 표시 (전체 ${entries.length}개)',
+            style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
+          ),
+        ),
+    ];
+  }
+
+  /// 연도별 평균 인가 나이 — 얇은 카드 행.
+  Iterable<Widget> _avgYearRows(Map<String, double> src) {
+    final keys = src.keys.toList()..sort();
+    final maxAvg = src.values.reduce((a, b) => a > b ? a : b);
+    return keys.map(
+      (k) => _barRow(
+        context: context,
+        label: k,
+        value: (src[k]! * 10).round(),
+        max: (maxAvg * 10).round(),
+        color: AppColors.tigerGold,
+        display: '${src[k]!.toStringAsFixed(1)}세',
       ),
     );
   }
@@ -1023,6 +1428,7 @@ class _StatsScreenState extends State<StatsScreen> {
     required int value,
     required int max,
     required Color color,
+    String? display,
   }) {
     final ratio = max == 0 ? 0.0 : value / max;
     return Padding(
@@ -1058,7 +1464,7 @@ class _StatsScreenState extends State<StatsScreen> {
               SizedBox(
                 width: 48,
                 child: Text(
-                  '$value명',
+                  display ?? '$value명',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,

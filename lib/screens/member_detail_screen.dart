@@ -12,6 +12,7 @@ import '../services/member_draft_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
+import '../widgets/donation_accounts.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/member_access_log.dart';
@@ -234,6 +235,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   _donationSection(m),
                   _eventSection(m),
                   _depositSection(m),
+                  _bankCard(m),
                   MerchActivitySection(
                     ident: m.number.isNotEmpty ? m.number : m.phone,
                     memberName: m.name,
@@ -591,6 +593,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 중앙회 계좌정보(3개) — **모든 회원 창**(인가자·비인가 포함)에서 노출(요구).
+  ///   · 대표(참가비·후원 등) / 수품구매계좌 / 행사비계좌 — 각 계좌에 송금·복사 버튼.
+  ///   · [DonationAccounts] 위젯 재사용(접기/펼치기 토글 자동 제공, 기본 펼침).
+  Widget _bankCard(Member m) {
+    return _section(
+      title: '중앙회 계좌 (3개)',
+      icon: Icons.account_balance,
+      child: const DonationAccounts(
+        fontSize: 11.5,
+        title: '참가비 · 수품구매 · 행사비 납부 계좌',
+        showHolder: true,
+      ),
+    );
+  }
+
   /// 개인별 입금 내역 — 후원/수품구매/참가비 등 모든 입금을 즉시 확인
   Widget _depositSection(Member m) {
     final fs = context.watch<FinanceService>();
@@ -927,14 +944,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.'),
+                content: Text(
+                  ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.',
+                ),
               ),
             );
           },
-          icon: Icon(
-            isLifetime ? Icons.star : Icons.card_membership,
-            size: 16,
-          ),
+          icon: Icon(isLifetime ? Icons.star : Icons.card_membership, size: 16),
           label: Text(
             isLifetime ? '평생회원 등록요청' : '연회비 납부 요청',
             style: const TextStyle(fontWeight: FontWeight.w800),
@@ -1817,9 +1833,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           //  · 멘티 표시는 위 [멘티·멘토·페런츠] 타일에서 하고, 여기서는
           //    **편집 권한자에게만** 멘티 편집기를 더한다(중복 표시 방지).
           //  · 자녀대원은 항상 표시한다.
-          if (!m.isRegular) ...[
+          //  · (요구) **비인가(일반회원) 카드에도** 자녀대원 정보를 노출한다.
+          //    페런츠(부모님) 카드의 경우 본인 자녀대원이 여기에 나타난다.
+          if (!m.isRegular || m.children.isNotEmpty) ...[
             const Divider(height: 22),
-            if (canEdit) ...[
+            if (canEdit && !m.isRegular) ...[
               MenteeRegisterSection(
                 member: m,
                 kind: 'mentee',
