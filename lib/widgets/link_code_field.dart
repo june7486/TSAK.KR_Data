@@ -81,11 +81,27 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
 
   String _clean(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
+  /// 저장키 접두어(종류별 복합키) — 서버와 동일 규칙.
+  ///   멘토의 number = 멘티(본인) 번호, 페런츠의 number = 인가번호이므로
+  ///   두 번호가 같아도 **서로 덮어쓰지 않도록** 종류 접두어를 붙여 저장/조회한다.
+  String _prefix() => widget.kind == 'parent' ? '페런츠' : '멘토';
+
+  /// 숫자 → 저장키 후보(복합키 우선 → 구(무접두어) 폴백).
+  List<String> _keyCands(String code) {
+    final d = _clean(code);
+    return ['${_prefix()}:$d', d];
+  }
+
+  /// 인적사항 조회 — **종류별 복합키 우선**, 없으면 구(무접두어) 키 폴백.
+  ///   · 페런츠 이름이 인가자 본인 이름으로 보이던 문제(요구)는 프로필을
+  ///     우선 사용하는 것으로 해결한다.
   Map<String, dynamic> _profileOf(String code) {
-    final key = _clean(code);
-    return (_profiles[key] as Map?)?.cast<String, dynamic>() ??
-        (_profiles[code] as Map?)?.cast<String, dynamic>() ??
-        {};
+    final p = _profiles;
+    for (final k in _keyCands(code)) {
+      final v = p[k];
+      if (v is Map && v.isNotEmpty) return v.cast<String, dynamic>();
+    }
+    return {};
   }
 
   /// 전화번호 → 아이디/비번 미리보기 (서버 규칙과 동일).
@@ -195,12 +211,15 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     );
   }
 
-  /// 표시용 [이름, 소속정보] — **멘토·페런츠는 인적사항 프로필을 우선** 사용한다.
+  /// 표시용 [이름, 소속정보] — **멘토·페런츠 모두 인적사항 프로필을 우선**한다.
   ///   · 멘토: 저장 코드가 **멘티(본인) 번호**이므로, 회원 명단에서 이름을 찾으면
   ///     멘티(본인) 이름이 노출되는 오류가 있었다.
   ///     (요구: "멘토이름에는 범 인가자가 아니라 멘토의 이름과 소속을 노출해야 함")
-  ///     → 멘토 프로필(이름·소속연맹·소속단위대)을 사용하고, 없을 때만 명단으로 폴백.
-  ///   · 페런츠: 인가번호로 조회되는 회원(현재활동)을 우선, 없으면 프로필 정보.
+  ///     → **멘토(범을 배출한 대장) 프로필** 이름·소속만 사용(명단 폴백 없음).
+  ///   · 페런츠: 번호(인가번호)로 조회되는 회원은 **인가자 본인**일 수 있으므로,
+  ///     회원 명단 이름을 먼저 쓰면 인가자(자녀) 이름이 노출된다.
+  ///     (요구: "페런츠 항목에는 부모님 이름을 노출시킬 것")
+  ///     → **부모님(페런츠) 프로필** 이름·소속을 우선, 없을 때만 명단으로 폴백.
   (String, String) _displayOf(String code) {
     final p = _profileOf(code);
     final pName = '${p['name'] ?? ''}'.trim();
@@ -208,12 +227,14 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
       '${p['league'] ?? ''}'.trim(),
       '${p['unit'] ?? ''}'.trim(),
     ].where((s) => s.isNotEmpty).join(' · ');
-    if (widget.kind == 'mentor') return (pName, pInfo);
-    // 페런츠
+    if (pName.isNotEmpty || pInfo.isNotEmpty) return (pName, pInfo);
+    // 멘토는 프로필이 없으면 명단 폴백을 쓰지 않는다(명단은 '멘티=본인'이라
+    //  본인 이름이 노출되므로 오히려 오표시). 미입력 상태로 안내한다.
+    if (widget.kind == 'mentor') return ('', '');
+    // 페런츠는 프로필이 없을 때만 명단으로 폴백(소속정보는 현재활동 등록정보).
     final m = _memberOf(code);
     final nm = (m?.name ?? '').trim();
     if (nm.isNotEmpty) return (nm, _activityInfo(m));
-    if (pName.isNotEmpty || pInfo.isNotEmpty) return (pName, pInfo);
     return ('', '');
   }
 
@@ -581,8 +602,15 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
           final p =
               (r['profile'] as Map?)?.cast<String, dynamic>() ??
               {'number': code, 'name': nm, 'phone': ph};
-          final key = '${p['number'] ?? code}';
-          setState(() => _profiles[key] = p);
+          // 종류별 복합키('멘토:<번호>'/'페런츠:<번호>')로 로컬 캐시도 갱신 →
+          //  멘토/페런츠 번호가 같아도 서로 덮어쓰지 않는다.
+          final skey = '${p['_key'] ?? ''}'.trim().isNotEmpty
+              ? '${p['_key']}'
+              : '${_prefix()}:${p['number'] ?? code}';
+          setState(() {
+            _profiles[skey] = p;
+            _profiles['${p['number'] ?? code}'] = p;
+          });
         } else {
           _snack('인적사항 저장 실패: ${r['error'] ?? ''}');
         }

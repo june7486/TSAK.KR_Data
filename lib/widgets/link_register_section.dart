@@ -50,11 +50,18 @@ class LinkRegisterSection extends StatelessWidget {
       ? '등록된 멘토(범을 배출한 대장) 없음 (복수 등록 가능)'
       : '등록된 페런츠(범을 배출한 부모님) 없음 (복수 등록 가능)';
 
+  /// 저장키 접두어(종류별 복합키) — 서버와 동일 규칙.
+  ///   멘토 번호(멘티=본인)와 페런츠 번호(인가번호)가 같아도 서로 덮어쓰지 않도록
+  ///   '멘토:<번호>' / '페런츠:<번호>' 로 분리해 조회한다.
+  String get _prefix => _isMentor ? '멘토' : '페런츠';
+
   Map<String, dynamic> _profileOf(String code) {
     final key = code.replaceAll(RegExp(r'[^0-9]'), '');
-    return (profiles[key] as Map?)?.cast<String, dynamic>() ??
-        (profiles[code] as Map?)?.cast<String, dynamic>() ??
-        {};
+    for (final k in ['$_prefix:$key', key, code]) {
+      final v = profiles[k];
+      if (v is Map && v.isNotEmpty) return v.cast<String, dynamic>();
+    }
+    return {};
   }
 
   /// 인가번호 배지 라벨 — 소속(은하/범) 접두어를 인가번호 앞에 붙인다.

@@ -144,30 +144,65 @@ Future<bool> showFeePaymentRequestSheet(
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: timingOptions.map((o) {
-                    final sel = timing == o.$1;
-                    final col =
-                        isLifetime ? AppColors.lifetimeGold : AppColors.scoutGreen;
-                    return ChoiceChip(
-                      selected: sel,
-                      // 한 번 더 누르면 선택 취소(토글).
-                      onSelected: (_) => setSheet(() => timing = sel ? '' : o.$1),
+                  children: [
+                    ...timingOptions.map((o) {
+                      final sel = timing == o.$1;
+                      final col = isLifetime
+                          ? AppColors.lifetimeGold
+                          : AppColors.scoutGreen;
+                      return ChoiceChip(
+                        selected: sel,
+                        // 한 번 더 누르면 선택 취소(토글).
+                        onSelected: (_) =>
+                            setSheet(() => timing = sel ? '' : o.$1),
+                        avatar: Icon(
+                          o.$3,
+                          size: 15,
+                          color: sel ? Colors.white : col,
+                        ),
+                        label: Text(o.$2),
+                        labelStyle: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                          color: sel ? Colors.white : AppColors.textDark,
+                        ),
+                        selectedColor: col,
+                        backgroundColor: col.withValues(alpha: 0.10),
+                        showCheckmark: false,
+                      );
+                    }),
+                    // (요구) 선택취소 — 납부 여부 선택을 **명시적으로** 해제한다.
+                    //  · 칩을 다시 눌러도 취소되지만, 취소 버튼을 별도로 노출한다.
+                    ActionChip(
                       avatar: Icon(
-                        o.$3,
+                        Icons.backspace_outlined,
                         size: 15,
-                        color: sel ? Colors.white : col,
+                        color: timing.isEmpty
+                            ? AppColors.textGray
+                            : AppColors.taegeukRed,
                       ),
-                      label: Text(o.$2),
+                      label: const Text('선택취소'),
                       labelStyle: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12.5,
-                        color: sel ? Colors.white : AppColors.textDark,
+                        color: timing.isEmpty
+                            ? AppColors.textGray
+                            : AppColors.textDark,
                       ),
-                      selectedColor: col,
-                      backgroundColor: col.withValues(alpha: 0.10),
-                      showCheckmark: false,
-                    );
-                  }).toList(),
+                      backgroundColor: timing.isEmpty
+                          ? Colors.black.withValues(alpha: 0.04)
+                          : AppColors.taegeukRed.withValues(alpha: 0.10),
+                      side: BorderSide(
+                        color: timing.isEmpty
+                            ? Colors.black.withValues(alpha: 0.12)
+                            : AppColors.taegeukRed.withValues(alpha: 0.55),
+                      ),
+                      // 선택된 항목이 있을 때만 실제로 비운다.
+                      onPressed: timing.isEmpty
+                          ? null
+                          : () => setSheet(() => timing = ''),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 14),
                 TextField(

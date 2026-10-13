@@ -2125,9 +2125,11 @@ class NasApi {
   }
 
   /// 명부관리: 멘토/페런츠 프로필의 '받는분의 범인가번호'만 저장(관리자·마스터).
+  ///   [kind] 를 함께 보내 멘토/페런츠 번호가 같아도 해당 종류만 수정되게 한다.
   Future<Map<String, dynamic>> linkProfileSetReceiver({
     required String number,
     required String receiverNo,
+    String kind = '',
   }) async {
     try {
       final r = await http
@@ -2138,6 +2140,7 @@ class NasApi {
               'action': 'receiver',
               'number': number,
               'receiverNo': receiverNo,
+              if (kind.isNotEmpty) 'kind': kind,
             }),
           )
           .timeout(const Duration(seconds: 20));

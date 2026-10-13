@@ -247,6 +247,7 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       final res = await nas.linkProfileSetReceiver(
         number: '${prof['number'] ?? ''}',
         receiverNo: r,
+        kind: '${prof['kind'] ?? ''}',
       );
       if (!mounted) return;
       if (res['ok'] == true) {
