@@ -18,6 +18,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/link_code_field.dart';
+import '../widgets/mentee_register_section.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/fee_payment_request.dart';
 import '../widgets/unsaved_guard.dart';
@@ -101,6 +102,11 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   List<String> _mentors = [];
   List<String> _parents = [];
 
+  /// (요구) 멘티대원 / 자녀대원 인가번호 목록 — "일반회원 멘티항목 추가".
+  ///  · 인가자(배출자) 카드에서 본인이 배출한 대원을 직접 등록/수정한다.
+  List<String> _mentees = [];
+  List<String> _children = [];
+
   /// 훈련현황 선택 항목
   static const List<String> _trainingOptions = [
     '중급',
@@ -152,6 +158,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _fees = Map<String, bool>.from(m?.feeYears ?? {});
     _mentors = List<String>.from(m?.mentors ?? []);
     _parents = List<String>.from(m?.parents ?? []);
+    _mentees = List<String>.from(m?.mentees ?? []);
+    _children = List<String>.from(m?.children ?? []);
     _privacyAgreed = m?.privacyAgreed ?? false;
     _privacyAgreedAt = m?.privacyAgreedAt ?? '';
     _gender = m?.gender ?? '';
@@ -471,6 +479,30 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 defaultUnit: _unit.text.trim(),
                 onChanged: (v) => setState(() => _parents = v),
                 editable: _canEditLinks,
+              ),
+              // (요구) 멘티대원 / 자녀대원 — "일반회원 멘티항목 추가".
+              //  · 본인이 배출한 멘티대원·자녀대원의 인가번호를 등록/수정한다.
+              //  · 상세화면과 **동일 위젯**을 써서 서로 어긋나지 않게 한다.
+              const SizedBox(height: 6),
+              _subHead(
+                '멘티 · 자녀대원 등록정보',
+                Icons.supervisor_account,
+                AppColors.purple,
+              ),
+              MenteeRegisterSection(
+                member: _existing ?? _draftMember(),
+                kind: 'mentee',
+                codes: _mentees,
+                canEdit: _canEditLinks,
+                onChanged: (v) => setState(() => _mentees = v),
+              ),
+              const SizedBox(height: 8),
+              MenteeRegisterSection(
+                member: _existing ?? _draftMember(),
+                kind: 'child',
+                codes: _children,
+                canEdit: _canEditLinks,
+                onChanged: (v) => setState(() => _children = v),
               ),
               _linkApprovalBar(),
               _field(
@@ -1043,6 +1075,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     'fees': _fees,
     'mentors': _mentors,
     'parents': _parents,
+    'mentees': _mentees,
+    'children': _children,
     'privacyAgreed': _privacyAgreed,
     'gender': _gender,
     'genderVisible': _genderVisible,
@@ -1145,6 +1179,11 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _mentors = men is List ? men.map((e) => '$e').toList() : <String>[];
     final par = f['parents'];
     _parents = par is List ? par.map((e) => '$e').toList() : <String>[];
+    // (요구) 멘티·자녀대원도 초안에 보존한다.
+    final mte = f['mentees'];
+    _mentees = mte is List ? mte.map((e) => '$e').toList() : <String>[];
+    final chd = f['children'];
+    _children = chd is List ? chd.map((e) => '$e').toList() : <String>[];
     final fees = f['fees'];
     _fees = fees is Map
         ? {for (final e in fees.entries) '${e.key}': e.value == true}
@@ -1357,6 +1396,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         _lifetime != m.lifetimeMember ||
         _mentors.join(',') != m.mentors.join(',') ||
         _parents.join(',') != m.parents.join(',') ||
+        _mentees.join(',') != m.mentees.join(',') ||
+        _children.join(',') != m.children.join(',') ||
         _privacyAgreed != m.privacyAgreed;
   }
 
@@ -1366,12 +1407,25 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     return state.isApp || state.isMaster || state.isSelfAccess;
   }
 
+  /// 신규(미저장) 작성 중인 값을 담은 임시 Member — 자기참조 방지 등
+  ///  멘티/자녀대원 등록 위젯이 필요로 하는 최소 정보만 제공한다.
+  Member _draftMember() => Member(
+        id: _existing?.id ?? 'draft',
+        number: _number.text.trim(),
+        name: _name.text.trim(),
+        corps: _existing?.corps ?? 'tsak',
+        isRegular: _existing?.isRegular ?? false,
+      );
+
   /// 멘토·페런츠 연결 승인 상태 바 — 미승인 라벨 + 승인요청 버튼.
   ///   · 연결이 없으면 아무것도 표시하지 않는다.
   ///   · 'pending' 이면 [미승인] 단추 + [승인요청] 버튼.
   ///   · 'approved' 이면 [승인됨], 'held' 이면 [보류].
   Widget _linkApprovalBar() {
-    final hasLinks = _mentors.isNotEmpty || _parents.isNotEmpty;
+    final hasLinks = _mentors.isNotEmpty ||
+        _parents.isNotEmpty ||
+        _mentees.isNotEmpty ||
+        _children.isNotEmpty;
     if (!hasLinks) return const SizedBox.shrink();
     final status = _existing?.linkApprovalStatus ?? '';
     final (label, color, icon) = switch (status) {
@@ -2083,10 +2137,19 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         _mentors.join(',') != (_existing?.mentors ?? const []).join(',');
     final parentsChanged =
         _parents.join(',') != (_existing?.parents ?? const []).join(',');
-    final hasLinks = _mentors.isNotEmpty || _parents.isNotEmpty;
+    // (요구) 멘티·자녀대원 변경도 승인 대상에 포함 → 재승인 요청.
+    final menteesChanged =
+        _mentees.join(',') != (_existing?.mentees ?? const []).join(',');
+    final childrenChanged =
+        _children.join(',') != (_existing?.children ?? const []).join(',');
+    final hasLinks = _mentors.isNotEmpty ||
+        _parents.isNotEmpty ||
+        _mentees.isNotEmpty ||
+        _children.isNotEmpty;
     String linkStatus = _existing?.linkApprovalStatus ?? '';
     String linkNote = _existing?.linkApprovalNote ?? '';
-    if ((mentorsChanged || parentsChanged) && hasLinks) {
+    if ((mentorsChanged || parentsChanged || menteesChanged || childrenChanged) &&
+        hasLinks) {
       linkStatus = 'pending';
       linkNote = '';
     } else if (!hasLinks) {
@@ -2131,10 +2194,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       eventAttend: _existing?.eventAttend ?? {},
       mentors: List<String>.from(_mentors),
       parents: List<String>.from(_parents),
-      // ⚠ 이 화면은 멘토·페런츠만 편집한다. 멘티·자녀대원 등록정보는 상세화면에서
-      //   별도 저장되므로 **기존값을 반드시 보존**해야 데이터 손실을 막을 수 있다.
-      mentees: List<String>.from(_existing?.mentees ?? const []),
-      children: List<String>.from(_existing?.children ?? const []),
+      // (요구) 멘티·자녀대원 — 이 화면에서 직접 편집한다(일반회원 멘티항목).
+      mentees: List<String>.from(_mentees),
+      children: List<String>.from(_children),
       linkApprovalStatus: linkStatus,
       linkApprovalNote: linkNote,
       linkApprovedAt: _existing?.linkApprovedAt ?? '',

@@ -1840,20 +1840,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           //  · 멘티 표시는 위 [멘티·멘토·페런츠] 타일에서 하고, 여기서는
           //    **편집 권한자에게만** 멘티 편집기를 더한다(중복 표시 방지).
           //  · 자녀대원은 항상 표시한다.
-          //  · (요구) **비인가(일반회원) 카드에도** 자녀대원 정보를 노출한다.
-          //    페런츠(부모님) 카드의 경우 본인 자녀대원이 여기에 나타난다.
-          if (!m.isRegular || m.children.isNotEmpty) ...[
+          //  · (요구) **비인가(일반회원) 카드에도** 멘티대원·자녀대원 정보를
+          //    노출하고 등록할 수 있게 한다("일반회원 멘티항목 추가").
+          //    지도대장(비인가)도 자신이 배출한 멘티를 등록·관리해야 하기 때문.
+          if (m.mentees.isNotEmpty || m.children.isNotEmpty || canEdit) ...[
             const Divider(height: 22),
-            if (canEdit && !m.isRegular) ...[
-              MenteeRegisterSection(
-                member: m,
-                kind: 'mentee',
-                codes: m.mentees,
-                canEdit: canEdit,
-                onChanged: (v) => _saveLinks(m, mentees: v),
-              ),
-              const SizedBox(height: 8),
-            ],
+            MenteeRegisterSection(
+              member: m,
+              kind: 'mentee',
+              codes: m.mentees,
+              canEdit: canEdit,
+              onChanged: (v) => _saveLinks(m, mentees: v),
+            ),
+            const SizedBox(height: 8),
             MenteeRegisterSection(
               member: m,
               kind: 'child',
