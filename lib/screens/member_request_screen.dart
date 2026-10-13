@@ -157,7 +157,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     final label = action == 'approve'
         ? '승인'
         : action == 'reject'
-        ? '반려'
+        ? '거절'
         : action == 'hold'
         ? '보류'
         : action == 'delete'
@@ -167,6 +167,55 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     await _refresh();
     // 승인 후 명단/배지 갱신
     if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// 큐 kind → 위임/처리 source ('regular' | 'request' | 'link').
+  String _sourceOf(String kind) {
+    if (kind == 'member') return 'regular';
+    if (kind == 'link') return 'link';
+    return 'request';
+  }
+
+  /// 해당 항목이 마스터에게 위임되었는지.
+  bool _isDelegated(Map<String, dynamic> m) => m['delegated'] == true;
+
+  /// 마스터에게 위임된 항목을 현재 사용자가 처리할 수 없는 상태인지
+  /// (마스터가 아니면 선택·처리 불가).
+  bool _isLocked(Map<String, dynamic> m) {
+    if (!_isDelegated(m)) return false;
+    return !context.read<AppState>().isMaster;
+  }
+
+  /// 마스터에게 위임 / 회수.
+  Future<void> _delegate(String kind, Map<String, dynamic> m) async {
+    final id = _idOf(m);
+    if (id.isEmpty) return;
+    final delegated = _isDelegated(m);
+    final state = context.read<AppState>();
+    final ok = await _confirm(
+      delegated ? '마스터 위임 해제' : '마스터에게 위임',
+      delegated
+          ? '이 항목의 마스터 위임을 해제하고 관리자·마스터 모두 처리할 수 있게 할까요?'
+          : '이 항목을 마스터에게 위임할까요?\n\n'
+                '위임하면 마스터만 승인·보류·대기·거절·삭제할 수 있습니다.',
+      danger: false,
+    );
+    if (ok != true) return;
+    if (!mounted) return;
+    setState(() => _busy = true);
+    final done = await state.delegateApproval(
+      source: _sourceOf(kind),
+      ident: id,
+      action: delegated ? 'cancel' : 'delegate',
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _snack(
+      done
+          ? (delegated ? '마스터 위임을 해제했습니다' : '마스터에게 위임했습니다')
+          : '위임 처리에 실패했습니다',
+    );
+    if (done) await _refresh();
   }
 
   Future<void> _restoreHistory(Map<String, dynamic> it) async {
@@ -483,7 +532,10 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     List<Map<String, dynamic>> items,
     Set<String> sel,
   ) {
-    final ids = items.map(_idOf).toList();
+    // 마스터에게 위임되어 현재 사용자가 처리할 수 없는 항목은 제외(요구).
+    final selectable = items.where((it) => !_isLocked(it)).toList();
+    final ids = selectable.map(_idOf).toList();
+    final lockedCount = items.length - selectable.length;
     final allSel = sel.length == ids.length && ids.isNotEmpty;
     return Container(
       color: AppColors.purple.withValues(alpha: 0.04),
@@ -491,21 +543,24 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       child: Row(
         children: [
           TextButton.icon(
-            onPressed: () => setState(() {
-              if (allSel) {
-                sel.clear();
-              } else {
-                sel
-                  ..clear()
-                  ..addAll(ids);
-              }
-            }),
+            onPressed: ids.isEmpty
+                ? null
+                : () => setState(() {
+                    if (allSel) {
+                      sel.clear();
+                    } else {
+                      sel
+                        ..clear()
+                        ..addAll(ids);
+                    }
+                  }),
             icon: Icon(
               allSel ? Icons.check_box : Icons.check_box_outline_blank,
               size: 18,
             ),
             label: Text(
-              '전체 선택 (${sel.length}/${ids.length})',
+              '전체 선택 (${sel.length}/${ids.length})'
+              '${lockedCount > 0 ? ' · 위임 $lockedCount' : ''}',
               style: const TextStyle(fontSize: 12),
             ),
           ),
@@ -574,6 +629,17 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
           icon: Icons.label_outline,
           emphasize: type.isNotEmpty,
         ),
+        if (_isDelegated(m))
+          TsakDetailEntry(
+            label: '마스터 위임',
+            value:
+                '위임됨${'${m['delegatedAt'] ?? ''}'.trim().isNotEmpty ? ' · ${m['delegatedAt']}' : ''}'
+                '${'${m['delegatedBy'] ?? ''}'.trim().isNotEmpty ? ' · 위임자 ${m['delegatedBy']}' : ''}'
+                ' · 마스터만 처리 가능',
+            icon: Icons.verified_user,
+            color: AppColors.tigerGold,
+            emphasize: true,
+          ),
         TsakDetailEntry(
           label: '인가번호',
           value: numLabel.isEmpty ? number : numLabel,
@@ -703,16 +769,26 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
             children: [
               Row(
                 children: [
-                  // 좌측 선택박스 — 상시 노출(체크 시 선택).
+                  // 좌측 선택박스 — 위임된 항목은 마스터만 선택할 수 있다(요구).
                   InkWell(
                     borderRadius: BorderRadius.circular(4),
-                    onTap: () => _toggle(key, id),
+                    onTap: _isLocked(m)
+                        ? () => _snack('마스터에게 위임된 항목은 마스터만 선택할 수 있습니다.')
+                        : () => _toggle(key, id),
                     child: Padding(
                       padding: const EdgeInsets.all(2),
                       child: Icon(
-                        sel ? Icons.check_box : Icons.check_box_outline_blank,
+                        _isLocked(m)
+                            ? Icons.lock
+                            : (sel
+                                  ? Icons.check_box
+                                  : Icons.check_box_outline_blank),
                         size: 20,
-                        color: sel ? AppColors.scoutGreen : AppColors.textGray,
+                        color: _isLocked(m)
+                            ? AppColors.tigerGold
+                            : (sel
+                                  ? AppColors.scoutGreen
+                                  : AppColors.textGray),
                       ),
                     ),
                   ),
@@ -726,6 +802,37 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                       ),
                     ),
                   ),
+                  if (_isDelegated(m))
+                    Container(
+                      margin: const EdgeInsets.only(right: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.tigerGold.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.verified_user,
+                            size: 11,
+                            color: AppColors.tigerGold,
+                          ),
+                          SizedBox(width: 3),
+                          Text(
+                            '마스터 위임',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.tigerGold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (kind == 'link')
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -939,7 +1046,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                 ],
               ],
               const SizedBox(height: 8),
-              Wrap(spacing: 6, runSpacing: 6, children: _buttons(kind, id)),
+              Wrap(spacing: 6, runSpacing: 6, children: _buttons(key, kind, m)),
             ],
           ),
         ),
@@ -996,73 +1103,43 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     );
   }
 
-  List<Widget> _buttons(String kind, String id) {
-    if (kind == 'member') {
+  List<Widget> _buttons(String key, String kind, Map<String, dynamic> m) {
+    final id = _idOf(m);
+    // 마스터에게 위임된 항목 — 마스터만 선택·처리 가능(요구).
+    if (_isLocked(m)) {
       return [
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.scoutGreen,
-            visualDensity: VisualDensity.compact,
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.tigerGold.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: AppColors.tigerGold.withValues(alpha: 0.5),
+            ),
           ),
-          onPressed: _busy ? null : () => _act(kind, 'approve', [id], ''),
-          icon: const Icon(Icons.check, size: 15),
-          label: const Text('승인'),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.tigerGold,
-            visualDensity: VisualDensity.compact,
+          child: Row(
+            children: [
+              const Icon(Icons.lock, size: 15, color: AppColors.tigerGold),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '🔒 마스터에게 위임됨 — 마스터만 처리할 수 있습니다'
+                  '${'${m['delegatedBy'] ?? ''}'.trim().isNotEmpty ? ' (위임: ${m['delegatedBy']})' : ''}',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.tigerGold,
+                  ),
+                ),
+              ),
+            ],
           ),
-          onPressed: _busy ? null : () => _act(kind, 'hold', [id], ''),
-          icon: const Icon(Icons.pause, size: 15),
-          label: const Text('보류'),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
-          onPressed: _busy ? null : () => _act(kind, 'pending', [id], ''),
-          icon: const Icon(Icons.hourglass_empty, size: 15),
-          label: const Text('대기'),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.taegeukRed,
-            visualDensity: VisualDensity.compact,
-          ),
-          onPressed: _busy ? null : () => _act(kind, 'delete', [id], ''),
-          icon: const Icon(Icons.delete_outline, size: 15),
-          label: const Text('삭제'),
         ),
       ];
     }
-    if (kind == 'link') {
-      return [
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.scoutGreen,
-            visualDensity: VisualDensity.compact,
-          ),
-          onPressed: _busy ? null : () => _act(kind, 'approve', [id], ''),
-          icon: const Icon(Icons.check, size: 15),
-          label: const Text('승인'),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.tigerGold,
-            visualDensity: VisualDensity.compact,
-          ),
-          onPressed: _busy ? null : () => _act(kind, 'hold', [id], ''),
-          icon: const Icon(Icons.pause, size: 15),
-          label: const Text('보류'),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
-          onPressed: _busy ? null : () => _act(kind, 'pending', [id], ''),
-          icon: const Icon(Icons.hourglass_empty, size: 15),
-          label: const Text('대기'),
-        ),
-      ];
-    }
-    return [
+    final delegated = _isDelegated(m);
+    final buttons = <Widget>[
       FilledButton.icon(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.scoutGreen,
@@ -1074,14 +1151,57 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       ),
       OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.tigerGold,
+          visualDensity: VisualDensity.compact,
+        ),
+        onPressed: _busy ? null : () => _act(kind, 'hold', [id], ''),
+        icon: const Icon(Icons.pause, size: 15),
+        label: const Text('보류'),
+      ),
+      OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+        onPressed: _busy ? null : () => _act(kind, 'pending', [id], ''),
+        icon: const Icon(Icons.hourglass_empty, size: 15),
+        label: const Text('대기'),
+      ),
+      OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.taegeukRed,
           visualDensity: VisualDensity.compact,
         ),
         onPressed: _busy ? null : () => _act(kind, 'reject', [id], ''),
-        icon: const Icon(Icons.close, size: 15),
-        label: const Text('반려'),
+        icon: const Icon(Icons.block, size: 15),
+        label: const Text('거절'),
+      ),
+      OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.taegeukRed,
+          visualDensity: VisualDensity.compact,
+        ),
+        onPressed: _busy ? null : () => _act(kind, 'delete', [id], ''),
+        icon: const Icon(Icons.delete_outline, size: 15),
+        label: const Text('삭제'),
       ),
     ];
+    // 마스터에게 위임 / 위임 해제 — 위임 항목은 마스터만 해제 가능.
+    final isMaster = context.read<AppState>().isMaster;
+    if (!delegated || isMaster) {
+      buttons.add(
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.purple,
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: _busy ? null : () => _delegate(kind, m),
+          icon: Icon(
+            delegated ? Icons.lock_open : Icons.verified_user,
+            size: 15,
+          ),
+          label: Text(delegated ? '위임 해제' : '마스터에게 위임'),
+        ),
+      );
+    }
+    return buttons;
   }
 
   String _byLabel(dynamic by) {
@@ -1274,7 +1394,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       case 'held':
         return '보류';
       case 'rejected':
-        return '반려';
+        return '거절';
       case 'deleted':
         return '삭제';
       case 'restored':

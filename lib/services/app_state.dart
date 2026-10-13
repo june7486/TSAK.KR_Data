@@ -1425,6 +1425,7 @@ class AppState extends ChangeNotifier {
             'approve': 'approved',
             'hold': 'held',
             'pending': 'pending',
+            'reject': 'rejected',
           }[action];
           if (status != null) {
             for (final id in idents) {
@@ -1440,6 +1441,29 @@ class AppState extends ChangeNotifier {
       }
     } catch (_) {}
     return 0;
+  }
+
+  /// 마스터에게 위임 / 위임 취소(관리자·마스터).
+  ///  source: 'regular' | 'request' | 'link', action: 'delegate' | 'cancel'.
+  ///  위임된 항목은 마스터만 선택·처리할 수 있다(서버가 강제).
+  Future<bool> delegateApproval({
+    required String source,
+    required String ident,
+    String action = 'delegate',
+  }) async {
+    if (!repo.isNasMode || !(isApp || isMaster) || ident.trim().isEmpty) {
+      return false;
+    }
+    try {
+      final r = await nas.approvalDelegate(
+        source: source,
+        ident: ident,
+        action: action,
+      );
+      return r['ok'] == true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 은행거래 종합분석 — 캐시 우선(force=재분석).

@@ -1943,7 +1943,8 @@ class NasApi {
   }
 
   /// 일반회원 승인 처리 (관리자·마스터).
-  ///  action: 'approve' | 'hold' | 'pending' | 'delete'
+  ///  action: 'approve' | 'hold' | 'pending' | 'reject' | 'delete'
+  ///  ※ 마스터에게 위임된 항목은 마스터만 처리 가능(서버가 403 master_only).
   Future<Map<String, dynamic>> approvalSet({
     required String action,
     required List<String> idents,
@@ -1953,6 +1954,31 @@ class NasApi {
           _uri('/api/approval/set'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
           body: json.encode({'action': action, 'idents': idents}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 마스터에게 위임 / 위임 취소 (관리자·마스터).
+  ///  source: 'regular'(비인가회원) | 'request'(등록요청) | 'link'(멘토·페런츠)
+  ///  action: 'delegate'(위임) | 'cancel'(해제)
+  ///  위임된 항목은 마스터만 선택·처리할 수 있다.
+  Future<Map<String, dynamic>> approvalDelegate({
+    required String source,
+    required String ident,
+    String action = 'delegate',
+    String note = '',
+  }) async {
+    final r = await http
+        .post(
+          _uri('/api/approval/delegate'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'source': source,
+            'ident': ident,
+            'action': action,
+            'note': note,
+          }),
         )
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
