@@ -159,34 +159,38 @@ class MemberCard extends StatelessWidget {
                         SizedBox(width: 6 * s),
                         // 말머리(소속 배지) — 범스카우트 '범' / 은하스카우트 '은하'
                         _corpsMark(member, s),
-                        SizedBox(width: 4 * s),
-                        Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 9 * s,
-                            vertical: 3 * s,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [AppColors.purple, AppColors.purpleLight],
+                        // 인가번호 박스 — **인가번호가 있을 때만** 노출한다.
+                        //  (요구) 일반회원은 "일반 + 전화번호"로 표시하지 않는다.
+                        //   역할은 아래 '역할 단추(일반·멘토·페런츠·멘티)'로 중복 표시.
+                        if (member.number.trim().isNotEmpty) ...[
+                          SizedBox(width: 4 * s),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 9 * s,
+                              vertical: 3 * s,
                             ),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            member.number.trim().isEmpty
-                                ? '일반 ${member.loginId}'
-                                // 소속 접두어 — 은하 회원은 인가번호 앞에 '은하'를 붙인다
-                                //  (예: '은하46호'). 범스카우트는 기존 '305호' 유지.
-                                //  (요구: "은하스카우트의 모든 창에는 인가번호 앞에
-                                //   은하 접두어를 넣을 것 '은하'+'n', 예) 은하46")
-                                : '${member.corps == 'eunha' ? '은하' : ''}${member.number}호',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15 * s,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.2,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  AppColors.purple,
+                                  AppColors.purpleLight,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              // 소속 접두어 — 은하 회원은 인가번호 앞에 '은하'를 붙인다
+                              //  (예: '은하46호'). 범스카우트는 기존 '305호' 유지.
+                              '${member.corps == 'eunha' ? '은하' : ''}${member.number}호',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15 * s,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.2,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                         // 아타스 인가번호 — 범 인가번호 뒤에 표시
                         if (member.atasNo.isNotEmpty) ...[
                           SizedBox(width: 4 * s),
@@ -227,15 +231,16 @@ class MemberCard extends StatelessWidget {
                       ],
                     ),
                     SizedBox(height: 5 * s),
-                    // 2번째 줄 — 연맹/단위대 + (인가일/아타스 보조) 한 줄로 압축
+                    // 2번째 줄 — 역할 단추(일반·멘토·페런츠·멘티) + 연맹/단위대 + 인가일
                     Row(
                       children: [
-                        if (member.isRegular)
-                          _badge('일반회원', AppColors.textGray, s),
-                        if (member.isRegular && member.league.isNotEmpty)
+                        // (요구) 일반회원은 "일반 010-xxxx"가 아니라 **'일반' 단추**로,
+                        //  거기에 (멘토)(페런츠)(멘티) 역할 단추를 중복해서 함께 표시.
+                        ..._roleChips(member, s),
+                        if (member.league.isNotEmpty) ...[
                           SizedBox(width: 5 * s),
-                        if (member.league.isNotEmpty)
                           _badge(member.league, color, s),
+                        ],
                         if (member.unit.isNotEmpty) ...[
                           SizedBox(width: 5 * s),
                           Flexible(
@@ -345,5 +350,44 @@ class MemberCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// (요구) 역할 단추 — (일반)(멘토)(페런츠)(멘티)를 **중복해서** 표시한다.
+  ///   · 일반   : 비인가(일반)회원.
+  ///   · 멘토   : 이 회원을 배출한 지도 대장이 있음(mentors).
+  ///   · 페런츠 : 범을 배출한 부모님이 있음(parents).
+  ///   · 멘티   : 이 회원이 배출한 대원이 있음(mentees) / 자녀대원(children).
+  ///   한 사람이 여러 역할을 겸하면 단추를 나란히 모두 보여준다.
+  List<Widget> _roleChips(Member m, double s) {
+    final out = <Widget>[];
+    void add(String label, Color color) {
+      if (out.isNotEmpty) out.add(SizedBox(width: 4 * s));
+      out.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 7 * s, vertical: 2 * s),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.5)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11.5 * s,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (m.isRegular) add('일반', AppColors.textGray);
+    if (m.mentors.isNotEmpty) add('멘토', AppColors.purple);
+    if (m.parents.isNotEmpty) add('페런츠', AppColors.taegeukBlue);
+    if (m.mentees.isNotEmpty || m.children.isNotEmpty) {
+      add('멘티', AppColors.scoutGreen);
+    }
+    return out;
   }
 }

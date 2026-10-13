@@ -25,10 +25,21 @@ import '../widgets/unsaved_guard.dart';
 import 'member_drafts_screen.dart';
 
 class MemberEditScreen extends StatefulWidget {
-  const MemberEditScreen({super.key, this.memberId, this.suggestedNumber});
+  const MemberEditScreen({
+    super.key,
+    this.memberId,
+    this.suggestedNumber,
+    this.registerAsRegular = false,
+  });
 
   final String? memberId;
   final String? suggestedNumber;
+
+  /// (요구) 신규 등록 시 유형 구분 — "회원 추가할 때 범인가자/일반회원 구분".
+  ///  · true  : 일반회원(비인가)으로 등록 — 인가번호 대신 전화번호로 계정 생성.
+  ///  · false : 범 인가자(정식 인가자)로 등록 — 인가번호 부여.
+  ///  (기존 회원 편집 시에는 무시되고 _existing 값을 따른다.)
+  final bool registerAsRegular;
 
   @override
   State<MemberEditScreen> createState() => _MemberEditScreenState();
@@ -94,6 +105,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   String _gender = '';
   bool _genderVisible = false;
 
+  /// 신규 등록 유형 — true=일반회원(비인가) / false=범 인가자.
+  ///   (요구) 회원 추가 시 범인가자·일반회원을 구분해 등록한다.
+  bool _registerAsRegular = false;
+
   /// 개인정보 수집·이용 및 제3자 제공 동의 (저장/가입 필수)
   bool _privacyAgreed = false;
   String _privacyAgreedAt = '';
@@ -124,6 +139,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     final state = context.read<AppState>();
     _existing = widget.memberId != null ? state.byId(widget.memberId!) : null;
     final m = _existing;
+    // 신규 등록 유형 — 기존 회원이면 그 값을 따르고, 신규면 화면 인자로 결정.
+    _registerAsRegular = _existing?.isRegular ?? widget.registerAsRegular;
 
     _number = TextEditingController(
       text: m?.number ?? widget.suggestedNumber ?? '',
@@ -317,6 +334,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
               _draftBanner(),
               _photoPicker(),
               const SizedBox(height: 12),
+              _registerTypeSelector(),
+              const SizedBox(height: 12),
               _privacyStatusBanner(state),
               const SizedBox(height: 12),
               // (요청) 배치 순서: 이름 → 범스카우트 인가번호 → ATAS 인가번호
@@ -329,12 +348,16 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 required: true,
               ),
               _field(
-                '${_existing?.corpsFullName ?? '범스카우트'} 인가번호',
+                _registerAsRegular
+                    ? '${_existing?.corpsFullName ?? '범스카우트'} 인가번호 (일반회원은 미부여)'
+                    : '${_existing?.corpsFullName ?? '범스카우트'} 인가번호',
                 _number,
-                hint: '예: 2186',
+                hint: _registerAsRegular
+                    ? '일반회원(비인가)은 인가번호 없이 전화번호로 계정을 만듭니다'
+                    : '예: 2186',
                 icon: Icons.tag,
                 numeric: true,
-                readOnly: personal,
+                readOnly: personal || _registerAsRegular,
               ),
               _field(
                 'ATAS 인가번호',
@@ -1514,6 +1537,136 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   }
 
   /// 개인정보 동의 상태 안내 배너 (상단)
+  /// (요구) 회원 추가 시 **등록 유형** 선택 — 범인가자 / 일반회원.
+  ///   · 신규 작성(_existing == null)에서만 노출한다(기존 회원은 유형 고정).
+  ///   · 일반회원을 고르면 인가번호가 비활성화되고 전화번호로 계정이 만들어진다.
+  Widget _registerTypeSelector() {
+    if (_existing != null) return const SizedBox.shrink();
+    Widget opt({
+      required bool regular,
+      required String title,
+      required String desc,
+      required IconData icon,
+      required Color color,
+    }) {
+      final on = _registerAsRegular == regular;
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() {
+            _registerAsRegular = regular;
+            if (regular) _number.text = ''; // 일반회원은 인가번호 미부여
+          }),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            decoration: BoxDecoration(
+              color: on ? color.withValues(alpha: 0.12) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: on ? color : color.withValues(alpha: 0.35),
+                width: on ? 2 : 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 18, color: color),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
+                          color: color,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      on
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_off,
+                      size: 16,
+                      color: on ? color : AppColors.textGray,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  desc,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    height: 1.3,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.how_to_reg, size: 16, color: AppColors.purple),
+              const SizedBox(width: 6),
+              const Text(
+                '등록 유형 선택',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.purple,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _registerAsRegular ? '일반회원(비인가)' : '범 인가자',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textGray,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              opt(
+                regular: false,
+                title: '범 인가자',
+                desc: '정식 인가자로 등록 — 범 인가번호 부여\n(인가번호 + 이름 + 성별)',
+                icon: Icons.verified_user,
+                color: AppColors.scoutGreen,
+              ),
+              const SizedBox(width: 8),
+              opt(
+                regular: true,
+                title: '일반회원',
+                desc: '비인가 회원으로 등록 — 인가번호 없음\n아이디=전화번호 / 초기비번=뒤 4자리',
+                icon: Icons.person_outline,
+                color: AppColors.taegeukBlue,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _privacyStatusBanner(AppState state) {
     final agreed = _privacyAgreed;
     final privileged = state.isApp || state.isMaster;
@@ -2098,6 +2251,19 @@ class _MemberEditScreenState extends State<MemberEditScreen>
 
   Future<bool> _saveInternal() async {
     if (!(_formKey.currentState?.validate() ?? false)) return false;
+    // (요구) 일반회원(비인가) — 인가번호 대신 **전화번호가 필수**(아이디 생성 기준).
+    if (_registerAsRegular &&
+        _phone.text.replaceAll(RegExp(r'[^0-9]'), '').length < 7) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('일반회원은 전화번호가 필수입니다 (아이디 생성 기준)'),
+            backgroundColor: AppColors.taegeukRed,
+          ),
+        );
+      }
+      return false;
+    }
     // 성별(남/여)은 필수
     if (_gender != '남' && _gender != '여') {
       if (mounted) {
@@ -2126,11 +2292,25 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       }
       return false;
     }
-    final id = _existing?.id ?? 'u${DateTime.now().millisecondsSinceEpoch}';
+    final id = _existing?.id ??
+        '${_registerAsRegular ? 'reg_' : 'u'}${DateTime.now().millisecondsSinceEpoch}';
     // 최초 동의 시각 기록
     if (_privacyAgreedAt.isEmpty) {
       _privacyAgreedAt = _nowStamp();
     }
+    // (요구) 일반회원(비인가) — 인가번호 대신 **전화번호**로 계정을 만든다.
+    //   아이디 = 전화번호 / 초기 비밀번호 = 뒤 4자리.
+    final regPhone = _phone.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final regLast4 = regPhone.length >= 4
+        ? regPhone.substring(regPhone.length - 4)
+        : regPhone;
+    final regAccessPhone =
+        _registerAsRegular ? regPhone : (_existing?.accessPhone ?? '');
+    final regPersonalPw = _registerAsRegular
+        ? (_existing?.personalPassword.isNotEmpty == true
+              ? _existing!.personalPassword
+              : regLast4)
+        : (_existing?.personalPassword ?? '');
 
     // 멘토·페런츠 연결 승인 상태 — 대상이 바뀌면 재승인(pending) 요청으로 전환.
     final mentorsChanged =
@@ -2201,9 +2381,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       linkApprovalNote: linkNote,
       linkApprovedAt: _existing?.linkApprovedAt ?? '',
       linkApprovedBy: _existing?.linkApprovedBy ?? '',
-      isRegular: _existing?.isRegular ?? false,
-      personalPassword: _existing?.personalPassword ?? '',
-      accessPhone: _existing?.accessPhone ?? '',
+      isRegular: _registerAsRegular,
+      personalPassword: regPersonalPw,
+      accessPhone: regAccessPhone,
       privacyAgreed: _privacyAgreed,
       privacyAgreedAt: _privacyAgreedAt,
       nameVisible: _existing?.nameVisible ?? true,

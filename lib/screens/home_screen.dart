@@ -968,7 +968,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 : FloatingActionButton.small(
                     backgroundColor: AppColors.taegeukRed,
-                    tooltip: '인가자 추가',
+                    tooltip: '회원 추가 (범인가자 / 일반회원)',
                     onPressed: () => _addNew(state),
                     child: const Icon(Icons.person_add_alt_1, size: 20),
                   )),
@@ -2848,15 +2848,127 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _addNew(AppState state) async {
-    final next = await state.nextNumber();
+    // (요구) 범인가자 / 일반회원을 **구분해서** 등록한다.
+    final asRegular = await _pickRegisterType();
+    if (asRegular == null || !mounted) return;
+    String suggested = '';
+    // 일반회원은 인가번호를 부여하지 않으므로 번호를 계산하지 않는다.
+    if (!asRegular) suggested = '${await state.nextNumber()}';
     if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MemberEditScreen(suggestedNumber: '$next'),
+        builder: (_) => MemberEditScreen(
+          suggestedNumber: suggested,
+          registerAsRegular: asRegular,
+        ),
       ),
     );
     if (mounted) context.read<AppState>().refresh();
+  }
+
+  /// (요구) 회원 추가 시 등록 유형 선택 — true=일반회원 / false=범인가자 / null=취소.
+  Future<bool?> _pickRegisterType() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.person_add_alt_1, color: AppColors.purple, size: 22),
+            SizedBox(width: 8),
+            Text('회원 추가 — 유형 선택'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '등록할 회원의 유형을 선택하세요. 유형에 따라 입력 항목과 '
+              '계정 생성 방식(인가번호/전화번호)이 달라집니다.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textGray, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            _regTypeTile(
+              ctx,
+              title: '범 인가자 (정식 인가자)',
+              desc: '범 인가번호를 부여합니다.\n아이디=인가번호 / 초기비번=인가번호!@@',
+              icon: Icons.verified_user,
+              color: AppColors.scoutGreen,
+              onTap: () => Navigator.pop(ctx, false),
+            ),
+            const SizedBox(height: 10),
+            _regTypeTile(
+              ctx,
+              title: '일반회원 (비인가)',
+              desc: '인가번호 없이 등록합니다.\n아이디=전화번호 / 초기비번=뒤 4자리',
+              icon: Icons.person_outline,
+              color: AppColors.taegeukBlue,
+              onTap: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _regTypeTile(
+    BuildContext ctx, {
+    required String title,
+    required String desc,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.45)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    desc,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: color),
+          ],
+        ),
+      ),
+    );
   }
 
   /// (마스터) 명단선택 창에서 선택한 계정을 **완전 삭제**.
