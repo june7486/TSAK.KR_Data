@@ -344,11 +344,54 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final phoneCtrl = TextEditingController(text: '${prof['phone'] ?? ''}');
     final leagueCtrl = TextEditingController(text: '${prof['league'] ?? ''}');
     final unitCtrl = TextEditingController(text: '${prof['unit'] ?? ''}');
+    // [요구] 개인정보 상세 입력 — ① 범스카우트 인가 정보 / ② 현재 활동정보.
+    var isScouter = (prof['isScouter'] == true) ||
+        '${prof['scoutNo'] ?? ''}'.trim().isNotEmpty ||
+        '${prof['inductedAt'] ?? ''}'.trim().isNotEmpty ||
+        '${prof['atasNo'] ?? ''}'.trim().isNotEmpty;
+    final scoutNoCtrl = TextEditingController(text: '${prof['scoutNo'] ?? ''}');
+    final inductedCtrl =
+        TextEditingController(text: '${prof['inductedAt'] ?? ''}');
+    final atasCtrl = TextEditingController(text: '${prof['atasNo'] ?? ''}');
+    final positionCtrl = TextEditingController(
+      text: '${prof['position'] ?? ''}'.trim().isNotEmpty
+          ? '${prof['position']}'
+          : (isMentor ? '멘토(지도대장)' : '페런츠(보호자)'),
+    );
+    final activityCtrl =
+        TextEditingController(text: '${prof['activity'] ?? ''}');
+    final trainingCtrl =
+        TextEditingController(text: '${prof['trainingStatus'] ?? ''}');
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         final isEdit = existing != null;
+        // 섹션 헤더 (요구: '① 범스카우트 인가시 / ② 현재 활동정보' 구분).
+        Widget secHdr(String text, IconData icon, Color color) => Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 2),
+              child: Row(
+                children: [
+                  Icon(icon, size: 15, color: color),
+                  const SizedBox(width: 5),
+                  Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Divider(
+                      color: color.withValues(alpha: 0.30),
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            );
         return StatefulBuilder(
           builder: (ctx, setDlg) {
             final previewPhone = phoneCtrl.text;
@@ -371,31 +414,32 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 요구: 멘토=범을 배출한 대장 / 멘티=내가 만든 범 대원 —
-                  //   혼동 방지를 위해 입력 항목의 의미를 먼저 안내한다.
-                  if (isMentor)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.purple.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.purple.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: const Text(
-                        '멘토 = 이 회원(멘티)을 배출한 지도 대장입니다.\n'
-                        '· 인가번호(멘티) : 이 회원 본인의 범 인가번호 (자동 입력)\n'
-                        '· 이름(멘토) : 지도한 대장(멘토)의 이름·소속을 입력하세요.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.45,
-                          color: AppColors.textDark,
-                        ),
+                  // 요구: 멘토 = 범을 배출한 지도대장 / 페런츠 = 범을 배출한 부모님.
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _accent.withValues(alpha: 0.35)),
+                    ),
+                    child: Text(
+                      isMentor
+                          ? '멘토 = 이 회원(멘티)을 배출한 지도 대장입니다.\n'
+                              '· 인가번호(멘티) : 이 회원 본인의 범 인가번호 (자동 입력)\n'
+                              '· 아래 [① 범스카우트 인가]·[② 현재 활동정보]로 멘토(대장)의\n'
+                              '  인적사항을 상세히 입력하세요.'
+                          : '페런츠 = 이 회원(범)을 배출한 부모님입니다.\n'
+                              '· 부모님이 범스카우트 인가자이면 [① 범스카우트 인가]에 입력\n'
+                              '· 아래 [② 현재 활동정보]로 부모님의 인적사항을 상세히 입력',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        height: 1.45,
+                        color: AppColors.textDark,
                       ),
                     ),
+                  ),
                   TextField(
                     controller: noCtrl,
                     enabled: !isEdit,
@@ -410,8 +454,8 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  // 요구: 멘토·페런츠 개인정보 입력 시 '범스카우트 인가정보 연동'
-                  //   창(선택)으로 기존 인가자 정보를 불러와 자동 채운다.
+                  // 요구: '범스카우트 인가정보 연동' — 기존 인가자 정보를 불러와
+                  //   인가시 정보(인가일·ATAS·직위 등)까지 자동 채운다.
                   Align(
                     alignment: Alignment.centerLeft,
                     child: OutlinedButton.icon(
@@ -430,6 +474,13 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                         leagueCtrl,
                         unitCtrl,
                         setDlg,
+                        scoutNoCtrl: scoutNoCtrl,
+                        inductedCtrl: inductedCtrl,
+                        atasCtrl: atasCtrl,
+                        positionCtrl: positionCtrl,
+                        activityCtrl: activityCtrl,
+                        trainingCtrl: trainingCtrl,
+                        setScouter: (v) => isScouter = v,
                       ),
                       icon: const Icon(Icons.manage_search, size: 16),
                       label: const Text(
@@ -461,13 +512,69 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       isDense: true,
                     ),
                   ),
-                  // 멘토·페런츠 **동일 폼** — 소속연맹·소속단위대.
-                  //  (요구: "페런츠 인가사항 입력란을 멘토랑 동일한 폼으로 구성")
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
+                  // ───────── ① 범스카우트 인가 정보 ─────────
+                  secHdr('① 범스카우트 인가 정보', Icons.verified_user_outlined,
+                      _accent),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    value: isScouter,
+                    activeThumbColor: _accent,
+                    onChanged: (v) => setDlg(() => isScouter = v),
+                    title: const Text(
+                      '범스카우트 인가자',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      '인가자이면 인가번호·인가일·ATAS번호를 입력하세요 (비인가면 끄세요)',
+                      style: TextStyle(fontSize: 10.5, height: 1.3),
+                    ),
+                  ),
+                  if (isScouter) ...[
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: scoutNoCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '인가번호 (본인 · 멘토/페런츠)',
+                        hintText: '예: 2186',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: inductedCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '인가일',
+                        hintText: '예: 2025.12.19.',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: atasCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'ATAS 인가번호',
+                        hintText: '예: ATAS-0000',
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  // ───────── ② 현재 활동정보 ─────────
+                  secHdr('② 현재 활동정보', Icons.local_activity_outlined,
+                      AppColors.scoutGreen),
+                  const SizedBox(height: 2),
                   TextField(
                     controller: leagueCtrl,
                     decoration: InputDecoration(
-                      labelText: isMentor ? '소속연맹 (멘토)' : '소속연맹 (페런츠)',
+                      labelText: isMentor
+                          ? '소속연맹 (멘토 · 현재 활동)'
+                          : '소속연맹 (페런츠 · 현재 활동)',
                       // 요구: 페런츠는 비었을 때 인가자(본인) 연맹을 안내/저장.
                       hintText: widget.defaultLeague.isNotEmpty
                           ? '없을시 인가자 연맹: ${widget.defaultLeague}'
@@ -479,11 +586,40 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                   TextField(
                     controller: unitCtrl,
                     decoration: InputDecoration(
-                      labelText: isMentor ? '소속단위대 (멘토)' : '소속단위대 (페런츠)',
+                      labelText: isMentor
+                          ? '소속단위대 (멘토 · 현재 활동)'
+                          : '소속단위대 (페런츠 · 현재 활동)',
                       // 요구: 페런츠는 비었을 때 인가자(본인) 단위대를 안내/저장.
                       hintText: widget.defaultUnit.isNotEmpty
                           ? '없을시 인가자 단위대: ${widget.defaultUnit}'
                           : '예: 샘물지역대',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: positionCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '직위 (현재 활동)',
+                      hintText: '예: 지역대장 / 부장 / 교수 / 스텝',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: activityCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '활동 상태',
+                      hintText: '예: 활동중 / 휴직 / 은퇴',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: trainingCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '훈련현황',
+                      hintText: '중급 / 상급 / 커미셔너과정 / 부교수 / 교수',
                       isDense: true,
                     ),
                   ),
@@ -604,6 +740,15 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
             'league': lg,
             'unit': un,
             'kind': widget.kind,
+            // [요구] ① 범스카우트 인가 정보
+            'isScouter': isScouter,
+            'scoutNo': _clean(scoutNoCtrl.text),
+            'inductedAt': inductedCtrl.text.trim(),
+            'atasNo': atasCtrl.text.trim(),
+            // [요구] ② 현재 활동정보
+            'position': positionCtrl.text.trim(),
+            'activity': activityCtrl.text.trim(),
+            'trainingStatus': trainingCtrl.text.trim(),
           },
         );
         if (r['ok'] == true) {
@@ -633,14 +778,22 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
   /// '범스카우트 인가정보 연동' (요구) — 기존 인가자를 검색해 인적사항을 채운다.
   ///   · 멘토: 번호칸은 **멘티(본인)번호**이므로 건드리지 않고, 이름·전화·소속만 채운다.
   ///   · 페런츠: 번호칸이 **페런츠 인가번호**이므로 번호까지 채운다.
+  ///   · [요구] 인가시 정보(인가일·ATAS)·현재 활동정보(직위·활동·훈련)까지 채운다.
   Future<void> _linkFromScout(
     TextEditingController noCtrl,
     TextEditingController nameCtrl,
     TextEditingController phoneCtrl,
     TextEditingController leagueCtrl,
     TextEditingController unitCtrl,
-    void Function(void Function()) setDlg,
-  ) async {
+    void Function(void Function()) setDlg, {
+    TextEditingController? scoutNoCtrl,
+    TextEditingController? inductedCtrl,
+    TextEditingController? atasCtrl,
+    TextEditingController? positionCtrl,
+    TextEditingController? activityCtrl,
+    TextEditingController? trainingCtrl,
+    void Function(bool)? setScouter,
+  }) async {
     final isMentor = widget.kind == 'mentor';
     final picked = await showLinkMemberPicker(
       context,
@@ -656,13 +809,41 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final league = '${picked['league'] ?? ''}'.trim();
     final unit = '${picked['unit'] ?? ''}'.trim();
     final number = '${picked['number'] ?? ''}'.trim();
+    final scoutNo = '${picked['scoutNo'] ?? ''}'.trim();
+    final date = '${picked['date'] ?? ''}'.trim();
+    final atas = '${picked['atasNo'] ?? ''}'.trim();
+    final position = '${picked['position'] ?? ''}'.trim();
+    final activity = '${picked['activity'] ?? ''}'.trim();
+    final training = '${picked['trainingStatus'] ?? ''}'.trim();
+    final regLeague = '${picked['regLeague'] ?? ''}'.trim();
+    final regUnit = '${picked['regUnit'] ?? ''}'.trim();
     setDlg(() {
       if (name.isNotEmpty) nameCtrl.text = name;
       if (phone.isNotEmpty) phoneCtrl.text = phone;
-      if (league.isNotEmpty) leagueCtrl.text = league;
-      if (unit.isNotEmpty) unitCtrl.text = unit;
+      // 소속은 '현재 활동정보'(재적)를 우선 채운다(없으면 인가시 값).
+      final lg = regLeague.isNotEmpty ? regLeague : league;
+      final un = regUnit.isNotEmpty ? regUnit : unit;
+      if (lg.isNotEmpty) leagueCtrl.text = lg;
+      if (un.isNotEmpty) unitCtrl.text = un;
       // 멘토는 번호칸이 멘티(본인)번호이므로 연동 시 번호를 덮어쓰지 않는다.
       if (!isMentor && number.isNotEmpty) noCtrl.text = number;
+      // ── ① 범스카우트 인가 정보 ──
+      setScouter?.call(true);
+      if (scoutNoCtrl != null && scoutNo.isNotEmpty) {
+        scoutNoCtrl.text = scoutNo;
+      }
+      if (inductedCtrl != null && date.isNotEmpty) inductedCtrl.text = date;
+      if (atasCtrl != null && atas.isNotEmpty) atasCtrl.text = atas;
+      // ── ② 현재 활동정보 ──
+      if (positionCtrl != null && position.isNotEmpty) {
+        positionCtrl.text = position;
+      }
+      if (activityCtrl != null && activity.isNotEmpty) {
+        activityCtrl.text = activity;
+      }
+      if (trainingCtrl != null && training.isNotEmpty) {
+        trainingCtrl.text = training;
+      }
     });
     _snack('인가정보를 불러왔습니다. 내용을 확인 후 저장하세요.');
   }

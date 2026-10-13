@@ -47,6 +47,23 @@ Future<bool> showLinkProfileSheet(
         ? '${profile['unit']}'
         : defaultUnit,
   );
+  // [요구] 개인정보 상세 입력 — ① 범스카우트 인가 정보 / ② 현재 활동정보.
+  var isScouter = (profile['isScouter'] == true) ||
+      '${profile['scoutNo'] ?? ''}'.trim().isNotEmpty ||
+      '${profile['inductedAt'] ?? ''}'.trim().isNotEmpty ||
+      '${profile['atasNo'] ?? ''}'.trim().isNotEmpty;
+  final scoutNoCtrl = TextEditingController(text: '${profile['scoutNo'] ?? ''}');
+  final inductedCtrl =
+      TextEditingController(text: '${profile['inductedAt'] ?? ''}');
+  final atasCtrl = TextEditingController(text: '${profile['atasNo'] ?? ''}');
+  final positionCtrl = TextEditingController(
+    text: '${profile['position'] ?? ''}'.trim().isNotEmpty
+        ? '${profile['position']}'
+        : (isMentor ? '멘토(지도대장)' : '페런츠(보호자)'),
+  );
+  final activityCtrl = TextEditingController(text: '${profile['activity'] ?? ''}');
+  final trainingCtrl =
+      TextEditingController(text: '${profile['trainingStatus'] ?? ''}');
 
   final saved = await showDialog<bool>(
     context: context,
@@ -55,6 +72,31 @@ Future<bool> showLinkProfileSheet(
         final ph = phoneCtrl.text;
         final digits = ph.replaceAll(RegExp(r'[^0-9]'), '');
         final last4 = digits.length >= 4 ? digits.substring(digits.length - 4) : '';
+        // 섹션 헤더 (요구: '① 범스카우트 인가시 / ② 현재 활동정보' 구분).
+        Widget secHdr(String text, IconData icon, Color color) => Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 2),
+              child: Row(
+                children: [
+                  Icon(icon, size: 15, color: color),
+                  const SizedBox(width: 5),
+                  Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Divider(
+                      color: color.withValues(alpha: 0.30),
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            );
         return AlertDialog(
           scrollable: true,
           title: Row(
@@ -104,7 +146,57 @@ Future<bool> showLinkProfileSheet(
                   onChanged: (_) => setDlg(() {}),
                   decoration: const InputDecoration(labelText: '전화번호'),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
+                // ───────── ① 범스카우트 인가 정보 ─────────
+                secHdr('① 범스카우트 인가 정보', Icons.verified_user_outlined,
+                    AppColors.purple),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: isScouter,
+                  activeThumbColor: AppColors.purple,
+                  onChanged: (v) => setDlg(() => isScouter = v),
+                  title: const Text(
+                    '범스카우트 인가자',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text(
+                    '인가자이면 인가번호·인가일·ATAS번호를 입력하세요 (비인가면 끄세요)',
+                    style: TextStyle(fontSize: 10.5, height: 1.3),
+                  ),
+                ),
+                if (isScouter) ...[
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: scoutNoCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '인가번호 (본인 · 멘토/페런츠)',
+                      hintText: '예: 2186',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: inductedCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '인가일',
+                      hintText: '예: 2025.12.19.',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: atasCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'ATAS 인가번호',
+                      hintText: '예: ATAS-0000',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                // ───────── ② 현재 활동정보 ─────────
+                secHdr('② 현재 활동정보', Icons.local_activity_outlined,
+                    AppColors.scoutGreen),
+                const SizedBox(height: 2),
                 Row(
                   children: [
                     Expanded(
@@ -121,6 +213,30 @@ Future<bool> showLinkProfileSheet(
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: positionCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '직위 (현재 활동)',
+                    hintText: '예: 지역대장 / 부장 / 교수 / 스텝',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: activityCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '활동 상태',
+                    hintText: '예: 활동중 / 휴직 / 은퇴',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: trainingCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '훈련현황',
+                    hintText: '중급 / 상급 / 커미셔너과정 / 부교수 / 교수',
+                  ),
                 ),
                 const SizedBox(height: 12),
                 // 아이디/비번 미리보기 (전화번호 → 아이디, 뒤 4자리 → 비번)
@@ -205,6 +321,15 @@ Future<bool> showLinkProfileSheet(
         'league': lg,
         'unit': un,
         'kind': kind,
+        // [요구] ① 범스카우트 인가 정보
+        'isScouter': isScouter,
+        'scoutNo': scoutNoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''),
+        'inductedAt': inductedCtrl.text.trim(),
+        'atasNo': atasCtrl.text.trim(),
+        // [요구] ② 현재 활동정보
+        'position': positionCtrl.text.trim(),
+        'activity': activityCtrl.text.trim(),
+        'trainingStatus': trainingCtrl.text.trim(),
       },
     );
     if (context.mounted) {
