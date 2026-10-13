@@ -19,6 +19,7 @@ import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/link_code_field.dart';
 import '../widgets/privacy_consent.dart';
+import '../widgets/fee_payment_request.dart';
 import '../widgets/unsaved_guard.dart';
 import 'member_drafts_screen.dart';
 
@@ -522,18 +523,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 onChanged: (v) => setState(() => _privacyAgreed = v),
               ),
               const SizedBox(height: 10),
-              Card(
-                child: SwitchListTile(
-                  title: const Text(
-                    '평생회원',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: const Text('평생회원으로 지정합니다'),
-                  value: _lifetime,
-                  activeThumbColor: AppColors.tigerGold,
-                  onChanged: (v) => setState(() => _lifetime = v),
-                ),
-              ),
+              // (요구) 회원은 스스로 평생회원으로 '지정'할 수 없다 → '요청'만 가능.
+              //  · 평생회비·연회비 납부 요청 + 지급납부(계좌 보기) 버튼을 제공한다.
+              _feeRequestCard(state),
               const SizedBox(height: 20),
               // 비밀번호 관리 카드 (요구: 개인정보 수정 페이지에서 비밀번호 변경).
               //  · 본인: 변경 + 분실 시 초기화 요청
@@ -1610,6 +1602,146 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         ).showSnackBar(SnackBar(content: Text('사진을 불러올 수 없습니다: $e')));
       }
     }
+  }
+
+  /// (요구) 평생회비·연회비 '납부 요청' 카드.
+  ///  · 회원은 스스로 평생회원으로 지정할 수 없다 → '요청'만 가능.
+  ///  · 평생회비·연회비 요청 + '지급납부'(계좌 3개 보기) 버튼을 제공한다.
+  ///  · 본인·관리자·마스터 모두 요청 가능(승인은 관리자·마스터).
+  Widget _feeRequestCard(AppState state) {
+    final canRequest = state.isApp || state.isMaster || state.isSelfAccess;
+    if (!canRequest) return const SizedBox.shrink();
+    final m = _existing;
+    if (m == null) {
+      // 신규 등록 화면: 등록 후 요청하도록 안내.
+      return Card(
+        color: AppColors.purple.withValues(alpha: 0.04),
+        child: const Padding(
+          padding: EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 18, color: AppColors.purple),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '평생회비·연회비 납부 요청은 인가자 등록을 마친 뒤 '
+                  '이 창에서 요청할 수 있습니다.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    Future<void> request(String type) async {
+      final ok = await showFeePaymentRequestSheet(
+        context,
+        member: m,
+        type: type,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.'),
+        ),
+      );
+    }
+
+    return Card(
+      color: AppColors.purple.withValues(alpha: 0.04),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.workspace_premium,
+                  color: AppColors.purple,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '평생회비·연회비 납부 요청',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '요청 · 관리자 승인',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purple,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '회원은 스스로 평생회원으로 지정할 수 없습니다. '
+              '아래에서 요청하면 관리자·마스터가 승인합니다.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.lifetimeGold,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => request('lifetime'),
+                  icon: const Icon(Icons.star, size: 16),
+                  label: const Text(
+                    '평생회원 등록요청',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.scoutGreen,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => request('fee'),
+                  icon: const Icon(Icons.card_membership, size: 16),
+                  label: const Text(
+                    '연회비 납부 요청',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.purple,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => showPaymentAccountsSheet(context),
+                  icon: const Icon(Icons.account_balance_wallet, size: 16),
+                  label: const Text(
+                    '지급납부',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _feeEditor() {

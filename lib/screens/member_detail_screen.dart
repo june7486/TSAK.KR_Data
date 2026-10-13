@@ -19,6 +19,7 @@ import '../widgets/link_code_field.dart';
 import '../widgets/link_register_section.dart';
 import '../widgets/mentee_register_section.dart';
 import '../widgets/member_registration_request_section.dart';
+import '../widgets/fee_payment_request.dart';
 import '../widgets/merch_activity_section.dart';
 import '../widgets/personal_survey_section.dart';
 import '../widgets/photo_pip.dart';
@@ -765,11 +766,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return '${neg ? '-' : ''}$b';
   }
 
-  /// (요구 #4) 평생회원 여부 — 편집 화면 최상단. 관리자·마스터만 노출.
-  ///  마스터는 여기서 평생회원 지정/해제가 가능하다.
+  /// (요구 #4) 평생회원 여부 — 편집 화면 최상단. 관리자·마스터·본인에게 노출.
+  ///  회원은 스스로 '지정'할 수 없고, '평생회원 등록요청'만 가능하다.
   Widget _lifetimeSection(Member m) {
-    final state = context.watch<AppState>();
-    final canMaster = state.isMaster;
     return _section(
       title: '평생회원 여부',
       icon: Icons.workspace_premium,
@@ -813,45 +812,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          if (canMaster)
-            Row(
-              children: [
-                Switch(
-                  value: m.lifetimeMember,
-                  activeThumbColor: AppColors.tigerGold,
-                  onChanged: (v) => context.read<AppState>().save(
-                    m.copyWith(
-                      lifetimeMember: v,
-                      lifetimeSince: v && m.lifetimeSince.isEmpty
-                          ? DateTime.now().toIso8601String().substring(0, 10)
-                          : m.lifetimeSince,
-                    ),
-                  ),
-                ),
-                const Text(
-                  '평생회원 지정 (마스터)',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            )
-          else
-            Row(
-              children: [
-                const Icon(
-                  Icons.info_outline,
-                  size: 15,
-                  color: AppColors.textGray,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '평생회원 지정은 마스터만 가능합니다. '
-                    '개인 프로필의 “등록요청”으로 요청하세요.',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-                  ),
-                ),
-              ],
-            ),
+          // (요구) 회원은 스스로 평생회원으로 '지정'할 수 없다 → '요청'만 가능.
+          //  · 인가자 창에서도 실행 가능. 관리자·마스터가 승인한다.
+          _feeRequestButtons(m, 'lifetime'),
         ],
       ),
     );
@@ -928,8 +891,68 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 : '* 연회비 납부 여부는 관리자·마스터가 관리합니다. (본인은 등록요청)',
             style: TextStyle(fontSize: 11, color: AppColors.textGray),
           ),
+          const SizedBox(height: 10),
+          // (요구) 연회비 납부 '요청' — 인가자 창에서도 실행 가능(관리자 승인).
+          _feeRequestButtons(m, 'fee'),
         ],
       ),
+    );
+  }
+
+  /// (요구) 평생회비·연회비 '납부 요청' 버튼 줄.
+  ///  · 평생회비: '평생회원 등록요청' → 납부 여부(오래전/최근/납부예정)·납부자 이름.
+  ///  · 연회비:   '연회비 납부 요청'   → 연도 · 납부완료/납부예정 · 납부자 이름.
+  ///  · 두 항목 모두 인가자 편집창 이외에도 인가자 창에서 실행 가능하다.
+  Widget _feeRequestButtons(Member m, String type) {
+    final state = context.watch<AppState>();
+    final canRequest = state.isApp || state.isMaster || state.isSelfAccess;
+    if (!canRequest) return const SizedBox.shrink();
+    final isLifetime = type == 'lifetime';
+    final col = isLifetime ? AppColors.lifetimeGold : AppColors.scoutGreen;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: col,
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: () async {
+            final ok = await showFeePaymentRequestSheet(
+              context,
+              member: m,
+              type: type,
+            );
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.'),
+              ),
+            );
+          },
+          icon: Icon(
+            isLifetime ? Icons.star : Icons.card_membership,
+            size: 16,
+          ),
+          label: Text(
+            isLifetime ? '평생회원 등록요청' : '연회비 납부 요청',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.purple,
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: () => showPaymentAccountsSheet(context),
+          icon: const Icon(Icons.account_balance_wallet, size: 16),
+          label: const Text(
+            '지급납부',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+      ],
     );
   }
 

@@ -12,6 +12,7 @@ import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_detail_sheet.dart';
 import '../widgets/member_registration_request_section.dart'
     show MemberRequestLabels;
+import '../widgets/fee_payment_request.dart' show feeTimingLabel;
 
 /// 통합승인관리 — (관리자·마스터 전용)
 ///
@@ -677,6 +678,10 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
             .toList();
     final reqAt = '${m['requestedAt'] ?? ''}'.trim();
     final reqSrc = _reqSourceLabel(m);
+    // 납부자 이름 + 납부 시점(평생회비·연회비 등록요청).
+    final payer = '${m['payer'] ?? ''}'.trim();
+    final timing = '${m['timing'] ?? ''}'.trim();
+    final timingLabel = timing.isEmpty ? '' : feeTimingLabel(type, timing);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
@@ -876,6 +881,12 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                   children: [
                     if (type == 'fee' && year.isNotEmpty)
                       _meta(Icons.event, '$year년 연회비'),
+                    if ((type == 'lifetime' || type == 'fee') &&
+                        timingLabel.isNotEmpty)
+                      _meta(Icons.payments_outlined, timingLabel),
+                    if ((type == 'lifetime' || type == 'fee') &&
+                        payer.isNotEmpty)
+                      _meta(Icons.person_outline, '납부자 $payer'),
                     if (type == 'lifetime' && date.isNotEmpty)
                       _meta(Icons.event_available, '납부일자 $date'),
                     if (type == 'event' && event.isNotEmpty)
@@ -1533,7 +1544,14 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     }
     if (req is Map) {
       final rs = req.cast<String, dynamic>();
+      final rt = '${rs['type'] ?? ''}'.trim();
+      final rtiming = '${rs['timing'] ?? ''}'.trim();
       kv('연도', '${rs['year'] ?? ''}');
+      kv(
+        '납부 여부',
+        rtiming.isEmpty ? '' : feeTimingLabel(rt, rtiming),
+      );
+      kv('납부자 이름', '${rs['payer'] ?? ''}');
       kv('납부일', '${rs['date'] ?? ''}');
       kv('행사', '${rs['event'] ?? ''}');
       kv('비고', '${rs['note'] ?? ''}');

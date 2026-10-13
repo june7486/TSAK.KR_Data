@@ -1210,24 +1210,34 @@ class AppState extends ChangeNotifier {
 
   // ---------- 회원 등록요청 (평생회원·연회비·자격) ----------
   /// 등록요청 제출 (로그인 회원 누구나). 성공 시 null, 실패 시 메시지.
+  ///  · [ident] 미지정 시 로그인 세션(who)을 사용한다. 관리자·마스터가 다른
+  ///    회원 대신 요청할 때는 대상 인가번호를 넘긴다.
+  ///  · 평생회비·연회비 등록요청은 [payer]·[timing]·[payerIsSelf]를 함께 보낸다.
   Future<String?> submitMemberRequest({
     required String type,
+    String ident = '',
     String year = '',
     String date = '',
     String note = '',
     String newNumber = '',
     String event = '',
+    String payer = '',
+    String timing = '',
+    bool payerIsSelf = false,
   }) async {
     if (!repo.isNasMode) return '서버 연결이 필요합니다';
     try {
       final r = await nas.memberRequestSubmit(
         type: type,
-        ident: who,
+        ident: ident.trim().isNotEmpty ? ident.trim() : who,
         year: year,
         date: date,
         note: note,
         newNumber: newNumber,
         event: event,
+        payer: payer,
+        timing: timing,
+        payerIsSelf: payerIsSelf,
       );
       if (r['ok'] == true) return null;
       return '${r['error'] ?? '요청 실패'}';

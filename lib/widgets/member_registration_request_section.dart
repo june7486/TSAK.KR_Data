@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import 'fee_payment_request.dart';
 
 /// 등록 · 자격 관리 섹션 — 개인 프로필(MemberDetailScreen)에 노출.
 ///
@@ -40,14 +41,6 @@ class _MemberRegistrationRequestSectionState
     '커미셔너과정',
     '부교수',
     '교수',
-  ];
-
-  /// 등록요청(승인 필요) 유형 정의.
-  ///  · 평생회비 등록요청 / 연간회비 등록요청 (요구 #6: '행사참가 요청' 버튼 삭제)
-  ///  · 자격(훈련현황)은 셀프 선택 항목이지만, 필요 시 자격 지정 요청도 승인 큐로 보낼 수 있다.
-  static const _types = <_ReqType>[
-    _ReqType('lifetime', '평생회비 등록요청', Icons.star, AppColors.lifetimeGold),
-    _ReqType('fee', '연간회비 등록요청', Icons.card_membership, AppColors.scoutGreen),
   ];
 
   @override
@@ -230,20 +223,20 @@ class _MemberRegistrationRequestSectionState
                     ),
                   ),
                 ),
-                // 요구 #6: 본인만 요청 제출 가능(행사참가 요청 버튼은 삭제)
-                if (canSubmit)
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.purple,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: () => _openRequestSheet(),
-                    icon: const Icon(Icons.edit_document, size: 16),
-                    label: const Text(
-                      '등록요청',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+                // (요구) 본인·관리자·마스터 모두 요청 제출 가능.
+                //  · 회원은 스스로 평생회원으로 '지정'할 수 없다 → '요청'만 가능.
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                    visualDensity: VisualDensity.compact,
                   ),
+                  onPressed: () => _openRequestSheet(),
+                  icon: const Icon(Icons.edit_document, size: 16),
+                  label: const Text(
+                    '등록요청',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -485,153 +478,142 @@ class _MemberRegistrationRequestSectionState
     }
   }
 
-  // ---------------- 등록요청 제출 시트 ----------------
+  // ---------------- 등록요청 제출 — 항목 선택 후 납부 정보 입력 ----------------
+  /// 회원은 스스로 평생회원으로 지정할 수 없다 → '요청'만 가능.
+  ///  · '평생회원 등록요청' / '연회비 납부 요청' 을 고르면 납부 요청 시트를 띄운다.
   Future<void> _openRequestSheet() async {
     final m = widget.member;
-    final state = context.read<AppState>();
-    String type = 'lifetime';
-    String year = '${DateTime.now().year}';
-    final dateCtrl = TextEditingController(text: _today());
-
-    final submit = await showModalBottomSheet<bool>(
+    final choice = await showModalBottomSheet<String>(
       context: context,
-      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.app_registration, color: AppColors.purple),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '등록요청 — ${m.name}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.app_registration, color: AppColors.purple),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '등록요청 — ${m.name}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const Text(
-                '요청할 항목을 선택하세요. 관리자·마스터 승인 후 반영됩니다.',
-                style: TextStyle(fontSize: 12, color: AppColors.textGray),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _types.map((t) {
-                  final sel = type == t.value;
-                  return ChoiceChip(
-                    selected: sel,
-                    onSelected: (_) => setSheet(() => type = t.value),
-                    avatar: Icon(
-                      t.icon,
-                      size: 16,
-                      color: sel ? Colors.white : t.color,
-                    ),
-                    label: Text(t.label),
-                    labelStyle: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: sel ? Colors.white : AppColors.textDark,
-                    ),
-                    selectedColor: t.color,
-                    backgroundColor: t.color.withValues(alpha: 0.10),
-                    showCheckmark: false,
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              if (type == 'fee')
-                DropdownButtonFormField<String>(
-                  initialValue: year,
-                  decoration: const InputDecoration(
-                    labelText: '납부 연도',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const ['2024', '2025', '2026', '2027']
-                      .map(
-                        (y) => DropdownMenuItem(value: y, child: Text('$y년')),
-                      )
-                      .toList(),
-                  onChanged: (v) => setSheet(() => year = v ?? year),
                 ),
-              if (type == 'lifetime')
-                TextField(
-                  controller: dateCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '평생회비 납부일자 (선택)',
-                    hintText: '예: 2022-04-13',
-                    border: OutlineInputBorder(),
-                  ),
+                IconButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close),
                 ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.purple,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  onPressed: () => Navigator.pop(ctx, true),
-                  icon: const Icon(Icons.send, size: 18),
-                  label: const Text(
-                    '등록요청 제출',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-            ],
-          ),
+              ],
+            ),
+            const Text(
+              '요청할 항목을 선택하세요. 관리자·마스터 승인 후 반영됩니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 10),
+            _choiceTile(
+              ctx,
+              'lifetime',
+              '평생회원 등록요청',
+              '평생회비 납부 여부 · 납부자 이름',
+              Icons.star,
+              AppColors.lifetimeGold,
+            ),
+            const SizedBox(height: 8),
+            _choiceTile(
+              ctx,
+              'fee',
+              '연회비 납부 요청',
+              '연도 · 납부완료/납부예정 · 납부자 이름',
+              Icons.card_membership,
+              AppColors.scoutGreen,
+            ),
+          ],
         ),
       ),
     );
+    if (choice == null || !mounted) return;
 
-    if (submit != true || !mounted) return;
-    final err = await state.submitMemberRequest(
-      type: type,
-      year: type == 'fee' ? year : '',
-      date: type == 'lifetime' ? dateCtrl.text.trim() : '',
-      note: '',
+    final ok = await showFeePaymentRequestSheet(
+      context,
+      member: m,
+      type: choice,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          err == null ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청 실패: $err',
+          ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.',
         ),
       ),
     );
-    if (err == null) _load();
+    if (ok) _load();
   }
 
-  String _today() {
-    final n = DateTime.now();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${n.year}-${two(n.month)}-${two(n.day)}';
+  Widget _choiceTile(
+    BuildContext ctx,
+    String value,
+    String title,
+    String sub,
+    IconData icon,
+    Color color,
+  ) {
+    return Material(
+      color: color.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.pop(ctx, value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      sub,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textGray),
+            ],
+          ),
+        ),
+      ),
+    );
   }
+
+
 }
-
 /// 등록요청 유형 라벨/아이콘 — 위젯·화면 공용.
 class MemberRequestLabels {
   static String label(String t) => switch (t) {
@@ -668,10 +650,3 @@ class MemberRequestLabels {
   };
 }
 
-class _ReqType {
-  const _ReqType(this.value, this.label, this.icon, this.color);
-  final String value;
-  final String label;
-  final IconData icon;
-  final Color color;
-}

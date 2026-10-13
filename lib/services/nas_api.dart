@@ -310,6 +310,8 @@ class NasApi {
 
   // ---- 회원 등록요청 (평생회원·연회비·자격) ----
   /// 등록요청 제출. type: lifetime | fee | qualification | event | donation | supply
+  ///  · lifetime/fee 등록요청은 [payer](납부자 이름)·[timing](납부시점)·
+  ///    [payerIsSelf]('인가자와 동일')를 함께 보낸다.
   Future<Map<String, dynamic>> memberRequestSubmit({
     required String type,
     String ident = '',
@@ -320,6 +322,9 @@ class NasApi {
     String event = '',
     String item = '',
     int amount = 0,
+    String payer = '',
+    String timing = '',
+    bool payerIsSelf = false,
   }) async {
     final r = await http
         .post(
@@ -335,6 +340,9 @@ class NasApi {
             if (event.isNotEmpty) 'event': event,
             if (item.isNotEmpty) 'item': item,
             if (amount != 0) 'amount': amount,
+            if (payer.isNotEmpty) 'payer': payer,
+            if (timing.isNotEmpty) 'timing': timing,
+            if (payerIsSelf) 'payerIsSelf': true,
           }),
         )
         .timeout(const Duration(seconds: 20));
