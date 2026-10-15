@@ -22,6 +22,7 @@ import '../widgets/hscroll_menu.dart';
 import 'roster_screen.dart';
 import 'event_review_screen.dart';
 import 'member_detail_screen.dart';
+import 'member_edit_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
 ///
@@ -162,7 +163,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _loading = false;
         // 기본 탭(고정) + 사용자 정의 '메뉴추가' 탭(PDF page9 최종 결정).
         final customCount = _customTabs.length;
-        final len = (fullView ? 5 : 1) + (fullView ? customCount : 0);
+        // [요구] 상단 탭: 참가자·사진+동영상·후기·기획서·참가비·후원금·행사비지출 = 6.
+        final len = (fullView ? 6 : 1) + (fullView ? customCount : 0);
         // ⚠️ 버그 수정: _load() 마다 TabController 를 새로 만들면 index 가 0
         // (참가자 탭)으로 되돌아가, 사진+동영상 하위폴더에 진입해도 다시
         // 사진 탭으로 돌아가 버렸다. 현재 탭 인덱스를 보존한다.
@@ -195,7 +197,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final baseTabs = const ['참가자', '사진+동영상', '기획서', '참가비·후원금', '행사비지출'];
+    // [요구] 상단 탭 순서 — 참가자 → 사진+동영상 → 후기 → 기획서 → 참가비·후원금 → 행사비지출.
+    //   '후기'는 별도 탭 화면(_reviewTab)이며, 기존 우측 상단 아이콘도 유지한다.
+    final baseTabs = const [
+      '참가자',
+      '사진+동영상',
+      '후기',
+      '기획서',
+      '참가비·후원금',
+      '행사비지출',
+    ];
     final tabs = _fullView
         ? <String>[...baseTabs, ..._customTabs.map((e) => '${e['name'] ?? ''}')]
         : const <String>['사진+동영상'];
@@ -336,6 +347,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         ? [
                             _attendeeTab(),
                             _mediaTab(),
+                            // [요구] 후기 탭 — 참가자→사진+동영상→후기→기획서→…
+                            EventReviewScreen(
+                              year: widget.year,
+                              title: widget.title,
+                              embedded: true,
+                            ),
                             _planTab(),
                             _financeTab('fee'),
                             _financeTab('expense'),
@@ -985,12 +1002,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ident.isNotEmpty,
     );
     final canManage = widget.canManage;
-    // (요구) 이름 클릭 → 개인카드 연결(관리자·마스터만). 그 외엔 비활성.
-    final canOpenCard = canManage && '${a['linkable'] ?? false}' == 'true';
+    // [요구] 회원 등록정보(개인카드) 유무 — 없으면 클릭 시 신규 등록을 유도한다.
+    //   서버가 내려준 registered 를 우선하고, 없으면 로컬 저장소로 보정한다.
+    final hasCard =
+        a['registered'] == true ||
+        (canManage && ident.isNotEmpty && context.read<AppState>().byNumber(ident) != null);
+    // (요구) 이름 클릭 → 개인카드 연결(관리자·마스터만). 등록정보가 없으면
+    //   신규 등록 창을 연다.
+    final canOpenCard = canManage && (a['linkable'] == true || hasCard);
+    // [요구] 개인카드가 없어도 클릭은 가능해야 한다(신규 등록 유도).
+    final canTap = canManage;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: InkWell(
-        onTap: canManage ? () => _openMemberPage(a) : null,
+        onTap: canTap ? () => _openOrRegister(a) : null,
         child: ListTile(
           leading: _attendeeLeading(a, ident, visited, isStaff),
           title: Row(
@@ -1013,13 +1038,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 ),
               ),
               const SizedBox(width: 6),
-              Flexible(
+              // [요구] 이름이 길면 흐르는 글자(마퀴)로 표시 — 폭을 확정(Expanded)
+              //   해야 MarqueeText 가 넘침을 감지해 애니메이션을 시작한다.
+              Expanded(
                 child: InkWell(
-                  onTap: canOpenCard ? () => _openMemberPage(a) : null,
+                  onTap: canTap ? () => _openOrRegister(a) : null,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Flexible(
+                      Expanded(
                         child: MarqueeText(
                           '${a['name'] ?? ''}',
                           style: TextStyle(
@@ -1036,6 +1063,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                           Icons.open_in_new,
                           size: 12,
                           color: AppColors.textGray,
+                        ),
+                      ] else if (canManage) ...[
+                        // 등록정보 없음 → 신규 등록 유도 아이콘.
+                        const SizedBox(width: 3),
+                        const Icon(
+                          Icons.person_add_alt_1,
+                          size: 12,
+                          color: AppColors.tigerGold,
                         ),
                       ],
                     ],
@@ -1098,23 +1133,52 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             children: [
               Text(
                 [
-                  // [요구] 활동등록대(unitText)를 우선 표시 — 없으면 인가시 단위대(unit).
-                  if ('${a['unitText'] ?? a['unit'] ?? ''}'.isNotEmpty)
-                    '${a['unitText'] ?? a['unit']}',
-                  if ('${a['phone'] ?? ''}'.isNotEmpty) '${a['phone']}',
-                  if ('${a['gender'] ?? ''}'.isNotEmpty) '${a['gender']}',
+                  // [요구] 활동등록대(unitText)를 우선 표시 — 없으면 인가시 단위대.
+                  if ('${a['unitText'] ?? ''}'.trim().isNotEmpty)
+                    '${a['unitText']}'
+                  else if ('${a['unit'] ?? ''}'.trim().isNotEmpty)
+                    '${a['unit']}',
+                  // [요구] 개인카드 정보 우선 — 전화·성별(카드가 있으면 카드값).
+                  if ('${a['phoneText'] ?? ''}'.trim().isNotEmpty)
+                    '${a['phoneText']}'
+                  else if ('${a['phone'] ?? ''}'.trim().isNotEmpty)
+                    '${a['phone']}',
+                  if ('${a['genderText'] ?? ''}'.trim().isNotEmpty)
+                    '${a['genderText']}'
+                  else if ('${a['gender'] ?? ''}'.trim().isNotEmpty)
+                    '${a['gender']}',
                 ].join(' · '),
                 style: const TextStyle(fontSize: 12),
               ),
-              // (요구) 혼돈 방지 — 이름 우측 하단에 전화번호를 매우 작게 병기.
-              if ('${a['phone'] ?? ''}'.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
+              // (요구) 메일주소 — 개인카드(회원 프로필)에서 가져와 작게 병기.
+              Builder(
+                builder: (_) {
+                  final em = '${a['emailText'] ?? ''}'.trim().isNotEmpty
+                      ? '${a['emailText']}'
+                      : '${a['email'] ?? ''}'.trim();
+                  if (em.isEmpty) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      em,
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        color: AppColors.textGray.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              // [요구] 회원 등록정보 없음 → 클릭 시 신규 등록을 유도한다.
+              if (canManage && !hasCard)
+                const Padding(
+                  padding: EdgeInsets.only(top: 1),
                   child: Text(
-                    '${a['phone']}',
+                    '미등록 — 클릭하여 신규 회원 등록',
                     style: TextStyle(
                       fontSize: 9.5,
-                      color: AppColors.textGray.withValues(alpha: 0.9),
+                      color: AppColors.tigerGold,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -1172,14 +1236,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     } else if (v == 'role') {
                       await _editAttendeeRole(i);
                     } else if (v == 'card') {
-                      await _openMemberPage(a);
+                      await _openOrRegister(a);
+                    } else if (v == 'register') {
+                      await _openOrRegister(a);
                     }
                   },
                   itemBuilder: (_) => [
-                    if ('${a['linkable'] ?? false}' == 'true')
+                    if (hasCard)
                       const PopupMenuItem(
                         value: 'card',
                         child: Text('개인카드 열기'),
+                      )
+                    else
+                      // [요구] 등록정보가 없으면 신규 회원 등록을 유도한다.
+                      const PopupMenuItem(
+                        value: 'register',
+                        child: Text('신규 회원 등록'),
                       ),
                     const PopupMenuItem(value: 'edit', child: Text('정보 수정')),
                     const PopupMenuItem(value: 'role', child: Text('항목(역할) 변경')),
@@ -1415,20 +1487,67 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     }
   }
 
-  /// (요구 #16) 참가자 명단 클릭 → 해당 회원 관리페이지(관리자·마스터만).
-  Future<void> _openMemberPage(Map<String, dynamic> a) async {
+  /// 참가자 항목 → 회원(개인카드) 조회. 인가번호/전화번호/이름 순으로 시도한다.
+  Member? _resolveMember(AppState s, Map<String, dynamic> a, String ident) {
+    Member? m = ident.isNotEmpty ? s.byNumber(ident) : null;
+    if (m == null) {
+      final ph = '${a['phone'] ?? a['loginId'] ?? ''}'.replaceAll(
+        RegExp(r'[^0-9]'),
+        '',
+      );
+      if (ph.isNotEmpty) m = s.byNumber(ph);
+    }
+    final nm = '${a['name'] ?? ''}'.trim();
+    if (m == null && nm.isNotEmpty) m = s.byName(nm);
+    return m;
+  }
+
+  /// [요구] 참가자 이름 클릭:
+  ///  · 개인카드(등록정보)가 있으면 → 개인카드 열기.
+  ///  · 등록정보가 없으면 → '신규 회원 등록할까요?' 확인 후, 등록 창을 열어
+  ///    이름·전화번호를 미리 채운다. (일반회원 신규 등록)
+  Future<void> _openOrRegister(Map<String, dynamic> a) async {
     if (!widget.canManage) return;
     final s = context.read<AppState>();
     final ident = '${a['number'] ?? a['phone'] ?? a['loginId'] ?? ''}'
         .replaceAll(RegExp(r'[^0-9]'), '');
-    final m = ident.isEmpty ? null : s.byNumber(ident);
-    if (m == null) {
-      _snack('등록된 회원 정보가 없습니다 (비인가/미등록)');
+    final m = _resolveMember(s, a, ident);
+    if (m != null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
+      );
+      if (mounted) _load();
       return;
     }
+    // ---- 등록정보 없음 → 신규 회원 등록 유도 ----
+    final nm = '${a['name'] ?? ''}'.trim();
+    final ph = '${a['phone'] ?? a['loginId'] ?? a['number'] ?? ''}'.trim();
+    // 인가자(범/은하)면 인가자로, 그 외(일반)면 일반회원으로 등록한다.
+    final isRegular = '${a['corps'] ?? ''}'.isEmpty && a['linkable'] != true;
+    final ok = await confirmDialog(
+      context,
+      title: '신규 회원 등록',
+      message:
+          '${nm.isEmpty ? '이 참가자' : nm}'
+          '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 등록된 회원 정보가 없습니다.\n\n'
+          '${isRegular ? '일반회원(비인가)' : '인가자'}로 신규 등록할까요?',
+      confirmLabel: '신규 등록',
+      cancelLabel: '취소',
+      danger: false,
+    );
+    if (!ok || !mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: m.id)),
+      MaterialPageRoute(
+        builder: (_) => MemberEditScreen(
+          registerAsRegular: isRegular,
+          prefillName: nm,
+          prefillPhone: ph,
+          prefillUnit: '${a['unitText'] ?? a['unit'] ?? ''}'.trim(),
+          prefillEmail: '${a['emailText'] ?? a['email'] ?? ''}'.trim(),
+        ),
+      ),
     );
     if (mounted) _load();
   }

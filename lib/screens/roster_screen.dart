@@ -616,7 +616,8 @@ class _RosterScreenState extends State<RosterScreen> {
       const DataColumn(label: Text('접속')),
       const DataColumn(label: Text('인가번호')),
       const DataColumn(label: Text('이름')),
-      const DataColumn(label: Text('소속')),
+      // [요구] 소속은 '현재 활동하는 곳(활동등록대)'을 먼저 노출한다.
+      const DataColumn(label: Text('소속(활동)')),
       const DataColumn(label: Text('성별')),
       const DataColumn(label: Text('연락처')),
       const DataColumn(label: Text('메일')),
@@ -676,17 +677,33 @@ class _RosterScreenState extends State<RosterScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
+                  // [요구] 활동등록대(unitText) 우선 — 인가시 소속은 폴백.
                   DataCell(
                     Text(
-                      '${widget.attendees[i]['unit'] ?? ''}',
+                      _first(widget.attendees[i], const ['unitText', 'unit']),
                       style: const TextStyle(color: AppColors.textGray),
                     ),
                   ),
-                  DataCell(Text('${widget.attendees[i]['gender'] ?? ''}')),
-                  DataCell(Text('${widget.attendees[i]['phone'] ?? ''}')),
                   DataCell(
                     Text(
-                      '${widget.attendees[i]['email'] ?? ''}',
+                      _first(widget.attendees[i], const [
+                        'genderText',
+                        'gender',
+                      ]),
+                    ),
+                  ),
+                  DataCell(
+                    Text(_first(widget.attendees[i], const [
+                      'phoneText',
+                      'phone',
+                    ])),
+                  ),
+                  DataCell(
+                    Text(
+                      _first(widget.attendees[i], const [
+                        'emailText',
+                        'email',
+                      ]),
                       style: const TextStyle(color: AppColors.textGray),
                     ),
                   ),
@@ -705,9 +722,18 @@ class _RosterScreenState extends State<RosterScreen> {
     );
   }
 
+  /// [요구] 표시용 필드(서버 주입)를 우선 사용 — 개인카드 정보/활동등록대.
+  String _first(Map<String, dynamic> a, List<String> keys) {
+    for (final k in keys) {
+      final v = '${a[k] ?? ''}'.trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
   String _num(Map<String, dynamic> a) {
-    final n = '${a['number'] ?? ''}'.trim();
-    return n;
+    // [요구] 서버가 준 표시용 인가번호(범#415/은하#43/일반#010…)를 우선한다.
+    return _first(a, const ['numberLabel', 'number']);
   }
 
   Widget _ynCell(bool v) {
@@ -752,7 +778,11 @@ class _RosterScreenState extends State<RosterScreen> {
   }
 
   String _rolesText(Map<String, dynamic> a) {
-    final roles = (a['roles'] as List?)?.map((e) => '$e').toList() ?? [];
+    final raw = a['rawRoles'];
+    final roles = (raw is List ? raw : (a['roles'] as List?) ?? [])
+        .map((e) => '$e')
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
     return roles.join(', ');
   }
 

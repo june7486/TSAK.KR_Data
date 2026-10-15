@@ -14,10 +14,19 @@ import '../widgets/tsak_app_bar.dart';
 /// 행사 후기 게시판 — 댓글·첨부·비밀번호 보호·임시저장·좋아요(공감).
 /// 관리자·마스터는 작성자 기기·IP를 함께 본다.
 class EventReviewScreen extends StatefulWidget {
-  const EventReviewScreen({super.key, required this.year, required this.title});
+  const EventReviewScreen({
+    super.key,
+    required this.year,
+    required this.title,
+    this.embedded = false,
+  });
 
   final String year;
   final String title;
+
+  /// [요구] 행사 상세의 '후기' 탭에 삽입될 때 true — 자체 Scaffold/AppBar 없이
+  ///   본문만 렌더링한다(탭 순서: 참가자→사진+동영상→후기→기획서…).
+  final bool embedded;
 
   @override
   State<EventReviewScreen> createState() => _EventReviewScreenState();
@@ -72,6 +81,51 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final body = Stack(
+      children: [
+        _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? _errorView()
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                  children: [
+                    _headerCard(state),
+                    const SizedBox(height: 8),
+                    if (_posts.isEmpty)
+                      _emptyView()
+                    else
+                      for (final p in _posts) _postCard(p, state),
+                  ],
+                ),
+              ),
+        BusyOverlay(
+          visible: _loading,
+          title: '행사 후기를 불러오는 중입니다',
+          lines: const [
+            'NAS 서버에서 후기 목록을 가져오는 중...',
+            '사진·내용을 정리하는 중...',
+            '잠시만 기다려 주세요...',
+          ],
+        ),
+      ],
+    );
+    // [요구] 행사 상세의 '후기' 탭에 삽입될 때(embedded)는 자체 AppBar 없이
+    //   본문만 렌더링하고, 작성 버튼은 하단 바로 제공한다.
+    if (widget.embedded) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAF9F7),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: AppColors.purple,
+          onPressed: () => _editPost(),
+          icon: const Icon(Icons.edit),
+          label: const Text('후기 쓰기'),
+        ),
+        body: body,
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F7),
       appBar: TsakAppBar(
@@ -91,37 +145,7 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
         icon: const Icon(Icons.edit),
         label: const Text('후기 쓰기'),
       ),
-      body: Stack(
-        children: [
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? _errorView()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    children: [
-                      _headerCard(state),
-                      const SizedBox(height: 8),
-                      if (_posts.isEmpty)
-                        _emptyView()
-                      else
-                        for (final p in _posts) _postCard(p, state),
-                    ],
-                  ),
-                ),
-          BusyOverlay(
-            visible: _loading,
-            title: '행사 후기를 불러오는 중입니다',
-            lines: const [
-              'NAS 서버에서 후기 목록을 가져오는 중...',
-              '사진·내용을 정리하는 중...',
-              '잠시만 기다려 주세요...',
-            ],
-          ),
-        ],
-      ),
+      body: body,
     );
   }
 

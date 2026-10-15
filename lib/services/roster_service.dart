@@ -39,17 +39,39 @@ class RosterService {
       .replaceAll('>', '&gt;');
 
   // ---- 참가자 데이터 접근 헬퍼 ----
+  //  [요구] 표시용 필드(서버 주입)를 우선 사용한다:
+  //   · 소속   — 활동등록대(unitText)를 먼저 노출(인가시 소속은 폴백).
+  //   · 메일/성별/연락처 — 개인카드(회원 프로필) 값을 먼저 사용.
+  //   · 인가번호 — numberLabel('범#415'/'은하#43'/'일반#010…').
+  static String _first(Map<String, dynamic> a, List<String> keys) {
+    for (final k in keys) {
+      final v = '${a[k] ?? ''}'.trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
   static String _name(Map<String, dynamic> a) => '${a['name'] ?? ''}';
-  static String _phone(Map<String, dynamic> a) => '${a['phone'] ?? ''}';
-  static String _number(Map<String, dynamic> a) => '${a['number'] ?? ''}';
-  static String _unit(Map<String, dynamic> a) => '${a['unit'] ?? ''}';
-  static String _gender(Map<String, dynamic> a) => '${a['gender'] ?? ''}';
-  static String _email(Map<String, dynamic> a) => '${a['email'] ?? ''}';
+  static String _phone(Map<String, dynamic> a) =>
+      _first(a, const ['phoneText', 'phone']);
+  static String _number(Map<String, dynamic> a) =>
+      _first(a, const ['numberLabel', 'number']);
+  static String _unit(Map<String, dynamic> a) =>
+      _first(a, const ['unitText', 'unit']);
+  static String _gender(Map<String, dynamic> a) =>
+      _first(a, const ['genderText', 'gender']);
+  static String _email(Map<String, dynamic> a) =>
+      _first(a, const ['emailText', 'email']);
   static bool _bool(Map<String, dynamic> a, String k) => a[k] == true;
   static bool _access(Map<String, dynamic> a) => a['visited'] == true;
 
   static String _rolesText(Map<String, dynamic> a) {
-    final roles = (a['roles'] as List?)?.map((e) => '$e').toList() ?? [];
+    // 서버가 준 표시용 rawRoles(원본 roles) 우선.
+    final raw = a['rawRoles'];
+    final roles = (raw is List ? raw : (a['roles'] as List?) ?? [])
+        .map((e) => '$e')
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
     if (roles.isEmpty) return '';
     return roles.join(', ');
   }
@@ -121,7 +143,8 @@ class RosterService {
       _th('접속', bold),
       _th('인가번호', bold),
       _th('이름', bold),
-      _th('소속', bold),
+      // [요구] 소속은 '현재 활동하는 곳(활동등록대)'을 먼저 노출한다.
+      _th('소속(활동)', bold),
       _th('성별', bold),
       _th('연락처', bold),
       _th('메일', bold),
@@ -307,7 +330,8 @@ class RosterService {
     b.writeln('참가 : ${attendees.length}명');
     if (desc.isNotEmpty) b.writeln(desc);
     b.writeln('-' * 72);
-    b.write('No. 접속  인가번호   이름      소속                 성별  연락처');
+    b.write('No. 접속  인가번호   이름      소속(활동)           성별  연락처');
+    b.write('     메일');
     if (showEventFee) b.write('   참가비');
     if (showLifetime) b.write('  평생');
     if (showYearFee) b.write('  연회비');
@@ -324,6 +348,7 @@ class RosterService {
         '${_gender(a).padRight(5)} '
         '${_phone(a).padRight(14)}',
       );
+      b.write('  ${_email(a).padRight(24)}');
       if (showEventFee) b.write('   ${_yn(_bool(a, 'eventFee')).padRight(5)}');
       if (showLifetime) b.write('  ${_yn(_bool(a, 'lifetime')).padRight(4)}');
       if (showYearFee) b.write('  ${_yn(_bool(a, 'yearFee')).padRight(5)}');
@@ -415,7 +440,7 @@ class RosterService {
   <div class="meta"><b>참가</b>${attendees.length}명</div>
   ${desc.isNotEmpty ? '<div class="desc">${_esc(desc)}</div>' : ''}
   <table>
-    <thead><tr><th>#</th><th>접속</th><th>인가번호</th><th>이름</th><th>소속</th><th>성별</th>
+    <thead><tr><th>#</th><th>접속</th><th>인가번호</th><th>이름</th><th>소속(활동)</th><th>성별</th>
     <th>연락처</th><th>메일</th><th>항목</th>$extraHead</tr></thead>
     <tbody>$rows</tbody>
   </table>

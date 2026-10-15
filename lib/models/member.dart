@@ -346,28 +346,54 @@ class Member {
   String get corpsOrgName => corps == 'eunha' ? '한국은하스카우트중앙회' : '한국범스카우트중앙회';
 
   /// 인가번호 표기 라벨 — 은하스카우트는 '은하#43', 범스카우트는 '범#43'.
-  ///   (요구: "은하스카우트는 #43 → 은하#43, 모든 창에서 그렇게 표시")
-  String get numberLabel => number.trim().isEmpty ? '' : '$corpsPrefix#$number';
+  ///   · 일반회원(비인가자)은 인가번호가 **없다**. 대신 전화번호를 써서
+  ///     '일반#01074451179' 로 표기한다.
+  ///   (요구: "일반회원은 회원명부에서 범#01074451179로 표시하지 말고 →
+  ///    일반#01074451179로 표시해줘 (모든 개인카드에 동일규칙임)")
+  ///   (기존: "은하스카우트는 #43 → 은하#43, 모든 창에서 그렇게 표시")
+  String get numberLabel {
+    if (isRegular) {
+      final d = phoneDigits;
+      final tail = d.isNotEmpty ? d : number.replaceAll(RegExp(r'[^0-9]'), '');
+      return tail.isEmpty ? '' : '일반#$tail';
+    }
+    return number.trim().isEmpty ? '' : '$corpsPrefix#$number';
+  }
 
   /// 소속 말머리를 붙인 번호(은하#43). [prefixHash] 면 '#' 표기, 아니면 '은하43'.
+  ///   일반회원은 '일반#<전화>' 규칙(numberLabel)을 그대로 따른다.
   String numPrefix({bool prefixHash = true}) {
+    if (isRegular) return numberLabel;
     if (number.trim().isEmpty) return '';
     return prefixHash ? '$corpsPrefix#$number' : '$corpsPrefix$number';
   }
 
   /// 화면 표기용 인가번호 — **은하스카우트는 '은하'+번호**(예: 은하46),
   ///   범스카우트는 기존처럼 번호만(예: 46). '#' 없이 붙여 쓴다.
+  ///   일반회원은 인가번호 대신 전화번호를 붙여 '일반010…' 로 표기한다.
   ///   (요구: "은하스카우트의 모든 창에는 인가번호 앞에 은하 접두어를 넣을 것
   ///    '은하'+'n', 예)은하46 … 그래야 범스카우트랑 헷갈리지 않아")
-  String get displayNumber => corps == 'eunha'
-      ? '은하${number.replaceAll(RegExp(r'[^0-9]'), '')}'
-      : number;
+  String get displayNumber {
+    if (isRegular) {
+      final d = phoneDigits;
+      return d.isEmpty ? number : '일반$d';
+    }
+    return corps == 'eunha'
+        ? '은하${number.replaceAll(RegExp(r'[^0-9]'), '')}'
+        : number;
+  }
 
   /// (정적) Raw 값용 인가번호 표기 — 서버 map 등 Member 미생성 데이터용.
   ///   예: ['43','eunha'] → '은하#43', ['43'] → '범#43'.
-  static String numLabelOf(String number, [String corps = 'tsak']) {
+  ///   [isRegular] 가 true 면 인가번호가 없으므로 '일반#<값>' 로 표기한다.
+  static String numLabelOf(
+    String number, [
+    String corps = 'tsak',
+    bool isRegular = false,
+  ]) {
     final n = number.trim();
     if (n.isEmpty) return '';
+    if (isRegular) return '일반#$n';
     return '${corps == 'eunha' ? '은하' : '범'}#$n';
   }
 

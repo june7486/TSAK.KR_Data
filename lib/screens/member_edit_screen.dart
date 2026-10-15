@@ -30,6 +30,10 @@ class MemberEditScreen extends StatefulWidget {
     this.memberId,
     this.suggestedNumber,
     this.registerAsRegular = false,
+    this.prefillName = '',
+    this.prefillPhone = '',
+    this.prefillUnit = '',
+    this.prefillEmail = '',
   });
 
   final String? memberId;
@@ -40,6 +44,13 @@ class MemberEditScreen extends StatefulWidget {
   ///  · false : 범 인가자(정식 인가자)로 등록 — 인가번호 부여.
   ///  (기존 회원 편집 시에는 무시되고 _existing 값을 따른다.)
   final bool registerAsRegular;
+
+  /// [요구] 신규 등록 시 미리 채울 값 — 참가자 명단의 미등록 일반회원을
+  ///   클릭해 '신규 회원 등록'을 선택했을 때 이름/전화/소속/메일을 자동 입력한다.
+  final String prefillName;
+  final String prefillPhone;
+  final String prefillUnit;
+  final String prefillEmail;
 
   @override
   State<MemberEditScreen> createState() => _MemberEditScreenState();
@@ -145,17 +156,19 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _number = TextEditingController(
       text: m?.number ?? widget.suggestedNumber ?? '',
     );
-    _name = TextEditingController(text: m?.name ?? '');
+    _name = TextEditingController(text: m?.name ?? widget.prefillName);
     _nameEn = TextEditingController(text: m?.nameEn ?? '');
     _league = TextEditingController(text: m?.league ?? '');
-    _unit = TextEditingController(text: m?.unit ?? '');
+    _unit = TextEditingController(
+      text: m?.unit ?? (m == null ? widget.prefillUnit : ''),
+    );
     _regLeague = TextEditingController(text: m?.regLeague ?? '');
     _regUnit = TextEditingController(text: m?.regUnit ?? '');
     _address = TextEditingController(text: m?.address ?? '');
     _zipCode = TextEditingController(text: m?.zipCode ?? '');
-    _phone = TextEditingController(text: m?.phone ?? '');
+    _phone = TextEditingController(text: m?.phone ?? widget.prefillPhone);
     _tel = TextEditingController(text: m?.tel ?? '');
-    _email = TextEditingController(text: m?.email ?? '');
+    _email = TextEditingController(text: m?.email ?? widget.prefillEmail);
     _residentNo = TextEditingController(text: m?.residentNo ?? '');
     _scoutNo = TextEditingController(text: m?.scoutNo ?? '');
     _date = TextEditingController(text: m?.date ?? '');
