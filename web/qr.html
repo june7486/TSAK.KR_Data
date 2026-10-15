@@ -144,6 +144,9 @@
     display:flex;align-items:center;justify-content:center;
     box-shadow:0 2px 6px rgba(23,32,58,.10);}
   .arrownav .anbtn:disabled{opacity:.35;cursor:default;box-shadow:none;}
+  /* 위·아래 화살표는 세로로 쌓아 좌우 화살표와 구분한다. */
+  .arrownav .anvcol{display:flex;flex-direction:column;gap:3px;flex:0 0 auto;}
+  .anvcol .anbtn{width:26px;height:21px;border-radius:7px;font-size:10px;}
   .sec-h{font-size:13px;font-weight:900;color:var(--fr-blue);margin:20px 0 2px;
     display:flex;align-items:center;gap:7px;}
   .sec-h:before{content:"";width:4px;height:14px;border-radius:2px;background:var(--fr-blue);}
@@ -192,23 +195,15 @@
         </div>
       </div>
 
-      <!-- 1) 참여 의사 + 명부/후기 -->
+      <!-- 1) 참여 의사 -->
       <div id="vw-ask" class="hide">
         <div class="q">이 행사에 참여하시겠습니까?</div>
         <div class="qsub">등록 후 행사 관리 명단에 참가자로 올라갑니다.</div>
         <button class="btn btn-yes" id="btnYes">예, 참여 신청하기</button>
         <button class="btn btn-no" id="btnNo">아니오</button>
 
-        <!-- 참가자 명부(공개) -->
-        <div id="rosterBox" class="hide" style="margin-top:20px;">
-          <div class="sec-h">참가자 명부 <span id="rosterCnt" class="chip-n">0명</span></div>
-          <div class="roster" id="rosterList"></div>
-        </div>
-
-        <!-- 후기(게시판 연계) -->
-        <button class="btn btn-no" id="btnReview" style="margin-top:10px;">
-          ✍️ 행사 후기 게시판 열기
-        </button>
+        <!-- (요구) 참가자 명부·게시판 글은 이 페이지에서 노출하지 않는다.
+             등록을 마친 사람에게만 아래(결과 화면) '행사 게시판' 버튼이 나타난다. -->
       </div>
 
       <!-- 2) 참여 신청서 -->
@@ -224,9 +219,7 @@
         <div id="formReg">
           <label>인가번호(회원번호)</label>
           <input id="inNo" inputmode="numeric" autocomplete="off" placeholder="예: 415">
-          <button class="lkbtn" id="btnLookupReg" type="button">🔍 기존 정보 불러오기</button>
-          <div class="hint">로그인 없이 인가번호만 입력하면 자동 등록됩니다. 기존 정보를 불러오면 아래에서 수정할 수 있습니다.</div>
-          <div id="mcardReg" class="mcard hide"></div>
+          <div class="hint">로그인 없이 인가번호만 입력하면 자동 등록됩니다.</div>
         </div>
 
         <!-- 비인가자 입력 -->
@@ -235,16 +228,18 @@
           <input id="inName" autocomplete="name" placeholder="홍길동">
           <label>전화번호</label>
           <input id="inPhone" inputmode="numeric" autocomplete="tel" placeholder="010-0000-0000">
-          <button class="lkbtn" id="btnLookupGuest" type="button">🔍 전화번호로 기존 정보 조회</button>
           <div class="hint">
-            입력한 전화번호로 로그인 아이디가 만들어집니다(이미 가입했다면 기존 정보를 그대로 사용합니다).<br>
+            입력한 전화번호로 로그인 아이디가 만들어집니다.<br>
             비밀번호는 전화번호 <b>뒤 4자리</b>이며, 이후 앱에서 전화번호로 로그인할 수 있습니다.
           </div>
-          <div id="mcardGuest" class="mcard hide"></div>
         </div>
 
-        <!-- (요구) 좌우 스크롤 화살표만 — 신청서 항목 바로가기 -->
+        <!-- (요구) 위·아래·좌·우 스크롤 화살표 — 신청서 항목 바로가기 -->
         <div class="arrownav" id="arrowNav">
+          <div class="anvcol">
+            <button type="button" class="anbtn" id="anUp" aria-label="위로">▲</button>
+            <button type="button" class="anbtn" id="anDown" aria-label="아래로">▼</button>
+          </div>
           <button type="button" class="anbtn" id="anLeft" aria-label="이전">‹</button>
           <div class="anchips" id="anChips">
             <button type="button" class="anchip on" data-sec="formReg">① 인가자 정보</button>
@@ -322,6 +317,10 @@
           <div id="doneNote" class="note hide"></div>
         </div>
         <button class="btn btn-yes" id="btnClose" style="margin-top:18px;">확인</button>
+        <!-- (요구) 참가 신청을 마친 사람만 행사 게시판을 열람할 수 있다. -->
+        <button class="btn btn-no" id="btnReview" style="margin-top:10px;">
+          ✍️ 행사 게시판 열기
+        </button>
       </div>
 
       <!-- 아니오 -->
@@ -379,7 +378,7 @@
   api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
     .then(function(r){
       if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
-      ev = r.j.event; renderHead(); show('vw-ask'); loadRoster();
+      ev = r.j.event; renderHead(); show('vw-ask');
     })
     .catch(function(){ renderHead(); show('vw-error'); });
 
@@ -388,27 +387,10 @@
   $('btnNo').onclick = function(){ show('vw-thanks'); };
   $('btnReview').onclick = function(){ openReview(); };
 
-  // 참가자 명부(공개) 로드 + 렌더
-  function loadRoster(){
-    api('/api/event/qr/roster?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title), {})
-      .then(function(r){
-        if (r.status!==200 || !r.j.ok) return;
-        var rows = r.j.roster || [];
-        $('rosterCnt').textContent = rows.length + '명';
-        var h = rows.map(function(x){
-          var badge = x.corps==='eunha' ? '은하' : (x.corps==='tsak' ? '범' : '일반');
-          var rl = x.roleCode ? (x.roleCode + (x.roleLabel && x.roleLabel!==x.roleCode ? '·'+x.roleLabel : '')) : '';
-          var num = x.numberLabel ? x.numberLabel : (x.unit||'');
-          return '<div class="rrow">'
-            + '<div class="av">'+esc(badge)+'</div>'
-            + '<div style="min-width:0;"><div class="nm">'+esc(x.name)+'</div>'
-            + '<div class="ph">'+esc(x.phone||'')+(num?' · '+esc(num):'')+'</div></div>'
-            + '<div class="rl">'+esc(rl)+'</div></div>';
-        }).join('');
-        $('rosterList').innerHTML = h || '<div class="hint">아직 등록된 참가자가 없습니다.</div>';
-        $('rosterBox').classList.remove('hide');
-      }).catch(function(){});
-  }
+  // (요구) 참가자 명부는 이 페이지에서 노출하지 않는다.
+  //   → 등록을 마친 뒤 앱의 '행사 게시판'에서만 열람할 수 있다.
+
+  // (요구) 후기/게시판 — 등록 완료자 전용 버튼이 연다.
   function openReview(){
     // 후기 게시판(앱) 연계 — 앱을 열어 해당 행사로 이동.
     try{ location.href = '/?event='+encodeURIComponent(year+'::'+title)+'&tab=review'; }
@@ -429,25 +411,40 @@
     markActiveAnchor();
   };
 
-  // (요구) 좌우 스크롤 — '화살표만'. 화살표는 칩 행을 한 화면(약 70%)씩 부드럽게 이동.
+  // (요구) 위·아래·좌·우 스크롤 화살표.
+  //   좌/우 = 칩 행을 한 화면(약 70%)씩, 위/아래 = 신청서를 한 화면씩 이동.
   (function(){
     var nav = $('arrowNav'), chips = $('anChips');
-    var L = $('anLeft'), R = $('anRight');
+    var L = $('anLeft'), R = $('anRight'), U = $('anUp'), D = $('anDown');
     if (!nav || !chips) return;
+    var stage = document.querySelector('.card') || document.scrollingElement;
     function upd(){
       var max = chips.scrollWidth - chips.clientWidth;
       var off = chips.scrollLeft;
       L.disabled = off <= 2;
       R.disabled = off >= max - 2;
+      // 위/아래: 페이지를 위·아래 끝까지 스크롤했는지에 따라 활성/비활성.
+      var st = window.pageYOffset || document.documentElement.scrollTop || 0;
+      var sh = (document.documentElement.scrollHeight || 0) - window.innerHeight;
+      if (U) U.disabled = st <= 2;
+      if (D) D.disabled = sh <= 2 || st >= sh - 2;
     }
     function nudge(dir){
       var step = chips.clientWidth * 0.7 * dir;
       chips.scrollBy({left:step, behavior:'smooth'});
     }
+    function vnudge(dir){
+      var amt = window.innerHeight * 0.8 * dir;
+      try{ stage.scrollBy({top:amt, behavior:'smooth'}); }catch(e){}
+      window.scrollBy(0, amt);
+    }
     L.onclick = function(){ nudge(-1); };
     R.onclick = function(){ nudge(1); };
+    if (U) U.onclick = function(){ vnudge(-1); };
+    if (D) D.onclick = function(){ vnudge(1); };
     chips.addEventListener('scroll', upd, {passive:true});
     window.addEventListener('resize', upd);
+    window.addEventListener('scroll', upd, {passive:true});
     setTimeout(upd, 60);
 
     // 칩 = 해당 입력 구역으로 이동 + 활성 표시
@@ -480,36 +477,8 @@
     else $('inArriveNote').classList.add('hide');
   };
 
-  // 기존 회원 조회(인가번호 / 전화번호) — 프리필
-  function lookup(q, cardId, onFound){
-    q = (q||'').replace(/[^0-9]/g,'');
-    if (!q){ return fail('인가번호(또는 전화번호)를 입력해 주세요.'); }
-    var card = $(cardId);
-    card.classList.remove('hide'); card.innerHTML = '조회 중…';
-    api('/api/event/qr/lookup', {q:q}).then(function(r){
-      var j = r.j || {};
-      if (!j.ok || !j.found){
-        card.innerHTML = '일치하는 회원이 없습니다. 신규 등록으로 진행합니다.';
-        return;
-      }
-      var m = j.member;
-      card.innerHTML = '✅ <b>'+esc(m.name)+'</b> ('+esc(m.numberLabel||m.number)+')'
-        + (m.unit?' · '+esc(m.unit):'')
-        + '<br>전화 '+esc(m.phone||'-') + (m.email?' · '+esc(m.email):'');
-      if (onFound) onFound(m);
-    }).catch(function(){ card.innerHTML='조회 실패. 잠시 후 다시 시도해 주세요.'; });
-  }
-  $('btnLookupReg').onclick = function(){
-    lookup($('inNo').value, 'mcardReg', function(m){
-      if (m.email && !$('inEmail').value) $('inEmail').value = m.email;
-    });
-  };
-  $('btnLookupGuest').onclick = function(){
-    lookup($('inPhone').value, 'mcardGuest', function(m){
-      if (m.name && !$('inName').value) $('inName').value = m.name;
-      if (m.email && !$('inEmail').value) $('inEmail').value = m.email;
-    });
-  };
+  // (요구) 인가자 '기존 정보 불러오기' 기능은 개인정보 노출 위험으로 삭제했다.
+  //   (비인가자 전화번호 조회도 같은 이유로 함께 제거 — 프리필은 서버가 처리.)
 
   // 3) 제출
   $('btnSubmit').onclick = function(){
