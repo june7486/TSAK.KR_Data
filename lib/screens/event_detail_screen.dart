@@ -1007,7 +1007,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             children: [
               Text(
                 [
-                  if ('${a['unit'] ?? ''}'.isNotEmpty) '${a['unit']}',
+                  // [요구] 활동등록대(unitText)를 우선 표시 — 없으면 인가시 단위대(unit).
+                  if ('${a['unitText'] ?? a['unit'] ?? ''}'.isNotEmpty)
+                    '${a['unitText'] ?? a['unit']}',
                   if ('${a['phone'] ?? ''}'.isNotEmpty) '${a['phone']}',
                   if ('${a['gender'] ?? ''}'.isNotEmpty) '${a['gender']}',
                 ].join(' · '),
