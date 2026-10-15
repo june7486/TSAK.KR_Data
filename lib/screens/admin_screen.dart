@@ -91,9 +91,9 @@ class _AdminScreenState extends State<AdminScreen> {
 
   /// (요구) 마스터 창에서 각 관리자 비번을 함께 노출한다.
   ///   · _adminNoPw — 인가번호 관리자(아이디=인가번호)의 현재 개인 비번.
-  ///   · _showPw    — 비번 보기/숨기기 토글(기본 숨김, 유출 최소화).
+  ///   스크롤·스크린샷 방지를 위해 예전엔 ••• 로 감췄으나, 단장 요청에 따라
+  ///   마스터 창에서는 모든 비번을 실제 값으로 표시한다.
   final Map<String, String> _adminNoPw = {};
-  bool _showPw = false;
 
   /// 인가번호 관리자들의 현재 비번을 병렬 조회해 채운다(마스터 전용 API).
   Future<void> _loadAdminNoPasswords(List<String> nos) async {
@@ -118,24 +118,9 @@ class _AdminScreenState extends State<AdminScreen> {
     });
   }
 
-  /// 비번 보기/숨기기 토글 버튼(두 카드에서 공용).
-  Widget _pwToggle() => TextButton.icon(
-    onPressed: () => setState(() => _showPw = !_showPw),
-    icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility, size: 16),
-    label: Text(
-      _showPw ? '비번 숨기기' : '비번 보기',
-      style: const TextStyle(fontSize: 11.5),
-    ),
-    style: TextButton.styleFrom(
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-    ),
-  );
-
-  /// 비번 1줄(숨김 시 ••••). 값이 있을 때만 복사 아이콘 노출.
+  /// 비번 1줄 — 실제 값을 그대로 노출(단장 요청: 으로 표현하지 말 것) + 복사.
   Widget _pwLine(String pw) {
     final has = pw.trim().isNotEmpty;
-    final txt = _showPw ? (has ? pw : '미설정') : (has ? '••••••' : '미설정');
     return Row(
       children: [
         const Text(
@@ -149,20 +134,17 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(width: 5),
         Flexible(
           child: Text(
-            txt,
+            has ? pw : '미설정',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: !has
-                  ? AppColors.textGray
-                  : (_showPw ? AppColors.taegeukRed : AppColors.textGray),
-              letterSpacing: _showPw ? 0 : 1.2,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: has ? AppColors.taegeukRed : AppColors.textGray,
             ),
           ),
         ),
-        if (has && _showPw) ...[
+        if (has) ...[
           const SizedBox(width: 4),
           InkWell(
             onTap: () {
@@ -244,18 +226,7 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _title(
-                    '관리자 계정 (생성 · 삭제)',
-                    Icons.vpn_key,
-                    AppColors.taegeukRed,
-                  ),
-                ),
-                _pwToggle(),
-              ],
-            ),
+            _title('관리자 계정 (생성 · 삭제)', Icons.vpn_key, AppColors.taegeukRed),
             const SizedBox(height: 6),
             const Text(
               '관리자 계정은 「아이디(로그인) = 인가번호」 + 「암호 = 개인 비밀번호」로 동작합니다. '
@@ -426,8 +397,8 @@ class _AdminScreenState extends State<AdminScreen> {
                       ],
                     ),
                     const SizedBox(height: 3),
-                    // (요구) 관리자 비번 함께 노출(토글로 표시/숨김).
-                    _pwLine('${_adminNoPw[no] ?? ''}'),
+                    // (요구) 관리자 비번 함께 노출(실제 값 표시).
+                    _pwLine(_adminNoPw[no] ?? ''),
                   ],
                 ),
               ),
@@ -522,8 +493,6 @@ class _AdminScreenState extends State<AdminScreen> {
                   '(${_idAccounts.length})',
                   style: const TextStyle(fontSize: 12, color: AppColors.textGray),
                 ),
-                const Spacer(),
-                _pwToggle(),
               ],
             ),
             const SizedBox(height: 4),
