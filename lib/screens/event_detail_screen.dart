@@ -959,6 +959,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     final visited = ident.isNotEmpty && _access.containsKey(ident);
     final roles = (a['roles'] as List?) ?? [];
+    // (요구) 소속 구분 뱃지 — 범/은하/일반. 서버가 내려준 corps/linkable 기반.
+    final isRegularRow = a['linkable'] != true && '${a['corps'] ?? ''}'.isEmpty;
+    final corpLabel = '${a['corps'] ?? ''}' == 'eunha'
+        ? '은하'
+        : ('${a['corps'] ?? ''}' == 'tsak'
+              ? '범'
+              : (isRegularRow ? '일반' : '범'));
+    final corpColor = '${a['corps'] ?? ''}' == 'eunha'
+        ? AppColors.taegeukBlue
+        : (isRegularRow ? AppColors.textGray : AppColors.taegeukRed);
+    // (요구) 역할 코드 — L(리더)/B(비버)/S(스카우트)/V(벤처)/R(로버)/본부/학부모/기타
+    final roleCode = '${a['roleCode'] ?? ''}'.trim();
+    final roleLabel = '${a['roleLabel'] ?? ''}'.trim();
+    // (요구) 인가번호 우선 노출 — 서버가 준 numberLabel(범#415/은하#43).
+    final numLabel = '${a['numberLabel'] ?? ''}'.trim();
     // (요구 #15) STAFF 여부 — 인가번호 옆 STAFF 단추.
     final isStaff = _staff.any(
       (s) =>
@@ -970,28 +985,104 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ident.isNotEmpty,
     );
     final canManage = widget.canManage;
+    // (요구) 이름 클릭 → 개인카드 연결(관리자·마스터만). 그 외엔 비활성.
+    final canOpenCard = canManage && '${a['linkable'] ?? false}' == 'true';
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: InkWell(
-        // (요구 #16) 참가자 명단 클릭 → 해당 회원 관리페이지(관리자·마스터만).
         onTap: canManage ? () => _openMemberPage(a) : null,
         child: ListTile(
           leading: _attendeeLeading(a, ident, visited, isStaff),
           title: Row(
             children: [
-              Flexible(
-                child: MarqueeText(
-                  '${a['name'] ?? ''}',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+              // 소속 구분 뱃지(범/은하/일반)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: corpColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: corpColor.withValues(alpha: 0.45)),
+                ),
+                child: Text(
+                  corpLabel,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                    color: corpColor,
+                  ),
                 ),
               ),
-              if (ident.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Flexible(
+                child: InkWell(
+                  onTap: canOpenCard ? () => _openMemberPage(a) : null,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: MarqueeText(
+                          '${a['name'] ?? ''}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            decoration: canOpenCard
+                                ? TextDecoration.underline
+                                : null,
+                          ),
+                        ),
+                      ),
+                      if (canOpenCard) ...[
+                        const SizedBox(width: 3),
+                        const Icon(
+                          Icons.open_in_new,
+                          size: 12,
+                          color: AppColors.textGray,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              // (요구) 인가번호 우선 노출
+              if (numLabel.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Text(
+                  numLabel,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ] else if (ident.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 Text(
                   Member.numLabelOf(ident, '${a['corps'] ?? 'tsak'}'),
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textGray,
+                  ),
+                ),
+              ],
+              // (요구) 역할 코드(L/B/S/V/R 등) 뱃지
+              if (roleCode.isNotEmpty) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    roleLabel.isEmpty || roleLabel == roleCode
+                        ? roleCode
+                        : '$roleCode $roleLabel',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purple,
+                    ),
                   ),
                 ),
               ],
@@ -1015,6 +1106,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 ].join(' · '),
                 style: const TextStyle(fontSize: 12),
               ),
+              // (요구) 혼돈 방지 — 이름 우측 하단에 전화번호를 매우 작게 병기.
+              if ('${a['phone'] ?? ''}'.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Text(
+                    '${a['phone']}',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: AppColors.textGray.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
               if (roles.isNotEmpty)
                 Wrap(
                   spacing: 4,
@@ -1058,17 +1161,128 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       if (!ok) return;
                       setState(() => _attendees.removeAt(i));
                       await _saveAttendees();
+                    } else if (v == 'top') {
+                      await _moveAttendee(i, 0);
+                    } else if (v == 'up') {
+                      if (i > 0) await _moveAttendee(i, i - 1);
+                    } else if (v == 'down') {
+                      if (i < _attendees.length - 1) {
+                        await _moveAttendee(i, i + 1);
+                      }
+                    } else if (v == 'role') {
+                      await _editAttendeeRole(i);
+                    } else if (v == 'card') {
+                      await _openMemberPage(a);
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('수정')),
-                    PopupMenuItem(value: 'del', child: Text('삭제')),
+                  itemBuilder: (_) => [
+                    if ('${a['linkable'] ?? false}' == 'true')
+                      const PopupMenuItem(
+                        value: 'card',
+                        child: Text('개인카드 열기'),
+                      ),
+                    const PopupMenuItem(value: 'edit', child: Text('정보 수정')),
+                    const PopupMenuItem(value: 'role', child: Text('항목(역할) 변경')),
+                    const PopupMenuItem(value: 'top', child: Text('맨 위로')),
+                    const PopupMenuItem(value: 'up', child: Text('위로 이동')),
+                    const PopupMenuItem(value: 'down', child: Text('아래로 이동')),
+                    const PopupMenuItem(value: 'del', child: Text('삭제')),
                   ],
                 )
               : const Icon(Icons.chevron_right, color: AppColors.textGray),
         ),
       ),
     );
+  }
+
+  /// (요구) 명단 관리 — 위치 변경(로컬 순서 조정 후 저장).
+  Future<void> _moveAttendee(int from, int to) async {
+    if (from < 0 || from >= _attendees.length) return;
+    final item = _attendees.removeAt(from);
+    _attendees.insert(to.clamp(0, _attendees.length), item);
+    setState(() {});
+    await _saveAttendees();
+  }
+
+  /// (요구) 명단 관리 — 항목(역할) 변경. L/B/S/V/R 등 코드로 표시된다.
+  Future<void> _editAttendeeRole(int i) async {
+    if (i < 0 || i >= _attendees.length) return;
+    final cur = ((_attendees[i]['rawRoles'] as List?) ??
+            (_attendees[i]['roles'] as List?) ??
+            [])
+        .map((e) => '$e')
+        .toSet();
+    const all = [
+      '지도자',
+      '비버',
+      '스카우트',
+      '벤처',
+      '로버',
+      '본부',
+      '학부모',
+      '기타',
+    ];
+    final sel = {...cur};
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('항목(역할) 변경'),
+          content: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final r in all)
+                FilterChip(
+                  label: Text(r),
+                  selected: sel.contains(r),
+                  selectedColor: AppColors.purple,
+                  labelStyle: TextStyle(
+                    color: sel.contains(r) ? Colors.white : AppColors.purple,
+                  ),
+                  onSelected: (v) =>
+                      setD(() => v ? sel.add(r) : sel.remove(r)),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('확인'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    _attendees[i]['roles'] = sel.toList();
+    // 표시용 코드도 즉시 갱신(서버 재조회 전 화면 반영)
+    bool has(List<String> ks) => ks.any((k) => sel.any((s) => s.contains(k)));
+    String code = '';
+    if (has(['지도자', '멘토', '리더'])) {
+      code = 'L';
+    } else if (has(['비버'])) {
+      code = 'B';
+    } else if (has(['벤처'])) {
+      code = 'V';
+    } else if (has(['로버'])) {
+      code = 'R';
+    } else if (has(['스카우트'])) {
+      code = 'S';
+    } else if (has(['본부'])) {
+      code = '본부';
+    } else if (has(['학부모'])) {
+      code = '학부모';
+    } else if (sel.isNotEmpty) {
+      code = '기타';
+    }
+    _attendees[i]['roleCode'] = code;
+    setState(() {});
+    await _saveAttendees();
   }
 
   /// 참가자 타일 좌측(leading).

@@ -104,6 +104,67 @@
   .hide{display:none!important;}
   .foot{margin-top:16px;font-size:11.5px;color:#9aa1b2;text-align:center;
     max-width:460px;line-height:1.6;}
+  select{width:100%;padding:15px 16px;border-radius:14px;border:1.5px solid var(--line);
+    background:#fbfbfd;font-size:16px;font-family:inherit;color:var(--ink);appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%237A8194' stroke-width='2'/></svg>");
+    background-repeat:no-repeat;background-position:right 16px center;}
+  select:focus{outline:none;border-color:var(--fr-blue);background-color:#fff;
+    box-shadow:0 0 0 4px rgba(27,79,156,.10);}
+  textarea{width:100%;padding:14px 16px;border-radius:14px;border:1.5px solid var(--line);
+    background:#fbfbfd;font-size:15px;font-family:inherit;color:var(--ink);resize:vertical;min-height:74px;}
+  textarea:focus{outline:none;border-color:var(--fr-blue);background:#fff;
+    box-shadow:0 0 0 4px rgba(27,79,156,.10);}
+  .lookup{margin-top:6px;}
+  .lkbtn{margin-top:10px;padding:12px;border-radius:12px;border:1.5px dashed var(--fr-blue);
+    background:rgba(27,79,156,.05);color:var(--fr-blue);font-weight:800;font-size:13.5px;
+    width:100%;font-family:inherit;cursor:pointer;}
+  .mcard{margin-top:12px;border:1px solid #dbe4f6;background:#f6f9ff;border-radius:14px;
+    padding:13px 14px;font-size:13px;line-height:1.75;}
+  .mcard b{color:var(--fr-blue);}
+  .consent{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;margin-top:14px;
+    border:1.5px solid var(--line);border-radius:14px;background:#fbfbfd;cursor:pointer;}
+  .consent input{width:auto;margin-top:2px;transform:scale(1.25);}
+  .consent span{font-size:12.5px;line-height:1.6;color:#3a4560;font-weight:600;}
+  .consent .sub{display:block;color:var(--muted);font-weight:500;margin-top:3px;}
+  .scroller{position:relative;}
+  .scrollhint{position:sticky;bottom:0;text-align:center;font-size:11px;color:var(--muted);
+    padding:6px 0 0;}
+  /* (요구) 참가신청 페이지 좌우 스크롤 — '화살표만' 노출 */
+  .arrownav{display:flex;align-items:center;gap:6px;margin:2px 0 12px;}
+  .arrownav .anchips{flex:1 1 auto;min-width:0;display:flex;gap:6px;overflow-x:auto;
+    scroll-behavior:smooth;scrollbar-width:none;-ms-overflow-style:none;padding:2px 0;}
+  .arrownav .anchips::-webkit-scrollbar{display:none;}
+  .arrownav .anchip{flex:0 0 auto;white-space:nowrap;border:1.5px solid var(--line);
+    background:#fff;color:var(--fr-blue);border-radius:99px;padding:7px 13px;
+    font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;}
+  .arrownav .anchip.on{background:var(--fr-blue);color:#fff;border-color:var(--fr-blue);}
+  .arrownav .anbtn{flex:0 0 auto;width:30px;height:30px;border-radius:50%;
+    border:1px solid var(--line);background:#fff;color:var(--fr-blue);font-weight:900;
+    font-size:16px;line-height:1;font-family:inherit;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 6px rgba(23,32,58,.10);}
+  .arrownav .anbtn:disabled{opacity:.35;cursor:default;box-shadow:none;}
+  .sec-h{font-size:13px;font-weight:900;color:var(--fr-blue);margin:20px 0 2px;
+    display:flex;align-items:center;gap:7px;}
+  .sec-h:before{content:"";width:4px;height:14px;border-radius:2px;background:var(--fr-blue);}
+  .roster{margin-top:8px;}
+  .rrow{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);
+    border-radius:12px;margin-bottom:6px;background:#fff;}
+  .rrow .av{width:30px;height:30px;border-radius:8px;background:rgba(27,79,156,.08);
+    display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;
+    color:var(--fr-blue);flex:0 0 auto;}
+  .rrow .nm{font-weight:800;font-size:14.5px;line-height:1.15;}
+  .rrow .ph{font-size:10.5px;color:#9aa1b2;}
+  .rrow .rl{margin-left:auto;font-size:11px;font-weight:800;color:var(--muted);}
+  .rc{border-radius:8px;overflow:hidden;border:1px solid var(--line);margin-bottom:8px;}
+  .rc .rc-h{background:linear-gradient(180deg,#fbfcff,#f4f7ff);padding:14px 16px;
+    border-bottom:1px solid var(--line);}
+  .rc .rc-t{font-size:16px;font-weight:900;letter-spacing:-.3px;}
+  .rc .rc-m{font-size:11.5px;color:var(--muted);margin-top:3px;}
+  .btn-sm{width:100%;border:0;border-radius:11px;padding:12px;font-size:14px;font-weight:800;
+    cursor:pointer;font-family:inherit;background:var(--fr-blue);color:#fff;}
+  .chip-n{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:800;
+    background:rgba(214,40,40,.09);color:var(--fr-red);margin-left:6px;}
 </style>
 </head>
 <body>
@@ -131,15 +192,26 @@
         </div>
       </div>
 
-      <!-- 1) 참여 의사 -->
+      <!-- 1) 참여 의사 + 명부/후기 -->
       <div id="vw-ask" class="hide">
         <div class="q">이 행사에 참여하시겠습니까?</div>
         <div class="qsub">등록 후 행사 관리 명단에 참가자로 올라갑니다.</div>
-        <button class="btn btn-yes" id="btnYes">예, 참여하겠습니다</button>
+        <button class="btn btn-yes" id="btnYes">예, 참여 신청하기</button>
         <button class="btn btn-no" id="btnNo">아니오</button>
+
+        <!-- 참가자 명부(공개) -->
+        <div id="rosterBox" class="hide" style="margin-top:20px;">
+          <div class="sec-h">참가자 명부 <span id="rosterCnt" class="chip-n">0명</span></div>
+          <div class="roster" id="rosterList"></div>
+        </div>
+
+        <!-- 후기(게시판 연계) -->
+        <button class="btn btn-no" id="btnReview" style="margin-top:10px;">
+          ✍️ 행사 후기 게시판 열기
+        </button>
       </div>
 
-      <!-- 2) 유형 선택 -->
+      <!-- 2) 참여 신청서 -->
       <div id="vw-kind" class="hide">
         <div class="q" style="font-size:15px;">참여 유형을 선택해 주세요</div>
         <div class="qsub">범스카우트 인가자 여부에 따라 등록 방법이 다릅니다.</div>
@@ -152,7 +224,9 @@
         <div id="formReg">
           <label>인가번호(회원번호)</label>
           <input id="inNo" inputmode="numeric" autocomplete="off" placeholder="예: 415">
-          <div class="hint">로그인 없이 인가번호만 입력하면 자동 등록됩니다.</div>
+          <button class="lkbtn" id="btnLookupReg" type="button">🔍 기존 정보 불러오기</button>
+          <div class="hint">로그인 없이 인가번호만 입력하면 자동 등록됩니다. 기존 정보를 불러오면 아래에서 수정할 수 있습니다.</div>
+          <div id="mcardReg" class="mcard hide"></div>
         </div>
 
         <!-- 비인가자 입력 -->
@@ -161,13 +235,72 @@
           <input id="inName" autocomplete="name" placeholder="홍길동">
           <label>전화번호</label>
           <input id="inPhone" inputmode="numeric" autocomplete="tel" placeholder="010-0000-0000">
+          <button class="lkbtn" id="btnLookupGuest" type="button">🔍 전화번호로 기존 정보 조회</button>
           <div class="hint">
-            입력한 전화번호로 로그인 아이디가 만들어집니다.<br>
+            입력한 전화번호로 로그인 아이디가 만들어집니다(이미 가입했다면 기존 정보를 그대로 사용합니다).<br>
             비밀번호는 전화번호 <b>뒤 4자리</b>이며, 이후 앱에서 전화번호로 로그인할 수 있습니다.
           </div>
+          <div id="mcardGuest" class="mcard hide"></div>
         </div>
 
-        <button class="btn btn-red" id="btnSubmit" style="margin-top:18px;">등록하기</button>
+        <!-- (요구) 좌우 스크롤 화살표만 — 신청서 항목 바로가기 -->
+        <div class="arrownav" id="arrowNav">
+          <button type="button" class="anbtn" id="anLeft" aria-label="이전">‹</button>
+          <div class="anchips" id="anChips">
+            <button type="button" class="anchip on" data-sec="formReg">① 인가자 정보</button>
+            <button type="button" class="anchip" data-sec="formGuest">② 비인가자 정보</button>
+            <button type="button" class="anchip" data-sec="secExtra">③ 추가 입력 사항</button>
+            <button type="button" class="anchip" data-sec="secConsent">④ 개인정보 동의</button>
+          </div>
+          <button type="button" class="anbtn" id="anRight" aria-label="다음">›</button>
+        </div>
+
+        <!-- 추가 입력 사항 -->
+        <div class="sec-h" id="secExtra">추가 입력 사항</div>
+        <div class="hint" style="margin:0 0 4px;">행사 준비를 위해 아래 정보를 입력해 주세요.</div>
+        <label>이메일 (선택)</label>
+        <input id="inEmail" type="email" inputmode="email" autocomplete="email" placeholder="hong@example.com">
+
+        <label>이동 방법</label>
+        <select id="inTransport">
+          <option value="">선택해 주세요</option>
+          <option value="자차">자차</option>
+          <option value="대중교통">대중교통</option>
+          <option value="기타">기타(직접입력)</option>
+        </select>
+        <input id="inTransportNote" class="hide" placeholder="이동 방법을 직접 입력" style="margin-top:8px;">
+
+        <label>숙박 여부</label>
+        <select id="inLodging">
+          <option value="">선택해 주세요</option>
+          <option value="숙박">숙박</option>
+          <option value="비숙박">비숙박(당일)</option>
+        </select>
+
+        <label>도착 예정 시간</label>
+        <select id="inArrive">
+          <option value="">선택해 주세요</option>
+          <option value="정시">정시</option>
+          <option value="기타">기타(직접입력)</option>
+        </select>
+        <input id="inArriveNote" class="hide" placeholder="도착 예정 시간을 직접 입력 (예: 1일 14:30)" style="margin-top:8px;">
+
+        <label>동행자 이름 (선택)</label>
+        <input id="inCompanion" placeholder="함께 오는 분 이름 (여러 명은 쉼표로)" autocomplete="off">
+
+        <label>운영진께 전달할 내용 (선택)</label>
+        <textarea id="inMessage" placeholder="식이요법, 알레르기, 특이사항 등 운영진이 알아야 할 내용"></textarea>
+
+        <!-- 개인정보 활용 동의 -->
+        <label class="consent" id="secConsent" for="ckConsent">
+          <input type="checkbox" id="ckConsent">
+          <span>
+            <b>[필수]</b> 개인정보(이름·전화번호 등)를 행사 참여 등록 및 운영 목적으로 활용하는 데 동의합니다.
+            <span class="sub">개인의 얼굴이 노출된 사진은 홍보(중앙회 활동 소개 등) 목적으로 노출될 수 있으며, 이에 함께 동의합니다.</span>
+          </span>
+        </label>
+
+        <button class="btn btn-red" id="btnSubmit" style="margin-top:14px;">등록하기</button>
         <button class="btn btn-no" id="btnBack">돌아가기</button>
         <div id="askErr" class="err hide"></div>
         <div id="subBusy" class="hide" style="margin-top:14px;text-align:center;">
@@ -246,31 +379,155 @@
   api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
     .then(function(r){
       if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
-      ev = r.j.event; renderHead(); show('vw-ask');
+      ev = r.j.event; renderHead(); show('vw-ask'); loadRoster();
     })
     .catch(function(){ renderHead(); show('vw-error'); });
 
   // 1) 참여 의사
   $('btnYes').onclick = function(){ show('vw-kind'); };
   $('btnNo').onclick = function(){ show('vw-thanks'); };
+  $('btnReview').onclick = function(){ openReview(); };
+
+  // 참가자 명부(공개) 로드 + 렌더
+  function loadRoster(){
+    api('/api/event/qr/roster?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title), {})
+      .then(function(r){
+        if (r.status!==200 || !r.j.ok) return;
+        var rows = r.j.roster || [];
+        $('rosterCnt').textContent = rows.length + '명';
+        var h = rows.map(function(x){
+          var badge = x.corps==='eunha' ? '은하' : (x.corps==='tsak' ? '범' : '일반');
+          var rl = x.roleCode ? (x.roleCode + (x.roleLabel && x.roleLabel!==x.roleCode ? '·'+x.roleLabel : '')) : '';
+          var num = x.numberLabel ? x.numberLabel : (x.unit||'');
+          return '<div class="rrow">'
+            + '<div class="av">'+esc(badge)+'</div>'
+            + '<div style="min-width:0;"><div class="nm">'+esc(x.name)+'</div>'
+            + '<div class="ph">'+esc(x.phone||'')+(num?' · '+esc(num):'')+'</div></div>'
+            + '<div class="rl">'+esc(rl)+'</div></div>';
+        }).join('');
+        $('rosterList').innerHTML = h || '<div class="hint">아직 등록된 참가자가 없습니다.</div>';
+        $('rosterBox').classList.remove('hide');
+      }).catch(function(){});
+  }
+  function openReview(){
+    // 후기 게시판(앱) 연계 — 앱을 열어 해당 행사로 이동.
+    try{ location.href = '/?event='+encodeURIComponent(year+'::'+title)+'&tab=review'; }
+    catch(e){ location.href='/'; }
+  }
 
   // 2) 유형 토글
   $('segReg').onclick = function(){
     kind='credentialed';
     $('segReg').classList.add('on'); $('segGuest').classList.remove('on');
     $('formReg').classList.remove('hide'); $('formGuest').classList.add('hide');
+    markActiveAnchor();
   };
   $('segGuest').onclick = function(){
     kind='guest';
     $('segGuest').classList.add('on'); $('segReg').classList.remove('on');
     $('formGuest').classList.remove('hide'); $('formReg').classList.add('hide');
+    markActiveAnchor();
   };
+
+  // (요구) 좌우 스크롤 — '화살표만'. 화살표는 칩 행을 한 화면(약 70%)씩 부드럽게 이동.
+  (function(){
+    var nav = $('arrowNav'), chips = $('anChips');
+    var L = $('anLeft'), R = $('anRight');
+    if (!nav || !chips) return;
+    function upd(){
+      var max = chips.scrollWidth - chips.clientWidth;
+      var off = chips.scrollLeft;
+      L.disabled = off <= 2;
+      R.disabled = off >= max - 2;
+    }
+    function nudge(dir){
+      var step = chips.clientWidth * 0.7 * dir;
+      chips.scrollBy({left:step, behavior:'smooth'});
+    }
+    L.onclick = function(){ nudge(-1); };
+    R.onclick = function(){ nudge(1); };
+    chips.addEventListener('scroll', upd, {passive:true});
+    window.addEventListener('resize', upd);
+    setTimeout(upd, 60);
+
+    // 칩 = 해당 입력 구역으로 이동 + 활성 표시
+    chips.querySelectorAll('.anchip').forEach(function(c){
+      c.onclick = function(){
+        var el = $(c.getAttribute('data-sec'));
+        if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
+        chips.querySelectorAll('.anchip').forEach(function(x){ x.classList.remove('on'); });
+        c.classList.add('on');
+      };
+    });
+    window.markActiveAnchor = function(){
+      var reg = !$('formReg').classList.contains('hide');
+      var want = reg ? 'formReg' : 'formGuest';
+      chips.querySelectorAll('.anchip').forEach(function(x){
+        x.classList.toggle('on', x.getAttribute('data-sec')===want);
+      });
+    };
+  })();
+  function markActiveAnchor(){ if (window.markActiveAnchor) window.markActiveAnchor(); }
   $('btnBack').onclick = function(){ $('askErr').classList.add('hide'); show('vw-ask'); };
+
+  // 이동방법/도착시간 '기타' 직접입력 토글
+  $('inTransport').onchange = function(){
+    if (this.value==='기타') $('inTransportNote').classList.remove('hide');
+    else $('inTransportNote').classList.add('hide');
+  };
+  $('inArrive').onchange = function(){
+    if (this.value==='기타') $('inArriveNote').classList.remove('hide');
+    else $('inArriveNote').classList.add('hide');
+  };
+
+  // 기존 회원 조회(인가번호 / 전화번호) — 프리필
+  function lookup(q, cardId, onFound){
+    q = (q||'').replace(/[^0-9]/g,'');
+    if (!q){ return fail('인가번호(또는 전화번호)를 입력해 주세요.'); }
+    var card = $(cardId);
+    card.classList.remove('hide'); card.innerHTML = '조회 중…';
+    api('/api/event/qr/lookup', {q:q}).then(function(r){
+      var j = r.j || {};
+      if (!j.ok || !j.found){
+        card.innerHTML = '일치하는 회원이 없습니다. 신규 등록으로 진행합니다.';
+        return;
+      }
+      var m = j.member;
+      card.innerHTML = '✅ <b>'+esc(m.name)+'</b> ('+esc(m.numberLabel||m.number)+')'
+        + (m.unit?' · '+esc(m.unit):'')
+        + '<br>전화 '+esc(m.phone||'-') + (m.email?' · '+esc(m.email):'');
+      if (onFound) onFound(m);
+    }).catch(function(){ card.innerHTML='조회 실패. 잠시 후 다시 시도해 주세요.'; });
+  }
+  $('btnLookupReg').onclick = function(){
+    lookup($('inNo').value, 'mcardReg', function(m){
+      if (m.email && !$('inEmail').value) $('inEmail').value = m.email;
+    });
+  };
+  $('btnLookupGuest').onclick = function(){
+    lookup($('inPhone').value, 'mcardGuest', function(m){
+      if (m.name && !$('inName').value) $('inName').value = m.name;
+      if (m.email && !$('inEmail').value) $('inEmail').value = m.email;
+    });
+  };
 
   // 3) 제출
   $('btnSubmit').onclick = function(){
     var err = $('askErr'); err.classList.add('hide');
-    var body = {year:year, title:title, kind:kind};
+    if (!$('ckConsent').checked){
+      return fail('개인정보 활용(얼굴 사진 홍보 활용 포함)에 동의해 주세요.');
+    }
+    var body = {year:year, title:title, kind:kind, consent:true, photoConsent:true};
+    // 공통 추가 입력
+    body.email = ($('inEmail').value||'').trim();
+    body.transport = $('inTransport').value || '';
+    body.transportNote = ($('inTransportNote').value||'').trim();
+    body.lodging = $('inLodging').value || '';
+    body.arrive = $('inArrive').value || '';
+    body.arriveNote = ($('inArriveNote').value||'').trim();
+    body.companion = ($('inCompanion').value||'').trim();
+    body.message = ($('inMessage').value||'').trim();
+
     if (kind==='credentialed'){
       var no = ($('inNo').value||'').replace(/[^0-9]/g,'');
       if (!no){ return fail('인가번호를 입력해 주세요.'); }
