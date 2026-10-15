@@ -129,8 +129,13 @@
   .scroller{position:relative;}
   .scrollhint{position:sticky;bottom:0;text-align:center;font-size:11px;color:var(--muted);
     padding:6px 0 0;}
-  /* (요구) 참가신청 페이지 좌우 스크롤 — '화살표만' 노출 */
-  .arrownav{display:flex;align-items:center;gap:6px;margin:2px 0 12px;}
+  /* (요구) 참가신청 페이지 좌우 스크롤 — '화살표'는 항상 화면에 고정 */
+  /*  [수정] 입력칸을 채우려 아래로 스크롤하면 화살표가 함께 사라져
+   *  입력이 어렵다는 지적 → 상단에 sticky 로 고정해 항상 보이게 한다. */
+  .arrownav{position:sticky;top:6px;z-index:30;display:flex;align-items:center;gap:6px;
+    margin:10px 0 12px;padding:7px 8px;border-radius:16px;
+    background:rgba(255,255,255,.94);backdrop-filter:blur(8px);
+    border:1px solid var(--line);box-shadow:0 6px 18px rgba(23,32,58,.10);}
   .arrownav .anchips{flex:1 1 auto;min-width:0;display:flex;gap:6px;overflow-x:auto;
     scroll-behavior:smooth;scrollbar-width:none;-ms-overflow-style:none;padding:2px 0;}
   .arrownav .anchips::-webkit-scrollbar{display:none;}
@@ -138,15 +143,15 @@
     background:#fff;color:var(--fr-blue);border-radius:99px;padding:7px 13px;
     font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;}
   .arrownav .anchip.on{background:var(--fr-blue);color:#fff;border-color:var(--fr-blue);}
-  .arrownav .anbtn{flex:0 0 auto;width:30px;height:30px;border-radius:50%;
-    border:1px solid var(--line);background:#fff;color:var(--fr-blue);font-weight:900;
-    font-size:16px;line-height:1;font-family:inherit;cursor:pointer;
+  .arrownav .anbtn{flex:0 0 auto;width:34px;height:34px;border-radius:50%;
+    border:1.5px solid var(--fr-blue);background:#fff;color:var(--fr-blue);font-weight:900;
+    font-size:17px;line-height:1;font-family:inherit;cursor:pointer;
     display:flex;align-items:center;justify-content:center;
-    box-shadow:0 2px 6px rgba(23,32,58,.10);}
-  .arrownav .anbtn:disabled{opacity:.35;cursor:default;box-shadow:none;}
+    box-shadow:0 3px 9px rgba(27,79,156,.16);}
+  .arrownav .anbtn:disabled{opacity:.32;cursor:default;box-shadow:none;}
   /* 위·아래 화살표는 세로로 쌓아 좌우 화살표와 구분한다. */
   .arrownav .anvcol{display:flex;flex-direction:column;gap:3px;flex:0 0 auto;}
-  .anvcol .anbtn{width:26px;height:21px;border-radius:7px;font-size:10px;}
+  .anvcol .anbtn{width:30px;height:24px;border-radius:8px;font-size:11px;}
   .sec-h{font-size:13px;font-weight:900;color:var(--fr-blue);margin:20px 0 2px;
     display:flex;align-items:center;gap:7px;}
   .sec-h:before{content:"";width:4px;height:14px;border-radius:2px;background:var(--fr-blue);}
@@ -168,6 +173,26 @@
     cursor:pointer;font-family:inherit;background:var(--fr-blue);color:#fff;}
   .chip-n{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:800;
     background:rgba(214,40,40,.09);color:var(--fr-red);margin-left:6px;}
+  /* (요구) 참가신청 페이지 — 배포 자료 다운로드 + 담당자 문의 */
+  .docs{margin-top:14px;border:1px solid #dbe4f6;background:#f6f9ff;border-radius:14px;
+    padding:13px 14px;}
+  .docs .dt{font-size:12.5px;font-weight:900;color:var(--fr-blue);margin-bottom:8px;
+    display:flex;align-items:center;gap:6px;}
+  .docs a.dl{display:flex;align-items:center;gap:8px;text-decoration:none;
+    padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#fff;
+    margin-bottom:6px;color:var(--ink);font-size:13.5px;font-weight:700;}
+  .docs a.dl .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;}
+  .docs a.dl .sz{font-size:11px;color:#9aa1b2;font-weight:600;flex:0 0 auto;}
+  .docs a.dl .ic{color:var(--fr-blue);font-weight:900;flex:0 0 auto;}
+  .contact{margin-top:14px;border:1px solid #e6e0d2;background:#fffdf6;border-radius:14px;
+    padding:13px 14px;}
+  .contact .ct{font-size:12.5px;font-weight:900;color:#8a6d1f;margin-bottom:8px;
+    display:flex;align-items:center;gap:6px;}
+  .contact .crow{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13.5px;}
+  .contact .crow .cn{font-weight:800;color:var(--ink);}
+  .contact .crow a.call{margin-left:auto;text-decoration:none;background:var(--fr-blue);
+    color:#fff;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:9px;}
 </style>
 </head>
 <body>
@@ -201,6 +226,8 @@
         <div class="qsub">등록 후 행사 관리 명단에 참가자로 올라갑니다.</div>
         <button class="btn btn-yes" id="btnYes">예, 참여 신청하기</button>
         <button class="btn btn-no" id="btnNo">아니오</button>
+        <div id="askDocs" class="hide"></div>
+        <div id="askContact" class="hide"></div>
 
         <!-- (요구) 참가자 명부·게시판 글은 이 페이지에서 노출하지 않는다.
              등록을 마친 사람에게만 아래(결과 화면) '행사 게시판' 버튼이 나타난다. -->
@@ -372,13 +399,49 @@
   }
   function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+  function fmtSize(n){ n = Number(n)||0;
+    if (n < 1024) return n+' B';
+    if (n < 1048576) return (n/1024).toFixed(1)+' KB';
+    return (n/1048576).toFixed(1)+' MB'; }
+
+  // (요구) 행사 소개 자료 다운로드 (복수 파일) — 참가신청 페이지.
+  function renderDocs(){
+    var box = $('askDocs'); var list = (ev && ev.docs) || [];
+    if (!list.length){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var h = '<div class="dt">📎 행사 소개 자료 ('+list.length+'개)</div>';
+    list.forEach(function(d){
+      var u = '/api/event/dist?year='+encodeURIComponent(year)
+            + '&title='+encodeURIComponent(title)
+            + '&name='+encodeURIComponent(d.name)+'&dl=1';
+      h += '<a class="dl" href="'+u+'" download>'
+         + '<span class="ic">⬇</span>'
+         + '<span class="nm">'+esc(d.name)+'</span>'
+         + '<span class="sz">'+fmtSize(d.size)+'</span></a>';
+    });
+    box.innerHTML = h; box.classList.remove('hide');
+  }
+
+  // (요구) 행사 담당자에게 문의 — 담당자 번호 노출(복수).
+  function renderContact(){
+    var box = $('askContact'); var cs = (ev && ev.contacts) || [];
+    if (!cs.length){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var h = '<div class="ct">☎️ 행사 담당자에게 문의하기</div>';
+    cs.forEach(function(c){
+      var tel = 'tel:'+encodeURIComponent(c.phone);
+      var label = c.name ? ('<span class="cn">'+esc(c.name)+'</span>') : '';
+      h += '<div class="crow">'+(label||'<span class="cn">담당자</span>')
+         + '<span>'+(c.phone||'')+'</span>'
+         + '<a class="call" href="'+tel+'">📞 전화 걸기</a></div>';
+    });
+    box.innerHTML = h; box.classList.remove('hide');
+  }
 
   if (!year || !title){ show('vw-error'); $('errMsg').textContent='QR 링크에 행사 정보가 없습니다.'; return; }
 
   api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
     .then(function(r){
       if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
-      ev = r.j.event; renderHead(); show('vw-ask');
+      ev = r.j.event; renderHead(); renderDocs(); renderContact(); show('vw-ask');
     })
     .catch(function(){ renderHead(); show('vw-error'); });
 

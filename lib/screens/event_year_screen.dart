@@ -12,6 +12,7 @@ import '../widgets/busy_overlay.dart';
 import 'all_photos_screen.dart';
 import 'board_screen.dart';
 import 'event_detail_screen.dart';
+import 'event_form_dialog.dart';
 
 /// 행사관리 — 연도별 탭 + 행사 목록/생성
 ///
@@ -455,6 +456,8 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final attendeeLen = (e['attendees'] as List?)?.length ?? 0;
     final memberCnt = (e['memberCount'] as num?)?.toInt() ?? 0;
     final count = attendeeLen > 0 ? attendeeLen : memberCnt;
+    // [요구] 이 행사를 열람한 '인가자' 수(서버 집계).
+    final credViewers = (e['credViewers'] as num?)?.toInt() ?? 0;
     final period = '${e['period'] ?? ''}';
     final place = '${e['place'] ?? ''}';
     final createdBy = '${e['createdBy'] ?? ''}';
@@ -558,7 +561,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
                             tooltip: '이름/연도 변경',
                             icon: Icons.edit_outlined,
                             color: AppColors.purple,
-                            onTap: () => _renameEvent(e),
+                            onTap: () => _editEvent(e),
                           ),
                         if (pending)
                           _cardIconBtn(
@@ -631,6 +634,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _metaChip(Icons.people_alt_outlined, '참가 $count명'),
+                  // [요구] 이 행사를 열람한 '인가자' 수.
+                  if (defined && credViewers > 0)
+                    _metaChip(
+                      Icons.verified_user_outlined,
+                      '인가자 열람 $credViewers명',
+                    ),
                   _metaChip(Icons.photo_camera_outlined, '$photos장'),
                   _metaChip(Icons.videocam_outlined, '$videos개'),
                   if (createdBy.isNotEmpty)
@@ -678,127 +687,18 @@ class _EventYearScreenState extends State<EventYearScreen> {
 
   Future<void> _createEvent() async {
     final initialYear = _year.isEmpty ? '${DateTime.now().year}' : _year;
-    final yearCtrl = TextEditingController(text: initialYear);
-    final titleCtrl = TextEditingController();
-    final periodCtrl = TextEditingController();
-    final placeCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-
-    final ok = await showDialog<bool>(
+    final res = await showDialog<EventFormResult>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) {
-          final yearOk = RegExp(r'^\d{4}$').hasMatch(yearCtrl.text.trim());
-          return AlertDialog(
-            title: const Text('새 행사 만들기'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: yearCtrl,
-                          keyboardType: TextInputType.number,
-                          maxLength: 4,
-                          onChanged: (_) => setSt(() {}),
-                          decoration: InputDecoration(
-                            labelText: '연도 * (필수)',
-                            counterText: '',
-                            errorText: yearCtrl.text.trim().isEmpty || yearOk
-                                ? null
-                                : '4자리 연도를 입력하세요',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () async {
-                          final now = DateTime.now().year;
-                          final picked = await showDialog<int>(
-                            context: ctx,
-                            builder: (_) => AlertDialog(
-                              title: const Text('연도 선택'),
-                              content: SizedBox(
-                                width: 300,
-                                height: 300,
-                                child: YearPicker(
-                                  firstDate: DateTime(1980),
-                                  lastDate: DateTime(now + 5),
-                                  selectedDate: DateTime(
-                                    int.tryParse(yearCtrl.text.trim()) ?? now,
-                                  ),
-                                  onChanged: (d) => Navigator.pop(ctx, d.year),
-                                ),
-                              ),
-                            ),
-                          );
-                          if (picked != null) {
-                            yearCtrl.text = '$picked';
-                            setSt(() {});
-                          }
-                        },
-                        child: const Text('선택'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(labelText: '행사명 *'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: periodCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '행사기간 (예: 2026.03.14~15)',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: placeCtrl,
-                    decoration: const InputDecoration(labelText: '장소'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: descCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: '행사 소개/개요'),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.purple,
-                ),
-                onPressed: (yearOk && titleCtrl.text.trim().isNotEmpty)
-                    ? () => Navigator.pop(ctx, true)
-                    : null,
-                child: const Text('생성'),
-              ),
-            ],
-          );
-        },
-      ),
+      builder: (_) =>
+          EventFormDialog(createMode: true, initialYear: initialYear),
     );
-    if (ok != true) return;
+    if (res == null || !mounted) return;
     // 이중 확인: 연도 필수 (요청 K#4)
-    if (!RegExp(r'^\d{4}$').hasMatch(yearCtrl.text.trim())) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('연도를 선택해야 행사를 만들 수 있습니다')));
-      }
+    if (!RegExp(r'^\d{4}$').hasMatch(res.year)) {
+      _snack('연도를 선택해야 행사를 만들 수 있습니다');
       return;
     }
-    if (titleCtrl.text.trim().isEmpty) return;
+    if (res.title.isEmpty) return;
     final nas = context.read<NasApi>();
     final state = context.read<AppState>();
     showDialog(
@@ -808,67 +708,88 @@ class _EventYearScreenState extends State<EventYearScreen> {
     );
     try {
       await nas.eventCreate(
-        year: yearCtrl.text.trim(),
-        title: titleCtrl.text.trim(),
-        period: periodCtrl.text.trim(),
-        place: placeCtrl.text.trim(),
-        desc: descCtrl.text.trim(),
+        year: res.year,
+        title: res.title,
+        period: res.period,
+        place: res.place,
+        desc: res.desc,
         by: state.who.isNotEmpty ? state.who : (state.isMaster ? '마스터' : '관리자'),
       );
+      // [요구] 기간(시작/종료일) + 담당자(복수) 저장.
+      if (res.startDate.isNotEmpty ||
+          res.endDate.isNotEmpty ||
+          res.contacts.isNotEmpty) {
+        await nas.eventUpdate(
+          year: res.year,
+          title: res.title,
+          startDate: res.startDate,
+          endDate: res.endDate,
+          contacts: res.contacts
+              .map((c) =>
+                  <String, dynamic>{'name': c['name'], 'phone': c['phone']})
+              .toList(),
+        );
+      }
+      // [요구] 첨부파일(복수) → '참가신청시 배포용' 폴더로 업로드.
+      for (final f in res.newFiles) {
+        try {
+          await nas.eventDistUpload(
+            res.year,
+            res.title,
+            f.name,
+            f.bytes,
+            contentType: _contentTypeOf(f.name),
+          );
+        } catch (e) {
+          _snack('자료 업로드 실패: ${f.name} ($e)');
+        }
+      }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('생성 실패: $e')));
+        _snack('생성 실패: $e');
       }
       return;
     }
     if (mounted) {
       Navigator.pop(context);
-      setState(() => _year = yearCtrl.text.trim());
+      setState(() => _year = res.year);
       await _load();
     }
   }
 
-  Future<void> _renameEvent(Map<String, dynamic> e) async {
-    final titleCtrl = TextEditingController(text: '${e['title']}');
-    final yearCtrl = TextEditingController(text: '${e['year']}');
-    final ok = await showDialog<bool>(
+  /// [요구] 행사 수정 — 입력했던 내용을 모두 수정한다.
+  ///   (연도·행사명·기간(시작/종료일 달력)·장소·소개·담당자(복수)·배포용 자료 첨부/삭제)
+  Future<void> _editEvent(Map<String, dynamic> e) async {
+    final year = '${e['year']}';
+    final title = '${e['title']}';
+    // 기존 배포용 자료 목록 조회(관리자·마스터).
+    List<Map<String, dynamic>> dist = const [];
+    try {
+      final full = await context.read<NasApi>().eventGet(year, title);
+      dist = ((full['distFiles'] as List?) ?? [])
+          .map((x) => (x as Map).cast<String, dynamic>())
+          .toList();
+    } catch (_) {}
+    if (!mounted) return;
+    final res = await showDialog<EventFormResult>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
-        scrollable: true,
-        title: const Text('행사 이름/연도 변경'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: yearCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '연도'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(labelText: '행사명'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('저장'),
-          ),
-        ],
+      builder: (_) => EventFormDialog(
+        createMode: false,
+        initialYear: year,
+        initialTitle: title,
+        initialPeriod: '${e['period'] ?? ''}',
+        initialPlace: '${e['place'] ?? ''}',
+        initialDesc: '${e['desc'] ?? ''}',
+        initialStart: '${e['startDate'] ?? ''}',
+        initialEnd: '${e['endDate'] ?? ''}',
+        initialContacts: ((e['contacts'] as List?) ?? [])
+            .map((x) => (x as Map).cast<String, dynamic>())
+            .toList(),
+        initialDist: dist,
       ),
     );
-    if (ok != true) return;
+    if (res == null || !mounted) return;
     final nas = context.read<NasApi>();
     showDialog(
       context: context,
@@ -876,16 +797,71 @@ class _EventYearScreenState extends State<EventYearScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      await nas.eventRename(
-        year: '${e['year']}',
-        title: '${e['title']}',
-        newYear: yearCtrl.text.trim(),
-        newTitle: titleCtrl.text.trim(),
+      final ok = await nas.eventUpdate(
+        year: year,
+        title: title,
+        newYear: res.year,
+        newTitle: res.title,
+        period: res.period,
+        place: res.place,
+        desc: res.desc,
+        startDate: res.startDate,
+        endDate: res.endDate,
+        contacts: res.contacts
+            .map((c) =>
+                <String, dynamic>{'name': c['name'], 'phone': c['phone']})
+            .toList(),
       );
+      if (!ok) {
+        if (mounted) _snack('저장에 실패했습니다');
+        return;
+      }
+      // 삭제할 배포용 자료
+      for (final nm in res.deletedDist) {
+        try {
+          await nas.eventDistDelete(res.year, res.title, nm);
+        } catch (_) {}
+      }
+      // 새로 첨부한 자료(복수) 업로드
+      for (final f in res.newFiles) {
+        try {
+          await nas.eventDistUpload(
+            res.year,
+            res.title,
+            f.name,
+            f.bytes,
+            contentType: _contentTypeOf(f.name),
+          );
+        } catch (err) {
+          _snack('자료 업로드 실패: ${f.name} ($err)');
+        }
+      }
+    } catch (err) {
+      _snack('수정 실패: $err');
     } finally {
       if (mounted) Navigator.pop(context);
     }
     await _load();
+  }
+
+  static String _contentTypeOf(String name) {
+    final n = name.toLowerCase();
+    if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+    if (n.endsWith('.png')) return 'image/png';
+    if (n.endsWith('.gif')) return 'image/gif';
+    if (n.endsWith('.webp')) return 'image/webp';
+    if (n.endsWith('.mp4')) return 'video/mp4';
+    if (n.endsWith('.mov')) return 'video/quicktime';
+    if (n.endsWith('.pdf')) return 'application/pdf';
+    if (n.endsWith('.hwp')) return 'application/x-hwp';
+    if (n.endsWith('.doc') || n.endsWith('.docx')) {
+      return 'application/msword';
+    }
+    if (n.endsWith('.xls') || n.endsWith('.xlsx')) {
+      return 'application/vnd.ms-excel';
+    }
+    if (n.endsWith('.zip')) return 'application/zip';
+    return 'application/octet-stream';
   }
 
   /// (요구 #9) 개인제안 심사중 행사 — 관리자·마스터가 승인/반려.

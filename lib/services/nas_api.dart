@@ -1420,6 +1420,130 @@ class NasApi {
     return j['ok'] == true;
   }
 
+  /// 행사 수정 — 입력했던 모든 내용(연도·행사명·기간·시작/종료일·장소·소개·
+  /// 담당자 연락처)을 한 번에 갱신한다. 이름/연도가 바뀌면 rename 을 먼저
+  /// 수행해 폴더까지 함께 이동한다.
+  Future<bool> eventUpdate({
+    required String year,
+    required String title,
+    String? newYear,
+    String? newTitle,
+    String? period,
+    String? place,
+    String? desc,
+    String? startDate,
+    String? endDate,
+    List<Map<String, dynamic>>? contacts,
+  }) async {
+    var curYear = year;
+    var curTitle = title;
+    final ny = newYear ?? year;
+    final nt = newTitle ?? title;
+    if (ny != year || nt != title) {
+      final r = await eventRename(
+        year: year,
+        title: title,
+        newYear: ny,
+        newTitle: nt,
+      );
+      if (r['ok'] != true) return false;
+      curYear = ny;
+      curTitle = nt;
+    }
+    final r = await http
+        .post(
+          _uri('/api/event/meta'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({
+            'year': curYear,
+            'title': curTitle,
+            if (period != null) 'period': period,
+            if (place != null) 'place': place,
+            if (desc != null) 'desc': desc,
+            if (startDate != null) 'startDate': startDate,
+            if (endDate != null) 'endDate': endDate,
+            if (contacts != null) 'contacts': contacts,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// [요구] 참가신청 페이지 '배포용' 자료 목록 — 기획서/참가신청시 배포용 폴더.
+  Future<List<Map<String, dynamic>>> eventDistFiles(
+    String year,
+    String title,
+  ) async {
+    final e = await eventGet(year, title);
+    return ((e['distFiles'] as List?) ?? [])
+        .map((x) => (x as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// [요구] 행사 첨부파일(복수)을 '참가신청시 배포용' 폴더로 업로드.
+  Future<Map<String, dynamic>> eventDistUpload(
+    String year,
+    String title,
+    String name,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final uri = Uri.parse(
+      '$_base/api/event/dist/upload?year=${Uri.encodeComponent(year)}'
+      '&title=${Uri.encodeComponent(title)}&name=${Uri.encodeComponent(name)}',
+    );
+    final req = http.StreamedRequest('POST', uri);
+    req.headers['Content-Type'] = contentType;
+    req.headers['Content-Length'] = '${bytes.length}';
+    const chunk = 262144;
+    Future<void> pump() async {
+      var sent = 0;
+      for (var i = 0; i < bytes.length; i += chunk) {
+        final end = (i + chunk < bytes.length) ? i + chunk : bytes.length;
+        req.sink.add(bytes.sublist(i, end));
+        sent = end;
+        onProgress?.call(sent, bytes.length);
+      }
+      await req.sink.close();
+    }
+
+    pump();
+    final streamed = await req.send().timeout(const Duration(seconds: 1800));
+    final resp = await http.Response.fromStream(streamed);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// [요구] 배포용 자료 삭제.
+  Future<bool> eventDistDelete(
+    String year,
+    String title,
+    String name,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/event/dist/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'year': year, 'title': title, 'name': name}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j['ok'] == true;
+  }
+
+  /// [요구] 이 행사를 열람한 '인가자' 수 + 이름 목록.
+  Future<Map<String, dynamic>> eventCredentialViewers(
+    String year,
+    String title,
+  ) async {
+    final e = await eventGet(year, title);
+    return {
+      'count': (e['credViewers'] as num?)?.toInt() ?? 0,
+      'names': ((e['credViewerNames'] as List?) ?? []).map((x) => '$x').toList(),
+    };
+  }
+
   /// 행사 이름/연도 변경
   Future<Map<String, dynamic>> eventRename({
     required String year,
