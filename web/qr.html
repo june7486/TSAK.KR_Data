@@ -205,6 +205,25 @@
   .infobox .crow a.call{margin-left:auto;text-decoration:none;background:var(--fr-blue);
     color:#fff;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:9px;}
 
+  /* (요구) 행사 안내 글 — 하부에 접어두기/펼치기 */
+  .descbox{margin:14px 0 2px;border:1px solid #e7e1f2;background:#fbf9ff;
+    border-radius:14px;overflow:hidden;}
+  .desc-toggle{width:100%;display:flex;align-items:center;gap:8px;background:transparent;
+    border:0;padding:14px 15px;font-size:13.5px;font-weight:900;color:#5B2C8D;cursor:pointer;
+    font-family:inherit;}
+  .desc-toggle .dt-a{margin-left:auto;font-size:12px;font-weight:800;color:#6a5c95;
+    background:#efeafb;padding:5px 12px;border-radius:99px;}
+  .desc-body{padding:0 15px 15px;}
+  .desc-text{font-size:13.5px;line-height:1.75;color:#333;white-space:pre-wrap;
+    word-break:break-word;background:#fff;border:1px solid #eee;border-radius:11px;
+    padding:13px 14px;}
+  .desc-text a{color:var(--fr-blue);font-weight:700;word-break:break-all;}
+  .desc-actions{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .desc-link{margin-right:auto;text-decoration:none;background:#ffe812;color:#3c1e1e;
+    font-weight:800;font-size:12.5px;padding:8px 13px;border-radius:99px;}
+  .desc-close{margin-left:auto;padding:8px 16px;border:1px solid #ddd;background:#fff;
+    border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+
   /* (요구) 장소 클릭 → 카카오맵 */
   .place-link{margin-top:7px;}
   .place-link a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;
@@ -260,6 +279,8 @@
         <!-- (요구) 행사 안내자료는 아래 '별도 박스'로 분리 배치 -->
         <div class="infobox askDocsBox hide"></div>
         <div class="infobox askContactBox hide"></div>
+        <!-- (요구) 행사 안내 글 — 하부 접이식(펼치기/접어두기) -->
+        <div class="descbox hide" id="askDescBox"></div>
 
         <!-- (요구) 참가자 명부·게시판 글은 이 페이지에서 노출하지 않는다.
              등록을 마친 사람에게만 아래(결과 화면) '행사 게시판' 버튼이 나타난다. -->
@@ -377,6 +398,8 @@
 
         <!-- (요구) 행사 안내자료는 아래 '별도 박스'로 분리 배치 -->
         <div class="infobox askDocsBox hide"></div>
+        <!-- (요구) 행사 안내 글 — 하부 접이식(펼치기/접어두기) -->
+        <div class="descbox hide" id="formDescBox"></div>
       </div>
 
       <!-- 3) 결과 -->
@@ -535,12 +558,66 @@
     boxes.forEach(function(b){ b.innerHTML = h; b.classList.remove('hide'); });
   }
 
+  // (요구) 행사 안내 글 — 하부에 '접어두기/펼치기' 토글 박스로 노출.
+  //   '예' 화면(#askDescBox)과 신청서 화면(#formDescBox) 양쪽에 렌더한다.
+  //   기본은 접힌 상태(깔끔). 펼치면 안내 글 + 삭제 버튼(접어두기)이 나타난다.
+  function renderDesc(){
+    var boxes = document.querySelectorAll('.descbox');
+    var text = (ev && ev.desc) ? String(ev.desc).trim() : '';
+    boxes.forEach(function(b){
+      if (!text){ b.classList.add('hide'); b.innerHTML=''; return; }
+      b.classList.remove('hide');
+      b.innerHTML = '<button class="desc-toggle" type="button">'
+          + '<span class="dt-i">📝</span><span>행사 안내 글</span>'
+          + '<span class="dt-a" id="'+b.id+'-a">펼치기 ▾</span></button>'
+        + '<div class="desc-body hide">'
+          + '<div class="desc-text">' + linkify(esc(text)) + '</div>'
+          + '<div class="desc-actions">'
+            + '<a class="desc-link" href="'+placeHref()+'" target="_blank" rel="noopener">'
+            + '<span>📍</span> 카카오맵에서 보기</a>'
+            + '<button class="desc-close" type="button">접어두기 ▲</button>'
+          + '</div>'
+        + '</div>';
+      var box = b;
+      var tgl = box.querySelector('.desc-toggle');
+      var body = box.querySelector('.desc-body');
+      var arrow = box.querySelector('.dt-a');
+      var close = box.querySelector('.desc-close');
+      tgl.onclick = function(){
+        var open = !body.classList.contains('hide');
+        if (open){ body.classList.add('hide'); arrow.textContent = '펼치기 ▾'; }
+        else { body.classList.remove('hide'); arrow.textContent = '접어두기 ▴'; }
+      };
+      if (close) close.onclick = function(){
+        body.classList.add('hide'); arrow.textContent = '펼치기 ▾';
+      };
+    });
+  }
+
+  // 안내 글 안의 URL/전화번호를 클릭 가능하게 변환한다.
+  function linkify(s){
+    s = String(s || '');
+    s = s.replace(/(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }
+
+  // 장소 → 카카오맵 링크(좌표 있으면 정확 위치, 없으면 장소 검색).
+  function placeHref(){
+    var place = (ev && ev.place) ? String(ev.place).trim() : '';
+    var href = (ev && ev.mapUrl) ? String(ev.mapUrl) : '';
+    if (!href && place){
+      href = 'https://map.kakao.com/link/search/' + encodeURIComponent(place);
+    }
+    return href || 'https://map.kakao.com/';
+  }
+
   if (!year || !title){ show('vw-error'); $('errMsg').textContent='QR 링크에 행사 정보가 없습니다.'; return; }
 
   api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
     .then(function(r){
       if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
-      ev = r.j.event; renderHead(); renderDocs(); renderContact(); show('vw-ask');
+      ev = r.j.event; renderHead(); renderDocs(); renderContact(); renderDesc(); show('vw-ask');
     })
     .catch(function(){ renderHead(); show('vw-error'); });
 
