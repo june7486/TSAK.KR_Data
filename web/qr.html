@@ -216,10 +216,11 @@
       <div id="vw-ask" class="hide">
         <div class="q">이 행사에 참여하시겠습니까?</div>
         <div class="qsub">등록 후 행사 관리 명단에 참가자로 올라갑니다.</div>
+        <!-- (요구) 참가신청 페이지에서 배포용 자료·담당자 문의를 상단에 노출 -->
+        <div class="askDocsBox hide"></div>
+        <div class="askContactBox hide"></div>
         <button class="btn btn-yes" id="btnYes">예, 참여 신청하기</button>
         <button class="btn btn-no" id="btnNo">아니오</button>
-        <div id="askDocs" class="hide"></div>
-        <div id="askContact" class="hide"></div>
 
         <!-- (요구) 참가자 명부·게시판 글은 이 페이지에서 노출하지 않는다.
              등록을 마친 사람에게만 아래(결과 화면) '행사 게시판' 버튼이 나타난다. -->
@@ -229,6 +230,8 @@
       <div id="vw-kind" class="hide">
         <div class="q" style="font-size:15px;">참여 유형을 선택해 주세요</div>
         <div class="qsub">범스카우트 인가자 여부에 따라 등록 방법이 다릅니다.</div>
+        <!-- (요구) 신청서 화면에서도 배포용 자료를 상단에 노출 -->
+        <div class="askDocsBox hide"></div>
         <div class="seg">
           <button id="segReg" class="on">범스카우트 인가자<small>인가번호로 등록</small></button>
           <button id="segGuest">비인가자<small>이름·전화번호로 등록</small></button>
@@ -255,6 +258,22 @@
 
         <!-- (요구) 화살표 내비게이션은 삭제했다.
              화면 자체가 상하좌우로 스크롤되므로 별도 조작 없이 입력할 수 있다. -->
+
+        <!-- (요구) 직책 — 비버/컵/스카우트/벤쳐스카우트/로버스카우트/리더/일반/기타 -->
+        <div class="sec-h" id="secRole">직책</div>
+        <label>직책 (선택)</label>
+        <select id="inRole">
+          <option value="">선택해 주세요</option>
+          <option value="비버">비버 (B)</option>
+          <option value="컵">컵 (C)</option>
+          <option value="스카우트">스카우트 (S)</option>
+          <option value="벤쳐스카우트">벤쳐스카우트 (V)</option>
+          <option value="로버스카우트">로버스카우트 (R)</option>
+          <option value="리더">리더 (L)</option>
+          <option value="일반">일반</option>
+          <option value="기타">기타(직접입력)</option>
+        </select>
+        <input id="inRoleNote" class="hide" placeholder="직책을 직접 입력" style="margin-top:8px;">
 
         <!-- 추가 입력 사항 -->
         <div class="sec-h" id="secExtra">추가 입력 사항</div>
@@ -373,7 +392,7 @@
     if (ev && ev.year) bits.push('<b>'+ev.year+'</b>년');
     if (ev && ev.period) bits.push('기간 <b>'+esc(ev.period)+'</b>');
     if (ev && ev.place) bits.push('장소 <b>'+esc(ev.place)+'</b>');
-    if (ev) bits.push('<span class="chip">현재 참가자 '+ev.count+'명</span>');
+    // (요구) '현재 참가자 N명' 노출 제거 — 참가자 수는 표시하지 않는다.
     $('evMeta').innerHTML = bits.join(' · ');
   }
   function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(c){
@@ -384,9 +403,14 @@
     return (n/1048576).toFixed(1)+' MB'; }
 
   // (요구) 행사 소개 자료 다운로드 (복수 파일) — 참가신청 페이지.
+  //   '예' 화면과 신청서 화면 양쪽 모두(.askDocsBox)에 노출한다.
   function renderDocs(){
-    var box = $('askDocs'); var list = (ev && ev.docs) || [];
-    if (!list.length){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var boxes = document.querySelectorAll('.askDocsBox');
+    var list = (ev && ev.docs) || [];
+    if (!list.length){
+      boxes.forEach(function(b){ b.classList.add('hide'); b.innerHTML=''; });
+      return;
+    }
     var h = '<div class="dt">📎 행사 소개 자료 ('+list.length+'개)</div>';
     list.forEach(function(d){
       var u = '/api/event/dist?year='+encodeURIComponent(year)
@@ -397,13 +421,17 @@
          + '<span class="nm">'+esc(d.name)+'</span>'
          + '<span class="sz">'+fmtSize(d.size)+'</span></a>';
     });
-    box.innerHTML = h; box.classList.remove('hide');
+    boxes.forEach(function(b){ b.innerHTML = h; b.classList.remove('hide'); });
   }
 
   // (요구) 행사 담당자에게 문의 — 담당자 번호 노출(복수).
   function renderContact(){
-    var box = $('askContact'); var cs = (ev && ev.contacts) || [];
-    if (!cs.length){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var boxes = document.querySelectorAll('.askContactBox');
+    var cs = (ev && ev.contacts) || [];
+    if (!cs.length){
+      boxes.forEach(function(b){ b.classList.add('hide'); b.innerHTML=''; });
+      return;
+    }
     var h = '<div class="ct">☎️ 행사 담당자에게 문의하기</div>';
     cs.forEach(function(c){
       var tel = 'tel:'+encodeURIComponent(c.phone);
@@ -412,7 +440,7 @@
          + '<span>'+(c.phone||'')+'</span>'
          + '<a class="call" href="'+tel+'">📞 전화 걸기</a></div>';
     });
-    box.innerHTML = h; box.classList.remove('hide');
+    boxes.forEach(function(b){ b.innerHTML = h; b.classList.remove('hide'); });
   }
 
   if (!year || !title){ show('vw-error'); $('errMsg').textContent='QR 링크에 행사 정보가 없습니다.'; return; }
@@ -463,6 +491,11 @@
     if (this.value==='기타') $('inArriveNote').classList.remove('hide');
     else $('inArriveNote').classList.add('hide');
   };
+  // (요구) 직책 '기타' 직접입력 토글
+  $('inRole').onchange = function(){
+    if (this.value==='기타') $('inRoleNote').classList.remove('hide');
+    else $('inRoleNote').classList.add('hide');
+  };
 
   // (요구) 인가자 '기존 정보 불러오기' 기능은 개인정보 노출 위험으로 삭제했다.
   //   (비인가자 전화번호 조회도 같은 이유로 함께 제거 — 프리필은 서버가 처리.)
@@ -483,6 +516,10 @@
     body.arriveNote = ($('inArriveNote').value||'').trim();
     body.companion = ($('inCompanion').value||'').trim();
     body.message = ($('inMessage').value||'').trim();
+    // (요구) 직책 — 기타 선택 시 직접입력 값 사용.
+    var roleSel = $('inRole').value || '';
+    if (roleSel === '기타') roleSel = ($('inRoleNote').value||'').trim() || '기타';
+    body.roles = roleSel ? [roleSel] : [];
 
     if (kind==='credentialed'){
       var no = ($('inNo').value||'').replace(/[^0-9]/g,'');
@@ -531,8 +568,7 @@
       $('doneNote').classList.remove('hide');
     }
     show('vw-done');
-    // 헤더 참가자 수 갱신
-    if (ev){ ev.count = (ev.count||0)+1; renderHead(); }
+    // (요구) 참가자 수는 더 이상 헤더에 노출하지 않는다.
   }
 
   $('btnClose').onclick = function(){ try{ window.close(); }catch(e){} show('vw-thanks'); };
