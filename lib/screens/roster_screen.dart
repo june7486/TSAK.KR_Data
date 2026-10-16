@@ -1,19 +1,16 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
-import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../services/file_save.dart';
-import '../services/roster_service.dart';
+import '../services/output_formats.dart';
+import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/scroll_arrows.dart';
+import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_output_preview.dart';
+import '../widgets/tsak_table_options.dart';
 
 /// 행사 참가자 명단 — 앱 내부에서 열리는 MUJI풍 미리보기 + 출력/공유.
 /// (외부 브라우저로 튕기지 않아 뒤로가기가 정상 동작한다)
@@ -52,17 +49,67 @@ class _RosterScreenState extends State<RosterScreen> {
 
   String get _period => widget.period.isNotEmpty ? widget.period : widget.year;
 
-  Future<Uint8List> _pdfBytes() => RosterService.buildPdf(
-    title: widget.title,
-    period: _period,
-    place: widget.place,
-    desc: widget.desc,
-    attendees: widget.attendees,
-    year: widget.year,
-    showEventFee: _showEventFee,
-    showLifetime: _showLifetime,
-    showYearFee: _showYearFee,
-  );
+  /// 출력 옵션(글씨크기·줄간격·용지·출력내용선택·위치이동) — 명부출력과 동일 규칙.
+  TableOutputOptions? _outOpts;
+
+  /// [공용] 행사 정보(제목·부제·설명) + 참가자 표를 담은 출력 문서.
+  ///   · 제목 = 행사명 · 부제·설명 = 행사 정보(장소·기간·안내글) → 문서 상단 노출.
+  ///   · options = 글씨 크기·줄 간격·용지 방향·열 선택/순서(공용).
+  ///   옵션(선택/순서·글씨·줄간격·용지)은 `TsakTableDoc` 이 PDF·JPG·문서에 반영한다.
+  TsakTableDoc _doc() {
+    final cols = <String>[
+      '#',
+      '접속',
+      '인가번호',
+      '이름',
+      '소속(활동)',
+      '성별',
+      '연락처',
+      '메일',
+      '항목',
+    ];
+    if (_showEventFee) cols.add('참가비');
+    if (_showLifetime) cols.add('평생');
+    if (_showYearFee) {
+      cols.add('${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비');
+    }
+    final rows = <List<String>>[];
+    for (var i = 0; i < widget.attendees.length; i++) {
+      final a = widget.attendees[i];
+      final r = <String>[
+        '${i + 1}',
+        (a['visited'] == true) ? 'V' : '',
+        _num(a),
+        '${a['name'] ?? ''}',
+        _first(a, const ['unitText', 'unit']),
+        _first(a, const ['genderText', 'gender']),
+        _first(a, const ['phoneText', 'phone']),
+        _first(a, const ['emailText', 'email']),
+        _rolesText(a),
+      ];
+      if (_showEventFee) r.add(a['eventFee'] == true ? 'O' : '');
+      if (_showLifetime) r.add(a['lifetime'] == true ? 'O' : '');
+      if (_showYearFee) r.add(a['yearFee'] == true ? 'O' : '');
+      rows.add(r);
+    }
+    return TsakTableDoc(
+      title: widget.title,
+      subtitle: widget.place.isEmpty ? '참가자 명단' : widget.place,
+      description: widget.desc,
+      author: '한국범스카우트중앙회',
+      extra: {
+        '기간': _period,
+        '장소': widget.place,
+        '참가': '${widget.attendees.length}명',
+        '파일': '${widget.fileNameBase}.pdf',
+      },
+      columns: cols,
+      rows: rows,
+      summary: ['총 ${widget.attendees.length}명'],
+      footerLeft: '한국범스카우트중앙회 · 참가자 명단',
+      options: _outOpts,
+    );
+  }
 
   void _snack(String m) {
     if (!mounted) return;
@@ -72,271 +119,133 @@ class _RosterScreenState extends State<RosterScreen> {
   }
 
   // ---- 실제 인쇄 ----
-  Future<void> _print() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await _pdfBytes();
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
-    } catch (e) {
-      _snack('인쇄를 열 수 없습니다: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+  Future<void> _print() async => _run(TsakOutputFormat.pdf, justPrint: true);
 
   // ---- 공유 ----
-  Future<void> _share() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await _pdfBytes();
-      await Share.shareXFiles(
-        [
-          XFile.fromData(
-            bytes,
-            mimeType: 'application/pdf',
-            name: '${widget.fileNameBase}.pdf',
-          ),
-        ],
-        subject: '${widget.title} 참가자 명단',
-        text: '${widget.title} 참가자 명단 (${widget.attendees.length}명)',
-      );
-    } catch (e) {
-      _snack('공유할 수 없습니다: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+  Future<void> _share() async => _run(TsakOutputFormat.pdf, share: true);
 
-  // ---- 파일 저장 (포맷 선택) ----
+  // ---- 파일 저장/인쇄/공유 (다른 명부 출력과 동일한 공용 시트) ----
+  /// [요구] 참가자 명부도 관리자·은하·아타스 명부와 **동일한 출력 흐름**을 쓴다.
+  ///  · 형식: PDF → JPG → 엑셀 → PPT → 워드 → TXT.
+  ///  · 옵션: 글씨 크기·줄 간격·용지(가로/세로)·출력내용선택·위치이동.
+  ///  · 미리보기: 실시간(2줄 방지 포함)으로 확인 후 PDF·이미지·인쇄.
   Future<void> _saveAs() async {
-    final fmt = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '출력 파일 형식 선택',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-            _fmtTile(ctx, 'pdf', Icons.picture_as_pdf, 'PDF 문서', '인쇄·보관용 (권장)'),
-            _fmtTile(
-              ctx,
-              'jpg',
-              Icons.image_outlined,
-              '이미지 (JPG)',
-              '사진처럼 저장·공유',
-            ),
-            _fmtTile(ctx, 'word', Icons.description, 'Word 문서', '.doc (편집 가능)'),
-            _fmtTile(
-              ctx,
-              'excel',
-              Icons.table_chart,
-              'Excel 문서',
-              '.xls (표 데이터)',
-            ),
-            _fmtTile(ctx, 'txt', Icons.notes, '텍스트', '.txt (간단 목록)'),
-          ],
-        ),
-      ),
-    );
-    if (fmt == null) return;
-    await _doSave(fmt);
-  }
-
-  Widget _fmtTile(
-    BuildContext ctx,
-    String val,
-    IconData icon,
-    String t,
-    String sub,
-  ) {
-    return ListTile(
-      leading: Icon(icon, color: AppColors.purple),
-      title: Text(t, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(sub, style: const TextStyle(fontSize: 11.5)),
-      onTap: () => Navigator.pop(ctx, val),
+    if (widget.attendees.isEmpty) {
+      _snack('출력할 참가자가 없습니다');
+      return;
+    }
+    await showTsakOutputSheet(
+      context,
+      title: '참가자 명부 출력',
+      subtitle: '${widget.title} · ${widget.attendees.length}명',
+      onPick: (f) => _run(f),
+      onPrint: () => _run(TsakOutputFormat.pdf, justPrint: true),
+      onEmail: () => emailTsakTable(context, _doc()),
+      onShare: () => _run(TsakOutputFormat.pdf, share: true),
+      // 모든 포맷을 외부 프로그램(뷰어·인쇄·공유 시트)으로 내보내기.
+      onOpen: (f) => _run(f, open: true),
+      onShareFormat: (f) => _run(f, share: true),
+      // 출력내용선택 · 위치이동 · 줄간격 · 글씨 · 용지 옵션(명부출력과 동일 화면).
+      onOptions: _editOptions,
+      // 실시간 미리보기 — 글씨·줄간격·2줄방지·가로세로를 확인 후 출력.
+      onPreview: () => showTsakOutputPreview(context, doc: _doc()),
+      onShareImage: () => _run(TsakOutputFormat.jpg, share: true),
+      onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
   }
 
-  Future<void> _doSave(String fmt) async {
-    setState(() => _busy = true);
-    try {
-      final name = widget.fileNameBase; // {행사명}_참가자명부
-      Uint8List bytes;
-      String ext;
-      MimeType mime;
-      if (fmt == 'jpg') {
-        // (요구 #17) 명단출력 JPG — PDF 첫 페이지를 이미지로 변환.
-        bytes = await _jpgBytes();
-        ext = 'jpg';
-        mime = MimeType.jpeg;
-      } else if (fmt == 'pdf') {
-        bytes = await _pdfBytes();
-        ext = 'pdf';
-        mime = MimeType.pdf;
-      } else if (fmt == 'txt') {
-        bytes = Uint8List.fromList(
-          utf8.encode(
-            RosterService.buildText(
-              title: widget.title,
-              period: _period,
-              place: widget.place,
-              desc: widget.desc,
-              attendees: widget.attendees,
-              year: widget.year,
-              showEventFee: _showEventFee,
-              showLifetime: _showLifetime,
-              showYearFee: _showYearFee,
-            ),
-          ),
-        );
-        ext = 'txt';
-        mime = MimeType.text;
-      } else {
-        final content = RosterService.buildWord(
-          title: widget.title,
-          period: _period,
-          place: widget.place,
-          desc: widget.desc,
-          attendees: widget.attendees,
-          year: widget.year,
-          showEventFee: _showEventFee,
-          showLifetime: _showLifetime,
-          showYearFee: _showYearFee,
-        );
-        bytes = Uint8List.fromList(utf8.encode(content));
-        ext = fmt == 'excel' ? 'xls' : 'doc';
-        mime = fmt == 'excel'
-            ? MimeType.microsoftExcel
-            : MimeType.microsoftWord;
-      }
-      // (요구 #17) 저장위치 확인 창 — 기본값 안내 후 확인 시 저장.
-      //  'choose' 선택 시 저장 폴더/위치를 직접 고른다(PC·모든 모바일).
-      //  'share'  선택 시 OS 공유 시트(아이폰 「이미지 저장」·외부앱)로 내보낸다.
-      final choice = await _confirmSaveLocation(fmt);
-      if (choice == null) return;
-      final String fMime = ext == 'xls'
-          ? 'application/vnd.ms-excel'
-          : (ext == 'doc' ? 'application/msword' : 'image/jpeg');
-      final bool ok;
-      if (choice == 'share') {
-        final r = await shareBytes(
-          bytes: bytes,
-          name: name,
-          ext: ext,
-          mime: fMime,
-        );
-        ok = r == TsakShareResult.shared ||
-            r == TsakShareResult.downloaded ||
-            r == TsakShareResult.dismissed;
-      } else {
-        ok = await saveBytesChoose(
-          bytes: bytes,
-          name: name,
-          ext: ext,
-          mime: fMime,
-          mimeType: mime,
-          choose: choice == 'choose',
-        );
-      }
-      _snack(ok ? '저장했습니다 ($name.$ext)' : '저장이 취소되었습니다');
-    } catch (e) {
-      _snack('저장 실패: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+  /// 출력 옵션 편집 — 관리자·은하·아타스 명부출력과 **동일한 화면**.
+  Future<void> _editOptions() async {
+    final out = await showTsakTableOptions(
+      context,
+      title: '참가자 명부 출력 옵션',
+      subtitle: '출력할 항목을 고르고 순서를 옮기고, 줄 간격·글씨·용지를 정하세요.',
+      columns: _doc().columns,
+      initial: _outOpts,
+    );
+    if (out != null && mounted) {
+      setState(() => _outOpts = out);
+      _snack('출력 옵션을 저장했습니다 · ${out.badge}');
     }
   }
 
-  /// (요구 #17·저장 폴더 변경) 저장 위치 확인 창.
-  ///  반환: 'default'(기본 폴더) | 'choose'(폴더 직접 선택) | null(취소).
-  ///  · 스마트폰: OS 저장 대화상자가 위치를 고르게 한다.
-  ///  · PC(크롬·엣지): [폴더 선택] 시 저장 폴더·파일명을 직접 지정할 수 있다.
-  Future<String?> _confirmSaveLocation(String fmt) {
-    final isImage = fmt == 'jpg';
-    // PC(Chromium)·안드로이드·아이폰 모두 '위치 직접 선택' 노출.
-    final canPick = supportsLocationPicker;
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.save_alt, color: AppColors.purple, size: 30),
-        title: const Text('저장 위치'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isImage
-                  ? '스마트폰: 사진(갤러리) 폴더\nPC: 다운로드(Downloads) 폴더'
-                  : '스마트폰·PC: 다운로드(Downloads) 폴더',
-              style: const TextStyle(fontSize: 13.5, height: 1.5),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              canPick
-                  ? '* 기본값: 기기 기본 폴더(다운로드)\n'
-                        '  [위치 직접 선택]을 누르면 저장 위치·앱을 직접 지정합니다.\n'
-                        '  · PC: 폴더·파일명 지정\n'
-                        '  · 안드로이드·아이폰: 파일 앱·드라이브 등 선택\n'
-                        '  [공유·내보내기] → 카톡·메일·드라이브, 아이폰은 「이미지 저장」.'
-                  : '* 이 브라우저는 위치 선택을 지원하지 않습니다.\n'
-                        '  기본 저장 위치는 기기 기본(다운로드) 폴더입니다.\n'
-                        '  아이폰은 [공유·내보내기] → 「이미지 저장」을 쓰세요.',
-              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('취소'),
-          ),
-          if (canPick)
-            OutlinedButton.icon(
-              onPressed: () => Navigator.pop(ctx, 'choose'),
-              icon: const Icon(Icons.folder_open, size: 17),
-              label: const Text('위치 직접 선택'),
-            ),
-          // 아이폰·안드로이드: 다운로드 폴더가 없어 저장이 실패할 수 있다 →
-          //  공유 시트(아이폰 「이미지 저장」)로 내보내는 선택지를 제공한다.
-          if (supportsShareExport)
-            OutlinedButton.icon(
-              onPressed: () => Navigator.pop(ctx, 'share'),
-              icon: const Icon(Icons.ios_share, size: 17),
-              label: const Text('공유·내보내기'),
-            ),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
-            onPressed: () => Navigator.pop(ctx, 'default'),
-            icon: const Icon(Icons.save_alt, size: 17),
-            // 네이티브(스마트폰)에서는 file_saver 가 OS 저장 대화상자를 띄워
-            //  사용자가 위치(사진/다운로드 등)를 직접 고를 수 있다.
-            label: Text(isImage ? '사진으로 저장' : '기본 폴더에 저장'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 명단 PDF 첫 페이지를 JPG 바이트로 변환 (요구 #17).
-  Future<Uint8List> _jpgBytes() async {
-    final pdf = await _pdfBytes();
-    final raster = await Printing.raster(pdf, dpi: 150).first;
-    final rgba = raster.pixels; // RGBA8888
-    final im = img.Image.fromBytes(
-      width: raster.width,
-      height: raster.height,
-      bytes: rgba.buffer,
-      numChannels: 4,
-    );
-    return img.encodeJpg(im, quality: 88);
+  /// 공용 출력 실행 — 저장/열기/공유/인쇄(진행 대기창 포함).
+  ///   1) 저장 위치를 진행창 이전에 확정(공용 규칙) → 2) 진행창 → 파일 생성.
+  Future<void> _run(
+    TsakOutputFormat format, {
+    bool open = false,
+    bool share = false,
+    bool justPrint = false,
+  }) async {
+    final doc = _doc();
+    if (doc.rows.isEmpty) {
+      _snack('출력할 참가자가 없습니다');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      var choose = false;
+      if (!open && !share && !justPrint) {
+        final loc = await askTsakSaveLocation(
+          context,
+          info:
+              '${widget.title} · ${doc.rows.length}명 · ${format.label}',
+        );
+        if (loc == null) {
+          if (mounted) _snack('저장을 취소했습니다');
+          return;
+        }
+        choose = loc;
+      }
+      if (!mounted) return;
+      await runWithTsakProgress(
+        context,
+        title: justPrint ? '참가자 명부 프린트 준비' : '참가자 명부 ${format.label} 생성',
+        note: '${doc.rows.length}명 명부를 처리합니다.',
+        steps: justPrint
+            ? const ['문서 구성', '인쇄 창 열기']
+            : ['문서 구성', '${format.label} 생성', '파일 처리'],
+        task: (ctl) async {
+          ctl.update(progress: 0.15, message: '문서를 구성하는 중…', stepIndex: 0);
+          if (justPrint) {
+            ctl.update(progress: 0.6, message: '인쇄 창을 여는 중…', stepIndex: 1);
+            await printTsakTable(doc);
+            ctl.update(progress: 1.0, stepIndex: 2);
+            return;
+          }
+          ctl.update(
+            progress: 0.5,
+            message: '${format.label} 생성 중…',
+            stepIndex: 1,
+          );
+          if (open) {
+            final r = await openTsakTableChosen(context, doc, format);
+            ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+            if (mounted) {
+              _snack(tsakShareMessage(r, what: '참가자 명부 ${format.label}'));
+            }
+            return;
+          }
+          if (share) {
+            final r = await shareTsakTableChosen(context, doc, format);
+            ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+            if (mounted) {
+              _snack(tsakShareMessage(r, what: '참가자 명부 ${format.label}'));
+            }
+            return;
+          }
+          await saveTsakTableChosen(context, doc, format, choose: choose);
+          ctl.update(progress: 1.0, message: '완료', stepIndex: 2);
+        },
+      );
+      if (mounted && !open && !share) {
+        _snack(justPrint ? '인쇄 창을 열었습니다' : '${format.label} 저장을 시작했습니다');
+      }
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
