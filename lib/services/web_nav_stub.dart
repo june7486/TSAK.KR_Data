@@ -64,3 +64,13 @@ bool guardAutoReloadOnce() => true;
 
 /// 카카오 우편번호 — 웹 전용. 네이티브에서는 null 을 반환한다.
 Future<String?> openKakaoPostcode() async => null;
+
+/// 카카오 지도 위치 선택기 — 웹 전용. 네이티브에서는 null 을 반환한다.
+/// (안드로이드 등에서는 카카오맵 앱/브라우저로 열거나 직접 입력한다.)
+Future<Map<String, String>?> openKakaoMapPicker({
+  String key = '',
+  String title = '',
+  String place = '',
+  String lat = '',
+  String lng = '',
+}) async => null;

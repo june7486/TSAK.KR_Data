@@ -532,10 +532,13 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
       cfg = await nas.fetchConfig();
     } catch (_) {}
     final cur = '${cfg['kakaoRestKey'] ?? ''}';
+    final curJs = '${cfg['kakaoJsKey'] ?? ''}';
     final ctrl = TextEditingController(text: cur);
+    final jsCtrl = TextEditingController(text: curJs);
     final qCtrl = TextEditingController(text: '부산 송정해수욕장');
     bool busy = false;
     String? testMsg;
+    String? mapMsg;
 
     await showDialog<void>(
       context: context,
@@ -562,10 +565,11 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
-                      '• 필요한 키: [앱 키] 의 **REST API 키** 하나만 있으면 됩니다.\n'
-                      '• JavaScript 키 / 네이티브 앱 키는 지금 단계에서는 필요 없습니다.\n'
-                      '• 비워 두면 무료 지도(OpenStreetMap)로 자동 동작합니다.\n'
-                      '• 키를 넣으면 카카오 장소검색으로 더 정확해집니다.',
+                      '• [REST API 키] — 서버가 장소를 검색해 좌표를 얻습니다(필수).\n'
+                      '• [JavaScript 키] — 실제 카카오 지도를 화면에 띄웁니다(선택).\n'
+                      '   → 카카오 콘솔 > 플랫폼 키 > JavaScript SDK 도메인에\n'
+                      '      이 앱 주소(예: *.sandbox.novita.ai)를 등록해야 지도가 뜹니다.\n'
+                      '• 둘 다 비워도 무료 지도(OpenStreetMap)로 자동 동작합니다.',
                       style: TextStyle(fontSize: 11.5, height: 1.5),
                     ),
                   ),
@@ -573,8 +577,16 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   TextField(
                     controller: ctrl,
                     decoration: const InputDecoration(
-                      labelText: '카카오 REST API 키',
+                      labelText: '카카오 REST API 키 (좌표 검색)',
                       hintText: '예) ace1d21c418e583805a7eebaef8bb6...',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: jsCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '카카오 JavaScript 키 (지도 표시)',
+                      hintText: '예) 8c75a4f4f9510dd70bf5ba132995cd81',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -599,7 +611,10 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                                 });
                                 try {
                                   final saved = await nas.saveConfig(
-                                    {'kakaoRestKey': ctrl.text.trim()},
+                                    {
+                                      'kakaoRestKey': ctrl.text.trim(),
+                                      'kakaoJsKey': jsCtrl.text.trim(),
+                                    },
                                   );
                                   final items = await nas.geoSearch(
                                     qCtrl.text.trim(),
@@ -635,6 +650,53 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                       child: Text(testMsg!,
                           style: const TextStyle(fontSize: 12, height: 1.4)),
                     ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await nas.saveConfig(
+                            {'kakaoJsKey': jsCtrl.text.trim()});
+                          setSt(() {
+                            mapMsg = jsCtrl.text.trim().isEmpty
+                                ? 'JS 키가 비어 있어 지도는 OSM 미리보기로 표시됩니다.'
+                                : 'JS 키 저장됨 — 지도 이미지를 불러옵니다…';
+                          });
+                        },
+                        icon: const Icon(Icons.map, size: 16),
+                        label: const Text('JS 키 저장 + 지도 확인',
+                            style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  if (jsCtrl.text.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        nas.geoKakaoMapUrl('35.1798', '129.0750', w: 480, h: 200),
+                        height: 120,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            '지도 이미지를 불러올 수 없습니다. '
+                            '(JavaScript SDK 도메인에 이 앱 주소를 등록했는지 확인)',
+                            style: TextStyle(
+                                fontSize: 11, color: AppColors.taegeukRed),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (mapMsg != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(mapMsg!,
+                          style: const TextStyle(
+                              fontSize: 11.5, height: 1.4)),
+                    ),
                 ],
               ),
             ),
@@ -646,7 +708,10 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
             ),
             FilledButton(
               onPressed: () async {
-                await nas.saveConfig({'kakaoRestKey': ctrl.text.trim()});
+                await nas.saveConfig({
+                  'kakaoRestKey': ctrl.text.trim(),
+                  'kakaoJsKey': jsCtrl.text.trim(),
+                });
                 if (ctx.mounted) Navigator.pop(ctx);
                 _snack('지도 검색 키가 저장되었습니다');
               },
@@ -657,6 +722,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
       ),
     );
     ctrl.dispose();
+    jsCtrl.dispose();
     qCtrl.dispose();
   }
 

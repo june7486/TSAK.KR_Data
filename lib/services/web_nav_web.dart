@@ -458,6 +458,63 @@ void openUrlInIsolatedTab(String url) {
   } catch (_) {}
 }
 
+/// 카카오 지도 위치 선택기를 연다 (웹 전용).
+///
+/// 브리지 구현은 `web/index.html` 의 `window.tsakOpenKakaoMapPicker` 참고.
+/// 사용자가 지도에서 위치를 정하면 `{place, lat, lng, address}` 를,
+/// 취소/실패 시 null 을 반환한다.
+@JS('tsakOpenKakaoMapPicker')
+external void _tsakOpenKakaoMapPicker(JSObject opts, JSFunction cb);
+
+extension type _MapPick(JSObject _) implements JSObject {
+  external String? get place;
+  external String? get lat;
+  external String? get lng;
+  external String? get address;
+}
+
+Future<Map<String, String>?> openKakaoMapPicker({
+  String key = '',
+  String title = '',
+  String place = '',
+  String lat = '',
+  String lng = '',
+}) {
+  final completer = Completer<Map<String, String>?>();
+  try {
+    void done(JSAny? data) {
+      if (completer.isCompleted) return;
+      if (data == null || data.isUndefinedOrNull) {
+        completer.complete(null);
+        return;
+      }
+      try {
+        final o = data as _MapPick;
+        completer.complete({
+          'place': o.place ?? '',
+          'lat': o.lat ?? '',
+          'lng': o.lng ?? '',
+          'address': o.address ?? '',
+        });
+      } catch (_) {
+        completer.complete(null);
+      }
+    }
+
+    final opts = <String, Object?>{
+      'key': key,
+      'title': title,
+      'place': place,
+      'lat': lat,
+      'lng': lng,
+    }.jsify()! as JSObject;
+    _tsakOpenKakaoMapPicker(opts, done.toJS);
+  } catch (_) {
+    if (!completer.isCompleted) completer.complete(null);
+  }
+  return completer.future;
+}
+
 /// 브라우저 새 탭/새 창으로 URL을 연다. (외부 바로가기용)
 void openUrlInNewTab(String url) {
   try {

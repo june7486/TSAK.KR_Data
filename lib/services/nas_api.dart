@@ -648,6 +648,21 @@ class NasApi {
       '$_base/api/geo/staticmap?lat=${Uri.encodeComponent(lat)}'
       '&lng=${Uri.encodeComponent(lng)}&z=$zoom&w=$w&h=$h';
 
+  /// [요구] 카카오 지도 정적 이미지 URL (JavaScript 키 필요).
+  ///   앱에서 바로 표시할 수 있는 <img> 용 URL.
+  String geoKakaoMapUrl(String lat, String lng,
+          {int level = 3, int w = 640, int h = 320}) =>
+      '$_base/api/geo/kakaomap?lat=${Uri.encodeComponent(lat)}'
+      '&lng=${Uri.encodeComponent(lng)}&level=$level&w=$w&h=$h';
+
+  /// [요구] 지도 임베드용 공개 설정(카카오 JS 키). QR/참가신청 페이지에서 사용.
+  Future<Map<String, dynamic>> geoConfig() async {
+    final r = await http
+        .get(_uri('/api/geo/config'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 15));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 선택 계정 완전 삭제(마스터 전용). [corps] 로 소속 명단을 지정한다.
   Future<Map<String, dynamic>> deleteMembers(
     List<String> ids, {

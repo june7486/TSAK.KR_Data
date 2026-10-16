@@ -169,6 +169,185 @@
     };
   </script>
   <script>
+    // 카카오 지도 위치 선택 브리지 (행사기획 → 위치 지정).
+    //  - Flutter(Dart)에서 window.tsakOpenKakaoMapPicker(opts, cb) 를 호출하면
+    //    전체화면 지도를 열고, 사용자가 드래그/검색으로 위치를 정한 뒤
+    //    cb({place, lat, lng, address}) 를 돌려준다. 취소 시 cb(null).
+    //  - opts = {key, title, place, lat, lng}. key = JavaScript 앱키.
+    window.tsakOpenKakaoMapPicker = function (opts, cb) {
+      opts = opts || {};
+      var key = opts.key || '';
+      var title = opts.title || '';
+      var seedPlace = opts.place || '';
+      var seedLat = parseFloat(opts.lat);
+      var seedLng = parseFloat(opts.lng);
+
+      function done(v) {
+        try { cb(v); } catch (e) {}
+      }
+      if (!key) { done(null); return; }
+
+      function loadSdk(cb2, fail) {
+        if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
+          cb2(); return;
+        }
+        var s = document.createElement('script');
+        s.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey='
+          + encodeURIComponent(key) + '&libraries=services';
+        s.onload = function () { cb2(); };
+        s.onerror = function () { fail(); };
+        document.head.appendChild(s);
+      }
+
+      function build() {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#fff;'
+          + 'display:flex;flex-direction:column;'
+          + "font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;";
+
+        var head = document.createElement('div');
+        head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 12px;'
+          + 'background:#5B2C8D;color:#fff;flex:0 0 auto;';
+        head.innerHTML = '<b style="font-size:15px">🗺️ 지도에서 위치 선택</b>'
+          + '<span style="flex:1"></span>'
+          + '<button id="tkp-close" style="background:transparent;border:0;color:#fff;'
+          + 'font-size:20px;line-height:1;cursor:pointer">✕</button>';
+
+        var bar = document.createElement('div');
+        bar.style.cssText = 'display:flex;gap:6px;padding:8px 10px;background:#faf8ff;flex:0 0 auto;';
+        bar.innerHTML = '<input id="tkp-q" placeholder="장소·주소 검색 (예: 부산 송정해수욕장)" '
+          + 'style="flex:1;padding:10px 12px;border:1px solid #ddd;border-radius:9px;font-size:14px">'
+          + '<button id="tkp-go" style="padding:10px 16px;border:0;border-radius:9px;'
+          + 'background:#5B2C8D;color:#fff;font-weight:800;font-size:14px;cursor:pointer">검색</button>';
+
+        var mapDiv = document.createElement('div');
+        mapDiv.id = 'tkp-map';
+        mapDiv.style.cssText = 'flex:1 1 auto;min-height:200px;position:relative;';
+
+        var pin = document.createElement('div');
+        pin.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);'
+          + 'font-size:34px;pointer-events:none;z-index:5;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))';
+        pin.textContent = '📍';
+        mapDiv.appendChild(pin);
+
+        var info = document.createElement('div');
+        info.id = 'tkp-info';
+        info.style.cssText = 'flex:0 0 auto;padding:10px 12px;background:#fff;border-top:1px solid #eee;'
+          + 'font-size:13px;color:#333;line-height:1.45;min-height:44px;';
+
+        var foot = document.createElement('div');
+        foot.style.cssText = 'display:flex;gap:8px;padding:10px 12px;background:#fff;flex:0 0 auto;';
+        foot.innerHTML = '<button id="tkp-cancel" style="flex:1;padding:12px;border:1px solid #ddd;'
+          + 'border-radius:10px;background:#fff;font-size:14px;cursor:pointer">취소</button>'
+          + '<button id="tkp-ok" style="flex:2;padding:12px;border:0;border-radius:10px;'
+          + 'background:#5B2C8D;color:#fff;font-weight:800;font-size:14px;cursor:pointer">이 위치로 지정</button>';
+
+        wrap.appendChild(head);
+        wrap.appendChild(bar);
+        wrap.appendChild(mapDiv);
+        wrap.appendChild(info);
+        wrap.appendChild(foot);
+        document.body.appendChild(wrap);
+
+        var center = new kakao.maps.LatLng(
+          isFinite(seedLat) ? seedLat : 37.5665,
+          isFinite(seedLng) ? seedLng : 126.9780
+        );
+        var map = new kakao.maps.Map(mapDiv, { center: center, level: 3 });
+        var marker = new kakao.maps.Marker({ position: center, map: map });
+        marker.setMap(map);
+
+        var cur = {
+          place: seedPlace || '', lat: center.getLat(),
+          lng: center.getLng(), address: ''
+        };
+        function setInfo() {
+          $id('tkp-info').innerHTML = '<b>' + esc(cur.place || '(이름 없음)') + '</b>'
+            + '<br><span style="color:#777">' + esc(cur.address || '') + '</span>'
+            + ' <span style="color:#aaa;font-size:11.5px">('
+            + cur.lat.toFixed(5) + ', ' + cur.lng.toFixed(5) + ')</span>';
+        }
+        function $id(x){ return document.getElementById(x); }
+        function esc(s){ return String(s||'').replace(/[&<>"]/g,function(c){
+          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+        function updateFromCenter() {
+          var c = map.getCenter();
+          cur.lat = c.getLat(); cur.lng = c.getLng();
+          marker.setPosition(c);
+          setInfo();
+        }
+        kakao.maps.event.addListener(map, 'center_changed', function () {
+          var c = map.getCenter();
+          cur.lat = c.getLat(); cur.lng = c.getLng();
+          marker.setPosition(c);
+        });
+        kakao.maps.event.addListener(map, 'idle', function () {
+          var c = map.getCenter();
+          cur.lat = c.getLat(); cur.lng = c.getLng();
+          marker.setPosition(c);
+          if (cur._addrDirty) { cur._addrDirty = false; }
+          setInfo();
+        });
+        setInfo();
+
+        function applyPlace(p) {
+          var pos = new kakao.maps.LatLng(parseFloat(p.y), parseFloat(p.x));
+          map.setCenter(pos);
+          cur.place = p.place_name || p.address_name || cur.place;
+          cur.address = p.road_address_name || p.address_name || '';
+          cur.lat = parseFloat(p.y); cur.lng = parseFloat(p.x);
+          marker.setPosition(pos);
+          setInfo();
+        }
+        function search() {
+          var q = ($id('tkp-q').value || '').trim();
+          if (!q) return;
+          $id('tkp-info').innerHTML = '<span style="color:#777">검색 중…</span>';
+          var ps = new kakao.maps.services.Places();
+          ps.keywordSearch(q, function (data, status) {
+            if (status === kakao.maps.services.Status.OK && data && data[0]) {
+              applyPlace(data[0]); return;
+            }
+            // 폴백: 주소 지오코딩
+            var gc = new kakao.maps.services.Geocoder();
+            gc.addressSearch(q, function (res, st2) {
+              if (st2 === kakao.maps.services.Status.OK && res && res[0]) {
+                applyPlace({
+                  x: res[0].x, y: res[0].y,
+                  place_name: q,
+                  address_name: res[0].address_name || '',
+                  road_address_name: (res[0].road_address && res[0].road_address.address_name) || ''
+                });
+              } else {
+                setInfo();
+                alert('검색 결과가 없습니다. 다른 검색어로 시도해 보세요.');
+              }
+            });
+          });
+        }
+
+        $id('tkp-go').onclick = search;
+        $id('tkp-q').addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') search();
+        });
+        $id('tkp-cancel').onclick = function () {
+          try { wrap.remove(); } catch (e) {}
+          done(null);
+        };
+        $id('tkp-close').onclick = $id('tkp-cancel').onclick;
+        $id('tkp-ok').onclick = function () {
+          var v = { place: cur.place || '', lat: cur.lat.toFixed(6),
+                    lng: cur.lng.toFixed(6), address: cur.address || '' };
+          try { wrap.remove(); } catch (e) {}
+          done(v);
+        };
+      }
+
+      loadSdk(build, function () { done(null); });
+    };
+  </script>
+  <script>
     // Flutter 엔진 첫 프레임 후 스플래시 제거
     (function () {
       var done = false;

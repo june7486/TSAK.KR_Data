@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
+import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 
 /// 행사 생성/수정 폼 다이얼로그의 결과.
@@ -687,9 +688,39 @@ class _EventFormDialogState extends State<EventFormDialog> {
   }
 
   /// [요구] 행사기획 시 지도에서 위치를 '검색하면 곧바로 입력'한다.
-  ///   검색어 → 결과 목록(주소/장소 + 좌표) → 탭하면 좌표가 즉시 저장되고
-  ///   정적지도 미리보기로 위치를 눈으로 확인한다.
+  ///   · 웹 + 카카오 JS 키가 있으면 → **실제 카카오맵(드래그·검색)** 선택기.
+  ///   · 그 외 → 무료 지오코딩 검색 목록(좌표 즉시 입력) + 미리보기.
   Future<void> _searchOnMap() async {
+    final nas = context.read<NasApi>();
+    if (isWebRuntime) {
+      final cfg = await nas.geoConfig();
+      final jsKey = '${cfg['kakaoJsKey'] ?? ''}'.trim();
+      if (jsKey.isNotEmpty) {
+        final picked = await openKakaoMapPicker(
+          key: jsKey,
+          title: _title.text.trim(),
+          place: _place.text.trim(),
+          lat: _lat,
+          lng: _lng,
+        );
+        if (picked != null) {
+          if (!mounted) return;
+          setState(() {
+            _lat = picked['lat'] ?? '';
+            _lng = picked['lng'] ?? '';
+            final nm = (picked['place'] ?? '').trim();
+            if (nm.isNotEmpty) _place.text = nm;
+          });
+          _toast('지도 위치가 지정되었습니다');
+        }
+        return;
+      }
+    }
+    await _searchOnMapFallback();
+  }
+
+  /// 무료 지오코딩 기반 검색(카카오 JS 키가 없거나 네이티브일 때).
+  Future<void> _searchOnMapFallback() async {
     final qCtrl = TextEditingController(
       text: [_title.text.trim(), _place.text.trim()]
           .where((s) => s.isNotEmpty)
@@ -699,7 +730,6 @@ class _EventFormDialogState extends State<EventFormDialog> {
     bool loading = false;
     String? err;
     final nas = context.read<NasApi>();
-
     Future<void> doSearch(StateSetter setSt) async {
       final q = qCtrl.text.trim();
       if (q.length < 2) return;
@@ -845,33 +875,46 @@ class _EventFormDialogState extends State<EventFormDialog> {
     });
   }
 
-  /// (요구) 검색 위치 정적지도 미리보기.
+  /// (요구) 검색 위치 지도 미리보기.
+  ///   카카오 지도(JS 키 등록 시) → 실패하면 무료 OSM 지도로 자동 폴백.
   Widget _mapPreview(String lat, String lng) {
     if (lat.isEmpty || lng.isEmpty) return const SizedBox.shrink();
-    final url = context.read<NasApi>().geoStaticMapUrl(lat, lng, w: 520, h: 240);
+    final nas = context.read<NasApi>();
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Image.network(
-        url,
+        nas.geoKakaoMapUrl(lat, lng, w: 520, h: 240),
         height: 160,
         width: double.infinity,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-          height: 60,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFFFEE500).withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(8),
+        errorBuilder: (_, __, ___) => Image.network(
+          nas.geoStaticMapUrl(lat, lng, w: 520, h: 240),
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            height: 60,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEE500).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text('지도 미리보기를 불러올 수 없습니다',
+                style: TextStyle(fontSize: 11, color: AppColors.textGray)),
           ),
-          child: const Text('지도 미리보기 · 미리보기를 불러올 수 없습니다',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
         ),
       ),
     );
   }
 
-  static String _fmtSize(int n) {
-    if (n < 1024) return '$n B';
+  void _toast(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  static String _fmtSize(int n) {    if (n < 1024) return '$n B';
     if (n < 1048576) return '${(n / 1024).toStringAsFixed(1)} KB';
     return '${(n / 1048576).toStringAsFixed(1)} MB';
   }
