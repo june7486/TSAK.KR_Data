@@ -280,6 +280,12 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
               ]),
               _section('앱 · 문의', [
                 _tile(
+                  '지도 검색 키 (카카오)',
+                  Icons.map_outlined,
+                  AppColors.scoutGreen,
+                  () => _editMapKeys(),
+                ),
+                _tile(
                   '문의글 확인 · 답변',
                   Icons.help_outline,
                   AppColors.taegeukBlue,
@@ -510,6 +516,148 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
   void _editHomeNotice() {
     _pushTab(0);
     _snack('상품관리 탭 상단의 공지 편집기에서 첫 화면 표시글을 변경할 수 있습니다');
+  }
+
+  /// (요구) 지도 위치검색에 쓰는 카카오 REST API 키를 등록·시험한다.
+  ///
+  ///  · 카카오 developers > 내 애플리케이션 > [앱 키] 에는 3종류가 있다:
+  ///    REST API 키 / JavaScript 키 / 네이티브 앱 키.
+  ///  · 서버에서 '장소 검색(좌표 얻기)'을 하려면 **REST API 키** 하나만 있으면 된다.
+  ///    (JavaScript 키는 웹 지도 임베드, 네이티브 앱 키는 안드로이드/iOS SDK용)
+  ///  · 키를 넣고 [저장+시험] 을 누르면 곧바로 검색을 시험해 결과 개수를 보여준다.
+  Future<void> _editMapKeys() async {
+    final nas = _nas;
+    Map<String, dynamic> cfg = {};
+    try {
+      cfg = await nas.fetchConfig();
+    } catch (_) {}
+    final cur = '${cfg['kakaoRestKey'] ?? ''}';
+    final ctrl = TextEditingController(text: cur);
+    final qCtrl = TextEditingController(text: '부산 송정해수욕장');
+    bool busy = false;
+    String? testMsg;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.map_outlined, size: 20, color: AppColors.scoutGreen),
+              SizedBox(width: 6),
+              Text('지도 검색 키 (카카오)', style: TextStyle(fontSize: 16)),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F7F3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '• 필요한 키: [앱 키] 의 **REST API 키** 하나만 있으면 됩니다.\n'
+                      '• JavaScript 키 / 네이티브 앱 키는 지금 단계에서는 필요 없습니다.\n'
+                      '• 비워 두면 무료 지도(OpenStreetMap)로 자동 동작합니다.\n'
+                      '• 키를 넣으면 카카오 장소검색으로 더 정확해집니다.',
+                      style: TextStyle(fontSize: 11.5, height: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: ctrl,
+                    decoration: const InputDecoration(
+                      labelText: '카카오 REST API 키',
+                      hintText: '예) ace1d21c418e583805a7eebaef8bb6...',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: qCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '시험 검색어',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                setSt(() {
+                                  busy = true;
+                                  testMsg = null;
+                                });
+                                try {
+                                  final saved = await nas.saveConfig(
+                                    {'kakaoRestKey': ctrl.text.trim()},
+                                  );
+                                  final items = await nas.geoSearch(
+                                    qCtrl.text.trim(),
+                                    limit: 5,
+                                  );
+                                  setSt(() {
+                                    busy = false;
+                                    testMsg =
+                                        '저장됨 ${saved['ok'] == true ? '✓' : '?'} · '
+                                        '검색결과 ${items.length}건'
+                                        '${items.isNotEmpty ? '\n· ${items.first['label']}' : ' (키/활성화를 확인하세요)'}';
+                                  });
+                                } catch (e) {
+                                  setSt(() {
+                                    busy = false;
+                                    testMsg = '오류: $e';
+                                  });
+                                }
+                              },
+                        icon: const Icon(Icons.check_circle_outline, size: 16),
+                        label: const Text('저장 + 시험', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  if (busy)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (testMsg != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(testMsg!,
+                          style: const TextStyle(fontSize: 12, height: 1.4)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('닫기'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await nas.saveConfig({'kakaoRestKey': ctrl.text.trim()});
+                if (ctx.mounted) Navigator.pop(ctx);
+                _snack('지도 검색 키가 저장되었습니다');
+              },
+              child: const Text('저장'),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
+    qCtrl.dispose();
   }
 
   void _showVersion() {
