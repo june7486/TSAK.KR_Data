@@ -63,6 +63,7 @@ class Member {
     List<String>? pendingEventNames,
     Map<String, String>? fieldPerms,
     List<Map<String, dynamic>>? donations,
+    List<Map<String, dynamic>>? infoHistory,
     this.sample = false,
     this.nameVisible = true,
     this.gender = '',
@@ -76,7 +77,8 @@ class Member {
        eventAttend = eventAttend ?? <String, bool>{},
        pendingEventNames = pendingEventNames ?? <String>[],
        fieldPerms = fieldPerms ?? <String, String>{},
-       donations = donations ?? <Map<String, dynamic>>[];
+       donations = donations ?? <Map<String, dynamic>>[],
+       infoHistory = infoHistory ?? <Map<String, dynamic>>[];
 
   /// 내부 고유 ID
   String id;
@@ -223,6 +225,10 @@ class Member {
   /// 후원금·후원물품 이력 — 수동입력 후 관리자·마스터 승인 시 기록된다.
   ///  각 항목: {kind:'donation'|'supply', item, amount, date, note, status, ...}
   List<Map<String, dynamic>> donations;
+
+  /// (요구) 개인정보 히스토리 — 참가신청 등으로 갱신된 email/phone/address 이력.
+  ///  각 항목: {at:'YYYY-MM-DD HH:MM', by:'행사명', email?, phone?, address?}
+  List<Map<String, dynamic>> infoHistory;
 
   /// 후원금 합계(승인된 금액 합).
   int get donationTotal => donations
@@ -454,6 +460,7 @@ class Member {
     'mentees': mentees,
     'children': children,
     'donations': donations,
+    'infoHistory': infoHistory,
     'linkApprovalStatus': linkApprovalStatus,
     'linkRequestSource': linkRequestSource,
     'linkRequestedAt': linkRequestedAt,
@@ -549,6 +556,16 @@ class Member {
         }
         return out;
       }(),
+      infoHistory: () {
+        final out = <Map<String, dynamic>>[];
+        final v = map['infoHistory'];
+        if (v is List) {
+          for (final e in v) {
+            if (e is Map) out.add(e.cast<String, dynamic>());
+          }
+        }
+        return out;
+      }(),
       linkApprovalStatus: '${map['linkApprovalStatus'] ?? ''}',
       linkRequestSource: '${map['linkRequestSource'] ?? ''}',
       linkRequestedAt: '${map['linkRequestedAt'] ?? ''}',
@@ -581,6 +598,7 @@ class Member {
   }
 
   Member copyWith({
+    List<Map<String, dynamic>>? infoHistory,
     String? number,
     String? name,
     String? nameEn,
@@ -688,6 +706,7 @@ class Member {
       mentees: mentees ?? List<String>.from(this.mentees),
       children: children ?? List<String>.from(this.children),
       donations: donations ?? List<Map<String, dynamic>>.from(this.donations),
+      infoHistory: infoHistory ?? this.infoHistory,
       linkApprovalStatus: linkApprovalStatus ?? this.linkApprovalStatus,
       linkRequestSource: linkRequestSource ?? this.linkRequestSource,
       linkRequestedAt: linkRequestedAt ?? this.linkRequestedAt,

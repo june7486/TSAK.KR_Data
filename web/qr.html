@@ -185,6 +185,40 @@
   .contact .crow .cn{font-weight:800;color:var(--ink);}
   .contact .crow a.call{margin-left:auto;text-decoration:none;background:var(--fr-blue);
     color:#fff;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:9px;}
+
+  /* (요구) 행사 안내자료 — 아래 '별도 박스' */
+  .infobox{margin:14px 0 2px;border:1px solid #dbe4f6;background:#f6f9ff;
+    border-radius:14px;padding:13px 14px;}
+  .infobox .dt{font-size:12.5px;font-weight:900;color:var(--fr-blue);margin-bottom:8px;
+    display:flex;align-items:center;gap:6px;}
+  .infobox a.dl{display:flex;align-items:center;gap:8px;text-decoration:none;
+    padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#fff;
+    margin-bottom:6px;color:var(--ink);font-size:13.5px;font-weight:700;}
+  .infobox a.dl .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;}
+  .infobox a.dl .sz{font-size:11px;color:#9aa1b2;font-weight:600;flex:0 0 auto;}
+  .infobox a.dl .ic{color:var(--fr-blue);font-weight:900;flex:0 0 auto;}
+  .infobox .ct{font-size:12.5px;font-weight:900;color:#8a6d1f;margin-bottom:8px;
+    display:flex;align-items:center;gap:6px;}
+  .infobox .crow{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13.5px;}
+  .infobox .crow .cn{font-weight:800;color:var(--ink);}
+  .infobox .crow a.call{margin-left:auto;text-decoration:none;background:var(--fr-blue);
+    color:#fff;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:9px;}
+
+  /* (요구) 장소 클릭 → 카카오맵 */
+  .place-link{margin-top:7px;}
+  .place-link a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;
+    background:#ffe812;color:#3c1e1e;font-weight:900;font-size:12.5px;
+    padding:6px 12px;border-radius:99px;}
+  .place-link a .pin{font-size:13px;}
+
+  /* (요구) 참가신청 여부 상단 노출 */
+  .apply-state{margin-top:8px;display:inline-flex;align-items:center;gap:6px;
+    font-size:12.5px;font-weight:900;padding:6px 12px;border-radius:99px;}
+  .apply-state.done{background:rgba(30,122,70,.13);color:#1E7A46;
+    border:1px solid rgba(30,122,70,.35);}
+  .apply-state.none{background:rgba(214,40,40,.10);color:#D62828;
+    border:1px solid rgba(214,40,40,.30);}
 </style>
 </head>
 <body>
@@ -196,6 +230,9 @@
       <div class="brand">Tiger <span class="red">Scout</span> Association of Korea</div>
       <div class="event-title" id="evTitle">행사</div>
       <div class="event-meta" id="evMeta"></div>
+      <div class="place-link hide" id="placeLink"></div>
+      <!-- (요구) 참가신청 여부를 상위에 노출 -->
+      <div class="apply-state hide" id="applyState"></div>
     </div>
 
     <div class="body">
@@ -216,11 +253,12 @@
       <div id="vw-ask" class="hide">
         <div class="q">이 행사에 참여하시겠습니까?</div>
         <div class="qsub">등록 후 행사 관리 명단에 참가자로 올라갑니다.</div>
-        <!-- (요구) 참가신청 페이지에서 배포용 자료·담당자 문의를 상단에 노출 -->
-        <div class="askDocsBox hide"></div>
-        <div class="askContactBox hide"></div>
         <button class="btn btn-yes" id="btnYes">예, 참여 신청하기</button>
         <button class="btn btn-no" id="btnNo">아니오</button>
+
+        <!-- (요구) 행사 안내자료는 아래 '별도 박스'로 분리 배치 -->
+        <div class="infobox askDocsBox hide"></div>
+        <div class="infobox askContactBox hide"></div>
 
         <!-- (요구) 참가자 명부·게시판 글은 이 페이지에서 노출하지 않는다.
              등록을 마친 사람에게만 아래(결과 화면) '행사 게시판' 버튼이 나타난다. -->
@@ -230,8 +268,6 @@
       <div id="vw-kind" class="hide">
         <div class="q" style="font-size:15px;">참여 유형을 선택해 주세요</div>
         <div class="qsub">범스카우트 인가자 여부에 따라 등록 방법이 다릅니다.</div>
-        <!-- (요구) 신청서 화면에서도 배포용 자료를 상단에 노출 -->
-        <div class="askDocsBox hide"></div>
         <div class="seg">
           <button id="segReg" class="on">범스카우트 인가자<small>인가번호로 등록</small></button>
           <button id="segGuest">비인가자<small>이름·전화번호로 등록</small></button>
@@ -305,6 +341,16 @@
         </select>
         <input id="inArriveNote" class="hide" placeholder="도착 예정 시간을 직접 입력 (예: 1일 14:30)" style="margin-top:8px;">
 
+        <!-- (요구) 현재 주소 — 회원정보(개인카드)에 업데이트 -->
+        <label>현재 주소 (선택 · 회원정보에 반영)</label>
+        <input id="inAddress" placeholder="도로명 주소" autocomplete="street-address">
+
+        <!-- (요구) 출발장소 및 예상 소요시간 -->
+        <label>출발 장소 (선택)</label>
+        <input id="inFrom" placeholder="예: 인천 송도" autocomplete="off">
+        <label>예상 소요시간 (선택)</label>
+        <input id="inEta" placeholder="예: 3시간 30분" autocomplete="off">
+
         <label>동행자 이름 (선택)</label>
         <input id="inCompanion" placeholder="함께 오는 분 이름 (여러 명은 쉼표로)" autocomplete="off">
 
@@ -327,6 +373,9 @@
           <div class="spinner" style="margin:6px auto 4px;"></div>
           <div class="hint">등록 중입니다… 잠시만 기다려 주세요.</div>
         </div>
+
+        <!-- (요구) 행사 안내자료는 아래 '별도 박스'로 분리 배치 -->
+        <div class="infobox askDocsBox hide"></div>
       </div>
 
       <!-- 3) 결과 -->
@@ -391,10 +440,42 @@
     var bits = [];
     if (ev && ev.year) bits.push('<b>'+ev.year+'</b>년');
     if (ev && ev.period) bits.push('기간 <b>'+esc(ev.period)+'</b>');
+    // (요구) 장소는 아래 카카오맵 링크로 별도 노출하므로 메타에는 위치만 유지.
     if (ev && ev.place) bits.push('장소 <b>'+esc(ev.place)+'</b>');
     // (요구) '현재 참가자 N명' 노출 제거 — 참가자 수는 표시하지 않는다.
     $('evMeta').innerHTML = bits.join(' · ');
+    renderPlaceLink();
+    renderApplyState();
   }
+
+  // (요구) 장소를 클릭하면 카카오맵에서 그 위치를 연다.
+  function renderPlaceLink(){
+    var box = $('placeLink'); if (!box) return;
+    var place = (ev && ev.place) ? String(ev.place).trim() : '';
+    if (!place){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var q = (ev && ev.title ? (ev.title + ' ' + place) : place);
+    var href = 'https://map.kakao.com/link/search/' + encodeURIComponent(q);
+    box.innerHTML = '<a href="'+href+'" target="_blank" rel="noopener">'
+      + '<span class="pin">📍</span> '+esc(place)+' 카카오맵에서 보기</a>';
+    box.classList.remove('hide');
+  }
+
+  // (요구) 참가신청 여부를 상단에 노출.
+  function renderApplyState(){
+    var box = $('applyState'); if (!box) return;
+    box.className = 'apply-state none';
+    box.textContent = '🕐 아직 참가신청 전입니다';
+    box.classList.remove('hide');
+  }
+
+  function markApplied(evt){
+    var box = $('applyState'); if (!box) return;
+    box.className = 'apply-state done';
+    box.textContent = '✅ 참가신청 완료'
+      + (evt && evt.name ? (' · ' + evt.name + ' 님') : '');
+    box.classList.remove('hide');
+  }
+
   function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
   function fmtSize(n){ n = Number(n)||0;
@@ -516,6 +597,10 @@
     body.arriveNote = ($('inArriveNote').value||'').trim();
     body.companion = ($('inCompanion').value||'').trim();
     body.message = ($('inMessage').value||'').trim();
+    // (요구) 현재 주소·출발 장소·예상 소요시간
+    body.address = ($('inAddress').value||'').trim();
+    body.from = ($('inFrom').value||'').trim();
+    body.eta = ($('inEta').value||'').trim();
     // (요구) 직책 — 기타 선택 시 직접입력 값 사용.
     var roleSel = $('inRole').value || '';
     if (roleSel === '기타') roleSel = ($('inRoleNote').value||'').trim() || '기타';
@@ -568,7 +653,8 @@
       $('doneNote').classList.remove('hide');
     }
     show('vw-done');
-    // (요구) 참가자 수는 더 이상 헤더에 노출하지 않는다.
+    // (요구) 참가신청 여부를 상단에 반영.
+    markApplied(j);
   }
 
   $('btnClose').onclick = function(){ try{ window.close(); }catch(e){} show('vw-thanks'); };

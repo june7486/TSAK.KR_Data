@@ -610,6 +610,18 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 인가자 개인정보 히스토리 항목 삭제 (마스터 또는 본인만).
+  Future<Map<String, dynamic>> deleteInfoHistory(String id, int index) async {
+    final r = await http
+        .post(
+          _uri('/api/member/info-history/delete'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'id': id, 'index': index}),
+        )
+        .timeout(const Duration(seconds: 60));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 선택 계정 완전 삭제(마스터 전용). [corps] 로 소속 명단을 지정한다.
   Future<Map<String, dynamic>> deleteMembers(
     List<String> ids, {

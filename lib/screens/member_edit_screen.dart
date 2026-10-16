@@ -14,6 +14,7 @@ import '../services/phone_format.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/address_field.dart';
+import '../widgets/confirm.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/member_avatar.dart';
@@ -560,6 +561,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 label: '주소',
                 hint: '주소검색 버튼으로 검색하세요',
               ),
+              // (요구) 인가자 개인정보 히스토리 — 참가신청 등으로 쌓인
+              //   이메일·연락처·주소 이력을 복수로 노출하고, 각 항목 우측의
+              //   삭제 버튼으로 마스터/본인이 정리할 수 있다.
+              _infoHistorySection(),
               _field(
                 '한줄소개 (비고)',
                 _bio,
@@ -636,6 +641,117 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     if (m != null) return m.loginId;
     final no = _number.text.trim();
     return no.isNotEmpty ? no : _phone.text.trim();
+  }
+
+  /// (요구) 인가자 개인정보 히스토리 — 참가신청 등으로 갱신된 email·연락처·주소
+  ///  이력을 복수로 노출하고, 각 항목 우측의 ✕ 버튼으로 정리(삭제)할 수 있다.
+  ///  (행사 때만 쓴 임시 연락처나 잘못된 정보를 마스터/본인이 지울 수 있도록)
+  Widget _infoHistorySection() {
+    final hist = _existing?.infoHistory ?? const <Map<String, dynamic>>[];
+    if (_existing == null || hist.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Row(
+          children: const [
+            Icon(Icons.history, size: 16, color: AppColors.purple),
+            SizedBox(width: 6),
+            Text(
+              '개인정보 히스토리 (참가신청 반영)',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        for (var i = 0; i < hist.length; i++)
+          Builder(
+            builder: (ctx) {
+              final h = hist[i];
+              final bits = <String>[
+                if ('${h['email'] ?? ''}'.trim().isNotEmpty)
+                  '✉ ${h['email']}',
+                if ('${h['phone'] ?? ''}'.trim().isNotEmpty)
+                  '☎ ${h['phone']}',
+                if ('${h['address'] ?? ''}'.trim().isNotEmpty)
+                  '🏠 ${h['address']}',
+              ];
+              final meta =
+                  '${h['at'] ?? ''}'
+                  '${'${h['by'] ?? ''}'.trim().isNotEmpty ? ' · ${h['by']}' : ''}';
+              return Card(
+                margin: const EdgeInsets.only(bottom: 6),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              bits.isEmpty ? '(변경 없음)' : bits.join('   '),
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              meta,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.textGray,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '이 항목 삭제',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          size: 18,
+                          color: AppColors.taegeukRed,
+                        ),
+                        onPressed: () => _deleteInfoHistory(i),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  /// 히스토리 항목 삭제 — 서버에 반영 후 로컬 목록 갱신.
+  Future<void> _deleteInfoHistory(int index) async {
+    final id = _existing?.id ?? '';
+    if (id.isEmpty) return;
+    final ok = await confirmDialog(
+      context,
+      message: '이 개인정보 이력 항목을 삭제할까요?',
+      title: '히스토리 삭제',
+    );
+    if (!ok) return;
+    try {
+      final r = await context.read<NasApi>().deleteInfoHistory(id, index);
+      if (r['ok'] == true) {
+        setState(() {
+          final h = List<Map<String, dynamic>>.from(
+            _existing?.infoHistory ?? const [],
+          );
+          if (index >= 0 && index < h.length) h.removeAt(index);
+          _existing = _existing?.copyWith(infoHistory: h);
+        });
+        _snack('삭제되었습니다');
+      } else {
+        _snack('삭제 실패: ${r['error'] ?? ''}');
+      }
+    } catch (e) {
+      _snack('삭제 실패: $e');
+    }
   }
 
   Widget _passwordCard(AppState state) {

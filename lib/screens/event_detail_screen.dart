@@ -1208,8 +1208,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       ? '${a['transportNote']}'
                       : '${a['transport'] ?? ''}'.trim();
                   if (tp.isNotEmpty) bits.add('🚗 $tp');
+                  final frm = '${a['from'] ?? ''}'.trim();
+                  if (frm.isNotEmpty) bits.add('출발 $frm');
+                  final eta = '${a['eta'] ?? ''}'.trim();
+                  if (eta.isNotEmpty) bits.add('소요 $eta');
                   final comp = '${a['companion'] ?? ''}'.trim();
                   if (comp.isNotEmpty) bits.add('👥 $comp');
+                  final addr = '${a['address'] ?? ''}'.trim();
+                  if (addr.isNotEmpty) bits.add('🏠 $addr');
                   final msg = '${a['message'] ?? ''}'.trim();
                   if (msg.isNotEmpty) bits.add('💬 $msg');
                   if (bits.isEmpty) return const SizedBox.shrink();
@@ -2026,10 +2032,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final emailC = TextEditingController(text: '${cur?['email'] ?? ''}');
     final addrC = TextEditingController(text: '${cur?['address'] ?? ''}');
     final numC = TextEditingController(text: '${cur?['number'] ?? ''}');
+    // (요구) '행사 참가신청 창'과 동일 포맷 — 추가 입력 항목.
+    final transportC = TextEditingController(text: '${cur?['transport'] ?? ''}');
+    final transportNoteC = TextEditingController(
+      text: '${cur?['transportNote'] ?? ''}',
+    );
+    final lodgingC = TextEditingController(text: '${cur?['lodging'] ?? ''}');
+    final arriveC = TextEditingController(text: '${cur?['arrive'] ?? ''}');
+    final arriveNoteC = TextEditingController(
+      text: '${cur?['arriveNote'] ?? ''}',
+    );
+    final fromC = TextEditingController(text: '${cur?['from'] ?? ''}');
+    final etaC = TextEditingController(text: '${cur?['eta'] ?? ''}');
+    final companionC = TextEditingController(text: '${cur?['companion'] ?? ''}');
+    final messageC = TextEditingController(text: '${cur?['message'] ?? ''}');
     final roles = <String>{
       ...((cur?['roles'] as List?)?.map((e) => '$e') ?? []),
     };
-    const all = ['지도자', '멘토지도자', '비버', '스카우트', '벤처', '로버', '본부', '학부모', '기타'];
+    // (요구) 직책: 비버/컵/스카우트/벤쳐스카우트/로버스카우트/리더/일반/기타.
+    const all = [
+      '비버',
+      '컵',
+      '스카우트',
+      '벤쳐스카우트',
+      '로버스카우트',
+      '리더',
+      '일반',
+      '기타',
+    ];
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -2077,8 +2107,61 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   const SizedBox(height: 8),
                   AddressField(
                     controller: addrC,
-                    label: '주소',
+                    label: '현재 주소 (회원정보에 반영)',
                     hint: '주소검색 버튼으로 검색하세요',
+                  ),
+                  const SizedBox(height: 8),
+                  // (요구) 참가신청 창과 동일한 '추가 입력 사항'.
+                  TextField(
+                    controller: transportC,
+                    decoration: const InputDecoration(labelText: '이동 방법'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: transportNoteC,
+                    decoration: const InputDecoration(
+                      labelText: '이동 방법 직접입력 (기타)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: lodgingC,
+                    decoration: const InputDecoration(labelText: '숙박 여부'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: arriveC,
+                    decoration: const InputDecoration(labelText: '도착 예정 시간'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: arriveNoteC,
+                    decoration: const InputDecoration(
+                      labelText: '도착 예정 시간 직접입력 (기타)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: fromC,
+                    decoration: const InputDecoration(labelText: '출발 장소'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: etaC,
+                    decoration: const InputDecoration(labelText: '예상 소요시간'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: companionC,
+                    decoration: const InputDecoration(labelText: '동행자 이름'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: messageC,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: '운영진께 전달할 내용',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Align(
@@ -2143,6 +2226,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       'email': emailC.text.trim(),
       'address': addrC.text.trim(),
       'roles': roles.toList(),
+      // (요구) 참가신청 창과 동일한 추가 입력 항목.
+      'transport': transportC.text.trim(),
+      'transportNote': transportNoteC.text.trim(),
+      'lodging': lodgingC.text.trim(),
+      'arrive': arriveC.text.trim(),
+      'arriveNote': arriveNoteC.text.trim(),
+      'from': fromC.text.trim(),
+      'eta': etaC.text.trim(),
+      'companion': companionC.text.trim(),
+      'message': messageC.text.trim(),
     };
     setState(() {
       if (editIndex != null) {
