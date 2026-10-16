@@ -224,6 +224,31 @@
   .desc-close{margin-left:auto;padding:8px 16px;border:1px solid #ddd;background:#fff;
     border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
 
+  /* (요구) 계좌번호 안내 — 접어두기/펼치기(기본 펼침) */
+  .acctbox{margin:14px 0 2px;border:1px solid #cfe6d6;background:#f3faf5;
+    border-radius:14px;overflow:hidden;}
+  .acct-toggle{width:100%;display:flex;align-items:center;gap:8px;background:transparent;
+    border:0;padding:14px 15px;font-size:13.5px;font-weight:900;color:#1E7A46;cursor:pointer;
+    font-family:inherit;}
+  .acct-toggle .at-a{margin-left:auto;font-size:12px;font-weight:800;color:#1E7A46;
+    background:#e2f2e8;padding:5px 12px;border-radius:99px;}
+  .acct-body{padding:0 15px 15px;}
+  .acct-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e6efe9;
+    border-radius:11px;padding:11px 12px;margin-bottom:7px;}
+  .acct-row .a-info{flex:1 1 auto;min-width:0;}
+  .acct-row .a-lb{font-size:11.5px;font-weight:800;color:#1E7A46;margin-bottom:3px;}
+  .acct-row .a-no{font-size:15px;font-weight:900;color:var(--ink);letter-spacing:.3px;
+    word-break:break-all;}
+  .acct-row .a-bank{font-size:11.5px;color:#8b95a1;font-weight:700;margin-top:2px;}
+  .acct-copy{flex:0 0 auto;border:0;background:var(--fr-blue);color:#fff;font-weight:800;
+    font-size:12px;padding:9px 13px;border-radius:9px;cursor:pointer;font-family:inherit;
+    white-space:nowrap;}
+  .acct-copy:active{opacity:.8;}
+  .acct-holder{font-size:12px;color:#4a5568;font-weight:700;margin-top:4px;}
+  .acct-foot{display:flex;align-items:center;gap:8px;margin-top:8px;}
+  .acct-close{margin-left:auto;padding:8px 16px;border:1px solid #ddd;background:#fff;
+    border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+
   /* (요구) 장소 클릭 → 카카오맵 */
   .place-link{margin-top:7px;}
   .place-link a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;
@@ -281,6 +306,8 @@
         <div class="infobox askContactBox hide"></div>
         <!-- (요구) 행사 안내 글 — 하부 접이식(펼치기/접어두기) -->
         <div class="descbox hide" id="askDescBox"></div>
+        <!-- (요구) 계좌번호 안내 — 접이식(기본 펼침) -->
+        <div class="acctbox hide" id="askAcctBox"></div>
 
         <!-- (요구) 참가자 명부·게시판 글은 이 페이지에서 노출하지 않는다.
              등록을 마친 사람에게만 아래(결과 화면) '행사 게시판' 버튼이 나타난다. -->
@@ -400,6 +427,8 @@
         <div class="infobox askDocsBox hide"></div>
         <!-- (요구) 행사 안내 글 — 하부 접이식(펼치기/접어두기) -->
         <div class="descbox hide" id="formDescBox"></div>
+        <!-- (요구) 계좌번호 안내 — 접이식(기본 펼침) -->
+        <div class="acctbox hide" id="formAcctBox"></div>
       </div>
 
       <!-- 3) 결과 -->
@@ -612,12 +641,103 @@
     return href || 'https://map.kakao.com/';
   }
 
+  // (요구) 계좌번호 안내 — 복수(대표/수품구매/행사비 등) 계좌를
+  //   '접어두기/펼치기' 토글 박스로 노출한다. (기본: 펼침)
+  //   · 계좌번호 탭 → 클립보드 복사(모바일 편의).
+  function renderAcct(){
+    var boxes = document.querySelectorAll('.acctbox');
+    var list = (ev && ev.donations && ev.donations.length) ? ev.donations : [];
+    var holder = (ev && ev.donationHolder) ? String(ev.donationHolder) : '';
+    boxes.forEach(function(b){
+      if (!list.length){ b.classList.add('hide'); b.innerHTML=''; return; }
+      b.classList.remove('hide');
+      var rows = '';
+      list.forEach(function(d){
+        var bank = esc(String(d.bank || ''));
+        var acct = esc(String(d.account || ''));
+        var label = esc(String(d.label || ''));
+        var copyVal = esc(String(d.account || '').replace(/[^0-9-]/g,''));
+        rows += '<div class="acct-row">'
+          + '<div class="a-info">'
+            + (label ? '<div class="a-lb">'+label+'</div>' : '')
+            + '<div class="a-no">'+acct+'</div>'
+            + (bank ? '<div class="a-bank">'+bank+'</div>' : '')
+          + '</div>'
+          + '<button class="acct-copy" type="button" data-acct="'+copyVal+'">복사</button>'
+        + '</div>';
+      });
+      b.innerHTML = '<button class="acct-toggle" type="button">'
+          + '<span class="at-i">🏦</span><span>계좌번호 안내</span>'
+          + '<span class="at-a">접어두기 ▴</span></button>'
+        + '<div class="acct-body">'
+          + rows
+          + (holder ? '<div class="acct-holder">예금주 : '+esc(holder)+'</div>' : '')
+          + '<div class="acct-foot">'
+            + '<span style="font-size:11.5px;color:#8b95a1">계좌번호를 눌러 복사할 수 있습니다.</span>'
+            + '<button class="acct-close" type="button">접어두기 ▲</button>'
+          + '</div>'
+        + '</div>';
+      var tgl = b.querySelector('.acct-toggle');
+      var body = b.querySelector('.acct-body');
+      var arrow = b.querySelector('.at-a');
+      var close = b.querySelector('.acct-close');
+      tgl.onclick = function(){
+        var open = !body.classList.contains('hide');
+        if (open){ body.classList.add('hide'); arrow.textContent = '펼치기 ▾'; }
+        else { body.classList.remove('hide'); arrow.textContent = '접어두기 ▴'; }
+      };
+      if (close) close.onclick = function(){
+        body.classList.add('hide'); arrow.textContent = '펼치기 ▾';
+      };
+      // 계좌번호 복사
+      b.querySelectorAll('.acct-copy').forEach(function(btn){
+        btn.onclick = function(){
+          var v = btn.getAttribute('data-acct') || '';
+          copyText(v, btn);
+        };
+      });
+      b.querySelectorAll('.a-no').forEach(function(el){
+        el.style.cursor = 'pointer';
+        el.title = '눌러서 복사';
+        el.onclick = function(){
+          copyText(String(el.textContent||'').replace(/[^0-9-]/g,''), el);
+        };
+      });
+    });
+  }
+
+  // 클립보드 복사(구형 브라우저 폴백 포함) + 버튼 라벨 피드백.
+  function copyText(v, el){
+    var ok = function(){
+      if (el && el.tagName === 'BUTTON'){ var t = el.textContent; el.textContent = '복사됨 ✓';
+        setTimeout(function(){ el.textContent = t; }, 1200); }
+      else if (el){ var bg = el.style.background; el.style.background = '#e2f2e8';
+        setTimeout(function(){ el.style.background = bg; }, 800); }
+    };
+    try{
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(v).then(ok, function(){ legacyCopy(v); ok(); });
+        return;
+      }
+    }catch(e){}
+    legacyCopy(v); ok();
+  }
+  function legacyCopy(v){
+    try{
+      var ta = document.createElement('textarea');
+      ta.value = v; ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }catch(e){}
+  }
+
   if (!year || !title){ show('vw-error'); $('errMsg').textContent='QR 링크에 행사 정보가 없습니다.'; return; }
 
   api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
     .then(function(r){
       if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
-      ev = r.j.event; renderHead(); renderDocs(); renderContact(); renderDesc(); show('vw-ask');
+      ev = r.j.event; renderHead(); renderDocs(); renderContact(); renderDesc(); renderAcct();
+      show('vw-ask');
     })
     .catch(function(){ renderHead(); show('vw-error'); });
 
