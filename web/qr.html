@@ -527,7 +527,7 @@
     var href = (ev && ev.mapUrl) ? String(ev.mapUrl) : '';
     if (!href && place){
       // (버그수정) 검색어는 '장소'만 — 행사명이 섞이면 엉뚱한 곳이 검색된다.
-      href = 'https://map.kakao.com/link/search/' + encodeURIComponent(place);
+      href = 'https://map.kakao.com/?q=' + encodeURIComponent(place);
     }
     if (!place && !href){ box.classList.add('hide'); box.innerHTML=''; return; }
     var label = place ? (esc(place) + ' 카카오맵에서 보기') : '카카오맵에서 위치 보기';
@@ -651,7 +651,7 @@
     var place = (ev && ev.place) ? String(ev.place).trim() : '';
     var href = (ev && ev.mapUrl) ? String(ev.mapUrl) : '';
     if (!href && place){
-      href = 'https://map.kakao.com/link/search/' + encodeURIComponent(place);
+      href = 'https://map.kakao.com/?q=' + encodeURIComponent(place);
     }
     return href || 'https://map.kakao.com/';
   }
