@@ -226,10 +226,34 @@
     padding:13px 14px;}
   .desc-text a{color:var(--fr-blue);font-weight:700;word-break:break-all;}
   .desc-actions{display:flex;align-items:center;gap:8px;margin-top:10px;}
-  .desc-link{margin-right:auto;text-decoration:none;background:#ffe812;color:#3c1e1e;
+  .desc-link{margin-right:auto;text-decoration:none;border:0;cursor:pointer;
+    font-family:inherit;background:#ffe812;color:#3c1e1e;
     font-weight:800;font-size:12.5px;padding:8px 13px;border-radius:99px;}
   .desc-close{margin-left:auto;padding:8px 16px;border:1px solid #ddd;background:#fff;
     border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+
+  /* (요구) 페이지 안 카카오 지도 (외부 앱 전환 없음) */
+  .map-wrap{margin:14px 0 2px;border:1px solid #e7e1f2;background:#fff;
+    border-radius:14px;overflow:hidden;}
+  .map-wrap.hide{display:none;}
+  .map-head{display:flex;align-items:center;gap:6px;padding:11px 14px;
+    font-size:12.5px;font-weight:900;color:#5B2C8D;border-bottom:1px solid #efeafb;}
+  .map-head .mh-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .map-canvas{width:100%;height:260px;background:#eef0f4;padding:0;
+    display:flex;align-items:center;justify-content:center;
+    color:#8891a6;font-size:12.5px;text-align:center;position:relative;}
+  .map-canvas .mc-ph{padding:0 18px;}
+  .map-canvas .map-img{width:100%;height:260px;object-fit:cover;display:block;}
+  .map-canvas .map-kakao{width:100%;height:260px;}
+  .map-canvas .hide{display:none;}
+  .map-foot{display:flex;flex-wrap:wrap;gap:7px;padding:10px 12px;border-top:1px solid #efeafb;}
+  .map-foot button, .map-foot a{flex:1 1 0;min-width:88px;text-align:center;
+    display:inline-flex;align-items:center;justify-content:center;gap:4px;
+    text-decoration:none;border-radius:9px;font-family:inherit;font-size:11.5px;
+    font-weight:800;padding:9px 8px;border:1px solid transparent;cursor:pointer;}
+  .mf-dir{background:#1B4F9C;color:#fff;}
+  .mf-app{background:#ffe812;color:#3c1e1e;}
+  .mf-close{background:#fff;color:#5a5a6e;border-color:#ddd;}
 
   /* (요구) 후원 계좌 — Flutter 위젯(DonationAccounts)과 동일한 디자인.
      흰 배경 + 골드 테두리, 라벨(골드)·계좌(검정), [송금](초록)·[복사](보라) 칩. */
@@ -260,12 +284,16 @@
   .acct-chip:active{opacity:.7;}
   .acct-holder{font-size:10px;color:#6E6A7C;font-weight:600;margin-top:6px;}
 
-  /* (요구) 장소 클릭 → 카카오맵 */
+  /* (요구) 장소 클릭 → 페이지 안에서 카카오 지도를 직접 표시.
+     (버그수정) 예전엔 map.kakao.com 링크라 모바일에서 카카오맵 앱이 곧바로 열렸다.
+     이제는 외부 링크로 나가지 않고 이 페이지 안에 지도를 그린다. */
   .place-link{margin-top:7px;}
-  .place-link a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;
+  .place-link button, .place-link a{display:inline-flex;align-items:center;gap:5px;
+    text-decoration:none;border:0;cursor:pointer;font-family:inherit;
     background:#ffe812;color:#3c1e1e;font-weight:900;font-size:12.5px;
     padding:6px 12px;border-radius:99px;}
-  .place-link a .pin{font-size:13px;}
+  .place-link button:active{transform:scale(.97);}
+  .place-link button .pin{font-size:13px;}
 
   /* (요구) 참가신청 여부 상단 노출 */
   .apply-state{margin-top:8px;display:inline-flex;align-items:center;gap:6px;
@@ -477,6 +505,21 @@
     </div>
   </div>
 
+  <!-- (요구) '카카오맵에서 보기' → 페이지 안 지도 (외부 앱 전환 없음) -->
+  <div class="map-wrap hide" id="mapWrap">
+    <div class="map-head"><span>🗺️</span><span class="mh-t" id="mapTitle">위치</span></div>
+    <div class="map-canvas" id="mapCanvas">
+      <img class="map-img hide" id="mapStatic" alt="행사 위치 지도">
+      <div class="map-kakao hide" id="mapKakao"></div>
+      <span class="mc-ph" id="mapPh">지도를 불러오는 중…</span>
+    </div>
+    <div class="map-foot">
+      <button type="button" class="mf-dir" id="mapDir">🧭 길찾기</button>
+      <a class="mf-app" id="mapApp" href="https://map.kakao.com/" target="_blank" rel="noopener">📍 카카오맵 앱</a>
+      <button type="button" class="mf-close" id="mapClose">닫기</button>
+    </div>
+  </div>
+
   <div class="foot">
     한국범스카우트중앙회 (TSAK) · 본 페이지는 행사 참여 등록 전용입니다.<br>
     개인정보는 참여 등록 목적으로만 사용됩니다.
@@ -489,6 +532,7 @@
   var title = qs.get('title') || '';
   var kind = 'credentialed';
   var ev = null;
+  var geo = null;   // /api/geo/config (카카오 JS 키 등)
 
   function $(id){ return document.getElementById(id); }
   function show(v){ ['vw-load','vw-error','vw-ask','vw-kind','vw-done','vw-thanks']
@@ -516,27 +560,189 @@
     renderApplyState();
   }
 
-  // (요구) 장소를 클릭하면 카카오맵에서 그 위치를 연다.
-  //   (요구) 참가신청 페이지에서는 지도(이미지/임베드)를 **표시하지 않는다** —
-  //   노란 '카카오맵에서 보기' 링크 하나만 노출한다.
+  // (요구) '카카오맵에서 보기' → **페이지 안에서** 카카오 지도를 띄운다.
+  //   (버그수정) 외부 map.kakao.com 링크는 모바일에서 카카오맵 앱을 곧바로 열어
+  //   주소를 확인할 수 없었다. 이제 외부로 나가지 않고 이 페이지 안에 지도를 그린다.
   function renderPlaceLink(){
     var box = $('placeLink'); if (!box) return;
     var place = (ev && ev.place) ? String(ev.place).trim() : '';
-    // (요구) 기획 시 지정한 지도 위치를 참가신청 화면에 노출.
-    //   서버가 mapUrl(좌표 있으면 정확한 위치, 없으면 검색) 을 내려준다.
-    var href = (ev && ev.mapUrl) ? String(ev.mapUrl) : '';
-    if (!href && place){
-      // (버그수정) 검색어는 '장소'만 — 행사명이 섞이면 엉뚱한 곳이 검색된다.
-      href = 'https://map.kakao.com/?q=' + encodeURIComponent(place);
-    }
-    if (!place && !href){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var hasCoord = !!(ev && ev.lat && ev.lng);
+    if (!place && !hasCoord){ box.classList.add('hide'); box.innerHTML=''; return; }
     var label = place ? (esc(place) + ' 카카오맵에서 보기') : '카카오맵에서 위치 보기';
-    var exact = (ev && ev.lat && ev.lng) ? ' · 위치 지정됨' : '';
-    var html = '<a href="'+href+'" target="_blank" rel="noopener">'
-      + '<span class="pin">📍</span> '+label+exact+'</a>';
-    box.innerHTML = html;
+    box.innerHTML = '<button type="button" class="pl-btn">'
+      + '<span class="pin">📍</span> '+label+'</button>';
     box.classList.remove('hide');
+    var btn = box.querySelector('.pl-btn');
+    if (btn) btn.onclick = function(){ openEvMap(); };
   }
+
+  // 이벤트의 지도 검색어('장소' 우선)와 카카오 SDK 로드 여부.
+  var _kakaoSdk = null;   // null=미로드, 'loading', 'ok', 'fail'
+  function evQuery(){
+    var place = (ev && ev.place) ? String(ev.place).trim() : '';
+    var title = (ev && ev.title) ? String(ev.title).trim() : '';
+    return place || title || '';
+  }
+
+  // 카카오맵 JS SDK 로더 (한 번만 로드).
+  function loadKakaoSdk(done, fail){
+    var key = (geo && geo.kakaoJsKey) ? String(geo.kakaoJsKey) : '';
+    if (!key){ fail && fail('키 없음'); return; }
+    if (window.kakao && window.kakao.maps){ _kakaoSdk='ok'; done(); return; }
+    if (_kakaoSdk === 'fail'){ fail && fail('SDK 로드 실패'); return; }
+    if (_kakaoSdk === 'loading'){ (window.__tsakSdkWait=window.__tsakSdkWait||[]).push(done); return; }
+    _kakaoSdk = 'loading';
+    var s = document.createElement('script');
+    s.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey='+encodeURIComponent(key)+'&autoload=false';
+    s.async = true;
+    s.onload = function(){
+      try{
+        if (!window.kakao || !window.kakao.maps) throw new Error('no maps');
+        window.kakao.maps.load(function(){
+          _kakaoSdk='ok'; done();
+          (window.__tsakSdkWait||[]).forEach(function(f){ try{f();}catch(e){} });
+          window.__tsakSdkWait=[];
+        });
+      }catch(e){ _kakaoSdk='fail'; fail && fail('SDK 초기화 실패'); }
+    };
+    s.onerror = function(){ _kakaoSdk='fail'; fail && fail('SDK 로드 실패'); };
+    document.head.appendChild(s);
+  }
+
+  // 페이지 안 지도 표시/닫기.
+  function closeEvMap(){
+    var w = $('mapWrap'); if (w) w.classList.add('hide');
+  }
+  function setMapPh(html){
+    var img = $('mapStatic');
+    var kk = $('mapKakao');
+    var ph = $('mapPh');
+    hideAllMap();
+    if (ph){ ph.innerHTML = html; ph.classList.remove('hide'); }
+  }
+  function hideAllMap(){
+    ['mapStatic','mapKakao','mapPh'].forEach(function(id){
+      var e = $(id); if (e) e.classList.add('hide');
+    });
+  }
+
+  // 1차: 우리 서버가 OSM 타일로 그려주는 정적 지도(카카오와 무관 → 항상 표시 가능).
+  function showStaticMap(){
+    var img = $('mapStatic');
+    if (!img) return false;
+    var lat = (ev && ev.lat && ev.lng) ? String(ev.lat) : '';
+    var lng = (ev && ev.lat && ev.lng) ? String(ev.lng) : '';
+    if (!lat || !lng) return false;
+    if (img.getAttribute('data-failed') === '1') return false;
+    if (img.getAttribute('data-loaded') === '1'){
+      hideAllMap(); img.classList.remove('hide'); return true;
+    }
+    var src = '/api/geo/staticmap?lat='+encodeURIComponent(lat)
+      + '&lng='+encodeURIComponent(lng)+'&z=15&w=760&h=340';
+    img.onload = function(){
+      img.setAttribute('data-loaded','1');
+      // 카카오 지도가 이미 떠 있으면 그대로 둔다(우선순위: 카카오 > 정적).
+      var kk = $('mapKakao');
+      if (kk && !kk.classList.contains('hide')) return;
+      hideAllMap(); img.classList.remove('hide');
+    };
+    img.onerror = function(){ img.setAttribute('data-failed','1'); };
+    img.src = src;
+    return true;
+  }
+
+  function openEvMap(){
+    var w = $('mapWrap'); if (!w) return;
+    var q = evQuery();
+    var tt = $('mapTitle'); if (tt) tt.textContent = q || '위치';
+    // [카카오맵 앱] 버튼: 좌표 있으면 정확한 위치, 없으면 장소명 검색.
+    var appA = $('mapApp');
+    if (appA){
+      var aq = (ev && ev.lat && ev.lng)
+        ? (String(ev.lat)+','+String(ev.lng))
+        : (q || '');
+      appA.href = aq ? ('https://map.kakao.com/?q='+encodeURIComponent(aq))
+                     : 'https://map.kakao.com/';
+    }
+    w.classList.remove('hide');
+    setMapPh('지도를 불러오는 중…');
+    try{ w.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+    // 좌표가 있으면 정적 지도를 즉시 띄우고(바로 확인 가능), 이어서 카카오 지도로 업그레이드.
+    showStaticMap();
+    renderEvMap();
+  }
+
+  function renderEvMap(){
+    var place = (ev && ev.place) ? String(ev.place).trim() : '';
+    var lat = (ev && ev.lat && ev.lng) ? parseFloat(ev.lat) : null;
+    var lng = (ev && ev.lat && ev.lng) ? parseFloat(ev.lng) : null;
+    loadKakaoSdk(function(){
+      var box = $('mapKakao'); if (!box) return;
+      box.innerHTML = '';
+      hideAllMap();
+      box.classList.remove('hide');
+      var center, level = 4;
+      if (lat !== null && !isNaN(lat) && lng !== null && !isNaN(lng)){
+        center = new window.kakao.maps.LatLng(lat, lng);
+      } else {
+        center = new window.kakao.maps.LatLng(36.5, 127.8); level = 11;
+      }
+      var map;
+      try{
+        map = new window.kakao.maps.Map(box, {center:center, level:level});
+        box.classList.remove('hide');   // 지도 생성 성공 → 실제 표시
+      }catch(e){
+        // 카카오 지도 실패 → 정적 지도/안내로 복귀.
+        if (!showStaticMap()) setMapPh('지도를 표시할 수 없습니다.');
+        return;
+      }
+      var pin = function(la, ln, nm){
+        var p = new window.kakao.maps.LatLng(la, ln);
+        new window.kakao.maps.Marker({map:map, position:p});
+        var iw = new window.kakao.maps.InfoWindow({
+          content:'<div style="padding:5px 9px;font-size:12px;font-weight:800;white-space:nowrap;">'
+            + (nm||'위치') + '</div>'});
+        iw.open(map, new window.kakao.maps.Marker({map:map, position:p}));
+        map.setCenter(p);
+      };
+      if (lat !== null && !isNaN(lat) && lng !== null && !isNaN(lng)){
+        try{ map.setLevel(4); }catch(e){}
+        pin(lat, lng, place || '행사 위치');
+      } else if (place){
+        var ps = new window.kakao.maps.services.Places();
+        ps.keywordSearch(place, function(data, status){
+          if (status === window.kakao.maps.services.Status.OK && data && data.length){
+            var f = data[0];
+            var my = parseFloat(f.y), mx = parseFloat(f.x);
+            try{ map.setLevel(4); }catch(e){}
+            pin(my, mx, f.place_name || place);
+          } else if (!showStaticMap()){
+            setMapPh('‘'+esc(place)+'’ 위치를 찾지 못했습니다.');
+          }
+        });
+      } else if (!showStaticMap()){
+        setMapPh('지도 위치 정보가 없습니다.');
+      }
+    }, function(){
+      // 카카오 SDK 실패 → 정적 지도가 있으면 그대로, 없으면 안내.
+      if (!showStaticMap()){
+        setMapPh('지도를 불러오지 못했습니다.<br>아래 [카카오맵 앱] 버튼을 이용해 주세요.');
+      }
+    });
+  }
+
+  // 지도 하단 버튼 동작 연결.
+  (function(){
+    var d = $('mapDir'), c = $('mapClose');
+    if (d) d.onclick = function(){
+      var q = evQuery();
+      if (!q) return;
+      // 길찾기는 카카오맵으로 이동(좌표가 있으면 더 정확).
+      var aq = (ev && ev.lat && ev.lng) ? (String(ev.lat)+','+String(ev.lng)) : q;
+      window.open('https://map.kakao.com/?q='+encodeURIComponent(aq), '_blank');
+    };
+    if (c) c.onclick = closeEvMap;
+  })();
 
   // (요구) 참가신청 여부를 상단에 노출.
   function renderApplyState(){
@@ -617,8 +823,8 @@
         + '<div class="desc-body">'
           + '<div class="desc-text">' + linkify(esc(text)) + '</div>'
           + '<div class="desc-actions">'
-            + '<a class="desc-link" href="'+placeHref()+'" target="_blank" rel="noopener">'
-            + '<span>📍</span> 카카오맵에서 보기</a>'
+            + '<button class="desc-link" type="button">'
+            + '<span>📍</span> 카카오맵에서 보기</button>'
             + '<button class="desc-close" type="button">접어두기 ▲</button>'
           + '</div>'
         + '</div>';
@@ -627,6 +833,7 @@
       var body = box.querySelector('.desc-body');
       var arrow = box.querySelector('.dt-a');
       var close = box.querySelector('.desc-close');
+      var dlink = box.querySelector('.desc-link');
       tgl.onclick = function(){
         var open = !body.classList.contains('hide');
         if (open){ body.classList.add('hide'); arrow.textContent = '펼치기 ▾'; }
@@ -634,6 +841,10 @@
       };
       if (close) close.onclick = function(){
         body.classList.add('hide'); arrow.textContent = '펼치기 ▾';
+      };
+      if (dlink) dlink.onclick = function(){
+        // (버그수정) 카카오맵 앱이 곧바로 열리지 않도록 페이지 안 지도를 띄운다.
+        openEvMap();
       };
     });
   }
@@ -752,7 +963,14 @@
 
   if (!year || !title){ show('vw-error'); $('errMsg').textContent='QR 링크에 행사 정보가 없습니다.'; return; }
 
-  api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title))
+  // 카카오 지도 키(공개 설정)를 먼저 불러온 뒤 행사 정보를 로드한다.
+  //   (지도 버튼을 누를 때 SDK를 로드하므로 키가 미리 있어야 한다.)
+  api('/api/geo/config')
+    .then(function(g){ geo = (g && g.j) ? g.j : null; })
+    .catch(function(){ geo = null; })
+    .then(function(){
+      return api('/api/event/qr/info?year='+encodeURIComponent(year)+'&title='+encodeURIComponent(title));
+    })
     .then(function(r){
       if (r.status!==200 || !r.j.ok){ renderHead(); show('vw-error'); return; }
       ev = r.j.event; renderHead(); renderDocs(); renderContact(); renderDesc(); renderAcct();
