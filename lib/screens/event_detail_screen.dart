@@ -978,6 +978,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
   }
 
+  /// (요구) 목록 표기용 직책 텍스트 — 코드 우선(B/C/S/V/R/L/일반),
+  ///   '기타'면 직접입력 내용을 그대로 노출.
+  String _roleDisplay(Map<String, dynamic> a) {
+    final code = '${a['roleCode'] ?? ''}'.trim();
+    if (code == '기타') {
+      final raw = a['rawRoles'];
+      final roles = (raw is List ? raw : (a['roles'] as List?) ?? [])
+          .map((e) => '$e')
+          .where((e) => e.trim().isNotEmpty && e.trim() != '기타')
+          .toList();
+      if (roles.isNotEmpty) return roles.join(', ');
+      return '기타';
+    }
+    return code;
+  }
+
   Widget _attendeeTile(int i) {
     final a = _attendees[i];
     final ident = '${a['number'] ?? a['phone'] ?? ''}'.replaceAll(
@@ -996,9 +1012,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final corpColor = '${a['corps'] ?? ''}' == 'eunha'
         ? AppColors.taegeukBlue
         : (isRegularRow ? AppColors.textGray : AppColors.taegeukRed);
-    // (요구) 역할 코드 — L(리더)/B(비버)/S(스카우트)/V(벤처)/R(로버)/본부/학부모/기타
+    // (요구) 역할 코드 — 비버(B)/컵(C)/스카우트(S)/벤쳐(V)/로버(R)/리더(L)/일반/기타
     final roleCode = '${a['roleCode'] ?? ''}'.trim();
-    final roleLabel = '${a['roleLabel'] ?? ''}'.trim();
     // (요구) 인가번호 우선 노출 — 서버가 준 numberLabel(범#415/은하#43).
     final numLabel = '${a['numberLabel'] ?? ''}'.trim();
     // (요구 #15) STAFF 여부 — 인가번호 옆 STAFF 단추.
@@ -1107,7 +1122,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                 ),
               ],
-              // (요구) 역할 코드(L/B/S/V/R 등) 뱃지
+              // (요구) 역할 코드 뱃지 — 목록에는 코드만(B/C/S/V/R/L/일반).
+              //   '기타'는 직접입력한 내용을 그대로 노출한다.
               if (roleCode.isNotEmpty) ...[
                 const SizedBox(width: 5),
                 Container(
@@ -1120,9 +1136,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    roleLabel.isEmpty || roleLabel == roleCode
-                        ? roleCode
-                        : '$roleCode $roleLabel',
+                    _roleDisplay(a),
                     style: const TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w800,

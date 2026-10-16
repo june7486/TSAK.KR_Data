@@ -67,6 +67,7 @@ class RosterService {
 
   static String _rolesText(Map<String, dynamic> a) {
     // 서버가 준 표시용 rawRoles(원본 roles) 우선.
+    // (요구) 출력(명부)에는 자격을 함께 노출 — 코드가 있으면 '코드(자격)'.
     final raw = a['rawRoles'];
     final roles = (raw is List ? raw : (a['roles'] as List?) ?? [])
         .map((e) => '$e')
