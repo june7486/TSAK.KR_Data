@@ -79,6 +79,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // [요구] 행사 폴더 열기 속도 개선 — 접근 이력 기록(로그)과 본문 로딩을
+      //   직렬로 기다리지 않고 동시에 시작한다(로그 실패는 무시).
       _logMediaAccess();
       _load();
     });
@@ -104,16 +106,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final e = await _nas.eventGet(widget.year, widget.title);
-      final plan = await _nas.eventFiles(widget.year, widget.title, 'plan');
-      final media = await _nas.eventFiles(
-        widget.year,
-        widget.title,
-        'media',
-        sub: _mediaSub,
-      );
-      final access = await _nas.eventAccessMap(widget.year, widget.title);
-      final fin = await _nas.eventFinance(widget.year, widget.title);
+      // [요구] 행사 폴더 열기 속도 개선 — 5개 API(행사·기획서·미디어·접근·재무)를
+      //   순차(약 5×RTT)로 기다리던 것을 '동시 병렬' 호출로 바꾼다.
+      //   가장 느린 1개 응답 시간에 수렴 → 체감 로딩 대폭 단축.
+      final results = await Future.wait<Object>([
+        _nas.eventGet(widget.year, widget.title),
+        _nas.eventFiles(widget.year, widget.title, 'plan'),
+        _nas.eventFiles(widget.year, widget.title, 'media', sub: _mediaSub),
+        _nas.eventAccessMap(widget.year, widget.title),
+        widget.canManage
+            ? _nas.eventFinance(widget.year, widget.title)
+            : Future<Map<String, dynamic>>.value(const {}),
+      ]);
+      final e = results[0] as Map<String, dynamic>;
+      final plan = results[1] as List<Map<String, dynamic>>;
+      final media = results[2] as List<Map<String, dynamic>>;
+      final access = results[3] as Map<String, dynamic>;
+      final fin = results[4] as Map<String, dynamic>;
       final atts = ((e['attendees'] as List?) ?? [])
           .map((x) => (x as Map).cast<String, dynamic>())
           .toList();
@@ -224,7 +233,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                   Text(
                     '${widget.year}'
-                    '${'${_event['place'] ?? ''}'.isNotEmpty ? ' · ${_event['place']}' : ''}',
+                    '${'${_event['place'] ?? ''}'.isNotEmpty ? ' · ${_event['place']}' : ''}'
+                    '${((_event['credViewers'] as num?)?.toInt() ?? 0) > 0 ? ' · 👁 인가자 ${(_event['credViewers'] as num).toInt()}명 열람' : ''}',
                     style: const TextStyle(fontSize: 11, color: Colors.white70),
                   ),
                 ],

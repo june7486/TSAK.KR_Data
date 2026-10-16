@@ -47,25 +47,31 @@ class _EventYearScreenState extends State<EventYearScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// [요구] 행사 목록 로딩. [silent]=true 이면 로딩 스피너를 띄우지 않고
+  ///   기존 목록을 유지한 채 조용히 갱신한다(뒤로가기 복귀 시 깜빡임/지연 제거).
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
-      final ev = await context.read<NasApi>().eventList2();
-      // (요구 #12) 행사관리창의 행사는 모든 회원에게 노출된다.
-      //  — 개인/일반회원도 전체 행사 목록을 열람할 수 있다(관리·편집은 권한별 제한).
-      // 휴지통 목록은 관리자·마스터만 조회 가능(실패해도 무시).
-      List<Map<String, dynamic>> trash = const [];
       final state = context.read<AppState>();
-      if (state.isApp || state.isMaster) {
-        try {
-          trash = await context.read<NasApi>().eventTrashList();
-        } catch (_) {
-          trash = const [];
-        }
-      }
+      final canTrash = state.isApp || state.isMaster;
+      // [요구] 속도 개선 — 목록과 휴지통을 동시에(병렬) 조회한다.
+      final results = await Future.wait<Object>([
+        context.read<NasApi>().eventList2(),
+        if (canTrash)
+          context.read<NasApi>().eventTrashList().catchError(
+            (_) => const <Map<String, dynamic>>[],
+          )
+        else
+          Future<List<Map<String, dynamic>>>.value(const []),
+      ]);
+      final ev = results[0] as List<Map<String, dynamic>>;
+      final trash =
+          canTrash ? results[1] as List<Map<String, dynamic>> : const <Map<String, dynamic>>[];
       if (!mounted) return;
       setState(() {
         _events = ev;
@@ -77,10 +83,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
         }
       });
     } catch (e) {
-      setState(() {
-        _error = '행사 목록을 불러오지 못했습니다: $e';
-        _loading = false;
-      });
+      if (!silent) {
+        setState(() {
+          _error = '행사 목록을 불러오지 못했습니다: $e';
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -499,7 +507,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
               ),
             ),
           );
-          _load();
+          // [요구] 뒤로가기 인터벌 단축 — 복귀 시 전체 스피너를 다시 띄우지 않고
+          //   조용히(백그라운드) 갱신한다. await 하지 않아 화면 전환이 즉시 끝난다.
+          _load(silent: true);
         },
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 6, 10),
