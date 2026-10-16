@@ -1,11 +1,11 @@
 // 자동 생성 파일 — scripts/gen_build_info.py 가 빌드 시 갱신합니다.
 // 직접 수정하지 마세요.
-const String kBuildStamp = '20261016152656';
-const int kBuildStampInt = 20261016152656;
+const String kBuildStamp = '20261016233737';
+const int kBuildStampInt = 20261016233737;
 const String kBuildStampKey = 'tsak_build_v';
-const String kBuildDisplay = '2026-10-16 15:26';
-const String kBuildShort = '10-16 15:26';
+const String kBuildDisplay = '2026-10-16 23:37';
+const String kBuildShort = '10-16 23:37';
 /// 자동 증가 빌드 넘버(git 커밋 수 + 1) — 커밋마다 1씩 늘어난다.
-const int kBuildNumber = 421;
+const int kBuildNumber = 430;
 /// 현재 커밋 해시(짧은 7자리) — 변경 확인용.
-const String kCommit = 'aea6c8e';
+const String kCommit = '6f9ac8c';

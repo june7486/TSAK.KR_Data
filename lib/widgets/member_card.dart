@@ -310,11 +310,16 @@ class MemberCard extends StatelessWidget {
   }
 
   /// 말머리 — 소속(corps) 배지. 범스카우트 '범'(청록) / 은하스카우트 '은하'(청색).
+  ///   (요구) 일반회원(비인가)은 '범'이 아니라 '일반'(회색) 말머리를 단다.
+  ///   범 단추는 인가자 중심 — 비인가자에게는 달지 않는다.
   ///   요구: "은하 스카우트도 명단검색되도록 하고 아래와 유사하게 말머리 만들어 노출".
   Widget _corpsMark(Member m, double s) {
     final isEunha = m.corps == 'eunha';
-    final label = isEunha ? '은하' : '범';
-    final color = isEunha ? AppColors.taegeukBlue : AppColors.scoutGreen;
+    final isRegular = m.isRegular;
+    final label = m.corpsMarkLabel;
+    final color = isRegular
+        ? AppColors.textGray
+        : (isEunha ? AppColors.taegeukBlue : AppColors.scoutGreen);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7 * s, vertical: 3 * s),
       decoration: BoxDecoration(

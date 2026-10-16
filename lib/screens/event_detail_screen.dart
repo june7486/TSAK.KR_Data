@@ -1038,16 +1038,25 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     final visited = ident.isNotEmpty && _access.containsKey(ident);
     final roles = (a['roles'] as List?) ?? [];
-    // (요구) 소속 구분 뱃지 — 범/은하/일반. 서버가 내려준 corps/linkable 기반.
-    final isRegularRow = a['linkable'] != true && '${a['corps'] ?? ''}'.isEmpty;
-    final corpLabel = '${a['corps'] ?? ''}' == 'eunha'
+    // (요구) 소속 구분 뱃지 — 범/은하/일반. 서버가 내려준 corps(권위) 기반.
+    //   ★ (요구) "일반 비인가자는 범 단추 대신 일반 단추를 달아줘.
+    //     범 단추는 인가자 중심(=인가자에게만 범 단추)."
+    //   판정은 서버가 내려준 corps 로만 한다:
+    //     · corps == 'tsak'  → '범'  (인가자)
+    //     · corps == 'eunha' → '은하' (인가자)
+    //     · corps == ''      → '일반' (비인가)
+    //   ⚠️ 기존엔 linkable(개인카드 열기 가능)로 판정해, 비인가자에게 인가번호
+    //      '일반#…' 라벨이 세팅되면 linkable=true 가 되어 '범'으로 잘못 표시됐다.
+    final corpsRaw = '${a['corps'] ?? ''}'.trim();
+    final isRegularRow = corpsRaw.isEmpty;
+    final corpLabel = corpsRaw == 'eunha'
         ? '은하'
-        : ('${a['corps'] ?? ''}' == 'tsak'
-              ? '범'
-              : (isRegularRow ? '일반' : '범'));
-    final corpColor = '${a['corps'] ?? ''}' == 'eunha'
-        ? AppColors.taegeukBlue
-        : (isRegularRow ? AppColors.textGray : AppColors.taegeukRed);
+        : (corpsRaw == 'tsak' ? '범' : '일반');
+    final corpColor = isRegularRow
+        ? AppColors.textGray
+        : (corpsRaw == 'eunha'
+              ? AppColors.taegeukBlue
+              : AppColors.taegeukRed);
     // (요구) 역할 코드 — 비버(B)/컵(C)/스카우트(S)/벤쳐(V)/로버(R)/리더(L)/일반/기타
     final roleCode = '${a['roleCode'] ?? ''}'.trim();
     // (요구) 인가번호 우선 노출 — 서버가 준 numberLabel(범#415/은하#43).
@@ -1628,7 +1637,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final nm = '${a['name'] ?? ''}'.trim();
     final ph = '${a['phone'] ?? a['loginId'] ?? a['number'] ?? ''}'.trim();
     // 인가자(범/은하)면 인가자로, 그 외(일반)면 일반회원으로 등록한다.
-    final isRegular = '${a['corps'] ?? ''}'.isEmpty && a['linkable'] != true;
+    //   (요구) 판정은 서버 권위 필드 corps 로만 — corps 가 비면 비인가(일반).
+    final isRegular = '${a['corps'] ?? ''}'.trim().isEmpty;
     final ok = await confirmDialog(
       context,
       title: '신규 회원 등록',
