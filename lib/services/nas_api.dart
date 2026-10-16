@@ -622,6 +622,32 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// [요구] 행사기획 지도 위치 검색 — 검색어로 장소/주소를 찾아 좌표를 얻는다.
+  ///   서버가 Photon(OSM)·도로명주소로 지오코딩한 결과를 돌려준다.
+  Future<List<Map<String, dynamic>>> geoSearch(
+    String query, {
+    int limit = 8,
+  }) async {
+    if (query.trim().length < 2) return const [];
+    final r = await http
+        .get(
+          _uri('/api/geo/search?q=${Uri.encodeComponent(query.trim())}'
+              '&limit=$limit'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return ((j['items'] as List?) ?? [])
+        .map((x) => (x as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  /// [요구] 검색 위치 미리보기 정적지도 이미지 URL (OSM 타일 스티칭).
+  String geoStaticMapUrl(String lat, String lng,
+          {int zoom = 15, int w = 640, int h = 320}) =>
+      '$_base/api/geo/staticmap?lat=${Uri.encodeComponent(lat)}'
+      '&lng=${Uri.encodeComponent(lng)}&z=$zoom&w=$w&h=$h';
+
   /// 선택 계정 완전 삭제(마스터 전용). [corps] 로 소속 명단을 지정한다.
   Future<Map<String, dynamic>> deleteMembers(
     List<String> ids, {

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 
 import '../services/file_pick.dart';
+import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 
 /// 행사 생성/수정 폼 다이얼로그의 결과.
@@ -397,6 +398,10 @@ class _EventFormDialogState extends State<EventFormDialog> {
                 ),
               ],
             ),
+            if (_lat.isNotEmpty && _lng.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              _mapPreview(_lat, _lng),
+            ],
             if (_lat.isNotEmpty && _lng.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -416,7 +421,11 @@ class _EventFormDialogState extends State<EventFormDialog> {
                           style: const TextStyle(fontSize: 11.5),
                         ),
                       ),
-                      const Text('(삭제)', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                      GestureDetector(
+                        onTap: () => setState(() => _lat = _lng = ''),
+                        child: const Text('(삭제)',
+                            style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                      ),
                     ],
                   ),
                 ),
@@ -677,120 +686,188 @@ class _EventFormDialogState extends State<EventFormDialog> {
     );
   }
 
-  /// [요구] 행사기획 시 지도상에서 위치를 검색·확인하고 좌표를 저장한다.
-  ///   카카오맵 검색을 외부 브라우저로 열어 위치를 눈으로 확인하게 하고,
-  ///   카카오맵 URL 에 표시되는 좌표(위도,경도)를 붙여넣어 정확히 저장한다.
+  /// [요구] 행사기획 시 지도에서 위치를 '검색하면 곧바로 입력'한다.
+  ///   검색어 → 결과 목록(주소/장소 + 좌표) → 탭하면 좌표가 즉시 저장되고
+  ///   정적지도 미리보기로 위치를 눈으로 확인한다.
   Future<void> _searchOnMap() async {
     final qCtrl = TextEditingController(
-      text: [
-        _title.text.trim(),
-        _place.text.trim(),
-      ].where((s) => s.isNotEmpty).join(' '),
+      text: [_title.text.trim(), _place.text.trim()]
+          .where((s) => s.isNotEmpty)
+          .join(' '),
     );
-    final latCtrl = TextEditingController(text: _lat);
-    final lngCtrl = TextEditingController(text: _lng);
-    final res = await showDialog<bool>(
+    List<Map<String, dynamic>> items = [];
+    bool loading = false;
+    String? err;
+    final nas = context.read<NasApi>();
+
+    Future<void> doSearch(StateSetter setSt) async {
+      final q = qCtrl.text.trim();
+      if (q.length < 2) return;
+      setSt(() {
+        loading = true;
+        err = null;
+      });
+      try {
+        final r = await nas.geoSearch(q, limit: 8);
+        setSt(() {
+          items = r;
+          loading = false;
+          if (r.isEmpty) err = '검색 결과가 없습니다. 다른 검색어로 시도해 보세요.';
+        });
+      } catch (e) {
+        setSt(() {
+          loading = false;
+          err = '검색 실패: $e';
+        });
+      }
+    }
+
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.map, size: 20, color: AppColors.purple),
-            SizedBox(width: 6),
-            Text('지도에서 위치 검색', style: TextStyle(fontSize: 16)),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Row(
             children: [
-              const Text(
-                '카카오맵에서 위치를 검색해 확인한 뒤, 주소창/장소창에 표시되는 '
-                '위도·경도를 붙여넣으면 참가신청 화면에 정확한 위치가 표시됩니다.',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: qCtrl,
-                decoration: const InputDecoration(labelText: '검색어 (행사명/장소)'),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        final q = qCtrl.text.trim();
-                        if (q.isEmpty) return;
-                        final u = Uri.parse(
-                          'https://map.kakao.com/link/search/${Uri.encodeComponent(q)}',
-                        );
-                        if (await canLaunchUrl(u)) {
-                          await launchUrl(u, mode: LaunchMode.externalApplication);
-                        }
-                      },
-                      icon: const Icon(Icons.search, size: 16),
-                      label: const Text('카카오맵에서 열기', style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Text('좌표 (선택 · 정확한 위치)',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: latCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true, signed: true),
-                      decoration: const InputDecoration(
-                        labelText: '위도 (lat)',
-                        hintText: '35.1781',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: lngCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true, signed: true),
-                      decoration: const InputDecoration(
-                        labelText: '경도 (lng)',
-                        hintText: '129.1833',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              Icon(Icons.map, size: 20, color: AppColors.purple),
+              SizedBox(width: 6),
+              Text('지도에서 위치 검색', style: TextStyle(fontSize: 16)),
             ],
           ),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '장소/주소를 검색하면 좌표가 곧바로 입력됩니다. '
+                    '결과를 누르면 정확한 위치가 저장됩니다.',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: qCtrl,
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            labelText: '장소/주소 검색',
+                            hintText: '예) 부산 송정해수욕장',
+                          ),
+                          onSubmitted: (_) => doSearch(setSt),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: loading ? null : () => doSearch(setSt),
+                        icon: const Icon(Icons.search, size: 16),
+                        label: const Text('검색', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                  if (err != null && !loading)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(err!,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.taegeukRed)),
+                    ),
+                  for (final it in items)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: const Color(0xFFE0DCE8)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.place_outlined,
+                            size: 18, color: AppColors.purple),
+                        title: Text(
+                          '${it['label'] ?? it['name'] ?? ''}',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                        subtitle: Text('${it['lat']}, ${it['lng']}',
+                            style: const TextStyle(fontSize: 10.5)),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _applyGeoChoice(it);
+                        },
+                      ),
+                    ),
+                  if (items.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _mapPreview('${items.first['lat']}', '${items.first['lng']}'),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                setSt(() {
+                  _lat = '';
+                  _lng = '';
+                  items = [];
+                });
+              },
+              child: const Text('좌표 지우기'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('직접 입력'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('적용'),
-          ),
-        ],
       ),
     );
-    if (res == true) {
-      if (!mounted) return;
-      setState(() {
-        _lat = latCtrl.text.trim();
-        _lng = lngCtrl.text.trim();
-      });
-    }
     qCtrl.dispose();
-    latCtrl.dispose();
-    lngCtrl.dispose();
+  }
+
+  /// 검색 결과에서 선택한 위치를 저장(장소명이 비어 있으면 결과 라벨 사용).
+  void _applyGeoChoice(Map<String, dynamic> it) {
+    setState(() {
+      _lat = '${it['lat'] ?? ''}';
+      _lng = '${it['lng'] ?? ''}';
+      if (_place.text.trim().isEmpty) {
+        final lb = '${it['name'] ?? it['label'] ?? ''}'.trim();
+        if (lb.isNotEmpty) _place.text = lb;
+      }
+    });
+  }
+
+  /// (요구) 검색 위치 정적지도 미리보기.
+  Widget _mapPreview(String lat, String lng) {
+    if (lat.isEmpty || lng.isEmpty) return const SizedBox.shrink();
+    final url = context.read<NasApi>().geoStaticMapUrl(lat, lng, w: 520, h: 240);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        url,
+        height: 160,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          height: 60,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEE500).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text('지도 미리보기 · 미리보기를 불러올 수 없습니다',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+        ),
+      ),
+    );
   }
 
   static String _fmtSize(int n) {

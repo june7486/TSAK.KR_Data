@@ -211,6 +211,8 @@
     background:#ffe812;color:#3c1e1e;font-weight:900;font-size:12.5px;
     padding:6px 12px;border-radius:99px;}
   .place-link a .pin{font-size:13px;}
+  .place-link .map-prev{display:block;width:100%;max-width:100%;margin-top:8px;
+    border-radius:10px;border:1px solid rgba(0,0,0,.12);cursor:pointer;}
 
   /* (요구) 참가신청 여부 상단 노출 */
   .apply-state{margin-top:8px;display:inline-flex;align-items:center;gap:6px;
@@ -462,8 +464,16 @@
     if (!place && !href){ box.classList.add('hide'); box.innerHTML=''; return; }
     var label = place ? (esc(place) + ' 카카오맵에서 보기') : '카카오맵에서 위치 보기';
     var exact = (ev && ev.lat && ev.lng) ? ' · 위치 지정됨' : '';
-    box.innerHTML = '<a href="'+href+'" target="_blank" rel="noopener">'
+    var html = '<a href="'+href+'" target="_blank" rel="noopener">'
       + '<span class="pin">📍</span> '+label+exact+'</a>';
+    // (요구) 기획 시 지정한 좌표가 있으면 지도 미리보기를 함께 노출.
+    if (ev && ev.lat && ev.lng){
+      var img = '/api/geo/staticmap?lat='+encodeURIComponent(ev.lat)
+        +'&lng='+encodeURIComponent(ev.lng)+'&z=15&w=640&h=240';
+      html += '<img class="map-prev" src="'+img+'" alt="행사 위치 지도" '
+        + 'onclick="window.open(\''+href+'\',\'_blank\')"/>';
+    }
+    box.innerHTML = html;
     box.classList.remove('hide');
   }
 
