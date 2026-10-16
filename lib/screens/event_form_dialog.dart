@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/file_pick.dart';
 import '../theme/app_theme.dart';
@@ -18,6 +19,8 @@ class EventFormResult {
     required this.contacts,
     required this.newFiles,
     required this.deletedDist,
+    this.lat = '',
+    this.lng = '',
   });
 
   final String year;
@@ -29,6 +32,10 @@ class EventFormResult {
   /// 구조화된 시작일/종료일 (YYYY-MM-DD). 없으면 ''.
   final String startDate;
   final String endDate;
+
+  /// (요구) 기획 시 지정한 지도 위치(좌표). 없으면 ''.
+  final String lat;
+  final String lng;
 
   /// 담당자 연락처(복수) — [{name, phone}].
   final List<Map<String, String>> contacts;
@@ -58,6 +65,8 @@ class EventFormDialog extends StatefulWidget {
     this.initialEnd = '',
     this.initialContacts = const [],
     this.initialDist = const [],
+    this.initialLat = '',
+    this.initialLng = '',
   });
 
   final bool createMode;
@@ -73,10 +82,13 @@ class EventFormDialog extends StatefulWidget {
   /// 기존 배포용 자료 [{name, size, ext}].
   final List<Map<String, dynamic>> initialDist;
 
+  /// (요구) 기획 시 지정한 지도 위치(좌표).
+  final String initialLat;
+  final String initialLng;
+
   @override
   State<EventFormDialog> createState() => _EventFormDialogState();
 }
-
 class _EventFormDialogState extends State<EventFormDialog> {
   late final TextEditingController _year;
   late final TextEditingController _title;
@@ -97,6 +109,9 @@ class _EventFormDialogState extends State<EventFormDialog> {
 
   late final List<Map<String, dynamic>> _dist;
 
+  /// (요구) 기획 시 지정한 지도 위치(좌표). 없으면 '' → 장소 검색으로 노출.
+  String _lat = '';
+  String _lng = '';
   @override
   void initState() {
     super.initState();
@@ -106,6 +121,8 @@ class _EventFormDialogState extends State<EventFormDialog> {
     );
     _title = TextEditingController(text: widget.initialTitle);
     _place = TextEditingController(text: widget.initialPlace);
+    _lat = widget.initialLat;
+    _lng = widget.initialLng;
     _desc = TextEditingController(text: widget.initialDesc);
     _start = _parseDate(widget.initialStart) ?? _parsePeriodStart(widget.initialPeriod);
     _end = _parseDate(widget.initialEnd) ?? _parsePeriodEnd(widget.initialPeriod);
@@ -358,11 +375,52 @@ class _EventFormDialogState extends State<EventFormDialog> {
               ),
             ),
             const SizedBox(height: 4),
-            // ---- 장소 ----
-            TextField(
-              controller: _place,
-              decoration: const InputDecoration(labelText: '장소'),
+            // ---- 장소 + 카카오지도 검색 ----
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _place,
+                    decoration: const InputDecoration(labelText: '장소'),
+                    onChanged: (_) => setState(() => _lat = _lng = ''),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: OutlinedButton.icon(
+                    onPressed: _searchOnMap,
+                    icon: const Icon(Icons.map_outlined, size: 16),
+                    label: const Text('지도에서 검색', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+              ],
             ),
+            if (_lat.isNotEmpty && _lng.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE500).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.place, size: 16, color: Color(0xFF3C1E1E)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '지도 위치 지정됨 · $_lat, $_lng',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                      const Text('(삭제)', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                    ],
+                  ),
+                ),
+              ),
             const SizedBox(height: 10),
             // ---- 소개/개요 ----
             TextField(
@@ -602,6 +660,8 @@ class _EventFormDialogState extends State<EventFormDialog> {
                       period: _periodText,
                       place: _place.text.trim(),
                       desc: _desc.text.trim(),
+                      lat: _lat,
+                      lng: _lng,
                       startDate: _start == null ? '' : _fmt(_start!),
                       endDate: _end == null ? '' : _fmt(_end!),
                       contacts: contacts,
@@ -615,6 +675,122 @@ class _EventFormDialogState extends State<EventFormDialog> {
         ),
       ],
     );
+  }
+
+  /// [요구] 행사기획 시 지도상에서 위치를 검색·확인하고 좌표를 저장한다.
+  ///   카카오맵 검색을 외부 브라우저로 열어 위치를 눈으로 확인하게 하고,
+  ///   카카오맵 URL 에 표시되는 좌표(위도,경도)를 붙여넣어 정확히 저장한다.
+  Future<void> _searchOnMap() async {
+    final qCtrl = TextEditingController(
+      text: [
+        _title.text.trim(),
+        _place.text.trim(),
+      ].where((s) => s.isNotEmpty).join(' '),
+    );
+    final latCtrl = TextEditingController(text: _lat);
+    final lngCtrl = TextEditingController(text: _lng);
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.map, size: 20, color: AppColors.purple),
+            SizedBox(width: 6),
+            Text('지도에서 위치 검색', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '카카오맵에서 위치를 검색해 확인한 뒤, 주소창/장소창에 표시되는 '
+                '위도·경도를 붙여넣으면 참가신청 화면에 정확한 위치가 표시됩니다.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: qCtrl,
+                decoration: const InputDecoration(labelText: '검색어 (행사명/장소)'),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        final q = qCtrl.text.trim();
+                        if (q.isEmpty) return;
+                        final u = Uri.parse(
+                          'https://map.kakao.com/link/search/${Uri.encodeComponent(q)}',
+                        );
+                        if (await canLaunchUrl(u)) {
+                          await launchUrl(u, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      icon: const Icon(Icons.search, size: 16),
+                      label: const Text('카카오맵에서 열기', style: TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text('좌표 (선택 · 정확한 위치)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: latCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                      decoration: const InputDecoration(
+                        labelText: '위도 (lat)',
+                        hintText: '35.1781',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: lngCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                      decoration: const InputDecoration(
+                        labelText: '경도 (lng)',
+                        hintText: '129.1833',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('적용'),
+          ),
+        ],
+      ),
+    );
+    if (res == true) {
+      if (!mounted) return;
+      setState(() {
+        _lat = latCtrl.text.trim();
+        _lng = lngCtrl.text.trim();
+      });
+    }
+    qCtrl.dispose();
+    latCtrl.dispose();
+    lngCtrl.dispose();
   }
 
   static String _fmtSize(int n) {

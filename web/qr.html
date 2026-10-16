@@ -452,11 +452,18 @@
   function renderPlaceLink(){
     var box = $('placeLink'); if (!box) return;
     var place = (ev && ev.place) ? String(ev.place).trim() : '';
-    if (!place){ box.classList.add('hide'); box.innerHTML=''; return; }
-    var q = (ev && ev.title ? (ev.title + ' ' + place) : place);
-    var href = 'https://map.kakao.com/link/search/' + encodeURIComponent(q);
+    // (요구) 기획 시 지정한 지도 위치를 참가신청 화면에 노출.
+    //   서버가 mapUrl(좌표 있으면 정확한 위치, 없으면 검색) 을 내려준다.
+    var href = (ev && ev.mapUrl) ? String(ev.mapUrl) : '';
+    if (!href && place){
+      var q = (ev && ev.title ? (ev.title + ' ' + place) : place);
+      href = 'https://map.kakao.com/link/search/' + encodeURIComponent(q);
+    }
+    if (!place && !href){ box.classList.add('hide'); box.innerHTML=''; return; }
+    var label = place ? (esc(place) + ' 카카오맵에서 보기') : '카카오맵에서 위치 보기';
+    var exact = (ev && ev.lat && ev.lng) ? ' · 위치 지정됨' : '';
     box.innerHTML = '<a href="'+href+'" target="_blank" rel="noopener">'
-      + '<span class="pin">📍</span> '+esc(place)+' 카카오맵에서 보기</a>';
+      + '<span class="pin">📍</span> '+label+exact+'</a>';
     box.classList.remove('hide');
   }
 

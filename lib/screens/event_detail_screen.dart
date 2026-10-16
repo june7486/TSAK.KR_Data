@@ -241,6 +241,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ),
             ),
             // [turn9-6] 행사명 옆 QR 아이콘 (PDF page9 최종 결정) — 참가 등록 QR.
+            // (요구) 장소 클릭 → 카카오지도에서 위치 표시.
+            if ('${_event['place'] ?? ''}'.trim().isNotEmpty)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '지도에서 위치 보기',
+                onPressed: _openEventMap,
+                icon: const Icon(Icons.place_outlined, size: 20),
+              ),
             IconButton(
               visualDensity: VisualDensity.compact,
               tooltip: '행사 QR 코드 (참가 등록)',
@@ -754,6 +762,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       isdir: isdir,
     );
     await _load();
+  }
+
+  /// (요구) 행사 장소를 카카오지도에서 연다 — 기획 시 지정한 좌표 우선.
+  Future<void> _openEventMap() async {
+    final place = '${_event['place'] ?? ''}'.trim();
+    final lat = '${_event['lat'] ?? ''}'.trim();
+    final lng = '${_event['lng'] ?? ''}'.trim();
+    String url;
+    if (lat.isNotEmpty && lng.isNotEmpty) {
+      final nm = Uri.encodeComponent(
+        '${_event['title'] ?? widget.title}'.trim().isEmpty
+            ? place
+            : '${_event['title'] ?? widget.title}'.trim(),
+      );
+      url = 'https://map.kakao.com/link/map/$nm,$lat,$lng';
+    } else {
+      final q = '${_event['title'] ?? widget.title} $place'.trim();
+      url = 'https://map.kakao.com/link/search/${Uri.encodeComponent(q)}';
+    }
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('지도를 열 수 없습니다')),
+        );
+      }
+    }
   }
 
   /// 행사 QR 코드 표시 — 회원/비회원이 스캔하면 이 행사로 바로 들어온다.

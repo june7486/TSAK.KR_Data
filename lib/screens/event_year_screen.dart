@@ -724,6 +724,8 @@ class _EventYearScreenState extends State<EventYearScreen> {
         place: res.place,
         desc: res.desc,
         by: state.who.isNotEmpty ? state.who : (state.isMaster ? '마스터' : '관리자'),
+        lat: res.lat,
+        lng: res.lng,
       );
       // [요구] 기간(시작/종료일) + 담당자(복수) 저장.
       if (res.startDate.isNotEmpty ||
@@ -797,6 +799,8 @@ class _EventYearScreenState extends State<EventYearScreen> {
             .map((x) => (x as Map).cast<String, dynamic>())
             .toList(),
         initialDist: dist,
+        initialLat: '${e['lat'] ?? ''}',
+        initialLng: '${e['lng'] ?? ''}',
       ),
     );
     if (res == null || !mounted) return;
@@ -817,6 +821,8 @@ class _EventYearScreenState extends State<EventYearScreen> {
         desc: res.desc,
         startDate: res.startDate,
         endDate: res.endDate,
+        lat: res.lat,
+        lng: res.lng,
         contacts: res.contacts
             .map((c) =>
                 <String, dynamic>{'name': c['name'], 'phone': c['phone']})

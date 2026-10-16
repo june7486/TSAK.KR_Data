@@ -1396,6 +1396,9 @@ class NasApi {
     String place = '',
     String desc = '',
     String by = '',
+    String lat = '',
+    String lng = '',
+    String mapQuery = '',
   }) async {
     final r = await http
         .post(
@@ -1408,6 +1411,9 @@ class NasApi {
             'place': place,
             'desc': desc,
             'by': by,
+            'lat': lat,
+            'lng': lng,
+            'mapQuery': mapQuery,
           }),
         )
         .timeout(const Duration(seconds: 60));
@@ -1445,6 +1451,9 @@ class NasApi {
     String? desc,
     String? startDate,
     String? endDate,
+    String? lat,
+    String? lng,
+    String? mapQuery,
     List<Map<String, dynamic>>? contacts,
   }) async {
     var curYear = year;
@@ -1474,6 +1483,9 @@ class NasApi {
             if (desc != null) 'desc': desc,
             if (startDate != null) 'startDate': startDate,
             if (endDate != null) 'endDate': endDate,
+            if (lat != null) 'lat': lat,
+            if (lng != null) 'lng': lng,
+            if (mapQuery != null) 'mapQuery': mapQuery,
             if (contacts != null) 'contacts': contacts,
           }),
         )
