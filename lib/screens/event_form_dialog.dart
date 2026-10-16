@@ -704,6 +704,13 @@ class _EventFormDialogState extends State<EventFormDialog> {
           lng: _lng,
         );
         if (picked != null) {
+          // 카카오 JS SDK 로드 실패(키 무효/도메인 미등록 등) →
+          //   조용히 아무 일도 안 일어나는 대신, 무료 검색으로 자동 폴백한다.
+          if ((picked['error'] ?? '').isNotEmpty) {
+            if (!mounted) return;
+            await _searchOnMapFallback(kakaoError: true);
+            return;
+          }
           if (!mounted) return;
           setState(() {
             _lat = picked['lat'] ?? '';
@@ -720,7 +727,8 @@ class _EventFormDialogState extends State<EventFormDialog> {
   }
 
   /// 무료 지오코딩 기반 검색(카카오 JS 키가 없거나 네이티브일 때).
-  Future<void> _searchOnMapFallback() async {
+  /// [kakaoError] 가 true 면 "카카오 키가 있는데 SDK 로드 실패" 상태 → 정확한 안내.
+  Future<void> _searchOnMapFallback({bool kakaoError = false}) async {
     // (버그수정) 검색어는 '장소' 우선 — 행사명이 섞이면 엉뚱한 곳이 검색된다.
     final qCtrl = TextEditingController(
       text: _place.text.trim().isNotEmpty
@@ -731,6 +739,17 @@ class _EventFormDialogState extends State<EventFormDialog> {
     bool loading = false;
     String? err;
     final nas = context.read<NasApi>();
+    // 카카오 진단(키가 있는데 실패한 경우) — 정확한 원인을 사용자에게 그대로 보여준다.
+    final diagVN = ValueNotifier<String?>(null);
+    if (kakaoError) {
+      nas.geoKakaoTest().then((t) {
+        diagVN.value = _fmtKakaoDiag(t);
+      }).catchError((_) {
+        diagVN.value = '카카오맵 서비스가 꺼져 있거나 키가 유효하지 않습니다. '
+            '마스터 콘솔 → [지도 검색 키 (카카오)]에서 확인하세요. '
+            '지금은 무료 지도로 검색합니다.';
+      });
+    }
     Future<void> doSearch(StateSetter setSt) async {
       final q = qCtrl.text.trim();
       if (q.length < 2) return;
@@ -777,19 +796,70 @@ class _EventFormDialogState extends State<EventFormDialog> {
                     style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
                   ),
                   const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF8E1),
-                      borderRadius: BorderRadius.circular(6),
+                  if (kakaoError)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBEE),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.taegeukRed.withValues(alpha: 0.35)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.error_outline, size: 15, color: AppColors.taegeukRed),
+                              const SizedBox(width: 6),
+                              const Expanded(
+                                child: Text(
+                                  '카카오맵을 불러오지 못했습니다. 아래 무료 지도(OpenStreetMap)로 검색합니다.',
+                                  style: TextStyle(fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                          ValueListenableBuilder<String?>(
+                            valueListenable: diagVN,
+                            builder: (_, dv, __) {
+                              if (dv == null || dv.isEmpty) {
+                                return const Padding(
+                                  padding: EdgeInsets.only(top: 6, left: 21),
+                                  child: SizedBox(
+                                    height: 12,
+                                    width: 12,
+                                    child: CircularProgressIndicator(strokeWidth: 1.6),
+                                  ),
+                                );
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4, left: 21),
+                                child: Text(
+                                  dv,
+                                  style: const TextStyle(
+                                      fontSize: 11, height: 1.45, color: AppColors.textGray),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        '💡 무료 지도(OpenStreetMap) 검색 중입니다. 상호명(예: 송정호텔)이 '
+                        '안 잡히면 마스터 콘솔 → [지도 검색 키 (카카오)]에 카카오 키를 '
+                        '등록하고 카카오맵 서비스를 켜면 카카오맵(정확)으로 전환됩니다.',
+                        style: TextStyle(fontSize: 11, height: 1.45),
+                      ),
                     ),
-                    child: const Text(
-                      '💡 무료 지도(OpenStreetMap) 검색 중입니다. 상호명(예: 송정호텔)이 '
-                      '안 잡히면 마스터 콘솔 → [지도 검색 키 (카카오)]에 카카오 키를 '
-                      '등록하면 카카오맵(정확)으로 전환됩니다.',
-                      style: TextStyle(fontSize: 11, height: 1.45),
-                    ),
-                  ),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -876,6 +946,22 @@ class _EventFormDialogState extends State<EventFormDialog> {
       ),
     );
     qCtrl.dispose();
+    diagVN.dispose();
+  }
+
+  /// 카카오 진단 응답(JSON) → 사용자가 바로 이해할 수 있는 한 줄 안내.
+  static String _fmtKakaoDiag(Map<String, dynamic> t) {
+    final hint = '${t['hint'] ?? ''}'.trim();
+    if (t['ok'] == true) return '카카오 키·서비스 정상입니다.';
+    if (hint.isNotEmpty) return hint;
+    final kakao = t['kakao'];
+    if (kakao is Map && '${kakao['message'] ?? ''}'.trim().isNotEmpty) {
+      return '카카오 오류: ${kakao['message']} '
+          '(마스터 콘솔 → [지도 검색 키 (카카오)]에서 확인하세요)';
+    }
+    final err = '${t['error'] ?? ''}'.trim();
+    if (err.isNotEmpty) return '카카오 연결 오류: $err';
+    return '카카오 응답을 확인할 수 없습니다. 키/서비스 상태를 점검하세요.';
   }
 
   /// 검색 결과에서 선택한 위치를 저장(장소명이 비어 있으면 결과 라벨 사용).

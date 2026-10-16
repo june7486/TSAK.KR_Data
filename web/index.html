@@ -344,7 +344,7 @@
         };
       }
 
-      loadSdk(build, function () { done(null); });
+      loadSdk(build, function () { done({ error: 'sdk' }); });
     };
   </script>
   <script>

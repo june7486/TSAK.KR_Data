@@ -663,6 +663,19 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// [요구] 카카오 REST 키 유효성 진단 — 실제 카카오 응답을 그대로 반환.
+  ///   (401 이면 카카오가 키를 인식하지 못하는 것: 활성화 전/오타)
+  Future<Map<String, dynamic>> geoKakaoTest() async {
+    try {
+      final r = await http
+          .get(_uri('/api/geo/kakao-test'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': '$e'};
+    }
+  }
+
   /// 선택 계정 완전 삭제(마스터 전용). [corps] 로 소속 명단을 지정한다.
   Future<Map<String, dynamic>> deleteMembers(
     List<String> ids, {

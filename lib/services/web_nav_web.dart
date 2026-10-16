@@ -471,6 +471,7 @@ extension type _MapPick(JSObject _) implements JSObject {
   external String? get lat;
   external String? get lng;
   external String? get address;
+  external String? get error;
 }
 
 Future<Map<String, String>?> openKakaoMapPicker({
@@ -495,6 +496,7 @@ Future<Map<String, String>?> openKakaoMapPicker({
           'lat': o.lat ?? '',
           'lng': o.lng ?? '',
           'address': o.address ?? '',
+          'error': o.error ?? '',
         });
       } catch (_) {
         completer.complete(null);

@@ -566,6 +566,8 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                     ),
                     child: const Text(
                       '• [REST API 키] — 서버가 장소를 검색해 좌표를 얻습니다(필수).\n'
+                      '   → 카카오 콘솔 > 제품 설정 > 카카오맵 에서\n'
+                      "      '카카오맵(로컬)' 서비스를 반드시 활성화(ON)해야 검색됩니다.\n"
                       '• [JavaScript 키] — 실제 카카오 지도를 화면에 띄웁니다(선택).\n'
                       '   → 카카오 콘솔 > 플랫폼 키 > JavaScript SDK 도메인에\n'
                       '      이 앱 주소(예: *.sandbox.novita.ai)를 등록해야 지도가 뜹니다.\n'
@@ -578,7 +580,7 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                     controller: ctrl,
                     decoration: const InputDecoration(
                       labelText: '카카오 REST API 키 (좌표 검색)',
-                      hintText: '예) ace1d21c418e583805a7eebaef8bb6...',
+                      hintText: '카카오 콘솔의 REST API 키 (32자리)',
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -616,17 +618,37 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                                       'kakaoJsKey': jsCtrl.text.trim(),
                                     },
                                   );
+                                  // 실제 카카오 응답으로 키 유효성 진단.
+                                  final diag = await nas.geoKakaoTest();
                                   final items = await nas.geoSearch(
                                     qCtrl.text.trim(),
                                     limit: 5,
                                   );
                                   final hasJs = jsCtrl.text.trim().isNotEmpty;
+                                  String diagMsg;
+                                  if (diag['ok'] == true) {
+                                    diagMsg = '카카오 키 정상 ✓';
+                                  } else {
+                                    final hint = '${diag['hint'] ?? ''}'.trim();
+                                    if (hint.isNotEmpty) {
+                                      diagMsg = '⚠ $hint';
+                                    } else if (diag['status'] != null) {
+                                      final kk = diag['kakao'];
+                                      final em = (kk is Map)
+                                          ? '${kk['message'] ?? kk['errorType'] ?? ''}'
+                                          : '${diag['error'] ?? ''}';
+                                      diagMsg = '⚠ 카카오 오류(${diag['status']}): $em';
+                                    } else {
+                                      diagMsg = '⚠ ${diag['error'] ?? '진단 실패'}';
+                                    }
+                                  }
                                   setSt(() {
                                     busy = false;
-                                    testMsg = '저장됨 ${saved['ok'] == true ? '✓' : '?'}'
-                                        '${hasJs ? ' · 카카오맵(지도) 사용 ✓' : ' · ⚠ JavaScript 키가 비어 카카오맵이 안 뜹니다'}\n'
+                                    testMsg = '저장됨 ${saved['ok'] == true ? '✓' : '?'}\n'
+                                        '$diagMsg\n'
+                                        '${hasJs ? 'JavaScript 키 ✓ (지도 표시)' : '⚠ JavaScript 키가 비어 카카오맵이 안 뜹니다'}\n'
                                         '좌표검색 ${items.length}건'
-                                        '${items.isNotEmpty ? ' · ${items.first['label']}' : ' (REST 키/활성화를 확인하세요)'}';
+                                        '${items.isNotEmpty ? ' · ${items.first['label']}' : ''}';
                                   });
                                 } catch (e) {
                                   setSt(() {
