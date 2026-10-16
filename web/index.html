@@ -182,25 +182,90 @@
       var seedLat = parseFloat(opts.lat);
       var seedLng = parseFloat(opts.lng);
 
+      var finished = false;
       function done(v) {
+        if (finished) return;      // 중복 콜백 방지
+        finished = true;
+        try { document.removeEventListener('keydown', onEsc); } catch (e) {}
         try { cb(v); } catch (e) {}
       }
+      function esc(s) { return String(s || '').replace(/[&<>"]/g, function (c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+      function onEsc(e) {
+        if (e && (e.key === 'Escape' || e.keyCode === 27)) {
+          try { var a = document.getElementById('tkp-wrap'); if (a) a.remove(); } catch (_) {}
+          try { var b = document.getElementById('tkp-fallback'); if (b) b.remove(); } catch (_) {}
+          done(null);
+        }
+      }
+      document.addEventListener('keydown', onEsc);
       if (!key) { done(null); return; }
+
+      // ---- 안전장치(fail-safe): 8초 안에 지도가 준비되지 않으면
+      //      '지도 없이 닫을 수 있는' 폴백 화면을 띄운다(앱이 멈추는 것 방지).
+      var ready = false;
+      var guard = setTimeout(function () {
+        if (ready || finished) return;
+        buildFallback('카카오 지도를 불러오지 못했습니다.');
+      }, 8000);
 
       function loadSdk(cb2, fail) {
         if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
           cb2(); return;
         }
+        // 이미 로드 시도 중이면 onerror/onload 를 기다린다.
         var s = document.createElement('script');
         s.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey='
-          + encodeURIComponent(key) + '&libraries=services';
-        s.onload = function () { cb2(); };
+          + encodeURIComponent(key) + '&libraries=services&autoload=false';
+        s.onload = function () {
+          try {
+            if (window.kakao && window.kakao.maps && kakao.maps.load) {
+              kakao.maps.load(function () { cb2(); });
+            } else { cb2(); }
+          } catch (e) { fail(); }
+        };
         s.onerror = function () { fail(); };
         document.head.appendChild(s);
       }
 
-      function build() {
+      // 지도 없이 안전하게 닫을 수 있는 폴백 화면.
+      function buildFallback(msg) {
+        if (finished) return;
+        try { removeAll(); } catch (e) {}
         var wrap = document.createElement('div');
+        wrap.id = 'tkp-fallback';
+        wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#fff;'
+          + 'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+          + 'padding:24px;text-align:center;'
+          + "font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;";
+        wrap.innerHTML = '<div style="font-size:40px">🗺️</div>'
+          + '<div style="font-size:16px;font-weight:800;margin:12px 0 6px">' + esc(msg) + '</div>'
+          + '<div style="font-size:13px;color:#666;line-height:1.6;max-width:420px">'
+          + '카카오 콘솔 → 내 애플리케이션 → [한국범스카우트중앙회] → 제품 설정 → 카카오맵 → '
+          + "'카카오맵(로컬)'을 활성화(ON)하면 실제 카카오 지도가 표시됩니다.<br>"
+          + '지금은 <b>무료 지도(OpenStreetMap)</b> 검색으로 위치를 지정하실 수 있습니다.</div>'
+          + '<button id="tkp-fb-close" style="margin-top:18px;padding:12px 26px;border:0;'
+          + 'border-radius:10px;background:#5B2C8D;color:#fff;font-weight:800;font-size:14px;'
+          + 'cursor:pointer">확인 (닫기)</button>';
+        document.body.appendChild(wrap);
+        var b = document.getElementById('tkp-fb-close');
+        if (b) b.onclick = function () { try { wrap.remove(); } catch (e) {} done(null); };
+        if (b) b.focus();
+      }
+
+      function removeAll() {
+        var a = document.getElementById('tkp-wrap');
+        if (a) a.remove();
+        var b = document.getElementById('tkp-fallback');
+        if (b) b.remove();
+      }
+
+      function build() {
+        ready = true;
+        try { clearTimeout(guard); } catch (e) {}
+
+        var wrap = document.createElement('div');
+        wrap.id = 'tkp-wrap';
         wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#fff;'
           + 'display:flex;flex-direction:column;'
           + "font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;";
@@ -222,7 +287,7 @@
 
         var mapDiv = document.createElement('div');
         mapDiv.id = 'tkp-map';
-        mapDiv.style.cssText = 'flex:1 1 auto;min-height:200px;position:relative;';
+        mapDiv.style.cssText = 'flex:1 1 auto;min-height:200px;position:relative;background:#eef1f5;';
 
         var pin = document.createElement('div');
         pin.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);'
@@ -249,102 +314,105 @@
         wrap.appendChild(foot);
         document.body.appendChild(wrap);
 
-        var center = new kakao.maps.LatLng(
-          isFinite(seedLat) ? seedLat : 37.5665,
-          isFinite(seedLng) ? seedLng : 126.9780
-        );
-        var map = new kakao.maps.Map(mapDiv, { center: center, level: 3 });
-        var marker = new kakao.maps.Marker({ position: center, map: map });
-        marker.setMap(map);
+        function $id(x){ return document.getElementById(x); }
 
-        var cur = {
-          place: seedPlace || '', lat: center.getLat(),
-          lng: center.getLng(), address: ''
-        };
+        // ★ 먼저 버튼부터 연결 — 지도 생성이 실패해도 반드시 닫을 수 있게.
+        $id('tkp-cancel').onclick = function () { removeAll(); done(null); };
+        $id('tkp-close').onclick = function () { removeAll(); done(null); };
+
+        var map = null, marker = null;
+        var cur = { place: seedPlace || '', lat: isFinite(seedLat) ? seedLat : 37.5665,
+                    lng: isFinite(seedLng) ? seedLng : 126.9780, address: '' };
         function setInfo() {
-          $id('tkp-info').innerHTML = '<b>' + esc(cur.place || '(이름 없음)') + '</b>'
+          var el = $id('tkp-info');
+          if (!el) return;
+          el.innerHTML = '<b>' + esc(cur.place || '(이름 없음)') + '</b>'
             + '<br><span style="color:#777">' + esc(cur.address || '') + '</span>'
             + ' <span style="color:#aaa;font-size:11.5px">('
-            + cur.lat.toFixed(5) + ', ' + cur.lng.toFixed(5) + ')</span>';
+            + Number(cur.lat).toFixed(5) + ', ' + Number(cur.lng).toFixed(5) + ')</span>';
         }
-        function $id(x){ return document.getElementById(x); }
-        function esc(s){ return String(s||'').replace(/[&<>"]/g,function(c){
-          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-
-        function updateFromCenter() {
-          var c = map.getCenter();
-          cur.lat = c.getLat(); cur.lng = c.getLng();
-          marker.setPosition(c);
-          setInfo();
-        }
-        kakao.maps.event.addListener(map, 'center_changed', function () {
-          var c = map.getCenter();
-          cur.lat = c.getLat(); cur.lng = c.getLng();
-          marker.setPosition(c);
-        });
-        kakao.maps.event.addListener(map, 'idle', function () {
-          var c = map.getCenter();
-          cur.lat = c.getLat(); cur.lng = c.getLng();
-          marker.setPosition(c);
-          if (cur._addrDirty) { cur._addrDirty = false; }
-          setInfo();
-        });
         setInfo();
 
+        // ★ 지도 생성은 try/catch 로 감싼다(실패해도 화면은 닫을 수 있게 유지).
+        try {
+          var center = new kakao.maps.LatLng(cur.lat, cur.lng);
+          map = new kakao.maps.Map(mapDiv, { center: center, level: 3 });
+          marker = new kakao.maps.Marker({ position: center, map: map });
+          marker.setMap(map);
+          kakao.maps.event.addListener(map, 'dragend', function () {
+            var c = map.getCenter();
+            cur.lat = c.getLat(); cur.lng = c.getLng();
+            marker.setPosition(c); setInfo();
+          });
+        } catch (e) {
+          map = null;
+          var md = $id('tkp-map');
+          if (md) md.innerHTML = '<div style="position:absolute;inset:0;display:flex;'
+            + 'align-items:center;justify-content:center;color:#888;font-size:13px;text-align:center;padding:20px">'
+            + '카카오 지도를 표시할 수 없습니다.<br>(카카오맵 서비스 활성화 필요)<br><br>'
+            + '좌측 검색창 대신, 아래 취소 후 <b>무료 지도</b>로 위치를 지정하세요.</div>';
+        }
+
+        $id('tkp-ok').onclick = function () {
+          var v = { place: cur.place || '', lat: Number(cur.lat).toFixed(6),
+                    lng: Number(cur.lng).toFixed(6), address: cur.address || '' };
+          removeAll(); done(v);
+        };
+
         function applyPlace(p) {
-          var pos = new kakao.maps.LatLng(parseFloat(p.y), parseFloat(p.x));
-          map.setCenter(pos);
+          var la = parseFloat(p.y), ln = parseFloat(p.x);
+          if (isFinite(la) && isFinite(ln)) { cur.lat = la; cur.lng = ln; }
           cur.place = p.place_name || p.address_name || cur.place;
           cur.address = p.road_address_name || p.address_name || '';
-          cur.lat = parseFloat(p.y); cur.lng = parseFloat(p.x);
-          marker.setPosition(pos);
+          if (map && window.kakao && kakao.maps) {
+            try {
+              var pos = new kakao.maps.LatLng(cur.lat, cur.lng);
+              map.setCenter(pos);
+              if (marker) marker.setPosition(pos);
+            } catch (e) {}
+          }
           setInfo();
         }
         function search() {
           var q = ($id('tkp-q').value || '').trim();
           if (!q) return;
+          if (!map) {
+            $id('tkp-info').innerHTML = '<span style="color:#c62828">지도가 없어 검색할 수 없습니다. '
+              + '무료 지도 검색을 이용하세요.</span>';
+            return;
+          }
           $id('tkp-info').innerHTML = '<span style="color:#777">검색 중…</span>';
-          var ps = new kakao.maps.services.Places();
-          ps.keywordSearch(q, function (data, status) {
-            if (status === kakao.maps.services.Status.OK && data && data[0]) {
-              applyPlace(data[0]); return;
-            }
-            // 폴백: 주소 지오코딩
-            var gc = new kakao.maps.services.Geocoder();
-            gc.addressSearch(q, function (res, st2) {
-              if (st2 === kakao.maps.services.Status.OK && res && res[0]) {
-                applyPlace({
-                  x: res[0].x, y: res[0].y,
-                  place_name: q,
-                  address_name: res[0].address_name || '',
-                  road_address_name: (res[0].road_address && res[0].road_address.address_name) || ''
-                });
-              } else {
-                setInfo();
-                alert('검색 결과가 없습니다. 다른 검색어로 시도해 보세요.');
+          try {
+            var ps = new kakao.maps.services.Places();
+            ps.keywordSearch(q, function (data, status) {
+              if (status === kakao.maps.services.Status.OK && data && data[0]) {
+                applyPlace(data[0]); return;
               }
+              var gc = new kakao.maps.services.Geocoder();
+              gc.addressSearch(q, function (res, st2) {
+                if (st2 === kakao.maps.services.Status.OK && res && res[0]) {
+                  applyPlace({ x: res[0].x, y: res[0].y, place_name: q,
+                    address_name: res[0].address_name || '',
+                    road_address_name: (res[0].road_address && res[0].road_address.address_name) || '' });
+                } else {
+                  setInfo();
+                  alert('검색 결과가 없습니다. 다른 검색어로 시도해 보세요.');
+                }
+              });
             });
-          });
+          } catch (e) {
+            setInfo();
+            alert('검색 중 오류가 발생했습니다. 무료 지도 검색을 이용하세요.');
+          }
         }
-
         $id('tkp-go').onclick = search;
         $id('tkp-q').addEventListener('keydown', function (e) {
           if (e.key === 'Enter') search();
         });
-        $id('tkp-cancel').onclick = function () {
-          try { wrap.remove(); } catch (e) {}
-          done(null);
-        };
-        $id('tkp-close').onclick = $id('tkp-cancel').onclick;
-        $id('tkp-ok').onclick = function () {
-          var v = { place: cur.place || '', lat: cur.lat.toFixed(6),
-                    lng: cur.lng.toFixed(6), address: cur.address || '' };
-          try { wrap.remove(); } catch (e) {}
-          done(v);
-        };
       }
 
-      loadSdk(build, function () { done({ error: 'sdk' }); });
+      // SDK 로드 실패 → 안전한 폴백 화면(닫기 버튼 있음). 앱은 절대 멈추지 않는다.
+      loadSdk(build, function () { clearTimeout(guard); buildFallback('카카오 지도를 불러오지 못했습니다.'); });
     };
   </script>
   <script>

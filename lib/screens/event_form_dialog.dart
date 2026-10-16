@@ -114,6 +114,9 @@ class _EventFormDialogState extends State<EventFormDialog> {
   /// (요구) 기획 시 지정한 지도 위치(좌표). 없으면 '' → 장소 검색으로 노출.
   String _lat = '';
   String _lng = '';
+
+  /// 카카오 지도 오버레이가 열려 있는 동안 true (중복 호출 방지).
+  bool _kakaoOpening = false;
   @override
   void initState() {
     super.initState();
@@ -688,40 +691,59 @@ class _EventFormDialogState extends State<EventFormDialog> {
   }
 
   /// [요구] 행사기획 시 지도에서 위치를 '검색하면 곧바로 입력'한다.
-  ///   · 웹 + 카카오 JS 키가 있으면 → **실제 카카오맵(드래그·검색)** 선택기.
+  ///   · 웹 + 카카오(키·서비스 정상) 확인 시 → **실제 카카오맵(드래그·검색)** 선택기.
   ///   · 그 외 → 무료 지오코딩 검색 목록(좌표 즉시 입력) + 미리보기.
+  ///
+  /// ## 버그 수정: "지도에서 검색 → 다운/멈춤"
+  ///  카카오맵 서비스가 꺼져 있으면 지도가 하얗게 뜨고 오버레이에 갇혔다.
+  ///  → 서버가 카카오 상태(canOpenKakao)를 확인해 줄 때만 오버레이를 열고,
+  ///    아니면 곧바로 무료 지도 검색으로 전환한다(JS/Dart 이중 안전장치).
   Future<void> _searchOnMap() async {
+    if (_kakaoOpening) return; // 중복 호출(연타) 방지 — 오버레이 2중 생성 차단
     final nas = context.read<NasApi>();
     if (isWebRuntime) {
-      final cfg = await nas.geoConfig();
+      Map<String, dynamic> cfg = {};
+      try {
+        cfg = await nas.geoConfig();
+      } catch (_) {}
       final jsKey = '${cfg['kakaoJsKey'] ?? ''}'.trim();
-      if (jsKey.isNotEmpty) {
-        final picked = await openKakaoMapPicker(
-          key: jsKey,
-          title: _title.text.trim(),
-          place: _place.text.trim(),
-          lat: _lat,
-          lng: _lng,
-        );
-        if (picked != null) {
-          // 카카오 JS SDK 로드 실패(키 무효/도메인 미등록 등) →
-          //   조용히 아무 일도 안 일어나는 대신, 무료 검색으로 자동 폴백한다.
-          if ((picked['error'] ?? '').isNotEmpty) {
-            if (!mounted) return;
-            await _searchOnMapFallback(kakaoError: true);
-            return;
-          }
+      final canOpen = cfg['canOpenKakao'] == true;
+      if (jsKey.isNotEmpty && canOpen) {
+        _kakaoOpening = true;
+        Map<String, String>? picked;
+        try {
+          picked = await openKakaoMapPicker(
+            key: jsKey,
+            title: _title.text.trim(),
+            place: _place.text.trim(),
+            lat: _lat,
+            lng: _lng,
+          );
+        } finally {
+          _kakaoOpening = false;
+        }
+        final err = picked?['error'] ?? '';
+        if (picked != null && err.isEmpty) {
           if (!mounted) return;
+          final p = picked;
           setState(() {
-            _lat = picked['lat'] ?? '';
-            _lng = picked['lng'] ?? '';
-            final nm = (picked['place'] ?? '').trim();
+            _lat = p['lat'] ?? '';
+            _lng = p['lng'] ?? '';
+            final nm = (p['place'] ?? '').trim();
             if (nm.isNotEmpty) _place.text = nm;
           });
           _toast('지도 위치가 지정되었습니다');
+          return; // 정상적으로 지정/취소됨
         }
+        // 오류/시간초과 → 무료 지도로 폴백(+원인 진단 배너)
+        if (!mounted) return;
+        await _searchOnMapFallback(kakaoError: true);
         return;
       }
+      // 카카오 준비 안 됨(키 없음/서비스 꺼짐/미확인) → 무료 지도 검색으로.
+      if (!mounted) return;
+      await _searchOnMapFallback(kakaoError: jsKey.isNotEmpty);
+      return;
     }
     await _searchOnMapFallback();
   }

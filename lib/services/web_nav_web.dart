@@ -482,9 +482,11 @@ Future<Map<String, String>?> openKakaoMapPicker({
   String lng = '',
 }) {
   final completer = Completer<Map<String, String>?>();
+  Timer? safety;
   try {
     void done(JSAny? data) {
       if (completer.isCompleted) return;
+      safety?.cancel();
       if (data == null || data.isUndefinedOrNull) {
         completer.complete(null);
         return;
@@ -503,6 +505,12 @@ Future<Map<String, String>?> openKakaoMapPicker({
       }
     }
 
+    // 브리지 함수가 없는 환경(구버전 index.html 등)에서는 곧바로 실패 처리.
+    final fn = globalContext.getProperty('tsakOpenKakaoMapPicker'.toJS);
+    if (!fn.isA<JSFunction>()) {
+      return Future.value(null);
+    }
+
     final opts = <String, Object?>{
       'key': key,
       'title': title,
@@ -511,6 +519,14 @@ Future<Map<String, String>?> openKakaoMapPicker({
       'lng': lng,
     }.jsify()! as JSObject;
     _tsakOpenKakaoMapPicker(opts, done.toJS);
+
+    // ★ 안전 타임아웃: 오버레이가 어떤 이유로든 콜백을 못 주면 45초 뒤 실패 처리
+    //   → 앱이 영원히 기다리며 멈추는 것을 막는다.
+    safety = Timer(const Duration(seconds: 45), () {
+      if (!completer.isCompleted) {
+        completer.complete({'error': 'timeout'});
+      }
+    });
   } catch (_) {
     if (!completer.isCompleted) completer.complete(null);
   }
