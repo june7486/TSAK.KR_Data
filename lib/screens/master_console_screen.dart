@@ -620,12 +620,13 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                                     qCtrl.text.trim(),
                                     limit: 5,
                                   );
+                                  final hasJs = jsCtrl.text.trim().isNotEmpty;
                                   setSt(() {
                                     busy = false;
-                                    testMsg =
-                                        '저장됨 ${saved['ok'] == true ? '✓' : '?'} · '
-                                        '검색결과 ${items.length}건'
-                                        '${items.isNotEmpty ? '\n· ${items.first['label']}' : ' (키/활성화를 확인하세요)'}';
+                                    testMsg = '저장됨 ${saved['ok'] == true ? '✓' : '?'}'
+                                        '${hasJs ? ' · 카카오맵(지도) 사용 ✓' : ' · ⚠ JavaScript 키가 비어 카카오맵이 안 뜹니다'}\n'
+                                        '좌표검색 ${items.length}건'
+                                        '${items.isNotEmpty ? ' · ${items.first['label']}' : ' (REST 키/활성화를 확인하세요)'}';
                                   });
                                 } catch (e) {
                                   setSt(() {

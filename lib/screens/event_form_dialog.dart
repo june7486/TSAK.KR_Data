@@ -721,10 +721,11 @@ class _EventFormDialogState extends State<EventFormDialog> {
 
   /// 무료 지오코딩 기반 검색(카카오 JS 키가 없거나 네이티브일 때).
   Future<void> _searchOnMapFallback() async {
+    // (버그수정) 검색어는 '장소' 우선 — 행사명이 섞이면 엉뚱한 곳이 검색된다.
     final qCtrl = TextEditingController(
-      text: [_title.text.trim(), _place.text.trim()]
-          .where((s) => s.isNotEmpty)
-          .join(' '),
+      text: _place.text.trim().isNotEmpty
+          ? _place.text.trim()
+          : _title.text.trim(),
     );
     List<Map<String, dynamic>> items = [];
     bool loading = false;
@@ -774,6 +775,20 @@ class _EventFormDialogState extends State<EventFormDialog> {
                     '장소/주소를 검색하면 좌표가 곧바로 입력됩니다. '
                     '결과를 누르면 정확한 위치가 저장됩니다.',
                     style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      '💡 무료 지도(OpenStreetMap) 검색 중입니다. 상호명(예: 송정호텔)이 '
+                      '안 잡히면 마스터 콘솔 → [지도 검색 키 (카카오)]에 카카오 키를 '
+                      '등록하면 카카오맵(정확)으로 전환됩니다.',
+                      style: TextStyle(fontSize: 11, height: 1.45),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Row(
