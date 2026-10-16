@@ -48,6 +48,11 @@
   }
   .head img{width:74px;height:74px;object-fit:contain;margin-bottom:10px;
     filter:drop-shadow(0 6px 14px rgba(27,79,156,.18));}
+  /* (요구) 앰블럼 클릭 → 한국범스카우트중앙회 홈페이지 */
+  .head a.emblem{display:inline-block;line-height:0;cursor:pointer;
+    transition:transform .12s ease;}
+  .head a.emblem:hover{transform:scale(1.05);}
+  .head a.emblem:active{transform:scale(.97);}
   .brand{font-size:12.5px;letter-spacing:1.5px;font-weight:800;
     color:var(--fr-blue);text-transform:uppercase;}
   .brand .red{color:var(--fr-red);}
@@ -183,8 +188,9 @@
     display:flex;align-items:center;gap:6px;}
   .contact .crow{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13.5px;}
   .contact .crow .cn{font-weight:800;color:var(--ink);}
-  .contact .crow a.call{margin-left:auto;text-decoration:none;background:var(--fr-blue);
-    color:#fff;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:9px;}
+  .contact .crow a.call{margin-left:auto;text-decoration:none;background:#ffe812;
+    color:#3c1e1e;font-weight:900;font-size:12.5px;padding:7px 13px;border-radius:9px;
+    box-shadow:0 2px 6px rgba(0,0,0,.10);}
 
   /* (요구) 행사 안내자료 — 아래 '별도 박스' */
   .infobox{margin:14px 0 2px;border:1px solid #dbe4f6;background:#f6f9ff;
@@ -202,8 +208,9 @@
     display:flex;align-items:center;gap:6px;}
   .infobox .crow{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13.5px;}
   .infobox .crow .cn{font-weight:800;color:var(--ink);}
-  .infobox .crow a.call{margin-left:auto;text-decoration:none;background:var(--fr-blue);
-    color:#fff;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:9px;}
+  .infobox .crow a.call{margin-left:auto;text-decoration:none;background:#ffe812;
+    color:#3c1e1e;font-weight:900;font-size:12.5px;padding:7px 13px;border-radius:9px;
+    box-shadow:0 2px 6px rgba(0,0,0,.10);}
 
   /* (요구) 행사 안내 글 — 하부에 접어두기/펼치기 */
   .descbox{margin:14px 0 2px;border:1px solid #e7e1f2;background:#fbf9ff;
@@ -270,7 +277,11 @@
 
   <div class="card">
     <div class="head">
-      <img src="tsak_emblem_splash.png" alt="TSAK" onerror="this.src='assets/assets/images/tsak_emblem.png'">
+      <a class="emblem" href="https://www.tsak.kr" target="_blank" rel="noopener"
+         title="한국범스카우트중앙회 홈페이지 (www.tsak.kr)">
+        <img src="tsak_emblem_splash.png" alt="TSAK"
+             onerror="this.src='assets/assets/images/tsak_emblem.png'">
+      </a>
       <div class="brand"><span class="red">Tiger Scout</span> Association of Korea</div>
       <div class="event-title" id="evTitle">행사</div>
       <div class="event-meta" id="evMeta"></div>
