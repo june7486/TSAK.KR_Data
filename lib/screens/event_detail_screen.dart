@@ -1179,6 +1179,44 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   );
                 },
               ),
+              // (요구) 참가신청 상세정보를 '아주 작은 글씨'로 병기 —
+              //   도착예정시간·숙박·이동방법·동행자·전달사항. 없으면 숨김.
+              Builder(
+                builder: (_) {
+                  final bits = <String>[];
+                  final arrive = '${a['arriveNote'] ?? ''}'.trim().isNotEmpty
+                      ? '${a['arriveNote']}'
+                      : '${a['arrive'] ?? ''}'.trim();
+                  if (arrive.isNotEmpty) bits.add('⏰ $arrive');
+                  final lodge = '${a['lodging'] ?? ''}'.trim();
+                  if (lodge.isNotEmpty) bits.add('🛏 $lodge');
+                  final tp = '${a['transportNote'] ?? ''}'.trim().isNotEmpty
+                      ? '${a['transportNote']}'
+                      : '${a['transport'] ?? ''}'.trim();
+                  if (tp.isNotEmpty) bits.add('🚗 $tp');
+                  final comp = '${a['companion'] ?? ''}'.trim();
+                  if (comp.isNotEmpty) bits.add('👥 $comp');
+                  final msg = '${a['message'] ?? ''}'.trim();
+                  if (msg.isNotEmpty) bits.add('💬 $msg');
+                  if (bits.isEmpty) return const SizedBox.shrink();
+                  // 넘칠 경우 마퀴(흐리는 글자)로 표시 — 폭을 확정해야 감지된다.
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: SizedBox(
+                      height: 13,
+                      child: MarqueeText(
+                        bits.join('  ·  '),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          color: AppColors.textGray.withValues(alpha: 0.95),
+                        ),
+                        velocity: 18,
+                        height: 13,
+                      ),
+                    ),
+                  );
+                },
+              ),
               // [요구] 회원 등록정보 없음 → 클릭 시 신규 등록을 유도한다.
               if (canManage && !hasCard)
                 const Padding(
