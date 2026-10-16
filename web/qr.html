@@ -211,11 +211,6 @@
     background:#ffe812;color:#3c1e1e;font-weight:900;font-size:12.5px;
     padding:6px 12px;border-radius:99px;}
   .place-link a .pin{font-size:13px;}
-  .place-link .map-prev{display:block;width:100%;max-width:100%;margin-top:8px;
-    border-radius:10px;border:1px solid rgba(0,0,0,.12);cursor:pointer;}
-  /* (요구) 실제 카카오 지도 임베드 영역 */
-  .kakao-map{width:100%;height:200px;margin-top:8px;border-radius:10px;
-    overflow:hidden;border:1px solid rgba(0,0,0,.12);}
 
   /* (요구) 참가신청 여부 상단 노출 */
   .apply-state{margin-top:8px;display:inline-flex;align-items:center;gap:6px;
@@ -236,8 +231,7 @@
       <div class="event-title" id="evTitle">행사</div>
       <div class="event-meta" id="evMeta"></div>
       <div class="place-link hide" id="placeLink"></div>
-      <!-- (요구) 실제 카카오 지도 (JavaScript 키 등록 시 표시) -->
-      <div class="kakao-map hide" id="kakaoMap"></div>
+      <!-- (요구) 참가신청 페이지에서는 지도를 표시하지 않는다 — 아래 '카카오맵에서 보기' 링크만 노출. -->
       <!-- (요구) 참가신청 여부를 상위에 노출 -->
       <div class="apply-state hide" id="applyState"></div>
     </div>
@@ -453,10 +447,11 @@
     $('evMeta').innerHTML = bits.join(' · ');
     renderPlaceLink();
     renderApplyState();
-    initKakaoMap();
   }
 
   // (요구) 장소를 클릭하면 카카오맵에서 그 위치를 연다.
+  //   (요구) 참가신청 페이지에서는 지도(이미지/임베드)를 **표시하지 않는다** —
+  //   노란 '카카오맵에서 보기' 링크 하나만 노출한다.
   function renderPlaceLink(){
     var box = $('placeLink'); if (!box) return;
     var place = (ev && ev.place) ? String(ev.place).trim() : '';
@@ -472,52 +467,8 @@
     var exact = (ev && ev.lat && ev.lng) ? ' · 위치 지정됨' : '';
     var html = '<a href="'+href+'" target="_blank" rel="noopener">'
       + '<span class="pin">📍</span> '+label+exact+'</a>';
-    // (요구) 기획 시 지정한 좌표가 있으면 지도 미리보기를 함께 노출.
-    if (ev && ev.lat && ev.lng){
-      var c = (ev.lat && ev.lng) ? '&lat='+encodeURIComponent(ev.lat)
-        +'&lng='+encodeURIComponent(ev.lng) : '';
-      var img = '/api/geo/kakaomap?lat='+encodeURIComponent(ev.lat)
-        +'&lng='+encodeURIComponent(ev.lng)+'&level=3&w=640&h=240';
-      html += '<img class="map-prev" src="'+img+'" alt="행사 위치 지도" '
-        + 'onerror="this.onerror=null;this.src=\'/api/geo/staticmap?lat='
-        + encodeURIComponent(ev.lat)+'&lng='+encodeURIComponent(ev.lng)
-        +'&z=15&w=640&h=240\';" '
-        + 'onclick="window.open(\''+href+'\',\'_blank\')"/>';
-    }
     box.innerHTML = html;
     box.classList.remove('hide');
-  }
-
-  // (요구) 실제 카카오 지도 — JavaScript 키가 등록돼 있으면 드래그·확대 가능한
-  //   지도를 띄우고 마커를 표시. 키가 없으면 지도 이미지/링크로 대체된다.
-  var _kakaoJsKey = '';
-  function initKakaoMap(){
-    if (!ev || !ev.lat || !ev.lng) return;
-    var box = $('kakaoMap'); if (!box) return;
-    api('/api/geo/config').then(function(r){
-      var key = (r.j && r.j.kakaoJsKey) ? String(r.j.kakaoJsKey) : '';
-      if (!key) return;   // 키 없으면 이미지 미리보기만 노출
-      _kakaoJsKey = key;
-      var s = document.createElement('script');
-      s.type = 'text/javascript';
-      s.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey='+encodeURIComponent(key);
-      s.onload = function(){
-        try{
-          var lat = parseFloat(ev.lat), lng = parseFloat(ev.lng);
-          var center = new kakao.maps.LatLng(lat, lng);
-          box.classList.remove('hide');
-          var map = new kakao.maps.Map(box, { center: center, level: 4 });
-          var mk = new kakao.maps.Marker({ position: center });
-          mk.setMap(map);
-          var info = new kakao.maps.InfoWindow({
-            content: '<div style="padding:4px 8px;font-size:12px;">'+esc(ev.place||ev.title||'행사 위치')+'</div>'
-          });
-          info.open(map, mk);
-        }catch(e){ box.classList.add('hide'); }
-      };
-      s.onerror = function(){ box.classList.add('hide'); };
-      document.head.appendChild(s);
-    }).catch(function(){});
   }
 
   // (요구) 참가신청 여부를 상단에 노출.
