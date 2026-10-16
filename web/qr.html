@@ -231,30 +231,34 @@
   .desc-close{margin-left:auto;padding:8px 16px;border:1px solid #ddd;background:#fff;
     border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
 
-  /* (요구) 계좌번호 안내 — 접어두기/펼치기(기본 펼침) */
-  .acctbox{margin:14px 0 2px;border:1px solid #cfe6d6;background:#f3faf5;
-    border-radius:14px;overflow:hidden;}
-  .acct-toggle{width:100%;display:flex;align-items:center;gap:8px;background:transparent;
-    border:0;padding:14px 15px;font-size:13.5px;font-weight:900;color:#1E7A46;cursor:pointer;
+  /* (요구) 후원 계좌 — Flutter 위젯(DonationAccounts)과 동일한 디자인.
+     흰 배경 + 골드 테두리, 라벨(골드)·계좌(검정), [송금](초록)·[복사](보라) 칩. */
+  .acctbox{margin:14px 0 2px;border:1.5px solid #F2B705;background:#fff;
+    border-radius:12px;padding:10px;}
+  .acct-head{display:flex;align-items:center;gap:5px;}
+  .acct-head .ah-i{color:#5B2C8D;font-size:15px;line-height:1;}
+  .acct-head .ah-t{font-size:12px;font-weight:800;color:#1F1A2E;}
+  .acct-head .ah-h{margin-left:auto;font-size:9.5px;color:#6E6A7C;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44%;}
+  .acct-head .ah-tgl{margin-left:6px;flex:0 0 auto;display:inline-flex;align-items:center;
+    gap:2px;background:rgba(91,44,141,.08);border:0;border-radius:20px;
+    padding:3px 8px;font-size:10px;font-weight:800;color:#5B2C8D;cursor:pointer;
     font-family:inherit;}
-  .acct-toggle .at-a{margin-left:auto;font-size:12px;font-weight:800;color:#1E7A46;
-    background:#e2f2e8;padding:5px 12px;border-radius:99px;}
-  .acct-body{padding:0 15px 15px;}
-  .acct-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e6efe9;
-    border-radius:11px;padding:11px 12px;margin-bottom:7px;}
-  .acct-row .a-info{flex:1 1 auto;min-width:0;}
-  .acct-row .a-lb{font-size:11.5px;font-weight:800;color:#1E7A46;margin-bottom:3px;}
-  .acct-row .a-no{font-size:15px;font-weight:900;color:var(--ink);letter-spacing:.3px;
-    word-break:break-all;}
-  .acct-row .a-bank{font-size:11.5px;color:#8b95a1;font-weight:700;margin-top:2px;}
-  .acct-copy{flex:0 0 auto;border:0;background:var(--fr-blue);color:#fff;font-weight:800;
-    font-size:12px;padding:9px 13px;border-radius:9px;cursor:pointer;font-family:inherit;
-    white-space:nowrap;}
-  .acct-copy:active{opacity:.8;}
-  .acct-holder{font-size:12px;color:#4a5568;font-weight:700;margin-top:4px;}
-  .acct-foot{display:flex;align-items:center;gap:8px;margin-top:8px;}
-  .acct-close{margin-left:auto;padding:8px 16px;border:1px solid #ddd;background:#fff;
-    border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .acct-body{padding-top:6px;}
+  .acct-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+  .acct-row:last-child{margin-bottom:0;}
+  .a-info{flex:1 1 auto;min-width:0;}
+  .a-lb{font-size:11px;font-weight:800;color:#B8860B;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .a-na{font-size:11px;font-weight:700;color:#1F1A2E;word-break:break-all;}
+  .acct-chips{flex:0 0 auto;display:flex;gap:4px;}
+  .acct-chip{display:inline-flex;align-items:center;gap:3px;border-radius:6px;
+    padding:4px 8px;font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;
+    border:1px solid transparent;background:#fff;white-space:nowrap;}
+  .acct-chip.send{color:#2E7D32;border-color:rgba(46,125,50,.35);background:rgba(46,125,50,.12);}
+  .acct-chip.copy{color:#5B2C8D;border-color:rgba(91,44,141,.35);background:rgba(91,44,141,.12);}
+  .acct-chip:active{opacity:.7;}
+  .acct-holder{font-size:10px;color:#6E6A7C;font-weight:600;margin-top:6px;}
 
   /* (요구) 장소 클릭 → 카카오맵 */
   .place-link{margin-top:7px;}
@@ -652,9 +656,11 @@
     return href || 'https://map.kakao.com/';
   }
 
-  // (요구) 계좌번호 안내 — 복수(대표/수품구매/행사비 등) 계좌를
-  //   '접어두기/펼치기' 토글 박스로 노출한다. (기본: 펼침)
-  //   · 계좌번호 탭 → 클립보드 복사(모바일 편의).
+  // (요구) 후원 계좌 — 복수(대표/수품구매/행사비 등) 계좌를
+  //   Flutter 위젯(DonationAccounts)과 **동일한 모양**으로 노출한다.
+  //   · 흰 배경 + 골드 테두리, 헤더 '후원 계좌'(보라 아이콘) + 예금주 + 접기/펼치기
+  //   · 각 행: 라벨(골드) / 은행+계좌번호 / [송금](초록)·[복사](보라) 칩
+  //   · 송금 = /pay 착지(토스·은행앱 딥링크), 복사 = 클립보드. (기본: 펼침)
   function renderAcct(){
     var boxes = document.querySelectorAll('.acctbox');
     var list = (ev && ev.donations && ev.donations.length) ? ev.donations : [];
@@ -663,55 +669,57 @@
       if (!list.length){ b.classList.add('hide'); b.innerHTML=''; return; }
       b.classList.remove('hide');
       var rows = '';
-      list.forEach(function(d){
+      list.forEach(function(d, idx){
         var bank = esc(String(d.bank || ''));
-        var acct = esc(String(d.account || ''));
+        var acct = esc(String(d.account || ''))
+          .replace(/(\d{3})-(\d{3})-(\d{6})/, '$1-$2-$3');
         var label = esc(String(d.label || ''));
-        var copyVal = esc(String(d.account || '').replace(/[^0-9-]/g,''));
+        var rawNo = String(d.account || '');
         rows += '<div class="acct-row">'
           + '<div class="a-info">'
-            + (label ? '<div class="a-lb">'+label+'</div>' : '')
-            + '<div class="a-no">'+acct+'</div>'
-            + (bank ? '<div class="a-bank">'+bank+'</div>' : '')
+            + '<div class="a-lb">'+label+'</div>'
+            + '<div class="a-na">'+bank+' '+acct+'</div>'
           + '</div>'
-          + '<button class="acct-copy" type="button" data-acct="'+copyVal+'">복사</button>'
+          + '<div class="acct-chips">'
+            + '<button class="acct-chip send" type="button" '
+              + 'data-idx="'+idx+'">➤ 송금</button>'
+            + '<button class="acct-chip copy" type="button" '
+              + 'data-acct="'+esc(rawNo)+'">⧉ 복사</button>'
+          + '</div>'
         + '</div>';
       });
-      b.innerHTML = '<button class="acct-toggle" type="button">'
-          + '<span class="at-i">🏦</span><span>계좌번호 안내</span>'
-          + '<span class="at-a">접어두기 ▴</span></button>'
+      b.innerHTML = '<div class="acct-head">'
+          + '<span class="ah-i">🏛</span>'
+          + '<span class="ah-t">후원 계좌</span>'
+          + (holder ? '<span class="ah-h">'+esc(holder)+'</span>' : '<span style="flex:1"></span>')
+          + '<button class="ah-tgl" type="button"><span class="ah-a">접어두기</span> ▴</button>'
+        + '</div>'
         + '<div class="acct-body">'
           + rows
           + (holder ? '<div class="acct-holder">예금주 : '+esc(holder)+'</div>' : '')
-          + '<div class="acct-foot">'
-            + '<span style="font-size:11.5px;color:#8b95a1">계좌번호를 눌러 복사할 수 있습니다.</span>'
-            + '<button class="acct-close" type="button">접어두기 ▲</button>'
-          + '</div>'
         + '</div>';
-      var tgl = b.querySelector('.acct-toggle');
+      var tgl = b.querySelector('.ah-tgl');
       var body = b.querySelector('.acct-body');
-      var arrow = b.querySelector('.at-a');
-      var close = b.querySelector('.acct-close');
+      var arrow = b.querySelector('.ah-a');
       tgl.onclick = function(){
         var open = !body.classList.contains('hide');
-        if (open){ body.classList.add('hide'); arrow.textContent = '펼치기 ▾'; }
-        else { body.classList.remove('hide'); arrow.textContent = '접어두기 ▴'; }
+        if (open){ body.classList.add('hide'); arrow.textContent = '펼치기'; tgl.innerHTML='<span class="ah-a">펼치기</span> ▾'; }
+        else { body.classList.remove('hide'); tgl.innerHTML='<span class="ah-a">접어두기</span> ▴'; }
       };
-      if (close) close.onclick = function(){
-        body.classList.add('hide'); arrow.textContent = '펼치기 ▾';
-      };
-      // 계좌번호 복사
-      b.querySelectorAll('.acct-copy').forEach(function(btn){
-        btn.onclick = function(){
-          var v = btn.getAttribute('data-acct') || '';
-          copyText(v, btn);
-        };
+      // 복사
+      b.querySelectorAll('.acct-chip.copy').forEach(function(btn){
+        btn.onclick = function(){ copyText(btn.getAttribute('data-acct') || '', btn); };
       });
-      b.querySelectorAll('.a-no').forEach(function(el){
-        el.style.cursor = 'pointer';
-        el.title = '눌러서 복사';
-        el.onclick = function(){
-          copyText(String(el.textContent||'').replace(/[^0-9-]/g,''), el);
+      // 송금 — /pay 착지 페이지(은행/토스 앱 자동 실행)
+      b.querySelectorAll('.acct-chip.send').forEach(function(btn){
+        btn.onclick = function(){
+          var d = list[parseInt(btn.getAttribute('data-idx'), 10)] || {};
+          var url = '/pay?label=' + encodeURIComponent(String(d.label||''))
+            + '&bank=' + encodeURIComponent(String(d.bank||''))
+            + '&account=' + encodeURIComponent(String(d.account||''))
+            + '&holder=' + encodeURIComponent(holder)
+            + '&memo=' + encodeURIComponent(String(d.label||''));
+          try{ window.open(url, '_blank'); }catch(e){ try{ location.href = url; }catch(_){} }
         };
       });
     });
