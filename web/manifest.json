@@ -1,6 +1,6 @@
 {
-    "name": "TSAK 인가자 관리",
-    "short_name": "TSAK 인가자",
+    "name": "TSAK.KR",
+    "short_name": "TSAK.KR",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#5B2C8D",

@@ -5,7 +5,7 @@
 /// - 개인 비밀번호(Personal): 인가번호 + "!@@" (예: 인가번호 000 → "000!@@")
 class AppConfig {
   /// 앱 표시 제목
-  static const String appTitle = '한국 범스카우트중앙회 통합 앱';
+  static const String appTitle = 'TSAK.KR';
 
   /// 프로그램 버전 / 업데이트 날짜
   static const String appVersion = '1.0.0';

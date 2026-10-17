@@ -1,5 +1,5 @@
 name: tsak_credential_manager
-description: "한국범스카우트 중앙회(TSAK) 인가자 통합 관리 애플리케이션"
+description: "TSAK.KR — 한국범스카우트 중앙회(TSAK) 인가자 통합 관리 애플리케이션"
 publish_to: 'none'
 version: 1.0.0+1
 
