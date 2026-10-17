@@ -62,6 +62,7 @@ class TableOutputOptions {
     this.fontSize = TsakFontSize.normal,
     this.rowSpace = TsakRowSpace.normal,
     this.landscape,
+    this.noWrap = const <String>{},
   });
 
   /// 출력할 열(0-based) 순서 — null 이면 원본 전체 순서.
@@ -76,6 +77,12 @@ class TableOutputOptions {
   /// 용지 방향 — null 이면 문서 기본값(보통 가로)을 따른다.
   final bool? landscape;
 
+  /// 두줄 방지 대상 **열 헤더 이름** 집합.
+  ///
+  /// (요구: "행사참가 출력파일 … 두줄방지 항목을 선택할 수 있도록 해줘")
+  /// 지정된 열은 줄바꿈하지 않고(한 줄 유지), 넘치면 글씨가 자동 축소된다.
+  final Set<String> noWrap;
+
   double get scale => fontSize.scale;
   double get rowSpaceMul => rowSpace.mul;
 
@@ -84,17 +91,20 @@ class TableOutputOptions {
     TsakFontSize? fontSize,
     TsakRowSpace? rowSpace,
     bool? landscape,
+    Set<String>? noWrap,
   }) => TableOutputOptions(
     cols: cols ?? this.cols,
     fontSize: fontSize ?? this.fontSize,
     rowSpace: rowSpace ?? this.rowSpace,
     landscape: landscape ?? this.landscape,
+    noWrap: noWrap ?? this.noWrap,
   );
 
-  /// 부제/배지 표기 — 예: "글씨 보통 · 간격 넓게 · 가로".
+  /// 부제/배지 표기 — 예: "글씨 보통 · 간격 넓게 · 가로 · 두줄방지 3".
   String get badge {
     final parts = <String>['글씨 ${fontSize.label}', '간격 ${rowSpace.label}'];
     if (landscape != null) parts.add(landscape! ? '가로' : '세로');
+    if (noWrap.isNotEmpty) parts.add('두줄방지 ${noWrap.length}');
     return parts.join(' · ');
   }
 }

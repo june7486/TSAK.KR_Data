@@ -81,6 +81,21 @@ class TsakTableDoc {
     ).rows;
   }
 
+  /// 두줄 방지할 **출력 열 인덱스** — [TableOutputOptions.noWrap](헤더 이름)을
+  /// 실제 출력 열 순서에 맞춰 인덱스로 변환한다.
+  ///
+  /// (요구: "행사참가 출력파일 … 두줄방지 항목을 선택") 지정 열은 PDF/미리보기에서
+  /// 줄바꿈하지 않는다(넘치면 자동 축소). 헤더 이름 기준이라 열 순서와 무관하게 동작.
+  Set<int> get effectiveNoWrapCols {
+    final names = options?.noWrap ?? const <String>{};
+    if (names.isEmpty) return const {};
+    final cols = viewColumns;
+    return {
+      for (var i = 0; i < cols.length; i++)
+        if (names.contains(cols[i])) i,
+    };
+  }
+
   /// 옵션이 정한 용지 방향(없으면 문서 기본값).
   bool get effectiveLandscape => options?.landscape ?? landscape;
 
@@ -224,6 +239,7 @@ Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
           landscape: doc.effectiveLandscape,
           scale: doc.options?.scale ?? 1.0,
           rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
+          noWrapCols: doc.effectiveNoWrapCols,
         ),
         ext: 'pdf',
         mime: 'application/pdf',
@@ -238,6 +254,7 @@ Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
         landscape: doc.effectiveLandscape,
         scale: doc.options?.scale ?? 1.0,
         rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
+        noWrapCols: doc.effectiveNoWrapCols,
       );
       return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
     case TsakOutputFormat.excel:
@@ -382,6 +399,7 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
     footerLeft: doc.footerLeft,
     landscape: doc.landscape,
     emblemDataUri: emblem,
+    noWrapCols: doc.effectiveNoWrapCols,
   );
   await openPrintWindow(html, doc.title);
 }

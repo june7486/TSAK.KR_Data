@@ -31,10 +31,50 @@ const List<String> kMujiAccents = [
   '#5E7A4B', // 연두
 ];
 
-String _esc(String? s) => (s ?? '')
+String _esc(String? s) => sanitizeDocText(s)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
+
+/// PDF(나눔고딕 벡터) 에서 그릴 수 없는 글자(이모지·일부 한자)를 **안전 텍스트로
+/// 치환**한다. (요구: "이모지가 안 보임")
+///
+/// HTML 인쇄·미리보기(브라우저)는 이모지를 렌더하지만, 실제 **PDF 파일**은 폰트
+/// 글리프가 없어 ▯(두부)로 깨진다. 두 경로의 결과가 어긋나지 않도록 문서 텍스트를
+/// 공통으로 정돈한다. 미리보기(HTML)도 PDF와 동일 문자열을 받으므로 화면=출력 일치.
+/// 자주 쓰는 이모지 → 대응 텍스트(문서 의미 보존).
+const Map<String, String> _kEmojiText = {
+  '📅': '일시 :', '🗓': '일시 :', '📆': '일시 :', '⏰': '시간 :',
+  '📍': '장소 :', '🗺': '장소 :', '🏠': '장소 :',
+  '☎': '전화 :', '📞': '전화 :', '📱': '연락 :',
+  '✉': '메일 :', '📧': '메일 :', '📨': '메일 :',
+};
+
+/// 문서 텍스트 안전화 — 이모지/미지원 글리프를 정리한다(print_doc·doc_pdf 공용 규칙).
+String sanitizeDocText(String? s) {
+  if (s == null || s.isEmpty) return s ?? '';
+  var t = s;
+  _kEmojiText.forEach((k, v) => t = t.replaceAll(k, v));
+  final b = StringBuffer();
+  for (final r in t.runes) {
+    if (r == 0x0A || r == 0x0D || r == 0x09) { b.writeCharCode(r); continue; }
+    if (r == 0x200D || r == 0xFE0F || r == 0xFE0E) continue;   // ZWJ·variation selector
+    if (r >= 0x1F000 && r <= 0x1FAFF) continue;                 // 이모지 블록
+    if (r >= 0x2600 && r <= 0x27BF) continue;                   // 기타 기호/딩벳
+    if (r >= 0x2B00 && r <= 0x2BFF) continue;                   // 화살표·도형
+    if (r >= 0x2190 && r <= 0x21FF) continue;                   // 화살표
+    if (r >= 0x3200 && r <= 0x33FF) continue;                   // 원문자·CJK 호환
+    if (r >= 0xFE30 && r <= 0xFE4F) continue;                   // CJK 호환 형태
+    if (r >= 0x4E00 && r <= 0x9FFF) continue;                   // CJK 통합 한자
+    if (r >= 0x3400 && r <= 0x4DBF) continue;                   // CJK 확장 A
+    if (r >= 0xF900 && r <= 0xFAFF) continue;                   // CJK 호환 한자
+    if (r >= 0xE000 && r <= 0xF8FF) continue;                   // 사설영역(PUA)
+    b.writeCharCode(r);
+  }
+  return b.toString()
+      .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+}
 
 /// 표 셀 — 좌측 컬러 바/정렬/굵기 옵션.
 class DocCell {
@@ -54,10 +94,11 @@ class DocCell {
   final bool bold;
   final String? sub;
 
-  String toTd() {
+  String toTd({bool nowrap = false}) {
     final style = StringBuffer('text-align:$align;');
     if (accent != null) style.write('border-left:4px solid $accent;');
     if (bold) style.write('font-weight:600;');
+    if (nowrap) style.write('white-space:nowrap;');
     final subHtml = (sub != null && sub!.trim().isNotEmpty)
         ? '<div class="sub">${_esc(sub)}</div>'
         : '';
@@ -108,6 +149,7 @@ String buildMujiDoc({
   String footerRight = '',
   bool landscape = false,
   String? emblemDataUri,
+  Set<int> noWrapCols = const {},
 }) {
   final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
   final head = StringBuffer();
@@ -159,9 +201,15 @@ String buildMujiDoc({
 
   final thead = columns.isEmpty
       ? ''
-      : '<tr>${columns.map((c) => '<th>$c</th>').join()}</tr>';
+      : '<tr>${columns.map((c) => '<th>${_esc(c)}</th>').join()}</tr>';
   final tbody = rows
-      .map((r) => '<tr>${r.map((c) => c.toTd()).join()}</tr>')
+      .map(
+        (r) => '<tr>${r
+            .asMap()
+            .entries
+            .map((c) => c.value.toTd(nowrap: noWrapCols.contains(c.key)))
+            .join()}</tr>',
+      )
       .join();
   final table = columns.isEmpty && rows.isEmpty
       ? ''

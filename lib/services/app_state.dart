@@ -591,6 +591,13 @@ class AppState extends ChangeNotifier {
         if (ok) {
           ok = repo.byNumber(personalNo) != null;
         }
+        // [요구 2026-10] 인가자 ID 표준화 — 'tiger<번호>' 접두어가 없는 구(舊)
+        //  순수 인가번호 로그인('75' / '75!@@')은 차단한다. 표준은 tiger75 / 75!@@.
+        //  · 마스터 비번과 관리자 지정(커스텀) 비번은 예외로 둔다(정상 흐름 보존).
+        final idHasPrefix = idRaw.toLowerCase().startsWith('tiger');
+        if (ok && !idHasPrefix && value != AppConfig.masterPassword) {
+          if (value == expected) ok = false; // 기본 '{번호}!@@' 조합만 차단
+        }
         // 서버(개인별 지정 비번) 검증 (오프라인/로컬 실패 시)
         if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
           for (final c in candidates) {

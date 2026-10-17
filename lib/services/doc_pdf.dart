@@ -59,7 +59,7 @@ class DocPdf {
   /// 제목 + (선택) 엠블럼 아이콘 행.
   static pw.Widget _titleRow(String title, pw.Font bold, {double emblemH = 30}) {
     final t = pw.Text(
-      title,
+      sanitize(title),
       style: pw.TextStyle(
         font: bold,
         fontSize: 18,
@@ -103,6 +103,13 @@ class DocPdf {
     String p(int n) => n.toString().padLeft(2, '0');
     return '${d.year}.${p(d.month)}.${p(d.day)} ${p(d.hour)}:${p(d.minute)}';
   }
+
+  /// PDF 폰트(나눔고딕)가 그릴 수 없는 글자(이모지·일부 한자 등)를 **안전한 텍스트로
+  /// 치환**한다. (요구: "이모지가 안 보임" — PDF 에서 ▯(두부) 박스로 깨지는 문제)
+  ///
+  /// 실제 규칙은 print_doc.dart 의 [sanitizeDocText] 하나로 공유한다 — 미리보기(HTML)
+  /// 와 실제 PDF 가 **동일한 문자열**을 쓰도록 해 화면=출력이 어긋나지 않게 한다.
+  static String sanitize(String? s) => sanitizeDocText(s);
 
   /// 표 데이터로 **실제 PDF 바이트**를 만든다. (A4 세로 기본)
   ///
@@ -164,7 +171,7 @@ class DocPdf {
             pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: 5),
               child: pw.Text(
-                meta.description,
+                sanitize(meta.description),
                 style: pw.TextStyle(font: reg, fontSize: 9.5, color: _ink),
               ),
             ),
@@ -185,7 +192,7 @@ class DocPdf {
                           ),
                         ),
                         pw.TextSpan(
-                          text: e.value,
+                          text: sanitize(e.value),
                           style: pw.TextStyle(
                             font: reg,
                             fontSize: 8.5,
@@ -256,7 +263,7 @@ class DocPdf {
                         headV.toDouble(),
                       ),
                       child: pw.Text(
-                        c,
+                        sanitize(c),
                         style: pw.TextStyle(
                           font: bold,
                           fontSize: cellPt,
@@ -294,7 +301,7 @@ class DocPdf {
                         crossAxisAlignment: _cross(e.value.align),
                         children: [
                           pw.Text(
-                            e.value.text,
+                            sanitize(e.value.text),
                             style: e.value.bold ? baseBold : base,
                             textAlign: _align(e.value.align),
                             // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
@@ -306,7 +313,7 @@ class DocPdf {
                             pw.Padding(
                               padding: const pw.EdgeInsets.only(top: 1.5),
                               child: pw.Text(
-                                e.value.sub!,
+                                sanitize(e.value.sub!),
                                 style: pw.TextStyle(
                                   font: reg,
                                   fontSize:
@@ -339,7 +346,7 @@ class DocPdf {
           children: summary
               .map(
                 (s) => pw.Text(
-                  s,
+                  sanitize(s),
                   style: pw.TextStyle(
                     font: bold,
                     fontSize: (10 * scale * 10).roundToDouble() / 10,
@@ -436,7 +443,7 @@ class DocPdf {
             pw.Padding(
               padding: const pw.EdgeInsets.only(top: 3),
               child: pw.Text(
-                meta.subtitle,
+                sanitize(meta.subtitle),
                 style: pw.TextStyle(font: reg, fontSize: 10, color: _gray),
               ),
             ),
@@ -776,7 +783,7 @@ class DocPdf {
                   child: pw.Align(
                     alignment: pw.Alignment.centerLeft,
                     child: pw.Text(
-                      rows[idx][0],
+                      sanitize(rows[idx][0]),
                       style: pw.TextStyle(
                         font: reg,
                         fontSize: pt * 0.8,
@@ -792,7 +799,7 @@ class DocPdf {
                   child: pw.Align(
                     alignment: pw.Alignment.centerLeft,
                     child: pw.Text(
-                      rows[idx].length > 1 ? rows[idx][1] : '',
+                      sanitize(rows[idx].length > 1 ? rows[idx][1] : ''),
                       style: pw.TextStyle(
                         font: bold,
                         fontSize: pt,
@@ -858,7 +865,7 @@ class DocPdf {
           _titleRow(meta.title, bold, emblemH: 26),
           pw.Text(
             meta.subtitle.trim().isNotEmpty
-                ? '${meta.subtitle}    인원 전체 $n명'
+                ? '${sanitize(meta.subtitle)}    인원 전체 $n명'
                 : '인원 전체 $n명',
             style: pw.TextStyle(font: reg, fontSize: 6.5, color: _gray),
           ),

@@ -460,7 +460,9 @@ class _LockScreenState extends State<LockScreen> {
                                 decoration: InputDecoration(
                                   labelText: _tier == 'guest'
                                       ? 'ID (전화번호)'
-                                      : 'ID (인가번호 · 관리자 아이디)',
+                                      : (_tier == 'personal'
+                                            ? 'ID (tiger+인가번호, 예: tiger75)'
+                                            : 'ID (은하번호, 예: 은하43)'),
                                   prefixIcon: const Icon(Icons.badge_outlined),
                                 ),
                               ),
@@ -809,7 +811,7 @@ class _LockScreenState extends State<LockScreen> {
         text = '모든 기능·초기화·통제 권한 (변경 불가)';
         break;
       case 'personal':
-        text = 'ID에 본인 인가번호 또는 관리자 아이디를 입력하세요';
+        text = 'ID = tiger + 본인 인가번호 (예: tiger75) · 비밀번호 = 75!@@';
         break;
       case 'eunha':
         // 은하스카우트 — 비밀번호 규칙은 절대 노출하지 않는다(요구).
