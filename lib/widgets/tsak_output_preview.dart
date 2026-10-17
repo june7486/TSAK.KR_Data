@@ -76,7 +76,11 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
       landscape: _landscape,
       scale: _fontScale,
       rowSpaceMul: _lineSpace,
-      noWrapCols: _noWrap ? {for (var i = 0; i < n; i++) i} : const {},
+      // 문서가 지정한 항목별 두줄방지(effectiveNoWrapCols)를 존중하고,
+      //  전역 토글(_noWrap)이 켜지면 모든 열을 한 줄로 출력한다.
+      noWrapCols: _noWrap
+          ? {for (var i = 0; i < n; i++) i}
+          : widget.doc.effectiveNoWrapCols,
     );
   }
 

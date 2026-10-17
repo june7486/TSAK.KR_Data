@@ -47,6 +47,8 @@ Future<TableOutputOptions?> showTsakTableOptions(
       var fontSize = initial?.fontSize ?? TsakFontSize.normal;
       var rowSpace = initial?.rowSpace ?? TsakRowSpace.normal;
       var landscape = initial?.landscape ?? true;
+      // 두줄 방지 대상 열(헤더 이름). (요구: 두줄방지 항목 선택)
+      final noWrap = <String>{...?initial?.noWrap};
 
       return StatefulBuilder(
         builder: (ctx, setSheet) {
@@ -146,6 +148,64 @@ Future<TableOutputOptions?> showTsakTableOptions(
                               ],
                             ),
                           ],
+                          const SizedBox(height: 18),
+                          // ── 두줄 방지 항목 선택 ──
+                          //   (요구: "행사참가 출력파일 … 두줄방지 항목을 선택할 수 있도록")
+                          //   체크한 열은 줄바꿈하지 않고 한 줄로 출력된다(넘치면 자동 축소).
+                          Row(
+                            children: [
+                              _sec('두줄 방지 (한 줄로 출력)'),
+                              const Spacer(),
+                              Text(
+                                '${noWrap.length}개',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.textGray,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          const Text(
+                            '체크한 항목은 두 줄로 접히지 않습니다. 이름·인가번호처럼 짧은 항목에 권장.',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              _mini('전체', () {
+                                setSheet(() {
+                                  noWrap
+                                    ..clear()
+                                    ..addAll(columns);
+                                });
+                              }),
+                              _mini('해제', () => setSheet(() => noWrap.clear())),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final c in columns)
+                                _noWrapChip(
+                                  c,
+                                  noWrap.contains(c),
+                                  () => setSheet(() {
+                                    if (noWrap.contains(c)) {
+                                      noWrap.remove(c);
+                                    } else {
+                                      noWrap.add(c);
+                                    }
+                                  }),
+                                ),
+                            ],
+                          ),
                           const SizedBox(height: 18),
                           // ── 출력내용 선택 · 위치이동 ──
                           if (allowColumns) ...[
@@ -268,6 +328,7 @@ Future<TableOutputOptions?> showTsakTableOptions(
                                 fontSize: fontSize,
                                 rowSpace: rowSpace,
                                 landscape: allowLandscape ? landscape : null,
+                                noWrap: noWrap,
                               ),
                             );
                           },
@@ -304,6 +365,41 @@ Widget _mini(String label, VoidCallback onTap) => TextButton(
   ),
   onPressed: onTap,
   child: Text(label, style: const TextStyle(fontSize: 12)),
+);
+
+/// 두줄 방지 선택 칩 — 테두리 토글.
+Widget _noWrapChip(String label, bool on, VoidCallback onTap) => InkWell(
+  onTap: onTap,
+  borderRadius: BorderRadius.circular(20),
+  child: Container(
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+    decoration: BoxDecoration(
+      color: on ? AppColors.purple : Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: on ? AppColors.purple : const Color(0xFFD8D3CA),
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          on ? Icons.check_circle : Icons.circle_outlined,
+          size: 14,
+          color: on ? Colors.white : AppColors.textGray,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: on ? FontWeight.w800 : FontWeight.w500,
+            color: on ? Colors.white : AppColors.textDark,
+          ),
+        ),
+      ],
+    ),
+  ),
 );
 
 Widget _seg<T>(

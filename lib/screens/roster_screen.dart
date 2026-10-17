@@ -58,7 +58,10 @@ class _RosterScreenState extends State<RosterScreen> {
   String get _period => widget.period.isNotEmpty ? widget.period : widget.year;
 
   /// 출력 옵션(글씨크기·줄간격·용지·출력내용선택·위치이동) — 명부출력과 동일 규칙.
-  TableOutputOptions? _outOpts;
+  /// 두줄 방지(요구: 참가신청 열 등 두 줄로 접힘 방지) 기본값을 인가번호·이름·연락처·메일에 적용.
+  TableOutputOptions? _outOpts = const TableOutputOptions(
+    noWrap: {'인가번호', '이름', '연락처', '메일'},
+  );
 
   /// [공용] 행사 정보(제목·부제·설명) + 참가자 표를 담은 출력 문서.
   ///   · 제목 = 행사명 · 부제·설명 = 행사 정보(장소·기간·안내글) → 문서 상단 노출.
