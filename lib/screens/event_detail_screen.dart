@@ -109,15 +109,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       // [요구] 행사 폴더 열기 속도 개선 — 5개 API(행사·기획서·미디어·접근·재무)를
       //   순차(약 5×RTT)로 기다리던 것을 '동시 병렬' 호출로 바꾼다.
       //   가장 느린 1개 응답 시간에 수렴 → 체감 로딩 대폭 단축.
-      final results = await Future.wait<Object>([
-        _nas.eventGet(widget.year, widget.title),
-        _nas.eventFiles(widget.year, widget.title, 'plan'),
-        _nas.eventFiles(widget.year, widget.title, 'media', sub: _mediaSub),
-        _nas.eventAccessMap(widget.year, widget.title),
-        widget.canManage
-            ? _nas.eventFinance(widget.year, widget.title)
-            : Future<Map<String, dynamic>>.value(const {}),
-      ]);
+      // [안정] 간헐적 연결 끊김/일시 오류(예: 앞단 게이트웨이가 HTML 오류를
+      //   반환)에 대비해 1회 자동 재시도한다. '불러오기 실패' 창이 뜨지 않게.
+      Future<List<Object>> _fetchAll() => Future.wait<Object>([
+            _nas.eventGet(widget.year, widget.title),
+            _nas.eventFiles(widget.year, widget.title, 'plan'),
+            _nas.eventFiles(widget.year, widget.title, 'media', sub: _mediaSub),
+            _nas.eventAccessMap(widget.year, widget.title),
+            widget.canManage
+                ? _nas.eventFinance(widget.year, widget.title)
+                : Future<Map<String, dynamic>>.value(const {}),
+          ]);
+
+      List<Object> results;
+      try {
+        results = await _fetchAll();
+      } catch (_) {
+        // 짧게 쉬고 1회 재시도(순간적인 연결 폭주/끊김 흡수).
+        await Future.delayed(const Duration(milliseconds: 700));
+        results = await _fetchAll();
+      }
       final e = results[0] as Map<String, dynamic>;
       final plan = results[1] as List<Map<String, dynamic>>;
       final media = results[2] as List<Map<String, dynamic>>;

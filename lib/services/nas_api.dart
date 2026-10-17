@@ -45,6 +45,41 @@ class NasApi {
 
   Uri _uri(String path) => Uri.parse('$_base$path');
 
+  /// 행사 화면 등에서 쓰는 '견고한 JSON GET'.
+  ///  · 인증 헤더를 항상 실어(쿠키 의존 제거) 보낸다.
+  ///  · 응답이 JSON 이 아니면(예: 앞단 게이트웨이가 폭주 시 HTML 오류 반환)
+  ///    명확한 예외를 던져 재시도를 유발한다.
+  ///  · 일시적 오류(연결 끊김·HTML 오류·5xx)면 짧게 쉬고 1회 재시도한다.
+  ///  → 서버가 잠깐 몰려도 '불러오기 실패' 창이 뜨지 않게 하는 안전망.
+  Future<Map<String, dynamic>> _robustJson(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    Object? lastErr;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final r = await http
+            .get(
+              uri,
+              headers: {..._authHeaders, 'Accept': 'application/json'},
+            )
+            .timeout(timeout);
+        final body = utf8.decode(r.bodyBytes);
+        final t = body.trimLeft();
+        if (r.statusCode >= 500 || t.startsWith('<')) {
+          throw FormatException('gateway non-JSON (HTTP ${r.statusCode})');
+        }
+        return json.decode(body) as Map<String, dynamic>;
+      } catch (e) {
+        lastErr = e;
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+    }
+    throw Exception('연결이 불안정합니다. 잠시 후 다시 시도해 주세요. ($lastErr)');
+  }
+
   /// 수품 이미지 URL (로컬 파일명 또는 외부 URL → 프록시 경유, 같은 출처).
   /// [crop] 이 true 이면 상·하단 텍스트를 자동 제거한 순수 수품 이미지를 받는다.
   String merchImageUrl(String image, {bool crop = false}) {
@@ -1323,15 +1358,11 @@ class NasApi {
 
   /// 행사 상세
   Future<Map<String, dynamic>> eventGet(String year, String title) async {
-    final r = await http
-        .get(
-          _uri(
-            '/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}',
-          ),
-          headers: _authHeaders,
-        )
-        .timeout(const Duration(seconds: 30));
-    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final j = await _robustJson(
+      _uri(
+        '/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}',
+      ),
+    );
     return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
   }
 
@@ -1350,16 +1381,15 @@ class NasApi {
     String key, {
     String sub = '',
   }) async {
-    final r = await http
-        .get(
-          _uri(
-            '/api/event/files?year=${Uri.encodeComponent(year)}'
-            '&title=${Uri.encodeComponent(title)}&key=$key'
-            '&sub=${Uri.encodeComponent(sub)}',
-          ),
-        )
-        .timeout(const Duration(seconds: 40));
-    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    // [안정] 인증 헤더 포함 + HTML/오류 응답 시 1회 재시도(_robustJson).
+    final j = await _robustJson(
+      _uri(
+        '/api/event/files?year=${Uri.encodeComponent(year)}'
+        '&title=${Uri.encodeComponent(title)}&key=$key'
+        '&sub=${Uri.encodeComponent(sub)}',
+      ),
+      timeout: const Duration(seconds: 40),
+    );
     return ((j['files'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
@@ -1885,15 +1915,12 @@ class NasApi {
 
   /// 행사 재무(참가비/후원금/지출) 조회
   Future<Map<String, dynamic>> eventFinance(String year, String title) async {
-    final r = await http
-        .get(
-          _uri(
-            '/api/event/finance?year=${Uri.encodeComponent(year)}'
-            '&title=${Uri.encodeComponent(title)}',
-          ),
-        )
-        .timeout(const Duration(seconds: 30));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri(
+        '/api/event/finance?year=${Uri.encodeComponent(year)}'
+        '&title=${Uri.encodeComponent(title)}',
+      ),
+    );
   }
 
   /// 행사 재무 항목 추가 (kind: fee | expense) → 재무관리 자동연동
@@ -1994,15 +2021,12 @@ class NasApi {
 
   /// 참가자 접근 이력 맵 (v표시용)
   Future<Map<String, dynamic>> eventAccessMap(String year, String title) async {
-    final r = await http
-        .get(
-          _uri(
-            '/api/event/access?year=${Uri.encodeComponent(year)}'
-            '&title=${Uri.encodeComponent(title)}',
-          ),
-        )
-        .timeout(const Duration(seconds: 30));
-    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final j = await _robustJson(
+      _uri(
+        '/api/event/access?year=${Uri.encodeComponent(year)}'
+        '&title=${Uri.encodeComponent(title)}',
+      ),
+    );
     return (j['access'] as Map?)?.cast<String, dynamic>() ?? {};
   }
 
