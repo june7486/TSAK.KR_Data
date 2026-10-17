@@ -263,6 +263,62 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- [로딩 진행률] ----------
+  /// 로딩 단계 진행률(0~100) — "정지된 것처럼 보임"을 막기 위해 % 를 노출한다.
+  double _loadProgress = 0;
+  double get loadProgress => _loadProgress;
+
+  /// 현재 로딩 단계 설명(사용자 안내 문구).
+  String _loadStage = '';
+  String get loadStage => _loadStage;
+
+  /// 진행률/단계를 갱신한다(0~100, 단조 증가).
+  void _setLoadProgress(double p, String stage) {
+    final v = p.clamp(0.0, 100.0);
+    if (v < _loadProgress) return; // 역행 방지
+    _loadProgress = v;
+    _loadStage = stage;
+    notifyListeners();
+  }
+
+  /// 로딩 시작 — 0% 로 초기화.
+  void _beginLoad([String stage = '준비 중']) {
+    _loadProgress = 0;
+    _loadStage = stage;
+  }
+
+  /// 로딩 종료 — 100% 후 상태 초기화.
+  void _endLoad() {
+    _loadProgress = 100;
+    _loadStage = '완료';
+    notifyListeners();
+  }
+
+  /// AuthGate 최초 부팅 진행률 — 로딩 화면(스피너)에 % 를 표시하기 위한 값.
+  double _bootProgress = 5;
+  double get bootProgress => _bootProgress;
+  String _bootStage = '앱을 준비하는 중…';
+  String get bootStage => _bootStage;
+
+  /// 부팅 진행률 갱신(_AuthGateState 에서 호출).
+  void setBootProgress(double p, [String? stage]) {
+    final v = p.clamp(0.0, 100.0);
+    if (v < _bootProgress) return;
+    _bootProgress = v;
+    if (stage != null) _bootStage = stage;
+    notifyListeners();
+  }
+
+  /// 개인정보 수정(개인 세션) 진입 시 **본인 1건만** 빠르게 조회한다.
+  ///  (서버 ?self=1 → 응답 수 KB → 즉시 표시). 무거운 전체 명단 로딩을 피한다.
+  Future<void> loadSelfOnly() async {
+    if (!repo.isNasMode) return;
+    try {
+      await repo.syncFromNas(self: true);
+    } catch (_) {}
+    refresh();
+  }
+
   /// 이 세션이 영구 마스터 인가번호(예: 415)로 로그인됐는지.
   bool get isPermanentMaster => isMaster && AppConfig.isPermanentMaster(_who);
 
@@ -350,7 +406,9 @@ class AppState extends ChangeNotifier {
     return DateTime.now().difference(_sessionStart!) < AppConfig.sessionTimeout;
   }
 
-  Future<void> restoreSession() async {
+  /// [self] true → 개인정보 수정(딥링크) 진입: 본인 1건만 받아 즉시 표시한다.
+  ///  (개인 세션이 전 회원을 내려받아 웹이 멈추던 문제 방지)
+  Future<void> restoreSession({bool self = false}) async {
     try {
       final p = await SharedPreferences.getInstance();
       final ts = p.getInt(AppConfig.kSessionTs);
@@ -376,8 +434,14 @@ class AppState extends ChangeNotifier {
           _corps = (corps == 'eunha') ? 'eunha' : 'tsak';
           _sessionStart = start;
           _applyAccessScope();
-          // 세션 복원 시에도 최신 명단을 백그라운드로 재조회(로딩 문구 표시).
-          if (repo.isNasMode) {
+          if (self) {
+            // 개인정보 수정 딥링크: 무거운 전체 명단 로딩을 **아예 건너뛰고**
+            //  **본인 1건**만 즉시 받아 화면을 연다(체감 즉시 로딩).
+            _setMembersLoading(true);
+            await loadSelfOnly();
+            _setMembersLoading(false);
+          } else if (repo.isNasMode) {
+            // 세션 복원 시에도 최신 명단을 백그라운드로 재조회(로딩 문구 표시).
             _setMembersLoading(true);
             unawaited(_reloadAfterLogin());
           }
@@ -634,6 +698,7 @@ class AppState extends ChangeNotifier {
   /// 로그인 직후 서버에서 (권한 범위의) 데이터를 재조회한다.
   Future<void> _reloadAfterLogin() async {
     _setMembersLoading(true);
+    _beginLoad('데이터를 준비하는 중…');
     try {
       // 소속 분리 — 은하스카우트 세션은 이전(범스카우트) 캐시를 비워
       //  은하 명단만 남긴다(범스카우트 데이터 혼입 방지).
@@ -642,12 +707,16 @@ class AppState extends ChangeNotifier {
           await repo.clearLocalCache();
         } catch (_) {}
       }
+      // 개인 로그인 세션은 서버가 권한 범위(본인+이름·번호 축약)를 내려준다.
+      _setLoadProgress(20, '명단을 불러오는 중…');
       await repo.syncFromNas();
       _membersLoaded = true;
+      _setLoadProgress(75, '화면을 준비하는 중…');
     } catch (_) {}
     //  서버 동기화가 끝나면 먼저 명단을 화면에 반영(체감 로딩 단축).
     refresh();
     _setMembersLoading(false);
+    _endLoad();
     try {
       await loadConfig();
     } catch (_) {}
@@ -715,30 +784,26 @@ class AppState extends ChangeNotifier {
       if (!granted) return false;
     }
 
-    var m = repo.byNumber(no);
-    // 세션 발급 직후에는 서버가 본인 1건을 반환하므로, 로컬에 없으면 서버에서
-    //  본인 정보를 다시 받아 채운다(웹 memory 모드/시드 미포함 대응).
-    if (m == null && granted) {
+    // [로딩 가속] 서버에서 **본인 1건만** 즉시 받는다(응답 수 KB → 즉시 표시).
+    //  · 전체 명단(2233건)을 받으면 웹이 파싱으로 멈춘다.
+    //  · 시드 폴백(우서하 등)이 아니라 **서버 실데이터**로 본인을 확정한다.
+    if (granted) {
       try {
-        await repo.syncFromNas();
+        await repo.syncFromNas(self: true);
       } catch (_) {}
-      m = repo.byNumber(no);
     }
+    final m = repo.byNumber(no);
     if (m == null) return false;
 
     _unlocked = true;
     _tier = AppConfig.isPermanentMaster(no) ? 'master' : 'personal';
     _who = no;
     _sessionStart = DateTime.now();
+    _membersLoaded = true;
     _applyAccessScope();
     _persistSession();
+    refresh();
     notifyListeners();
-    // 로그인 후 권한 범위 데이터 재조회.
-    //  단, 개인 QR 로 발급된 personal 세션으로는 전체 목록을 받을 수 없으므로
-    //  영구 마스터(415 등)는 시드 목록을 그대로 유지한다(권한 축소 방지).
-    if (repo.isNasMode && !isMaster) {
-      unawaited(_reloadAfterLogin());
-    }
     return true;
   }
 

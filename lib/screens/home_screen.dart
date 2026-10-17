@@ -892,7 +892,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   )
                 : (state.membersLoading && !state.membersLoaded)
-                ? _loadingList(loaded: members.length)
+                ? _loadingList(
+                    loaded: members.length,
+                    progress: state.loadProgress,
+                    stage: state.loadStage,
+                  )
                 : members.isEmpty
                 ? _empty()
                 : ListView.builder(
@@ -2763,23 +2767,41 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 초기 로딩 — 명단을 서버에서 불러오는 동안 표시(빈 화면 방지).
-  Widget _loadingList({int loaded = 0}) {
+  ///  진행률(%)과 단계를 함께 노출해 "멈춘 것처럼" 보이지 않게 한다.
+  Widget _loadingList({
+    int loaded = 0,
+    double progress = 0,
+    String stage = '',
+  }) {
+    final pct = progress.clamp(0.0, 100.0);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(
-            width: 42,
-            height: 42,
+          SizedBox(
+            width: 54,
+            height: 54,
             child: CircularProgressIndicator(
-              strokeWidth: 3,
+              value: pct > 0 ? pct / 100 : null,
+              strokeWidth: 3.5,
               color: AppColors.purple,
+              backgroundColor: AppColors.purple.withValues(alpha: 0.15),
             ),
           ),
-          const SizedBox(height: 16),
-          const Text(
-            '자료를 불러오는 중입니다…',
-            style: TextStyle(
+          const SizedBox(height: 14),
+          if (pct > 0)
+            Text(
+              '${pct.round()}%',
+              style: const TextStyle(
+                color: AppColors.purpleDark,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            stage.isNotEmpty ? stage : '자료를 불러오는 중입니다…',
+            style: const TextStyle(
               color: AppColors.purpleDark,
               fontSize: 15.5,
               fontWeight: FontWeight.w800,

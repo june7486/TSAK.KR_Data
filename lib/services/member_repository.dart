@@ -41,6 +41,16 @@ class MemberRepository {
     '',
   ); // '', 'saving', 'saved', 'error', 'offline'
 
+  /// [성능] 전체 목록 캐시 — 2233건을 매 호출마다 재구성하면(웹 dart2js 수 초)
+  ///  UI가 멈춘다. 한 번 만들어 재사용한다. 데이터 변경(_put/_putAll/…) 시 무효화.
+  List<Member>? _unscopedCache;
+  final Map<String, Member> _byIdCache = {};
+
+  void _invalidateCaches() {
+    _unscopedCache = null;
+    _byIdCache.clear();
+  }
+
   /// Hive 기반 (프로덕션, 오프라인 전용)
   MemberRepository({this.nas})
     : _mem = nas != null ? <String, Map<String, dynamic>>{} : null;
@@ -52,20 +62,24 @@ class MemberRepository {
   bool get isNasMode => nas != null;
 
   /// NAS 최신 데이터 로드. 성공 시 true.
-  Future<bool> syncFromNas() async {
+  ///  · [self=true] → 서버에서 **본인 1건만** 조회(개인정보 수정 화면 전용).
+  ///  · 회원 맵(raw) 그대로 받아 저장한다 — 2233건을 Member 로 변환(수 초)하고
+  ///    다시 toMap 으로 되돌리는 **이중 변환을 제거**해 로딩이 즉시 끝난다.
+  Future<bool> syncFromNas({bool self = false}) async {
     final api = nas;
     if (api == null) return false;
     try {
       syncStatus.value = 'saving';
-      final members = await api.fetchMembers();
-      if (members.isEmpty) {
+      final maps = await api.fetchMembersRaw(self: self);
+      if (maps.isEmpty) {
         syncStatus.value = 'error';
         return false;
       }
-      final batch = {for (final m in members) m.id: m.toMap()};
+      final batch = {for (final m in maps) '${m['id']}': m};
+      final merge = isRestricted || self;
       final mem = _mem;
       if (mem != null) {
-        if (isRestricted) {
+        if (merge) {
           // 개인/게스트(본인 1건) 접근: 전체 목록을 덮어쓰지 않고 병합한다.
           //  (시드 폴백으로 채운 목록을 보존하여 QR 자동로그인/본인 조회가
           //   관리자 데이터를 다시 받아온 뒤에도 계속 동작하게 함)
@@ -75,7 +89,7 @@ class MemberRepository {
           mem.addAll(batch);
         }
       } else {
-        if (isRestricted) {
+        if (merge) {
           await _box!.putAll(batch);
         } else {
           await _box!.clear();
@@ -87,6 +101,7 @@ class MemberRepository {
         serverMeta.value = meta;
       } catch (_) {}
       syncStatus.value = 'saved';
+      _invalidateCaches();
       revision.value++;
       return true;
     } catch (e) {
@@ -160,27 +175,16 @@ class MemberRepository {
     try {
       final raw = await rootBundle.loadString('assets/data/members_seed.json');
       final List<dynamic> list = json.decode(raw) as List<dynamic>;
+      // [성능] 시드 원본 맵을 **그대로** 저장한다(Member 변환→toMap 이중 변환 제거).
+      //  저장소는 raw 맵을 다루므로 화면 렌더도 즉시 가능하다.
       final batch = <String, Map<String, dynamic>>{};
       for (final item in list) {
-        final m = item as Map<String, dynamic>;
-        final member = Member(
-          id: '${m['id']}',
-          number: '${m['number'] ?? ''}',
-          name: '${m['name'] ?? ''}',
-          league: normalizeLeague('${m['league'] ?? ''}'),
-          unit: '${m['unit'] ?? ''}',
-          address: '${m['address'] ?? ''}',
-          phone: '${m['phone'] ?? ''}',
-          email: '${m['email'] ?? ''}',
-          date: '${m['date'] ?? ''}',
-          atasNo: '${m['atasNo'] ?? ''}',
-          activity: '${m['activity'] ?? ''}',
-          memo: '${m['memo'] ?? ''}',
-          birthday: '${m['birthday'] ?? ''}',
-          anniversary: '${m['anniversary'] ?? ''}',
-          trainingStatus: '${m['trainingStatus'] ?? ''}',
-        );
-        batch[member.id] = member.toMap();
+        if (item is! Map) continue;
+        final m = item.cast<String, dynamic>();
+        final id = '${m['id'] ?? m['number'] ?? ''}'.trim();
+        if (id.isEmpty) continue;
+        m['id'] = id;
+        batch[id] = m;
       }
       await _putAll(batch);
       if (kDebugMode) debugPrint('Seeded ${batch.length} members');
@@ -204,6 +208,7 @@ class MemberRepository {
       isRestricted ? all().length : (isMemory ? _mem!.length : _box!.length);
 
   Future<void> _put(String id, Map<String, dynamic> map) async {
+    _invalidateCaches();
     if (isMemory) {
       _mem![id] = map;
     } else {
@@ -212,6 +217,7 @@ class MemberRepository {
   }
 
   Future<void> _putAll(Map<String, Map<String, dynamic>> batch) async {
+    _invalidateCaches();
     if (isMemory) {
       _mem!.addAll(batch);
     } else {
@@ -220,6 +226,7 @@ class MemberRepository {
   }
 
   Future<void> _deleteKey(String id) async {
+    _invalidateCaches();
     if (isMemory) {
       _mem!.remove(id);
     } else {
@@ -228,6 +235,7 @@ class MemberRepository {
   }
 
   Future<void> _clearAll() async {
+    _invalidateCaches();
     if (isMemory) {
       _mem!.clear();
     } else {
@@ -264,51 +272,77 @@ class MemberRepository {
   }
 
   List<Member> all() {
+    final base = allUnscoped();
+    if (isRestricted) {
+      return base.where(_matchesRestricted).toList();
+    }
+    return base;
+  }
+
+  /// 제한 없이 전체 목록(관리자/마스터 전용) — 캐시된 목록을 재사용한다.
+  List<Member> allUnscoped() {
+    final cached = _unscopedCache;
+    if (cached != null) return cached;
     final list = _values.map((v) => Member.fromMap(v)).toList()
       ..sort(compareMembers);
-    if (isRestricted) {
-      return list.where(_matchesRestricted).toList();
-    }
+    _unscopedCache = list;
     return list;
   }
 
-  /// 제한 없이 전체 목록(관리자/마스터 전용)
-  List<Member> allUnscoped() =>
-      _values.map((v) => Member.fromMap(v)).toList()..sort(compareMembers);
-
   Member? byId(String id) {
-    if (isRestricted) {
-      final m = _rawById(id);
-      if (m == null) return null;
-      return _matchesRestricted(m) ? m : null;
-    }
-    return _rawById(id);
+    final m = _rawById(id);
+    if (m == null) return null;
+    if (isRestricted) return _matchesRestricted(m) ? m : null;
+    return m;
   }
 
   Member? _rawById(String id) {
+    final cached = _byIdCache[id];
+    if (cached != null) return cached;
+    dynamic v;
     if (isMemory) {
-      final v = _mem![id];
-      return v == null ? null : Member.fromMap(v);
+      v = _mem![id];
+    } else {
+      v = _box!.get(id);
     }
-    final v = _box!.get(id);
     if (v == null) return null;
-    return Member.fromMap(v as Map);
+    final m = Member.fromMap(v as Map);
+    _byIdCache[id] = m;
+    return m;
   }
 
+  /// raw 맵 1건이 제한(본인) 조건에 맞는지.
+  bool _matchesRestrictedRaw(Map m) {
+    if (!isRestricted) return true;
+    final r = restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '');
+    if (r.isEmpty) return false;
+    final num = '${m['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final login = '${m['loginId'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final phone = '${m['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    return num == r || login == r || phone == r;
+  }
+
+  /// [성능] raw 맵을 훑어 **일치하는 1건만** Member 로 변환한다(전체 변환 배제).
+  ///  byNumber/byName 는 로그인·딥링크의 첫 관문이라 2233건 변환으로 막히면
+  ///  화면이 멈춘다. 매칭 1건만 변환해 즉시 반환한다.
   Member? byNumber(String number) {
     final n = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (n.isEmpty) return null;
-    if (isRestricted) {
-      for (final m in all()) {
-        if (m.loginId.replaceAll(RegExp(r'[^0-9]'), '') == n ||
-            m.number.replaceAll(RegExp(r'[^0-9]'), '') == n) {
-          return m;
-        }
+    final restricted = isRestricted;
+    final r = restricted
+        ? restrictedNumber!.replaceAll(RegExp(r'[^0-9]'), '')
+        : '';
+    for (final v in _values) {
+      final m = v;
+      final num = '${m['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+      final lid = '${m['loginId'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+      if (restricted) {
+        final ph = '${m['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+        if (r.isEmpty || (num != r && lid != r && ph != r)) continue;
+        if (lid == n || num == n) return Member.fromMap(m);
+      } else {
+        if (num == n) return Member.fromMap(m);
       }
-      return null;
-    }
-    for (final m in all()) {
-      if (m.number.replaceAll(RegExp(r'[^0-9]'), '') == n) return m;
     }
     return null;
   }
@@ -317,8 +351,11 @@ class MemberRepository {
   Member? byName(String name) {
     final q = name.trim();
     if (q.isEmpty) return null;
-    for (final m in all()) {
-      if (m.name.trim() == q) return m;
+    for (final v in _values) {
+      final m = v;
+      if ('${m['name'] ?? ''}'.trim() != q) continue;
+      if (!_matchesRestrictedRaw(m)) continue;
+      return Member.fromMap(m);
     }
     return null;
   }
@@ -332,13 +369,21 @@ class MemberRepository {
     if (q.isEmpty) return null;
     final low = q.toLowerCase();
     final digits = q.replaceAll(RegExp(r'[^0-9]'), '');
-    for (final m in allUnscoped()) {
-      final lid = m.loginId.trim();
-      if (lid.isNotEmpty && lid.toLowerCase() == low) return m;
+    for (final v in _values) {
+      final m = v;
+      final lid = '${m['loginId'] ?? ''}'.trim();
+      if (lid.isNotEmpty && lid.toLowerCase() == low) return Member.fromMap(m);
       if (digits.isNotEmpty) {
-        if (lid.replaceAll(RegExp(r'[^0-9]'), '') == digits) return m;
-        if (m.phone.replaceAll(RegExp(r'[^0-9]'), '') == digits) return m;
-        if (m.number.replaceAll(RegExp(r'[^0-9]'), '') == digits) return m;
+        if (lid.replaceAll(RegExp(r'[^0-9]'), '') == digits) {
+          return Member.fromMap(m);
+        }
+        if ('${m['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '') == digits) {
+          return Member.fromMap(m);
+        }
+        if ('${m['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '') ==
+            digits) {
+          return Member.fromMap(m);
+        }
       }
     }
     return null;

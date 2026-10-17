@@ -126,11 +126,17 @@ class _AuthGateState extends State<AuthGate> {
     _readDeepLink();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final state = context.read<AppState>();
-      await state.restoreSession();
+      state.setBootProgress(15, '세션을 확인하는 중…');
+      // 개인정보 수정 딥링크(?access=personal)는 세션 복원 시 **본인 1건만**
+      //  받아 즉시 연다(무거운 전체 명단 로딩으로 멈추는 문제 방지).
+      await state.restoreSession(self: _fromQr && _prefillNo.isNotEmpty);
+      state.setBootProgress(45, '데이터를 불러오는 중…');
       // 개인 QR 스캔 → 로그인으로 간주(비밀번호 없이) 하고 바로 정보수정으로.
       if (_fromQr && _prefillNo.isNotEmpty && !state.sessionValid) {
+        state.setBootProgress(55, '본인 정보를 확인하는 중…');
         await state.qrPersonalLogin(_prefillNo);
       }
+      state.setBootProgress(95, '화면을 그리는 중…');
       if (mounted) setState(() => _initialized = true);
       _startTimer();
     });
@@ -175,7 +181,49 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      // [진행률 노출] 무한 스피너만 돌리면 "정지된 것처럼" 오해하므로
+      //  진행률(%)과 현재 단계 문구를 함께 보여 준다.
+      final st = context.watch<AppState>();
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: CircularProgressIndicator(
+                    value: (st.bootProgress / 100).clamp(0.0, 1.0),
+                    strokeWidth: 4,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '${st.bootProgress.round()}%',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  st.bootStage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13.5),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '잠시만 기다려 주세요. 앱이 멈춘 것이 아닙니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     final state = context.watch<AppState>();
     if (!state.unlocked || !state.sessionValid) {

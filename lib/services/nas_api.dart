@@ -547,13 +547,31 @@ class NasApi {
   }
 
   // ---- Members ----
-  Future<List<Member>> fetchMembers() async {
+  /// [self=true] 이면 서버에 `?self=1` 을 보내 **로그인 본인 1건만** 받는다.
+  ///  개인정보 수정 진입(개인 세션)에서 전 회원(4.5MB)을 파싱하느라 웹이
+  ///  멈추던 문제를 막는다(응답 수 KB → 즉시 로딩).
+  Future<List<Member>> fetchMembers({bool self = false}) async {
+    final path = self ? '/api/members?self=1' : '/api/members';
     final r = await http
-        .get(_uri('/api/members'), headers: _authHeaders)
+        .get(_uri(path), headers: _authHeaders)
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     final list = (j['members'] as List?) ?? [];
     return list.map((e) => Member.fromMap(e as Map)).toList();
+  }
+
+  /// [raw] 회원 맵 목록 그대로 조회 — 대량(전체 명단)일 때 Member 변환(수 초 소요)
+  ///  없이 즉시 반환한다. 저장소가 raw 맵을 보관하므로 화면 렌더도 빨라진다.
+  Future<List<Map<String, dynamic>>> fetchMembersRaw({bool self = false}) async {
+    final path = self ? '/api/members?self=1' : '/api/members';
+    final r = await http
+        .get(_uri(path), headers: _authHeaders)
+        .timeout(const Duration(seconds: 60));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    final list = (j['members'] as List?) ?? [];
+    return list.map((e) => (e as Map).cast<String, dynamic>())
+        .where((m) => '${m['id'] ?? ''}'.isNotEmpty)
+        .toList();
   }
 
   /// 은하스카우트 별도 명단 조회(관리자·마스터 전용).
