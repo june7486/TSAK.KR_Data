@@ -803,13 +803,51 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     }
   }
 
+  /// 행사 QR 링크를 연다(요구: 행사 QR·링크주소 클릭 → 접속).
+  ///
+  ///  · 웹: 같은 창에서 접속 주소로 이동(새 탭 아님).
+  ///  · 그 외: 외부 브라우저/앱으로 연다.
+  ///  · 열 수 없으면 주소를 복사해 준다.
+  Future<void> _openEventQrLink(String payload) async {
+    if (!payload.startsWith('http')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('공개 접속 주소가 설정되지 않아 링크를 열 수 없습니다.\n설정 → "QR 공개 주소"를 입력하세요.'),
+        ),
+      );
+      return;
+    }
+    final uri = Uri.parse(payload);
+    try {
+      // 웹에서는 같은 창(_self)으로 이동해 새 탭/팝업 차단을 피하고,
+      //  곧바로 접속(딥링크)되게 한다.
+      final ok = await launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
+        webOnlyWindowName: '_self',
+      );
+      if (!ok) {
+        final ok2 = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!ok2) throw Exception('open failed');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      Clipboard.setData(ClipboardData(text: payload));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('링크를 주소창에 붙여넣어 접속하세요. (주소를 복사했습니다)')),
+      );
+    }
+  }
+
   /// 행사 QR 코드 표시 — 회원/비회원이 스캔하면 이 행사로 바로 들어온다.
   ///
   /// · 기존 회원: 로그인 후 행사 화면으로 이동
   /// · 비회원: 아이디(신규회원 가입) 후 행사 화면으로 이동
   /// (행사 생성/관리는 관리자만 — 이 메뉴도 canManage 에서만 노출)
-  void _showEventQr() {
-    final state = context.read<AppState>();
+  void _showEventQr() {    final state = context.read<AppState>();
     final payload = state.eventQrLink(widget.year, widget.title);
 
     showDialog<void>(
@@ -830,39 +868,63 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 ),
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.purple.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: QrImageView(
-                  data: payload,
-                  version: QrVersions.auto,
-                  size: 220,
-                  backgroundColor: Colors.white,
-                  eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.square,
-                    color: AppColors.purple,
-                  ),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: AppColors.purpleDark,
+              // (요구) 행사 QR도 클릭하면 접속 가능 — QR 자체를 탭.
+              Tooltip(
+                message: 'QR/링크를 클릭하면 접속 화면이 열립니다',
+                child: InkWell(
+                  onTap: () => _openEventQrLink(payload),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.purple.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: QrImageView(
+                      data: payload,
+                      version: QrVersions.auto,
+                      size: 220,
+                      backgroundColor: Colors.white,
+                      eyeStyle: const QrEyeStyle(
+                        eyeShape: QrEyeShape.square,
+                        color: AppColors.purple,
+                      ),
+                      dataModuleStyle: const QrDataModuleStyle(
+                        dataModuleShape: QrDataModuleShape.square,
+                        color: AppColors.purpleDark,
+                      ),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-              SelectableText(
-                payload,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: AppColors.purple,
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
+              // (요구) 주소를 클릭하면 바로 접속된다.
+              Tooltip(
+                message: '클릭하면 접속 주소가 열립니다',
+                child: InkWell(
+                  onTap: () => _openEventQrLink(payload),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    child: Text(
+                      payload,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.purple,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.purple,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               if (!state.hasQrBase) ...[
@@ -903,14 +965,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ),
         ),
         actions: [
-          TextButton(
+          // (요구) QR/링크주소 클릭 → 접속 + 복사 버튼 명칭 통일.
+          TextButton.icon(
+            onPressed: () => _openEventQrLink(payload),
+            icon: const Icon(Icons.open_in_new, size: 17),
+            label: const Text('링크 열기'),
+          ),
+          TextButton.icon(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: payload));
               ScaffoldMessenger.of(ctx).showSnackBar(
-                const SnackBar(content: Text('행사 QR 링크가 복사되었습니다')),
+                const SnackBar(content: Text('행사 QR 링크주소를 복사했습니다')),
               );
             },
-            child: const Text('링크 복사'),
+            icon: const Icon(Icons.link, size: 17),
+            label: const Text('링크주소 복사'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),

@@ -776,10 +776,18 @@ class AppState extends ChangeNotifier {
     // [보안] 서버에서 세션을 먼저 발급받는다 (QR 자체가 자격증명).
     //  · 세션 발급에 실패하면 다른 회원 정보가 노출되지 않도록 즉시 중단.
     //  · 개인 QR 이므로 항상 personal 등급(영구 마스터라 해도 승격하지 않음).
+    //  · [접속기록] QR로 직접 들어온 경우도 접속기록에 포함되도록
+    //    log:true 로 서버에 로그인 이력을 남긴다(비번 없이 세션만 받는 경우
+    //    로그가 누락되던 문제 해결).
     var granted = false;
     if (repo.isNasMode) {
       try {
-        granted = await nas.grantSession('personal', id: no);
+        granted = await nas.grantSession(
+          'personal',
+          id: no,
+          log: true,
+          via: 'qr',
+        );
       } catch (_) {}
       if (!granted) return false;
     }

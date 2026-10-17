@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/member.dart';
 import '../services/app_config.dart';
@@ -44,6 +45,56 @@ class _QrGenerateView extends StatelessWidget {
   String _payload(BuildContext context) {
     final state = context.read<AppState>();
     return state.personalQrLink(member.number);
+  }
+
+  /// QR 링크를 복사한다(요구: "데이터 복사" → "링크주소 복사").
+  void _copyLink(BuildContext context) {
+    final link = _payload(context);
+    Clipboard.setData(ClipboardData(text: link));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('접속 링크주소를 복사했습니다. 붙여넣기로 공유하세요.')),
+    );
+  }
+
+  /// 현재 접속 중인 브라우저 창에서 링크를 연다(QR·링크주소 클릭 → 접속).
+  ///
+  ///  · 웹: 새 탭으로 열리지 않고 **같은 창에서 바로** 접속 주소로 이동한다.
+  ///  · 그 외(모바일 등): 외부 브라우저/앱으로 연다.
+  Future<void> _openLink(BuildContext context) async {
+    final link = _payload(context);
+    if (!link.startsWith('http')) {
+      // 공개 접속 주소가 설정되지 않은 상대경로 — 열 수 없다.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('공개 접속 주소가 설정되지 않아 링크를 열 수 없습니다.\n설정 → "QR 공개 주소"를 입력하세요.'),
+        ),
+      );
+      return;
+    }
+    final uri = Uri.parse(link);
+    try {
+      // 웹에서는 같은 창(_self)으로 이동해 새 탭/팝업 차단을 피하고,
+      //  곧바로 접속(딥링크)되게 한다. 그 외 플랫폼은 기본 동작(외부 열기).
+      final ok = await launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
+        webOnlyWindowName: '_self',
+      );
+      if (!ok) {
+        final ok2 = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!ok2) throw Exception('open failed');
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      // 열기가 막힌 환경(일부 인앱 브라우저)에서는 주소를 복사해 준다.
+      Clipboard.setData(ClipboardData(text: link));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('링크를 주소창에 붙여넣어 접속하세요. (주소를 복사했습니다)')),
+      );
+    }
   }
 
   /// QR 화면에서 해당 인가자 정보수정 페이지로 이동.
@@ -125,18 +176,30 @@ class _QrGenerateView extends StatelessWidget {
                         ],
                       ),
                       const Divider(height: 24),
-                      QrImageView(
-                        data: _payload(context),
-                        version: QrVersions.auto,
-                        size: 230,
-                        backgroundColor: Colors.white,
-                        eyeStyle: const QrEyeStyle(
-                          eyeShape: QrEyeShape.square,
-                          color: AppColors.purple,
-                        ),
-                        dataModuleStyle: const QrDataModuleStyle(
-                          dataModuleShape: QrDataModuleShape.square,
-                          color: AppColors.purpleDark,
+                      // (요구) QR을 클릭하면 접속 가능 — QR 자체를 탭하면
+                      //  QR에 담긴 접속 주소로 이동한다.
+                      Tooltip(
+                        message: 'QR/링크를 클릭하면 접속 화면이 열립니다',
+                        child: InkWell(
+                          onTap: () => _openLink(context),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: QrImageView(
+                              data: _payload(context),
+                              version: QrVersions.auto,
+                              size: 230,
+                              backgroundColor: Colors.white,
+                              eyeStyle: const QrEyeStyle(
+                                eyeShape: QrEyeShape.square,
+                                color: AppColors.purple,
+                              ),
+                              dataModuleStyle: const QrDataModuleStyle(
+                                dataModuleShape: QrDataModuleShape.square,
+                                color: AppColors.purpleDark,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -176,14 +239,30 @@ class _QrGenerateView extends StatelessWidget {
                       const SizedBox(height: 8),
                       // 실제로 QR에 인코딩된 주소(검증용). 스캔이 안 되면 이 값이
                       // http(s)로 시작하는지 확인하면 된다.
-                      SelectableText(
-                        _payload(context),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          color: AppColors.purple,
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
+                      // (요구) 주소를 클릭하면 바로 접속된다.
+                      Tooltip(
+                        message: '클릭하면 접속 주소가 열립니다',
+                        child: InkWell(
+                          onTap: () => _openLink(context),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
+                            child: Text(
+                              _payload(context),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.purple,
+                                fontWeight: FontWeight.w600,
+                                height: 1.35,
+                                decoration: TextDecoration.underline,
+                                decorationColor: AppColors.purple,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       if (!context.read<AppState>().hasQrBase) ...[
@@ -223,15 +302,21 @@ class _QrGenerateView extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // (요구) "데이터 복사" → "링크주소 복사": QR에 담긴 접속 링크를 복사.
                   OutlinedButton.icon(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _payload(context)));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('QR 데이터가 복사되었습니다')),
-                      );
-                    },
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: const Text('데이터 복사'),
+                    onPressed: () => _copyLink(context),
+                    icon: const Icon(Icons.link, size: 18),
+                    label: const Text('링크주소 복사'),
+                  ),
+                  const SizedBox(width: 10),
+                  // (요구) 버튼으로도 바로 접속 가능하게 — 링크 열기.
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.purple,
+                    ),
+                    onPressed: () => _openLink(context),
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: const Text('링크 열기'),
                   ),
                 ],
               ),

@@ -186,6 +186,7 @@ class NasApi {
     String? app,
     String corps = 'tsak',
     bool log = false,
+    String via = '',
   }) async {
     try {
       final r = await http
@@ -199,6 +200,7 @@ class NasApi {
               if (master != null) 'master': master,
               if (app != null) 'app': app,
               if (log) 'log': true,
+              if (via.isNotEmpty) 'via': via,
             }),
           )
           .timeout(const Duration(seconds: 15));
