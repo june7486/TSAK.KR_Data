@@ -29,6 +29,11 @@ class DocPdf {
   static pw.Font? _regular;
   static pw.Font? _bold;
 
+  /// 브랜드 엠블럼(중앙회 마크) — 최초 1회 로드 후 캐시. 문서 제목 옆에 표시한다.
+  /// [요구] "명부 출력시 아이콘이 표시되지 않음" — 화면의 엠블럼을 PDF에도 넣는다.
+  static pw.MemoryImage? _emblem;
+  static bool _emblemTried = false;
+
   /// 한글 폰트(나눔고딕) — 최초 1회 로드 후 캐시.
   static Future<void> _ensureFonts() async {
     _regular ??= pw.Font.ttf(
@@ -36,6 +41,40 @@ class DocPdf {
     );
     _bold ??= pw.Font.ttf(
       await rootBundle.load('assets/fonts/NanumGothic-Bold-s.ttf'),
+    );
+  }
+
+  /// 엠블럼 로드(실패해도 문서 생성은 계속 — 아이콘만 생략).
+  static Future<void> _ensureEmblem() async {
+    if (_emblemTried) return;
+    _emblemTried = true;
+    try {
+      final b = await rootBundle.load('assets/images/tsak_emblem.png');
+      _emblem = pw.MemoryImage(b.buffer.asUint8List());
+    } catch (_) {
+      _emblem = null;
+    }
+  }
+
+  /// 제목 + (선택) 엠블럼 아이콘 행.
+  static pw.Widget _titleRow(String title, pw.Font bold, {double emblemH = 30}) {
+    final t = pw.Text(
+      title,
+      style: pw.TextStyle(
+        font: bold,
+        fontSize: 18,
+        color: _title,
+        letterSpacing: -0.2,
+      ),
+    );
+    if (_emblem == null) return t;
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(child: t),
+        pw.SizedBox(width: 8),
+        pw.Image(_emblem!, height: emblemH, width: emblemH),
+      ],
     );
   }
 
@@ -85,6 +124,7 @@ class DocPdf {
     Set<int> noWrapCols = const {},
   }) async {
     await _ensureFonts();
+    await _ensureEmblem();
     final reg = _regular!;
     final bold = _bold!;
     final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
@@ -391,15 +431,7 @@ class DocPdf {
           ),
         ),
         build: (ctx) => [
-          pw.Text(
-            meta.title,
-            style: pw.TextStyle(
-              font: bold,
-              fontSize: 18,
-              color: _title,
-              letterSpacing: -0.2,
-            ),
-          ),
+          _titleRow(meta.title, bold, emblemH: 34),
           if (meta.subtitle.trim().isNotEmpty)
             pw.Padding(
               padding: const pw.EdgeInsets.only(top: 3),
@@ -624,6 +656,7 @@ class DocPdf {
     double desiredPt = 14.0,
   }) async {
     await _ensureFonts();
+    await _ensureEmblem();
     _lastRosterCols = 1;
 
     if (rows.isEmpty) {
@@ -821,11 +854,8 @@ class DocPdf {
             ),
           ),
           pw.SizedBox(height: 2),
-          // 제목 + 부제
-          pw.Text(
-            meta.title,
-            style: pw.TextStyle(font: bold, fontSize: 15, color: _title),
-          ),
+          // 제목 + (엠블럼 아이콘)
+          _titleRow(meta.title, bold, emblemH: 26),
           pw.Text(
             meta.subtitle.trim().isNotEmpty
                 ? '${meta.subtitle}    인원 전체 $n명'

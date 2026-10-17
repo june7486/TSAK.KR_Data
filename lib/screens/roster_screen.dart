@@ -42,10 +42,18 @@ class RosterScreen extends StatefulWidget {
 class _RosterScreenState extends State<RosterScreen> {
   bool _busy = false;
 
-  // ---- 인쇄 항목 선택(항상: 인가번호·이름·연락처) ----
+  // ---- 인쇄 항목 선택 ----
+  //  · 항상 인쇄: # · 접속 · 인가번호 · 이름 · 연락처
+  //  · 선택 항목(요구): 소속·성별·메일·항목 + 참가비·평생회원·연회비 납부여부 +
+  //    참가신청 입력항목(도착·숙박·이동·동행·전달사항).
+  bool _showUnit = true; // 소속(활동)
+  bool _showGender = true; // 성별
+  bool _showEmail = true; // 메일
+  bool _showRoles = true; // 항목(역할)
   bool _showEventFee = false; // 참가비 납부 여부
   bool _showLifetime = false; // 평생회원 여부
   bool _showYearFee = false; // 행사년도 연회비 납부 여부
+  bool _showApply = false; // 참가신청 입력항목
 
   String get _period => widget.period.isNotEmpty ? widget.period : widget.year;
 
@@ -62,17 +70,18 @@ class _RosterScreenState extends State<RosterScreen> {
       '접속',
       '인가번호',
       '이름',
-      '소속(활동)',
-      '성별',
-      '연락처',
-      '메일',
-      '항목',
     ];
+    if (_showUnit) cols.add('소속(활동)');
+    if (_showGender) cols.add('성별');
+    cols.add('연락처');
+    if (_showEmail) cols.add('메일');
+    if (_showRoles) cols.add('항목');
     if (_showEventFee) cols.add('참가비');
     if (_showLifetime) cols.add('평생');
     if (_showYearFee) {
       cols.add('${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비');
     }
+    if (_showApply) cols.add('참가신청');
     final rows = <List<String>>[];
     for (var i = 0; i < widget.attendees.length; i++) {
       final a = widget.attendees[i];
@@ -81,15 +90,16 @@ class _RosterScreenState extends State<RosterScreen> {
         (a['visited'] == true) ? 'V' : '',
         _num(a),
         '${a['name'] ?? ''}',
-        _first(a, const ['unitText', 'unit']),
-        _first(a, const ['genderText', 'gender']),
-        _first(a, const ['phoneText', 'phone']),
-        _first(a, const ['emailText', 'email']),
-        _rolesText(a),
       ];
+      if (_showUnit) r.add(_first(a, const ['unitText', 'unit']));
+      if (_showGender) r.add(_first(a, const ['genderText', 'gender']));
+      r.add(_first(a, const ['phoneText', 'phone']));
+      if (_showEmail) r.add(_first(a, const ['emailText', 'email']));
+      if (_showRoles) r.add(_rolesText(a));
       if (_showEventFee) r.add(a['eventFee'] == true ? 'O' : '');
       if (_showLifetime) r.add(a['lifetime'] == true ? 'O' : '');
       if (_showYearFee) r.add(a['yearFee'] == true ? 'O' : '');
+      if (_showApply) r.add(_applyText(a));
       rows.add(r);
     }
     return TsakTableDoc(
@@ -404,10 +414,15 @@ class _RosterScreenState extends State<RosterScreen> {
   /// 인쇄 항목 요약 — 어떤 항목이 함께 인쇄되는지 한 줄로 표시.
   Widget _optionSummary() {
     final extras = <String>[
+      if (_showUnit) '소속',
+      if (_showGender) '성별',
+      if (_showEmail) '메일',
+      if (_showRoles) '항목',
       if (_showEventFee) '참가비',
       if (_showLifetime) '평생회원',
       if (_showYearFee)
         '${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비',
+      if (_showApply) '참가신청',
     ];
     return Container(
       width: double.infinity,
@@ -423,7 +438,7 @@ class _RosterScreenState extends State<RosterScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '인가번호·이름·연락처는 항상 인쇄'
+              '#·접속·인가번호·이름·연락처는 항상 인쇄'
               '${extras.isEmpty ? ' (선택 항목 없음)' : ' · 추가: ${extras.join(', ')}'}',
               style: const TextStyle(fontSize: 12, color: AppColors.textDark),
             ),
@@ -447,54 +462,143 @@ class _RosterScreenState extends State<RosterScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 2, 16, 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '인쇄 항목 선택',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 2, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '인쇄 항목 선택',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '인가번호 · 이름 · 연락처는 항상 인쇄됩니다.',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '# · 접속 · 인가번호 · 이름 · 연락처는 항상 인쇄됩니다.\n아래 항목을 골라 함께 출력하세요.',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                    ),
                   ),
                 ),
-              ),
-              _optTile('참가비 납부 여부', _showEventFee, (v) {
-                setD(() => _showEventFee = v);
-                setState(() => _showEventFee = v);
-              }),
-              _optTile('평생회원 여부', _showLifetime, (v) {
-                setD(() => _showLifetime = v);
-                setState(() => _showLifetime = v);
-              }),
-              _optTile(
-                '${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비 납부 여부',
-                _showYearFee,
-                (v) {
-                  setD(() => _showYearFee = v);
-                  setState(() => _showYearFee = v);
-                },
-              ),
-              const SizedBox(height: 6),
-            ],
+                const Divider(height: 18),
+                _sectionLabel('기본 정보'),
+                _optTile('소속(활동)', _showUnit, (v) {
+                  setD(() => _showUnit = v);
+                  setState(() => _showUnit = v);
+                }),
+                _optTile('성별', _showGender, (v) {
+                  setD(() => _showGender = v);
+                  setState(() => _showGender = v);
+                }),
+                _optTile('메일', _showEmail, (v) {
+                  setD(() => _showEmail = v);
+                  setState(() => _showEmail = v);
+                }),
+                _optTile('항목(역할)', _showRoles, (v) {
+                  setD(() => _showRoles = v);
+                  setState(() => _showRoles = v);
+                }),
+                const Divider(height: 18),
+                _sectionLabel('납부 여부'),
+                _optTile('참가비 납부 여부', _showEventFee, (v) {
+                  setD(() => _showEventFee = v);
+                  setState(() => _showEventFee = v);
+                }),
+                _optTile('평생회원 여부', _showLifetime, (v) {
+                  setD(() => _showLifetime = v);
+                  setState(() => _showLifetime = v);
+                }),
+                _optTile(
+                  '${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비 납부 여부',
+                  _showYearFee,
+                  (v) {
+                    setD(() => _showYearFee = v);
+                    setState(() => _showYearFee = v);
+                  },
+                ),
+                const Divider(height: 18),
+                _sectionLabel('참가신청 정보'),
+                _optTile('참가신청 입력항목 (도착·숙박·이동·동행·전달)', _showApply, (v) {
+                  setD(() => _showApply = v);
+                  setState(() => _showApply = v);
+                }),
+                // 전체 켜기 / 끄기 — 한 번에 선택.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: () {
+                          setD(() {
+                            _showUnit = true;
+                            _showGender = true;
+                            _showEmail = true;
+                            _showRoles = true;
+                            _showEventFee = true;
+                            _showLifetime = true;
+                            _showYearFee = true;
+                            _showApply = true;
+                          });
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.done_all, size: 17),
+                        label: const Text('전체 선택'),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () {
+                          setD(() {
+                            _showUnit = false;
+                            _showGender = false;
+                            _showEmail = false;
+                            _showRoles = false;
+                            _showEventFee = false;
+                            _showLifetime = false;
+                            _showYearFee = false;
+                            _showApply = false;
+                          });
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.remove_done, size: 17),
+                        label: const Text('전체 해제'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _sectionLabel(String s) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        s,
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w900,
+          color: AppColors.purple,
+        ),
+      ),
+    ),
+  );
 
   Widget _optTile(String label, bool val, ValueChanged<bool> onChanged) {
     return CheckboxListTile(
@@ -519,24 +623,25 @@ class _RosterScreenState extends State<RosterScreen> {
         ),
       );
     }
-    // 항상: 인가번호·이름·연락처 + 선택 컬럼
+    // 항상: # · 접속 · 인가번호 · 이름 · 연락처 + 선택 컬럼
     final columns = <DataColumn>[
       const DataColumn(label: Text('#')),
       const DataColumn(label: Text('접속')),
       const DataColumn(label: Text('인가번호')),
       const DataColumn(label: Text('이름')),
       // [요구] 소속은 '현재 활동하는 곳(활동등록대)'을 먼저 노출한다.
-      const DataColumn(label: Text('소속(활동)')),
-      const DataColumn(label: Text('성별')),
+      if (_showUnit) const DataColumn(label: Text('소속(활동)')),
+      if (_showGender) const DataColumn(label: Text('성별')),
       const DataColumn(label: Text('연락처')),
-      const DataColumn(label: Text('메일')),
-      const DataColumn(label: Text('항목')),
+      if (_showEmail) const DataColumn(label: Text('메일')),
+      if (_showRoles) const DataColumn(label: Text('항목')),
       if (_showEventFee) const DataColumn(label: Text('참가비')),
       if (_showLifetime) const DataColumn(label: Text('평생')),
       if (_showYearFee)
         DataColumn(
           label: Text('${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비'),
         ),
+      if (_showApply) const DataColumn(label: Text('참가신청')),
     ];
 
     return Container(
@@ -587,42 +692,56 @@ class _RosterScreenState extends State<RosterScreen> {
                     ),
                   ),
                   // [요구] 활동등록대(unitText) 우선 — 인가시 소속은 폴백.
-                  DataCell(
-                    Text(
-                      _first(widget.attendees[i], const ['unitText', 'unit']),
-                      style: const TextStyle(color: AppColors.textGray),
+                  if (_showUnit)
+                    DataCell(
+                      Text(
+                        _first(widget.attendees[i], const ['unitText', 'unit']),
+                        style: const TextStyle(color: AppColors.textGray),
+                      ),
                     ),
-                  ),
-                  DataCell(
-                    Text(
-                      _first(widget.attendees[i], const [
-                        'genderText',
-                        'gender',
-                      ]),
+                  if (_showGender)
+                    DataCell(
+                      Text(
+                        _first(widget.attendees[i], const [
+                          'genderText',
+                          'gender',
+                        ]),
+                      ),
                     ),
-                  ),
                   DataCell(
                     Text(_first(widget.attendees[i], const [
                       'phoneText',
                       'phone',
                     ])),
                   ),
-                  DataCell(
-                    Text(
-                      _first(widget.attendees[i], const [
-                        'emailText',
-                        'email',
-                      ]),
-                      style: const TextStyle(color: AppColors.textGray),
+                  if (_showEmail)
+                    DataCell(
+                      Text(
+                        _first(widget.attendees[i], const [
+                          'emailText',
+                          'email',
+                        ]),
+                        style: const TextStyle(color: AppColors.textGray),
+                      ),
                     ),
-                  ),
-                  DataCell(Text(_rolesText(widget.attendees[i]))),
+                  if (_showRoles)
+                    DataCell(Text(_rolesText(widget.attendees[i]))),
                   if (_showEventFee)
                     DataCell(_ynCell(widget.attendees[i]['eventFee'] == true)),
                   if (_showLifetime)
                     DataCell(_ynCell(widget.attendees[i]['lifetime'] == true)),
                   if (_showYearFee)
                     DataCell(_ynCell(widget.attendees[i]['yearFee'] == true)),
+                  if (_showApply)
+                    DataCell(
+                      Text(
+                        _applyText(widget.attendees[i]),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ),
                 ],
               ),
           ],
@@ -693,6 +812,32 @@ class _RosterScreenState extends State<RosterScreen> {
         .where((e) => e.trim().isNotEmpty)
         .toList();
     return roles.join(', ');
+  }
+
+  /// 참가신청 입력항목 요약(도착·숙박·이동·동행·전달사항) — 선택 시 한 칸에 병기.
+  String _applyText(Map<String, dynamic> a) {
+    final bits = <String>[];
+    for (final k in const ['arriveNote', 'arrive']) {
+      final v = '${a[k] ?? ''}'.trim();
+      if (v.isNotEmpty) {
+        bits.add('도착 $v');
+        break;
+      }
+    }
+    for (final k in const ['transportNote', 'transport']) {
+      final v = '${a[k] ?? ''}'.trim();
+      if (v.isNotEmpty) {
+        bits.add('이동 $v');
+        break;
+      }
+    }
+    final lodge = '${a['lodging'] ?? ''}'.trim();
+    if (lodge.isNotEmpty) bits.add('숙박 $lodge');
+    final comp = '${a['companion'] ?? ''}'.trim();
+    if (comp.isNotEmpty) bits.add('동행 $comp');
+    final msg = '${a['message'] ?? ''}'.trim();
+    if (msg.isNotEmpty) bits.add(msg);
+    return bits.join(' · ');
   }
 
   Widget _bottomBar() {

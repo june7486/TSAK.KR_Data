@@ -107,6 +107,7 @@ String buildMujiDoc({
   String footerLeft = '한국범스카우트중앙회',
   String footerRight = '',
   bool landscape = false,
+  String? emblemDataUri,
 }) {
   final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
   final head = StringBuffer();
@@ -115,7 +116,19 @@ String buildMujiDoc({
     '<div class="letter"><span class="lbrand">한국범스카우트중앙회 · TSAK</span>'
     '<span class="lpage">1 of 1</span></div>',
   );
+  head.write('<div class="title-row">');
   head.write('<h1>${_esc(meta.title)}</h1>');
+  // [요구] 명부/출력물 아이콘 — 중앙회 엠블럼을 제목 우측에 표시.
+  // · data URI(base64) 가 있으면 그것을 우선 사용(Blob/새 창에서도 로드됨).
+  // · 없으면 상대경로로 폴백(서버가 직접 서빙하는 경우).
+  final emblemSrc = (emblemDataUri != null && emblemDataUri.trim().isNotEmpty)
+      ? emblemDataUri
+      : 'assets/assets/images/tsak_emblem.png';
+  head.write(
+    '<img class="emblem" src="$emblemSrc" alt="" '
+    'onerror="this.style.display=\'none\'">',
+  );
+  head.write('</div>');
   if (meta.subtitle.trim().isNotEmpty) {
     head.write('<div class="sub2">${_esc(meta.subtitle)}</div>');
   }
@@ -179,7 +192,10 @@ String buildMujiDoc({
    border-bottom:1px solid #EDEAE3}
  .letter .lbrand{font-weight:700}
  .letter .lpage{font-variant-numeric:tabular-nums}
+ .title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+ .title-row .emblem{width:44px;height:44px;object-fit:contain;flex:none}
  h1{font-size:22px;color:#3A3A3A;font-weight:800;margin:14px 0 6px;letter-spacing:-.3px}
+ .title-row h1{margin:14px 0 6px;flex:1}
  .sub2{font-size:12.5px;color:#8C877E;margin:0 0 12px}
  .meta{padding:10px 0;border-top:1px solid #E4E0D8;border-bottom:1px solid #E4E0D8;
    font-size:11px;line-height:1.7;margin-bottom:4px}

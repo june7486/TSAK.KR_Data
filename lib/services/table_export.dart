@@ -10,9 +10,10 @@
 library;
 
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'doc_pdf.dart';
 import 'file_save.dart';
@@ -357,6 +358,7 @@ Future<void> emailTsakTable(BuildContext context, TsakTableDoc doc) async {
 
 /// 문서를 MUJI HTML로 만들어 브라우저 인쇄창을 연다(공용 '프린트').
 Future<void> printTsakTable(TsakTableDoc doc) async {
+  final emblem = await _emblemDataUri();
   final html = buildMujiDoc(
     meta: doc.meta,
     columns: doc.columns,
@@ -379,12 +381,39 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
     summary: doc.summary.join(' · '),
     footerLeft: doc.footerLeft,
     landscape: doc.landscape,
+    emblemDataUri: emblem,
   );
   await openPrintWindow(html, doc.title);
 }
 
 // ── 내부 헬퍼 ──
 Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
+
+/// 출력물(HTML 인쇄/PDF)에 넣을 **중앙회 엠블럼(data URI)** 을 한 번만 읽어 캐시.
+///
+/// 인쇄 창은 Blob URL 로 열리므로 상대경로 이미지(`assets/...`)가 로드되지
+/// 않는다(요구: "명부 출력시 아이콘이 표시되지 않음"). 따라서 자산을 base64
+/// data URI 로 직접 인라인해야 어떤 브라우저/창에서도 아이콘이 보인다.
+String? _emblemDataUriCache;
+Future<String?> _emblemDataUri() async {
+  if (_emblemDataUriCache != null) return _emblemDataUriCache;
+  for (final key in const [
+    'assets/images/tsak_emblem.png',
+    'assets/assets/images/tsak_emblem.png',
+  ]) {
+    try {
+      final b = await rootBundle.load(key);
+      _emblemDataUriCache =
+          'data:image/png;base64,${base64Encode(b.buffer.asUint8List())}';
+      return _emblemDataUriCache;
+    } catch (e) {
+      if (kDebugMode) debugPrint('emblem load fail ($key): $e');
+    }
+  }
+  _emblemDataUriCache = '';
+  return null;
+}
+
 
 /// CSV 는 맨 앞에 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 저장한다.
 Uint8List _csvBytes(String s) =>

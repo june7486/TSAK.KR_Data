@@ -184,7 +184,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         // 기본 탭(고정) + 사용자 정의 '메뉴추가' 탭(PDF page9 최종 결정).
         final customCount = _customTabs.length;
         // [요구] 상단 탭: 참가자·사진+동영상·후기·기획서·참가비·후원금·행사비지출 = 6.
-        final len = (fullView ? 6 : 1) + (fullView ? customCount : 0);
+        // [요구] 일반 참가자(비스텝)도 **참가자 명단·사진·후기** 3개 탭을 본다.
+        //   (명단은 이름·인가번호만 — 개인정보는 서버가 제외해 내려준다.)
+        final len = (fullView ? 6 : 3) + (fullView ? customCount : 0);
         // ⚠️ 버그 수정: _load() 마다 TabController 를 새로 만들면 index 가 0
         // (참가자 탭)으로 되돌아가, 사진+동영상 하위폴더에 진입해도 다시
         // 사진 탭으로 돌아가 버렸다. 현재 탭 인덱스를 보존한다.
@@ -229,7 +231,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     ];
     final tabs = _fullView
         ? <String>[...baseTabs, ..._customTabs.map((e) => '${e['name'] ?? ''}')]
-        : const <String>['사진+동영상'];
+        : const <String>['참가자', '사진+동영상', '후기'];
     return Scaffold(
       appBar: TsakAppBar(
         title: Row(
@@ -387,7 +389,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                             _financeTab('expense'),
                             for (final t in _customTabs) _customTabView(t),
                           ]
-                        : [_mediaTab()],
+                        // [요구] 일반 참가자(비스텝): 참가자(읽기) · 사진+동영상 · 후기.
+                        //   참가자 탭은 이름·인가번호만 노출(개인정보 없음).
+                        : [
+                            _attendeeTab(),
+                            _mediaTab(),
+                            EventReviewScreen(
+                              year: widget.year,
+                              title: widget.title,
+                              embedded: true,
+                            ),
+                          ],
                   ),
                 ),
               ],
@@ -1029,26 +1041,54 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               style: TextStyle(fontSize: 12, color: AppColors.textGray),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              _rosterButton(Icons.table_chart, '명단 출력', () => _openRoster()),
-              const SizedBox(width: 6),
-              _rosterButton(Icons.sms, '문자', _sendSms),
-              const SizedBox(width: 6),
-              _rosterButton(Icons.mail, '메일', _sendMail),
-              const Spacer(),
-              Text(
-                '${_attendees.length}명',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.purple,
-                ),
-              ),
-            ],
+        // [요구] 일반 참가자(비스텝): 이름·인가번호만 열람(개인정보 비노출) 안내.
+        if (!widget.canManage && !_isStaff)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 10, 12, 2),
+            child: Text(
+              '참가자 명단을 열람합니다 — 이름·인가번호만 표시됩니다.',
+              style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            ),
           ),
-        ),
+        // [요구] 명단 출력·문자·메일은 개인정보(연락처·메일)를 포함하므로
+        //   스텝·관리자·마스터(_fullView)에게만 노출한다(참가자 열람 불가).
+        if (_fullView)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _rosterButton(Icons.table_chart, '명단 출력', () => _openRoster()),
+                const SizedBox(width: 6),
+                _rosterButton(Icons.sms, '문자', _sendSms),
+                const SizedBox(width: 6),
+                _rosterButton(Icons.mail, '메일', _sendMail),
+                const Spacer(),
+                Text(
+                  '${_attendees.length}명',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.purple,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                const Spacer(),
+                Text(
+                  '${_attendees.length}명',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.purple,
+                  ),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 6),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
@@ -1287,81 +1327,87 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     '${a['unitText']}'
                   else if ('${a['unit'] ?? ''}'.trim().isNotEmpty)
                     '${a['unit']}',
-                  // [요구] 개인카드 정보 우선 — 전화·성별(카드가 있으면 카드값).
-                  if ('${a['phoneText'] ?? ''}'.trim().isNotEmpty)
-                    '${a['phoneText']}'
-                  else if ('${a['phone'] ?? ''}'.trim().isNotEmpty)
-                    '${a['phone']}',
-                  if ('${a['genderText'] ?? ''}'.trim().isNotEmpty)
-                    '${a['genderText']}'
-                  else if ('${a['gender'] ?? ''}'.trim().isNotEmpty)
-                    '${a['gender']}',
+                  // [요구 개인정보] 전화·성별은 참가자(_fullView=false)에게 비노출.
+                  if (_fullView)
+                    if ('${a['phoneText'] ?? ''}'.trim().isNotEmpty)
+                      '${a['phoneText']}'
+                    else if ('${a['phone'] ?? ''}'.trim().isNotEmpty)
+                      '${a['phone']}',
+                  if (_fullView)
+                    if ('${a['genderText'] ?? ''}'.trim().isNotEmpty)
+                      '${a['genderText']}'
+                    else if ('${a['gender'] ?? ''}'.trim().isNotEmpty)
+                      '${a['gender']}',
                 ].join(' · '),
                 style: const TextStyle(fontSize: 12),
               ),
               // (요구) 메일주소 — 개인카드(회원 프로필)에서 가져와 작게 병기.
-              Builder(
-                builder: (_) {
-                  final em = '${a['emailText'] ?? ''}'.trim().isNotEmpty
-                      ? '${a['emailText']}'
-                      : '${a['email'] ?? ''}'.trim();
-                  if (em.isEmpty) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: Text(
-                      em,
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        color: AppColors.textGray.withValues(alpha: 0.9),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              // (요구) 참가신청 상세정보를 '아주 작은 글씨'로 병기 —
-              //   도착예정시간·숙박·이동방법·동행자·전달사항. 없으면 숨김.
-              Builder(
-                builder: (_) {
-                  final bits = <String>[];
-                  final arrive = '${a['arriveNote'] ?? ''}'.trim().isNotEmpty
-                      ? '${a['arriveNote']}'
-                      : '${a['arrive'] ?? ''}'.trim();
-                  if (arrive.isNotEmpty) bits.add('⏰ $arrive');
-                  final lodge = '${a['lodging'] ?? ''}'.trim();
-                  if (lodge.isNotEmpty) bits.add('🛏 $lodge');
-                  final tp = '${a['transportNote'] ?? ''}'.trim().isNotEmpty
-                      ? '${a['transportNote']}'
-                      : '${a['transport'] ?? ''}'.trim();
-                  if (tp.isNotEmpty) bits.add('🚗 $tp');
-                  final frm = '${a['from'] ?? ''}'.trim();
-                  if (frm.isNotEmpty) bits.add('출발 $frm');
-                  final eta = '${a['eta'] ?? ''}'.trim();
-                  if (eta.isNotEmpty) bits.add('소요 $eta');
-                  final comp = '${a['companion'] ?? ''}'.trim();
-                  if (comp.isNotEmpty) bits.add('👥 $comp');
-                  final addr = '${a['address'] ?? ''}'.trim();
-                  if (addr.isNotEmpty) bits.add('🏠 $addr');
-                  final msg = '${a['message'] ?? ''}'.trim();
-                  if (msg.isNotEmpty) bits.add('💬 $msg');
-                  if (bits.isEmpty) return const SizedBox.shrink();
-                  // 넘칠 경우 마퀴(흐리는 글자)로 표시 — 폭을 확정해야 감지된다.
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: SizedBox(
-                      height: 13,
-                      child: MarqueeText(
-                        bits.join('  ·  '),
+              //   참가자(_fullView=false)에게는 비노출.
+              if (_fullView)
+                Builder(
+                  builder: (_) {
+                    final em = '${a['emailText'] ?? ''}'.trim().isNotEmpty
+                        ? '${a['emailText']}'
+                        : '${a['email'] ?? ''}'.trim();
+                    if (em.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        em,
                         style: TextStyle(
                           fontSize: 9.5,
-                          color: AppColors.textGray.withValues(alpha: 0.95),
+                          color: AppColors.textGray.withValues(alpha: 0.9),
                         ),
-                        velocity: 18,
-                        height: 13,
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+              // (요구) 참가신청 상세정보를 '아주 작은 글씨'로 병기 —
+              //   도착예정시간·숙박·이동방법·동행자·전달사항. 없으면 숨김.
+              //   [개인정보] 참가자(_fullView=false)에게는 비노출.
+              if (_fullView)
+                Builder(
+                  builder: (_) {
+                    final bits = <String>[];
+                    final arrive = '${a['arriveNote'] ?? ''}'.trim().isNotEmpty
+                        ? '${a['arriveNote']}'
+                        : '${a['arrive'] ?? ''}'.trim();
+                    if (arrive.isNotEmpty) bits.add('⏰ $arrive');
+                    final lodge = '${a['lodging'] ?? ''}'.trim();
+                    if (lodge.isNotEmpty) bits.add('🛏 $lodge');
+                    final tp = '${a['transportNote'] ?? ''}'.trim().isNotEmpty
+                        ? '${a['transportNote']}'
+                        : '${a['transport'] ?? ''}'.trim();
+                    if (tp.isNotEmpty) bits.add('🚗 $tp');
+                    final frm = '${a['from'] ?? ''}'.trim();
+                    if (frm.isNotEmpty) bits.add('출발 $frm');
+                    final eta = '${a['eta'] ?? ''}'.trim();
+                    if (eta.isNotEmpty) bits.add('소요 $eta');
+                    final comp = '${a['companion'] ?? ''}'.trim();
+                    if (comp.isNotEmpty) bits.add('👥 $comp');
+                    final addr = '${a['address'] ?? ''}'.trim();
+                    if (addr.isNotEmpty) bits.add('🏠 $addr');
+                    final msg = '${a['message'] ?? ''}'.trim();
+                    if (msg.isNotEmpty) bits.add('💬 $msg');
+                    if (bits.isEmpty) return const SizedBox.shrink();
+                    // 넘칠 경우 마퀴(흐리는 글자)로 표시 — 폭을 확정해야 감지된다.
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: SizedBox(
+                        height: 13,
+                        child: MarqueeText(
+                          bits.join('  ·  '),
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            color: AppColors.textGray.withValues(alpha: 0.95),
+                          ),
+                          velocity: 18,
+                          height: 13,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               // [요구] 회원 등록정보 없음 → 클릭 시 신규 등록을 유도한다.
               if (canManage && !hasCard)
                 const Padding(
