@@ -84,6 +84,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// (권한이 허용하는 범위까지만 노출된다.)
   bool _showMainHome = false;
 
+  /// [버그수정] 개인 접근(특히 은하스카우트) 진입 시, 데이터 동기화가 끝나기 전에
+  /// 본인 카드가 그려지지 않아 **빈 공간**이 남는 문제를 막기 위한 재시도 타이머.
+  Timer? _selfRetry;
+
   /// 홈 첫 페이지 후원 계좌 접힘 상태 — 기본값 false(모두 노출).
   /// (요구: "후원계좌는 기본값이 모두 노출이지만, 접어두기 버튼으로 접고 펼칠 수 있게")
   bool _donationCollapsed = false;
@@ -125,6 +129,58 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppState>().ensureEunhaForSearch();
     });
+    // [버그수정] 개인 접근(특히 은하스카우트) 진입 시 서버 동기화가 화면 표시보다
+    //  늦게 끝나 본인 카드가 그려지지 않고 **빈 공간**이 남는 문제를 막는다.
+    //  · 개인 접근이면 재시도를 걸어, 본인 1건이 채워질 때까지 주기적으로 새로고침한다.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startSelfRetry());
+  }
+
+  /// 개인 접근에서 본인 1건이 로드될 때까지 짧게 재시도(최대 ~12초).
+  ///  네트워크가 느리거나 서버 동기화가 늦어도 카드가 반드시 나타나게 한다.
+  void _startSelfRetry() {
+    if (!mounted) return;
+    final st = context.read<AppState>();
+    if (!st.isSelfAccess) {
+      _maybeReloadEunhaSelf(st);
+      return;
+    }
+    _selfRetry?.cancel();
+    var ticks = 0;
+    _selfRetry = Timer.periodic(const Duration(milliseconds: 1500), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      final s = context.read<AppState>();
+      if (!s.isSelfAccess) {
+        t.cancel();
+        _maybeReloadEunhaSelf(s);
+        return;
+      }
+      final who = s.who;
+      final has =
+          who.isNotEmpty && s.byNumber(who) != null || s.members.isNotEmpty;
+      if (has || ++ticks > 8) {
+        t.cancel();
+        if (!has && s.repo.isNasMode) {
+          // 아직 못 채웠다면 서버에서 본인 스코프로 1회 더 당겨온다.
+          unawaited(s.repo.syncFromNas(self: true).then((_) => s.refresh()));
+        }
+        return;
+      }
+      // 데이터만 다시 반영(화면 갱신)
+      s.refresh();
+    });
+  }
+
+  /// (버그수정) 은하 개인 세션은 서버가 이미 본인 1건을 내려주므로,
+  ///  _eunhaMembers 별도 로드 없이 repo 캐시만 반영되면 카드가 뜬다.
+  ///  다만 초기 로드가 실패했으면 은하 명단 엔드포인트를 1회 시도한다.
+  void _maybeReloadEunhaSelf(AppState s) {
+    if (!mounted) return;
+    if (s.repo.isNasMode && s.eunhaMembers.isEmpty) {
+      unawaited(s.loadEunhaMembers());
+    }
   }
 
   /// 승인요청을 주기적으로 감시해 배지(원형 숫자)를 자동 갱신한다.
@@ -314,6 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _approvalTimer?.cancel();
+    _selfRetry?.cancel();
     _searchCtrl.dispose();
     _scroll.dispose();
     _personalScroll.dispose();
@@ -869,7 +926,34 @@ class _HomeScreenState extends State<HomeScreen> {
                         SliverToBoxAdapter(child: _personalHeader(state)),
                         const SliverToBoxAdapter(child: SizedBox(height: 8)),
                         if (selfMembers.isEmpty)
-                          const SliverToBoxAdapter(child: SizedBox(height: 8))
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 28, 16, 8),
+                              child: Column(
+                                children: [
+                                  const SizedBox(
+                                    width: 26,
+                                    height: 26,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.6,
+                                      color: AppColors.purple,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    '본인 정보를 불러오는 중…',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textGray.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
                         else
                           SliverList(
                             delegate: SliverChildBuilderDelegate((context, i) {
