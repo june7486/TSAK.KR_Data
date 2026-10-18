@@ -903,7 +903,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 4),
             const Text(
-              '• 범 인가자 접근: ID=인가번호 · 비밀번호=인가번호 + !@@ (예: 000!@@)',
+              '• 범 인가자 접근: ID=tiger+인가번호 (예: tiger415) · 비밀번호는 본인 설정',
               style: TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 4),

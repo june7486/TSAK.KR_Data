@@ -13,7 +13,7 @@ import '../widgets/privacy_consent.dart';
 import 'merch_shop_screen.dart';
 
 /// 앱 잠금(인증) 화면
-///  - 범스카우트 접근: ID "인가번호" + 개인 비밀번호 (예: 인가번호 000 → 000!@@)
+///  - 범스카우트 접근: ID "tiger+인가번호" + 개인 비밀번호 (예: tiger415)
 ///    · 관리자 로그인 창은 제거됨 — 같은 ID 칸에 관리자 아이디(task/tsak437 등)를
 ///      입력하면 서버가 관리자 계정으로 인증한다(통합 로그인).
 ///  - 비인가자 접근: ID "휴대폰 전화번호" + 비밀번호(뒤 4자리) / 신규회원 생성
@@ -461,8 +461,8 @@ class _LockScreenState extends State<LockScreen> {
                                   labelText: _tier == 'guest'
                                       ? 'ID (전화번호)'
                                       : (_tier == 'personal'
-                                            ? 'ID (tiger+인가번호, 예: tiger75)'
-                                            : 'ID (은하번호, 예: 은하43)'),
+                                            ? 'ID (tiger+인가번호, 예: tiger415)'
+                                            : 'ID (은하+인가번호, 예: 은하100)'),
                                   prefixIcon: const Icon(Icons.badge_outlined),
                                 ),
                               ),
@@ -811,11 +811,11 @@ class _LockScreenState extends State<LockScreen> {
         text = '모든 기능·초기화·통제 권한 (변경 불가)';
         break;
       case 'personal':
-        text = 'ID = tiger + 본인 인가번호 (예: tiger75) · 비밀번호 = 75!@@';
+        text = 'ID = tiger + 본인 인가번호 (예: tiger415)';
         break;
       case 'eunha':
-        // 은하스카우트 — 비밀번호 규칙은 절대 노출하지 않는다(요구).
-        text = '은하스카우트 회원은 본인 ID(은하번호)와 비밀번호를 입력하세요';
+        // 은하스카우트 — ID 형식(은하+인가번호)만 안내, 비밀번호 규칙은 노출하지 않는다(요구).
+        text = 'ID = 은하 + 본인 인가번호 (예: 은하100)';
         break;
       case 'guest':
         text = 'ID=휴대폰 전화번호 · 비밀번호=전화번호 뒤 4자리';

@@ -152,7 +152,7 @@ class AppAccessScreen extends StatelessWidget {
                     ),
                     SizedBox(height: 3),
                     Text(
-                      '• 범 인가자 접근: ID = 본인 인가번호  ·  비밀번호 = 인가번호 + !@@ (예: 000!@@)',
+                      '• 범 인가자 접근: ID = tiger + 본인 인가번호 (예: tiger415)  ·  비밀번호는 본인 설정',
                       style: TextStyle(fontSize: 12.5),
                     ),
                   ],
