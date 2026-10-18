@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_state.dart';
+import '../services/apk_updater.dart';
 import '../services/build_info.dart';
 import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
+import '../widgets/apk_update_banner.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/privacy_consent.dart';
 import 'merch_shop_screen.dart';
@@ -61,6 +63,11 @@ class _LockScreenState extends State<LockScreen> {
     // 로그인 화면 진입 시: 구버전이면 캐시 자동 삭제 후 최신 버전을 재다운로드.
     //  (인터넷이 안 되면 아무 것도 하지 않고 기존 버전으로 그대로 진행)
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdateCheck());
+    // APK 자기 업데이트: 서버의 최신 APK 정보를 조회해 더 최신이면 배너 노출.
+    //  (웹에서는 supportsApkSelfUpdate=false → 즉시 종료, 기존 방식 유지)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ApkUpdater.instance.check();
+    });
   }
 
   /// 구버전 감지 시 1회성으로 캐시를 지우고 최신 자산을 다시 받는다.
@@ -614,6 +621,21 @@ class _LockScreenState extends State<LockScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      // APK 원격 업데이트 배너 (새 버전이 있으면 표시)
+                      AnimatedBuilder(
+                        animation: ApkUpdater.instance,
+                        builder: (context, _) {
+                          final up = ApkUpdater.instance;
+                          if (!up.showBanner) return const SizedBox.shrink();
+                          return ApkUpdateBanner(
+                            update: up.update,
+                            busy: up.isBusy,
+                            progress: up.progress,
+                            compact: true,
+                            onUpdate: () => up.downloadAndInstall(context),
+                          );
+                        },
+                      ),
                       // 바로가기: 홈페이지 / 네이버 카페 (클릭 시 새창 열기)
                       Row(
                         children: [

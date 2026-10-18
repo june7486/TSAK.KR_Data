@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 가 공유할 수 있는 경로 정의 (TSAK.KR APK 자기 업데이트용).
+
+  · cache-path  : path_provider 의 임시폴더(getTemporaryDirectory) → 앱 캐시 경로.
+                  업데이트 APK 를 여기에 내려받아 설치기에 content:// 로 전달한다.
+  · files-path  : (예비) 앱 내부 files 경로.
+  Android 8+ 에서는 file:// URI 를 열 수 없어 이 FileProvider 가 필수다.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="tsak_cache" path="." />
+    <files-path name="tsak_files" path="." />
+</paths>

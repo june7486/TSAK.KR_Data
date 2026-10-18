@@ -19,4 +19,11 @@ python3 scripts/gen_build_info.py || true
 echo "▶ flutter build apk (release)..."
 flutter build apk --release --dart-define=SERVER_BASE="$SB"
 
+# ── 원격 업데이트 매니페스트 배치 ──────────────────────────────────────────
+# 새 APK 를 build/web 에 사본으로 두고 apk.json(버전·해시·URL)을 생성한다.
+# 이렇게 하면 앱이 서버 /apk.json 을 보고 스스로 업데이트할 수 있다.
+echo "▶ apk.json(원격 업데이트 매니페스트) 생성..."
+python3 scripts/gen_apk_manifest.py || echo "  ⚠️ apk.json 생성 실패(계속 진행)"
+
 echo "✓ APK: build/app/outputs/flutter-apk/app-release.apk"
+echo "✓ apk.json: build/web/apk.json"

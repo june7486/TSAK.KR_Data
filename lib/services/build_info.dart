@@ -130,3 +130,89 @@ Future<bool> serverHasNewerVersion() async {
     return false;
   }
 }
+
+// ============================================================================
+//  APK 원격 업데이트 (안드로이드 네이티브 전용)
+//  --------------------------------------------------------------------------
+//  웹은 위의 빌드 스탬프 방식으로 캐시를 지우고 재로드하면 끝이지만,
+//  설치형 APK 는 코드/화면을 바꿀 수 없다 → **새 APK 를 내려받아 설치**해야 한다.
+//  서버는 `/apk.json` 에 최신 APK 의 버전·URL·무결성(SHA-256)을 게시하고,
+//  앱은 그것을 조회해 더 최신이면 다운로드→검증→설치한다.
+// ============================================================================
+
+/// 서버가 게시한 최신 APK 정보.
+class ApkUpdate {
+  /// 서버 빌드 넘버(예: 447). 현재 [kBuildNumber] 보다 크면 최신.
+  final int build;
+
+  /// 표시용 버전 문자열(예: "1.0.0+447").
+  final String version;
+
+  /// APK 절대 다운로드 URL.
+  final String url;
+
+  /// SHA-256(hex, 소문자) — 다운로드 무결성 검증용. 비어 있으면 검증 생략.
+  final String sha256;
+
+  /// 파일 크기(바이트, 0=미상).
+  final int size;
+
+  /// 릴리스 노트(선택).
+  final String notes;
+
+  const ApkUpdate({
+    required this.build,
+    required this.version,
+    required this.url,
+    this.sha256 = '',
+    this.size = 0,
+    this.notes = '',
+  });
+
+  /// 현재 앱보다 최신인가?
+  bool get isNewer => build > kBuildNumber;
+}
+
+/// 서버의 최신 APK 정보를 조회한다. (실패·오프라인 시 null)
+///
+/// · 서버주소는 `AppConfig.defaultServerBase`(빌드 시 --dart-define=SERVER_BASE 로
+///   주입) 또는 사용자가 설정한 값을 사용한다.
+/// · apk.json 의 `url` 이 상대경로면 서버주소 기준으로 절대화한다.
+Future<ApkUpdate?> fetchApkUpdate() async {
+  final base = AppConfig.defaultServerBase.replaceAll(RegExp(r'/+$'), '');
+  if (base.isEmpty || !base.startsWith('http')) return null;
+  try {
+    final uri = Uri.parse(
+      '$base/apk.json?_=${DateTime.now().millisecondsSinceEpoch}',
+    );
+    final resp = await http
+        .get(uri, headers: {'Cache-Control': 'no-store'})
+        .timeout(const Duration(seconds: 8));
+    if (resp.statusCode != 200) return null;
+    final m = jsonDecode(utf8.decode(resp.bodyBytes));
+    if (m is! Map) return null;
+
+    final build = int.tryParse('${m['build'] ?? m['build_number'] ?? 0}') ?? 0;
+    final version = '${m['version'] ?? ''}';
+    final rawUrl = '${m['url'] ?? ''}'.trim();
+    var url = rawUrl;
+    if (url.isNotEmpty && !url.startsWith('http')) {
+      // 상대경로 → 서버주소 기준 절대화
+      url = '$base/${url.replaceAll(RegExp(r'^/+'), '')}';
+    }
+    final sha = '${m['sha256'] ?? ''}'.trim().toLowerCase();
+    final size = int.tryParse('${m['size'] ?? 0}') ?? 0;
+    final notes = '${m['notes'] ?? ''}';
+    if (build <= 0 || url.isEmpty) return null;
+    return ApkUpdate(
+      build: build,
+      version: version.isEmpty ? 'build $build' : version,
+      url: url,
+      sha256: sha,
+      size: size,
+      notes: notes,
+    );
+  } catch (_) {
+    return null;
+  }
+}

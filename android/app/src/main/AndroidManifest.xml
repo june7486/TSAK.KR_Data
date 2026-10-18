@@ -12,6 +12,9 @@
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"/>
+    <!-- APK 원격 업데이트: 새 버전 패키지 설치 화면을 띄우기 위한 권한.
+         (설치 전 사용자 확인은 OS 가 항상 별도로 요구한다 — 자동/무단 설치 불가) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
 
@@ -45,6 +48,16 @@
                 <data android:scheme="tsak"/>
             </intent-filter>
         </activity>
+        <!-- APK 자기 업데이트: content:// URI 로 설치기에 전달하는 FileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

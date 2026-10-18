@@ -54,6 +54,8 @@ dependencies:
   # 유틸
   intl: ^0.19.0
   http: ^1.2.0
+  # APK 원격 업데이트 — 다운로드 무결성(SHA-256) 검증
+  crypto: ^3.0.6
 
   # 주문 처리 중 화면 꺼짐 방지 (wakelock)
   wakelock_plus: ^1.2.8
