@@ -3,9 +3,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 카메라: 사진 촬영 및 QR 스캔 -->
     <uses-permission android:name="android.permission.CAMERA"/>
-    <!-- 전화 / 문자 발송 -->
-    <uses-permission android:name="android.permission.CALL_PHONE"/>
-    <uses-permission android:name="android.permission.SEND_SMS"/>
+    <!-- 전화/문자는 tel:/sms: URL 스킴(전화·메시지 앱 위임)으로 처리하므로
+         CALL_PHONE/SEND_SMS 권한을 선언하지 않는다.
+         (위험 권한 제거 → 스토어/기기 악성앱 오탐 방지) -->
     <!-- 사진 저장/불러오기 (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -19,7 +19,6 @@
         android:label="TSAK.KR"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"

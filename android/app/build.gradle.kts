@@ -46,6 +46,11 @@ android {
                 storeFile = file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
             }
+            // v1(JAR) 서명도 함께 생성 → 구형 검증기/일부 보안 스캐너 호환.
+            // (v1 미포함 시 일부 스캐너가 '검증 불가'로 오탐하는 사례 방지)
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
