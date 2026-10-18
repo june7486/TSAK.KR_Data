@@ -33,9 +33,16 @@ class AppConfig {
   /// 세션 유지 시간 (1시간)
   static const Duration sessionTimeout = Duration(hours: 1);
 
-  /// NAS 프록시 서버 주소 (비어 있으면 웹과 동일한 origin 사용 → 상대경로)
-  /// Android 등 네이티브에서는 설정에서 절대 URL 입력 가능.
-  static String defaultServerBase = '';
+  /// NAS 프록시 서버 주소.
+  ///
+  /// - **웹**: 비어 있으면 웹과 동일한 origin 사용 → 상대경로(`/api/...`).
+  /// - **네이티브(APK)**: 빌드 시 `--dart-define=SERVER_BASE=https://...` 로
+  ///   주입한다. (안드로이드에서는 상대경로 호스트가 없어 반드시 절대 URL 필요)
+  ///   마스터는 설정 화면에서 언제든 덮어쓸 수 있다(SharedPreferences 우선).
+  static const String defaultServerBase = String.fromEnvironment(
+    'SERVER_BASE',
+    defaultValue: '',
+  );
 
   /// 앱 **공개 접속 주소**(웹 배포 URL). QR 생성의 최종 기준.
   ///
