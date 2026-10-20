@@ -240,102 +240,268 @@ class DocPdf {
       ],
     );
 
-    // ── 표 ──
-    pw.Widget? table;
-    if (columns.isNotEmpty || rows.isNotEmpty) {
-      table = pw.Table(
-        border: pw.TableBorder(
-          horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
-          bottom: const pw.BorderSide(color: _border, width: 0.8),
-        ),
-        columnWidths: _contentCols(columns, rows),
+    // ───────────────────────────────────────────────────────────────────────
+    // 표 행 단위 수동 페이지 나눔 + **페이지마다 머리행(구분표) 반복**
+    //
+    // ## 왜 MultiPage + Table 을 쓰지 않는가 (요구: "명부 출력시 페이지가 넘어갈
+    // 경우 상단에 구분표 반복해서 노출할 것")
+    // `pw.Table` 은 페이지 경계에서 **분할되지 않는다**(canSpan=false). 표가 한
+    // 페이지보다 크면 통째로 다음 페이지로 밀리고, 넘치는 행은 아예 사라진다.
+    // 실제로 아타스 명부 290명을 출력하면 2페이지 이후가 잘려 나왔다.
+    // 그래서 ① 행 높이를 미리 재어 페이지에 담기는 행 수를 계산하고 ② 페이지마다
+    // 같은 머리행 위젯을 **다시 그려** 넣는다. 헤더가 모든 페이지 상단에 반복된다.
+    // ───────────────────────────────────────────────────────────────────────
+
+    final widths = _contentCols(
+      columns,
+      rows,
+      availableWidth: fmt.width - 36 * 2 - 8,
+    );
+    final availW = fmt.width - 36 * 2;
+    final margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30);
+    final availBody = fmt.height - margin.vertical;
+
+    // ── 페이지 장식(레터헤드·푸터) — 높이를 **실제로 재어** 본문 가용 높이에서
+    //  뺀다. 추정값을 쓰면 첫 페이지에서 행이 한 줄 넘쳐 다음 페이지로 밀리고,
+    //  그 페이지에 머리행이 없어 '구분표 없는 페이지'가 생긴다(실제 발생).
+    pw.Widget pageHeader(pw.Context ctx) => pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 6),
+      child: pw.Column(
         children: [
-          if (columns.isNotEmpty)
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: _head),
-              children: columns
-                  .map(
-                    (c) => pw.Padding(
-                      padding: pw.EdgeInsets.fromLTRB(
-                        4,
-                        headV.toDouble(),
-                        4,
-                        headV.toDouble(),
-                      ),
-                      child: pw.Text(
-                        sanitize(c),
-                        style: pw.TextStyle(
-                          font: bold,
-                          fontSize: cellPt,
-                          color: _strong,
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          for (final r in rows)
-            pw.TableRow(
-              children: r
-                  .asMap()
-                  .entries
-                  .map(
-                    (e) => pw.Container(
-                      padding: pw.EdgeInsets.fromLTRB(
-                        4,
-                        padV.toDouble(),
-                        4,
-                        padV.toDouble(),
-                      ),
-                      decoration: e.value.accent != null
-                          ? pw.BoxDecoration(
-                              border: pw.Border(
-                                left: pw.BorderSide(
-                                  color: _hex(e.value.accent!),
-                                  width: 2.4,
-                                ),
-                              ),
-                            )
-                          : null,
-                      child: pw.Column(
-                        crossAxisAlignment: _cross(e.value.align),
-                        children: [
-                          pw.Text(
-                            sanitize(e.value.text),
-                            style: e.value.bold ? baseBold : base,
-                            textAlign: _align(e.value.align),
-                            // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
-                            softWrap: !noWrapCols.contains(e.key),
-                            maxLines: noWrapCols.contains(e.key) ? 1 : null,
-                          ),
-                          if (e.value.sub != null &&
-                              e.value.sub!.trim().isNotEmpty)
-                            pw.Padding(
-                              padding: const pw.EdgeInsets.only(top: 1.5),
-                              child: pw.Text(
-                                sanitize(e.value.sub!),
-                                style: pw.TextStyle(
-                                  font: reg,
-                                  fontSize:
-                                      (7.5 * scale * 10).roundToDouble() / 10,
-                                  color: _gray,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                '한국범스카우트중앙회 · TSAK',
+                style: pw.TextStyle(
+                  font: bold,
+                  fontSize: 7.5,
+                  color: _gray,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              pw.Text(
+                '${ctx.pageNumber} of ${ctx.pagesCount}',
+                style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          pw.Container(height: 0.6, color: _line),
         ],
-      );
+      ),
+    );
+
+    pw.Widget pageFooter(pw.Context ctx) => pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 8),
+      child: pw.Container(
+        padding: const pw.EdgeInsets.only(top: 6),
+        decoration: const pw.BoxDecoration(
+          border: pw.Border(top: pw.BorderSide(color: _line)),
+        ),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              footerLeft,
+              style: pw.TextStyle(
+                font: reg,
+                fontSize: 7.5,
+                color: _gray,
+                letterSpacing: 0.4,
+              ),
+            ),
+            pw.Text(
+              '출력규칙 · 보고서 · ${ctx.pageNumber}/${ctx.pagesCount}',
+              style: pw.TextStyle(
+                font: reg,
+                fontSize: 7.5,
+                color: _gray,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    /// 1페이지 머리(제목·부제·메타·PART 라벨) — 높이 측정용으로도 쓴다.
+    final firstHead = <pw.Widget>[
+      _titleRow(meta.title, bold, emblemH: 34),
+      if (meta.subtitle.trim().isNotEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 3),
+          child: pw.Text(
+            sanitize(meta.subtitle),
+            style: pw.TextStyle(font: reg, fontSize: 10, color: _gray),
+          ),
+        ),
+      pw.SizedBox(height: 8),
+      metaBlock,
+      pw.SizedBox(height: 12),
+      if (columns.isNotEmpty || rows.isNotEmpty) ...[
+        partLabel(rows.length),
+        pw.SizedBox(height: 8),
+      ],
+    ];
+
+    /// 머리행 — 모든 페이지 상단에 반복 출력된다.
+    pw.Widget headRow() => pw.Table(
+      border: pw.TableBorder(
+        horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
+        bottom: const pw.BorderSide(color: _border, width: 0.8),
+      ),
+      columnWidths: widths,
+      children: [
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: _head),
+          children: columns
+              .map(
+                (c) => pw.Padding(
+                  padding: pw.EdgeInsets.fromLTRB(
+                    4,
+                    headV.toDouble(),
+                    4,
+                    headV.toDouble(),
+                  ),
+                  child: pw.Text(
+                    sanitize(c),
+                    style: pw.TextStyle(
+                      font: bold,
+                      fontSize: cellPt,
+                      color: _strong,
+                      // 머리행은 한 줄 고정 — 두 줄로 접히면 페이지마다 높이가
+                      // 달라져 행 배치가 어긋난다.
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+
+    /// 본문 행 하나.
+    pw.Widget bodyRow(int i) => pw.Table(
+      border: const pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: _line, width: 0.6),
+        bottom: pw.BorderSide(color: _border, width: 0.8),
+      ),
+      columnWidths: widths,
+      children: [
+        pw.TableRow(
+          children: rows[i]
+              .asMap()
+              .entries
+              .map(
+                (e) => pw.Container(
+                  padding: pw.EdgeInsets.fromLTRB(
+                    4,
+                    padV.toDouble(),
+                    4,
+                    padV.toDouble(),
+                  ),
+                  decoration: e.value.accent != null
+                      ? pw.BoxDecoration(
+                          border: pw.Border(
+                            left: pw.BorderSide(
+                              color: _hex(e.value.accent!),
+                              width: 2.4,
+                            ),
+                          ),
+                        )
+                      : null,
+                  child: pw.Column(
+                    crossAxisAlignment: _cross(e.value.align),
+                    children: [
+                      pw.Text(
+                        sanitize(e.value.text),
+                        style: e.value.bold ? baseBold : base,
+                        textAlign: _align(e.value.align),
+                        // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
+                        softWrap: !noWrapCols.contains(e.key),
+                        maxLines: noWrapCols.contains(e.key) ? 1 : null,
+                      ),
+                      if (e.value.sub != null && e.value.sub!.trim().isNotEmpty)
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(top: 1.5),
+                          child: pw.Text(
+                            sanitize(e.value.sub!),
+                            style: pw.TextStyle(
+                              font: reg,
+                              fontSize:
+                                  (7.5 * scale * 10).roundToDouble() / 10,
+                              color: _gray,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+
+    // ── 모든 높이를 **실제로 잰다**(레이아웃만 하고 그리지 않는다).
+    //  · headerH/footerH: 레터헤드·푸터가 잡아먹는 높이
+    //  · headH: 반복 머리행(구분표) 높이
+    //  · firstH: 1페이지에만 있는 제목·메타·PART 라벨 높이
+    //  추정값 대신 측정값을 쓰므로 '행 1개가 넘쳐서 머리행 없는 페이지'가 생기지
+    //  않는다. (측정은 순수 계산이라 부작용 없음 — pdf 패키지 layout 단계)
+    final measureDoc = pw.Document();
+    final measureCtx = pw.Context(document: measureDoc.document)
+        .inheritFromAll(<pw.Inherited>[pw.ThemeData.base()]);
+
+    double measure(pw.Widget w) {
+      try {
+        w.layout(measureCtx, pw.BoxConstraints(maxWidth: availW));
+        return w.box?.height ?? 0;
+      } catch (_) {
+        return 24.0; // 측정 실패 시 보수적으로 2줄 높이
+      }
     }
 
+    final headerH = measure(pageHeader(_FakeCtx()));
+    final footerH = measure(pageFooter(_FakeCtx()));
+    final headH = columns.isEmpty ? 0.0 : measure(headRow());
+    final firstH = measure(
+      pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: firstHead),
+    );
+    final rowHeights = <double>[
+      for (var i = 0; i < rows.length; i++) measure(bodyRow(i)),
+    ];
+
+    /// 1페이지 본문 가용 높이 = 전체 − 레터헤드 − 푸터 − 1페이지 머리 − (반복)머리행
+    final firstCap = availBody - headerH - footerH - firstH - headH;
+    /// 2페이지 이후 = 전체 − 레터헤드 − 푸터 − (반복)머리행
+    final contCap = availBody - headerH - footerH - headH;
+
+    /// 한 페이지에 담기는 행 인덱스 구간 목록.
+    var pages = <List<int>>[];
+    var buf = <int>[];
+    var used = 0.0;
+    var cap = firstCap;
+    for (var i = 0; i < rows.length; i++) {
+      // 안전 여유 0.5pt — 반올림 오차로 한 행이 넘치는 것을 막는다.
+      if (buf.isNotEmpty && used + rowHeights[i] > cap - 0.5) {
+        pages.add(buf);
+        buf = <int>[];
+        used = 0.0;
+        cap = contCap;
+      }
+      buf.add(i);
+      used += rowHeights[i];
+    }
+    if (buf.isNotEmpty) pages.add(buf);
+    if (pages.isEmpty) pages = [<int>[]];
+
     // ── 합계 ──
-    pw.Widget? sumWidget;
-    if (summary.isNotEmpty) {
-      sumWidget = pw.Container(
+    pw.Widget? sumWidget() {
+      if (summary.isEmpty) return null;
+      return pw.Container(
         margin: const pw.EdgeInsets.only(top: 14),
         padding: const pw.EdgeInsets.only(top: 10),
         decoration: const pw.BoxDecoration(
@@ -359,109 +525,44 @@ class DocPdf {
       );
     }
 
-    doc.addPage(
-      pw.MultiPage(
-        maxPages: 500,
-        pageTheme: pw.PageTheme(
-          pageFormat: fmt,
-          margin: const pw.EdgeInsets.fromLTRB(36, 40, 36, 30),
-          // 샘플 규격: 페이지를 얇은 테두리 박스로 감싼다.
-          buildBackground: (ctx) => pw.FullPage(
-            ignoreMargins: true,
-            child: pw.Container(
-              margin: const pw.EdgeInsets.all(14),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: _border, width: 0.8),
-              ),
-            ),
-          ),
-        ),
-        // 레터헤드 — 모든 페이지 상단 좌 브랜드 · 우 N of M.
-        header: (ctx) => pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 6),
-          child: pw.Column(
-            children: [
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    '한국범스카우트중앙회 · TSAK',
-                    style: pw.TextStyle(
-                      font: bold,
-                      fontSize: 7.5,
-                      color: _gray,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                  pw.Text(
-                    '${ctx.pageNumber} of ${ctx.pagesCount}',
-                    style: pw.TextStyle(font: reg, fontSize: 7.5, color: _gray),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 4),
-              pw.Container(height: 0.6, color: _line),
-            ],
-          ),
-        ),
-        // 푸터 — 좌 기관명 · 우 출력규칙 · 보고서 · N/M.
-        footer: (ctx) => pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 8),
-          child: pw.Container(
-            padding: const pw.EdgeInsets.only(top: 6),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(top: pw.BorderSide(color: _line)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  footerLeft,
-                  style: pw.TextStyle(
-                    font: reg,
-                    fontSize: 7.5,
-                    color: _gray,
-                    letterSpacing: 0.4,
-                  ),
+    for (var pi = 0; pi < pages.length; pi++) {
+      final idxs = pages[pi];
+      final last = pi == pages.length - 1;
+      doc.addPage(
+        pw.MultiPage(
+          maxPages: 2,
+          pageTheme: pw.PageTheme(
+            pageFormat: fmt,
+            margin: margin,
+            // 샘플 규격: 페이지를 얇은 테두리 박스로 감싼다.
+            buildBackground: (ctx) => pw.FullPage(
+              ignoreMargins: true,
+              child: pw.Container(
+                margin: const pw.EdgeInsets.all(14),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: _border, width: 0.8),
                 ),
-                pw.Text(
-                  '출력규칙 · 보고서 · ${ctx.pageNumber}/${ctx.pagesCount}',
-                  style: pw.TextStyle(
-                    font: reg,
-                    fontSize: 7.5,
-                    color: _gray,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        build: (ctx) => [
-          _titleRow(meta.title, bold, emblemH: 34),
-          if (meta.subtitle.trim().isNotEmpty)
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(top: 3),
-              child: pw.Text(
-                sanitize(meta.subtitle),
-                style: pw.TextStyle(font: reg, fontSize: 10, color: _gray),
               ),
             ),
-          pw.SizedBox(height: 8),
-          metaBlock,
-          pw.SizedBox(height: 12),
-          if (columns.isNotEmpty || rows.isNotEmpty) ...[
-            partLabel(rows.length),
-            pw.SizedBox(height: 8),
+          ),
+          // 레터헤드 / 푸터 — 위에서 만든 빌더를 그대로 쓴다(측정값과 동일).
+          header: pageHeader,
+          footer: pageFooter,
+          build: (ctx) => [
+            // 1페이지에만 제목·메타·PART 라벨(계속 페이지는 곧바로 머리행).
+            if (pi == 0) ...firstHead,
+            // ★ 머리행(구분표) — 모든 페이지 상단에 반복된다.
+            if (columns.isNotEmpty && idxs.isNotEmpty) headRow(),
+            // 이 페이지에 담기는 본문 행.
+            for (final i in idxs) bodyRow(i),
+            if (last) ?sumWidget(),
           ],
-          if (table != null) table,
-          if (sumWidget != null) sumWidget,
-        ],
-      ),
-    );
-
+        ),
+      );
+    }
     return doc.save();
   }
+
 
   /// 열 폭을 **내용 길이에 비례**해 자동 배분한다.
   ///
@@ -472,8 +573,9 @@ class DocPdf {
   /// 그 비율대로 폭을 나눠 여백을 없앤다.
   static Map<int, pw.TableColumnWidth> _contentCols(
     List<String> columns,
-    List<List<DocCell>> rows,
-  ) {
+    List<List<DocCell>> rows, {
+    double availableWidth = 517.0,
+  }) {
     final n = columns.length;
     if (n <= 0) return const {};
     // 각 열의 **내용** 폭(폰트 1pt 기준). 헤더·서브텍스트·본문을 모두 고려한다.
@@ -501,7 +603,10 @@ class DocPdf {
     const double fontPt = 8.5; // 셀 본문 폰트
     const double padU = 8.0; // 셀 좌우 패딩 합(좌 4 + 우 4)
     const double lead = 3.0; // 헤어라인/렌더 오차 여유
-    const double avail = 517.0; // 페이지 폭 − 좌우 여백 − 테두리(≈ 595 − 36·2 − 여유)
+    // 페이지 폭 − 좌우 여백 − 테두리(≈ 595 − 36·2 − 여유).
+    //  가로(landscape) 출력에서도 같은 비율이 되도록 A4 폭 기준값은 그대로 두되,
+    //  호출부가 넘긴 사용 가능 폭이 있으면 그쪽을 우선한다([availableWidth]).
+    final double avail = availableWidth;
     final req = <double>[
       for (var i = 0; i < n; i++) units[i] * fontPt + padU + lead,
     ];
@@ -1027,3 +1132,18 @@ pw.Widget tsakPdfFooter({
     ),
   ),
 );
+
+/// 페이지 번호를 **측정용으로만** 흉내내는 최소 Context.
+///
+/// 레터헤드/푸터는 `ctx.pageNumber`·`ctx.pagesCount` 를 읽는다. 높이만 재면 되므로
+/// 0/0 으로도 폭·높이가 동일하다. `pw.Context` 를 직접 만들 수 없어 얇은 대역을 쓴다.
+class _FakeCtx implements pw.Context {
+  @override
+  int get pageNumber => 0;
+
+  @override
+  int get pagesCount => 0;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}

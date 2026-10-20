@@ -214,9 +214,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   _quickActions(m),
                   _approvalBanner(m),
                   // (요구) 인가정보·활동정보 위치 변경 — 개인 상세페이지 **최상단** 배치.
-                  //   ① 범스카우트 인가 정보(인가 당시 정보) ② 현재 활동 등록 정보
+                  //   ① 범스카우트 인가 정보(인가 당시 정보)  ② ATAS 인가 정보
+                  //   ③ 현재 활동 등록 정보
                   //   · 관리자·본인·타인 모두에게 가장 먼저 보이도록 최상단에 노출한다.
-                  _credentialCard(m),
+                  //   · (요구) "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
+                  //     → 범인가/ATAS 를 **각각 별도 카드**로 나눠 노출한다.
+                  _credentialCards(m),
                   _currentActivityCard(m),
                   // (요구 #4) 편집 화면 최상단: 평생회원 여부 → 연간회비 납부현황
                   //  · 관리자·마스터에게만 노출된다.
@@ -1795,6 +1798,25 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   ///   · 편집 권한(본인 또는 관리자·마스터)이 있으면 **그 자리에서 입력·수정**
   ///     할 수 있는 입력창(LinkCodeField)을 함께 노출한다.
   ///     (편집 화면과 동일한 기준: 멘티 인가번호 + 멘토/페런츠 인적사항)
+  ///
+  /// ## 범스카우트 인가정보 / ATAS 인가정보 **분리**
+  /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것")
+  /// 기존에는 ATAS 인가번호·영문 이름이 범인가 정보 카드 안에 섞여 있어, 인가
+  /// 근거(연맹·단위대·인가일)와 ATAS 발급정보가 뒤섞여 보였다. 이제 카드를 둘로
+  /// 나눈다:
+  ///   ① [범스카우트 인가 정보] = 범인가 근거 + 멘토/페런츠
+  ///   ② [ATAS 인가 정보]      = ATAS 인가번호 + 영문(로마자) 이름
+  Widget _credentialCards(Member m) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _credentialCard(m),
+        _atasCard(m),
+      ],
+    );
+  }
+
+  /// ① 범스카우트 인가 정보 (인가 당시 정보) — ATAS 항목은 여기서 뺀다.
   Widget _credentialCard(Member m) {
     final state = context.watch<AppState>();
     final canEdit =
@@ -1808,10 +1830,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
-          // (복원) ATAS 인가번호 — 범·은하 모두 표시(요구: "개인페이지에 atas 다시 넣어줘").
-          _plainRow('ATAS 인가번호', m.atasNo),
-          // (요구) 영문 이름 — ATAS 인가정보에서 가져온 로마자 표기. 없으면 미표시.
-          _plainRow('영문 이름', m.nameEn),
           // 멘토대장·페런츠 등록정보 — **멘티 등록정보와 동일한 형식**으로 노출.
           //  (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출해줘",
           //         "이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
@@ -1863,6 +1881,37 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ],
           // 편집 권한자에게는 **편집기**를 더한다(3-항목 타일과 역할이 다름).
           if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
+        ],
+      ),
+    );
+  }
+
+  /// ② **ATAS 인가 정보** — 범스카우트 인가 정보와 **별도 카드**로 분리.
+  ///
+  /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것")
+  ///  · ATAS 인가번호(국제 아타스 발급번호)와 그 발급 근거인 **영문(로마자) 이름**만
+  ///    이 카드에 둔다. 소속 연맹·단위대·인가일(범인가 근거)은 위 카드에 남는다.
+  ///  · ATAS 인가번호가 없으면 카드를 만들지 않는다(정보 없는 빈 카드 방지).
+  ///  · 이 카드의 값은 **명부 출력 시 'ATAS 인가정보' 항목 선택**과 1:1 로 대응한다.
+  Widget _atasCard(Member m) {
+    final hasAtas = m.atasNo.trim().isNotEmpty;
+    final hasEn = m.nameEn.trim().isNotEmpty;
+    if (!hasAtas && !hasEn) return const SizedBox.shrink();
+    return _section(
+      title: 'ATAS 인가 정보',
+      icon: Icons.military_tech,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _plainRow('ATAS 인가번호', m.atasNo),
+          _plainRow('영문 이름', m.nameEn),
+          const SizedBox(height: 2),
+          Text(
+            hasAtas
+                ? 'ATAS(국제 범스카우트 인가) 발급 기록입니다.'
+                : 'ATAS 인가번호가 등록되지 않았습니다.',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
         ],
       ),
     );

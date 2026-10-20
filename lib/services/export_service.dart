@@ -1069,11 +1069,13 @@ class ExportService {
       '<table border="1" cellspacing="0" cellpadding="4" '
       'style="border-collapse:collapse;font-size:10pt">',
     );
-    buf.write('<tr style="background:#5B2C8D;color:#fff">');
+    // 머리행은 <thead> 에 넣어야 Word/브라우저 인쇄에서 **페이지마다 반복**된다.
+    //  (요구: "명부 출력시 페이지가 넘어갈 경우 상단에 구분표 반복해서 노출할 것")
+    buf.write('<thead><tr style="background:#5B2C8D;color:#fff">');
     for (final h in headersWithIndex(keys, numbering: numbering)) {
       buf.write('<th>$h</th>');
     }
-    buf.write('</tr>');
+    buf.write('</tr></thead><tbody>');
     for (var i = 0; i < members.length; i++) {
       buf.write('<tr>');
       for (final v in rowWithIndex(
@@ -1086,7 +1088,7 @@ class ExportService {
       }
       buf.write('</tr>');
     }
-    buf.write('</table></body></html>');
+    buf.write('</tbody></table></body></html>');
     return Uint8List.fromList(utf8.encode(buf.toString()));
   }
 

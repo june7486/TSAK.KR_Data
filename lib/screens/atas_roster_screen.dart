@@ -14,6 +14,7 @@ import '../widgets/busy_overlay.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_table_options.dart';
 import '../widgets/tsak_output_preview.dart';
 import 'member_detail_screen.dart';
 
@@ -35,6 +36,65 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
 
   /// 좌측 선택박스로 고른 항목(회원 id). 선택 시 그 항목만 출력한다.
   final Set<String> _sel = {};
+
+  /// 출력 옵션 — **출력 시 각각의 정보를 선택**(범스카우트 인가정보 / ATAS 인가정보
+  /// / 소속 등)하고 순서·글씨·줄간격·용지를 정한다.
+  ///
+  /// (요구: "츌력시 각각의 정보를 선택할 수 있도록 업데이트 할 것")
+  TableOutputOptions? _outOpts;
+
+  /// 출력 항목(헤더) — 인가정보 그룹을 나눠 정의한다.
+  ///
+  ///  · ATAS 인가정보 : ATAS 인가번호 · 영문 이름
+  ///  · 범스카우트 인가정보 : 범인가번호 · 성명 · 소속 연맹 · 등록 단위대 · 인가년월일
+  ///  → 두 그룹을 각각 켜고 끌 수 있어 "ATAS 정보만" 또는 "범스카우트 정보만"
+  ///    뽑을 수 있다.
+  static const _atasFields = ['ATAS 인가번호', '영문 이름'];
+  static const _beomFields = ['범인가번호', '성명', '소속 연맹', '등록 단위대', '인가년월일'];
+  static List<String> get _allHeaders => [..._beomFields, ..._atasFields];
+
+  /// 현재 옵션을 적용한 실제 출력 (헤더, 행) 쌍.
+  ({List<String> headers, List<List<String>> rows}) _view(
+    List<Member> list,
+  ) {
+    final all = _allHeaders;
+    final full = <List<String>>[
+      for (final m in list)
+        [
+          m.number.trim(),
+          m.name,
+          m.league.trim(),
+          m.unit.trim(),
+          m.date.trim(),
+          m.atasNo.trim(),
+          m.nameEn.trim(),
+        ],
+    ];
+    final o = _outOpts;
+    if (o == null || o.cols == null) return (headers: all, rows: full);
+    final v = applyTableOptions(
+      columns: all,
+      rows: full,
+      order: o.cols,
+      selected: o.cols!.toSet(),
+    );
+    return (headers: v.columns, rows: v.rows);
+  }
+
+  /// 출력 옵션 편집 — 정보 그룹(범/ATAS) 프리셋 + 항목 선택·순서·글씨·줄간격·용지.
+  Future<void> _editOptions(List<Member> list) async {
+    final out = await showTsakTableOptions(
+      context,
+      title: '아타스 명부 출력 옵션',
+      subtitle: '범스카우트 인가정보 / ATAS 인가정보를 각각 골라 출력하세요.',
+      columns: _allHeaders,
+      initial: _outOpts,
+    );
+    if (out != null && mounted) {
+      setState(() => _outOpts = out);
+      _snack('출력 옵션을 저장했습니다 · ${out.badge}');
+    }
+  }
 
   void _toggle(String id) {
     setState(() {
@@ -229,20 +289,12 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
       _snack('출력할 아타스 명부가 없습니다');
       return;
     }
-    // (요구) 명단 출력 시 **한글 이름 옆에 영문 이름**을 배치한다.
-    //  · 영문 이름(nameEn)은 ATAS 인가정보에서 온 값이며, 없으면 빈칸으로 둔다.
-    final headers = ['ATAS 인가번호', '범인가번호', '성명', '영문 이름', '소속', '인가년월일'];
-    final rows = <List<String>>[];
-    for (final m in list) {
-      rows.add([
-        m.atasNo.trim(),
-        m.number.trim(),
-        m.name,
-        m.nameEn.trim(),
-        m.unit.trim(),
-        m.date.trim(),
-      ]);
-    }
+    // (요구) **출력 시 각각의 정보를 선택** — 옵션으로 고른 항목만 나간다.
+    //  · ATAS 인가정보(ATAS 인가번호·영문 이름)와 범스카우트 인가정보(범인가번호·
+    //    성명·소속 연맹·등록 단위대·인가년월일)를 각각 켜고 끌 수 있다.
+    final view = _view(list);
+    final headers = view.headers;
+    final rows = view.rows;
     final title = '아타스(ATAS) 명부${_q.isEmpty ? '' : ' (검색 ${list.length}명)'}';
     await showTsakOutputSheet(
       context,
@@ -271,8 +323,12 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
           rows: rows,
           summary: ['총 ${rows.length}명'],
           footerLeft: '한국범스카우트중앙회 · 아타스',
+          options: _outOpts,
         ),
       ),
+      // (요구) 출력 시 **각각의 정보를 선택** — 범인가/ATAS 그룹·항목·순서·글씨·
+      //  줄간격·용지를 이 자리에서 고른다(관리자 명부와 동일한 화면).
+      onOptions: () => _editOptions(list),
       onOnePage: () => _runOnePage(_atasAll(context.read<AppState>())),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );
@@ -354,6 +410,8 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
       rows: rows,
       summary: ['총 ${rows.length}명'],
       footerLeft: '한국범스카우트중앙회 · 아타스',
+      // 글씨·줄간격·용지 옵션 반영.
+      options: _outOpts,
     );
     setState(() => _busyBuilding = true);
     try {

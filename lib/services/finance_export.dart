@@ -297,13 +297,15 @@ class FinanceExportService {
         '<table border="1" cellspacing="0" cellpadding="4" '
         'style="border-collapse:collapse;font-size:10pt;font-family:$kDocFontStack">',
       );
+      // 머리행은 <thead> 로 — 페이지가 넘어가도 구분표가 반복된다.
       if (t.headers.isNotEmpty) {
-        buf.write('<tr style="background:#5B2C8D;color:#fff">');
+        buf.write('<thead><tr style="background:#5B2C8D;color:#fff">');
         for (final h in t.headers) {
           buf.write('<th>${_esc(h)}</th>');
         }
-        buf.write('</tr>');
+        buf.write('</tr></thead>');
       }
+      buf.write('<tbody>');
       for (final r in t.rows) {
         buf.write('<tr>');
         for (final c in r) {
@@ -318,7 +320,7 @@ class FinanceExportService {
         }
         buf.write('</tr>');
       }
-      buf.write('</table><br>');
+      buf.write('</tbody></table><br>');
     }
     if (d.footnote.isNotEmpty) buf.write('<p>${_esc(d.footnote)}</p>');
     buf.write('</body></html>');

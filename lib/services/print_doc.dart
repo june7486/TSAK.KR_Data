@@ -199,10 +199,14 @@ String buildMujiDoc({
             '<span class="prule"></span>'
             '<span class="pcount">${rowCount > 0 ? '$rowCount개 항목' : ''}</span></div>';
 
+  // 머리행 반복 (요구: "명부 출력시 페이지가 넘어갈 경우 상단에 구분표 반복").
+  //  th 를 <thead> 로 감싸야 브라우저 인쇄에서 **페이지마다 머리행이 반복**된다.
+  //  기존에는 <tr><th> 만 있어 2페이지부터 구분표가 사라졌다.
   final thead = columns.isEmpty
       ? ''
-      : '<tr>${columns.map((c) => '<th>${_esc(c)}</th>').join()}</tr>';
-  final tbody = rows
+      : '<thead><tr>${columns.map((c) => '<th>${_esc(c)}</th>').join()}'
+            '</tr></thead>';
+  final tbody = '<tbody>${rows
       .map(
         (r) => '<tr>${r
             .asMap()
@@ -210,7 +214,7 @@ String buildMujiDoc({
             .map((c) => c.value.toTd(nowrap: noWrapCols.contains(c.key)))
             .join()}</tr>',
       )
-      .join();
+      .join()}</tbody>';
   final table = columns.isEmpty && rows.isEmpty
       ? ''
       : '<table>$thead$tbody</table>';
