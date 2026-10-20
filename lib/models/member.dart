@@ -306,10 +306,26 @@ class Member {
   /// 마지막 수정 시각
   DateTime? updatedAt;
 
+  /// ATAS 인가번호를 보유했는지.
+  bool get hasAtas => atasNo.trim().isNotEmpty;
+
   /// 검색용 통합 텍스트
-  String get searchText =>
-      '$number $name $nameEn $league $unit $regLeague $regUnit $address $zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo $activity $position $memo $birthday $anniversary $trainingStatus $awards $specialtyCourses $purchases $gender ${mentors.join(' ')} ${parents.join(' ')} ${mentees.join(' ')} ${children.join(' ')}'
-          .toLowerCase();
+  ///
+  /// · ATAS 보유자는 `atas`/`아타스` 키워드로도 잡히도록 토큰을 덧붙인다.
+  ///   (atasNo 자체는 숫자만 저장되므로 — 예: "358" — 키워드 검색이 불가능했다.
+  ///    요구: "검색창에 atas 치면 ATAS 명부 대상자가 나오게 해줘")
+  String get searchText {
+    final base =
+        '$number $name $nameEn $league $unit $regLeague $regUnit $address '
+        '$zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo '
+        '$activity $position $memo $birthday $anniversary $trainingStatus '
+        '$awards $specialtyCourses $purchases $gender '
+        '${mentors.join(' ')} ${parents.join(' ')} '
+        '${mentees.join(' ')} ${children.join(' ')}';
+    // ATAS 를 가진 회원만 'atas 아타스' 토큰을 검색어에 포함한다.
+    final atas = hasAtas ? ' atas 아타스' : '';
+    return '$base$atas'.toLowerCase();
+  }
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
   String displayGender({required bool canSeeRealName}) {

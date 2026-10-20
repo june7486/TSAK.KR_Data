@@ -1869,6 +1869,9 @@ class AppState extends ChangeNotifier {
   int get corpsFilterEunhaCount =>
       (_corps == 'eunha') ? repo.all().length : _eunhaMembers.length;
 
+  /// 아타스(ATAS) 인가번호 보유자 수 — 현재 검색 기준 목록(range)에서 센다.
+  int get atasCount => _searchBase().where((m) => m.hasAtas).length;
+
   // ---------- 리스트 크기 ----------
   double _listScale = 0.85;
   static const double listScaleMin = 0.7;
@@ -1910,6 +1913,7 @@ class AppState extends ChangeNotifier {
 
   /// 회원 구분 필터: '' (전체) | 'credential' (인가자) | 'regular' (일반회원)
   ///                    | 'mentor' (멘토) | 'mentee' (멘티) | 'parent' (보호자 지정)
+  ///                    | 'atas' (아타스 = ATAS 인가번호 보유자)
   String _kindFilter = '';
 
   List<Member> get members => _members;
@@ -1989,6 +1993,10 @@ class AppState extends ChangeNotifier {
       case 'parent':
         list = list.where((m) => m.parents.isNotEmpty).toList();
         break;
+      case 'atas':
+        // 아타스 = ATAS 인가번호를 보유한 대원.
+        list = list.where((m) => m.hasAtas).toList();
+        break;
     }
     if (_query.trim().isNotEmpty) {
       list = _applyQuery(list, _query.trim());
@@ -2021,6 +2029,8 @@ class AppState extends ChangeNotifier {
     final parts = q.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     final qDigits = rawQuery.replaceAll(RegExp(r'[^0-9]'), '');
     final qLooksLikePhone = qDigits.length >= 4;
+    // ATAS 검색 신호 — 'atas' / '아타스' 를 포함하면 ATAS 보유자까지 후보로 넓힌다.
+    final qAtas = q.contains('atas') || q.contains('아타스');
 
     return list.where((m) {
       // 모든 토큰이 통합 텍스트에 포함되어야 함
@@ -2029,6 +2039,15 @@ class AppState extends ChangeNotifier {
       if (qLooksLikePhone && m.phoneDigits.contains(qDigits)) return true;
       // 행사명(참석한 행사)으로 검색 — 행사 참가자 명단
       if (m.eventAttend.keys.any((e) => e.toLowerCase().contains(q))) {
+        return true;
+      }
+      // ATAS 키워드 검색 — 'atas'/'아타스' 를 치면 ATAS 인가번호 보유자를 모아준다.
+      //  (요구: "검색창에 atas 치면 ATAS 명부 대상자가 나오게 해줘")
+      if (qAtas && m.hasAtas) return true;
+      // ATAS 번호로 검색 — 'atas 358' / '아타스358' 처럼 번호를 함께 쓴 경우.
+      if (qAtas &&
+          qDigits.isNotEmpty &&
+          m.atasNo.replaceAll(RegExp(r'[^0-9]'), '').contains(qDigits)) {
         return true;
       }
       return false;

@@ -2667,6 +2667,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     state.corpsFilter == 'eunha' ? '' : 'eunha',
                   ),
                 ),
+                const SizedBox(width: 5),
+                // ── 아타스(ATAS) — ATAS 인가번호를 보유한 대원만 보기 ──
+                //  (요구: "atas 버튼도 넣어줘")
+                //  · 검색창에 'atas'/'아타스' 를 쳐도 같은 결과가 나온다.
+                _filterChip(
+                  label: '아타스 ${state.atasCount}',
+                  selected: state.kindFilter == 'atas',
+                  color: AppColors.lifetimeGold,
+                  onTap: () => state.setKind(
+                    state.kindFilter == 'atas' ? '' : 'atas',
+                  ),
+                ),
               ],
             ),
           ),
