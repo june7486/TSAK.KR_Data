@@ -1881,33 +1881,63 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 값이 비어 있어도 **자리를 지키는** 행 — ATAS 항목용.
+  ///
+  /// (요구: "아타스인가정보 중 인가번호만 있다면 나머지는 추후 입력할 수 있도록
+  ///        항목만 만들고 비워 놔")
+  /// [_plainRow] 는 빈 값을 숨기므로, 항목이 사라져 나중에 입력할 자리가 없어진다.
+  /// 이 헬퍼는 비어 있으면 `—` 로 표시해 **항목을 항상 노출**한다.
+  Widget _blankRow(String label, String value) {
+    final v = value.trim();
+    final empty = v.isEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textGray,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              empty ? '—' : v,
+              style: TextStyle(
+                color: empty ? AppColors.textGray : AppColors.textDark,
+                fontSize: 13.5,
+                fontWeight: empty ? FontWeight.w400 : FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// ② **ATAS 인가 정보 (인가 당시 정보)** — 범스카우트 인가 정보와 분리된 카드.
   ///
   /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
   ///        + "아타스 인가정보: 인가번호 / 소속연맹·단위대 / 인가일")
+  /// (요구: "인가번호만 있다면 나머지는 추후 입력할 수 있도록 항목만 만들고 비워 놔")
   ///
-  /// ## 표시 항목
-  ///  · **ATAS 인가번호** — ATAS 발급번호(atasNo)
-  ///  · **소속 연맹 · 등록 단위대** — ATAS 인가 당시 소속
-  ///  · **인가일** — ATAS 인가일
-  ///  · **영문 이름** — ATAS 등록 로마자 표기
-  ///
-  /// ## 데이터 현실 (솔직하게)
-  /// 현재 데이터에는 **ATAS 전용 소속연맹·단위대·인가일 필드가 없다**. 있는 것은
-  /// `atasNo`·`nameEn` 뿐이다. 그래서 소속/인가일은 **범인가 기준값을 상속**해
-  /// 보여주되, 값이 범인가와 동일함을 `(범인가 기준)` 으로 명시해 오해를 막는다.
-  ///  → ATAS 전용 값이 데이터에 추가되면 그 값이 우선 표시된다(아래 ?? 분기).
+  /// ## 표시 원칙
+  ///  · **항목은 항상 전부 노출**한다 — ATAS 인가번호 · 소속 연맹 · 등록 단위대 ·
+  ///    인가일 · 영문 이름.
+  ///  · 값이 없으면 `—` 로 비워 둔다. **범인가 값을 상속하지 않는다**
+  ///    (ATAS 인가 당시 정보는 범인가와 별개이므로, 상속하면 잘못된 정보가 된다).
+  ///  · 나중에 값을 채우면 그대로 표시된다(항목 자체를 미리 만들어 둔 이유).
   Widget _atasCard(Member m) {
     final hasAtas = m.atasNo.trim().isNotEmpty;
     final hasEn = m.nameEn.trim().isNotEmpty;
+    // ATAS 관련 값이 하나도 없으면 카드 자체를 만들지 않는다(빈 카드 방지).
     if (!hasAtas && !hasEn) return const SizedBox.shrink();
-
-    // ATAS 전용 값이 없으므로 범인가 값을 상속(있으면 ATAS 전용 값 우선).
-    final league = m.league.trim();
-    final unit = m.unit.trim();
-    final date = m.date.trim();
-    final inherited = league.isNotEmpty || unit.isNotEmpty || date.isNotEmpty;
-    final note = inherited ? '  (범인가 기준)' : '';
 
     return _section(
       title: 'ATAS 인가 정보 (인가 당시 정보)',
@@ -1915,15 +1945,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _plainRow('ATAS 인가번호', m.atasNo),
-          _plainRow('소속 연맹', league.isEmpty ? '' : '$league$note'),
-          _plainRow('등록 단위대', unit.isEmpty ? '' : '$unit$note'),
-          _plainRow('인가일', date.isEmpty ? '' : '$date$note'),
-          _plainRow('영문 이름', m.nameEn),
+          _blankRow('ATAS 인가번호', m.atasNo),
+          // ATAS 전용 필드 — 지금은 대부분 비어 있고, 값을 넣으면 바로 표시된다.
+          //  · 범인가(league/unit/date)와 **분리된 값**이다(상속하지 않는다).
+          _blankRow('소속 연맹', m.atasLeague),
+          _blankRow('등록 단위대', m.atasUnit),
+          _blankRow('인가일', m.atasDate),
+          _blankRow('영문 이름', m.nameEn),
           const SizedBox(height: 2),
           Text(
             hasAtas
-                ? 'ATAS(국제 범스카우트 인가) 기록입니다.'
+                ? 'ATAS(국제 범스카우트 인가) 기록입니다. 비어 있는 항목(—)은 추후 입력할 수 있습니다.'
                 : 'ATAS 인가번호가 등록되지 않았습니다.',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),

@@ -77,6 +77,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       _scoutNo,
       _date,
       _atas,
+      _atasLeague,
+      _atasUnit,
+      _atasDate,
       _activity,
       _position,
       _bio,
@@ -175,6 +178,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _scoutNo = TextEditingController(text: m?.scoutNo ?? '');
     _date = TextEditingController(text: m?.date ?? '');
     _atas = TextEditingController(text: m?.atasNo ?? '');
+    _atasLeague = TextEditingController(text: m?.atasLeague ?? '');
+    _atasUnit = TextEditingController(text: m?.atasUnit ?? '');
+    _atasDate = TextEditingController(text: m?.atasDate ?? '');
     _activity = TextEditingController(text: m?.activity ?? '');
     _position = TextEditingController(text: m?.position ?? '');
     _bio = TextEditingController(text: m?.bio ?? '');
@@ -387,6 +393,31 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 _nameEn,
                 hint: 'ATAS 인가정보의 영문 이름 (없으면 직접 입력, 예: Won Ho CHO)',
                 icon: Icons.abc,
+              ),
+              // ── ATAS 인가 정보 (인가 당시 정보) ──
+              //  (요구) "아타스 인가정보"를 범스카우트 인가정보와 **분리**하고,
+              //  인가번호 외 항목(소속연맹·단위대·인가일)은 **추후 입력**할 수 있게
+              //  항목만 만들어 둔다(지금은 비어 있어도 저장 가능).
+              const SizedBox(height: 4),
+              _subHead('ATAS 인가 정보 (인가 당시 정보)', Icons.military_tech,
+                  AppColors.lifetimeGold),
+              _field(
+                'ATAS 소속 연맹',
+                _atasLeague,
+                hint: 'ATAS 인가 당시 연맹 (모르면 비워 두세요)',
+                icon: Icons.account_balance,
+              ),
+              _field(
+                'ATAS 등록 단위대',
+                _atasUnit,
+                hint: 'ATAS 인가 당시 단위대 (모르면 비워 두세요)',
+                icon: Icons.groups,
+              ),
+              _field(
+                'ATAS 인가일',
+                _atasDate,
+                hint: 'ATAS 인가일 (예: 2019-05-20 · 모르면 비워 두세요)',
+                icon: Icons.event,
               ),
               const SizedBox(height: 4),
               _subHead(
@@ -2488,6 +2519,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       bio: _bio.text.trim(),
       date: _date.text.trim(),
       atasNo: _atas.text.trim(),
+      atasLeague: _atasLeague.text.trim(),
+      atasUnit: _atasUnit.text.trim(),
+      atasDate: _atasDate.text.trim(),
       activity: _activity.text.trim(),
       position: _position.text.trim(),
       memo: _memo.text.trim(),

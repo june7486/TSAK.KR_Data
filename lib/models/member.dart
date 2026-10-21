@@ -24,6 +24,9 @@ class Member {
     this.bio = '',
     this.date = '',
     this.atasNo = '',
+    this.atasLeague = '',
+    this.atasUnit = '',
+    this.atasDate = '',
     this.activity = '',
     this.position = '',
     this.memo = '',
@@ -139,6 +142,17 @@ class Member {
 
   /// ATAS 인가번호
   String atasNo;
+
+  /// **ATAS 인가 당시 소속 연맹** — 범인가(`league`)와 별개다.
+  ///  (요구: "아타스인가정보 중 인가번호만 있다면 나머지는 추후 입력할 수 있도록
+  ///         항목만 만들고 비워 놔") 지금은 대부분 비어 있고, 추후 입력한다.
+  String atasLeague;
+
+  /// **ATAS 인가 당시 등록 단위대** — 범인가(`unit`)와 별개.
+  String atasUnit;
+
+  /// **ATAS 인가일** — 범인가(`date`)와 별개.
+  String atasDate;
 
   /// 활동 내용
   String activity;
@@ -461,6 +475,9 @@ class Member {
     'bio': bio,
     'date': date,
     'atasNo': atasNo,
+    'atasLeague': atasLeague,
+    'atasUnit': atasUnit,
+    'atasDate': atasDate,
     'activity': activity,
     'position': position,
     'memo': memo,
@@ -548,6 +565,9 @@ class Member {
       bio: '${map['bio'] ?? ''}',
       date: '${map['date'] ?? ''}',
       atasNo: '${map['atasNo'] ?? ''}',
+      atasLeague: '${map['atasLeague'] ?? ''}',
+      atasUnit: '${map['atasUnit'] ?? ''}',
+      atasDate: '${map['atasDate'] ?? ''}',
       activity: '${map['activity'] ?? ''}',
       position: '${map['position'] ?? ''}',
       memo: '${map['memo'] ?? ''}',
@@ -643,6 +663,9 @@ class Member {
     String? bio,
     String? date,
     String? atasNo,
+    String? atasLeague,
+    String? atasUnit,
+    String? atasDate,
     String? activity,
     String? position,
     String? memo,
@@ -707,6 +730,9 @@ class Member {
       bio: bio ?? this.bio,
       date: date ?? this.date,
       atasNo: atasNo ?? this.atasNo,
+      atasLeague: atasLeague ?? this.atasLeague,
+      atasUnit: atasUnit ?? this.atasUnit,
+      atasDate: atasDate ?? this.atasDate,
       activity: activity ?? this.activity,
       position: position ?? this.position,
       memo: memo ?? this.memo,
