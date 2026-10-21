@@ -16,7 +16,6 @@ import '../widgets/donation_accounts.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/member_access_log.dart';
-import '../widgets/link_code_field.dart';
 import '../widgets/link_people_tiles.dart';
 import '../widgets/mentee_register_section.dart';
 import '../widgets/member_registration_request_section.dart';
@@ -1854,23 +1853,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           // [요구] 비인가회원 정보 수정요청 — 본인은 메모로 요청, 관리자·마스터는
           //  확인·수정. (본인+관리자+마스터 외에는 정보 수정 불가)
           _linkFixRequestSection(m),
-          // (요구 #3) 멘티·자녀대원 등록정보 — 인가자 본인이 직접 등록/승인요청.
-          //  · 멘티 표시는 위 [멘티·멘토·페런츠] 타일에서 하고, 여기서는
-          //    **편집 권한자에게만** 멘티 편집기를 더한다(중복 표시 방지).
-          //  · 자녀대원은 항상 표시한다.
-          //  · (요구) **비인가(일반회원) 카드에도** 멘티대원·자녀대원 정보를
-          //    노출하고 등록할 수 있게 한다("일반회원 멘티항목 추가").
-          //    지도대장(비인가)도 자신이 배출한 멘티를 등록·관리해야 하기 때문.
-          if (m.mentees.isNotEmpty || m.children.isNotEmpty || canEdit) ...[
+          // ── 중복 노출 정리 (요구: "화면만 중복된 내용 정리") ──
+          //  잘못된 구성:
+          //   ① LinkPeopleTiles  — 멘티/멘토/페런츠 **표시**(이름 탭·추가 버튼 포함)
+          //   ② MenteeRegisterSection ×2 — 멘티/자녀대원을 **또** 표시
+          //   ③ _linkEditor        — 멘토/페런츠를 **또** 입력창으로 표시
+          //  → 같은 3항목이 화면에 3번 나왔다(사용자 스크린샷).
+          //
+          //  정리 원칙(연동·저장 방식은 그대로 유지):
+          //   · 멘티/멘토/페런츠는 **① LinkPeopleTiles 한 곳**에서만 보여준다.
+          //     (이 위젯이 이미 추가·수정·이름탭·프로필 등록을 모두 처리한다)
+          //   · ② 는 **자녀대원**만 남긴다 — 자녀는 ① 에 없는 항목이다.
+          //   · ③ _linkEditor 는 **삭제**한다(① 의 '+멘토 추가 / +페런츠 추가' 와
+          //     완전히 같은 역할의 중복 입력창이었다).
+          if (m.children.isNotEmpty || canEdit) ...[
             const Divider(height: 22),
-            MenteeRegisterSection(
-              member: m,
-              kind: 'mentee',
-              codes: m.mentees,
-              canEdit: canEdit,
-              onChanged: (v) => _saveLinks(m, mentees: v),
-            ),
-            const SizedBox(height: 8),
             MenteeRegisterSection(
               member: m,
               kind: 'child',
@@ -1879,36 +1876,54 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               onChanged: (v) => _saveLinks(m, children: v),
             ),
           ],
-          // 편집 권한자에게는 **편집기**를 더한다(3-항목 타일과 역할이 다름).
-          if (canEdit) ...[const Divider(height: 22), _linkEditor(m)],
         ],
       ),
     );
   }
 
-  /// ② **ATAS 인가 정보** — 범스카우트 인가 정보와 **별도 카드**로 분리.
+  /// ② **ATAS 인가 정보 (인가 당시 정보)** — 범스카우트 인가 정보와 분리된 카드.
   ///
-  /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것")
-  ///  · ATAS 인가번호(국제 아타스 발급번호)와 그 발급 근거인 **영문(로마자) 이름**만
-  ///    이 카드에 둔다. 소속 연맹·단위대·인가일(범인가 근거)은 위 카드에 남는다.
-  ///  · ATAS 인가번호가 없으면 카드를 만들지 않는다(정보 없는 빈 카드 방지).
-  ///  · 이 카드의 값은 **명부 출력 시 'ATAS 인가정보' 항목 선택**과 1:1 로 대응한다.
+  /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
+  ///        + "아타스 인가정보: 인가번호 / 소속연맹·단위대 / 인가일")
+  ///
+  /// ## 표시 항목
+  ///  · **ATAS 인가번호** — ATAS 발급번호(atasNo)
+  ///  · **소속 연맹 · 등록 단위대** — ATAS 인가 당시 소속
+  ///  · **인가일** — ATAS 인가일
+  ///  · **영문 이름** — ATAS 등록 로마자 표기
+  ///
+  /// ## 데이터 현실 (솔직하게)
+  /// 현재 데이터에는 **ATAS 전용 소속연맹·단위대·인가일 필드가 없다**. 있는 것은
+  /// `atasNo`·`nameEn` 뿐이다. 그래서 소속/인가일은 **범인가 기준값을 상속**해
+  /// 보여주되, 값이 범인가와 동일함을 `(범인가 기준)` 으로 명시해 오해를 막는다.
+  ///  → ATAS 전용 값이 데이터에 추가되면 그 값이 우선 표시된다(아래 ?? 분기).
   Widget _atasCard(Member m) {
     final hasAtas = m.atasNo.trim().isNotEmpty;
     final hasEn = m.nameEn.trim().isNotEmpty;
     if (!hasAtas && !hasEn) return const SizedBox.shrink();
+
+    // ATAS 전용 값이 없으므로 범인가 값을 상속(있으면 ATAS 전용 값 우선).
+    final league = m.league.trim();
+    final unit = m.unit.trim();
+    final date = m.date.trim();
+    final inherited = league.isNotEmpty || unit.isNotEmpty || date.isNotEmpty;
+    final note = inherited ? '  (범인가 기준)' : '';
+
     return _section(
-      title: 'ATAS 인가 정보',
+      title: 'ATAS 인가 정보 (인가 당시 정보)',
       icon: Icons.military_tech,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _plainRow('ATAS 인가번호', m.atasNo),
+          _plainRow('소속 연맹', league.isEmpty ? '' : '$league$note'),
+          _plainRow('등록 단위대', unit.isEmpty ? '' : '$unit$note'),
+          _plainRow('인가일', date.isEmpty ? '' : '$date$note'),
           _plainRow('영문 이름', m.nameEn),
           const SizedBox(height: 2),
           Text(
             hasAtas
-                ? 'ATAS(국제 범스카우트 인가) 발급 기록입니다.'
+                ? 'ATAS(국제 범스카우트 인가) 기록입니다.'
                 : 'ATAS 인가번호가 등록되지 않았습니다.',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
@@ -2142,43 +2157,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// 멘토·페런츠 **입력창 복원** — 개인정보(상세)창에서 직접 등록/수정.
   ///   · 편집 화면(member_edit_screen)과 완전히 동일한 위젯/기준을 사용한다.
   ///   · 변경 즉시 회원 데이터에 반영하고 저장(연결 승인 상태는 pending 으로 전환).
-  Widget _linkEditor(Member m) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '멘토(범을 배출한 대장)·페런츠 등록 (복수 입력 가능)',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textGray,
-          ),
-        ),
-        const SizedBox(height: 6),
-        LinkCodeField(
-          label: '멘토 (범을 배출한 대장)',
-          icon: Icons.supervisor_account,
-          kind: 'mentor',
-          codes: m.mentors,
-          menteeNumber: m.number.trim(),
-          editable: true,
-          onChanged: (v) => _saveLinks(m, mentors: v),
-        ),
-        LinkCodeField(
-          label: '페런츠 (범을 배출한 부모님)',
-          icon: Icons.family_restroom,
-          kind: 'parent',
-          codes: m.parents,
-          editable: true,
-          // 요구: 소속연맹/단위대가 없으면 인가자(본인) 값을 쓴다.
-          defaultLeague: m.league,
-          defaultUnit: m.unit,
-          onChanged: (v) => _saveLinks(m, parents: v),
-        ),
-      ],
-    );
-  }
-
   /// 멘토·페런츠 연결 저장 — 회원 데이터 반영 + 서버 저장.
   ///   · 대상이 바뀌면 연결 승인 상태를 'pending'(미승인)으로 전환한다
   ///     (편집 화면과 동일 정책).
