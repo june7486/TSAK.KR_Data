@@ -214,6 +214,30 @@ class _QrGenerateView extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                      // [버그수정] 소속을 함께 표시 — 은하/범 혼동 방지.
+                      Container(
+                        margin: const EdgeInsets.only(top: 2, bottom: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: member.corps == 'eunha'
+                              ? AppColors.scoutGreen.withValues(alpha: 0.13)
+                              : AppColors.purple.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          member.corps == 'eunha' ? '은하스카우트 인가' : '범스카우트 인가',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: member.corps == 'eunha'
+                                ? AppColors.scoutGreen
+                                : AppColors.purple,
+                          ),
+                        ),
+                      ),
                       Text(
                         '${member.corpsFullName}인가번호 ${member.number}',
                         style: const TextStyle(

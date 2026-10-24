@@ -32,6 +32,7 @@ class MemberEditScreen extends StatefulWidget {
     this.memberId,
     this.suggestedNumber,
     this.registerAsRegular = false,
+    this.corps = '',
     this.prefillName = '',
     this.prefillPhone = '',
     this.prefillUnit = '',
@@ -46,6 +47,13 @@ class MemberEditScreen extends StatefulWidget {
   ///  · false : 범 인가자(정식 인가자)로 등록 — 인가번호 부여.
   ///  (기존 회원 편집 시에는 무시되고 _existing 값을 따른다.)
   final bool registerAsRegular;
+
+  /// 신규 등록 시 소속 — 'eunha' 면 은하 명단에 등록한다.
+  ///   [버그수정] 종전에는 신규 회원의 corps 가 **항상 'tsak'** 으로 저장돼,
+  ///   은하 화면에서 만든 신규 회원도 범스카우트 명단에 들어갔다. 그 결과
+  ///   그 회원의 QR 이 범스카우트 인가번호 QR 로 생성되는 문제가 있었다.
+  ///   (요구: "새로만든 은하스카우트 qr생성 오류")
+  final String corps;
 
   /// [요구] 신규 등록 시 미리 채울 값 — 참가자 명단의 미등록 일반회원을
   ///   클릭해 '신규 회원 등록'을 선택했을 때 이름/전화/소속/메일을 자동 입력한다.
@@ -1592,13 +1600,32 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     return state.isApp || state.isMaster || state.isSelfAccess;
   }
 
+  /// 이 회원의 소속 — 기존 회원이면 그 값을, **신규면 위젯 인자 또는
+  /// 현재 세션 소속**을 따른다.
+  ///   [버그수정] 신규 회원의 corps 가 항상 'tsak' 으로 저장되어,
+  ///   은하스카우트에서 만든 신규 회원이 범스카우트 명단에 들어가고
+  ///   그 QR 이 범스카우트 인가번호 QR 로 생성되던 문제를 막는다.
+  String get _newCorps {
+    final ex = _existing?.corps ?? '';
+    if (ex.isNotEmpty) return ex;
+    final w = widget.corps.trim().toLowerCase();
+    if (w == 'eunha' || w == 'tsak') return w;
+    // 신규 + 인자 없음 → 현재 로그인 세션의 소속을 따른다.
+    try {
+      final c = context.read<AppState>().corps;
+      return c == 'eunha' ? 'eunha' : 'tsak';
+    } catch (_) {
+      return 'tsak';
+    }
+  }
+
   /// 신규(미저장) 작성 중인 값을 담은 임시 Member — 자기참조 방지 등
   ///  멘티/자녀대원 등록 위젯이 필요로 하는 최소 정보만 제공한다.
   Member _draftMember() => Member(
     id: _existing?.id ?? 'draft',
     number: _number.text.trim(),
     name: _name.text.trim(),
-    corps: _existing?.corps ?? 'tsak',
+    corps: _newCorps,
     isRegular: _existing?.isRegular ?? false,
   );
 
@@ -2501,7 +2528,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       name: _name.text.trim(),
       nameEn: _nameEn.text.trim(),
       // 소속(corps) 보존 — 은하스카우트 편집이 범스카우트 DB로 저장되지 않도록.
-      corps: _existing?.corps ?? 'tsak',
+      corps: _newCorps,
       league: normalizeLeague(_league.text),
       unit: _unit.text.trim(),
       regLeague: normalizeLeague(_regLeague.text),
