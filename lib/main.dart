@@ -113,6 +113,11 @@ class _AuthGateState extends State<AuthGate> {
   String _prefillNo = '';
   bool _fromQr = false;
 
+  /// QR 딥링크 소속 — 은하스카우트 QR이면 'eunha' (기본 'tsak').
+  ///   [버그수정] 은하 인가번호는 범 인가번호와 숫자가 겹쳐서, 소속을 함께
+  ///   받지 않으면 은하 QR이 범스카우트 회원으로 열린다.
+  String _fromCorps = 'tsak';
+
   /// 행사 QR 딥링크 파라미터 (?access=event&year=..&title=..)
   String _eventYear = '';
   String _eventTitle = '';
@@ -129,12 +134,16 @@ class _AuthGateState extends State<AuthGate> {
       state.setBootProgress(15, '세션을 확인하는 중…');
       // 개인정보 수정 딥링크(?access=personal)는 세션 복원 시 **본인 1건만**
       //  받아 즉시 연다(무거운 전체 명단 로딩으로 멈추는 문제 방지).
+      if (_fromQr && _fromCorps == 'eunha') {
+        // 은하스카우트 QR — 소속을 먼저 지정해야 서버가 은하 명단에서 찾는다.
+        state.presetCorps('eunha');
+      }
       await state.restoreSession(self: _fromQr && _prefillNo.isNotEmpty);
       state.setBootProgress(45, '데이터를 불러오는 중…');
       // 개인 QR 스캔 → 로그인으로 간주(비밀번호 없이) 하고 바로 정보수정으로.
       if (_fromQr && _prefillNo.isNotEmpty && !state.sessionValid) {
         state.setBootProgress(55, '본인 정보를 확인하는 중…');
-        await state.qrPersonalLogin(_prefillNo);
+        await state.qrPersonalLogin(_prefillNo, corps: _fromCorps);
       }
       state.setBootProgress(95, '화면을 그리는 중…');
       if (mounted) setState(() => _initialized = true);
@@ -150,6 +159,10 @@ class _AuthGateState extends State<AuthGate> {
     final access = uri.queryParameters['access'] ?? '';
     if (access == 'personal' && no.isNotEmpty) {
       _prefillNo = no.replaceAll(RegExp(r'[^0-9]'), '');
+      // [버그수정] 은하스카우트 QR(?…&corps=eunha)은 은하 명단에서 찾아야 한다.
+      //  소속을 무시하면 같은 숫자의 **범스카우트 회원**이 열린다.
+      final c = (uri.queryParameters['corps'] ?? '').toLowerCase().trim();
+      _fromCorps = (c == 'eunha') ? 'eunha' : 'tsak';
       _fromQr = true;
     } else if (access == 'event') {
       _eventYear = uri.queryParameters['year'] ?? '';
@@ -229,7 +242,8 @@ class _AuthGateState extends State<AuthGate> {
     if (!state.unlocked || !state.sessionValid) {
       return LockScreen(
         onUnlocked: () => setState(() {}),
-        initialTier: _prefillNo.isNotEmpty ? 'personal' : 'personal',
+        // [버그수정] 은하스카우트 QR은 은하 탭(별도 검증)으로 열어야 한다.
+        initialTier: _fromCorps == 'eunha' ? 'eunha' : 'personal',
         initialId: _prefillNo,
       );
     }

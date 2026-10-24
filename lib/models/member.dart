@@ -70,7 +70,7 @@ class Member {
     this.sample = false,
     this.nameVisible = true,
     this.gender = '',
-    this.genderVisible = false,
+    this.genderVisible = true,
     this.updatedAt,
   }) : mentors = mentors ?? <String>[],
        parents = parents ?? <String>[],
@@ -304,7 +304,8 @@ class Member {
   /// 성별 — '남' | '여' | ''(미입력). 저장 시 남/여 중 하나는 필수.
   String gender;
 
-  /// 성별 공개 여부 — 기본값 false(비노출). true여야 다른 회원에게 노출된다.
+  /// 성별 공개 여부 — **기본값 true(노출)**. false 로 두어야 다른 회원에게 숨겨진다.
+  ///   (요구: "기본값은 현재 비노출에서 노출로 변경")
   bool genderVisible;
 
   /// 다른 회원(관리자·본인 제외)에게 보여줄 표시 이름.
@@ -636,7 +637,7 @@ class Member {
       sample: map['sample'] == true,
       nameVisible: map['nameVisible'] != false,
       gender: '${map['gender'] ?? ''}',
-      genderVisible: map['genderVisible'] == true,
+      genderVisible: map['genderVisible'] != false,
       updatedAt: map['updatedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int)
           : null,

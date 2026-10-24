@@ -117,9 +117,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   /// 마스터 비밀번호 열람 시 가림 여부(기본: 가림).
   bool _pwObscured = true;
 
-  /// 성별 — '남' | '여' | ''. 남/여 중 하나는 필수. 공개여부는 기본 비노출.
+  /// 성별 — '남' | '여' | ''. **선택 항목**(미선택 허용). 공개여부는 기본 노출.
   String _gender = '';
-  bool _genderVisible = false;
+  bool _genderVisible = true;
 
   /// 신규 등록 유형 — true=일반회원(비인가) / false=범 인가자.
   ///   (요구) 회원 추가 시 범인가자·일반회원을 구분해 등록한다.
@@ -201,7 +201,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _privacyAgreed = m?.privacyAgreed ?? false;
     _privacyAgreedAt = m?.privacyAgreedAt ?? '';
     _gender = m?.gender ?? '';
-    _genderVisible = m?.genderVisible ?? false;
+    _genderVisible = m?.genderVisible ?? true;
 
     // ---- 자동 임시저장 초기화 ----
     WidgetsBinding.instance.addObserver(this);
@@ -399,8 +399,11 @@ class _MemberEditScreenState extends State<MemberEditScreen>
               //  인가번호 외 항목(소속연맹·단위대·인가일)은 **추후 입력**할 수 있게
               //  항목만 만들어 둔다(지금은 비어 있어도 저장 가능).
               const SizedBox(height: 4),
-              _subHead('ATAS 인가 정보 (인가 당시 정보)', Icons.military_tech,
-                  AppColors.lifetimeGold),
+              _subHead(
+                'ATAS 인가 정보 (인가 당시 정보)',
+                Icons.military_tech,
+                AppColors.lifetimeGold,
+              ),
               _field(
                 'ATAS 소속 연맹',
                 _atasLeague,
@@ -701,10 +704,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
             builder: (ctx) {
               final h = hist[i];
               final bits = <String>[
-                if ('${h['email'] ?? ''}'.trim().isNotEmpty)
-                  '✉ ${h['email']}',
-                if ('${h['phone'] ?? ''}'.trim().isNotEmpty)
-                  '☎ ${h['phone']}',
+                if ('${h['email'] ?? ''}'.trim().isNotEmpty) '✉ ${h['email']}',
+                if ('${h['phone'] ?? ''}'.trim().isNotEmpty) '☎ ${h['phone']}',
                 if ('${h['address'] ?? ''}'.trim().isNotEmpty)
                   '🏠 ${h['address']}',
               ];
@@ -1594,19 +1595,20 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   /// 신규(미저장) 작성 중인 값을 담은 임시 Member — 자기참조 방지 등
   ///  멘티/자녀대원 등록 위젯이 필요로 하는 최소 정보만 제공한다.
   Member _draftMember() => Member(
-        id: _existing?.id ?? 'draft',
-        number: _number.text.trim(),
-        name: _name.text.trim(),
-        corps: _existing?.corps ?? 'tsak',
-        isRegular: _existing?.isRegular ?? false,
-      );
+    id: _existing?.id ?? 'draft',
+    number: _number.text.trim(),
+    name: _name.text.trim(),
+    corps: _existing?.corps ?? 'tsak',
+    isRegular: _existing?.isRegular ?? false,
+  );
 
   /// 멘토·페런츠 연결 승인 상태 바 — 미승인 라벨 + 승인요청 버튼.
   ///   · 연결이 없으면 아무것도 표시하지 않는다.
   ///   · 'pending' 이면 [미승인] 단추 + [승인요청] 버튼.
   ///   · 'approved' 이면 [승인됨], 'held' 이면 [보류].
   Widget _linkApprovalBar() {
-    final hasLinks = _mentors.isNotEmpty ||
+    final hasLinks =
+        _mentors.isNotEmpty ||
         _parents.isNotEmpty ||
         _mentees.isNotEmpty ||
         _children.isNotEmpty;
@@ -1746,9 +1748,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                       ),
                     ),
                     Icon(
-                      on
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_off,
+                      on ? Icons.radio_button_checked : Icons.radio_button_off,
                       size: 16,
                       color: on ? color : AppColors.textGray,
                     ),
@@ -1809,7 +1809,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
               opt(
                 regular: false,
                 title: '범 인가자',
-                desc: '정식 인가자로 등록 — 범 인가번호 부여\n(인가번호 + 이름 + 성별)',
+                desc: '정식 인가자로 등록 — 범 인가번호 부여\n(인가번호 + 이름)',
                 icon: Icons.verified_user,
                 color: AppColors.scoutGreen,
               ),
@@ -2314,8 +2314,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   }
 
   /// 공용 저장 로직 — 저장만 수행 (pop 없음)
-  /// 성별 선택 — 남/여 중 하나는 **필수**. 공개여부는 기본 **비노출**.
-  /// 남/여 선택 후 '비노출'을 다시 선택할 수 있다.
+  /// 성별 선택 — **선택 항목**(미선택 저장 허용). 공개여부 기본값은 **노출**.
+  ///   (요구: "남/여 선택을 필수 항목으로 선택하지 않도록 함,
+  ///          기본값은 현재 비노출에서 노출로 변경")
   Widget _genderEditor() {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 10),
@@ -2339,7 +2340,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '(남/여 필수 · 공개여부 기본 비노출)',
+                  '(선택 · 공개여부 기본 노출)',
                   style: TextStyle(
                     fontSize: 11,
                     color: AppColors.textGray.withValues(alpha: 0.9),
@@ -2373,8 +2374,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
               const Padding(
                 padding: EdgeInsets.only(top: 6),
                 child: Text(
-                  '성별(남/여)을 선택해야 저장할 수 있습니다',
-                  style: TextStyle(fontSize: 11, color: AppColors.taegeukRed),
+                  '선택하지 않아도 저장됩니다 (추후 입력 가능)',
+                  style: TextStyle(fontSize: 11, color: AppColors.textGray),
                 ),
               ),
           ],
@@ -2425,18 +2426,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       }
       return false;
     }
-    // 성별(남/여)은 필수
-    if (_gender != '남' && _gender != '여') {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('성별(남/여)을 선택해 주세요'),
-            backgroundColor: AppColors.taegeukRed,
-          ),
-        );
-      }
-      return false;
-    }
+    // 성별(남/여)은 **선택 항목** — 미선택이어도 저장할 수 있다.
+    //  (요구: "남/여 선택을 필수 항목으로 선택하지 않도록 함")
     final state = context.read<AppState>();
     // 관리자(app)·마스터는 개인정보 동의 없이도 입력·수정 가능.
     // (일반 개인/비인가자 본인 접근은 동의가 필수)
@@ -2453,7 +2444,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       }
       return false;
     }
-    final id = _existing?.id ??
+    final id =
+        _existing?.id ??
         '${_registerAsRegular ? 'reg_' : 'u'}${DateTime.now().millisecondsSinceEpoch}';
     // 최초 동의 시각 기록
     if (_privacyAgreedAt.isEmpty) {
@@ -2465,8 +2457,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     final regLast4 = regPhone.length >= 4
         ? regPhone.substring(regPhone.length - 4)
         : regPhone;
-    final regAccessPhone =
-        _registerAsRegular ? regPhone : (_existing?.accessPhone ?? '');
+    final regAccessPhone = _registerAsRegular
+        ? regPhone
+        : (_existing?.accessPhone ?? '');
     final regPersonalPw = _registerAsRegular
         ? (_existing?.personalPassword.isNotEmpty == true
               ? _existing!.personalPassword
@@ -2483,13 +2476,17 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         _mentees.join(',') != (_existing?.mentees ?? const []).join(',');
     final childrenChanged =
         _children.join(',') != (_existing?.children ?? const []).join(',');
-    final hasLinks = _mentors.isNotEmpty ||
+    final hasLinks =
+        _mentors.isNotEmpty ||
         _parents.isNotEmpty ||
         _mentees.isNotEmpty ||
         _children.isNotEmpty;
     String linkStatus = _existing?.linkApprovalStatus ?? '';
     String linkNote = _existing?.linkApprovalNote ?? '';
-    if ((mentorsChanged || parentsChanged || menteesChanged || childrenChanged) &&
+    if ((mentorsChanged ||
+            parentsChanged ||
+            menteesChanged ||
+            childrenChanged) &&
         hasLinks) {
       linkStatus = 'pending';
       linkNote = '';

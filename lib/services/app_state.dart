@@ -52,6 +52,15 @@ class AppState extends ChangeNotifier {
   /// 은하스카우트 세션 여부(개인 로그인 '은하#N').
   bool get isEunha => _corps == 'eunha';
 
+  /// 로그인 전에 소속을 미리 지정한다(QR 딥링크 등).
+  ///   [버그수정] 은하스카우트 QR이 같은 숫자의 범스카우트 회원으로 열리던
+  ///   문제를 막기 위해, 딥링크가 소속을 알려 주면 세션 복원/로그인 전에
+  ///   먼저 반영한다.
+  void presetCorps(String corps) {
+    final c = corps.trim().toLowerCase();
+    _corps = (c == 'eunha') ? 'eunha' : 'tsak';
+  }
+
   // ---------- 역할 / 메뉴 접근권한 ----------
   /// 서포터즈(일반회원 로그인) 여부 — 서버 로그인 응답으로 설정.
   bool _isSupporter = false;
@@ -624,7 +633,9 @@ class AppState extends ChangeNotifier {
         // (요구) 관리자 로그인 창을 없애고 범스카우트 인가자 ID칸 하나로 통합.
         //  아이디/암호 관리자 계정(예: task/tsak437)은 순수 숫자 인가번호가
         //  아니므로, 인가번호 규칙으로 실패하면 관리자 계정으로 재검증한다.
-        if (!ok && idRaw.isNotEmpty && repo.isNasMode &&
+        if (!ok &&
+            idRaw.isNotEmpty &&
+            repo.isNasMode &&
             !RegExp(r'^\d+$').hasMatch(idRaw)) {
           try {
             final ar = await nas.login('app', value, id: idRaw);
@@ -776,9 +787,14 @@ class AppState extends ChangeNotifier {
   /// 개인 QR에는 인가번호가 담겨 있고, 그 QR 자체가 자격증명이다.
   /// 권한은 **기존 개인 로그인과 완전히 동일** (추가 권한 없음).
   /// → 본인 정보만 열람·수정 가능.
-  Future<bool> qrPersonalLogin(String number) async {
+  ///
+  /// **[버그수정]** [corps] 를 받는다. 은하스카우트 QR은 인가번호가 범스카우트와
+  ///  숫자가 겹치므로(은하 43 ↔ 범 43), 소속을 함께 넘겨 은하 명단에서 찾아야
+  ///  한다. 넘기지 않으면 은하 QR이 **범스카우트 회원**으로 열린다.
+  Future<bool> qrPersonalLogin(String number, {String corps = 'tsak'}) async {
     final no = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (no.isEmpty) return false;
+    final isEunha = corps.trim().toLowerCase() == 'eunha';
 
     // [보안] 서버에서 세션을 먼저 발급받는다 (QR 자체가 자격증명).
     //  · 세션 발급에 실패하면 다른 회원 정보가 노출되지 않도록 즉시 중단.
@@ -791,7 +807,8 @@ class AppState extends ChangeNotifier {
       try {
         granted = await nas.grantSession(
           'personal',
-          id: no,
+          id: isEunha ? '은하$no' : no,
+          corps: isEunha ? 'eunha' : 'tsak',
           log: true,
           via: 'qr',
         );
@@ -807,11 +824,16 @@ class AppState extends ChangeNotifier {
         await repo.syncFromNas(self: true);
       } catch (_) {}
     }
-    final m = repo.byNumber(no);
+
+    // [버그수정] 소속에 맞는 명단에서 먼저 찾는다.
+    final m = isEunha
+        ? _eunhaByNumber(no)
+        : (repo.byNumber(no) ?? _eunhaByNumber(no));
     if (m == null) return false;
 
     _unlocked = true;
     _tier = AppConfig.isPermanentMaster(no) ? 'master' : 'personal';
+    _corps = m.corps == 'eunha' ? 'eunha' : 'tsak';
     _who = no;
     _sessionStart = DateTime.now();
     _membersLoaded = true;
@@ -819,7 +841,21 @@ class AppState extends ChangeNotifier {
     _persistSession();
     refresh();
     notifyListeners();
+    selfOnlyRefresh();
     return true;
+  }
+
+  /// 본인 1건만 서버에서 다시 받아 목록에 반영(은하 QR 복구용).
+  void selfOnlyRefresh() {
+    if (!repo.isNasMode) return;
+    unawaited(
+      repo.syncFromNas(self: true).then((_) {
+        // 세션 corp 가 은하이면 은하 명단도 함께 갱신 시도.
+        if (_corps == 'eunha') unawaited(loadEunhaMembers());
+        refresh();
+        notifyListeners();
+      }),
+    );
   }
 
   Future<void> _persistSession() async {
@@ -1060,11 +1096,23 @@ class AppState extends ChangeNotifier {
   bool get hasQrBase => qrBaseUrl.isNotEmpty;
 
   /// 개인 QR 딥링크 (절대 URL). 없으면 스킴 없는 상대경로.
-  String personalQrLink(String number) {
+  ///
+  /// **[버그수정] 은하스카우트 QR이 범스카우트 인가번호로 열리던 문제**
+  ///  은하스카우트 인가번호(1~165)는 범스카우트 인가번호와 **같은 숫자**를 쓴다.
+  ///  종전에는 QR에 숫자만 담아서, 스캔/딥링크 시 서버·앱이 그 번호를
+  ///  무조건 **범스카우트**로 해석했다(예: 은하 43호 → 범 43호 전종찬?).
+  ///  → 소속을 `corps=eunha` 로 함께 담고, 소비 측(딥링크·스캔·세션발급)이
+  ///    그 값을 우선 사용하도록 바꾼다. 범스카우트는 기존과 동일(파라미터 없음).
+  String personalQrLink(String number, {String corps = 'tsak'}) {
     final base = qrBaseUrl;
-    final q = '/?access=personal&no=${Uri.encodeComponent(number)}';
+    final c = corps.trim().toLowerCase();
+    final corpsParam = (c == 'eunha') ? '&corps=eunha' : '';
+    final q = '/?access=personal&no=${Uri.encodeComponent(number)}$corpsParam';
     return base.isEmpty ? q : '$base$q';
   }
+
+  /// 인가번호 + 소속으로 딥링크를 만든다(호출부 편의).
+  String personalQrLinkOf(Member m) => personalQrLink(m.number, corps: m.corps);
 
   /// 행사 QR 딥링크 (절대 URL).
   /// 전용 경량 착지 페이지(/qr.html)로 연결한다 — 앱(5MB) 로딩 없이 즉시 뜬다.
@@ -1171,9 +1219,7 @@ class AppState extends ChangeNotifier {
       final r = await nas.fetchAdminAccounts();
       final list = r['accounts'];
       if (list is List) {
-        return list
-            .map((e) => (e as Map).cast<String, dynamic>())
-            .toList();
+        return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
       }
     } catch (_) {}
     return [];
@@ -1200,6 +1246,7 @@ class AppState extends ChangeNotifier {
       return '$e';
     }
   }
+
   Map<String, dynamic> _admin = {};
   Map<String, dynamic> get adminState => _admin;
   bool get serverPaused => _admin['serverPaused'] == true;

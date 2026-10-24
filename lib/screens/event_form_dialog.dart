@@ -91,7 +91,9 @@ class EventFormDialog extends StatefulWidget {
   @override
   State<EventFormDialog> createState() => _EventFormDialogState();
 }
-class _EventFormDialogState extends State<EventFormDialog> {
+
+class _EventFormDialogState extends State<EventFormDialog>
+    with WidgetsBindingObserver {
   late final TextEditingController _year;
   late final TextEditingController _title;
   late final TextEditingController _place;
@@ -117,9 +119,18 @@ class _EventFormDialogState extends State<EventFormDialog> {
 
   /// 카카오 지도 오버레이가 열려 있는 동안 true (중복 호출 방지).
   bool _kakaoOpening = false;
+
+  /// 본문 스크롤 컨트롤러 — 스크롤바·방향 화살표용.
+  ///   (요구: "행사생성시 스크롤바가 없어서 키보드 누르면 입력란이 안 보임.
+  ///          키보드 선택시 입력중인 창이 노출되고 나머지가 위로 밀렸으면.
+  ///          그리고 스크롤 방향화살표 생성")
+  final ScrollController _scroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
+    // 키보드가 올라오면(뷰 인셋 변화) 현재 입력 중인 칸을 화면 안으로 끌어올린다.
+    WidgetsBinding.instance.addObserver(this);
     final now = DateTime.now().year;
     _year = TextEditingController(
       text: widget.initialYear.isNotEmpty ? widget.initialYear : '$now',
@@ -129,8 +140,11 @@ class _EventFormDialogState extends State<EventFormDialog> {
     _lat = widget.initialLat;
     _lng = widget.initialLng;
     _desc = TextEditingController(text: widget.initialDesc);
-    _start = _parseDate(widget.initialStart) ?? _parsePeriodStart(widget.initialPeriod);
-    _end = _parseDate(widget.initialEnd) ?? _parsePeriodEnd(widget.initialPeriod);
+    _start =
+        _parseDate(widget.initialStart) ??
+        _parsePeriodStart(widget.initialPeriod);
+    _end =
+        _parseDate(widget.initialEnd) ?? _parsePeriodEnd(widget.initialPeriod);
     for (final c in widget.initialContacts) {
       final nm = '${c['name'] ?? ''}';
       final ph = '${c['phone'] ?? ''}';
@@ -144,6 +158,8 @@ class _EventFormDialogState extends State<EventFormDialog> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scroll.dispose();
     _year.dispose();
     _title.dispose();
     _place.dispose();
@@ -152,6 +168,73 @@ class _EventFormDialogState extends State<EventFormDialog> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // ---------------------------------------------------------------
+  // 키보드 대응 — 지금 입력 중인 칸을 화면 안(키보드 위)으로 끌어올린다.
+  // ---------------------------------------------------------------
+  double _lastViewInset = 0;
+
+  @override
+  void didChangeMetrics() {
+    final inset =
+        WidgetsBinding
+            .instance
+            .platformDispatcher
+            .views
+            .first
+            .viewInsets
+            .bottom /
+        (WidgetsBinding
+                    .instance
+                    .platformDispatcher
+                    .views
+                    .first
+                    .devicePixelRatio ==
+                0
+            ? 1
+            : WidgetsBinding
+                  .instance
+                  .platformDispatcher
+                  .views
+                  .first
+                  .devicePixelRatio);
+    final rising = inset > _lastViewInset + 1;
+    _lastViewInset = inset;
+    if (!rising) return;
+    // 키보드가 올라오는 순간에만 스크롤을 보정한다(내려갈 때는 그대로).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revealFocusedField());
+  }
+
+  /// 현재 포커스된 입력 칸을 스크롤 영역 안으로 노출한다.
+  ///   · `Scrollable.ensureVisible` 은 다이얼로그 안 스크롤까지 자동 처리한다.
+  ///   · 애니메이션을 짧게 두어 '확 밀리는' 느낌을 없앤다.
+  void _revealFocusedField() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null || !mounted) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: 0.18, // 화면 위쪽 18% 지점에 오도록 → 아래 남은 칸이 보인다
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+    );
+  }
+
+  /// 스크롤 방향 화살표 — 위/아래로 한 화면씩 이동.
+  ///   (요구: "스크롤 방향화살표 생성")
+  Future<void> _nudge(double dir) async {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final target = (pos.pixels + dir * pos.viewportDimension * 0.72).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    await _scroll.animateTo(
+      target.toDouble(),
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   static DateTime? _parseDate(String s) {
@@ -255,396 +338,501 @@ class _EventFormDialogState extends State<EventFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // 키보드가 올라오면 그만큼 본문 높이를 줄여 **입력칸이 가려지지 않게** 한다.
+    //  (AlertDialog 는 자체 스크롤(controller 없음)이라 스크롤바·화살표를 달 수
+    //   없어서, 본문만 우리가 직접 스크롤 영역으로 만든다.)
+    final mq = MediaQuery.of(context);
+    final keyboard = mq.viewInsets.bottom;
+    // 제목 + 버튼(actions) 영역을 뺀 나머지가 본문 높이.
+    final chrome = 190.0;
+    final maxBody = (mq.size.height - keyboard - chrome).clamp(180.0, 720.0);
+
     return AlertDialog(
       title: Text(widget.createMode ? '새 행사 만들기' : '행사 수정'),
-      scrollable: true,
+      scrollable: false,
+      // 키보드가 올라오면 다이얼로그 자체도 위로 붙게 한다.
+      insetPadding: EdgeInsets.only(
+        left: 18,
+        right: 18,
+        top: 16,
+        bottom: 16 + keyboard,
+      ),
       content: SizedBox(
         width: 440,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ---- 연도 ----
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _year,
-                    keyboardType: TextInputType.number,
-                    maxLength: 4,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      labelText: '연도 * (필수)',
-                      counterText: '',
-                      errorText:
-                          _year.text.trim().isEmpty || _yearOk
-                              ? null
-                              : '4자리 연도를 입력하세요',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () async {
-                    final now = DateTime.now().year;
-                    final picked = await showDialog<int>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('연도 선택'),
-                        content: SizedBox(
-                          width: 300,
-                          height: 300,
-                          child: YearPicker(
-                            firstDate: DateTime(1980),
-                            lastDate: DateTime(now + 8),
-                            selectedDate: DateTime(
-                              int.tryParse(_year.text.trim()) ?? now,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxBody),
+          child: Stack(
+            children: [
+              Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                trackVisibility: false,
+                thickness: 7,
+                radius: const Radius.circular(4),
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  // 스크롤 중에는 키보드를 유지하고, 빈 곳 탭 시 닫는다.
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  // 우측 스크롤바·화살표가 내용을 가리지 않도록 여백 확보.
+                  padding: const EdgeInsets.only(right: 20, bottom: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ---- 연도 ----
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _year,
+                              keyboardType: TextInputType.number,
+                              maxLength: 4,
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                labelText: '연도 * (필수)',
+                                counterText: '',
+                                errorText: _year.text.trim().isEmpty || _yearOk
+                                    ? null
+                                    : '4자리 연도를 입력하세요',
+                              ),
                             ),
-                            onChanged: (d) => Navigator.pop(context, d.year),
                           ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: () async {
+                              final now = DateTime.now().year;
+                              final picked = await showDialog<int>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('연도 선택'),
+                                  content: SizedBox(
+                                    width: 300,
+                                    height: 300,
+                                    child: YearPicker(
+                                      firstDate: DateTime(1980),
+                                      lastDate: DateTime(now + 8),
+                                      selectedDate: DateTime(
+                                        int.tryParse(_year.text.trim()) ?? now,
+                                      ),
+                                      onChanged: (d) =>
+                                          Navigator.pop(context, d.year),
+                                    ),
+                                  ),
+                                ),
+                              );
+                              if (picked != null) {
+                                _year.text = '$picked';
+                                setState(() {});
+                              }
+                            },
+                            child: const Text('선택'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // ---- 행사명 ----
+                      TextField(
+                        controller: _title,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(labelText: '행사명 *'),
+                      ),
+                      const SizedBox(height: 10),
+                      // ---- 기간 (시작일 / 종료일) ----
+                      const Text(
+                        '행사기간',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    );
-                    if (picked != null) {
-                      _year.text = '$picked';
-                      setState(() {});
-                    }
-                  },
-                  child: const Text('선택'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // ---- 행사명 ----
-            TextField(
-              controller: _title,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(labelText: '행사명 *'),
-            ),
-            const SizedBox(height: 10),
-            // ---- 기간 (시작일 / 종료일) ----
-            const Text(
-              '행사기간',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.event, size: 17),
-                    label: Text(
-                      _start == null ? '시작일 선택' : _fmt(_start!),
-                      style: const TextStyle(fontSize: 12.5),
-                    ),
-                    onPressed: () => _pickDate(isStart: true),
-                  ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Text('~'),
-                ),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.event_available, size: 17),
-                    label: Text(
-                      _end == null ? '종료일 선택' : _fmt(_end!),
-                      style: const TextStyle(fontSize: 12.5),
-                    ),
-                    onPressed: () => _pickDate(isStart: false),
-                  ),
-                ),
-              ],
-            ),
-            if (_periodText.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 5, left: 2),
-                child: Text(
-                  '표시: $_periodText',
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: AppColors.textGray,
-                  ),
-                ),
-              ),
-            // 종료일이 있으면 시작일도 함께 초기화할 수 있게 안내.
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => setState(() {
-                  _start = null;
-                  _end = null;
-                }),
-                child: const Text('기간 지우기', style: TextStyle(fontSize: 12)),
-              ),
-            ),
-            const SizedBox(height: 4),
-            // ---- 장소 + 카카오지도 검색 ----
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _place,
-                    decoration: const InputDecoration(labelText: '장소'),
-                    onChanged: (_) => setState(() => _lat = _lng = ''),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: OutlinedButton.icon(
-                    onPressed: _searchOnMap,
-                    icon: const Icon(Icons.map_outlined, size: 16),
-                    label: const Text('지도에서 검색', style: TextStyle(fontSize: 12)),
-                  ),
-                ),
-              ],
-            ),
-            if (_lat.isNotEmpty && _lng.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              _mapPreview(_lat, _lng),
-            ],
-            if (_lat.isNotEmpty && _lng.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEE500).withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.place, size: 16, color: Color(0xFF3C1E1E)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          '지도 위치 지정됨 · $_lat, $_lng',
-                          style: const TextStyle(fontSize: 11.5),
-                        ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.event, size: 17),
+                              label: Text(
+                                _start == null ? '시작일 선택' : _fmt(_start!),
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                              onPressed: () => _pickDate(isStart: true),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text('~'),
+                          ),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.event_available, size: 17),
+                              label: Text(
+                                _end == null ? '종료일 선택' : _fmt(_end!),
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                              onPressed: () => _pickDate(isStart: false),
+                            ),
+                          ),
+                        ],
                       ),
-                      GestureDetector(
-                        onTap: () => setState(() => _lat = _lng = ''),
-                        child: const Text('(삭제)',
-                            style: TextStyle(fontSize: 11, color: AppColors.textGray)),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: 10),
-            // ---- 소개/개요 ----
-            TextField(
-              controller: _desc,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '행사 소개/개요',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 14),
-            // ---- 담당자 연락처 (복수) ----
-            Row(
-              children: [
-                const Icon(Icons.headset_mic, size: 17, color: AppColors.purple),
-                const SizedBox(width: 6),
-                const Text(
-                  '행사 담당자 (문의하기 · 복수 가능)',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '담당자 추가',
-                  icon: const Icon(Icons.add_circle_outline, size: 20),
-                  onPressed: () =>
-                      setState(() => _contacts.add(_ContactRow('', ''))),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-            if (_contacts.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(left: 2, bottom: 4),
-                child: Text(
-                  '(선택) 담당자 번호를 입력하면 참가신청 페이지에 문의 버튼이 나타납니다.',
-                  style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
-                ),
-              ),
-            for (var i = 0; i < _contacts.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 92,
-                      child: TextField(
-                        controller: _contacts[i].name,
-                        decoration: const InputDecoration(
-                          labelText: '이름',
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: TextField(
-                        controller: _contacts[i].phone,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: '전화번호',
-                          isDense: true,
-                          hintText: '010-0000-0000',
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '삭제',
-                      icon: const Icon(
-                        Icons.remove_circle_outline,
-                        size: 20,
-                        color: AppColors.taegeukRed,
-                      ),
-                      onPressed: () => setState(() {
-                        _contacts.removeAt(i).dispose();
-                      }),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 10),
-            // ---- 첨부파일 → '참가신청시 배포용' (복수) ----
-            Row(
-              children: [
-                const Icon(Icons.attach_file, size: 17, color: AppColors.scoutGreen),
-                const SizedBox(width: 6),
-                const Text(
-                  '참가신청시 배포용 자료 (복수 가능)',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  icon: const Icon(Icons.upload_file, size: 18),
-                  label: const Text('파일 추가', style: TextStyle(fontSize: 12)),
-                  onPressed: _pickFiles,
-                ),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 4),
-              child: Text(
-                '여기에 올린 파일은 참가신청 페이지에서 바로 내려받을 수 있습니다.\n'
-                "저장 위치: 기획서 폴더 › '참가신청시 배포용'",
-                style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.5),
-              ),
-            ),
-            // 기존 배포용 파일 (삭제 가능)
-            for (final d in _dist)
-              if (!_deleted.contains('${d['name']}'))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.scoutGreen.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(
-                        color: AppColors.scoutGreen.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.description,
-                          size: 16,
-                          color: AppColors.scoutGreen,
-                        ),
-                        const SizedBox(width: 7),
-                        Expanded(
+                      if (_periodText.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5, left: 2),
                           child: Text(
-                            '${d['name']}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12.5),
+                            '표시: $_periodText',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textGray,
+                            ),
                           ),
                         ),
-                        Text(
-                          _fmtSize((d['size'] as num?)?.toInt() ?? 0),
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            color: AppColors.textGray,
+                      // 종료일이 있으면 시작일도 함께 초기화할 수 있게 안내.
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => setState(() {
+                            _start = null;
+                            _end = null;
+                          }),
+                          child: const Text(
+                            '기간 지우기',
+                            style: TextStyle(fontSize: 12),
                           ),
                         ),
-                        IconButton(
-                          tooltip: '삭제',
-                          icon: const Icon(
-                            Icons.close,
-                            size: 17,
-                            color: AppColors.taegeukRed,
+                      ),
+                      const SizedBox(height: 4),
+                      // ---- 장소 + 카카오지도 검색 ----
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _place,
+                              decoration: const InputDecoration(
+                                labelText: '장소',
+                              ),
+                              onChanged: (_) =>
+                                  setState(() => _lat = _lng = ''),
+                            ),
                           ),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () =>
-                              setState(() => _deleted.add('${d['name']}')),
-                        ),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: OutlinedButton.icon(
+                              onPressed: _searchOnMap,
+                              icon: const Icon(Icons.map_outlined, size: 16),
+                              label: const Text(
+                                '지도에서 검색',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_lat.isNotEmpty && _lng.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        _mapPreview(_lat, _lng),
                       ],
-                    ),
-                  ),
-                ),
-            // 새로 추가한 파일
-            for (var i = 0; i < _newFiles.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.purple.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(
-                      color: AppColors.purple.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.upload_file, size: 16, color: AppColors.purple),
-                      const SizedBox(width: 7),
-                      Expanded(
+                      if (_lat.isNotEmpty && _lng.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFFFEE500,
+                              ).withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.place,
+                                  size: 16,
+                                  color: Color(0xFF3C1E1E),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '지도 위치 지정됨 · $_lat, $_lng',
+                                    style: const TextStyle(fontSize: 11.5),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => setState(() => _lat = _lng = ''),
+                                  child: const Text(
+                                    '(삭제)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textGray,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      // ---- 소개/개요 ----
+                      TextField(
+                        controller: _desc,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: '행사 소개/개요',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      // ---- 담당자 연락처 (복수) ----
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.headset_mic,
+                            size: 17,
+                            color: AppColors.purple,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            '행사 담당자 (문의하기 · 복수 가능)',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: '담당자 추가',
+                            icon: const Icon(
+                              Icons.add_circle_outline,
+                              size: 20,
+                            ),
+                            onPressed: () => setState(
+                              () => _contacts.add(_ContactRow('', '')),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                      if (_contacts.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 2, bottom: 4),
+                          child: Text(
+                            '(선택) 담당자 번호를 입력하면 참가신청 페이지에 문의 버튼이 나타납니다.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                        ),
+                      for (var i = 0; i < _contacts.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 92,
+                                child: TextField(
+                                  controller: _contacts[i].name,
+                                  decoration: const InputDecoration(
+                                    labelText: '이름',
+                                    isDense: true,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: TextField(
+                                  controller: _contacts[i].phone,
+                                  keyboardType: TextInputType.phone,
+                                  decoration: const InputDecoration(
+                                    labelText: '전화번호',
+                                    isDense: true,
+                                    hintText: '010-0000-0000',
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: '삭제',
+                                icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  size: 20,
+                                  color: AppColors.taegeukRed,
+                                ),
+                                onPressed: () => setState(() {
+                                  _contacts.removeAt(i).dispose();
+                                }),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      // ---- 첨부파일 → '참가신청시 배포용' (복수) ----
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.attach_file,
+                            size: 17,
+                            color: AppColors.scoutGreen,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            '참가신청시 배포용 자료 (복수 가능)',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            icon: const Icon(Icons.upload_file, size: 18),
+                            label: const Text(
+                              '파일 추가',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            onPressed: _pickFiles,
+                          ),
+                        ],
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '${_newFiles[i].name}  (신규)',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12.5),
+                          '여기에 올린 파일은 참가신청 페이지에서 바로 내려받을 수 있습니다.\n'
+                          "저장 위치: 기획서 폴더 › '참가신청시 배포용'",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textGray,
+                            height: 1.5,
+                          ),
                         ),
                       ),
-                      Text(
-                        _fmtSize(_newFiles[i].bytes.length),
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          color: AppColors.textGray,
+                      // 기존 배포용 파일 (삭제 가능)
+                      for (final d in _dist)
+                        if (!_deleted.contains('${d['name']}'))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.scoutGreen.withValues(
+                                  alpha: 0.07,
+                                ),
+                                borderRadius: BorderRadius.circular(9),
+                                border: Border.all(
+                                  color: AppColors.scoutGreen.withValues(
+                                    alpha: 0.25,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.description,
+                                    size: 16,
+                                    color: AppColors.scoutGreen,
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Expanded(
+                                    child: Text(
+                                      '${d['name']}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12.5),
+                                    ),
+                                  ),
+                                  Text(
+                                    _fmtSize((d['size'] as num?)?.toInt() ?? 0),
+                                    style: const TextStyle(
+                                      fontSize: 10.5,
+                                      color: AppColors.textGray,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: '삭제',
+                                    icon: const Icon(
+                                      Icons.close,
+                                      size: 17,
+                                      color: AppColors.taegeukRed,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => setState(
+                                      () => _deleted.add('${d['name']}'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      // 새로 추가한 파일
+                      for (var i = 0; i < _newFiles.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.purple.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(
+                                color: AppColors.purple.withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.upload_file,
+                                  size: 16,
+                                  color: AppColors.purple,
+                                ),
+                                const SizedBox(width: 7),
+                                Expanded(
+                                  child: Text(
+                                    '${_newFiles[i].name}  (신규)',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                                Text(
+                                  _fmtSize(_newFiles[i].bytes.length),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.textGray,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: '빼기',
+                                  icon: const Icon(
+                                    Icons.close,
+                                    size: 17,
+                                    color: AppColors.taegeukRed,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () =>
+                                      setState(() => _newFiles.removeAt(i)),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: '빼기',
-                        icon: const Icon(
-                          Icons.close,
-                          size: 17,
-                          color: AppColors.taegeukRed,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => setState(() => _newFiles.removeAt(i)),
-                      ),
                     ],
                   ),
                 ),
               ),
-          ],
+              // 우측 스크롤 화살표 (요구: "스크롤 방향화살표 생성")
+              //   · 입력 중 키보드가 올라와도 바로 위/아래로 넘길 수 있다.
+              Positioned(right: 0, bottom: 8, child: _scrollArrows()),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -659,8 +847,7 @@ class _EventFormDialogState extends State<EventFormDialog> {
                   final contacts = <Map<String, String>>[];
                   for (final c in _contacts) {
                     final nm = c.name.text.trim();
-                    final ph =
-                        c.phone.text.replaceAll(RegExp(r'[^0-9]'), '');
+                    final ph = c.phone.text.replaceAll(RegExp(r'[^0-9]'), '');
                     if (ph.isNotEmpty) {
                       contacts.add({'name': nm, 'phone': ph});
                     }
@@ -687,6 +874,59 @@ class _EventFormDialogState extends State<EventFormDialog> {
           child: Text(widget.createMode ? '생성' : '저장'),
         ),
       ],
+    );
+  }
+
+  /// 본문 우측에 붙는 스크롤 방향 화살표(▲/▼).
+  ///   스크롤 위치에 따라 위/아래 버튼의 활성 상태가 바뀐다.
+  Widget _scrollArrows() {
+    return AnimatedBuilder(
+      animation: _scroll,
+      builder: (context, _) {
+        var atTop = true;
+        var atBottom = true;
+        if (_scroll.hasClients) {
+          final p = _scroll.position;
+          atTop = p.pixels <= p.minScrollExtent + 2;
+          atBottom = p.pixels >= p.maxScrollExtent - 2;
+        }
+        Widget btn(IconData icon, double dir, String tip, bool disabled) {
+          return Material(
+            color: disabled
+                ? Colors.white.withValues(alpha: 0.55)
+                : AppColors.purple.withValues(alpha: 0.90),
+            shape: const CircleBorder(),
+            elevation: disabled ? 0 : 2,
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: disabled ? null : () => _nudge(dir),
+              child: Tooltip(
+                message: tip,
+                child: SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: disabled
+                        ? AppColors.textGray.withValues(alpha: 0.5)
+                        : Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            btn(Icons.keyboard_arrow_up, -1, '위로 스크롤', atTop),
+            const SizedBox(height: 8),
+            btn(Icons.keyboard_arrow_down, 1, '아래로 스크롤', atBottom),
+          ],
+        );
+      },
     );
   }
 
@@ -764,13 +1004,17 @@ class _EventFormDialogState extends State<EventFormDialog> {
     // 카카오 진단(키가 있는데 실패한 경우) — 정확한 원인을 사용자에게 그대로 보여준다.
     final diagVN = ValueNotifier<String?>(null);
     if (kakaoError) {
-      nas.geoKakaoTest().then((t) {
-        diagVN.value = _fmtKakaoDiag(t);
-      }).catchError((_) {
-        diagVN.value = '카카오맵 서비스가 꺼져 있거나 키가 유효하지 않습니다. '
-            '마스터 콘솔 → [지도 검색 키 (카카오)]에서 확인하세요. '
-            '지금은 무료 지도로 검색합니다.';
-      });
+      nas
+          .geoKakaoTest()
+          .then((t) {
+            diagVN.value = _fmtKakaoDiag(t);
+          })
+          .catchError((_) {
+            diagVN.value =
+                '카카오맵 서비스가 꺼져 있거나 키가 유효하지 않습니다. '
+                '마스터 콘솔 → [지도 검색 키 (카카오)]에서 확인하세요. '
+                '지금은 무료 지도로 검색합니다.';
+          });
     }
     Future<void> doSearch(StateSetter setSt) async {
       final q = qCtrl.text.trim();
@@ -821,23 +1065,36 @@ class _EventFormDialogState extends State<EventFormDialog> {
                   if (kakaoError)
                     Container(
                       margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 9,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFEBEE),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.taegeukRed.withValues(alpha: 0.35)),
+                        border: Border.all(
+                          color: AppColors.taegeukRed.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.error_outline, size: 15, color: AppColors.taegeukRed),
+                              const Icon(
+                                Icons.error_outline,
+                                size: 15,
+                                color: AppColors.taegeukRed,
+                              ),
                               const SizedBox(width: 6),
                               const Expanded(
                                 child: Text(
                                   '카카오맵을 불러오지 못했습니다. 아래 무료 지도(OpenStreetMap)로 검색합니다.',
-                                  style: TextStyle(fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    height: 1.4,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ],
@@ -851,16 +1108,24 @@ class _EventFormDialogState extends State<EventFormDialog> {
                                   child: SizedBox(
                                     height: 12,
                                     width: 12,
-                                    child: CircularProgressIndicator(strokeWidth: 1.6),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.6,
+                                    ),
                                   ),
                                 );
                               }
                               return Padding(
-                                padding: const EdgeInsets.only(top: 4, left: 21),
+                                padding: const EdgeInsets.only(
+                                  top: 4,
+                                  left: 21,
+                                ),
                                 child: Text(
                                   dv,
                                   style: const TextStyle(
-                                      fontSize: 11, height: 1.45, color: AppColors.textGray),
+                                    fontSize: 11,
+                                    height: 1.45,
+                                    color: AppColors.textGray,
+                                  ),
                                 ),
                               );
                             },
@@ -870,7 +1135,10 @@ class _EventFormDialogState extends State<EventFormDialog> {
                     )
                   else
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFF8E1),
                         borderRadius: BorderRadius.circular(6),
@@ -908,14 +1176,20 @@ class _EventFormDialogState extends State<EventFormDialog> {
                   if (loading)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     ),
                   if (err != null && !loading)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(err!,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.taegeukRed)),
+                      child: Text(
+                        err!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.taegeukRed,
+                        ),
+                      ),
                     ),
                   for (final it in items)
                     Container(
@@ -926,14 +1200,19 @@ class _EventFormDialogState extends State<EventFormDialog> {
                       ),
                       child: ListTile(
                         dense: true,
-                        leading: const Icon(Icons.place_outlined,
-                            size: 18, color: AppColors.purple),
+                        leading: const Icon(
+                          Icons.place_outlined,
+                          size: 18,
+                          color: AppColors.purple,
+                        ),
                         title: Text(
                           '${it['label'] ?? it['name'] ?? ''}',
                           style: const TextStyle(fontSize: 12.5),
                         ),
-                        subtitle: Text('${it['lat']}, ${it['lng']}',
-                            style: const TextStyle(fontSize: 10.5)),
+                        subtitle: Text(
+                          '${it['lat']}, ${it['lng']}',
+                          style: const TextStyle(fontSize: 10.5),
+                        ),
                         onTap: () {
                           Navigator.pop(ctx);
                           _applyGeoChoice(it);
@@ -942,7 +1221,10 @@ class _EventFormDialogState extends State<EventFormDialog> {
                     ),
                   if (items.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _mapPreview('${items.first['lat']}', '${items.first['lng']}'),
+                    _mapPreview(
+                      '${items.first['lat']}',
+                      '${items.first['lng']}',
+                    ),
                   ],
                 ],
               ),
@@ -1022,8 +1304,10 @@ class _EventFormDialogState extends State<EventFormDialog> {
               color: const Color(0xFFFEE500).withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text('지도 미리보기를 불러올 수 없습니다',
-                style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+            child: const Text(
+              '지도 미리보기를 불러올 수 없습니다',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+            ),
           ),
         ),
       ),
@@ -1037,7 +1321,8 @@ class _EventFormDialogState extends State<EventFormDialog> {
     );
   }
 
-  static String _fmtSize(int n) {    if (n < 1024) return '$n B';
+  static String _fmtSize(int n) {
+    if (n < 1024) return '$n B';
     if (n < 1048576) return '${(n / 1024).toStringAsFixed(1)} KB';
     return '${(n / 1048576).toStringAsFixed(1)} MB';
   }
@@ -1045,8 +1330,8 @@ class _EventFormDialogState extends State<EventFormDialog> {
 
 class _ContactRow {
   _ContactRow(String name, String phone)
-      : name = TextEditingController(text: name),
-        phone = TextEditingController(text: phone);
+    : name = TextEditingController(text: name),
+      phone = TextEditingController(text: phone);
 
   final TextEditingController name;
   final TextEditingController phone;

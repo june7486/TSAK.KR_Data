@@ -42,9 +42,14 @@ class _QrGenerateView extends StatelessWidget {
   /// 상대경로라 스캔해도 열리지 않았다. 이제 짧은 절대 URL 하나만 담는다.
   /// (인가번호는 URL의 `no` 파라미터에 들어가며, 스캔 시 본인확인 후
   ///  바로 정보수정 페이지로 연결된다.)
+  ///
+  /// **[버그수정] 은하스카우트 QR이 범스카우트 인가번호 QR로 생성되던 오류**
+  ///  은하 인가번호는 범 인가번호와 숫자가 겹친다(은하 43 ↔ 범 43).
+  ///  종전에는 소속을 담지 않아 스캔 시 항상 범스카우트로 해석됐다.
+  ///  → 은하 회원은 `corps=eunha` 를 함께 담는다.
   String _payload(BuildContext context) {
     final state = context.read<AppState>();
-    return state.personalQrLink(member.number);
+    return state.personalQrLink(member.number, corps: member.corps);
   }
 
   /// QR 링크를 복사한다(요구: "데이터 복사" → "링크주소 복사").
@@ -66,7 +71,9 @@ class _QrGenerateView extends StatelessWidget {
       // 공개 접속 주소가 설정되지 않은 상대경로 — 열 수 없다.
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('공개 접속 주소가 설정되지 않아 링크를 열 수 없습니다.\n설정 → "QR 공개 주소"를 입력하세요.'),
+          content: Text(
+            '공개 접속 주소가 설정되지 않아 링크를 열 수 없습니다.\n설정 → "QR 공개 주소"를 입력하세요.',
+          ),
         ),
       );
       return;
@@ -81,10 +88,7 @@ class _QrGenerateView extends StatelessWidget {
         webOnlyWindowName: '_self',
       );
       if (!ok) {
-        final ok2 = await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
+        final ok2 = await launchUrl(uri, mode: LaunchMode.externalApplication);
         if (!ok2) throw Exception('open failed');
       }
     } catch (_) {
@@ -163,10 +167,10 @@ class _QrGenerateView extends StatelessWidget {
                                 const Icon(Icons.shield, size: 40),
                           ),
                           const SizedBox(width: 10),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              '한국범스카우트 중앙회\n인가자 QR',
-                              style: TextStyle(
+                              '${member.corpsOrgName}\n인가자 QR',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
                                 height: 1.3,
@@ -586,12 +590,18 @@ class _QrScanViewState extends State<_QrScanView> {
     _handled = true;
 
     String? number;
-    // 1) 새 형식: 절대/상대 URL (…?access=personal&no=415)
+    String corps = 'tsak';
+    // 1) 새 형식: 절대/상대 URL (…?access=personal&no=415&corps=eunha)
     try {
       final uri = Uri.parse(code);
       final acc = uri.queryParameters['access'];
       if (acc == 'personal') {
         number = uri.queryParameters['no'];
+        // [버그수정] 은하스카우트 QR은 소속을 함께 읽어야 같은 숫자의
+        //  범스카우트 회원이 열리는 문제를 막을 수 있다.
+        if ((uri.queryParameters['corps'] ?? '').toLowerCase() == 'eunha') {
+          corps = 'eunha';
+        }
       } else if (uri.queryParameters['no'] != null &&
           uri.queryParameters['tsak'] != null) {
         number = uri.queryParameters['no'];
@@ -646,7 +656,14 @@ class _QrScanViewState extends State<_QrScanView> {
       }
     }
 
-    final target = state.byNumber(number);
+    final target = corps == 'eunha'
+        ? (state.eunhaMembers
+                  .where(
+                    (m) => m.number.replaceAll(RegExp(r'[^0-9]'), '') == number,
+                  )
+                  .firstOrNull ??
+              state.byNumber(number))
+        : state.byNumber(number);
     if (target == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -659,7 +676,7 @@ class _QrScanViewState extends State<_QrScanView> {
 
     // 개인 QR 스캔 = 개인 로그인으로 간주 (비밀번호 없이) → 정보수정 바로 이동.
     // 권한은 기존 개인 로그인과 완전히 동일 (추가 권한 없음, 본인만 수정).
-    final ok = await state.qrPersonalLogin(number);
+    final ok = await state.qrPersonalLogin(number, corps: corps);
     if (!ok) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
