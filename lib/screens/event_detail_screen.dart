@@ -3239,12 +3239,24 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final kind = '${m['kind'] ?? 'image'}';
     final uploader = _uploaderLabel('${m['uploader'] ?? ''}');
     final selected = _mediaSel.contains(name);
-    final thumbUrl = _nas.eventThumb2Url(
-      widget.year,
-      widget.title,
-      name,
-      sub: _mediaSub,
-    );
+
+    // (버그 수정) '사진+동영상' 탭이 이미지/영상이 **아닌 파일**까지 썸네일로
+    //  요청해 회색 빈칸(16×16 플레이스홀더)만 보이던 문제.
+    //  서버 `/api/event/thumb2` 는 이미지가 아니면 썸네일을 만들 수 없어
+    //  회색 JPEG 를 돌려준다 → 화면은 '빈 사진'으로 보인다.
+    //  미디어가 아닌 파일(.txt·.xlsx 등)은 썸네일을 아예 요청하지 않고
+    //  파일 카드로 그린다.
+    final isMedia = kind == 'image' || kind == 'video';
+    // 썸네일 경로가 없으면 Image.network 을 만들지 않는다 —
+    //  null URL 로 네트워크 요청이 나가는 것을 막는다.
+    final thumbUrl = isMedia
+        ? _nas.eventThumb2Url(
+            widget.year,
+            widget.title,
+            name,
+            sub: _mediaSub,
+          )
+        : '';
     // 화면 폭/열 수에 맞춰 디코딩 크기를 제한 → 메모리·디코딩 비용 절감(로딩 가속).
     final cacheW =
         ((MediaQuery.of(context).size.width / _cols) *
@@ -3312,6 +3324,121 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 ),
               ],
             ),
+          ),
+        ),
+      );
+    }
+
+    // 미디어가 아닌 파일(.txt·.xlsx·.pdf 등) — 썸네일 대신 확장자 카드.
+    if (!isMedia) {
+      return RepaintBoundary(
+        child: GestureDetector(
+          onTap: () {
+            if (_mediaSelect) {
+              setState(() {
+                if (selected) {
+                  _mediaSel.remove(name);
+                } else {
+                  _mediaSel.add(name);
+                }
+              });
+            } else {
+              _openOtherFile(name);
+            }
+          },
+          onLongPress: () {
+            setState(() {
+              _mediaSelect = true;
+              _mediaSel.add(name);
+            });
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.purple.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _fileIcon(name),
+                              size: 32,
+                              color: AppColors.purple.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _fileExtLabel(name),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.purple.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_mediaSelect)
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? AppColors.scoutGreen
+                                  : Colors.black38,
+                              shape: BoxShape.circle,
+                            ),
+                            padding: const EdgeInsets.all(3),
+                            child: Icon(
+                              selected ? Icons.check : Icons.circle_outlined,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              MarqueeText(
+                name,
+                maxLines: 1,
+                align: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textGray,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Builder(
+                builder: (_) {
+                  final sz = (m['size'] as num?)?.toInt() ?? 0;
+                  if (sz <= 0) return const SizedBox.shrink();
+                  return Text(
+                    _fmtSize(sz),
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: AppColors.purple.withValues(alpha: 0.75),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ),
       );
@@ -3500,7 +3627,62 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     }
   }
 
+  /// 미디어가 아닌 파일(.txt·.xlsx·.pdf 등) 열기 — 외부 뷰어/다운로드.
+  Future<void> _openOtherFile(String name) async {
+    try {
+      final url = _nas.eventFile2Url(
+        widget.year,
+        widget.title,
+        'media',
+        name,
+        sub: _mediaSub,
+      );
+      await _download(url);
+    } catch (e) {
+      if (mounted) _snack('파일을 열 수 없습니다: $e');
+    }
+  }
+
+  /// 파일 이름 → 확장자별 아이콘(썸네일을 만들 수 없는 파일 카드용).
+  IconData _fileIcon(String name) {
+    final n = name.toLowerCase();
+    if (n.endsWith('.pdf')) return Icons.picture_as_pdf;
+    if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.csv')) {
+      return Icons.table_chart;
+    }
+    if (n.endsWith('.docx') || n.endsWith('.doc') || n.endsWith('.hwp')) {
+      return Icons.description;
+    }
+    if (n.endsWith('.zip') || n.endsWith('.7z') || n.endsWith('.tar')) {
+      return Icons.folder_zip;
+    }
+    if (n.endsWith('.pptx') || n.endsWith('.ppt')) return Icons.slideshow;
+    return Icons.insert_drive_file;
+  }
+
+  /// 파일 이름 → 짧은 확장자 라벨('.txt' → 'TXT', 없으면 'FILE').
+  String _fileExtLabel(String name) {
+    final i = name.lastIndexOf('.');
+    if (i <= 0 || i == name.length - 1) return 'FILE';
+    final ext = name.substring(i + 1).toUpperCase();
+    return ext.length > 5 ? ext.substring(0, 5) : ext;
+  }
+
   void _openViewer(int index) {
+    // 뷰어는 **미디어(이미지·영상)만** 받는다. 목록에 .txt 같은 일반 파일이
+    //  섞여 있으면 뷰어 인덱스와 타일 인덱스가 어긋나 엉뚱한 사진이 열린다.
+    //  → 뷰어에 넘길 목록을 먼저 만들고, 그 안에서의 위치를 계산해 넘긴다.
+    final items = _media
+        .where((m) => m['isdir'] != true)
+        .where((m) {
+          final k = '${m['kind'] ?? 'image'}';
+          return k == 'image' || k == 'video';
+        })
+        .toList();
+    // 현재 타일이 가리키는 파일이 뷰어 목록에서 몇 번째인지.
+    final name = '${_media[index]['name']}';
+    var at = items.indexWhere((m) => '${m['name']}' == name);
+    if (at < 0) at = 0;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -3508,8 +3690,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           year: widget.year,
           title: widget.title,
           sub: _mediaSub,
-          items: _media.where((m) => m['isdir'] != true).toList(),
-          initialIndex: index,
+          items: items,
+          initialIndex: at,
           canDeleteAll: widget.canManage,
           myName: _uploaderName(),
         ),

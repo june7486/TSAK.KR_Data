@@ -73,6 +73,28 @@ class SettlementBlockData {
   String get title => block.label;
 
   bool get hasDetails => details.isNotEmpty;
+
+  /// 상세 내역을 **결산 표의 하위 행**으로 펼친다 — `['· 상세', 원본내용, '', '']`.
+  ///
+  /// ## 왜 필요한가 (요구: "후원내역 상세 항목, 지출 및 참가비 등도 상세 내역을
+  ///  결산시 보여주고 … 출력여부를 상세까지 선택")
+  /// [details] 는 `'2026-05-12 · 김철수 · 점심식사 12,000원 · 행사비'` 같은
+  /// 한 줄 문자열이다. 결산 표는 `[항목, 금액/인원, 비고, 추가]` 4칸이므로
+  /// 원본 줄을 **2번째 칸**에 넣고 1번째 칸에 `· 상세` 표시를 둔다.
+  /// (미리보기·PDF·HTML 이 모두 이 함수를 쓰므로 화면=출력이 유지된다)
+  ///
+  /// [max] 를 주면 상세 줄 수를 제한한다(너무 길어지는 것 방지).
+  List<List<String>> detailRows({int max = 40}) {
+    if (details.isEmpty) return const [];
+    final out = <List<String>>[];
+    for (var i = 0; i < details.length && i < max; i++) {
+      out.add(['· 상세', details[i], '', '']);
+    }
+    if (details.length > max) {
+      out.add(['· 상세', '… 외 ${details.length - max}건', '', '']);
+    }
+    return out;
+  }
 }
 
 /// 결산서 블록 배치 — 순서 + 출력 포함 여부 + 서식(글씨·줄간격·용지·두줄방지).
@@ -84,14 +106,74 @@ class SettlementLayout {
     this.rowSpace = 1.0,
     this.landscape = false,
     this.noWrap = true,
+    this.showNotes = true,
+    Set<SettlementBlock>? detailOff,
   }) : order = order ?? [...SettlementBlock.values],
-       excluded = excluded ?? <SettlementBlock>{};
+       excluded = excluded ?? <SettlementBlock>{},
+       detailOff = detailOff ?? <SettlementBlock>{};
 
   /// 출력 순서.
   List<SettlementBlock> order;
 
   /// 출력에서 빼기로 한 블록.
   Set<SettlementBlock> excluded;
+
+  // ── 요구: "결산에 후원내역 상세 항목, 지출 및 참가비 등도 상세 내역을
+  //    결산시 보여주고 미리보기 창에서 출력여부를 상세까지 선택할 수 있도록"
+  //
+  //  블록(소제목)만 켜고 끄면 '합계만 있는 결산'이 된다. 실제로 회계를
+  //  확인하는 사람이 보고 싶은 것은 **그 합계가 어디서 나왔는가**이다.
+  //  그래서 블록마다 '상세 내역'(원본 행)을 표 아래에 붙일 수 있게 하고,
+  //  미리보기 편집창에서 블록별로 켜고 끈다.
+  //
+  //  ## 설계 (3-상태의 함정을 피한다)
+  //  '전체 스위치(showDetails) + 개별 예외(detailOff)' 2개를 두면
+  //   (전체 off, 개별 on) 같은 **모순 조합**이 생겨 "전체를 껐는데 한 블록만
+  //   켜져 있는" 상태가 만들어진다(실제로 그렇게 구현했다가 테스트에서 잡힘).
+  //  → 진실원을 **하나**로 둔다. [detailOff] 만이 "이 블록은 상세를 빼라"를
+  //   뜻하고, 전체 스위치([setAllDetails])는 그 집합을 통째로 채우거나 비운다.
+  //   그래서 언제나 일관된 상태만 존재한다.
+
+  /// 블록 하단 한 줄 설명(note)을 붙일지.
+  bool showNotes;
+
+  /// 상세 내역을 **빼기로 한** 블록 — 이 집합 하나가 진실원이다.
+  Set<SettlementBlock> detailOff;
+
+  /// 상세 내역을 통째로 끄면 쓰는 표식(6개 블록 전부 제외 = 전체 끔).
+  ///
+  /// `detailOff` 가 모든 블록을 담고 있으면 '전체 끔' 상태로 본다.
+  static Set<SettlementBlock> get _all => SettlementBlock.values.toSet();
+
+  /// 상세 내역을 **전체로** 붙이는가(어느 한 블록이라도 켜져 있으면 true).
+  bool get showDetails => order.any((b) => !detailOff.contains(b));
+
+  /// 이 블록의 상세 내역을 출력하는가.
+  bool showsDetail(SettlementBlock b) => !detailOff.contains(b);
+
+  /// 블록별 상세 내역 켜기/끄기 — 그 블록만 바꾼다(다른 블록 불변).
+  void toggleDetail(SettlementBlock b) {
+    if (detailOff.contains(b)) {
+      detailOff.remove(b);
+    } else {
+      detailOff.add(b);
+    }
+  }
+
+  /// 상세 내역 전체 켜기/끄기.
+  void setAllDetails(bool on) {
+    if (on) {
+      detailOff.clear();
+    } else {
+      detailOff.addAll(SettlementBlock.values);
+    }
+  }
+
+  /// 상세가 하나라도 켜져 있는가(배지 표기용).
+  bool get anyDetail => included.any(showsDetail);
+
+  /// 상세를 붙이는 블록 수.
+  int get detailCount => included.where(showsDetail).length;
 
   // ── 서식 — 미리보기에서 바로 조절하고 **출력 문서에도 그대로** 적용된다.
   //    (요구: "미리보기 기능을 강화해서 출력시 보여지는 내용을 실시간으로
@@ -176,6 +258,8 @@ class SettlementLayout {
     rowSpace: rowSpace,
     landscape: landscape,
     noWrap: noWrap,
+    showNotes: showNotes,
+    detailOff: {...detailOff},
   );
 
   /// 서식만 기본값으로.
@@ -184,6 +268,8 @@ class SettlementLayout {
     rowSpace = 1.0;
     landscape = false;
     noWrap = true;
+    showNotes = true;
+    detailOff.clear();
   }
 
   /// 서식이 기본값과 다른가(배지 표기용).
@@ -191,7 +277,9 @@ class SettlementLayout {
       (fontScale - 1.0).abs() > 0.001 ||
       (rowSpace - 1.0).abs() > 0.001 ||
       landscape ||
-      !noWrap;
+      !noWrap ||
+      detailOff.isNotEmpty ||
+      !showNotes;
 
   /// 서식 요약 — 예: '가로 · 글씨 108% · 줄간격 92%'.
   String get styleBadge {
@@ -204,6 +292,8 @@ class SettlementLayout {
       parts.add('줄간격 ${(rowSpace * 100).round()}%');
     }
     if (!noWrap) parts.add('두줄허용');
+    parts.add(anyDetail ? '상세 $detailCount/${includedCount}' : '상세 없음');
+    if (!showNotes) parts.add('설명 없음');
     return parts.join(' · ');
   }
 
@@ -222,6 +312,7 @@ class SettlementLayout {
   /// 저장/복원용 — 순서를 문자열 목록으로.
   List<String> toJson() => [for (final b in order) b.name];
   List<String> excludedJson() => [for (final b in excluded) b.name];
+  List<String> detailOffJson() => [for (final b in detailOff) b.name];
 
   static SettlementLayout fromJson(
     List<dynamic>? order,
@@ -230,6 +321,9 @@ class SettlementLayout {
     double rowSpace = 1.0,
     bool landscape = false,
     bool noWrap = true,
+    bool showDetails = true,
+    bool showNotes = true,
+    List<dynamic>? detailOff,
   }) {
     final ord = <SettlementBlock>[];
     for (final e in order ?? const []) {
@@ -245,6 +339,13 @@ class SettlementLayout {
       final b = SettlementBlock.parse('$e');
       if (b != null) exc.add(b);
     }
+    final off = <SettlementBlock>{};
+    for (final e in detailOff ?? const []) {
+      final b = SettlementBlock.parse('$e');
+      if (b != null) off.add(b);
+    }
+    // 옛 저장값 호환 — showDetails=false 였으면 '전체 상세 끔'으로 복원한다.
+    if (!showDetails) off.addAll(SettlementBlock.values);
     return SettlementLayout(
       order: ord,
       excluded: exc,
@@ -252,6 +353,8 @@ class SettlementLayout {
       rowSpace: rowSpace,
       landscape: landscape,
       noWrap: noWrap,
+      showNotes: showNotes,
+      detailOff: off,
     );
   }
 }

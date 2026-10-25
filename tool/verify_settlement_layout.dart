@@ -96,7 +96,8 @@ void main() {
   print('=== 2. 서식(글씨·줄간격·용지·두줄) 보존 ===');
   final s = SettlementLayout();
   check('기본은 isStyled=false', s.isStyled == false);
-  eq('기본 배지', s.styleBadge, '세로');
+  // (요구) 배지에 상세 내역 상태도 함께 드러난다 — 기본은 6/6.
+  eq('기본 배지', s.styleBadge, '세로 · 상세 6/6');
   s.fontScale = 1.18;
   s.rowSpace = 0.8;
   s.landscape = true;
@@ -209,6 +210,126 @@ void main() {
     ds.bySponsor.map((g) => g.itemSummary).join(' | '),
   );
   eq('식사후원 상당액', ds.byKind['식사후원']!.$2, 80000);
+
+  // ignore: avoid_print
+  print('=== 4b. 상세 내역 출력 선택(showDetails/detailOff) ===');
+  // (요구) "결산에 후원내역 상세 항목, 지출 및 참가비 등도 상세 내역을 결산시
+  //  보여주고 미리보기 창에서 출력여부를 상세까지 선택"
+  {
+    final l = SettlementLayout();
+    eq('기본값: 상세 켜짐', l.showDetails, true);
+    eq('기본값: 설명 켜짐', l.showNotes, true);
+    eq('기본값: 개별 예외 없음', l.detailOff.length, 0);
+    eq('블록 6개 모두 상세', l.detailCount, SettlementBlock.values.length);
+    check('기본 anyDetail 참', l.anyDetail);
+
+    // 전체 끄기
+    l.setAllDetails(false);
+    eq('전체 끄면 showDetails=false', l.showDetails, false);
+    eq('전체 끄면 detailCount=0', l.detailCount, 0);
+    check('전체 끄면 anyDetail 거짓', !l.anyDetail);
+    check('블록별도 거짓', !l.showsDetail(SettlementBlock.income));
+
+    // 전체 켜기
+    l.setAllDetails(true);
+    check('다시 켜면 블록별 참', l.showsDetail(SettlementBlock.income));
+
+    // 한 블록만 끄기 — 나머지는 유지돼야 한다(핵심 회귀 방지).
+    l.toggleDetail(SettlementBlock.sponsor);
+    check('후원 상세 꺼짐', !l.showsDetail(SettlementBlock.sponsor));
+    check('수입 상세 유지', l.showsDetail(SettlementBlock.income));
+    eq('detailCount 5', l.detailCount, SettlementBlock.values.length - 1);
+
+    // 전체를 껐다가 개별로 하나만 켜면 — 그 블록만 보여야 한다.
+    l.setAllDetails(false);
+    eq('전체 끄면 0', l.detailCount, 0);
+    l.toggleDetail(SettlementBlock.expenseCategory);
+    check('개별 켜면 그 블록 참', l.showsDetail(SettlementBlock.expenseCategory));
+    check('수입은 여전히 상세 꺼짐', !l.showsDetail(SettlementBlock.income));
+    eq('detailCount 1', l.detailCount, 1);
+    check('anyDetail 참', l.anyDetail);
+
+    // 복사본은 값을 그대로 가져야 한다(미리보기 → 출력 문서).
+    final cp = l.copy();
+    eq('copy showDetails', cp.showDetails, true);
+    eq('copy detailOff', cp.detailOff.length, l.detailOff.length);
+    check('copy 상세 동일', cp.showsDetail(SettlementBlock.expenseCategory));
+    // 원본을 바꿔도 복사본은 영향 없음.
+    l.setAllDetails(true);
+    eq('copy 독립(detailOff)', cp.detailOff.length, SettlementBlock.values.length - 1);
+
+    // 직렬화 왕복
+    final j = SettlementLayout.fromJson(
+      l.toJson(),
+      l.excludedJson(),
+      fontScale: 1.1,
+      rowSpace: 0.9,
+      landscape: true,
+      noWrap: false,
+      showDetails: false,
+      showNotes: false,
+      detailOff: ['income', 'balance'],
+    );
+    eq('왕복 showDetails', j.showDetails, false);
+    eq('왕복 showNotes', j.showNotes, false);
+    // 옛 저장값(showDetails=false)은 '전체 상세 끔'으로 복원되므로 6개가 된다.
+    //  → 레거시 호환 규칙: showDetails=false + detailOff 2개 = 전체 끔(6).
+    eq('왕복 detailOff = 전체(레거시 호환)', j.detailOff.length, 6);
+    check('왕복 detailOff 내용', j.detailOff.contains(SettlementBlock.balance));
+    check(
+      'detailOffJson 직렬화',
+      j.detailOffJson().contains('income'),
+      j.detailOffJson().join(','),
+    );
+
+    // 배지에 상세 상태가 드러나야 한다(사용자가 '왜 표가 짧지?'를 바로 안다).
+    final offAll = SettlementLayout();
+    offAll.setAllDetails(false);
+    final b1 = offAll.styleBadge;
+    check('배지: 상세 없음', b1.contains('상세 없음'), b1);
+    final b2 = SettlementLayout().styleBadge;
+    check('배지: 상세 n/m', b2.contains('상세 6/6'), b2);
+  }
+
+  // ignore: avoid_print
+  print('=== 4c. 상세 행 펼치기(detailRows) ===');
+  {
+    const d = SettlementBlockData(
+      block: SettlementBlock.sponsor,
+      rows: [
+        ['식사후원', '100,000원', '1건'],
+      ],
+      note: '후원 1건',
+      details: ['김철수 · 식사후원 · 김밥 100줄 · 100,000원'],
+    );
+    final rr = d.detailRows();
+    eq('상세 1행', rr.length, 1);
+    eq('열 4개', rr.first.length, 4);
+    eq('1열 표시', rr.first[0], '· 상세');
+    check('2열에 원본', rr.first[1].contains('김밥 100줄'), rr.first[1]);
+    eq('3열 비움', rr.first[2], '');
+    eq('4열 비움', rr.first[3], '');
+
+    // 상한 초과 — '… 외 N건' 안내 행이 붙는다.
+    final many = SettlementBlockData(
+      block: SettlementBlock.income,
+      rows: const [],
+      note: '',
+      details: [for (var i = 0; i < 12; i++) '행$i'],
+    );
+    final m5 = many.detailRows(max: 5);
+    eq('상한 5 + 안내 1 = 6행', m5.length, 6);
+    check('초과 안내', m5.last[1].contains('외 7건'), m5.last[1]);
+
+    // 상세가 없으면 빈 목록(표에 빈 줄이 끼지 않는다).
+    const none = SettlementBlockData(
+      block: SettlementBlock.balance,
+      rows: [],
+      note: '',
+    );
+    eq('상세 없으면 0행', none.detailRows().length, 0);
+    check('hasDetails 거짓', !none.hasDetails);
+  }
 
   // ignore: avoid_print
   print('=== 5. 출력 선택(FinancePickSet) ===');
