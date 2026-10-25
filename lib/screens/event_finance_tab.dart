@@ -301,7 +301,7 @@ class _EventFinanceTabState extends State<EventFinanceTab> {
             ],
           ),
         ),
-        if (_selectMode && _picks.isFiltered)
+        if (_picks.isFiltered)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
             child: Row(
@@ -318,6 +318,21 @@ class _EventFinanceTabState extends State<EventFinanceTab> {
                     style: const TextStyle(
                       fontSize: 10.5,
                       color: AppColors.textGray,
+                    ),
+                  ),
+                ),
+                // 선택 모드를 닫아도 필터는 남으므로, 여기서 바로 되돌릴 수 있게.
+                InkWell(
+                  onTap: () => setState(_picks.includeAll),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text(
+                      '전체 포함으로',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.taegeukBlue,
+                      ),
                     ),
                   ),
                 ),
@@ -385,12 +400,15 @@ class _EventFinanceTabState extends State<EventFinanceTab> {
     final attach = (r['attach'] as num?)?.toInt() ?? 0;
     final account = '${r['account'] ?? ''}'.trim();
     final color = widget.color;
+    // 선택 모드를 닫아도 '제외된 행'이 있으면 체크박스를 계속 보여준다
+    //  (필터가 걸린 채로 조작 불가 상태가 되지 않도록).
+    final showCheck = _selectMode || _picks.isFiltered;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: ListTile(
         contentPadding: const EdgeInsets.only(left: 10, right: 2),
-        leading: _selectMode
+        leading: showCheck
             ? IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: Icon(
