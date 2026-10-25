@@ -70,8 +70,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
           Future<List<Map<String, dynamic>>>.value(const []),
       ]);
       final ev = results[0] as List<Map<String, dynamic>>;
-      final trash =
-          canTrash ? results[1] as List<Map<String, dynamic>> : const <Map<String, dynamic>>[];
+      final trash = canTrash
+          ? results[1] as List<Map<String, dynamic>>
+          : const <Map<String, dynamic>>[];
       if (!mounted) return;
       setState(() {
         _events = ev;
@@ -476,8 +477,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
     final manage = _canManage(state);
     // (요구) 편집·삭제 버튼을 카드 '상단(제목 줄)' 우측 상단으로 올린다.
     //  · 아이콘을 조밀(compact)하게 만들어 한 줄에 더 많은 행사가 보이도록 한다.
-    final hasHeaderActions =
-        manage && (defined || pending);
+    final hasHeaderActions = manage && (defined || pending);
     return Card(
       // 더 많은 행사가 보이도록 카드 여백·하단 간격을 줄인다.
       margin: const EdgeInsets.only(bottom: 7),
@@ -697,10 +697,15 @@ class _EventYearScreenState extends State<EventYearScreen> {
 
   Future<void> _createEvent() async {
     final initialYear = _year.isEmpty ? '${DateTime.now().year}' : _year;
-    final res = await showDialog<EventFormResult>(
+    // ## 버그 수정: 행사 만들기 창이 키보드에 찌그러지던 문제
+    //  showDialog(AlertDialog) → showEventFormSheet(바텀시트).
+    //  AlertDialog 는 키보드가 올라오면 insetPadding.bottom 이 커지며 창이
+    //  줄어 입력칸이 화면 밖으로 밀려났다. 바텀시트는 키보드 위로 올라가고
+    //  높이가 고정돼 입력칸이 절대 사라지지 않는다.
+    final res = await showEventFormSheet(
       context: context,
-      builder: (_) =>
-          EventFormDialog(createMode: true, initialYear: initialYear),
+      createMode: true,
+      initialYear: initialYear,
     );
     if (res == null || !mounted) return;
     // 이중 확인: 연도 필수 (요청 K#4)
@@ -737,8 +742,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
           startDate: res.startDate,
           endDate: res.endDate,
           contacts: res.contacts
-              .map((c) =>
-                  <String, dynamic>{'name': c['name'], 'phone': c['phone']})
+              .map(
+                (c) => <String, dynamic>{
+                  'name': c['name'],
+                  'phone': c['phone'],
+                },
+              )
               .toList(),
         );
       }
@@ -784,24 +793,22 @@ class _EventYearScreenState extends State<EventYearScreen> {
           .toList();
     } catch (_) {}
     if (!mounted) return;
-    final res = await showDialog<EventFormResult>(
+    final res = await showEventFormSheet(
       context: context,
-      builder: (_) => EventFormDialog(
-        createMode: false,
-        initialYear: year,
-        initialTitle: title,
-        initialPeriod: '${e['period'] ?? ''}',
-        initialPlace: '${e['place'] ?? ''}',
-        initialDesc: '${e['desc'] ?? ''}',
-        initialStart: '${e['startDate'] ?? ''}',
-        initialEnd: '${e['endDate'] ?? ''}',
-        initialContacts: ((e['contacts'] as List?) ?? [])
-            .map((x) => (x as Map).cast<String, dynamic>())
-            .toList(),
-        initialDist: dist,
-        initialLat: '${e['lat'] ?? ''}',
-        initialLng: '${e['lng'] ?? ''}',
-      ),
+      createMode: false,
+      initialYear: year,
+      initialTitle: title,
+      initialPeriod: '${e['period'] ?? ''}',
+      initialPlace: '${e['place'] ?? ''}',
+      initialDesc: '${e['desc'] ?? ''}',
+      initialStart: '${e['startDate'] ?? ''}',
+      initialEnd: '${e['endDate'] ?? ''}',
+      initialContacts: ((e['contacts'] as List?) ?? [])
+          .map((x) => (x as Map).cast<String, dynamic>())
+          .toList(),
+      initialDist: dist,
+      initialLat: '${e['lat'] ?? ''}',
+      initialLng: '${e['lng'] ?? ''}',
     );
     if (res == null || !mounted) return;
     final nas = context.read<NasApi>();
@@ -824,8 +831,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
         lat: res.lat,
         lng: res.lng,
         contacts: res.contacts
-            .map((c) =>
-                <String, dynamic>{'name': c['name'], 'phone': c['phone']})
+            .map(
+              (c) => <String, dynamic>{'name': c['name'], 'phone': c['phone']},
+            )
             .toList(),
       );
       if (!ok) {
@@ -988,7 +996,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              defined ? '“$title” 을(를) 휴지통으로 옮겼습니다 (복구 가능)' : '“$title” 행사명을 삭제했습니다',
+              defined
+                  ? '“$title” 을(를) 휴지통으로 옮겼습니다 (복구 가능)'
+                  : '“$title” 행사명을 삭제했습니다',
             ),
           ),
         );
@@ -1119,9 +1129,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
       decoration: BoxDecoration(
         color: AppColors.taegeukRed.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: AppColors.taegeukRed.withValues(alpha: 0.18),
-        ),
+        border: Border.all(color: AppColors.taegeukRed.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [

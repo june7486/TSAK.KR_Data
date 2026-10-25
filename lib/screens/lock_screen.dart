@@ -278,7 +278,10 @@ class _LockScreenState extends State<LockScreen> {
       case 'eunha':
         return 'ID(은하번호) 또는 비밀번호가 올바르지 않습니다';
       case 'personal':
-        return 'ID(인가번호·관리자 아이디) 또는 비밀번호가 올바르지 않습니다';
+        // ## 안내 개선: 'tiger416' 처럼 접두어를 붙여야 한다는 사실을 알려준다.
+        //  서버는 접두어 없는 맨 인가번호('416') 로그인을 취약 로그인으로
+        //  차단한다. 그래서 ID 형식을 안내하지 않으면 원인을 알 수 없다.
+        return 'ID(예: tiger416 · 관리자 아이디) 또는 비밀번호가 올바르지 않습니다';
       case 'guest':
         return 'ID(전화번호) 또는 비밀번호(뒤 4자리)가 올바르지 않습니다';
       default:

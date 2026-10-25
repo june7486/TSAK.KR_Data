@@ -607,21 +607,40 @@ class AppState extends ChangeNotifier {
         if (ok && !idHasPrefix && value != AppConfig.masterPassword) {
           if (value == expected) ok = false; // 기본 '{번호}!@@' 조합만 차단
         }
-        // 서버(개인별 지정 비번) 검증 (오프라인/로컬 실패 시)
+        // ── 서버(개인별 지정 비번) 검증 ───────────────────────────────────
+        // ## 버그 수정: '인가자416 / 416!@@' 로그인 실패
+        //  종전에는 서버로 **숫자만**(`id: personalNo` → '416') 보냈다.
+        //  그런데 서버는 2026-10 표준화로 접두어 없는 순수 인가번호 로그인
+        //  ('416' + '416!@@')을 **취약 로그인으로 차단**한다.
+        //  그래서 앱에서 'tiger416'을 넣어도 서버에는 '416'이 도착해 실패했다.
+        //  → 사용자가 입력한 표준 ID('tiger416')를 **그대로** 보낸다.
+        //     (서버의 _member_by_ident_any 가 tiger 접두어를 정규화한다)
         if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
-          for (final c in candidates) {
-            try {
-              final r = await nas.login(
-                'personal',
-                c,
-                id: personalNo,
-                corps: 'tsak',
-              );
-              if (r['ok'] == true) {
-                ok = true;
-                break;
-              }
-            } catch (_) {}
+          // 서버로 보낼 ID 후보 — 순서가 중요하다.
+          //  ① 사용자가 입력한 그대로(예: tiger416)
+          //  ② 표준 접두어를 붙인 형태(예: 416 → tiger416)
+          //  ③ 맨 숫자 — 구(舊) 규칙 호환이지만 서버가 취약 로그인으로 차단한다.
+          final idTries = <String>{
+            if (idRaw.isNotEmpty) idRaw,
+            'tiger$personalNo',
+            personalNo,
+          };
+          outer:
+          for (final tryId in idTries) {
+            for (final c in candidates) {
+              try {
+                final r = await nas.login(
+                  'personal',
+                  c,
+                  id: tryId,
+                  corps: 'tsak',
+                );
+                if (r['ok'] == true) {
+                  ok = true;
+                  break outer;
+                }
+              } catch (_) {}
+            }
           }
         }
         // 서버 검증으로 성공한 경우엔 이미 세션이 발급됐고(관리자 부여 플래그),

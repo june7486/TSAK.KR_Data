@@ -228,3 +228,148 @@ class TsakField extends StatelessWidget {
     );
   }
 }
+
+/// 결과값을 돌려주는 일반형 폼 시트 — [showTsakFormSheet] 의 제네릭 판.
+///
+/// ## 왜 필요한가
+/// 행사 만들기/수정 폼은 저장 시 여러 입력값([EventFormResult])을 돌려줘야
+/// 하는데 `showTsakFormSheet` 는 `bool` 만 반환한다. 같은 레이아웃 규칙
+/// (키보드 높이 차감 · 헤더/스크롤/버튼 고정)을 그대로 쓰면서 **결과 타입만**
+/// 제네릭으로 바꾼 버전이다.
+///
+/// ## 키보드 처리 (핵심)
+/// `showModalBottomSheet(isScrollControlled: true, useSafeArea: true)` +
+/// `height = (화면높이 − 키보드높이) × heightFactor` + `padding.bottom = 키보드높이`.
+/// → 키보드가 올라와도 창이 **줄지 않고** 입력칸이 가려지지 않는다.
+/// (AlertDialog + SingleChildScrollView 조합에서 반복 발생하던
+///  "창이 급격히 줄어 입력이 불가" 문제의 근본 해결)
+Future<T?> showTsakFormSheetResult<T>({
+  required BuildContext context,
+  required String title,
+  String? subtitle,
+  required Widget Function(BuildContext ctx, StateSetter setSheetState) builder,
+  required T Function() buildResult,
+  bool Function()? validate,
+  String saveLabel = '저장',
+  String cancelLabel = '취소',
+  IconData icon = Icons.edit_note,
+  Color? accent,
+  double heightFactor = 0.94,
+}) {
+  final color = accent ?? AppColors.purple;
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    backgroundColor: Colors.white,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final mq = MediaQuery.of(ctx);
+          final avail = mq.size.height - mq.viewInsets.bottom;
+          final h = avail * heightFactor;
+          return Padding(
+            padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
+            child: SizedBox(
+              height: h,
+              child: Column(
+                children: [
+                  // 헤더
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 12, 8),
+                    child: Row(
+                      children: [
+                        Icon(icon, size: 18, color: color),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              if (subtitle != null && subtitle.isNotEmpty)
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textGray,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: color.withValues(alpha: 0.15)),
+                  // 본문(여기만 스크롤)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: builder(ctx, setSheetState),
+                    ),
+                  ),
+                  // 버튼(항상 보임)
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border(
+                        top: BorderSide(color: color.withValues(alpha: 0.12)),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                            child: Text(cancelLabel),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: color,
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                            onPressed: () {
+                              if (validate != null && !validate()) return;
+                              Navigator.pop(ctx, buildResult());
+                            },
+                            child: Text(
+                              saveLabel,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
