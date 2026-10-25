@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/event_finance_picks.dart';
 import '../services/event_settlement.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
@@ -27,6 +28,7 @@ import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_output_sheet.dart';
 import '../widgets/tsak_table_options.dart';
 import 'roster_screen.dart';
+import 'event_finance_tab.dart';
 import 'event_review_screen.dart';
 import 'event_settlement_tab.dart';
 import 'member_detail_screen.dart';
@@ -3335,169 +3337,36 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   };
 
   Widget _financeTab(String kind) {
+    final fk = FinanceKind.fromKey(kind);
     final rows = _rowsOf(kind);
-    final title = _financeTitle(kind);
-    final color = _financeColor(kind);
-    final total = rows.fold<int>(
-      0,
-      (s, r) => s + ((r['amount'] as num?)?.toInt() ?? 0),
-    );
-    return Column(
-      children: [
-        // 참가비 탭 상단: 납부 계좌 3개 + 송금 버튼
-        if (kind == 'fee')
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: color),
-                  onPressed: () => _financeEdit(kind),
-                  icon: const Icon(Icons.add),
-                  label: Text('$title 추가'),
-                ),
+    return EventFinanceTab(
+      kind: fk,
+      rows: rows,
+      color: _financeColor(kind),
+      header: kind == 'fee'
+          ? const Padding(
+              padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: DonationAccounts(
+                title: '참가비·후원 납부 계좌',
+                showHolder: true,
               ),
-              const SizedBox(width: 8),
-              // (요구) 항목별 출력 — 옵션·미리보기·인쇄(공용 시트).
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: color,
-                  side: BorderSide(color: color.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 14,
-                  ),
-                ),
-                onPressed: rows.isEmpty ? null : () => _outputFinance(kind),
-                icon: const Icon(Icons.print_outlined, size: 18),
-                label: const Text(
-                  '출력',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // (요구) 합산 — 목록 위에 건수·합계를 항상 표시.
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            children: [
-              Icon(Icons.functions, size: 14, color: color),
-              const SizedBox(width: 4),
-              Text(
-                '${rows.length}건',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _won(total),
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w900,
-                    color: color,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 2),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            children: [
-              Icon(Icons.sync, size: 13, color: AppColors.scoutGreen),
-              SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  '재무관리와 자동 연동됩니다 (입력·수정·삭제 시 함께 반영)',
-                  style: TextStyle(fontSize: 11, color: AppColors.textGray),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: rows.isEmpty
-              ? const Center(
-                  child: Text(
-                    '내역이 없습니다',
-                    style: TextStyle(color: AppColors.textGray),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: rows.length,
-                  itemBuilder: (_, i) {
-                    final r = rows[i];
-                    final amt = (r['amount'] as num?)?.toInt() ?? 0;
-                    final isFee = kind == 'fee';
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 5,
-                      ),
-                      child: ListTile(
-                        leading: Icon(
-                          isFee ? Icons.volunteer_activism : Icons.payments,
-                          color: isFee
-                              ? AppColors.scoutGreen
-                              : AppColors.taegeukRed,
-                        ),
-                        title: Text('${r['name'] ?? ''}'),
-                        subtitle: Text(
-                          '${r['date'] ?? ''}'
-                          '${'${r['category'] ?? ''}'.isNotEmpty ? ' · ${r['category']}' : ''}'
-                          '${'${r['memo'] ?? ''}'.isNotEmpty ? ' · ${r['memo']}' : ''}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _won(amt),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              onSelected: (v) async {
-                                if (v == 'edit') {
-                                  await _financeEdit(kind, row: r);
-                                } else if (v == 'del') {
-                                  await _nas.eventFinanceDelete(
-                                    widget.year,
-                                    widget.title,
-                                    kind,
-                                    '${r['id']}',
-                                  );
-                                  await _load();
-                                }
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(value: 'edit', child: Text('수정')),
-                                PopupMenuItem(value: 'del', child: Text('삭제')),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+            )
+          : null,
+      won: _won,
+      onAdd: () => _financeEdit(kind),
+      onEdit: (r) => _financeEdit(kind, row: r),
+      onDelete: (r) async {
+        await _nas.eventFinanceDelete(
+          widget.year,
+          widget.title,
+          kind,
+          '${r['id']}',
+        );
+        await _load();
+      },
+      onReload: _load,
+      // (요구) 출력 시 포함여부 — 선택된 행만 문서로 만든다.
+      onOutput: (included) => _outputFinance(kind, rows: included),
     );
   }
 
@@ -3652,8 +3521,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   //  공용 엔진(table_export / tsak_output_sheet)을 그대로 재사용한다.
 
   /// 재무 항목(참가비·후원·지출) 표 문서.
-  TsakTableDoc _financeDoc(String kind) {
-    final rows = _rowsOf(kind);
+  ///
+  /// (요구) "출력시 포함여부를 선택" — `rows` 를 주면 그 행만 문서에 담는다.
+  ///  선택 출력일 때는 부제·합계에 '선택 n/m건' 을 명시해 혼동을 막는다.
+  TsakTableDoc _financeDoc(String kind, {List<Map<String, dynamic>>? rows}) {
+    final all = _rowsOf(kind);
+    final list = rows ?? all;
     final isExpense = kind == 'expense';
     final cols = [
       if (isExpense) '연번' else '연번',
@@ -3664,11 +3537,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       if (isExpense) '출금계좌',
       '금액',
       '메모',
+      '자료',
     ];
     final body = <List<String>>[];
     var i = 0;
-    for (final r in rows) {
+    for (final r in list) {
       i++;
+      final n = (r['attach'] as num?)?.toInt() ?? 0;
       body.add([
         '$i',
         '${r['date'] ?? ''}',
@@ -3678,26 +3553,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         if (isExpense) '${r['account'] ?? ''}',
         _won((r['amount'] as num?)?.toInt() ?? 0),
         '${r['memo'] ?? ''}',
+        n > 0 ? '$n건' : '-',
       ]);
     }
-    final total = rows.fold<int>(
+    final total = list.fold<int>(
       0,
       (s, r) => s + ((r['amount'] as num?)?.toInt() ?? 0),
     );
+    final picked = rows != null && list.length != all.length;
     return TsakTableDoc(
       title: '${widget.year} ${widget.title}',
-      subtitle: '${_financeTitle(kind)} · ${rows.length}건',
+      subtitle: '${_financeTitle(kind)} · ${list.length}건'
+          '${picked ? ' (선택 ${list.length}/${all.length}건)' : ''}',
       description: isExpense
           ? '행사에 지출한 내역을 연번 순으로 정리하고 합계를 기재합니다.'
           : '납부·후원 내역을 연번 순으로 정리하고 합계를 기재합니다.',
       columns: cols,
       rows: body,
-      summary: ['총 ${rows.length}건 · 합계 ${_won(total)}'],
+      summary: ['총 ${list.length}건 · 합계 ${_won(total)}'],
       footerLeft: '한국범스카우트중앙회 · 행사 ${_financeTitle(kind)}',
       landscape: true,
       options: TableOutputOptions(
         // (요구) 2줄 방지 — 좁은 열은 한 줄 유지(넘치면 자동 축소).
-        noWrap: const {'연번', '날짜', '구분', '인가번호', '금액'},
+        noWrap: const {'연번', '날짜', '구분', '인가번호', '금액', '자료'},
       ),
     );
   }
@@ -3875,11 +3753,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     }
   }
 
-  void _outputFinance(String kind) {
+  /// (요구) 출력 시 포함여부 — `rows` 를 주면 그 행만 출력한다.
+  void _outputFinance(String kind, {List<Map<String, dynamic>>? rows}) {
+    final list = rows ?? _rowsOf(kind);
+    final picked = rows != null && list.length != _rowsOf(kind).length;
     _runOutputDoc(
-      () => _financeDoc(kind),
+      () => _financeDoc(kind, rows: list),
       title: '${widget.title} · ${_financeTitle(kind)}',
-      subtitle: '${_rowsOf(kind).length}건 · 옵션·미리보기·인쇄',
+      subtitle: '${list.length}건'
+          '${picked ? ' (선택 출력)' : ''} · 옵션·미리보기·인쇄',
     );
   }
 
