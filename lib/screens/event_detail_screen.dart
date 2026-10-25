@@ -8,9 +8,13 @@ import 'package:video_player/video_player.dart';
 
 import '../models/member.dart';
 import '../services/app_state.dart';
+import '../services/event_settlement.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
 import '../services/nas_api.dart';
+import '../services/output_formats.dart';
+import '../services/table_export.dart';
+import '../services/table_options.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
@@ -19,10 +23,15 @@ import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/confirm.dart';
 import '../widgets/hscroll_menu.dart';
+import '../widgets/tsak_output_preview.dart';
+import '../widgets/tsak_output_sheet.dart';
+import '../widgets/tsak_table_options.dart';
 import 'roster_screen.dart';
 import 'event_review_screen.dart';
+import 'event_settlement_tab.dart';
 import 'member_detail_screen.dart';
 import 'member_edit_screen.dart';
+import 'role_permissions_screen.dart';
 
 /// 행사 상세 — 항목(계획서/참석자/사진+동영상/참가비·후원금/행사비지출)
 ///
@@ -55,6 +64,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   /// (요구 #14) 스텝 포함 전체 게시판 노출 여부.
   bool get _fullView => widget.canManage || _isStaff;
+
+  /// (요구) 마스터 전용 항목 노출 여부 — '관리'(관리자 세부권한) 탭은
+  ///   마스터에게만 보인다.
+  bool get _isMasterView {
+    if (!widget.canManage) return false;
+    try {
+      return context.watch<AppState>().isMaster;
+    } catch (_) {
+      return false;
+    }
+  }
 
   List<Map<String, dynamic>> _plan = [];
   List<Map<String, dynamic>> _media = [];
@@ -183,10 +203,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _loading = false;
         // 기본 탭(고정) + 사용자 정의 '메뉴추가' 탭(PDF page9 최종 결정).
         final customCount = _customTabs.length;
-        // [요구] 상단 탭: 참가자·사진+동영상·후기·기획서·참가비·후원금·행사비지출 = 6.
-        // [요구] 일반 참가자(비스텝)도 **참가자 명단·사진·후기** 3개 탭을 본다.
-        //   (명단은 이름·인가번호만 — 개인정보는 서버가 제외해 내려준다.)
-        final len = (fullView ? 6 : 3) + (fullView ? customCount : 0);
+        // [요구] 행사 탭 세분화 —
+        //   참가자 / 사진+동영상 / 후기 / 기획서 / **참가비·후원금** /
+        //   **후원·기타수입** / **행사비지출** / **행사결산** (+마스터 전용 **관리**)
+        //   종전 '참가비·후원금' 한 탭에 섞여 있던 후원·기타수입을 분리하고,
+        //   결산 탭을 새로 둔다. 총 8 + (마스터면 1) + 사용자 정의 탭.
+        final len =
+            (fullView ? 8 : 3) +
+            (_isMasterView ? 1 : 0) +
+            (fullView ? customCount : 0);
         // ⚠️ 버그 수정: _load() 마다 TabController 를 새로 만들면 index 가 0
         // (참가자 탭)으로 되돌아가, 사진+동영상 하위폴더에 진입해도 다시
         // 사진 탭으로 돌아가 버렸다. 현재 탭 인덱스를 보존한다.
@@ -219,11 +244,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    // [요구] 상단 탭 순서 — 참가자 → 사진+동영상 → 후기 → 기획서 → 참가비·후원금 → 행사비지출.
+    // [요구] 상단 탭 순서 — 참가자 → 사진+동영상 → 후기 → 기획서 →
+    //   참가비·후원금 → 후원·기타수입 → 행사비지출 → 행사결산 (+ 마스터: 관리).
     //   '후기'는 별도 탭 화면(_reviewTab)이며, 기존 우측 상단 아이콘도 유지한다.
-    final baseTabs = const ['참가자', '사진+동영상', '후기', '기획서', '참가비·후원금', '행사비지출'];
+    final baseTabs = const [
+      '참가자',
+      '사진+동영상',
+      '후기',
+      '기획서',
+      '참가비·후원금',
+      '후원·기타수입',
+      '행사비지출',
+      '행사결산',
+    ];
+    // (요구) 관리자권한 — 마스터 항목은 마스터에게만 노출한다.
     final tabs = _fullView
-        ? <String>[...baseTabs, ..._customTabs.map((e) => '${e['name'] ?? ''}')]
+        ? <String>[
+            ...baseTabs,
+            if (_isMasterView) '관리',
+            ..._customTabs.map((e) => '${e['name'] ?? ''}'),
+          ]
         : const <String>['참가자', '사진+동영상', '후기'];
     return Scaffold(
       appBar: TsakAppBar(
@@ -378,8 +418,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               embedded: true,
                             ),
                             _planTab(),
+                            // (요구) 참가비/후원금 · 후원·기타수입 · 행사비지출
+                            //   세 탭으로 분리. 같은 데이터(fees)를 구분(category)
+                            //   으로 나눠 보여준다.
                             _financeTab('fee'),
+                            _financeTab('donation'),
                             _financeTab('expense'),
+                            // (요구) 행사결산 — 참가자 수 + 수입/지출 + 계좌별.
+                            EventSettlementTab(
+                              year: widget.year,
+                              title: widget.title,
+                              attendees: _attendees,
+                              fees: _fees,
+                              expenses: _expenses,
+                              onOutput: _outputSettlement,
+                              onOutputAttendees: _outputAttendees,
+                            ),
+                            if (_isMasterView) _masterManageTab(),
                             for (final t in _customTabs) _customTabView(t),
                           ]
                         // [요구] 일반 참가자(비스텝): 참가자(읽기) · 사진+동영상 · 후기.
@@ -3247,36 +3302,117 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   // ============================ 재무(참가비/후원금·지출) ============================
+  /// 재무 탭 3종.
+  ///  · `fee`      → 참가비 (category == '참가비')
+  ///  · `donation` → 후원·기타수입 (후원 / 후원금 / 기타)
+  ///  · `expense`  → 행사비지출 (_expenses 전체)
+  /// (요구) "참가비/후원금, 후원·기타수입, 행사비지출을 각각 따로 관리"
+  static const List<String> _donationCats = ['후원', '후원금', '기타', '수송지원'];
+
+  List<Map<String, dynamic>> _rowsOf(String kind) {
+    if (kind == 'expense') return _expenses;
+    if (kind == 'fee') {
+      return _fees
+          .where((r) => '${r['category'] ?? '참가비'}'.trim() == '참가비')
+          .toList();
+    }
+    // 후원·기타수입 — 참가비를 제외한 모든 수입(후원/후원금/기타/수송지원 등).
+    return _fees
+        .where((r) => '${r['category'] ?? '참가비'}'.trim() != '참가비')
+        .toList();
+  }
+
+  String _financeTitle(String kind) => switch (kind) {
+    'fee' => '참가비 납부자',
+    'donation' => '후원 · 기타수입',
+    _ => '행사비 지출내역',
+  };
+
+  Color _financeColor(String kind) => switch (kind) {
+    'fee' => AppColors.scoutGreen,
+    'donation' => AppColors.tigerGold,
+    _ => AppColors.taegeukRed,
+  };
+
   Widget _financeTab(String kind) {
-    final rows = kind == 'fee' ? _fees : _expenses;
-    final title = kind == 'fee' ? '참가비 / 후원금 납부자' : '행사비 지출내역';
+    final rows = _rowsOf(kind);
+    final title = _financeTitle(kind);
+    final color = _financeColor(kind);
+    final total = rows.fold<int>(
+      0,
+      (s, r) => s + ((r['amount'] as num?)?.toInt() ?? 0),
+    );
     return Column(
       children: [
-        // 참가비·후원금 항목 상단: 납부 계좌 3개 + 송금 버튼
+        // 참가비 탭 상단: 납부 계좌 3개 + 송금 버튼
         if (kind == 'fee')
           const Padding(
             padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
             child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),
           ),
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
           child: Row(
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: kind == 'fee'
-                        ? AppColors.scoutGreen
-                        : AppColors.taegeukRed,
-                  ),
+                  style: FilledButton.styleFrom(backgroundColor: color),
                   onPressed: () => _financeEdit(kind),
                   icon: const Icon(Icons.add),
                   label: Text('$title 추가'),
                 ),
               ),
+              const SizedBox(width: 8),
+              // (요구) 항목별 출력 — 옵션·미리보기·인쇄(공용 시트).
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 14,
+                  ),
+                ),
+                onPressed: rows.isEmpty ? null : () => _outputFinance(kind),
+                icon: const Icon(Icons.print_outlined, size: 18),
+                label: const Text(
+                  '출력',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
             ],
           ),
         ),
+        // (요구) 합산 — 목록 위에 건수·합계를 항상 표시.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              Icon(Icons.functions, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(
+                '${rows.length}건',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _won(total),
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
           child: Row(
@@ -3373,19 +3509,28 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     final dateC = TextEditingController(text: '${row?['date'] ?? _today()}');
     final memoC = TextEditingController(text: '${row?['memo'] ?? ''}');
-    String category = '${row?['category'] ?? (kind == 'fee' ? '참가비' : '행사비')}';
+    // (요구) 지출은 출금계좌(대표 3계좌 중 선택) 또는 직접입력.
+    final accountC = TextEditingController(text: '${row?['account'] ?? ''}');
+    String category =
+        '${row?['category'] ?? (kind == 'expense' ? '행사비' : (kind == 'donation' ? '후원' : '참가비'))}';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: Text(kind == 'fee' ? '참가비/후원금 입력' : '행사비 지출 입력'),
+          title: Text(switch (kind) {
+            'fee' => '참가비 입력',
+            'donation' => '후원 · 기타수입 입력',
+            _ => '행사비 지출 입력',
+          }),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameC,
-                  decoration: const InputDecoration(labelText: '이름/납부자 *'),
+                  decoration: InputDecoration(
+                    labelText: kind == 'expense' ? '지출처/사용내역 *' : '이름/납부자 *',
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -3411,13 +3556,33 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   DropdownButtonFormField<String>(
                     initialValue: category,
                     decoration: const InputDecoration(labelText: '구분'),
-                    items: const [
-                      DropdownMenuItem(value: '참가비', child: Text('참가비')),
-                      DropdownMenuItem(value: '후원', child: Text('후원')),
-                      DropdownMenuItem(value: '후원금', child: Text('후원금')),
-                      DropdownMenuItem(value: '기타', child: Text('기타')),
+                    items: [
+                      for (final c
+                          in (kind == 'expense'
+                              ? const [
+                                  '행사비',
+                                  '각종 지출',
+                                  '수품제작',
+                                  '기념품제작',
+                                  '수송지원',
+                                  '장소임차',
+                                  '식비',
+                                  '기타',
+                                ]
+                              : (kind == 'donation'
+                                    ? _donationCats
+                                    : const ['참가비'])))
+                        DropdownMenuItem(value: c, child: Text(c)),
                     ],
                     onChanged: (v) => setD(() => category = v ?? category),
+                  ),
+                ],
+                // (요구) 지출은 출금계좌를 대표 3계좌 중 선택하거나 직접입력.
+                if (kind == 'expense') ...[
+                  const SizedBox(height: 8),
+                  EventAccountPicker(
+                    value: accountC.text,
+                    onChanged: (v) => setD(() => accountC.text = v),
                   ),
                 ],
                 const SizedBox(height: 8),
@@ -3452,17 +3617,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       'number': numC.text.trim(),
       'amount': int.tryParse(amtC.text.trim()) ?? 0,
       'date': dateC.text.trim(),
-      'category': kind == 'fee' ? category : '행사비',
+      'category': kind == 'expense' ? category : category,
       'memo': memoC.text.trim(),
+      if (kind == 'expense') 'account': accountC.text.trim(),
     };
+    // (요구) 후원·기타수입은 서버 재무 분류가 '후원'으로 뭉개지지 않도록
+    //   구분값을 그대로 넘긴다(서버는 kind='fee' 로 저장하되 category 보존).
+    final saveKind = kind == 'expense' ? 'expense' : 'fee';
     final isNew = row == null || '${row['id']}'.isEmpty;
     if (isNew) {
-      await _nas.eventFinanceAdd(widget.year, widget.title, kind, data);
+      await _nas.eventFinanceAdd(widget.year, widget.title, saveKind, data);
     } else {
       await _nas.eventFinanceUpdate(
         widget.year,
         widget.title,
-        kind,
+        saveKind,
         '${row['id']}',
         data,
       );
@@ -3474,6 +3643,457 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final n = DateTime.now();
     return '${n.year}-${n.month.toString().padLeft(2, '0')}-'
         '${n.day.toString().padLeft(2, '0')}';
+  }
+
+  // ============================ 출력 (요구 #2/#3) ============================
+  //  기본출력 법칙(명단출력과 동일):
+  //   ① 출력내용선택(열)·위치이동 ② 두줄방지(noWrap) ③ 줄간격·글씨·용지
+  //   ④ 미리보기 → PDF·인쇄·엑셀 등 공용 시트.
+  //  공용 엔진(table_export / tsak_output_sheet)을 그대로 재사용한다.
+
+  /// 재무 항목(참가비·후원·지출) 표 문서.
+  TsakTableDoc _financeDoc(String kind) {
+    final rows = _rowsOf(kind);
+    final isExpense = kind == 'expense';
+    final cols = [
+      if (isExpense) '연번' else '연번',
+      '날짜',
+      '구분',
+      isExpense ? '지출처/내역' : '이름/납부자',
+      '인가번호',
+      if (isExpense) '출금계좌',
+      '금액',
+      '메모',
+    ];
+    final body = <List<String>>[];
+    var i = 0;
+    for (final r in rows) {
+      i++;
+      body.add([
+        '$i',
+        '${r['date'] ?? ''}',
+        '${r['category'] ?? ''}',
+        '${r['name'] ?? ''}',
+        '${r['number'] ?? ''}',
+        if (isExpense) '${r['account'] ?? ''}',
+        _won((r['amount'] as num?)?.toInt() ?? 0),
+        '${r['memo'] ?? ''}',
+      ]);
+    }
+    final total = rows.fold<int>(
+      0,
+      (s, r) => s + ((r['amount'] as num?)?.toInt() ?? 0),
+    );
+    return TsakTableDoc(
+      title: '${widget.year} ${widget.title}',
+      subtitle: '${_financeTitle(kind)} · ${rows.length}건',
+      description: isExpense
+          ? '행사에 지출한 내역을 연번 순으로 정리하고 합계를 기재합니다.'
+          : '납부·후원 내역을 연번 순으로 정리하고 합계를 기재합니다.',
+      columns: cols,
+      rows: body,
+      summary: ['총 ${rows.length}건 · 합계 ${_won(total)}'],
+      footerLeft: '한국범스카우트중앙회 · 행사 ${_financeTitle(kind)}',
+      landscape: true,
+      options: TableOutputOptions(
+        // (요구) 2줄 방지 — 좁은 열은 한 줄 유지(넘치면 자동 축소).
+        noWrap: const {'연번', '날짜', '구분', '인가번호', '금액'},
+      ),
+    );
+  }
+
+  /// 참가자 명단 표 문서(결산 탭·하단 출력 공용).
+  TsakTableDoc _attendeeDoc() {
+    final cols = ['연번', '이름', '인가번호', '소속', '직책', '연락처'];
+    final body = <List<String>>[];
+    var i = 0;
+    for (final a in _attendees) {
+      i++;
+      final roles = ((a['roles'] as List?) ?? const [])
+          .map((e) => '$e')
+          .join(',');
+      body.add([
+        '$i',
+        '${a['name'] ?? ''}',
+        Member.numLabelOf(
+          '${a['number'] ?? ''}',
+          '${a['corps'] ?? 'tsak'}',
+          a['isRegular'] == true,
+        ),
+        '${a['unitText'] ?? a['unit'] ?? ''}',
+        roles,
+        '${a['phoneText'] ?? a['phone'] ?? ''}',
+      ]);
+    }
+    return TsakTableDoc(
+      title: '${widget.year} ${widget.title}',
+      subtitle: '참가자 명단 · ${_attendees.length}명',
+      description: '행사 참가자 명단을 연번 순으로 정리합니다.',
+      columns: cols,
+      rows: body,
+      summary: [
+        '총 ${_attendees.length}명',
+        EventAttendeeBreakdown.fromAttendees(_attendees).summaryLine,
+      ],
+      footerLeft: '한국범스카우트중앙회 · 행사 참가자 명단',
+      landscape: true,
+      options: TableOutputOptions(noWrap: const {'연번', '인가번호', '연락처'}),
+    );
+  }
+
+  /// 행사 결산표 문서 — 참가자 수(필수) + 수입/지출 + 계좌별.
+  TsakTableDoc _settlementDoc() {
+    final s = EventSettlement(
+      title: widget.title,
+      year: widget.year,
+      attendeeCount: EventAttendeeBreakdown.fromAttendees(_attendees),
+      attendees: _attendees,
+      fees: _fees.map((e) => EventMoneyRow.fromMap(e)).toList(),
+      expenses: _expenses
+          .map((e) => EventMoneyRow.fromMap(e, expense: true))
+          .toList(),
+    );
+    final rows = <List<String>>[];
+    // ① 참가자 수 (요구: 8종 + 합산 필수)
+    rows.add(['참가자 수', '', '', '']);
+    for (final e in s.attendeeCount.ordered) {
+      rows.add(['', e.key, '${e.value}명', '']);
+    }
+    rows.add(['', '참가자 합계', '${s.attendeeCount.total}명', '']);
+    // ② 수입
+    rows.add(['수입', '참가비', _won(s.feeTotal), '']);
+    rows.add(['', '후원금', _won(s.donationFund), '']);
+    rows.add(['', '후원', _won(s.donation), '']);
+    rows.add(['', '기타수입', _won(s.otherIncome), '']);
+    rows.add(['', '수입 합계', _won(s.incomeTotal), '']);
+    // ③ 지출 분류별
+    final byCat = s.expenseByCategory.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    rows.add(['지출', '분류', '금액', '']);
+    for (final e in byCat) {
+      rows.add(['', e.key, _won(e.value), '']);
+    }
+    rows.add(['', '지출 합계', _won(s.expenseTotal), '']);
+    // ④ 지출 계좌별 (요구: 출금계좌 선택/직접입력 반영)
+    final byAcct = s.expenseByAccount.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    rows.add(['계좌별', '출금계좌', '금액', '']);
+    for (final e in byAcct) {
+      rows.add(['', e.key, _won(e.value), '']);
+    }
+    // ⑤ 잔액
+    rows.add(['결산', '잔액', _won(s.balance), s.balance >= 0 ? '잔액' : '초과']);
+
+    return TsakTableDoc(
+      title: '${widget.year} ${widget.title}',
+      subtitle: '행사 결산서',
+      description: '참가자 수·수입·지출·계좌별 지출을 한 장에 정리한 결산서입니다.',
+      columns: const ['구분', '항목', '금액/인원', '비고'],
+      rows: rows,
+      summary: [
+        '수입 ${_won(s.incomeTotal)} · 지출 ${_won(s.expenseTotal)}'
+            ' · 잔액 ${_won(s.balance)}',
+        s.attendeeCount.summaryLine,
+      ],
+      footerLeft: '한국범스카우트중앙회 · 행사 결산',
+      landscape: false,
+      options: TableOutputOptions(noWrap: const {'구분', '항목', '금액/인원'}),
+    );
+  }
+
+  /// 공용 출력 시트 실행 — 옵션·미리보기·인쇄·저장.
+  Future<void> _runOutputDoc(
+    TsakTableDoc Function() build, {
+    required String title,
+    required String subtitle,
+  }) async {
+    TableOutputOptions opts = const TableOutputOptions();
+    TsakTableDoc doc() {
+      final d = build();
+      // 사용자가 고른 옵션을 반영(열 선택·순서·글씨·간격·용지).
+      return TsakTableDoc(
+        title: d.title,
+        subtitle: d.subtitle,
+        description: d.description,
+        author: d.author,
+        extra: d.extra,
+        columns: d.columns,
+        rows: d.rows,
+        summary: d.summary,
+        footerLeft: d.footerLeft,
+        landscape: opts.landscape ?? d.landscape,
+        options: opts,
+      );
+    }
+
+    await showTsakOutputSheet(
+      context,
+      title: title,
+      subtitle: subtitle,
+      onPick: (f) => _doExport(doc(), f),
+      onOpen: (f) => _doExport(doc(), f, open: true),
+      onPrint: () => _doPrint(doc()),
+      onPreview: () => showTsakOutputPreview(context, doc: doc()),
+      onOptions: () async {
+        final base = build();
+        final out = await showTsakTableOptions(
+          context,
+          title: '$title · 출력 옵션',
+          subtitle: '출력할 항목·순서·글씨·줄간격·용지를 정하세요.',
+          columns: base.columns,
+          initial: opts,
+        );
+        if (out != null) opts = out;
+      },
+    );
+  }
+
+  Future<void> _doExport(
+    TsakTableDoc doc,
+    TsakOutputFormat format, {
+    bool open = false,
+  }) async {
+    try {
+      final loc = await askTsakSaveLocation(
+        context,
+        info: '${doc.title} · ${format.label}',
+      );
+      if (loc == null) return;
+      if (!mounted) return;
+      await saveTsakTableChosen(context, doc, format, choose: loc);
+      if (mounted) _snack('${format.label} 저장을 시작했습니다');
+    } catch (e) {
+      if (mounted) _snack('출력 실패: $e');
+    }
+  }
+
+  Future<void> _doPrint(TsakTableDoc doc) async {
+    try {
+      await printTsakTable(doc);
+    } catch (e) {
+      if (mounted) _snack('인쇄 실패: $e');
+    }
+  }
+
+  void _outputFinance(String kind) {
+    _runOutputDoc(
+      () => _financeDoc(kind),
+      title: '${widget.title} · ${_financeTitle(kind)}',
+      subtitle: '${_rowsOf(kind).length}건 · 옵션·미리보기·인쇄',
+    );
+  }
+
+  void _outputAttendees() {
+    if (_attendees.isEmpty) {
+      _snack('참가자가 없습니다');
+      return;
+    }
+    _runOutputDoc(
+      _attendeeDoc,
+      title: '${widget.title} · 참가자 명단',
+      subtitle: '${_attendees.length}명 · 옵션·미리보기·인쇄',
+    );
+  }
+
+  void _outputSettlement() {
+    _runOutputDoc(
+      _settlementDoc,
+      title: '${widget.title} · 행사 결산서',
+      subtitle:
+          '참가자 ${_attendees.length}명 · 수입 ${_fees.length}건 · '
+          '지출 ${_expenses.length}건',
+    );
+  }
+
+  // ============================ 관리 (마스터 전용) ============================
+  /// (요구) "마스터창에서는 관리자의 세부권한을 체계적으로 관리할 수 있도록"
+  ///   행사 단위에서 바로 관리자 세부권한 화면으로 들어갈 수 있게 한다.
+  Widget _masterManageTab() {
+    final s = context.read<AppState>();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.purple.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.purple.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.admin_panel_settings,
+                    size: 18,
+                    color: AppColors.purple,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    '마스터 전용 · 관리자 세부권한',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.purple,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '역할별로 이 행사에서 무엇을 할 수 있는지(참가자 편집·재무 입력·'
+                '결산 출력·사진 관리)를 켜고 끕니다. 값은 서버에 저장되어 모든 '
+                '기기에 즉시 반영됩니다.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textGray,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.purple,
+                      ),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RolePermissionsScreen(),
+                        ),
+                      ),
+                      icon: const Icon(Icons.tune, size: 17),
+                      label: const Text(
+                        '역할별 메뉴 권한 관리',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        // 행사 스텝(STAFF) 관리 — 지정자는 이 행사의 모든 게시판이 열린다.
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.taegeukBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.engineering,
+                    size: 18,
+                    color: AppColors.taegeukBlue,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '행사 스텝 ${_staff.length}명',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.taegeukBlue,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _manageStaff,
+                    icon: const Icon(Icons.person_add_alt, size: 16),
+                    label: const Text('스텝 등록'),
+                  ),
+                ],
+              ),
+              const Text(
+                '스텝은 이 행사의 참가자 명단·사진·후기·재무를 모두 열람합니다.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+              ),
+              if (_staff.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final st in _staff)
+                      Chip(
+                        label: Text(
+                          '${st['name'] ?? ''}',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                        onDeleted: () async {
+                          await _nas.eventStaffRemove(
+                            year: widget.year,
+                            title: widget.title,
+                            number: '${st['number'] ?? ''}',
+                          );
+                          await _load();
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        // 현재 세션 요약 — 마스터가 누구로 접속했는지 확인.
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.tigerGold.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.verified_user,
+                    size: 18,
+                    color: AppColors.lifetimeGold,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    '현재 세션',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.lifetimeGold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${s.isMaster ? '마스터' : (s.isApp ? '관리자' : '개인')}'
+                '${s.who.isNotEmpty ? ' · ${s.who}' : ''}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   // ============================ 부가 기능 ============================
