@@ -464,6 +464,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               onLayoutChanged: (l) => _settleLayout = l,
                               onOutput: _outputSettlement,
                               onOutputAttendees: _outputAttendees,
+                              // (요구) 미리보기 시트 안 '인쇄' 버튼 —
+                              //  시트를 닫지 않고 바로 브라우저 인쇄창을 연다.
+                              onPrint: (layout, data) =>
+                                  _doPrint(_settlementDoc(layout, data)),
                             ),
                             if (_isMasterView) _masterManageTab(),
                             for (final t in _customTabs) _customTabView(t),

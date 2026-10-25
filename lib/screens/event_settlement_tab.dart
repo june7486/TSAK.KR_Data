@@ -34,6 +34,7 @@ class EventSettlementTab extends StatefulWidget {
     required this.expenses,
     required this.onOutput,
     required this.onOutputAttendees,
+    this.onPrint,
     this.initialLayout,
     this.onLayoutChanged,
   });
@@ -53,6 +54,13 @@ class EventSettlementTab extends StatefulWidget {
 
   /// 참가자 명단 출력.
   final VoidCallback onOutputAttendees;
+
+  /// 결산 **인쇄**(브라우저 인쇄창) — 미리보기 시트 안에서 바로 호출된다.
+  final void Function(
+    SettlementLayout layout,
+    Map<SettlementBlock, SettlementBlockData> data,
+  )?
+  onPrint;
 
   /// 이전에 정한 배치(순서/포함) — 탭을 오가도 유지.
   final SettlementLayout? initialLayout;
@@ -110,6 +118,34 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
       layout: _layout,
       data: data,
       title: '${widget.year} ${widget.title} · 결산서',
+      // (요구) "미리보기 창에 출력버튼을 추가해서 창을 이동시키지 않아도
+      //  실시간으로 보면서 바로 출력할 수 있도록 해줘"
+      //
+      //  시트 안에서 PDF 를 뽑으면, 시트에 남아 있는 **현재 레이아웃**을
+      //  상위(결산 탭)에도 즉시 반영한다. 그래야 시트를 닫았을 때
+      //  결산 탭 카드 순서·서식이 방금 맞춘 것과 어긋나지 않는다.
+      onExport: (layout, format, open) {
+        _bump(() => _layout = layout.copy());
+        widget.onOutput(layout, SettlementBuilder.build(
+          settlement: _settlement,
+          fees: widget.fees,
+          expenses: widget.expenses,
+          attendees: widget.attendees,
+          won: _won,
+          memo: layout.showMemo,
+        ));
+      },
+      onPrint: (layout) {
+        _bump(() => _layout = layout.copy());
+        widget.onPrint?.call(layout, SettlementBuilder.build(
+          settlement: _settlement,
+          fees: widget.fees,
+          expenses: widget.expenses,
+          attendees: widget.attendees,
+          won: _won,
+          memo: layout.showMemo,
+        ));
+      },
     );
     if (out != null) {
       _bump(() => _layout = out);

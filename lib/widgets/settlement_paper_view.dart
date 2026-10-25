@@ -19,6 +19,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../services/event_settlement.dart';
+import '../services/output_formats.dart';
 import '../services/output_templates.dart';
 import '../services/settlement_layout.dart';
 import '../theme/app_theme.dart';
@@ -341,6 +342,21 @@ Future<SettlementLayout?> showSettlementPreviewSheet(
   required SettlementLayout layout,
   required Map<SettlementBlock, SettlementBlockData> data,
   required String title,
+
+  /// (요구) "미리보기 창에 출력버튼을 추가해서 창을 이동시키지 않아도 실시간으로
+  ///  보면서 바로 출력할 수 있도록 해줘"
+  ///
+  /// 미리보기 시트 **안에서** 바로 출력한다. 시트를 닫고 결산 탭으로 돌아가
+  /// '출력'을 다시 누르면, 방금 맞춘 서식이 반영됐는지 확인하려고 또 미리보기를
+  /// 열어야 했다(왕복 3번). 이제 시트 안에서 서식을 맞추고 그대로 PDF 를 뽑는다.
+  ///
+  /// [onExport] 를 넘기면 시트 하단에 출력 버튼이 생긴다.
+  /// 넘기지 않으면(다른 호출부) 종전과 완전히 동일하게 동작한다.
+  void Function(SettlementLayout layout, TsakOutputFormat format, bool open)?
+  onExport,
+
+  /// 인쇄(브라우저 인쇄창) — 보고서형 HTML 로 연다.
+  void Function(SettlementLayout layout)? onPrint,
 }) {
   return showModalBottomSheet<SettlementLayout>(
     context: context,
@@ -348,8 +364,13 @@ Future<SettlementLayout?> showSettlementPreviewSheet(
     useSafeArea: true,
     showDragHandle: true,
     backgroundColor: const Color(0xFFF3F1EC),
-    builder: (_) =>
-        _PreviewSheet(layout: layout.copy(), data: data, title: title),
+    builder: (_) => _PreviewSheet(
+      layout: layout.copy(),
+      data: data,
+      title: title,
+      onExport: onExport,
+      onPrint: onPrint,
+    ),
   );
 }
 
@@ -358,11 +379,24 @@ class _PreviewSheet extends StatefulWidget {
     required this.layout,
     required this.data,
     required this.title,
+    this.onExport,
+    this.onPrint,
   });
 
   final SettlementLayout layout;
   final Map<SettlementBlock, SettlementBlockData> data;
   final String title;
+
+  /// 시트 안에서 바로 출력(넘기지 않으면 출력 버튼 숨김).
+  final void Function(
+    SettlementLayout layout,
+    TsakOutputFormat format,
+    bool open,
+  )?
+  onExport;
+
+  /// 인쇄 — 넘기지 않으면 인쇄 버튼을 숨긴다.
+  final void Function(SettlementLayout layout)? onPrint;
 
   @override
   State<_PreviewSheet> createState() => _PreviewSheetState();
@@ -418,7 +452,19 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                     ],
                   ),
           ),
-          _optionsBar(),
+          // 옵션 줄이 길어졌다(템플릿 6종 + 출력 버튼). 좁은 화면에서
+          //  미리보기를 짓누르지 않도록 하단바 자체를 스크롤한다.
+          //  · 높이는 화면의 34%(최대 190)까지만 — 종이가 항상 보이게.
+          //  · wide(넓은 화면)에서는 예전처럼 자연 높이.
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: (mq.size.height * 0.34).clamp(120.0, 190.0),
+            ),
+            child: SingleChildScrollView(
+              primary: false,
+              child: _optionsBar(),
+            ),
+          ),
         ],
       ),
     );
@@ -797,72 +843,9 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          // (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿을 만들어서 선택"
-          //
-          //  칩 6개를 한 줄에 밀어 넣으면 좁은 화면에서 넘친다.
-          //  → 가로 스크롤 한 줄로 두고, 고른 템플릿은 색으로 표시한다.
-          //  템플릿은 **미리보기 자체**에도 즉시 반영된다(아래 _templateOf).
-          SizedBox(
-            height: 34,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: DocTemplate.all.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 5),
-              itemBuilder: (_, i) {
-                final t = DocTemplate.all[i];
-                final on = _layout.reportStyle && _layout.template == t;
-                return Tooltip(
-                  message: t.hint,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => _touch(() {
-                      _layout.template = t;
-                      // 표형이면 템플릿이 보이지 않으므로 보고서형으로 되돌린다.
-                      _layout.reportStyle = true;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: on
-                            ? AppColors.purple
-                            : AppColors.purple.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: on
-                              ? AppColors.purple
-                              : AppColors.purple.withValues(alpha: 0.22),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _templateIcon(t),
-                            size: 13,
-                            color: on ? Colors.white : AppColors.purple,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            t.label,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: on ? Colors.white : AppColors.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
           const SizedBox(height: 4),
+          _templatePicker(),
+          const SizedBox(height: 6),
           Row(
             children: [
               _chip(
@@ -936,7 +919,296 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               ),
             ],
           ),
+          // ── 창을 닫지 않고 **여기서 바로 출력** ────────────────────────
+          //
+          // (요구) "미리보기 창에 출력버튼을 추가해서 창을 이동시키지 않아도
+          //  실시간으로 보면서 바로 출력할 수 있도록 해줘"
+          //
+          //  종전: 미리보기 닫기 → 결산 탭에서 '출력' → 옵션 시트 → 또 미리보기
+          //        (서식 맞추려고 왕복 3번)
+          //  이제: 이 줄에서 PDF/미리보기/인쇄를 즉시. 시트는 그대로 열려 있어
+          //        결과를 보며 다시 고칠 수 있다.
+          if (widget.onExport != null) _exportBar(),
         ],
+      ),
+    );
+  }
+
+  /// 미리보기 시트 하단 출력 줄 — 서식을 맞춘 **그 상태로** 바로 뽑는다.
+  Widget _exportBar() {
+    void fire(TsakOutputFormat f, {bool open = false}) {
+      widget.onExport!(_layout.copy(), f, open);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 5),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.ios_share,
+                size: 13,
+                color: AppColors.purple,
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                '지금 서식 그대로 출력',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.purple,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  '${_layout.template.label} · ${_layout.styleBadge}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          // 한 줄에 다 들어가도록 균등 분할.
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    minimumSize: const Size(0, 38),
+                  ),
+                  onPressed: () => fire(TsakOutputFormat.pdf),
+                  icon: const Icon(Icons.picture_as_pdf, size: 15),
+                  label: const Text(
+                    'PDF',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                flex: 3,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    minimumSize: const Size(0, 38),
+                    side: BorderSide(
+                      color: AppColors.purple.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  onPressed: () => fire(TsakOutputFormat.pdf, open: true),
+                  icon: const Icon(
+                    Icons.open_in_new,
+                    size: 14,
+                    color: AppColors.purple,
+                  ),
+                  label: const Text(
+                    '미리보기',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.purple,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                flex: 4,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    minimumSize: const Size(0, 38),
+                    side: BorderSide(
+                      color: AppColors.scoutGreen.withValues(alpha: 0.55),
+                    ),
+                  ),
+                  onPressed: () => widget.onPrint?.call(_layout.copy()),
+                  icon: const Icon(
+                    Icons.print_outlined,
+                    size: 14,
+                    color: AppColors.scoutGreen,
+                  ),
+                  label: const Text(
+                    '인쇄',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.scoutGreen,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 출력 템플릿 6종 선택 — **라벨 + 2줄 그리드**로 전부 보이게.
+  ///
+  /// ## 왜 바꿨나 (실제 피드백)
+  /// "탬블릿 6종은 나타나지 않음"
+  ///  → 종전에는 높이 34 의 **가로 스크롤 칩 한 줄**이었다. 화면 오른쪽으로
+  ///    밀어야 나머지가 보이고, 라벨도 없어서 '옵션 줄'로 인식되지 않았다.
+  ///  → 이제 제목 줄('출력 서식') + 3열 그리드로 6종을 **전부 한눈에** 보여준다.
+  ///    각 칸에 아이콘·이름·한 줄 설명을 넣어 무엇이 바뀌는지 알 수 있게 했다.
+  Widget _templatePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.dashboard_customize_outlined,
+              size: 13,
+              color: AppColors.purple,
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              '출력 서식',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+                color: AppColors.purple,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                '고른 서식이 아래 미리보기에 바로 적용됩니다',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: AppColors.textGray.withValues(alpha: 0.95),
+                ),
+              ),
+            ),
+            if (!_layout.reportStyle)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.taegeukRed.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  '표형(평평한 표)',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.taegeukRed,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        // 3열 × 2줄 — 좁은 화면에서도 6종이 접히지 않고 모두 보인다.
+        LayoutBuilder(
+          builder: (_, box) {
+            const gap = 5.0;
+            final w = ((box.maxWidth - gap * 2) / 3).clamp(72.0, 220.0);
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final t in DocTemplate.all)
+                  SizedBox(
+                    width: w,
+                    child: _templateTile(t, on: _layout.template == t),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// 템플릿 타일 1개 — 아이콘 + 이름 + 한 줄 설명.
+  Widget _templateTile(DocTemplate t, {required bool on}) {
+    final active = on && _layout.reportStyle;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _touch(() {
+        _layout.template = t;
+        // 표형 상태에서 템플릿을 고르면 서식이 보이도록 보고서형으로 되돌린다.
+        _layout.reportStyle = true;
+      }),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(7, 5, 7, 6),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.purple.withValues(alpha: 0.10)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active
+                ? AppColors.purple
+                : AppColors.purple.withValues(alpha: 0.20),
+            width: active ? 1.4 : 0.8,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _templateIcon(t),
+                  size: 13,
+                  color: active ? AppColors.purple : AppColors.textGray,
+                ),
+                const SizedBox(width: 3),
+                Expanded(
+                  child: Text(
+                    t.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      color: active ? AppColors.purple : AppColors.textDark,
+                    ),
+                  ),
+                ),
+                if (active)
+                  const Icon(
+                    Icons.check_circle,
+                    size: 12,
+                    color: AppColors.purple,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 1),
+            Text(
+              t.hint,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 8.6, color: AppColors.textGray),
+            ),
+          ],
+        ),
       ),
     );
   }
