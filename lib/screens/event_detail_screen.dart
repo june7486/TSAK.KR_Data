@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/marquee_text.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -577,11 +578,54 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   Future<void> _download(String url) async {
+    // [사고 대응] 사진 폴더 전체(수 GB)를 ZIP 으로 받으면 서버가 메모리 부족으로
+    //  죽었다. 서버는 이제 용량을 사전에 검사해 413(too large)으로 거절하고,
+    //  우리는 그 URL 을 미리 조회해 **사람이 읽을 수 있는 안내**로 바꿔준다.
+    //  (브라우저 새 창에 raw JSON 이 뜨는 것을 막는다)
+    if (url.contains('/api/event/zip')) {
+      final tooBig = await _zipTooLargeHint(url);
+      if (tooBig != null) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('폴더가 너무 큽니다'),
+            content: Text(tooBig),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (e) {
       _snack('다운로드 실패: $e');
     }
+  }
+
+  /// ZIP 요청이 413 이면 안내 문구를, 아니면 null 을 돌려준다.
+  ///  실제 다운로드(브라우저)를 막지 않도록 HEAD 가 아니라 '가벼운 선검사'만 한다.
+  Future<String?> _zipTooLargeHint(String url) async {
+    try {
+      final probe = url.contains('?') ? '$url&probe=1' : '$url?probe=1';
+      final r = await http
+          .get(Uri.parse(probe))
+          .timeout(const Duration(seconds: 120));
+      if (r.statusCode == 413) {
+        return '이 폴더의 전체 용량이 서버 제한을 넘습니다.\n\n'
+            '· 폴더를 나누어(하위 폴더별로) 받으시거나\n'
+            '· 사진을 선택한 뒤 "선택 다운로드"를 사용하세요.';
+      }
+    } catch (_) {
+      // 선검사 실패는 무시하고 정상 다운로드로 진행.
+    }
+    return null;
   }
 
   void _snack(String m) {
