@@ -2322,6 +2322,81 @@ class AppState extends ChangeNotifier {
     return hit;
   }
 
+  /// (요구) 행사 참가자 **삭제**를 로컬 캐시에 즉시 반영한다.
+  ///
+  /// ## 배경 (사용자 지적)
+  ///  "참가자 삭제시 개인정보카드와 연계해서 참가행사에서도 삭제하도록 해줘"
+  ///
+  ///  서버는 이제 `/api/event/attendee/set` 에서 명단에 없는 회원의
+  ///  `eventAttend[행사명]` 을 False 로 되돌린다. 그런데 앱의 메모리 캐시는
+  ///  그대로라, 개인정보카드를 열면 여전히 '참가' 로 보인다
+  ///  (앱을 새로고침해야 반영됨).
+  ///
+  ///  그래서 [linkEventToMembers] 의 반대 동작을 여기서 수행한다.
+  ///  **키를 지우지 않고 False 로** 둔다 — 서버와 동일한 규칙이며,
+  ///  개인정보카드는 `attend == true` 만 노출하므로 목록에서는 사라진다.
+  ///
+  /// [keepIdents] 는 화면에 **남아 있는** 참가자 식별자들이다.
+  ///  그 목록에 없는 회원만 해제한다(다른 행사 기록은 건드리지 않는다).
+  ///
+  /// 반환: 실제로 해제된 회원 수.
+  Future<int> unlinkEventFromMembers(
+    String eventName, {
+    required Iterable<String> keepIdents,
+  }) async {
+    final name = eventName.trim();
+    if (name.isEmpty) return 0;
+    final keep = <String>{
+      for (final i in keepIdents)
+        if (i.replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty)
+          i.replaceAll(RegExp(r'[^0-9]'), ''),
+    };
+
+    bool stayed(Member m) {
+      final no = m.number.replaceAll(RegExp(r'[^0-9]'), '');
+      final ph = m.phone.replaceAll(RegExp(r'[^0-9]'), '');
+      final lid = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
+      // 이 행사에 참가(True) 기록이 있고, 현재 명단에 남아 있으면 유지.
+      return m.eventAttend[name] == true &&
+          (keep.contains(no) ||
+              (ph.isNotEmpty && keep.contains(ph)) ||
+              (lid.isNotEmpty && keep.contains(lid)));
+    }
+
+    var hit = 0;
+
+    // ── 범스카우트(로컬 캐시) ──
+    final touched = <Member>[];
+    for (final m in repo.allUnscoped()) {
+      if (m.eventAttend[name] != true) continue; // 참가 기록 없음
+      if (stayed(m)) continue; // 아직 명단에 있음
+      final map = Map<String, bool>.from(m.eventAttend)..[name] = false;
+      final updated = m.copyWith(eventAttend: map);
+      // 개인 프로필 '참가행사' 목록도 함께 정리(있으면).
+      touched.add(updated);
+    }
+    if (touched.isNotEmpty) {
+      await repo.saveLocalOnlyAll(touched);
+      hit += touched.length;
+    }
+
+    // ── 은하스카우트(별도 캐시) ──
+    for (var i = 0; i < _eunhaMembers.length; i++) {
+      final m = _eunhaMembers[i];
+      if (m.eventAttend[name] != true) continue;
+      if (stayed(m)) continue;
+      final map = Map<String, bool>.from(m.eventAttend)..[name] = false;
+      _eunhaMembers[i] = m.copyWith(eventAttend: map);
+      hit++;
+    }
+
+    if (hit > 0) {
+      refresh();
+      notifyListeners();
+    }
+    return hit;
+  }
+
   /// 개인/비인가자 접근에서 특정 회원이 본인인지 여부
   bool isSelfNumber(String number) {
     if (!isSelfAccess || who.isEmpty) return true;

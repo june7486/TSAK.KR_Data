@@ -1773,7 +1773,18 @@ class NasApi {
   }
 
   /// 참석자 목록 저장 (+회원 프로필 자동 반영)
-  Future<bool> eventSetAttendees(
+  /// 참가자 명단 저장 — 서버가 회원 프로필(eventAttend)에 **양방향** 연동한다.
+  ///
+  /// ## 버그 수정: "참가자 삭제시 개인정보카드와 연계해서 참가행사에서도 삭제"
+  ///  종전 서버는 추가(True)만 연동해서, 명단에서 지워도 개인정보카드의
+  ///  '행사참가 이력'에 그대로 남았다.
+  ///
+  /// 이제 서버 응답에 `linkedAdded` / `linkedRemoved` 가 실려 온다.
+  ///  · linkedAdded  : 프로필에 '참가'로 새로 기록된 인원
+  ///  · linkedRemoved: 명단에서 빠져 '참가'가 해제된 인원
+  ///
+  /// 반환: `{'ok': bool, 'linkedAdded': int, 'linkedRemoved': int}`
+  Future<Map<String, dynamic>> eventSetAttendeesDetailed(
     String year,
     String title,
     List<Map<String, dynamic>> attendees,
@@ -1790,7 +1801,24 @@ class NasApi {
         )
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
-    return j['ok'] == true;
+    return {
+      'ok': j['ok'] == true,
+      'linkedAdded': int.tryParse('${j['linkedAdded'] ?? 0}') ?? 0,
+      'linkedRemoved': int.tryParse('${j['linkedRemoved'] ?? 0}') ?? 0,
+    };
+  }
+
+  /// 참가자 명단 저장 (성공 여부만).
+  ///
+  /// 프로필 연동은 서버가 함께 처리한다. 연동 인원까지 알고 싶으면
+  /// [eventSetAttendeesDetailed] 를 쓴다.
+  Future<bool> eventSetAttendees(
+    String year,
+    String title,
+    List<Map<String, dynamic>> attendees,
+  ) async {
+    final res = await eventSetAttendeesDetailed(year, title, attendees);
+    return res['ok'] == true;
   }
 
   /// 인가자/회원 검색 (참석자 선택용)

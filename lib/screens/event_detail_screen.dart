@@ -1516,14 +1516,55 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       await _manualAddAttendee(editIndex: i);
                     } else if (v == 'del') {
                       // (요구) 삭제 전 한 번 더 확인.
+                      //  삭제하면 **개인정보카드의 '행사참가 이력'에서도**
+                      //  사라진다는 사실을 미리 알린다.
                       final ok = await confirmDialog(
                         context,
                         title: '참가자 삭제',
-                        message: '${a['name'] ?? ''} 님을 참가자 명단에서 삭제할까요?',
+                        message:
+                            '${a['name'] ?? ''} 님을 참가자 명단에서 삭제할까요?\n\n'
+                            '개인정보카드의 「행사참가 이력」에서도 함께 '
+                            '제외됩니다.',
                       );
                       if (!ok) return;
+                      final wasLinked = (a['number'] ?? a['phone'] ?? '')
+                          .toString()
+                          .replaceAll(RegExp(r'[^0-9]'), '')
+                          .isNotEmpty;
                       setState(() => _attendees.removeAt(i));
-                      await _saveAttendees();
+                      final res = await _saveAttendeesLinked();
+                      // 서버는 이미 eventAttend[행사명]=False 로 되돌렸다.
+                      // 앱 메모리 캐시도 함께 정리해야 **개인정보카드를 바로
+                      // 열었을 때** '행사참가 이력'에서 사라진다.
+                      var localFreed = 0;
+                      if (mounted) {
+                        try {
+                          localFreed = await context
+                              .read<AppState>()
+                              .unlinkEventFromMembers(
+                                widget.title,
+                                keepIdents: [
+                                  for (final x in _attendees)
+                                    '${x['number'] ?? ''}',
+                                  for (final x in _attendees)
+                                    '${x['phone'] ?? ''}',
+                                ],
+                              );
+                        } catch (_) {}
+                      }
+                      if (!mounted) return;
+                      final freed =
+                          int.tryParse('${res['linkedRemoved'] ?? 0}') ?? 0;
+                      final total = freed > localFreed ? freed : localFreed;
+                      _snack(
+                        total > 0
+                            ? '삭제 완료 · 개인정보카드 「행사참가 이력」에서도 '
+                                  '$total명 제외했습니다'
+                            : (wasLinked
+                                  ? '삭제 완료 (개인정보카드에 이 행사 참가 '
+                                        '기록이 없어 해제할 항목이 없습니다)'
+                                  : '삭제 완료'),
+                      );
                     } else if (v == 'top') {
                       await _moveAttendee(i, 0);
                     } else if (v == 'up') {
@@ -2004,6 +2045,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Future<void> _saveAttendees() async {
     await _nas.eventSetAttendees(widget.year, widget.title, _attendees);
     await _load();
+  }
+
+  /// 참가자 명단 저장 + **개인정보카드 연동 결과**까지 받아온다.
+  ///
+  /// ## 요구: "참가자 삭제시 개인정보카드와 연계해서 참가행사에서도 삭제"
+  ///  서버가 명단을 저장하면서 회원 프로필(eventAttend)을 양방향으로 갱신한다.
+  ///  여기서는 그 결과(해제된 인원)를 사용자에게 알려준다.
+  Future<Map<String, dynamic>> _saveAttendeesLinked() async {
+    final res = await _nas.eventSetAttendeesDetailed(
+      widget.year,
+      widget.title,
+      _attendees,
+    );
+    await _load();
+    return res;
   }
 
   /// 인가자 다중 검색 & 일괄 추가.
@@ -3356,10 +3412,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       header: kind == 'fee'
           ? const Padding(
               padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
-              child: DonationAccounts(
-                title: '참가비·후원 납부 계좌',
-                showHolder: true,
-              ),
+              child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),
             )
           : null,
       won: _won,
@@ -3400,7 +3453,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     // (요구) 지출은 출금계좌(대표 3계좌 중 선택) 또는 직접입력.
     final accountC = TextEditingController(text: '${row?['account'] ?? ''}');
-    String category = '${row?['category'] ?? (kind == 'expense' ? '행사비' : (kind == 'donation' ? '후원금' : '참가비'))}';
+    String category =
+        '${row?['category'] ?? (kind == 'expense' ? '행사비' : (kind == 'donation' ? '후원금' : '참가비'))}';
     // 후원 탭은 '후원금' 만 수입 — 후원(현물)은 별도 분류.
     if (kind == 'donation' && !DonationKindOptions.all.contains(category)) {
       category = '후원금';
@@ -3416,9 +3470,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         'donation' => '후원 입력',
         _ => '행사비 지출 입력',
       },
-      subtitle: isDonation
-          ? '후원금만 수입으로 잡힙니다 · 후원(현물)은 금액/상당액을 따로 기록'
-          : null,
+      subtitle: isDonation ? '후원금만 수입으로 잡힙니다 · 후원(현물)은 금액/상당액을 따로 기록' : null,
       icon: switch (kind) {
         'fee' => Icons.volunteer_activism,
         'donation' => Icons.card_giftcard,
@@ -3480,9 +3532,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     child: TextField(
                       controller: amtC,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: const InputDecoration(
                         isDense: true,
                         suffixText: '원',
@@ -3498,9 +3548,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     child: TextField(
                       controller: valueC,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: const InputDecoration(
                         isDense: true,
                         suffixText: '원 상당',
@@ -3518,7 +3566,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 controller: amtC,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(isDense: true, suffixText: '원'),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  suffixText: '원',
+                ),
               ),
             ),
           TsakField(
@@ -3538,18 +3589,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 isExpanded: true,
                 decoration: const InputDecoration(isDense: true),
                 items: [
-                  for (final c in (kind == 'expense'
-                      ? const [
-                          '행사비',
-                          '각종 지출',
-                          '수품제작',
-                          '기념품제작',
-                          '수송지원',
-                          '장소임차',
-                          '식비',
-                          '기타',
-                        ]
-                      : const ['참가비']))
+                  for (final c
+                      in (kind == 'expense'
+                          ? const [
+                              '행사비',
+                              '각종 지출',
+                              '수품제작',
+                              '기념품제작',
+                              '수송지원',
+                              '장소임차',
+                              '식비',
+                              '기타',
+                            ]
+                          : const ['참가비']))
                     DropdownMenuItem(
                       value: c,
                       child: Text(c, style: const TextStyle(fontSize: 12.5)),
@@ -3598,7 +3650,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     child: Text(
                       isSponsor
                           ? '${category}은(는) 수입에 넣지 않고 후원 내역으로만 집계합니다.'
-                              '금액·상당액은 결산의 후원 항목에 따로 표시됩니다.'
+                                '금액·상당액은 결산의 후원 항목에 따로 표시됩니다.'
                           : '후원금은 현금 수입으로 합산됩니다(수입 = 참가비 + 후원금).',
                       style: const TextStyle(
                         fontSize: 10.5,
@@ -3708,7 +3760,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final picked = rows != null && list.length != all.length;
     return TsakTableDoc(
       title: '${widget.year} ${widget.title}',
-      subtitle: '${_financeTitle(kind)} · ${list.length}건'
+      subtitle:
+          '${_financeTitle(kind)} · ${list.length}건'
           '${picked ? ' (선택 ${list.length}/${all.length}건)' : ''}',
       description: isExpense
           ? '행사에 지출한 내역을 연번 순으로 정리하고 합계를 기재합니다.'
@@ -3917,7 +3970,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     _runOutputDoc(
       () => _financeDoc(kind, rows: list),
       title: '${widget.title} · ${_financeTitle(kind)}',
-      subtitle: '${list.length}건'
+      subtitle:
+          '${list.length}건'
           '${picked ? ' (선택 출력)' : ''} · 옵션·미리보기·인쇄',
     );
   }
