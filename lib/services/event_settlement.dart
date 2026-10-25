@@ -270,15 +270,21 @@ class EventSettlement {
       .where((e) => DonationKind.parse(e.category) == DonationKind.cash)
       .fold(0, (s, e) => s + e.amount);
 
+  /// 후원 관련 행만 — 참가비·기타수입 제외.
+  ///  (버그 수정: parse() 가 모르는 분류를 '기타후원'으로 떨어뜨려
+  ///   참가비·기타수입이 후원 합계에 섞이던 문제)
+  Iterable<EventMoneyRow> get _sponsorRows => fees.where(
+    (e) =>
+        !DonationKind.isNonDonation(e.category) &&
+        DonationKind.parse(e.category).isSponsor,
+  );
+
   /// 후원(현물) 현금 합계.
-  int get sponsorCashTotal => fees
-      .where((e) => DonationKind.parse(e.category).isSponsor)
-      .fold(0, (s, e) => s + e.amount);
+  int get sponsorCashTotal => _sponsorRows.fold(0, (s, e) => s + e.amount);
 
   /// 후원(현물) 상당액 합계.
-  int get sponsorValueTotal => fees
-      .where((e) => DonationKind.parse(e.category).isSponsor)
-      .fold(0, (s, e) => s + (e.valueAmount ?? 0));
+  int get sponsorValueTotal =>
+      _sponsorRows.fold(0, (s, e) => s + (e.valueAmount ?? 0));
 
   /// 수입 합계 — (요구) **수입은 참가비 + 후원금만**.
   ///  후원(현물)·기타후원은 수입에 넣지 않는다. 기타수입(현금)은 참고로 더한다.

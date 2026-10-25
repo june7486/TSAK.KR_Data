@@ -59,6 +59,22 @@ enum DonationKind {
   /// 출력 선택지에 노출할 항목.
   static List<DonationKind> get sponsors =>
       values.where((e) => e.isSponsor).toList();
+
+  /// 후원과 **무관한** 분류인가.
+  ///
+  /// ## 왜 필요한가 (버그 수정)
+  /// 행사 재무의 'fees' 목록에는 참가비·기타수입도 함께 들어 있다. 그런데
+  /// [parse] 는 모르는 문자열을 전부 [etc] 로 떨어뜨리므로, 종전에는
+  /// **참가비와 기타수입이 '기타후원'으로 둔갑**해 후원 합계에 섞였다.
+  /// (예: 참가비 5만원 + 후원 현금 3만원 → 후원 합계 8만원으로 표시)
+  /// 이 술어로 후원과 무관한 행을 먼저 걸러낸다.
+  static bool isNonDonation(String raw) {
+    final s = raw.trim();
+    return s == '참가비' || s == '참가비납부' || s == '기타수입' || s == '기타 수입';
+  }
+
+  /// 후원 분류로 인정되는 문자열인가.
+  static bool isDonationCategory(String raw) => !isNonDonation(raw);
 }
 
 /// 후원 1건(정규화).
@@ -147,18 +163,24 @@ class DonationRow {
 }
 
 /// 후원 집계.
+///
+/// ## 버그 수정 (요구 1 위반)
+/// `fees` 목록에는 **참가비·기타수입**도 함께 들어 있다. `DonationKind.parse`
+/// 는 모르는 문자열을 '기타후원'으로 떨어뜨리므로, 종전에는 참가비 5만원 +
+/// 후원현금 3만원이 **후원 합계 8만원**으로 표시됐다.
+/// → 후원과 무관한 분류([DonationKind.isNonDonation])는 집계에서 제외한다.
 class DonationSummary {
-  DonationSummary(this.rows);
+  DonationSummary(List<DonationRow> all)
+    : rows = all.where((e) => !DonationKind.isNonDonation(e.category)).toList();
 
+  /// 원본 행 중 **후원 관련 행만** 남긴 목록.
   final List<DonationRow> rows;
 
   /// 후원금(현금·수입) 행만.
-  List<DonationRow> get cashRows =>
-      rows.where((e) => e.isIncome).toList();
+  List<DonationRow> get cashRows => rows.where((e) => e.isIncome).toList();
 
   /// 후원(현물) 행만.
-  List<DonationRow> get sponsorRows =>
-      rows.where((e) => e.isSponsor).toList();
+  List<DonationRow> get sponsorRows => rows.where((e) => e.isSponsor).toList();
 
   /// 후원금 합계 — **이것만 수입**.
   int get cashTotal => cashRows.fold(0, (s, e) => s + e.amount);
@@ -194,19 +216,16 @@ class DonationSummary {
       final key = '${e.name}|${e.number}';
       final g = map[key];
       if (g == null) {
-        map[key] = SponsorGroup(
-          name: e.name,
-          number: e.number,
-          items: [e],
-        );
+        map[key] = SponsorGroup(name: e.name, number: e.number, items: [e]);
       } else {
         g.items.add(e);
       }
     }
     final list = map.values.toList()
       ..sort((a, b) {
-        final c = (b.valueTotal + b.cashTotal)
-            .compareTo(a.valueTotal + a.cashTotal);
+        final c = (b.valueTotal + b.cashTotal).compareTo(
+          a.valueTotal + a.cashTotal,
+        );
         return c != 0 ? c : a.name.compareTo(b.name);
       });
     return list;
@@ -217,11 +236,7 @@ class DonationSummary {
 
 /// 후원자 1명의 후원 묶음.
 class SponsorGroup {
-  SponsorGroup({
-    required this.name,
-    required this.number,
-    required this.items,
-  });
+  SponsorGroup({required this.name, required this.number, required this.items});
 
   final String name;
   final String number;
