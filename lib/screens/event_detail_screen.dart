@@ -4330,75 +4330,66 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // [버그 수정] "0건"과 "못 불러옴"을 구분한다 — 종전에는 401(세션만료·
     //  등급부족)이 조용히 빈 목록이 되어 입력자료가 사라진 것처럼 보였다.
     final err = _financeError;
+
+    // ── [버그 수정 2026-10-26] 후원 탭에서 **후원 내역이 안 보이던 문제** ──
+    //
+    //  증상: '현물후원 5건 440,000원' 요약은 나오는데 그 아래 내역 목록이
+    //        통째로 비어 있었다(아주 긴 공백만 남음).
+    //
+    //  원인: `DonationListPanel` 은 내부에 `Expanded` + `ListView` 를 가진
+    //        '스스로 높이를 채우는' 위젯인데, 종전에는 이것을
+    //        `EventFinanceTab` 의 Column 에 **일반 자식(header)** 으로 넣었다.
+    //        Column 은 비-flex 자식에게 **높이 제약을 주지 않으므로**,
+    //        그 안의 Expanded/ListView 는 높이 0 으로 계산되어
+    //        릴리스 빌드에서 **아무것도 그리지 않았다**(예외도 없이 조용히).
+    //        → 화면에는 요약만 남고 목록은 사라진 것처럼 보였다.
+    //
+    //  또한 후원 탭은 **같은 5건을 두 번** 그리는 구조였다(패널 목록 +
+    //        하단 EventFinanceTab 목록). 요약·후원자별/내역별 전환·필터·
+    //        '+ 후원 추가'·'출력' 은 이미 패널이 모두 제공하므로,
+    //        후원 탭은 **패널 단독**으로 구성하는 것이 맞다.
+    if (kind == 'donation') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (err != null) _financeErrorBanner(err),
+          // Expanded 안에서 패널이 남은 높이를 모두 쓰도록 한다(핵심).
+          Expanded(
+            child: DonationListPanel(
+              rows: rows,
+              won: _won,
+              onAdd: () => _financeEdit(kind),
+              onEdit: (r) => _financeEdit(kind, row: r),
+              onDelete: (r) async {
+                await _nas.eventFinanceDelete(
+                  widget.year,
+                  widget.title,
+                  kind,
+                  '${r['id']}',
+                );
+                await _load();
+              },
+              onOutput: (view, focus) =>
+                  _outputDonationList(rows: rows, view: view, focus: focus),
+            ),
+          ),
+        ],
+      );
+    }
+
     return EventFinanceTab(
       kind: fk,
       rows: rows,
       color: _financeColor(kind),
-      // 재무 로드가 실패했으면 목록 위에 사유 + 다시 시도를 띄운다.
+      // 참가비 탭 — 납부 계좌 안내. 재무 로드 실패 시에는 사유 배너를 먼저.
       header: err != null
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _financeErrorBanner(err),
-                if (kind == 'donation')
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-                    child: DonationListPanel(
-                      rows: rows,
-                      won: _won,
-                      onAdd: () => _financeEdit(kind),
-                      onEdit: (r) => _financeEdit(kind, row: r),
-                      onDelete: (r) async {
-                        await _nas.eventFinanceDelete(
-                          widget.year,
-                          widget.title,
-                          kind,
-                          '${r['id']}',
-                        );
-                        await _load();
-                      },
-                      onOutput: (view, focus) => _outputDonationList(
-                        rows: rows,
-                        view: view,
-                        focus: focus,
-                      ),
-                    ),
-                  ),
-              ],
-            )
+          ? _financeErrorBanner(err)
           : kind == 'fee'
           ? const Padding(
               padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
               child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),
             )
-          // (요구) "후원리스트에는 후원자와 후원내역을 별도로 정리할 것,
-          //  후원항목만 출력시 후원물품 혹은 금액에 대한 선택할 수 있도록 할 것."
-          //  → 후원·기타수입 탭 상단에 '후원자별 ↔ 내역별' 전환 패널을 둔다.
-          : kind == 'donation'
-              ? Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-                  child: DonationListPanel(
-                    rows: rows,
-                    won: _won,
-                    onAdd: () => _financeEdit(kind),
-                    onEdit: (r) => _financeEdit(kind, row: r),
-                    onDelete: (r) async {
-                      await _nas.eventFinanceDelete(
-                        widget.year,
-                        widget.title,
-                        kind,
-                        '${r['id']}',
-                      );
-                      await _load();
-                    },
-                    onOutput: (view, focus) => _outputDonationList(
-                      rows: rows,
-                      view: view,
-                      focus: focus,
-                    ),
-                  ),
-                )
-              : null,
+          : null,
       won: _won,
       onAdd: () => _financeEdit(kind),
       onEdit: (r) => _financeEdit(kind, row: r),

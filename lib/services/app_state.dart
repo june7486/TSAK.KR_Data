@@ -600,30 +600,45 @@ class AppState extends ChangeNotifier {
         if (ok) {
           ok = repo.byNumber(personalNo) != null;
         }
-        // [요구 2026-10] 인가자 ID 표준화 — 'tiger<번호>' 접두어가 없는 구(舊)
-        //  순수 인가번호 로그인('75' / '75!@@')은 차단한다. 표준은 tiger75 / 75!@@.
-        //  · 마스터 비번과 관리자 지정(커스텀) 비번은 예외로 둔다(정상 흐름 보존).
-        final idHasPrefix = idRaw.toLowerCase().startsWith('tiger');
-        if (ok && !idHasPrefix && value != AppConfig.masterPassword) {
-          if (value == expected) ok = false; // 기본 '{번호}!@@' 조합만 차단
+        // ── [표준 ID 체계 확립 2026-10-26] ────────────────────────────────
+        //
+        // ## 무엇이 문제였나
+        //  1) 아래 서버 폴백이 사용자가 넣지 않은 **'tiger' 접두어를 자동으로
+        //     붙여**(`'tiger$personalNo'`) 시도했다. 그래서 사용자가 구(舊)
+        //     체계인 `415 / 415!@@` 를 입력해도 내부적으로 `tiger415` 로 승격돼
+        //     **통과**했다 → "ID 체계가 예전으로 돌아간" 것처럼 보였다.
+        //  2) 위쪽 로컬 차단은 `value == expected` 일 때만 걸려서, 접두어 없는
+        //     ID 로 커스텀 비번을 쓰는 경우까지는 막지 못했다.
+        //
+        // ## 확정 규칙
+        //   · 인가자 표준 로그인 = **`tiger<인가번호>` + `{번호}!@@`**
+        //     (예: tiger415 / 415!@@) — 이 조합만 정상 통과.
+        //   · 접두어 없는 구(舊) ID(`415`)는 **어떤 경우에도 통과시키지 않는다**
+        //     (자동 접두어 부착 금지).
+        //   · 예외 2가지만 허용:
+        //       ① 마스터 비밀번호 — 관리자 복구 경로(항상 유지)
+        //       ② 관리자(마스터)가 지정한 **커스텀 개인비번** + `tiger` 접두어 ID
+        //   · 은하스카우트는 위 `_corps == 'eunha'` 분기에서 서버 전용 규칙으로
+        //     이미 처리되므로 이 규칙의 영향을 받지 않는다(번호 혼동 방지).
+        final idLower = idRaw.toLowerCase();
+        final idIsStandard = idLower.startsWith('tiger') && idLower.length > 5;
+        final isMasterPw = value == AppConfig.masterPassword;
+        final isDefaultPw = value == expected; // '{번호}!@@'
+        final hasCustomPw = value.trim().isNotEmpty && !isDefaultPw;
+        // 표준 ID 가 아니면(= 접두어 없음 또는 비어 있음) 기본 개인비번 로그인 금지.
+        if (!isMasterPw && isDefaultPw && !idIsStandard) {
+          ok = false;
         }
-        // ── 서버(개인별 지정 비번) 검증 ───────────────────────────────────
-        // ## 버그 수정: '인가자416 / 416!@@' 로그인 실패
-        //  종전에는 서버로 **숫자만**(`id: personalNo` → '416') 보냈다.
-        //  그런데 서버는 2026-10 표준화로 접두어 없는 순수 인가번호 로그인
-        //  ('416' + '416!@@')을 **취약 로그인으로 차단**한다.
-        //  그래서 앱에서 'tiger416'을 넣어도 서버에는 '416'이 도착해 실패했다.
-        //  → 사용자가 입력한 표준 ID('tiger416')를 **그대로** 보낸다.
-        //     (서버의 _member_by_ident_any 가 tiger 접두어를 정규화한다)
-        if (!ok && repo.isNasMode && personalNo.isNotEmpty) {
-          // 서버로 보낼 ID 후보 — 순서가 중요하다.
-          //  ① 사용자가 입력한 그대로(예: tiger416)
-          //  ② 표준 접두어를 붙인 형태(예: 416 → tiger416)
-          //  ③ 맨 숫자 — 구(舊) 규칙 호환이지만 서버가 취약 로그인으로 차단한다.
+        // 서버 폴백 허용 조건 — 표준 ID 이거나 마스터 비번일 때만.
+        final allowServerVerify = isMasterPw || idIsStandard || hasCustomPw;
+        if (!ok && repo.isNasMode && personalNo.isNotEmpty && allowServerVerify) {
+          // 서버로 보내는 ID 는 **사용자가 입력한 그대로**만 시도한다.
+          //  ⚠️ 종전에는 'tiger$personalNo' 를 자동으로 덧붙여 시도했는데,
+          //     그것이 구(舊) 체계 로그인을 되살리는 원인이었다. 절대 되살리지 말 것.
+          //  · 표준 ID('tiger416')가 그대로 서버에 도착하면 서버가 접두어를
+          //    정규화해 회원을 찾는다.
           final idTries = <String>{
-            if (idRaw.isNotEmpty) idRaw,
-            'tiger$personalNo',
-            personalNo,
+            if (idIsStandard) idRaw,
           };
           outer:
           for (final tryId in idTries) {
@@ -641,6 +656,20 @@ class AppState extends ChangeNotifier {
                 }
               } catch (_) {}
             }
+          }
+          // 표준 ID 로 서버 검증이 실패했고, **커스텀 개인비번**을 쓰는 경우에 한해
+          //  서버가 개인비번을 직접 검증하도록 ID 를 그대로 넘겨 1회 더 시도한다.
+          //  (접두어 없는 구 ID 로는 이 경로도 열리지 않는다 — 아래 조합 조건)
+          if (!ok && idIsStandard && hasCustomPw) {
+            try {
+              final r = await nas.login(
+                'personal',
+                value,
+                id: idRaw,
+                corps: 'tsak',
+              );
+              if (r['ok'] == true) ok = true;
+            } catch (_) {}
           }
         }
         // 서버 검증으로 성공한 경우엔 이미 세션이 발급됐고(관리자 부여 플래그),
@@ -844,15 +873,28 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // [버그수정] 소속에 맞는 명단에서 먼저 찾는다.
-    final m = isEunha
-        ? _eunhaByNumber(no)
-        : (repo.byNumber(no) ?? _eunhaByNumber(no));
+    // ── [표준 ID 체계·은하 혼동 방지 2026-10-26] ──────────────────────────
+    //  QR 은 "개인정보 수정" 화면으로 **본인 1명**을 특정하는 자격증명이다.
+    //  숫자만으로 명단을 넘나들면 엉뚱한 사람의 개인정보가 열린다.
+    //
+    //  ① 범스카우트 QR(`?access=personal&no=43`)이 은하 명단까지 뒤지지 않게 한다.
+    //     종전: `repo.byNumber(no) ?? _eunhaByNumber(no)` — 범 명단에 없으면
+    //     **은하 43호**가 열렸다(범 43 ↔ 은하 43 숫자 충돌).
+    //     이제: 범 QR 은 범 명단 **안에서만** 찾는다.
+    //  ② 소속 파라미터가 없던 시절의 구 QR 로도 은하 회원이 열리지 않게,
+    //     결과 회원의 소속이 요청 소속과 **일치할 때만** 통과시킨다.
+    //  ③ 은하 세션에 영구 마스터(master) 등급을 승격하지 않는다.
+    //     (범스카우트 마스터 번호가 은하 번호와 겹칠 수 있다)
+    final m = isEunha ? _eunhaByNumber(no) : repo.byNumber(no);
     if (m == null) return false;
+    final memberCorps = (m.corps == 'eunha') ? 'eunha' : 'tsak';
+    if (memberCorps != (isEunha ? 'eunha' : 'tsak')) return false;
 
     _unlocked = true;
-    _tier = AppConfig.isPermanentMaster(no) ? 'master' : 'personal';
-    _corps = m.corps == 'eunha' ? 'eunha' : 'tsak';
+    _tier = (!isEunha && AppConfig.isPermanentMaster(no))
+        ? 'master'
+        : 'personal';
+    _corps = memberCorps;
     _who = no;
     _sessionStart = DateTime.now();
     _membersLoaded = true;

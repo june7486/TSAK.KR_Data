@@ -77,25 +77,75 @@ class _DonationListPanelState extends State<DonationListPanel> {
     final cash = _cash;
     final sponsors = _sponsors;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _toolbar(),
-        _summaryBar(cash, sponsors),
-        const SizedBox(height: 2),
-        Expanded(
-          child: sponsors.isEmpty
-              ? const Center(
-                  child: Text(
-                    '현물후원 내역이 없습니다',
-                    style: TextStyle(color: AppColors.textGray),
+    // ── [버그 수정 2026-10-26] 목록이 통째로 사라지던 문제 ────────────────
+    //
+    //  이 패널은 내부에 `Expanded` + `ListView` 를 가진 '스스로 높이를 채우는'
+    //  위젯이다. 그런데 호출부에서 **높이가 무한(unbounded)** 인 곳
+    //  (예: 스크롤 영역 안, Column 의 비-flex 자식)에 넣으면
+    //  Expanded/ListView 가 높이를 계산하지 못해 릴리스 빌드에서
+    //  **아무것도 그리지 않았다**(예외 없이 조용히). 사용자에게는
+    //  "요약은 보이는데 상세 내역이 없다"로 나타났다.
+    //
+    //  해결: 부모가 준 제약을 확인해
+    //   · 높이가 유한하면 → 남은 높이를 채우는 고정 헤더 + 스크롤 목록
+    //   · 무한하면       → 헤더/목록을 **하나의 스크롤 뷰**로 합쳐 그린다
+    //     (이때 목록은 shrinkWrap + 물리 스크롤 없음)
+    return LayoutBuilder(
+      builder: (context, c) {
+        final bounded = c.maxHeight.isFinite;
+        final header = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _toolbar(),
+            _summaryBar(cash, sponsors),
+            const SizedBox(height: 2),
+          ],
+        );
+        final empty = const Padding(
+          padding: EdgeInsets.symmetric(vertical: 28),
+          child: Center(
+            child: Text(
+              '현물후원 내역이 없습니다',
+              style: TextStyle(color: AppColors.textGray),
+            ),
+          ),
+        );
+
+        if (!bounded) {
+          // 높이 제약이 없는 곳 — 전체를 하나의 스크롤로.
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                if (sponsors.isEmpty)
+                  empty
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _view == DonationViewMode.bySponsor
+                        ? _sponsorList(sponsors, scrollable: false)
+                        : _kindList(sponsors, scrollable: false),
                   ),
-                )
-              : _view == DonationViewMode.bySponsor
-              ? _sponsorList(sponsors)
-              : _kindList(sponsors),
-        ),
-      ],
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            Expanded(
+              child: sponsors.isEmpty
+                  ? empty
+                  : (_view == DonationViewMode.bySponsor
+                        ? _sponsorList(sponsors)
+                        : _kindList(sponsors)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -314,7 +364,10 @@ class _DonationListPanelState extends State<DonationListPanel> {
   }
 
   // -------------------------------------------------------------- 후원자별
-  Widget _sponsorList(List<DonationRow> sponsors) {
+  /// 후원자별 목록.
+  ///  [scrollable] false 면 부모 스크롤 안에 들어가므로 스스로 스크롤하지 않고
+  ///  내용 높이만큼 커진다(shrinkWrap). 높이 제약이 없는 곳에서 필수.
+  Widget _sponsorList(List<DonationRow> sponsors, {bool scrollable = true}) {
     final map = <String, List<DonationRow>>{};
     for (final e in sponsors) {
       map.putIfAbsent('${e.name}|${e.number}', () => []).add(e);
@@ -330,6 +383,9 @@ class _DonationListPanelState extends State<DonationListPanel> {
       });
 
     return ListView.builder(
+      // 높이 제약이 없으면(shrinkWrap) 부모 스크롤이 스크롤을 담당한다.
+      shrinkWrap: !scrollable,
+      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 16),
       itemCount: keys.length,
       itemBuilder: (_, i) {
@@ -546,7 +602,8 @@ class _DonationListPanelState extends State<DonationListPanel> {
   }
 
   // --------------------------------------------------------------- 내역별
-  Widget _kindList(List<DonationRow> sponsors) {
+  /// 내역(분류)별 목록. [scrollable] 의미는 [_sponsorList] 와 같다.
+  Widget _kindList(List<DonationRow> sponsors, {bool scrollable = true}) {
     final order = <DonationKind>[
       DonationKind.meal,
       DonationKind.goods,
@@ -560,6 +617,8 @@ class _DonationListPanelState extends State<DonationListPanel> {
     final kinds = order.where(map.containsKey).toList();
 
     return ListView.builder(
+      shrinkWrap: !scrollable,
+      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 16),
       itemCount: kinds.length,
       itemBuilder: (_, i) {
