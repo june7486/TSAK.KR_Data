@@ -3417,7 +3417,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   /// 선택 항목 토큰 ('현재폴더 파일'=name, '하위폴더 파일'=segSub:name)
   void _downloadSelectedMedia() {
     if (_mediaSel.isEmpty) return;
-    final tokens = _mediaSel.toList();
+    // [중요] 평탄화 보기(하위폴더 펼침)에서는 같은 사진 이름이 서로 다른
+    //  폴더에 있을 수 있다. 서버는 'sub/seg:name' 토큰으로 하위폴더 파일을
+    //  구분하므로, 항목의 sub 를 토큰에 함께 실어 보낸다.
+    //  (그냥 이름만 보내면 엉뚱한 폴더의 동명 파일이 내려간다)
+    final tokens = <String>[];
+    for (final m in _media) {
+      final nm = '${m['name']}';
+      if (!_mediaSel.contains(nm)) continue;
+      final s = '${m['sub'] ?? ''}';
+      tokens.add(s.isEmpty ? nm : '$s:$nm');
+    }
+    if (tokens.isEmpty) return;
     _download(
       _nas.eventZipUrl(
         widget.year,
@@ -3467,13 +3478,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     for (final m in items) {
       final name = '${m['name']}';
       final isdir = m['isdir'] == true;
+      // [중요] 평탄화 보기에서는 항목마다 폴더가 다르다 → 항목의 sub 사용.
+      final itemSub = '${m['sub'] ?? ''}'.isNotEmpty
+          ? '${m['sub']}'
+          : _mediaSub;
       try {
         final done = await _nas.eventFileDelete(
           widget.year,
           widget.title,
           'media',
           name,
-          sub: _mediaSub,
+          sub: itemSub,
           isdir: isdir,
         );
         if (done != true) fail++;
@@ -3505,10 +3520,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     //  미디어가 아닌 파일(.txt·.xlsx 등)은 썸네일을 아예 요청하지 않고
     //  파일 카드로 그린다.
     final isMedia = kind == 'image' || kind == 'video';
+    // [중요] 하위폴더까지 펼친 보기(평탄화)에서는 각 파일이 서로 다른
+    //  폴더에 있다. 항상 현재 폴더(_mediaSub)를 쓰면 썸네일이 404 로
+    //  깨져 '사진이 안 보인다'로 되돌아간다 → 항목별 sub 를 우선 사용.
+    final itemSub = '${m['sub'] ?? ''}'.isNotEmpty
+        ? '${m['sub']}'
+        : _mediaSub;
     // 썸네일 경로가 없으면 Image.network 을 만들지 않는다 —
     //  null URL 로 네트워크 요청이 나가는 것을 막는다.
     final thumbUrl = isMedia
-        ? _nas.eventThumb2Url(widget.year, widget.title, name, sub: _mediaSub)
+        ? _nas.eventThumb2Url(widget.year, widget.title, name, sub: itemSub)
         : '';
     // 화면 폭/열 수에 맞춰 디코딩 크기를 제한 → 메모리·디코딩 비용 절감(로딩 가속).
     final cacheW =
@@ -3940,8 +3961,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       return k == 'image' || k == 'video';
     }).toList();
     // 현재 타일이 가리키는 파일이 뷰어 목록에서 몇 번째인지.
+    //  (평탄화 보기에서는 같은 이름이 서로 다른 폴더에 있을 수 있어
+    //   이름 + sub 를 함께 비교한다)
     final name = '${tile['name']}';
-    var at = items.indexWhere((m) => '${m['name']}' == name);
+    final tileSub = '${tile['sub'] ?? ''}';
+    var at = items.indexWhere((m) =>
+        '${m['name']}' == name && '${m['sub'] ?? ''}' == tileSub);
+    if (at < 0) at = items.indexWhere((m) => '${m['name']}' == name);
     if (at < 0) at = 0;
     Navigator.push(
       context,
@@ -5586,6 +5612,15 @@ class _MediaViewerState extends State<_MediaViewer> {
 
   Map<String, dynamic> get _cur => widget.items[_index];
 
+  /// [중요] 뷰어가 지금 보고 있는 사진의 **하위폴더**.
+  ///  하위폴더까지 펼친(평탄화) 목록에서는 사진마다 폴더가 다르므로
+  ///  항목의 `sub` 를 우선 쓰고, 없으면 진입한 폴더를 쓴다.
+  ///  (이것을 쓰지 않으면 썸네일·원본·다운로드가 404 로 깨진다)
+  String get _curSub {
+    final s = '${_cur['sub'] ?? ''}';
+    return s.isNotEmpty ? s : widget.sub;
+  }
+
   bool get _canDelete {
     if (widget.canDeleteAll) return true;
     return '${_cur['uploader'] ?? ''}' == widget.myName;
@@ -5668,7 +5703,7 @@ class _MediaViewerState extends State<_MediaViewer> {
                 'media',
                 name,
                 download: true,
-                sub: widget.sub,
+                sub: _curSub,
               );
               // 요구: "사진 저장위치 선택창이 안나오니 이것도 조정해줘요".
               //  · 위치 선택창을 띄운 뒤, 바이트를 직접 받아 지정 위치/기본 폴더에 저장.
@@ -5705,7 +5740,7 @@ class _MediaViewerState extends State<_MediaViewer> {
                       widget.title,
                       'media',
                       n,
-                      sub: widget.sub,
+                      sub: _curSub,
                     ),
                   );
                 }
@@ -5717,7 +5752,7 @@ class _MediaViewerState extends State<_MediaViewer> {
                   widget.title,
                   n,
                   size: isOrig ? 'orig' : 'view',
-                  sub: widget.sub,
+                  sub: _curSub,
                 );
                 // 최적화·원본 모두 확대(핀치/더블탭) 가능.
                 // 원본은 화면을 가득 채우되 잘리지 않게(contain) 전체가 보인다.
@@ -5802,7 +5837,7 @@ class _MediaViewerState extends State<_MediaViewer> {
       widget.title,
       'media',
       '${_cur['name']}',
-      sub: widget.sub,
+      sub: _curSub,
     );
     if (mounted) Navigator.pop(context);
   }
