@@ -45,9 +45,109 @@ class DocPdf {
     );
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+  // 한자(CJK) 폴백 — [요구] "한자(金李朴…)가 PDF 에서 사라진다"
+  //
+  // 왜 별도 폰트인가:
+  //  번들 나눔고딕(-s, 서브셋)은 **한글 전용**이다. cmap 에 CJK 구간이 0자라
+  //  한자를 그릴 수 없고, `_paperSafe` 가 조용히 지워버렸다(□ 조차 안 남음).
+  //  나눔고딕을 통짜로 쓰면 20MB 라 앱이 무거워지므로, **한자 구간만** 뽑은
+  //  Noto Sans CJK KR 서브셋(4.9MB)을 fontFallback 으로 붙인다.
+  //
+  // 왜 조건부(지연) 로딩인가:
+  //  문서에 한자가 한 글자도 없으면 4.9MB 를 읽을 이유가 없다. 그래서
+  //  [build]/[buildReport] 진입 시 **문서 텍스트를 먼저 훑어** 한자가 있을
+  //  때만 `_ensureHanja()` 를 호출한다. (웹 초기 로딩·메모리 부담 최소화)
+  //
+  // ⚠️ OOM 주의: 이 서브셋은 `CFF `(OTF) 아웃라인이다. CJK 폰트를 임베드하면
+  //  서브셋 글리프가 늘어 파일이 커질 수 있으므로, 한자를 쓰는 문서에서만
+  //  로드하고 로드 후 캐시를 유지한다(매 문서 재파싱 금지).
+  // ───────────────────────────────────────────────────────────────────────
+  /// ⚠️ (2026-10-25) **기본 비활성.** 아래 실패 원인이 해결되면 `_hanjaOn = true`.
+  ///
+  /// pdf 3.12.0 은 `TextStyle.fontFallback` 을 제공하지만, 표 셀·TextSpan 등
+  /// 일부 경로에서 폴백 폰트를 조회하지 않고 **원본 폰트로만** 글자를 그린다.
+  /// 그래서 한자가 들어오면 `Invalid argument (string): Contains invalid
+  /// characters` 로 PDF 생성이 **통째로 실패**한다(실측).
+  /// 조용히 사라지는 것보다, 아예 켜지 않는 편이 안전하다.
+  ///
+  /// 대신 `print_doc.sanitizeDocText` 의 한자 제거를 없앴으므로
+  /// **브라우저 인쇄(HTML) 경로에서는 이제 한자가 정상 출력**된다.
+  static const bool _hanjaOn = false;
+
+  static pw.Font? _hanja;
+  static bool _hanjaTried = false;
+
+  /// 테스트 전용 — rootBundle 없이 폰트를 주입한다(`flutter test` 용).
+  ///  `_ensureFonts`/`_ensureHanja` 는 이미 값이 있으면 다시 읽지 않으므로,
+  ///  테스트에서 실제 파일을 로드해 넣으면 네트워크/에셋 없이 검증할 수 있다.
+  static void debugSetFonts({
+    pw.Font? regular,
+    pw.Font? bold,
+    pw.Font? hanja,
+  }) {
+    if (regular != null) _regular = regular;
+    if (bold != null) _bold = bold;
+    if (hanja != null) {
+      _hanja = hanja;
+      _hanjaTried = true;
+    }
+  }
+
+  static bool _hasHanja(String? s) {
+    if (s == null || s.isEmpty) return false;
+    for (final r in s.runes) {
+      if ((r >= 0x3400 && r <= 0x4DBF) || // CJK 확장 A
+          (r >= 0x4E00 && r <= 0x9FFF) || // CJK 통합
+          (r >= 0xF900 && r <= 0xFAFF)) {
+        // CJK 호환
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _hasHanjaIn(Object? v) {
+    if (v == null) return false;
+    if (v is String) return _hasHanja(v);
+    if (v is Iterable) return v.any(_hasHanjaIn);
+    if (v is Map) return v.values.any(_hasHanjaIn);
+    return false;
+  }
+
+  /// 문서에 한자가 있을 때만 한자 폴백 폰트를 로드한다(실패해도 계속).
+  static Future<void> _ensureHanja() async {
+    if (!_hanjaOn) return; // 위 주석 참조 — pdf 패키지 미지원
+    if (_hanjaTried) return;
+    _hanjaTried = true;
+    try {
+      _hanja = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/TsakHanja-s.ttf'),
+      );
+    } catch (_) {
+      _hanja = null;
+    }
+  }
+
+  /// 텍스트 스타일에 한자 폴백을 붙인다(로드되지 않았으면 그대로 반환).
+  static pw.TextStyle _fb(pw.TextStyle s) {
+    final h = _hanja;
+    if (h == null) return s;
+    return pw.TextStyle(
+      font: s.font,
+      fontFallback: [h],
+      fontSize: s.fontSize,
+      color: s.color,
+      fontWeight: s.fontWeight,
+      fontStyle: s.fontStyle,
+      letterSpacing: s.letterSpacing,
+      lineSpacing: s.lineSpacing,
+      decoration: s.decoration,
+    );
+  }
+
   /// 엠블럼 로드(실패해도 문서 생성은 계속 — 아이콘만 생략).
-  static Future<void> _ensureEmblem() async {
-    if (_emblemTried) return;
+  static Future<void> _ensureEmblem() async {    if (_emblemTried) return;
     _emblemTried = true;
     try {
       final b = await rootBundle.load('assets/images/tsak_emblem.png');
@@ -191,12 +291,25 @@ class DocPdf {
   }
 
   /// 폰트가 그릴 수 없는 글자를 제거한다(PDF 전용). 공백·줄바꿈은 보존.
+  ///
+  /// 한자 폴백([_hanja])이 로드돼 있으면 CJK 구간을 **지우지 않는다** —
+  /// 예전에는 한자를 무조건 지워 '金 李 朴' 같은 이름이 통째로 사라졌다.
+  static bool _isCjk(int r) =>
+      (r >= 0x3400 && r <= 0x4DBF) ||
+      (r >= 0x4E00 && r <= 0x9FFF) ||
+      (r >= 0xF900 && r <= 0xFAFF);
+
   static String _paperSafe(String s) {
     if (s.isEmpty) return s;
     final ranges = _ranges();
+    final keepHanja = _hanja != null;
     final b = StringBuffer();
     for (final r in s.runes) {
       if (r == 0x0A || r == 0x0D || r == 0x09 || r == 0x20) {
+        b.writeCharCode(r);
+        continue;
+      }
+      if (keepHanja && _isCjk(r)) {
         b.writeCharCode(r);
         continue;
       }
@@ -232,6 +345,10 @@ class DocPdf {
     Set<int> noWrapCols = const {},
   }) async {
     await _ensureFonts();
+    // 한자가 문서에 있을 때만 4.9MB 폴백 폰트를 읽는다(없으면 종전과 동일).
+    if (_hanjaOn && (_hasHanjaIn(columns) || _hasHanjaIn(rows))) {
+      await _ensureHanja();
+    }
     await _ensureEmblem();
     final reg = _regular!;
     final bold = _bold!;
@@ -244,8 +361,9 @@ class DocPdf {
     final double cellPt = (8.5 * scale * 10).roundToDouble() / 10;
     final int padV = (5 * rowSpaceMul).round().clamp(1, 14);
     final int headV = (6 * rowSpaceMul).round().clamp(1, 16);
-    final base = pw.TextStyle(font: reg, fontSize: cellPt, color: _ink);
-    final baseBold = pw.TextStyle(font: bold, fontSize: cellPt, color: _ink);
+    // [_fb] — 한자 폴백 폰트를 붙인다(로드되지 않았으면 원본 그대로).
+    final base = _fb(pw.TextStyle(font: reg, fontSize: cellPt, color: _ink));
+    final baseBold = _fb(pw.TextStyle(font: bold, fontSize: cellPt, color: _ink));
 
     final doc = pw.Document();
 
@@ -808,6 +926,13 @@ class DocPdf {
     DocTemplate template = DocTemplate.report,
   }) async {
     await _ensureFonts();
+    // 한자가 문서에 있을 때만 4.9MB 폴백 폰트를 읽는다.
+    if (_hanjaOn &&
+        (_hasHanjaIn(blocks.map((b) => [b.title, b.subtitle, b.note, ...b.rows])) ||
+            _hasHanjaIn(summary) ||
+            _hasHanjaIn(meta.title))) {
+      await _ensureHanja();
+    }
     await _ensureEmblem();
     final reg = _regular!;
     final bold = _bold!;
@@ -821,8 +946,9 @@ class DocPdf {
     //  사용자 의도이므로 살리되, **읽을 수 있는 하한(8.4pt)** 을 둔다.
     final cellPt = ((t.compact ? 8.8 : 9.4) * scale).clamp(8.4, 15.0);
     final int padV = (t.cellPadV * rowSpaceMul).round().clamp(2, 14);
-    final base = pw.TextStyle(font: reg, fontSize: cellPt, color: _ink);
-    final baseBold = pw.TextStyle(font: bold, fontSize: cellPt, color: _ink);
+    // [_fb] — 한자 폴백 폰트를 붙인다(로드되지 않았으면 원본 그대로).
+    final base = _fb(pw.TextStyle(font: reg, fontSize: cellPt, color: _ink));
+    final baseBold = _fb(pw.TextStyle(font: bold, fontSize: cellPt, color: _ink));
     // 블록 안 4열 비율 — 미리보기(SettlementPaperView)와 동일: 1.1 / 1.9 / 1.35 / 1.45
     final widths = <int, pw.TableColumnWidth>{
       0: const pw.FlexColumnWidth(1.1),
@@ -840,24 +966,23 @@ class DocPdf {
       ...meta.extra.entries,
     ];
 
-    // ── 블록 위젯 — **템플릿이 모양을 결정한다** ──────────────────────
-    //
-    //  (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿을 만들어서 선택"
-    //  데이터(rows)는 하나이고, 여기서 색 띠·괘선·카드·큰 숫자만 갈아끼운다.
-    //  → 같은 결산서가 '보고서형 / 장부형 / 카드형 / 미니멀형 / 공문서형 /
-    //    브리핑형' 6가지 인상으로 나온다.
-    pw.Widget blockWidget(DocReportBlock b, bool first) {
+
+    /// 한 블록을 **페이지 경계에서 나뉠 수 있는 조각들**로 푼다.
+    ///
+    /// 반환 순서: [헤더 조각, 행 표 조각, (메모 조각)] — 부가 껍데기(카드
+    /// 테두리)는 `pw.Container` 가 SpanningWidget 이 아니므로 **여기서는 쓰지
+    /// 않는다**. 카드형 템플릿의 테두리는 포기하고, 대신 블록이 페이지를 넘어도
+    /// 내용이 잘리지 않는 쪽을 택한다(빈 페이지보다 낫다).
+    ///
+    /// `firstFragment`: 블록 첫 조각인지(블록 간 여백 계산용).
+    /// `lastFragment` : 블록 마지막 조각인지(아래 여백 계산용).
+    List<pw.Widget> blockFrags(DocReportBlock b, bool first) {
       final accent = _hex(b.accent);
-      // ⚠️ 알파를 쓰지 않는다 — 흰 종이에 **미리 합성한 불투명 색**을 만든다.
-      //    (위 [_tint] 주석 참조: 4번째 인자는 pdf 패키지가 버린다)
-      //    띠는 아주 옅게(종이처럼), 합계 행은 조금 더 진하게.
       final bandTint = _tint(accent, t.bandAlpha * 0.62);
       final totalTint = _tint(accent, t.tintTotal * 0.55);
-      // 띠 위 제목은 **어두운 악센트** — 배경(옅은 틴트)과 명도가 크게 벌어져
-      // 어떤 프린터·저해상도 PDF 에서도 읽힌다. (종전: 배경색 = 글자색 → 실종)
       final bandInk = _darken(accent, 0.72);
 
-      // ① 제목부 — 띠(accentBand) / 가운데·좌측 / 괘선 유무
+      // ① 헤더 — 제목 띠 (뜯지 않고 한 덩어리)
       final titleRow = pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.end,
         children: [
@@ -884,47 +1009,41 @@ class DocPdf {
         ],
       );
 
-      pw.Widget header;
-      if (t.accentBand) {
-        header = pw.Container(
-          padding: pw.EdgeInsets.fromLTRB(
-            t.cellPadH + 2,
-            (t.cellPadV + 1.4).roundToDouble(),
-            t.cellPadH + 1,
-            (t.cellPadV + 1.4).roundToDouble(),
-          ),
-          decoration: pw.BoxDecoration(
-            color: bandTint,
-            // 좌측 컬러 바 + 아래 실선 — 옅은 배경만으로는 경계가 흐려져
-            // 블록이 붙어 보이므로 '띠'의 존재를 선으로 확정한다.
-            border: pw.Border(
-              left: pw.BorderSide(
-                color: _darken(accent, 0.25),
-                width: t.bandWidth > 0 ? t.bandWidth : 2.5,
+      final pw.Widget header = t.accentBand
+          ? pw.Container(
+              padding: pw.EdgeInsets.fromLTRB(
+                t.cellPadH + 2,
+                (t.cellPadV + 1.4).roundToDouble(),
+                t.cellPadH + 1,
+                (t.cellPadV + 1.4).roundToDouble(),
               ),
-              bottom: pw.BorderSide(color: _tint(accent, 0.42), width: 0.9),
-            ),
-          ),
-          child: titleRow,
-        );
-      } else {
-        header = pw.Container(
-          padding: const pw.EdgeInsets.only(bottom: 3),
-          decoration: pw.BoxDecoration(
-            border: pw.Border(
-              bottom: pw.BorderSide(
-                color: _border,
-                width: t.gridLines ? 0.9 : 0.6,
+              decoration: pw.BoxDecoration(
+                color: bandTint,
+                border: pw.Border(
+                  left: pw.BorderSide(
+                    color: _darken(accent, 0.25),
+                    width: t.bandWidth > 0 ? t.bandWidth : 2.5,
+                  ),
+                  bottom: pw.BorderSide(color: _tint(accent, 0.42), width: 0.9),
+                ),
               ),
-            ),
-          ),
-          child: titleRow,
-        );
-      }
+              child: titleRow,
+            )
+          : pw.Container(
+              padding: const pw.EdgeInsets.only(bottom: 3),
+              decoration: pw.BoxDecoration(
+                border: pw.Border(
+                  bottom: pw.BorderSide(
+                    color: _border,
+                    width: t.gridLines ? 0.9 : 0.6,
+                  ),
+                ),
+              ),
+              child: titleRow,
+            );
 
-      // ② 행 표 — gridLines 면 격자, 아니면 가로 괘선만.
-      //  괘선은 '보이되 시끄럽지 않게' — 종전 0.5pt 는 저해상도 인쇄에서 사라졌다.
-      final rowsWidget = pw.Table(
+      // ② 행 표 — MultiPage 의 직접 자식이어야 분할된다.
+      final rowsTable = pw.Table(
         columnWidths: widths,
         border: t.gridLines
             ? pw.TableBorder.all(color: _border, width: 0.6)
@@ -973,10 +1092,9 @@ class DocPdf {
         ],
       );
 
-      // ③ 하단 메모 — 종전 회색(_gray)은 인쇄에서 거의 사라졌다. 색을 진하게
-      //    하고 좌측 얇은 선으로 '표에 딸린 설명'임을 시각적으로 붙여준다.
+      // ③ 하단 메모
       final noteWidget = b.note.trim().isEmpty
-          ? pw.SizedBox()
+          ? null
           : pw.Container(
               margin: pw.EdgeInsets.only(top: 4, left: t.cellPadH * 0.4),
               padding: pw.EdgeInsets.only(
@@ -999,32 +1117,23 @@ class DocPdf {
               ),
             );
 
-      pw.Widget inner = pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [header, rowsWidget, noteWidget],
-      );
-
-      // ④ 카드 껍데기 — 블록을 둥근 테두리로 분리
-      //    종전 테두리색(_line 0xFFEDEAE3)은 흰 종이에서 보이지 않아 카드형이
-      //    '평평한 표'처럼 보였다 → 악센트를 옅게 깐 테두리로 교체.
-      if (t.cardShell) {
-        inner = pw.Container(
-          padding: const pw.EdgeInsets.fromLTRB(7, 7, 7, 6),
-          decoration: pw.BoxDecoration(
-            color: _tint(accent, 0.028),
-            border: pw.Border.all(color: _tint(accent, 0.34), width: 0.9),
-            borderRadius: pw.BorderRadius.circular(4),
-          ),
-          child: inner,
-        );
-      }
-
-      return pw.Padding(
-        padding: pw.EdgeInsets.only(
-          top: first ? 0 : t.blockGap * rowSpaceMul,
+      // 조각 결합 — 블록 사이 여백은 '헤더 조각의 위쪽'에만 준다.
+      return [
+        pw.Padding(
+          padding: pw.EdgeInsets.only(top: first ? 0 : t.blockGap * rowSpaceMul),
+          // ⚠ 여백(Padding)은 SpanningWidget 이 아니지만, 그 안의 Table 이
+          //  분할되려면 Padding 으로 감싸면 안 된다 → 헤더만 감싼다.
+          child: header,
         ),
-        child: inner,
-      );
+        if (b.rows.isNotEmpty) rowsTable,
+        if (noteWidget != null)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 1),
+            child: noteWidget,
+          )
+        else
+          pw.SizedBox(height: 1),
+      ];
     }
 
     doc.addPage(
@@ -1174,14 +1283,21 @@ class DocPdf {
             ),
           ),
           pw.SizedBox(height: 12),
-          // 블록들 — MultiPage 가 페이지 경계에서 자연스럽게 나눈다.
+          // ── 블록들 — **조각(frag) 단위**로 풀어서 MultiPage 에 넘긴다 ─────
+          //
+          //  ## 왜 블록을 조각으로 쪼개는가 (요구: "PDF 2페이지가 거의 비어 나온다")
+          //  `pw.MultiPage` 는 SpanningWidget(Table)만 페이지 경계에서 나눈다.
+          //  종전 코드는 블록 전체를 `Column[header, Table, note]` 로 감쌌는데
+          //  Column 은 SpanningWidget 이 아니라 **쪼갤 수 없는 덩어리**였다.
+          //  → 큰 블록(참가자 290명 등)은 통째로 다음 페이지로 밀리고, 남은
+          //    앞 페이지는 거의 빈 채로 인쇄됐다.
+          //
+          //  그래서 각 블록을 ① 헤더 조각 ② 행 조각들 ③ 메모 조각 으로 풀어
+          //  MultiPage 의 **직접 자식**으로 넣는다. Table 이 직접 자식이면
+          //  페이지 경계에서 행 단위로 자연스럽게 이어진다.
+          //  (머리행 반복은 `header:` 콜백이 모든 페이지에 그리므로 유지된다.)
           for (var i = 0; i < blocks.length; i++)
-            pw.Padding(
-              // 블록과 블록 사이에 페이지 분할 여지를 준다 — 종전에는 큰 블록이
-              // 통째로 밀려나 한 페이지가 거의 비었다(요구: 빈 페이지 정리).
-              padding: const pw.EdgeInsets.only(bottom: 1),
-              child: blockWidget(blocks[i], i == 0),
-            ),
+            ...blockFrags(blocks[i], i == 0),
           // 합계 요약
           if (summary.isNotEmpty)
             pw.Container(
@@ -1349,6 +1465,7 @@ class DocPdf {
     double desiredPt = 14.0,
   }) async {
     await _ensureFonts();
+    if (_hanjaOn && _hasHanjaIn(rows)) await _ensureHanja();
     await _ensureEmblem();
     _lastRosterCols = 1;
 

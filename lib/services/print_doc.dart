@@ -92,17 +92,20 @@ String sanitizeDocText(String? s) {
       b.writeCharCode(r);
       continue;
     }
-    if (r == 0x200D || r == 0xFE0F || r == 0xFE0E)
+    if (r == 0x200D || r == 0xFE0F || r == 0xFE0E) {
       continue; // ZWJ·variation selector
+    }
     if (r >= 0x1F000 && r <= 0x1FAFF) continue; // 이모지 블록
     if (r >= 0x2600 && r <= 0x27BF) continue; // 기타 기호/딩벳
     if (r >= 0x2B00 && r <= 0x2BFF) continue; // 화살표·도형
     if (r >= 0x2190 && r <= 0x21FF) continue; // 화살표
     if (r >= 0x3200 && r <= 0x33FF) continue; // 원문자·CJK 호환
     if (r >= 0xFE30 && r <= 0xFE4F) continue; // CJK 호환 형태
-    if (r >= 0x4E00 && r <= 0x9FFF) continue; // CJK 통합 한자
-    if (r >= 0x3400 && r <= 0x4DBF) continue; // CJK 확장 A
-    if (r >= 0xF900 && r <= 0xFAFF) continue; // CJK 호환 한자
+    // ⚠️ (변경) CJK 한자는 **여기서 지우지 않는다.**
+    //  · PDF 경로: `DocPdf.sanitize` → `_paperSafe` 가 담당한다. 한자 폴백
+    //    폰트(TsakHanja-s.otf)가 로드된 경우에만 남기고, 없으면 종전처럼 지운다.
+    //  · HTML(브라우저 인쇄) 경로: 시스템 폰트가 한자를 그릴 수 있으므로
+    //    지우는 것이 오히려 손해였다('金 李 朴' 이 사라짐).
     if (r >= 0xE000 && r <= 0xF8FF) continue; // 사설영역(PUA)
     b.writeCharCode(r);
   }
