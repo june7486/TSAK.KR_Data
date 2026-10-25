@@ -311,7 +311,7 @@ class _QrGenerateView extends StatelessWidget {
                             ),
                           ),
                           child: const Text(
-                            '⚠ 공개 접속 주소가 설정되지 않아 QR이 상대경로입니다.\n'
+                            '공개 접속 주소가 설정되지 않아 QR이 상대경로입니다.\n'
                             '스캔해도 앱이 열리지 않습니다.\n'
                             '설정 → “QR 공개 주소”에서 배포 주소를 입력하세요.',
                             style: TextStyle(

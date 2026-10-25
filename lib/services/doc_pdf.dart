@@ -96,6 +96,37 @@ class DocPdf {
   static const _head = PdfColor.fromInt(0xFFF4F1EA);
   static const _strong = PdfColor.fromInt(0xFF4A4A48);
 
+  /// ⚠️ **`PdfColor(r, g, b, alpha)` 의 4번째 인자(알파)는 `pdf` 패키지가
+  /// 버린다** — `BoxDecoration.color` / `TableRow.decoration` 안에서는 조용히
+  /// 무시되어 **완전 불투명**으로 그려진다.
+  ///
+  /// 실측 근거: 알파 0.10 으로 지정한 `#2E5F8A` 띠를 PDF 에서 역추적하면
+  /// `fill (0.18039, 0.37255, 0.54118)` = 알파가 사라진 원색 그대로였다.
+  /// 그 결과 ① 띠가 진한 색으로 꽉 차고 ② 제목 글씨도 같은 색이라 **글자가
+  /// 배경에 묻혀 보이지 않았다**. (요구: "글자와 배경의 가독성이 매우 낮아짐")
+  ///
+  /// 그래서 여기서는 알파를 **흰 종이 위에 합성한 불투명 색**으로 미리 계산한다.
+  /// `blend = 1 - (1 - c) * a` (a=0 → 흰색, a=1 → 원색).
+  static PdfColor _tint(PdfColor c, double a) {
+    final t = a.clamp(0.0, 1.0);
+    if (t >= 0.999) return c;
+    if (t <= 0.001) return PdfColor.fromInt(0xFFFFFFFF);
+    return PdfColor(
+      1 - (1 - c.red) * t,
+      1 - (1 - c.green) * t,
+      1 - (1 - c.blue) * t,
+    );
+  }
+
+  /// 악센트를 살짝 어둡게 — 띠 위 제목 글씨용(배경과 **명도 차이**를 만든다).
+  /// `k = 0` 원색, `k = 1` 검정.
+  static PdfColor _darken(PdfColor c, double k) {
+    final t = k.clamp(0.0, 1.0);
+    // 0.62 는 '진한 색이되 검정은 아닌' 지점 — 인쇄에서도 악센트가 남는다.
+    final m = t * 0.62;
+    return PdfColor(c.red * (1 - m), c.green * (1 - m), c.blue * (1 - m));
+  }
+
   static PdfColor _hex(String h) {
     var s = h.replaceAll('#', '').trim();
     if (s.length == 6) s = 'FF$s';
@@ -114,7 +145,72 @@ class DocPdf {
   ///
   /// 실제 규칙은 print_doc.dart 의 [sanitizeDocText] 하나로 공유한다 — 미리보기(HTML)
   /// 와 실제 PDF 가 **동일한 문자열**을 쓰도록 해 화면=출력이 어긋나지 않게 한다.
-  static String sanitize(String? s) => sanitizeDocText(s);
+  ///
+  /// 여기에 **종이(PDF) 전용 2차 필터**를 하나 더 건다. 이유:
+  ///  · HTML(브라우저)은 OS 폰트로 CJK·기호를 모두 그리지만, PDF 는 번들
+  ///    나눔고딕 **하나**로 그린다. 이 폰트에는 CJK 한자(0x4E00~)와 `✓ ㎡ ① ㎏ ㈜`
+  ///    같은 일부 기호가 **없다** → 그대로 두면 PDF 에서 □(두부)가 된다.
+  ///    (요구: "아이콘이 박스로 표현되는 것도 다시 체크")
+  ///  · 그래서 [sanitize] 는 PDF 경로 전용으로 두고, 실측한 글리프 표와 대조해
+  ///    그릴 수 없는 글자만 조용히 제거한다. HTML 경로는 [sanitizeDocText] 만 쓴다.
+  static String sanitize(String? s) => _paperSafe(sanitizeDocText(s));
+
+  /// 번들 나눔고딕(s) 이 실제로 가진 글자 구간 — `fontTools` 로 cmap 을 뽑아 만든
+  /// **실측 표**이다(35개 구간). 여기 없는 글자는 PDF 에서 반드시 □ 가 된다.
+  ///
+  /// ⚠️ 폰트를 교체하면 이 표도 다시 뽑아야 한다.
+  static const List<String> _paperRanges = [
+    '0x20-0x7E,0xB0-0xB3,0xB7,0xD7,0xF7,0x2013-0x2014,0x2018-0x2019,0x201C-0x201D',
+    '0x2022,0x2026,0x203B,0x20A9,0x2190-0x2194,0x25A0-0x25A1,0x25B2,0x25B6,0x25BC',
+    '0x25C0,0x25C6-0x25C7,0x25CB,0x25CF,0x2605-0x2606,0x2661,0x2665,0x2716',
+    '0x3001-0x3003,0x3008-0x3019,0x301E-0x3020,0x3036,0x3131-0x3163,0x3165-0x318E',
+    '0xAC00-0xD7A3,0xFF01-0xFF5E,0xFFE0-0xFFE3,0xFFE5-0xFFE6',
+  ];
+
+  static List<List<int>>? _rangeCache;
+
+  static List<List<int>> _ranges() {
+    final c = _rangeCache;
+    if (c != null) return c;
+    final out = <List<int>>[];
+    for (final line in _paperRanges) {
+      for (final token in line.split(',')) {
+        final t = token.trim();
+        if (t.isEmpty) continue;
+        final dash = t.indexOf('-', 1);
+        if (dash < 0) {
+          final v = int.parse(t);
+          out.add([v, v]);
+        } else {
+          out.add([int.parse(t.substring(0, dash)), int.parse(t.substring(dash + 1))]);
+        }
+      }
+    }
+    _rangeCache = out;
+    return out;
+  }
+
+  /// 폰트가 그릴 수 없는 글자를 제거한다(PDF 전용). 공백·줄바꿈은 보존.
+  static String _paperSafe(String s) {
+    if (s.isEmpty) return s;
+    final ranges = _ranges();
+    final b = StringBuffer();
+    for (final r in s.runes) {
+      if (r == 0x0A || r == 0x0D || r == 0x09 || r == 0x20) {
+        b.writeCharCode(r);
+        continue;
+      }
+      var ok = false;
+      for (final g in ranges) {
+        if (r >= g[0] && r <= g[1]) {
+          ok = true;
+          break;
+        }
+      }
+      if (ok) b.writeCharCode(r);
+    }
+    return b.toString().replaceAll(RegExp(r'[ \t]{2,}'), ' ').trim();
+  }
 
   /// 표 데이터로 **실제 PDF 바이트**를 만든다. (A4 세로 기본)
   ///
@@ -719,9 +815,12 @@ class DocPdf {
     final fmt = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
     final t = template;
-    final cellPt = ((t.compact ? 8.2 : 9.0) * scale * 10).roundToDouble() / 10;
-    final int padV =
-        (t.cellPadV * rowSpaceMul).round().clamp(1, 14);
+    // ── 글씨 크기 ────────────────────────────────────────────────────────
+    //  종전: 9.0pt × 사용자 배율(0.86) = **7.7pt** — A4 인쇄에서 본문이 사실상
+    //  읽히지 않았다(요구: "글자와 배경의 가독성이 매우 낮아짐"). 배율은
+    //  사용자 의도이므로 살리되, **읽을 수 있는 하한(8.4pt)** 을 둔다.
+    final cellPt = ((t.compact ? 8.8 : 9.4) * scale).clamp(8.4, 15.0);
+    final int padV = (t.cellPadV * rowSpaceMul).round().clamp(2, 14);
     final base = pw.TextStyle(font: reg, fontSize: cellPt, color: _ink);
     final baseBold = pw.TextStyle(font: bold, fontSize: cellPt, color: _ink);
     // 블록 안 4열 비율 — 미리보기(SettlementPaperView)와 동일: 1.1 / 1.9 / 1.35 / 1.45
@@ -749,18 +848,14 @@ class DocPdf {
     //    브리핑형' 6가지 인상으로 나온다.
     pw.Widget blockWidget(DocReportBlock b, bool first) {
       final accent = _hex(b.accent);
-      final bandTint = PdfColor(
-        accent.red,
-        accent.green,
-        accent.blue,
-        t.bandAlpha,
-      );
-      final totalTint = PdfColor(
-        accent.red,
-        accent.green,
-        accent.blue,
-        t.tintTotal,
-      );
+      // ⚠️ 알파를 쓰지 않는다 — 흰 종이에 **미리 합성한 불투명 색**을 만든다.
+      //    (위 [_tint] 주석 참조: 4번째 인자는 pdf 패키지가 버린다)
+      //    띠는 아주 옅게(종이처럼), 합계 행은 조금 더 진하게.
+      final bandTint = _tint(accent, t.bandAlpha * 0.62);
+      final totalTint = _tint(accent, t.tintTotal * 0.55);
+      // 띠 위 제목은 **어두운 악센트** — 배경(옅은 틴트)과 명도가 크게 벌어져
+      // 어떤 프린터·저해상도 PDF 에서도 읽힌다. (종전: 배경색 = 글자색 → 실종)
+      final bandInk = _darken(accent, 0.72);
 
       // ① 제목부 — 띠(accentBand) / 가운데·좌측 / 괘선 유무
       final titleRow = pw.Row(
@@ -771,8 +866,8 @@ class DocPdf {
               sanitize(b.title),
               style: pw.TextStyle(
                 font: bold,
-                fontSize: cellPt * (t.bigFigures ? 1.18 : 1.02),
-                color: t.accentBand || t.cardShell ? accent : _ink,
+                fontSize: cellPt * (t.bigFigures ? 1.24 : 1.06),
+                color: t.accentBand ? bandInk : _ink,
                 letterSpacing: 0.1,
               ),
             ),
@@ -782,8 +877,8 @@ class DocPdf {
               sanitize(b.subtitle),
               style: pw.TextStyle(
                 font: bold,
-                fontSize: cellPt * 0.76,
-                color: _gray,
+                fontSize: cellPt * 0.78,
+                color: _darken(_gray, 0.25),
               ),
             ),
         ],
@@ -793,18 +888,22 @@ class DocPdf {
       if (t.accentBand) {
         header = pw.Container(
           padding: pw.EdgeInsets.fromLTRB(
+            t.cellPadH + 2,
+            (t.cellPadV + 1.4).roundToDouble(),
             t.cellPadH + 1,
-            t.cellPadV,
-            t.cellPadH + 1,
-            t.cellPadV,
+            (t.cellPadV + 1.4).roundToDouble(),
           ),
           decoration: pw.BoxDecoration(
             color: bandTint,
-            border: t.bandWidth > 0
-                ? pw.Border(
-                    left: pw.BorderSide(color: accent, width: t.bandWidth),
-                  )
-                : null,
+            // 좌측 컬러 바 + 아래 실선 — 옅은 배경만으로는 경계가 흐려져
+            // 블록이 붙어 보이므로 '띠'의 존재를 선으로 확정한다.
+            border: pw.Border(
+              left: pw.BorderSide(
+                color: _darken(accent, 0.25),
+                width: t.bandWidth > 0 ? t.bandWidth : 2.5,
+              ),
+              bottom: pw.BorderSide(color: _tint(accent, 0.42), width: 0.9),
+            ),
           ),
           child: titleRow,
         );
@@ -824,18 +923,17 @@ class DocPdf {
       }
 
       // ② 행 표 — gridLines 면 격자, 아니면 가로 괘선만.
-      final tableBorder = t.gridLines
-          ? pw.TableBorder.all(color: _border, width: 0.5)
-          : pw.TableBorder(
-              horizontalInside: const pw.BorderSide(
-                color: _border,
-                width: 0.5,
-              ),
-            );
-
+      //  괘선은 '보이되 시끄럽지 않게' — 종전 0.5pt 는 저해상도 인쇄에서 사라졌다.
       final rowsWidget = pw.Table(
         columnWidths: widths,
-        border: tableBorder,
+        border: t.gridLines
+            ? pw.TableBorder.all(color: _border, width: 0.6)
+            : pw.TableBorder(
+                horizontalInside: const pw.BorderSide(
+                  color: _border,
+                  width: 0.6,
+                ),
+              ),
         children: [
           for (final r in b.rows)
             pw.TableRow(
@@ -846,7 +944,7 @@ class DocPdf {
                 _rcell(
                   r.isNotEmpty ? r[0] : '',
                   base: baseBold,
-                  accent: _isReportTotal(r) ? accent : null,
+                  accent: _isReportTotal(r) ? bandInk : null,
                   padV: padV,
                   padH: t.cellPadH,
                 ),
@@ -860,7 +958,7 @@ class DocPdf {
                   r.length > 2 ? r[2] : '',
                   base: baseBold,
                   align: 'right',
-                  accent: _isReportTotal(r) ? accent : null,
+                  accent: _isReportTotal(r) ? bandInk : null,
                   padV: padV,
                   padH: t.cellPadH,
                 ),
@@ -875,17 +973,28 @@ class DocPdf {
         ],
       );
 
-      // ③ 하단 메모
+      // ③ 하단 메모 — 종전 회색(_gray)은 인쇄에서 거의 사라졌다. 색을 진하게
+      //    하고 좌측 얇은 선으로 '표에 딸린 설명'임을 시각적으로 붙여준다.
       final noteWidget = b.note.trim().isEmpty
           ? pw.SizedBox()
-          : pw.Padding(
-              padding: pw.EdgeInsets.only(top: 3, left: t.cellPadH),
+          : pw.Container(
+              margin: pw.EdgeInsets.only(top: 4, left: t.cellPadH * 0.4),
+              padding: pw.EdgeInsets.only(
+                left: (t.cellPadH * 0.9).clamp(4.0, 10.0),
+                top: 1.5,
+              ),
+              decoration: pw.BoxDecoration(
+                border: pw.Border(
+                  left: pw.BorderSide(color: _tint(accent, 0.5), width: 1.6),
+                ),
+              ),
               child: pw.Text(
                 sanitize(b.note),
                 style: pw.TextStyle(
                   font: reg,
-                  fontSize: cellPt * 0.8,
-                  color: _gray,
+                  fontSize: (cellPt * 0.86).clamp(7.6, 12.0),
+                  color: _darken(_gray, 0.42),
+                  lineSpacing: 1.2,
                 ),
               ),
             );
@@ -896,12 +1005,15 @@ class DocPdf {
       );
 
       // ④ 카드 껍데기 — 블록을 둥근 테두리로 분리
+      //    종전 테두리색(_line 0xFFEDEAE3)은 흰 종이에서 보이지 않아 카드형이
+      //    '평평한 표'처럼 보였다 → 악센트를 옅게 깐 테두리로 교체.
       if (t.cardShell) {
         inner = pw.Container(
-          padding: const pw.EdgeInsets.fromLTRB(6, 6, 6, 5),
+          padding: const pw.EdgeInsets.fromLTRB(7, 7, 7, 6),
           decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: _line, width: 0.9),
-            borderRadius: pw.BorderRadius.circular(3),
+            color: _tint(accent, 0.028),
+            border: pw.Border.all(color: _tint(accent, 0.34), width: 0.9),
+            borderRadius: pw.BorderRadius.circular(4),
           ),
           child: inner,
         );
@@ -1064,12 +1176,17 @@ class DocPdf {
           pw.SizedBox(height: 12),
           // 블록들 — MultiPage 가 페이지 경계에서 자연스럽게 나눈다.
           for (var i = 0; i < blocks.length; i++)
-            blockWidget(blocks[i], i == 0),
+            pw.Padding(
+              // 블록과 블록 사이에 페이지 분할 여지를 준다 — 종전에는 큰 블록이
+              // 통째로 밀려나 한 페이지가 거의 비었다(요구: 빈 페이지 정리).
+              padding: const pw.EdgeInsets.only(bottom: 1),
+              child: blockWidget(blocks[i], i == 0),
+            ),
           // 합계 요약
           if (summary.isNotEmpty)
             pw.Container(
               margin: const pw.EdgeInsets.only(top: 14),
-              padding: const pw.EdgeInsets.only(top: 9),
+              padding: const pw.EdgeInsets.only(top: 9, left: 2, right: 2),
               decoration: const pw.BoxDecoration(
                 border: pw.Border(top: pw.BorderSide(color: _strong, width: 1.3)),
               ),
@@ -1077,12 +1194,20 @@ class DocPdf {
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
                   for (final s in summary)
-                    pw.Text(
-                      sanitize(s),
-                      style: pw.TextStyle(
-                        font: bold,
-                        fontSize: (10 * scale * 10).roundToDouble() / 10,
-                        color: _ink,
+                    pw.Padding(
+                      // 요약줄끼리 겹치던 문제(2페이지 실측) — 줄 간 여백 확보.
+                      padding: const pw.EdgeInsets.only(top: 2.5),
+                      child: pw.Text(
+                        sanitize(s),
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(
+                          font: bold,
+                          fontSize: ((10 * scale).clamp(9.0, 15.0) * 10)
+                                  .roundToDouble() /
+                              10,
+                          color: _ink,
+                          lineSpacing: 2,
+                        ),
                       ),
                     ),
                 ],

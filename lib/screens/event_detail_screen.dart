@@ -4331,12 +4331,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
     return TsakTableDoc(
       title: '${widget.year} ${widget.title}',
-      subtitle:
-          '행사 결산서 · ${blocks.length}개 항목'
-          '${layout.isStyled ? ' · ${layout.styleBadge}' : ''}',
-      description: layout.isFiltered
-          ? '선택한 항목만 담은 결산서입니다(제외 ${layout.order.length - blocks.length}개).'
-          : '참가자 수·수입·후원·지출·잔액을 항목별로 정리한 결산서입니다.',
+      // (요구) "문서의 편집스타일을 넣지마"
+      //  종전 부제: '행사 결산서 · 6개 항목 · 세로 · 글씨 86% · 줄간격 72% ·
+      //             상세 6/6 · 보고서형'
+      //  → 앞의 세로/글씨/줄간격/상세/서식은 **편집기 상태**이지 문서 내용이
+      //    아니다. 인쇄물에는 '무엇을 담았는지'만 남긴다.
+      subtitle: '행사 결산서 · ${blocks.length}개 항목',
+      // 설명도 편집기 문구('제외 N개')를 쓰지 않는다.
+      description: '참가자 수·수입·후원·지출·잔액을 항목별로 정리한 결산서입니다.',
       columns: const ['구분', '항목', '금액/인원', '비고'],
       rows: rows,
       summary: [

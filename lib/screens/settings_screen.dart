@@ -213,7 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 10),
             _kv('설정값', configured.isEmpty ? '(미설정 — 현재 주소 사용)' : configured),
-            _kv('현재 QR 기준', effective.isEmpty ? '⚠ 공개 주소 없음' : effective),
+            _kv('현재 QR 기준', effective.isEmpty ? '공개 주소 없음' : effective),
             const SizedBox(height: 10),
             Row(
               children: [

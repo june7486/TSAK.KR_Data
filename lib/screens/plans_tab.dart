@@ -746,7 +746,7 @@ class _PlansTabState extends State<PlansTab> {
                   child: Text(
                     '신청 $count명'
                     '${minQty > 0 ? ' / 최소 $minQty명' : ''}'
-                    '${minQty > 0 && count >= minQty ? '  ✓ 제작가능' : ''}',
+                    '${minQty > 0 && count >= minQty ? '  · 제작가능' : ''}',
                     style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,

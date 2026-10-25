@@ -244,7 +244,7 @@ class _DonateSheetState extends State<_DonateSheet> {
                   _qrCard(),
                   const SizedBox(height: 12),
                   const Text(
-                    '후원금은 앱 유지·개발에 소중히 사용됩니다. 감사합니다 🐅',
+                    '후원금은 앱 유지·개발에 소중히 사용됩니다. 감사합니다',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 11.5,
@@ -283,7 +283,7 @@ class _DonateSheetState extends State<_DonateSheet> {
               color: AppColors.tigerGold,
               shape: BoxShape.circle,
             ),
-            child: const Text('🐅', style: TextStyle(fontSize: 22)),
+            child: const Icon(Icons.pets, size: 24, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(

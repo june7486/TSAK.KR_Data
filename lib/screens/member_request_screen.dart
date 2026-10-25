@@ -1119,7 +1119,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '🔒 마스터에게 위임됨 — 마스터만 처리할 수 있습니다'
+                  '마스터에게 위임됨 — 마스터만 처리할 수 있습니다'
                   '${'${m['delegatedBy'] ?? ''}'.trim().isNotEmpty ? ' (위임: ${m['delegatedBy']})' : ''}',
                   style: const TextStyle(
                     fontSize: 11.5,

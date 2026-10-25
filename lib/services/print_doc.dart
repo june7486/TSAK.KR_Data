@@ -56,6 +56,29 @@ const Map<String, String> _kEmojiText = {
   '✉': '메일 :',
   '📧': '메일 :',
   '📨': '메일 :',
+  // ── 기호류 ───────────────────────────────────────────────────────────
+  //  종전에는 아래 글자들이 그대로 남아 **PDF 폰트에 글리프가 없어 □(두부)**
+  //  로 찍혔다. (요구: "아이콘이 박스로 표현되는 것도 다시 체크")
+  //  지우면 의미가 사라지므로, 뜻이 통하는 문자로 바꿔 둔다.
+  '✓': '○',
+  '✔': '○',
+  '☑': '○',
+  '✕': '×',
+  '✗': '×',
+  '✘': '×',
+  '⚠': '주의',
+  '❗': '!',
+  '❕': '!',
+  '🔒': '잠금',
+  '🔓': '열림',
+  '⭐': '★',
+  '🌟': '★',
+  '✅': '○',
+  '❌': '×',
+  '➡': '→',
+  '⬅': '←',
+  '⬆': '↑',
+  '⬇': '↓',
 };
 
 /// 문서 텍스트 안전화 — 이모지/미지원 글리프를 정리한다(print_doc·doc_pdf 공용 규칙).
@@ -523,22 +546,34 @@ String buildReportDocHtml({
  /* ── 블록 ── */
  .blk{margin:0 0 13px;page-break-inside:avoid}
  .blk:last-child{margin-bottom:0}
+ /* 띠 배경은 아주 옅게(종이 느낌). 글자는 **배경보다 진한 색** —
+    종전에는 배경과 같은 악센트 원색이라 글자가 배경에 묻혔다.
+    (요구: "글자와 배경의 가독성이 매우 낮아짐") */
  .bh{display:flex;align-items:baseline;justify-content:space-between;
-   gap:8px;padding:4px 7px;background:color-mix(in srgb,var(--ac) 10%,#fff);
-   border-left:3px solid var(--ac)}
- .bt{font-size:12.5px;font-weight:800;color:var(--ac);letter-spacing:.2px}
- .bs{font-size:10.5px;color:#9A9388;white-space:nowrap}
+   gap:8px;padding:5px 8px;background:#F1EFF4;
+   background:color-mix(in srgb,var(--ac) 8%,#fff);
+   border-left:4px solid #5A4A78;border-left:4px solid var(--ac);
+   border-bottom:1px solid #E2DEE8;
+   border-bottom:1px solid color-mix(in srgb,var(--ac) 34%,#fff)}
+ .bt{font-size:12.8px;font-weight:800;color:#2A2A2A;letter-spacing:.2px;
+   color:color-mix(in srgb,var(--ac) 76%,#111)}
+ .bs{font-size:10.5px;color:#6E6960;white-space:nowrap}
  .bt-tbl{width:100%;border-collapse:collapse;table-layout:fixed}
- .bt-tbl td{border-bottom:1px solid #EDEAE3;padding:4px 6px;
+ .bt-tbl td{border-bottom:1px solid #DDD8CE;padding:4.5px 6px;
    vertical-align:top;word-break:break-word}
- .bt-tbl td.c0{width:22%;font-weight:600;color:#4A4A48}
- .bt-tbl td.c1{width:38%}
+ .bt-tbl td.c0{width:22%;font-weight:600;color:#3A3A3A}
+ .bt-tbl td.c1{width:38%;color:#333}
  .bt-tbl td.c2{width:20%;text-align:right;font-variant-numeric:tabular-nums}
- .bt-tbl td.c3{width:20%;color:#7A756C;font-size:.94em}
- .bt-tbl td.detail{color:#9A9388;font-weight:400;font-style:italic}
- .bt-tbl tr.total td{background:color-mix(in srgb,var(--ac) 6%,#fff);
-   font-weight:700}
- .bn{font-size:10.5px;color:#9A9388;padding:4px 7px 0;line-height:1.5}
+ .bt-tbl td.c3{width:20%;color:#57534B;font-size:.94em}
+ .bt-tbl td.detail{color:#5A564E;font-weight:400;font-style:italic}
+ .bt-tbl tr.total td{background:#F6F4F9;
+   background:color-mix(in srgb,var(--ac) 7%,#fff);
+   font-weight:700;color:#2A2A2A;
+   border-top:1px solid color-mix(in srgb,var(--ac) 30%,#fff)}
+ .bn{font-size:10.5px;color:#5A564E;padding:5px 8px 0;line-height:1.55;
+   border-left:2px solid #D8D3CA;
+   border-left:2px solid color-mix(in srgb,var(--ac) 45%,#fff);
+   margin-left:2px}
  /* ── 합계 ── */
  .sum{margin-top:16px;padding:12px 16px;border-top:2px solid #3A3A3A;
    background:#F8F7F4;text-align:right;font-size:12.5px;line-height:1.9;
