@@ -1,4 +1,4 @@
-/// **출력 템플릿 6종 + 보고서형 경로** 검증 하네스 — `dart run` 으로 실행.
+/// **출력 템플릿 8종 + 보고서형 경로** 검증 하네스 — `dart run` 으로 실행.
 ///
 /// ## 왜 이 하네스가 필요한가 (실제로 두 번 실패했기 때문)
 /// 1) `DocPdf.buildReport` 를 만들었는데 **출력 시트가 reportBlocks 를 버려서**
@@ -29,11 +29,11 @@ void check(String label, bool ok, [String detail = '']) {
 }
 
 void main() {
-  stdout.writeln('═══ 출력 템플릿 6종 검증 ═══\n');
+  stdout.writeln('═══ 출력 템플릿 8종 검증 ═══\n');
 
   // ── ① 템플릿 목록 자체 ──
   stdout.writeln('[1] 템플릿 목록');
-  check('정확히 6종', DocTemplate.all.length == 6, '${DocTemplate.all.length}');
+  check('정확히 8종', DocTemplate.all.length == 8, '${DocTemplate.all.length}');
   check(
     '중복 없음',
     DocTemplate.all.toSet().length == DocTemplate.all.length,
@@ -49,7 +49,11 @@ void main() {
   );
   check(
     '라벨 유일',
-    DocTemplate.all.map((t) => t.label).toSet().length == 6,
+    DocTemplate.all.map((t) => t.label).toSet().length == 8,
+  );
+  check(
+    '설명(hint) 유일 — 서로 다른 템플릿임을 사용자가 구분',
+    DocTemplate.all.map((t) => t.hint).toSet().length == 8,
   );
 
   // ── ② parse / 저장 라운드트립 ──
@@ -73,12 +77,12 @@ void main() {
   stdout.writeln('\n[3] next() 순환');
   var cur = DocTemplate.report;
   final seen = <DocTemplate>{cur};
-  for (var i = 0; i < 5; i++) {
+  for (var i = 0; i < 7; i++) {
     cur = cur.next;
     seen.add(cur);
   }
-  check('5회 next 로 6종 모두 방문', seen.length == 6, '${seen.length}');
-  check('6회 next 면 원점', cur.next == DocTemplate.report);
+  check('7회 next 로 8종 모두 방문', seen.length == 8, '${seen.length}');
+  check('8회 next 면 원점', cur.next == DocTemplate.report);
 
   // ── ④ 시각 속성이 템플릿마다 다르다 ──
   stdout.writeln('\n[4] 시각 속성 구분');
@@ -123,13 +127,54 @@ void main() {
     !DocTemplate.official.accentBand && DocTemplate.official.gridLines,
   );
   check(
-    '6종의 (accentBand,gridLines,cardShell) 조합이 3가지 이상',
+    '8종의 (accentBand,gridLines,cardShell) 조합이 4가지 이상',
     DocTemplate.all
             .map((t) => '${t.accentBand}/${t.gridLines}/${t.cardShell}')
             .toSet()
             .length >=
-        3,
+        4,
   );
+
+  // ── 신규 2종의 '고유 축' 검사 — 다른 7종과 섞이지 않는가 ──
+  stdout.writeln('\n[4-2] 신규 2종이 다른 6종과 확실히 구분되는가');
+  check('색면형만 원색 꽉 찬 띠', DocTemplate.duotone.isSolidBand);
+  check(
+    '색면형 외에는 꽉 찬 띠 없음',
+    DocTemplate.all.where((t) => t != DocTemplate.duotone).every(
+      (t) => !t.isSolidBand,
+    ),
+  );
+  check('색면형은 좌측 바 폭 0(면이므로 불필요)', DocTemplate.duotone.bandWidth == 0);
+  check('인장형만 이중 괘선', DocTemplate.stamp.doubleRule);
+  check(
+    '인장형 외에는 이중 괘선 없음',
+    DocTemplate.all.where((t) => t != DocTemplate.stamp).every(
+      (t) => !t.doubleRule,
+    ),
+  );
+  check('인장형만 도장 칸', DocTemplate.stamp.stampBox);
+  check(
+    '인장형 외에는 도장 칸 없음',
+    DocTemplate.all.where((t) => t != DocTemplate.stamp).every(
+      (t) => !t.stampBox,
+    ),
+  );
+  check('인장형은 제목 가운데(제출용)', DocTemplate.stamp.centerTitle);
+  // 8종이 '띠 / 괘선 / 카드 / 여백 / 격자 / 숫자 / 색면 / 인장' 8축을 나눠 갖는지.
+  final axes = <String>{
+    for (final t in DocTemplate.all) ...[
+      if (t.isSolidBand) 'solid',
+      if (t.cardShell) 'card',
+      if (t.gridLines) 'grid',
+      if (t.centerTitle) 'center',
+      if (t.bigFigures) 'big',
+      if (t.compact) 'compact',
+      if (t.stampBox) 'stamp',
+      if (t.doubleRule) 'double',
+      if (t.bandAlpha == 0 && t.tintTotal == 0) 'plain',
+    ],
+  };
+  check('서로 다른 시각 축 6가지 이상', axes.length >= 6, '${axes.length}: $axes');
 
   // ── ⑤ 보고서형 HTML 이 실제로 그려지는가 ──
   //

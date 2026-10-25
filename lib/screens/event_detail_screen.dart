@@ -17,6 +17,7 @@ import '../services/file_pick.dart';
 import '../services/file_save.dart';
 import '../services/nas_api.dart';
 import '../services/output_formats.dart';
+import '../services/settlement_doc.dart';
 import '../services/settlement_layout.dart';
 import '../services/table_export.dart';
 import '../services/table_options.dart';
@@ -4773,63 +4774,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///  페이지에서 선택 … 항목별 위치 이동 … 실시간 미리보기"
   /// → 결산 탭이 만든 [SettlementLayout] + 블록 데이터를 그대로 문서로 옮긴다.
   ///   화면 미리보기와 **같은 데이터**라 "보이는 것 = 인쇄되는 것"이 된다.
+  /// 행사 결산표 문서 — 사용자가 고른 **블록(항목)만, 고른 순서로**.
+  ///
+  /// (요구) "결산페이지 … 각 항목별로 취합된 데이터를 보여주고, 출력여부를 그
+  ///  페이지에서 선택 … 항목별 위치 이동 … 실시간 미리보기"
+  ///
+  /// ## 왜 [SettlementDoc] 로 옮겼나
+  /// 종전에는 이 화면 안에서 4열 행을 조립하고 reportBlocks 를 만들었다.
+  /// 그 결과 **미리보기 위젯**(SettlementPaperView)과 **문서**가 각자 조립해
+  /// 상세 내역·메모 규칙이 어긋날 위험이 있었다. 이제 변환 지점은
+  /// `SettlementDoc.build` 하나뿐이고, 미리보기·PDF·JPG·엑셀·워드·인쇄가
+  /// 모두 이 함수를 쓴다 — "보이는 것 = 인쇄되는 것".
   TsakTableDoc _settlementDoc(
     SettlementLayout layout,
     Map<SettlementBlock, SettlementBlockData> data,
-  ) {
-    final s = _settlementOf();
-    final blocks = layout.included;
-    final rows = <List<String>>[];
-
-    for (var i = 0; i < blocks.length; i++) {
-      final b = blocks[i];
-      final d = data[b];
-      if (d == null) continue;
-      // 블록 구분 띠 — 4열 첫 칸에 블록명, 나머지는 병합 느낌으로 비운다.
-      rows.add([b.label, '', '', '']);
-      for (final r in d.rows) {
-        rows.add([
-          '',
-          r.isNotEmpty ? r[0] : '',
-          r.length > 1 ? r[1] : '',
-          r.length > 2 ? r[2] : '',
-        ]);
-      }
-      if (d.note.isNotEmpty) {
-        rows.add(['', '· ${d.note}', '', '']);
-      }
-    }
-
-    return TsakTableDoc(
-      title: '${widget.year} ${widget.title}',
-      // (요구) "문서의 편집스타일을 넣지마"
-      //  종전 부제: '행사 결산서 · 6개 항목 · 세로 · 글씨 86% · 줄간격 72% ·
-      //             상세 6/6 · 보고서형'
-      //  → 앞의 세로/글씨/줄간격/상세/서식은 **편집기 상태**이지 문서 내용이
-      //    아니다. 인쇄물에는 '무엇을 담았는지'만 남긴다.
-      subtitle: '행사 결산서 · ${blocks.length}개 항목',
-      // 설명도 편집기 문구('제외 N개')를 쓰지 않는다.
-      description: '참가자 수·수입·후원·지출·잔액을 항목별로 정리한 결산서입니다.',
-      columns: const ['구분', '항목', '금액/인원', '비고'],
-      rows: rows,
-      summary: [
-        '수입 ${_won(s.incomeTotal)} · 지출 ${_won(s.expenseTotal)}'
-            ' · 잔액 ${_won(s.balance)}',
-        s.attendeeCount.summaryLine,
-      ],
-      footerLeft: '한국범스카우트중앙회 · 행사 결산',
-      // 미리보기에서 고른 용지 방향과 서식(글씨·줄간격·두줄방지)을 그대로 넘긴다.
-      landscape: layout.landscape,
-      options: layout.toOutputOptions(),
-      // (요구) "pdf 출력물의 형태는 결산의 경우 기존 무인양품 스타일을 버리고,
-      //  미리보기 항목의 내용을 참조해서 항목별로 보기좋게 출력 … 보고서처럼"
-      //  → PDF/JPG 는 블록 컬러 띠 + 4열 표(미리보기와 동일 그래픽)로 나간다.
-      //  CSV/워드/TXT/HTML 인쇄는 위의 columns/rows 를 그대로 쓰므로 영향 없다.
-      reportBlocks: SettlementReportBuilder.build(layout: layout, data: data),
-      // (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿" — 미리보기에서 고른 모양.
-      template: layout.template,
-    );
-  }
+  ) =>
+      SettlementDoc.build(
+        year: widget.year,
+        title: widget.title,
+        layout: layout,
+        data: data,
+        settlement: _settlementOf(),
+        won: _won,
+      );
 
   /// 결산 집계(문서·요약 공용).
   EventSettlement _settlementOf() => EventSettlement(

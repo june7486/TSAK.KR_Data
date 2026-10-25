@@ -102,6 +102,8 @@ class SettlementPaperView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 인장형 — 문서 위쪽 **이중 실선**(PDF 의 buildBackground 와 같은 규칙).
+            if (_tpl.doubleRule) _doubleRule(),
             if (blocks.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
@@ -123,9 +125,75 @@ class SettlementPaperView extends StatelessWidget {
               // 요약 꼬리 — 실제 문서의 summary 줄과 같은 내용.
               if (blocks.any((b) => b == SettlementBlock.balance))
                 const SizedBox.shrink(),
+              // 인장형 — 확인 도장 칸(화면에서도 그대로 보여야 '보이는 것 = 인쇄').
+              if (_tpl.stampBox) _stampBox(),
+              if (_tpl.doubleRule) _doubleRule(),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// 인장형 전용 — 이중 실선(굵은 선 + 가는 선).
+  Widget _doubleRule() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(
+        children: [
+          Container(height: 1.7, color: const Color(0xFF6B6660)),
+          const SizedBox(height: 2.4),
+          Container(height: 0.8, color: const Color(0xFFB9B3A9)),
+        ],
+      ),
+    );
+  }
+
+  /// 인장형 전용 — 작성·확인·승인 도장 칸.
+  Widget _stampBox() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          for (final role in const ['작성', '확인', '승인'])
+            Container(
+              width: 62,
+              margin: const EdgeInsets.only(left: 4),
+              child: Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 2.5),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFF6B6660)),
+                    ),
+                    child: Text(
+                      role,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: _fs * 0.66,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(color: const Color(0xFF6B6660)),
+                        right: BorderSide(color: const Color(0xFF6B6660)),
+                        bottom: BorderSide(color: const Color(0xFF6B6660)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -146,7 +214,7 @@ class SettlementPaperView extends StatelessWidget {
             Container(
               padding: _tpl.accentBand
                   ? EdgeInsets.fromLTRB(
-                      _tpl.cellPadH + 1,
+                      _tpl.cellPadH + (_tpl.isSolidBand ? 0 : 1),
                       3.4 * rowSpace,
                       _tpl.cellPadH + 1,
                       3.4 * rowSpace,
@@ -154,17 +222,22 @@ class SettlementPaperView extends StatelessWidget {
                   : const EdgeInsets.only(bottom: 3),
               decoration: _tpl.accentBand
                   ? BoxDecoration(
-                      color: _blockColor(
-                        block,
-                      ).withValues(alpha: _tpl.bandAlpha),
-                      border: _tpl.bandWidth > 0
-                          ? Border(
-                              left: BorderSide(
-                                color: _blockColor(block),
-                                width: _tpl.bandWidth,
-                              ),
-                            )
-                          : null,
+                      // 색면형은 원색으로 **꽉 채운다**(PDF 와 같은 규칙).
+                      color: _tpl.isSolidBand
+                          ? _blockColor(block).withValues(alpha: 0.92)
+                          : _blockColor(
+                              block,
+                            ).withValues(alpha: _tpl.bandAlpha),
+                      border: _tpl.isSolidBand
+                          ? null
+                          : (_tpl.bandWidth > 0
+                                ? Border(
+                                    left: BorderSide(
+                                      color: _blockColor(block),
+                                      width: _tpl.bandWidth,
+                                    ),
+                                  )
+                                : null),
                     )
                   : BoxDecoration(
                       border: Border(
@@ -184,9 +257,12 @@ class SettlementPaperView extends StatelessWidget {
                       style: TextStyle(
                         fontSize: _fs * (_tpl.bigFigures ? 1.06 : 0.94),
                         fontWeight: FontWeight.w900,
-                        color: _tpl.accentBand || _tpl.cardShell
-                            ? _blockColor(block)
-                            : AppColors.textDark,
+                        // 색면형은 흰 글씨 — 어두운 배경 위에서 읽히게.
+                        color: _tpl.isSolidBand
+                            ? Colors.white
+                            : (_tpl.accentBand || _tpl.cardShell
+                                  ? _blockColor(block)
+                                  : AppColors.textDark),
                       ),
                     ),
                   ),
@@ -195,7 +271,9 @@ class SettlementPaperView extends StatelessWidget {
                     style: TextStyle(
                       fontSize: _fs * 0.72,
                       fontWeight: FontWeight.w800,
-                      color: _blockColor(block).withValues(alpha: 0.7),
+                      color: _tpl.isSolidBand
+                          ? Colors.white.withValues(alpha: 0.85)
+                          : _blockColor(block).withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -984,6 +1062,11 @@ class _PreviewSheetState extends State<_PreviewSheet> {
           ),
           const SizedBox(height: 5),
           // 한 줄에 다 들어가도록 균등 분할.
+          //
+          // (요구) "PDF, JPG, 엑셀, 워드파일 등도 넣어줘"
+          //  → 종전에는 PDF·미리보기·인쇄 3개뿐이었다. 미리보기를 보며 서식을
+          //    맞춘 **그 자리에서** 원하는 형식을 골라야 왕복이 없다. 그래서
+          //    PDF · JPG · 엑셀 · 워드 + 인쇄 5개를 한 줄에 둔다.
           Row(
             children: [
               Expanded(
@@ -991,51 +1074,53 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.purple,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    minimumSize: const Size(0, 38),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    minimumSize: const Size(0, 36),
                   ),
                   onPressed: () => fire(TsakOutputFormat.pdf),
-                  icon: const Icon(Icons.picture_as_pdf, size: 15),
+                  icon: const Icon(Icons.picture_as_pdf, size: 14),
                   label: const Text(
                     'PDF',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
-              Expanded(
-                flex: 3,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    minimumSize: const Size(0, 38),
-                    side: BorderSide(
-                      color: AppColors.purple.withValues(alpha: 0.5),
+              const SizedBox(width: 4),
+              for (final f in const [
+                TsakOutputFormat.jpg,
+                TsakOutputFormat.excel,
+                TsakOutputFormat.word,
+              ]) ...[
+                Expanded(
+                  flex: 3,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      minimumSize: const Size(0, 36),
+                      side: BorderSide(
+                        color: AppColors.purple.withValues(alpha: 0.5),
+                      ),
                     ),
-                  ),
-                  onPressed: () => fire(TsakOutputFormat.pdf, open: true),
-                  icon: const Icon(
-                    Icons.open_in_new,
-                    size: 14,
-                    color: AppColors.purple,
-                  ),
-                  label: const Text(
-                    '미리보기',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.purple,
+                    onPressed: () => fire(f),
+                    icon: Icon(f.icon, size: 13, color: AppColors.purple),
+                    label: Text(
+                      f.label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purple,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 5),
+                const SizedBox(width: 4),
+              ],
               Expanded(
                 flex: 4,
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    minimumSize: const Size(0, 38),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    minimumSize: const Size(0, 36),
                     side: BorderSide(
                       color: AppColors.scoutGreen.withValues(alpha: 0.55),
                     ),
@@ -1043,13 +1128,13 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                   onPressed: () => widget.onPrint?.call(_layout.copy()),
                   icon: const Icon(
                     Icons.print_outlined,
-                    size: 14,
+                    size: 13,
                     color: AppColors.scoutGreen,
                   ),
                   label: const Text(
                     '인쇄',
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w800,
                       color: AppColors.scoutGreen,
                     ),
@@ -1144,7 +1229,14 @@ class _PreviewSheetState extends State<_PreviewSheet> {
     );
   }
 
-  /// 템플릿 타일 1개 — 아이콘 + 이름 + 한 줄 설명.
+  /// 템플릿 타일 1개 — **미니 도판 + 이름 + 한 줄 설명**.
+  ///
+  /// (요구) "총 8가지 템플릿(구분이 확실히 되는 디자인 포멧으로 할 것, 유사한
+  ///  것들은 ALT로써는 의미가 없음)"
+  ///  → 이름만으로는 8종이 구분되지 않는다. 각 타일에 **그 템플릿의 서식이
+  ///    실제로 어떻게 생겼는지** 작은 도판(_templateThumb)을 그려 넣는다.
+  ///    색면형은 꽉 찬 띠, 인장형은 이중 괘선 + 도장칸처럼 **모양 자체**가
+  ///    다르므로, 눈으로 보고 고를 수 있다.
   Widget _templateTile(DocTemplate t, {required bool on}) {
     final active = on && _layout.reportStyle;
     return InkWell(
@@ -1155,7 +1247,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
         _layout.reportStyle = true;
       }),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(7, 5, 7, 6),
+        padding: const EdgeInsets.fromLTRB(6, 5, 6, 6),
         decoration: BoxDecoration(
           color: active
               ? AppColors.purple.withValues(alpha: 0.10)
@@ -1172,11 +1264,14 @@ class _PreviewSheetState extends State<_PreviewSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ── 서식 미니 도판 ──
+            _templateThumb(t, active: active),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Icon(
                   _templateIcon(t),
-                  size: 13,
+                  size: 12,
                   color: active ? AppColors.purple : AppColors.textGray,
                 ),
                 const SizedBox(width: 3),
@@ -1186,7 +1281,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 10.2,
                       fontWeight: FontWeight.w900,
                       color: active ? AppColors.purple : AppColors.textDark,
                     ),
@@ -1195,7 +1290,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                 if (active)
                   const Icon(
                     Icons.check_circle,
-                    size: 12,
+                    size: 11,
                     color: AppColors.purple,
                   ),
               ],
@@ -1205,7 +1300,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               t.hint,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 8.6, color: AppColors.textGray),
+              style: const TextStyle(fontSize: 8.4, color: AppColors.textGray),
             ),
           ],
         ),
@@ -1213,7 +1308,244 @@ class _PreviewSheetState extends State<_PreviewSheet> {
     );
   }
 
-  /// 템플릿 6종 아이콘 — 한눈에 구분되게.
+  /// 템플릿의 **서식 미니 도판** — 종이 한 장을 축소해 그 서식의 특징만 그린다.
+  ///
+  /// 8종이 서로 다른 축(띠/괘선/카드/여백/격자/숫자/색면/인장)을 하나씩
+  /// 맡으므로, 도판만 봐도 어느 것인지 구분된다.
+  Widget _templateThumb(DocTemplate t, {required bool active}) {
+    const lineColor = Color(0xFFCFC9C0);
+    const ink = Color(0xFF8C877E);
+    final accent = active ? AppColors.purple : const Color(0xFF7C6A9C);
+
+    // 종이 위에 그릴 한 줄(막대) — 폭 비율로 형태를 만든다.
+    Widget bar(double w, {Color? c, double h = 2.2}) => FractionallySizedBox(
+      alignment: Alignment.centerLeft,
+      widthFactor: w.clamp(0.05, 1.0),
+      child: Container(
+        height: h,
+        decoration: BoxDecoration(
+          color: c ?? ink,
+          borderRadius: BorderRadius.circular(1),
+        ),
+      ),
+    );
+
+    Widget rows({double w = 0.86, int n = 3, Color? c}) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < n; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: bar(i == n - 1 ? w * 0.7 : w, c: c),
+          ),
+      ],
+    );
+
+    Widget band({
+      required Color bg,
+      required double h,
+      bool leftBar = false,
+      Color? textColor,
+    }) => Container(
+      height: h,
+      decoration: BoxDecoration(
+        color: bg,
+        border: leftBar
+            ? Border(left: BorderSide(color: accent, width: 2.2))
+            : null,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2.5),
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 1.8,
+        width: 22,
+        color: textColor ?? ink,
+      ),
+    );
+
+    final Widget body = switch (t) {
+      // 띠 + 표 — 기본 보고서
+      DocTemplate.report => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          band(bg: accent.withValues(alpha: 0.13), h: 7, leftBar: true),
+          const SizedBox(height: 3),
+          rows(),
+        ],
+      ),
+      // 전면 격자 · 촘촘
+      DocTemplate.ledger => Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: lineColor, width: 0.9),
+        ),
+        child: Column(
+          children: [
+            for (var i = 0; i < 4; i++)
+              Container(
+                height: 4.4,
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: lineColor, width: 0.6)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                alignment: Alignment.centerLeft,
+                child: Container(height: 1.4, width: i == 0 ? 16 : 26, color: ink),
+              ),
+          ],
+        ),
+      ),
+      // 둥근 카드 2개
+      DocTemplate.card => Column(
+        children: [
+          for (var k = 0; k < 2; k++)
+            Container(
+              margin: const EdgeInsets.only(bottom: 2.5),
+              padding: const EdgeInsets.fromLTRB(3, 2, 3, 2.5),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: lineColor, width: 0.8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  band(bg: accent.withValues(alpha: 0.12), h: 4.5, leftBar: true),
+                  const SizedBox(height: 2),
+                  bar(0.8, h: 1.6),
+                ],
+              ),
+            ),
+        ],
+      ),
+      // 선·색 최소 — 여백이 주인공
+      DocTemplate.minimal => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          bar(0.34, h: 2.6),
+          const SizedBox(height: 5),
+          rows(w: 0.9, n: 2, c: lineColor),
+          const SizedBox(height: 4),
+          bar(0.62, c: lineColor),
+          const SizedBox(height: 2.4),
+          bar(0.48, c: lineColor),
+        ],
+      ),
+      // 전체 격자 + 가운데 제목
+      DocTemplate.official => Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: ink, width: 1.0),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: ink, width: 0.9)),
+              ),
+              alignment: Alignment.center,
+              child: Container(height: 2, width: 26, color: ink),
+            ),
+            for (var i = 0; i < 2; i++)
+              Container(
+                height: 4.6,
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: lineColor, width: 0.6)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                alignment: Alignment.centerLeft,
+                child: Container(height: 1.3, width: 24, color: lineColor),
+              ),
+          ],
+        ),
+      ),
+      // 핵심 숫자를 크게
+      DocTemplate.brief => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          band(bg: accent.withValues(alpha: 0.14), h: 6, leftBar: true),
+          const SizedBox(height: 2.5),
+          Center(
+            child: Container(
+              height: 8,
+              width: 34,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          rows(w: 0.7, n: 2, c: lineColor),
+        ],
+      ),
+      // 꽉 찬 색면 + 흰 글씨
+      DocTemplate.duotone => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 8,
+            color: accent.withValues(alpha: 0.92),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            alignment: Alignment.centerLeft,
+            child: Container(height: 1.9, width: 20, color: Colors.white),
+          ),
+          const SizedBox(height: 2.5),
+          rows(w: 0.88, n: 2),
+          const SizedBox(height: 2),
+          Container(
+            height: 7,
+            color: accent.withValues(alpha: 0.92),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            alignment: Alignment.centerLeft,
+            child: Container(height: 1.9, width: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 2.5),
+          rows(w: 0.8, n: 1),
+        ],
+      ),
+      // 이중 괘선 + 도장 칸
+      DocTemplate.stamp => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(height: 1.6, color: ink),
+          const SizedBox(height: 1.6),
+          Container(height: 0.8, color: lineColor),
+          const SizedBox(height: 3),
+          rows(w: 0.82, n: 2),
+          const SizedBox(height: 3),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < 2; i++)
+                  Container(
+                    width: 9,
+                    height: 9,
+                    margin: const EdgeInsets.only(left: 1.6),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: ink, width: 0.8),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    };
+
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: const Color(0xFFE2DDD4)),
+      ),
+      child: body,
+    );
+  }
+
+  /// 템플릿 8종 아이콘 — 한눈에 구분되게.
   static IconData _templateIcon(DocTemplate t) => switch (t) {
     DocTemplate.report => Icons.article_outlined,
     DocTemplate.ledger => Icons.table_chart_outlined,
@@ -1221,6 +1553,8 @@ class _PreviewSheetState extends State<_PreviewSheet> {
     DocTemplate.minimal => Icons.horizontal_rule,
     DocTemplate.official => Icons.gavel_outlined,
     DocTemplate.brief => Icons.insights_outlined,
+    DocTemplate.duotone => Icons.gradient_outlined,
+    DocTemplate.stamp => Icons.verified_outlined,
   };
 
   Widget _zoomChip() {

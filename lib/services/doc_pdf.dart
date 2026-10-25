@@ -162,9 +162,11 @@ class DocPdf {
     String title,
     pw.Font bold, {
     double emblemH = 30,
+    bool centered = false,
   }) {
     final t = pw.Text(
       sanitize(title),
+      textAlign: centered ? pw.TextAlign.center : pw.TextAlign.left,
       style: pw.TextStyle(
         font: bold,
         fontSize: 18,
@@ -172,7 +174,23 @@ class DocPdf {
         letterSpacing: -0.2,
       ),
     );
-    if (_emblem == null) return t;
+    // 인장형(official·stamp) — 제목을 **가운데** 두고 문장(엠블럼)은 위에 얹는다.
+    //  제출용 문서는 제목이 가운데 오는 것이 관례라, 표 정렬만 바꾸면 다른
+    //  템플릿과 시각적으로 섞이지 않는다.
+    if (centered && _emblem != null) {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Center(child: pw.Image(_emblem!, height: emblemH, width: emblemH)),
+          pw.SizedBox(height: 4),
+          t,
+        ],
+      );
+    }
+    final body = centered
+        ? pw.SizedBox(width: double.infinity, child: t)
+        : t;
+    if (_emblem == null) return body;
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -978,9 +996,20 @@ class DocPdf {
     /// `lastFragment` : 블록 마지막 조각인지(아래 여백 계산용).
     List<pw.Widget> blockFrags(DocReportBlock b, bool first) {
       final accent = _hex(b.accent);
-      final bandTint = _tint(accent, t.bandAlpha * 0.62);
+      // 색면형(duotone) — 제목 띠를 **원색으로 꽉 채우고 글씨를 흰색**으로 쓴다.
+      //  `_tint(accent, 1.0)` 은 원색 그대로다(알파 1 = 흰색 섞임 0).
+      //  살짝 어둡게(_darken 0.10) 해서 인쇄기 잉크 번짐에도 대비가 남게 한다.
+      final solid = t.isSolidBand;
+      final bandTint = solid
+          ? _darken(accent, 0.10)
+          : _tint(accent, t.bandAlpha * 0.62);
       final totalTint = _tint(accent, t.tintTotal * 0.55);
       final bandInk = _darken(accent, 0.72);
+      // 색면 위 글씨는 흰색. 부제는 '흰색 82%' 를 종이에 미리 합성한 옅은 색.
+      final bandTitleInk = solid
+          ? PdfColor.fromInt(0xFFFFFFFF)
+          : (t.accentBand ? bandInk : _ink);
+      final bandSubInk = solid ? _tint(accent, 0.84) : _darken(_gray, 0.25);
 
       // ① 헤더 — 제목 띠 (뜯지 않고 한 덩어리)
       final titleRow = pw.Row(
@@ -992,7 +1021,7 @@ class DocPdf {
               style: pw.TextStyle(
                 font: bold,
                 fontSize: cellPt * (t.bigFigures ? 1.24 : 1.06),
-                color: t.accentBand ? bandInk : _ink,
+                color: bandTitleInk,
                 letterSpacing: 0.1,
               ),
             ),
@@ -1003,7 +1032,7 @@ class DocPdf {
               style: pw.TextStyle(
                 font: bold,
                 fontSize: cellPt * 0.78,
-                color: _darken(_gray, 0.25),
+                color: bandSubInk,
               ),
             ),
         ],
@@ -1012,20 +1041,26 @@ class DocPdf {
       final pw.Widget header = t.accentBand
           ? pw.Container(
               padding: pw.EdgeInsets.fromLTRB(
-                t.cellPadH + 2,
+                t.cellPadH + (solid ? 0 : 2),
                 (t.cellPadV + 1.4).roundToDouble(),
-                t.cellPadH + 1,
+                t.cellPadH + (solid ? 0 : 1),
                 (t.cellPadV + 1.4).roundToDouble(),
               ),
               decoration: pw.BoxDecoration(
                 color: bandTint,
-                border: pw.Border(
-                  left: pw.BorderSide(
-                    color: _darken(accent, 0.25),
-                    width: t.bandWidth > 0 ? t.bandWidth : 2.5,
-                  ),
-                  bottom: pw.BorderSide(color: _tint(accent, 0.42), width: 0.9),
-                ),
+                // 색면형은 꽉 찬 면이라 좌측 바·하단선이 필요 없다(오히려 지저분).
+                border: solid
+                    ? null
+                    : pw.Border(
+                        left: pw.BorderSide(
+                          color: _darken(accent, 0.25),
+                          width: t.bandWidth > 0 ? t.bandWidth : 2.5,
+                        ),
+                        bottom: pw.BorderSide(
+                          color: _tint(accent, 0.42),
+                          width: 0.9,
+                        ),
+                      ),
               ),
               child: titleRow,
             )
@@ -1146,8 +1181,20 @@ class DocPdf {
             child: pw.Container(
               margin: const pw.EdgeInsets.all(13),
               decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: _border, width: 0.8),
+                border: t.doubleRule
+                    // 인장형 — 안쪽에 한 줄 더 그어 **이중 실선**으로 만든다.
+                    //  다른 7종은 단선이므로 서식만 봐도 구분된다.
+                    ? pw.Border.all(color: _border, width: 0.8)
+                    : pw.Border.all(color: _border, width: 0.8),
               ),
+              child: t.doubleRule
+                  ? pw.Container(
+                      margin: const pw.EdgeInsets.all(3.2),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: _border, width: 1.6),
+                      ),
+                    )
+                  : null,
             ),
           ),
         ),
@@ -1216,7 +1263,12 @@ class DocPdf {
         ),
         build: (ctx) => [
           // 제목 + 부제 (1페이지 상단)
-          _titleRow(meta.title, bold, emblemH: 32),
+          _titleRow(
+            meta.title,
+            bold,
+            emblemH: 32,
+            centered: t.centerTitle,
+          ),
           if (meta.subtitle.trim().isNotEmpty)
             pw.Padding(
               padding: const pw.EdgeInsets.only(top: 3),
@@ -1324,6 +1376,58 @@ class DocPdf {
                           color: _ink,
                           lineSpacing: 2,
                         ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          // ── 인장형 전용: 확인 도장 칸 ────────────────────────────────
+          //
+          // (요구) "8가지 템플릿 — 구분이 확실히 되는 디자인 포멧"
+          //  증명서·확인서에서 실제로 쓰는 요소는 '직인 자리'다. 표만으로는
+          //  다른 템플릿과 구분되지 않으므로 이 칸이 인장형의 표식이 된다.
+          if (t.stampBox)
+            pw.Container(
+              margin: const pw.EdgeInsets.only(top: 18),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  for (final role in const ['작성', '확인', '승인'])
+                    pw.Container(
+                      width: 74,
+                      margin: const pw.EdgeInsets.only(left: 5),
+                      child: pw.Column(
+                        children: [
+                          pw.Container(
+                            width: double.infinity,
+                            padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                            decoration: pw.BoxDecoration(
+                              border: pw.Border.all(color: _strong, width: 0.7),
+                            ),
+                            child: pw.Center(
+                              child: pw.Text(
+                                role,
+                                style: pw.TextStyle(
+                                  font: bold,
+                                  fontSize: 8,
+                                  color: _ink,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            width: double.infinity,
+                            height: 44,
+                            decoration: pw.BoxDecoration(
+                              border: pw.Border(
+                                left: pw.BorderSide(color: _strong, width: 0.7),
+                                right: pw.BorderSide(color: _strong, width: 0.7),
+                                bottom: pw.BorderSide(color: _strong, width: 0.7),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                 ],

@@ -20,7 +20,11 @@ library;
 import 'package:flutter/material.dart';
 
 import '../services/event_settlement.dart';
+import '../services/file_save.dart';
+import '../services/output_formats.dart';
+import '../services/settlement_doc.dart';
 import '../services/settlement_layout.dart';
+import '../services/table_export.dart';
 import '../theme/app_theme.dart';
 import '../widgets/settlement_paper_view.dart';
 
@@ -78,6 +82,9 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
 
   /// 펼쳐 본 블록(집계 근거 원본 행 보기).
   final Set<SettlementBlock> _expanded = <SettlementBlock>{};
+
+  /// 파일 내보내기 진행 중 — 중복 클릭 방지.
+  bool _exporting = false;
 
   SettlementLayout get _layoutRef => _layout;
 
@@ -653,54 +660,165 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
     );
   }
 
-  // 하단 고정 버튼 — 미리보기 / 결산 출력 / 명단 출력
+  // 하단 고정 버튼 — 미리보기 / PDF / JPG / 엑셀 / 워드 / 결산 출력
+  //
+  // (요구) "PDF, JPG, 엑셀, 워드파일 등도 넣어줘"
+  //  → 종전 하단은 [미리보기] [결산 출력] 두 개뿐이라, 파일을 뽑으려면
+  //    시트를 열고 → 형식을 다시 고르고 → 저장 위치를 또 고르는 3단계였다.
+  //    이제 **한 줄에서 바로** 형식을 골라 뽑는다. 미리보기는 그대로 남긴다.
   Widget _bottomBar() {
+    final empty = _layout.includedCount == 0;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 7, 12, 10),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 9),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE0DBD2))),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            flex: 2,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.purple,
-                side: BorderSide(
-                  color: AppColors.purple.withValues(alpha: 0.45),
+          // ── 1줄: 미리보기(실시간) + 결산 출력(옵션 시트) ──
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.purple,
+                    side: BorderSide(
+                      color: AppColors.purple.withValues(alpha: 0.45),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  onPressed: _openPreview,
+                  icon: const Icon(Icons.visibility_outlined, size: 16),
+                  label: const Text(
+                    '미리보기',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                  ),
                 ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              onPressed: _openPreview,
-              icon: const Icon(Icons.visibility_outlined, size: 17),
-              label: const Text(
-                '미리보기',
-                style: TextStyle(fontWeight: FontWeight.w800),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 3,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  onPressed: empty
+                      ? null
+                      : () => widget.onOutput(_layout.copy(), _data),
+                  icon: const Icon(Icons.ios_share, size: 16),
+                  label: const Text(
+                    '결산 출력',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 7),
-          Expanded(
-            flex: 3,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.purple,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: _layout.includedCount == 0
-                  ? null
-                  : () => widget.onOutput(_layout.copy(), _data),
-              icon: const Icon(Icons.ios_share, size: 17),
-              label: const Text(
-                '결산 출력',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
+          const SizedBox(height: 6),
+          // ── 2줄: 파일 형식 바로 뽑기(PDF · JPG · 엑셀 · 워드) ──
+          Row(
+            children: [
+              for (final f in const [
+                TsakOutputFormat.pdf,
+                TsakOutputFormat.jpg,
+                TsakOutputFormat.excel,
+                TsakOutputFormat.word,
+              ]) ...[
+                Expanded(
+                  child: _fmtButton(f, enabled: !empty),
+                ),
+                if (f != TsakOutputFormat.word) const SizedBox(width: 5),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 형식 버튼 1개 — 지금 서식(_layout) 그대로 파일을 만든다.
+  Widget _fmtButton(TsakOutputFormat f, {required bool enabled}) {
+    final accent = switch (f) {
+      TsakOutputFormat.pdf => AppColors.taegeukRed,
+      TsakOutputFormat.jpg => AppColors.taegeukBlue,
+      TsakOutputFormat.excel => AppColors.scoutGreen,
+      TsakOutputFormat.word => AppColors.purple,
+      _ => AppColors.textGray,
+    };
+    return OutlinedButton(
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+        side: BorderSide(color: accent.withValues(alpha: enabled ? 0.45 : 0.2)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      onPressed: enabled ? () => _export(f) : null,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(f.icon, size: 15, color: enabled ? accent : AppColors.textGray),
+          const SizedBox(height: 1),
+          Text(
+            f.label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              color: enabled ? accent : AppColors.textGray,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 지금 화면의 항목·순서·서식·템플릿 그대로 파일을 만든다.
+  ///
+  /// (요구) "실시간으로 미리보기 화면을 보면서 출력물의 내용과 디자인을 보면서
+  ///  선택할 수 있도록" → 미리보기에서 고른 값이 [_layout] 에 남아 있으므로,
+  ///  이 버튼은 **화면에 보이는 그대로** 뽑는다(왕복 없음).
+  Future<void> _export(TsakOutputFormat format) async {
+    if (_exporting) return;
+    if (_layout.includedCount == 0) {
+      _snack('출력할 항목이 없습니다');
+      return;
+    }
+    final data = _data;
+    final doc = SettlementDoc.build(
+      year: widget.year,
+      title: widget.title,
+      layout: _layout,
+      data: data,
+      settlement: _settlement,
+    );
+    final opt = await askSaveOption(
+      context,
+      info: '${widget.year} ${widget.title} · 결산서 · ${format.label}',
+    );
+    if (opt == null || !mounted) return;
+    setState(() => _exporting = true);
+    try {
+      final file = await buildTsakTableFile(doc, format);
+      await saveFileOption(
+        bytes: file.bytes,
+        filename: '${doc.baseName()}.${file.ext}',
+        mime: file.mime,
+        option: opt,
+      );
+      _snack('결산서 ${format.label} 내보내기를 시작했습니다');
+    } catch (e) {
+      _snack('내보내기 실패: $e');
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
     );
   }
 
