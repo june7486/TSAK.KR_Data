@@ -89,6 +89,7 @@ class DonationRow {
     required this.amount,
     required this.value,
     required this.memo,
+    this.attach = 0,
   });
 
   final String id;
@@ -113,6 +114,9 @@ class DonationRow {
   final int value;
 
   final String memo;
+
+  /// 붙인 자료(영수증·사진 등) 건수 — 출력에서 '자료' 열.
+  final int attach;
 
   DonationKind get kind => DonationKind.parse(category);
 
@@ -154,6 +158,7 @@ class DonationRow {
     amount: _int(r['amount']),
     value: _int(r['value']),
     memo: '${r['memo'] ?? ''}'.trim(),
+    attach: _int(r['attach']),
   );
 
   static int _int(Object? v) {

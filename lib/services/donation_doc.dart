@@ -43,6 +43,83 @@ enum DonationFocus {
   final String hint;
 }
 
+/// 출력에 노출할 **세부 항목**.
+///
+/// ## 요구사항 (그대로)
+/// "후원항목에서의 출력시 항목 및 세부항목, 메모, 내용등을 노출할지
+///  선택할 수 있도록 해주고"
+///
+/// ## 정리
+/// 후원 1건(donation row)에는 아래 필드가 있다. 출력할 때 **무엇을 보여줄지**
+/// 관리자가 직접 켜고 끈다. 최소 1개는 켜져 있어야 한다(빈 표 방지).
+enum DonationField {
+  sponsor('후원자', '누가 후원했는지(이름)', true, true),
+  number('인가번호', '범 인가자면 인가번호', false, false),
+  category('후원항목', '식사·물품·차량·기타 분류', true, true),
+  detail('세부항목', '후원 내역 — 김밥 100줄, 버스 1대', true, true),
+  amount('금액', '실제로 받은 현금', true, true),
+  value('금액 상당', '"10만원 상당" 의 그 금액', true, true),
+  date('날짜', '후원 접수일', false, false),
+  memo('메모', '비고·특이사항', false, false),
+  attach('자료', '붙인 증빙 건수', false, false);
+
+  const DonationField(this.label, this.hint, this.inBySponsor, this.inByKind);
+
+  final String label;
+  final String hint;
+
+  /// 후원자별 표에서 기본으로 켜는가.
+  final bool inBySponsor;
+
+  /// 내역별 표에서 기본으로 켜는가.
+  final bool inByKind;
+
+  /// 후원금(현금) 행에도 의미가 있는가 — 후원금은 세부항목이 없다.
+  bool get needsDetail => this == detail;
+}
+
+/// 후원 출력 옵션 — 보기 방식 + 초점 + **노출 필드**.
+///
+/// Flutter 의존 없음(순수 Dart) → `dart run tool/verify_donation_doc.dart`.
+class DonationDocOptions {
+  DonationDocOptions({
+    this.view = DonationViewMode.bySponsor,
+    this.focus = DonationFocus.both,
+    Set<DonationField>? fields,
+  }) : fields = fields ?? _defaults(view);
+
+  final DonationViewMode view;
+  final DonationFocus focus;
+
+  /// 노출할 필드 — 비어 있으면 저장 시 기본값으로 되돌린다.
+  Set<DonationField> fields;
+
+  /// 보기 방식에 맞는 기본 필드 집합.
+  static Set<DonationField> _defaults(DonationViewMode v) => {
+    for (final f in DonationField.values)
+      if (v == DonationViewMode.bySponsor ? f.inBySponsor : f.inByKind) f,
+  };
+
+  /// 초점이 물품중심이면 금액을, 금액중심이면 세부항목을 강제로 끈다.
+  /// (서로 모순되는 조합을 만들지 않는다)
+  void applyFocus() {
+    if (focus == DonationFocus.item) {
+      fields.remove(DonationField.amount);
+      fields.remove(DonationField.value);
+    }
+    if (focus == DonationFocus.money) fields.remove(DonationField.detail);
+    if (fields.isEmpty) fields = _defaults(view);
+  }
+
+  bool shows(DonationField f) => fields.contains(f);
+
+  DonationDocOptions copy() =>
+      DonationDocOptions(view: view, focus: focus, fields: {...fields});
+
+  /// 배지 표기 — 예: '후원자별 · 물품중심 · 5항목'.
+  String get badge => '${view.label} · ${focus.label} · ${fields.length}항목';
+}
+
 /// 문서 본문(열 / 행 / 요약 / 부제) — 화면에서 `TsakTableDoc` 으로 감싼다.
 class DonationDocData {
   const DonationDocData({
@@ -63,10 +140,26 @@ class DonationDocData {
 /// [rows] 는 '후원·기타수입' 탭의 행 그대로(참가비 제외). 필터링하지 않는다.
 DonationDocData buildDonationDocData({
   required List<Map<String, dynamic>> rows,
-  required DonationViewMode view,
-  required DonationFocus focus,
+  DonationDocOptions? options,
+  // 하위 호환 — 옛 호출부(view/focus 만 주는 경우).
+  DonationViewMode? view,
+  DonationFocus? focus,
   required String Function(int) won,
 }) {
+  final opt =
+      options ??
+      DonationDocOptions(
+        view: view ?? DonationViewMode.bySponsor,
+        focus: focus ?? DonationFocus.both,
+      );
+  final v = opt.view;
+  final f = opt.focus;
+  final fields = opt.fields.isEmpty
+      ? DonationDocOptions(view: v).fields
+      : opt.fields;
+
+  bool on(DonationField x) => fields.contains(x);
+
   final all = rows.map(DonationRow.fromMap).toList();
   // (버그 방지) `parse()` 는 모르는 문자열을 '기타후원'으로 떨어뜨린다.
   //  참가비·기타수입처럼 **후원과 무관한 행**을 먼저 걸러내지 않으면
@@ -77,69 +170,114 @@ DonationDocData buildDonationDocData({
   final cash = donations.where((e) => e.isIncome).toList();
   final sponsors = donations.where((e) => e.isSponsor).toList();
 
+  // ── 열 구성 — 켜진 필드만, 정해진 순서대로.
   final columns = <String>['연번'];
+  final order = <DonationField>[
+    DonationField.sponsor,
+    DonationField.number,
+    DonationField.category,
+    DonationField.detail,
+    DonationField.amount,
+    DonationField.value,
+    DonationField.date,
+    DonationField.memo,
+    DonationField.attach,
+  ];
+
+  // 내역별 표는 '건수'를 항상 넣는다(묶음 크기).
+  final showCount = v == DonationViewMode.byKind;
+  final fFields = order.where(on).toList();
+
+  // 초점과 모순되는 필드는 열에서도 뺀다.
+  final visible = <DonationField>[
+    for (final x in fFields)
+      if (!(f == DonationFocus.item &&
+              (x == DonationField.amount || x == DonationField.value)) &&
+          !(f == DonationFocus.money && x == DonationField.detail))
+        x,
+  ];
+
+  for (var i = 0; i < visible.length; i++) {
+    final x = visible[i];
+    columns.add(x.label);
+    // (버그 수정) 내역별 표의 '건수'는 **후원항목 바로 뒤**에만 넣는다.
+    //  종전에는 후원항목 뒤 + 표 끝에 두 번 들어가 열/셀이 어긋났다.
+    if (x == DonationField.category && showCount) columns.add('건수');
+  }
+  // 후원항목을 끈 경우에만 표 끝에 건수를 붙인다(중복 방지).
+  final tailCount = showCount && !visible.contains(DonationField.category);
+  if (tailCount) columns.add('건수');
+
   final body = <List<String>>[];
 
-  switch (view) {
-    case DonationViewMode.bySponsor:
-      columns.addAll(['후원자', '인가번호', '후원분류']);
-      if (focus != DonationFocus.money) columns.add('후원내역');
-      if (focus != DonationFocus.item) columns.addAll(['금액', '금액 상당']);
-      columns.add('비고');
+  List<String> cellsFor(_Group g, int no) {
+    final out = <String>['$no'];
+    for (final x in visible) {
+      switch (x) {
+        case DonationField.sponsor:
+          out.add(
+            v == DonationViewMode.bySponsor
+                ? (g.name.isEmpty ? '(이름 없음)' : g.name)
+                : g.namesText,
+          );
+        case DonationField.number:
+          out.add(g.number);
+        case DonationField.category:
+          out.add(g.kindSummary);
+          if (showCount) out.add('${g.items.length}');
+        case DonationField.detail:
+          out.add(g.itemSummary);
+        case DonationField.amount:
+          out.add(g.cash > 0 ? won(g.cash) : '-');
+        case DonationField.value:
+          out.add(g.value > 0 ? won(g.value) : '-');
+        case DonationField.date:
+          out.add(g.dateText);
+        case DonationField.memo:
+          out.add(g.memoText);
+        case DonationField.attach:
+          out.add('${g.attachCount}');
+      }
+    }
+    if (tailCount) out.add('${g.items.length}');
+    return out;
+  }
 
+  switch (v) {
+    case DonationViewMode.bySponsor:
+      // 후원자 1명 = 1 묶음. (이름+인가번호가 같으면 같은 사람)
       final map = <String, _Group>{};
       for (final e in sponsors) {
-        final key = '${e.name}|${e.number}';
-        map.putIfAbsent(key, () => _Group(e.name, e.number)).add(e);
+        map
+            .putIfAbsent(
+              '${e.name}|${e.number}',
+              () => _Group(e.name, e.number),
+            )
+            .add(e);
       }
       final groups = map.values.toList()
         ..sort((a, b) {
           final c = (b.cash + b.value).compareTo(a.cash + a.value);
           return c != 0 ? c : a.name.compareTo(b.name);
         });
-
       for (var i = 0; i < groups.length; i++) {
-        final g = groups[i];
-        final row = <String>['${i + 1}', g.name, g.number, g.kindSummary];
-        if (focus != DonationFocus.money) row.add(g.itemSummary);
-        if (focus != DonationFocus.item) {
-          row.add(g.cash > 0 ? won(g.cash) : '-');
-          row.add(g.value > 0 ? won(g.value) : '-');
-        }
-        row.add('${g.items.length}건');
-        body.add(row);
+        body.add(cellsFor(groups[i], i + 1));
       }
 
     case DonationViewMode.byKind:
-      columns.addAll(['후원분류', '건수']);
-      if (focus != DonationFocus.money) columns.add('후원내역');
-      if (focus != DonationFocus.item) columns.addAll(['금액', '금액 상당']);
-      columns.add('비고');
-
-      final kinds = <DonationKind, _Group>{};
+      // 분류 1개 = 1 묶음. (식사→물품→차량→기타 고정 순서)
+      final map = <DonationKind, _Group>{};
       for (final e in sponsors) {
-        kinds.putIfAbsent(e.kind, () => _Group(e.kind.label, '')).add(e);
+        map.putIfAbsent(e.kind, () => _Group(e.kind.label, '')).add(e);
       }
-      // 분류 순서는 enum 순서(식사→물품→차량→기타) 고정.
-      final ordered = <DonationKind>[
+      final kinds = <DonationKind>[
         DonationKind.meal,
         DonationKind.goods,
         DonationKind.vehicle,
         DonationKind.etc,
-      ].where(kinds.containsKey).toList();
-
-      for (var i = 0; i < ordered.length; i++) {
-        final k = ordered[i];
-        final g = kinds[k]!;
-        final row = <String>['${i + 1}', k.label, '${g.items.length}'];
-        if (focus != DonationFocus.money) row.add(g.itemSummary);
-        if (focus != DonationFocus.item) {
-          row.add(g.cash > 0 ? won(g.cash) : '-');
-          row.add(g.value > 0 ? won(g.value) : '-');
-        }
-        final names = g.items.map((e) => e.name).where((e) => e.isNotEmpty);
-        row.add(names.isEmpty ? '' : names.join(', '));
-        body.add(row);
+      ].where(map.containsKey).toList();
+      for (var i = 0; i < kinds.length; i++) {
+        body.add(cellsFor(map[kinds[i]]!, i + 1));
       }
   }
 
@@ -153,18 +291,12 @@ DonationDocData buildDonationDocData({
         ' + 상당 ${won(sponsorValue)}',
   ];
 
-  final focusText = switch (focus) {
-    DonationFocus.item => '물품중심',
-    DonationFocus.money => '금액중심',
-    DonationFocus.both => '내역+금액',
-  };
-
   return DonationDocData(
     columns: columns,
     rows: body,
     summary: summary,
     subtitle:
-        '후원 ${view.label} · $focusText · '
+        '후원 ${v.label} · ${f.label} · ${visible.length}개 항목 · '
         '현물 ${sponsors.length}건 / 후원금 ${cash.length}건',
   );
 }
@@ -190,6 +322,41 @@ class _Group {
     }
     return set.join(', ');
   }
+
+  /// 후원자 이름들 — 내역별 표의 '후원자' 칸. 중복 제거.
+  String get namesText {
+    final out = <String>[];
+    for (final e in items) {
+      final n = e.name.trim();
+      if (n.isNotEmpty && !out.contains(n)) out.add(n);
+    }
+    return out.isEmpty ? '(이름 없음)' : out.join(', ');
+  }
+
+  /// 날짜들 — 여러 건이면 범위 표기('2026-05-01 외 2일').
+  String get dateText {
+    final ds = <String>[];
+    for (final e in items) {
+      final d = e.date.trim();
+      if (d.isNotEmpty && !ds.contains(d)) ds.add(d);
+    }
+    if (ds.isEmpty) return '-';
+    ds.sort();
+    return ds.length == 1 ? ds.first : '${ds.first} 외 ${ds.length - 1}일';
+  }
+
+  /// 메모들 — 중복 제거 후 줄바꿈 대신 ' / '.
+  String get memoText {
+    final out = <String>[];
+    for (final e in items) {
+      final m = e.memo.trim();
+      if (m.isNotEmpty && !out.contains(m)) out.add(m);
+    }
+    return out.isEmpty ? '-' : out.join(' / ');
+  }
+
+  /// 붙인 자료 건수 합.
+  int get attachCount => items.fold(0, (sum, e) => sum + e.attach);
 
   /// '김밥 100줄, 기념품 50개' — 내역이 없으면 분류명으로 대체, 중복 제거.
   String get itemSummary {
