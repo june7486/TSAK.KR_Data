@@ -13,6 +13,7 @@
 library;
 
 import '../models/member.dart';
+import 'donation_kinds.dart';
 
 /// 대표 계좌 1개 — 지출 시 어느 계좌에서 나갔는지 기록/선택한다.
 class EventAccount {
@@ -103,7 +104,7 @@ class EventAttendeeBreakdown {
     for (final a in list) {
       final roles = <String>[
         ...((a['roles'] as List?) ?? const []).map(
-          (e) => '${e}'.trim().toLowerCase(),
+          (e) => e.trim().toLowerCase(),
         ),
         if ('${a['roleCode'] ?? ''}'.trim().isNotEmpty)
           '${a['roleCode']}'.trim().toLowerCase(),
@@ -168,6 +169,8 @@ class EventMoneyRow {
     required this.memo,
     required this.account,
     required this.amount,
+    this.valueAmount,
+    this.item = '',
     this.isExpense = false,
   });
 
@@ -180,6 +183,13 @@ class EventMoneyRow {
   /// 출금/입금 계좌 표기('행사비 · 우리은행 …'). 지출에서 주로 쓴다.
   final String account;
   final int amount;
+
+  /// '금액 상당'(원) — 후원 현물처럼 정확한 현금이 아닌 항목.
+  final int? valueAmount;
+
+  /// 후원 내역('김밥 100줄', '버스 1대').
+  final String item;
+
   final bool isExpense;
 
   /// 결산·출력 공통 표기 금액('1,234,000원').
@@ -205,6 +215,8 @@ class EventMoneyRow {
       memo: '${r['memo'] ?? ''}'.trim(),
       account: '${r['account'] ?? ''}'.trim(),
       amount: (r['amount'] as num?)?.toInt() ?? 0,
+      valueAmount: (r['value'] as num?)?.toInt(),
+      item: '${r['item'] ?? ''}'.trim(),
       isExpense: expense,
     );
   }
@@ -240,21 +252,40 @@ class EventSettlement {
   int get feeTotal =>
       fees.where((e) => e.category == '참가비').fold(0, (s, e) => s + e.amount);
 
-  /// 후원금 합계.
-  int get donationFund =>
-      fees.where((e) => e.category == '후원금').fold(0, (s, e) => s + e.amount);
+  /// 후원금 합계 — **현금 수입**. (요구: "후원금만 수입으로 잡을 것")
+  int get donationFund => cashDonationTotal;
 
-  /// 후원 합계.
-  int get donation =>
-      fees.where((e) => e.category == '후원').fold(0, (s, e) => s + e.amount);
+  /// 후원(현물·서비스)의 **현금** 합계 — 수입에 넣지 않는다.
+  int get donation => sponsorCashTotal;
 
-  /// 기타수입 합계(참가비·후원·후원금 외).
-  int get otherIncome => fees
-      .where((e) => !const ['참가비', '후원', '후원금'].contains(e.category))
+  /// 후원(현물·서비스)의 **상당액** 합계 — 수입에 넣지 않는다.
+  int get donationValue => sponsorValueTotal;
+
+  /// 참가비·후원금 외 현금 수입(기타수입).
+  int get otherIncome =>
+      fees.where((e) => e.category == '기타수입').fold(0, (s, e) => s + e.amount);
+
+  /// 후원금(현금) 합계 — 수입 산정의 유일한 후원 항목.
+  int get cashDonationTotal => fees
+      .where((e) => DonationKind.parse(e.category) == DonationKind.cash)
       .fold(0, (s, e) => s + e.amount);
 
-  /// 수입 합계.
-  int get incomeTotal => fees.fold(0, (s, e) => s + e.amount);
+  /// 후원(현물) 현금 합계.
+  int get sponsorCashTotal => fees
+      .where((e) => DonationKind.parse(e.category).isSponsor)
+      .fold(0, (s, e) => s + e.amount);
+
+  /// 후원(현물) 상당액 합계.
+  int get sponsorValueTotal => fees
+      .where((e) => DonationKind.parse(e.category).isSponsor)
+      .fold(0, (s, e) => s + (e.valueAmount ?? 0));
+
+  /// 수입 합계 — (요구) **수입은 참가비 + 후원금만**.
+  ///  후원(현물)·기타후원은 수입에 넣지 않는다. 기타수입(현금)은 참고로 더한다.
+  int get incomeTotal => feeTotal + cashDonationTotal + otherIncome;
+
+  /// 참고 표기용 — 후원(현물)의 가치(현금+상당). 수입에는 미포함.
+  int get sponsorReferenceTotal => sponsorCashTotal + sponsorValueTotal;
 
   /// 지출 합계.
   int get expenseTotal => expenses.fold(0, (s, e) => s + e.amount);
