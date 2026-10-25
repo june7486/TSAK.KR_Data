@@ -682,6 +682,382 @@ class DocPdf {
     String footerLeft = '한국범스카우트중앙회',
   }) => build(meta: meta, summary: lines, footerLeft: footerLeft);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 보고서형 PDF — 미리보기(SettlementPaperView)와 **같은 그래픽**
+  //
+  // ## 요구사항 (그대로)
+  // "pdf 출력물의 형태는 결산의 경우 기존 무인양품 스타일을 버리고, 미리보기
+  //  항목의 내용을 참조해서 항목별로 보기좋게 출력해주고 … pdf 출력된 항목은
+  //  계산서처럼 보여지기보다는 보고서처럼 보여지는게 좋아서그래."
+  //
+  // ## 왜 별도 빌더인가
+  // 기존 [build] 는 머리행 1개 + 평평한 행 목록(무인양품 표)이다. 결산은
+  // **여러 블록(참가자·수입·후원·지출·잔액)** 이 이어지고 블록마다 색이 다르며
+  // 합계 행은 강조된다. 평평한 표로는 그 구조가 사라져 '계산서'처럼 읽힌다.
+  // 이 빌더는 블록마다 ① 컬러 제목 띠(좌측 3pt 바 + 10% 틴트) ② 4열 표
+  // ③ 합계 행 5.5% 틴트 ④ 하단 메모 를 그려 **화면 미리보기와 동일한 인상**을
+  // 준다.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// 보고서 한 블록 — 제목 띠 + 4열 행 + 하단 메모.
+  static Future<Uint8List> buildReport({
+    required DocMeta meta,
+    required List<DocReportBlock> blocks,
+    List<String> summary = const [],
+    String footerLeft = '한국범스카우트중앙회',
+    bool landscape = false,
+    double scale = 1.0,
+    double rowSpaceMul = 1.0,
+  }) async {
+    await _ensureFonts();
+    await _ensureEmblem();
+    final reg = _regular!;
+    final bold = _bold!;
+    final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
+    final fmt = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
+
+    final cellPt = (9.0 * scale * 10).roundToDouble() / 10;
+    final int padV = (4 * rowSpaceMul).round().clamp(1, 12);
+    final base = pw.TextStyle(font: reg, fontSize: cellPt, color: _ink);
+    final baseBold = pw.TextStyle(font: bold, fontSize: cellPt, color: _ink);
+    // 블록 안 4열 비율 — 미리보기(SettlementPaperView)와 동일: 1.1 / 1.9 / 1.35 / 1.45
+    final widths = <int, pw.TableColumnWidth>{
+      0: const pw.FlexColumnWidth(1.1),
+      1: const pw.FlexColumnWidth(1.9),
+      2: const pw.FlexColumnWidth(1.35),
+      3: const pw.FlexColumnWidth(1.45),
+    };
+
+    final doc = pw.Document();
+    final margin = const pw.EdgeInsets.fromLTRB(34, 38, 34, 28);
+
+    final facts = <MapEntry<String, String>>[
+      if (meta.author.trim().isNotEmpty) MapEntry('작성', meta.author),
+      MapEntry('출력일', now),
+      ...meta.extra.entries,
+    ];
+
+    // ── 블록 위젯 ──────────────────────────────────────────────────────
+    pw.Widget blockWidget(DocReportBlock b, bool first) {
+      final accent = _hex(b.accent);
+      return pw.Padding(
+        padding: pw.EdgeInsets.only(top: first ? 0 : 10 * rowSpaceMul),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          children: [
+            // ① 제목 띠 — 좌측 3pt 컬러 바 + 10% 틴트 (미리보기와 동일)
+            pw.Container(
+              padding: const pw.EdgeInsets.fromLTRB(7, 4, 7, 4),
+              decoration: pw.BoxDecoration(
+                color: PdfColor(
+                  accent.red,
+                  accent.green,
+                  accent.blue,
+                  0.10,
+                ),
+                border: pw.Border(
+                  left: pw.BorderSide(color: accent, width: 3),
+                ),
+              ),
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      sanitize(b.title),
+                      style: pw.TextStyle(
+                        font: bold,
+                        fontSize: cellPt * 1.02,
+                        color: accent,
+                      ),
+                    ),
+                  ),
+                  if (b.subtitle.trim().isNotEmpty)
+                    pw.Text(
+                      sanitize(b.subtitle),
+                      style: pw.TextStyle(
+                        font: bold,
+                        fontSize: cellPt * 0.78,
+                        color: PdfColor(
+                          accent.red,
+                          accent.green,
+                          accent.blue,
+                          0.7,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // ② 4열 표
+            pw.Table(
+              columnWidths: widths,
+              border: pw.TableBorder(
+                horizontalInside: const pw.BorderSide(
+                  color: _border,
+                  width: 0.6,
+                ),
+              ),
+              children: [
+                for (final r in b.rows)
+                  pw.TableRow(
+                    decoration: _isReportTotal(r)
+                        ? pw.BoxDecoration(
+                            color: PdfColor(
+                              accent.red,
+                              accent.green,
+                              accent.blue,
+                              0.055,
+                            ),
+                          )
+                        : null,
+                    children: [
+                      _rcell(
+                        r.isNotEmpty ? r[0] : '',
+                        base: baseBold,
+                        accent: _isReportTotal(r) ? accent : null,
+                        padV: padV,
+                      ),
+                      _rcell(r.length > 1 ? r[1] : '', base: base, padV: padV),
+                      _rcell(
+                        r.length > 2 ? r[2] : '',
+                        base: baseBold,
+                        align: 'right',
+                        accent: _isReportTotal(r) ? accent : null,
+                        padV: padV,
+                      ),
+                      _rcell(r.length > 3 ? r[3] : '', base: base, padV: padV),
+                    ],
+                  ),
+              ],
+            ),
+            // ③ 하단 메모
+            if (b.note.trim().isNotEmpty)
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(top: 3, left: 2),
+                child: pw.Text(
+                  sanitize(b.note),
+                  style: pw.TextStyle(
+                    font: reg,
+                    fontSize: cellPt * 0.82,
+                    color: _gray,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    doc.addPage(
+      pw.MultiPage(
+        pageTheme: pw.PageTheme(
+          pageFormat: fmt,
+          margin: margin,
+          buildBackground: (ctx) => pw.FullPage(
+            ignoreMargins: true,
+            child: pw.Container(
+              margin: const pw.EdgeInsets.all(13),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: _border, width: 0.8),
+              ),
+            ),
+          ),
+        ),
+        header: (ctx) => pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 7),
+          child: pw.Column(
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    '한국범스카우트중앙회 · TSAK',
+                    style: pw.TextStyle(
+                      font: bold,
+                      fontSize: 7.5,
+                      color: _gray,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  pw.Text(
+                    '${ctx.pageNumber} of ${ctx.pagesCount}',
+                    style: pw.TextStyle(
+                      font: reg,
+                      fontSize: 7.5,
+                      color: _gray,
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 4),
+              pw.Container(height: 0.6, color: _line),
+            ],
+          ),
+        ),
+        footer: (ctx) => pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 8),
+          child: pw.Container(
+            padding: const pw.EdgeInsets.only(top: 6),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(top: pw.BorderSide(color: _line)),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  footerLeft,
+                  style: pw.TextStyle(
+                    font: reg,
+                    fontSize: 7.5,
+                    color: _gray,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                pw.Text(
+                  '보고서 · ${ctx.pageNumber}/${ctx.pagesCount}',
+                  style: pw.TextStyle(
+                    font: reg,
+                    fontSize: 7.5,
+                    color: _gray,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        build: (ctx) => [
+          // 제목 + 부제 (1페이지 상단)
+          _titleRow(meta.title, bold, emblemH: 32),
+          if (meta.subtitle.trim().isNotEmpty)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(top: 3),
+              child: pw.Text(
+                sanitize(meta.subtitle),
+                style: pw.TextStyle(font: reg, fontSize: 10, color: _gray),
+              ),
+            ),
+          pw.SizedBox(height: 7),
+          // 설명 + 작성/출력일
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 6),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                top: pw.BorderSide(color: _line),
+                bottom: pw.BorderSide(color: _line),
+              ),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                if (meta.description.trim().isNotEmpty)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(bottom: 4),
+                    child: pw.Text(
+                      sanitize(meta.description),
+                      style: pw.TextStyle(
+                        font: reg,
+                        fontSize: 9,
+                        color: _ink,
+                      ),
+                    ),
+                  ),
+                pw.Wrap(
+                  spacing: 20,
+                  runSpacing: 2,
+                  children: [
+                    for (final e in facts)
+                      pw.RichText(
+                        text: pw.TextSpan(
+                          children: [
+                            pw.TextSpan(
+                              text: '${e.key} ',
+                              style: pw.TextStyle(
+                                font: bold,
+                                fontSize: 8,
+                                color: _gray,
+                              ),
+                            ),
+                            pw.TextSpan(
+                              text: sanitize(e.value),
+                              style: pw.TextStyle(
+                                font: reg,
+                                fontSize: 8,
+                                color: _gray,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 12),
+          // 블록들 — MultiPage 가 페이지 경계에서 자연스럽게 나눈다.
+          for (var i = 0; i < blocks.length; i++)
+            blockWidget(blocks[i], i == 0),
+          // 합계 요약
+          if (summary.isNotEmpty)
+            pw.Container(
+              margin: const pw.EdgeInsets.only(top: 14),
+              padding: const pw.EdgeInsets.only(top: 9),
+              decoration: const pw.BoxDecoration(
+                border: pw.Border(top: pw.BorderSide(color: _strong, width: 1.3)),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  for (final s in summary)
+                    pw.Text(
+                      sanitize(s),
+                      style: pw.TextStyle(
+                        font: bold,
+                        fontSize: (10 * scale * 10).roundToDouble() / 10,
+                        color: _ink,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    return doc.save();
+  }
+
+  /// 보고서 표의 셀 하나.
+  static pw.Widget _rcell(
+    String text, {
+    required pw.TextStyle base,
+    String align = 'left',
+    PdfColor? accent,
+    int padV = 4,
+  }) {
+    return pw.Container(
+      padding: pw.EdgeInsets.fromLTRB(5, padV.toDouble(), 5, padV.toDouble()),
+      child: pw.Text(
+        sanitize(text),
+        style: accent == null
+            ? base
+            : pw.TextStyle(
+                font: base.font,
+                fontSize: base.fontSize,
+                color: accent,
+                fontWeight: pw.FontWeight.bold,
+              ),
+        textAlign: _align(align),
+      ),
+    );
+  }
+
+  /// 합계 행인가 — 미리보기 `_isTotal` 과 같은 규칙.
+  static bool _isReportTotal(List<String> r) {
+    final k = r.isNotEmpty ? r[0] : '';
+    return k.contains('합계') || k == '잔액' || k == '초과';
+  }
+
   /// 문자열 표(헤더/행)로 **실제 PDF**를 만든다.
   ///
   /// 여러 화면(판매대장·재고·공여 등)이 표 데이터를 `List<List<String>>`

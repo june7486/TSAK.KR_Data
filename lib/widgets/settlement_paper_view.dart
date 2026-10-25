@@ -172,7 +172,10 @@ class SettlementPaperView extends StatelessWidget {
               ),
             ),
             children: [
-              for (final r in rows)
+              // (요구) "미리보기에도 세부항목을 선택할 수 있도록"
+              //  → 이 블록의 '상세' 가 켜져 있으면 원본 행을 표 안에 이어 붙인다.
+              //   PDF(보고서형)도 같은 detailRows() 를 쓰므로 화면=출력이 된다.
+              for (final r in _visibleRows(block, d))
                 TableRow(
                   decoration: _isTotal(r)
                       ? BoxDecoration(
@@ -183,21 +186,30 @@ class SettlementPaperView extends StatelessWidget {
                     _cell(
                       r.isNotEmpty ? r[0] : '',
                       bold: true,
-                      color: _isTotal(r) ? _blockColor(block) : null,
+                      color: _isTotal(r)
+                          ? _blockColor(block)
+                          : (_isDetail(r) ? AppColors.textGray : null),
                     ),
-                    _cell(r.length > 1 ? r[1] : '', align: TextAlign.left),
+                    _cell(
+                      r.length > 1 ? r[1] : '',
+                      align: TextAlign.left,
+                      color: _isDetail(r) ? AppColors.textGray : null,
+                    ),
                     _cell(
                       r.length > 2 ? r[2] : '',
                       align: TextAlign.right,
-                      bold: true,
+                      bold: !_isDetail(r),
                       color: _isTotal(r) ? _blockColor(block) : null,
                     ),
-                    _cell(r.length > 3 ? r[3] : ''),
+                    _cell(
+                      r.length > 3 ? r[3] : '',
+                      color: _isDetail(r) ? AppColors.textGray : null,
+                    ),
                   ],
                 ),
             ],
           ),
-          if (d != null && d.note.isNotEmpty)
+          if (d != null && d.note.isNotEmpty && layout.showNotes)
             Padding(
               padding: EdgeInsets.only(top: 2.5 * rowSpace, left: 2),
               child: Text(
@@ -215,8 +227,21 @@ class SettlementPaperView extends StatelessWidget {
     );
   }
 
-  static bool _isTotal(List<String> r) {
-    final k = r.isNotEmpty ? r[0] : '';
+  /// 이 블록에서 표에 실제로 그릴 행 — 합계 행 + (상세가 켜져 있으면) 원본 행.
+  ///
+  /// 상세 행은 `['· 상세', 원본내용, '', '']` 형태라 합계 행과 시각적으로
+  /// 구분된다(_isDetail 로 흐린 글씨). 미리보기와 PDF 가 **같은 규칙**을 쓴다.
+  List<List<String>> _visibleRows(SettlementBlock block, SettlementBlockData? d) {
+    final base = d?.rows ?? const <List<String>>[];
+    if (d == null || !layout.showsDetail(block)) return base;
+    return [...base, ...d.detailRows()];
+  }
+
+  /// 상세 행인가 — 첫 칸이 '· 상세'.
+  static bool _isDetail(List<String> r) =>
+      r.isNotEmpty && r[0].startsWith('· 상세');
+
+  static bool _isTotal(List<String> r) {    final k = r.isNotEmpty ? r[0] : '';
     return k.contains('합계') || k == '잔액' || k == '초과';
   }
 
@@ -301,6 +326,14 @@ class _PreviewSheetState extends State<_PreviewSheet> {
   bool _editOpen = true;
 
   void _touch(VoidCallback fn) => setState(fn);
+
+  /// 블록 타일 부제 — 행 수 + 상세 건수(있으면).
+  String _detailLabel(SettlementBlock b, SettlementBlockData d) {
+    final rows = '${d.rows.length}행';
+    if (!d.hasDetails) return rows;
+    final n = d.details.length;
+    return _layout.showsDetail(b) ? '$rows + 상세 $n' : '$rows (상세 $n 숨김)';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -511,15 +544,78 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                               ),
                               if (d != null && d.rows.isNotEmpty)
                                 Text(
-                                  '${d.rows.length}행',
-                                  style: const TextStyle(
+                                  _detailLabel(b, d),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
                                     fontSize: 9.5,
-                                    color: AppColors.textGray,
+                                    color: on && _layout.showsDetail(b)
+                                        ? c.withValues(alpha: 0.9)
+                                        : AppColors.textGray,
+                                    fontWeight: on && _layout.showsDetail(b)
+                                        ? FontWeight.w700
+                                        : FontWeight.w400,
                                   ),
                                 ),
                             ],
                           ),
                         ),
+                        // (요구) "미리보기에도 세부항목을 선택할 수 있도록"
+                        //  블록(항목)만 켜고 끄면 '합계만 있는 결산'이 된다.
+                        //  블록마다 그 합계의 근거(상세 내역)를 켜고 끄는 버튼.
+                        if (on && d != null && d.hasDetails)
+                          InkWell(
+                            onTap: () => _touch(() => _layout.toggleDetail(b)),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Tooltip(
+                              message: _layout.showsDetail(b)
+                                  ? '상세 내역 숨기기'
+                                  : '상세 내역 보기',
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _layout.showsDetail(b)
+                                      ? c.withValues(alpha: 0.16)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: _layout.showsDetail(b)
+                                        ? c.withValues(alpha: 0.55)
+                                        : const Color(0xFFD8D3CA),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _layout.showsDetail(b)
+                                          ? Icons.subject
+                                          : Icons.subject_outlined,
+                                      size: 11,
+                                      color: _layout.showsDetail(b)
+                                          ? c
+                                          : AppColors.textGray,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '상세',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: _layout.showsDetail(b)
+                                            ? c
+                                            : AppColors.textGray,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
@@ -670,6 +766,32 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               ),
               const SizedBox(width: 5),
               _zoomChip(),
+              const SizedBox(width: 5),
+              // (요구) 상세·메모·설명을 **전체 단위**로도 한 번에 켜고 끈다.
+              _chip(
+                label: '상세',
+                icon: _layout.anyDetail ? Icons.subject : Icons.subject_outlined,
+                on: _layout.anyDetail,
+                onTap: () => _touch(
+                  () => _layout.setAllDetails(!_layout.anyDetail),
+                ),
+              ),
+              const SizedBox(width: 5),
+              _chip(
+                label: '메모',
+                icon: Icons.sticky_note_2_outlined,
+                on: _layout.showMemo,
+                onTap: () =>
+                    _touch(() => _layout.showMemo = !_layout.showMemo),
+              ),
+              const SizedBox(width: 5),
+              _chip(
+                label: '설명',
+                icon: Icons.notes,
+                on: _layout.showNotes,
+                onTap: () =>
+                    _touch(() => _layout.showNotes = !_layout.showNotes),
+              ),
               const Spacer(),
               TextButton(
                 onPressed: () => Navigator.pop(context),

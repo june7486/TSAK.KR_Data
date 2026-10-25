@@ -208,7 +208,8 @@ void main() {
   );
 
   // ── ④ 요약 — 후원금(수입)과 현물을 섞지 않는다 ────────────────────
-  check('요약 2줄', kb.summary.length == 2, '${kb.summary.length}');
+  // (요구) 메모 수록 여부 줄이 추가되어 3줄(메모 OFF 면 2줄).
+  check('요약 3줄(메모 포함)', kb.summary.length == 3, '${kb.summary.length}');
   check('후원금(수입) 200,000원', kb.summary[0].contains('200,000원'), kb.summary[0]);
   check('후원금 건수 1건', kb.summary[0].contains('1건'), kb.summary[0]);
   check('현물 금액 100,000원', kb.summary[1].contains('금액 100,000원'), kb.summary[1]);
@@ -247,8 +248,9 @@ void main() {
   // 기본값 — 후원자/후원항목/세부항목/금액/금액상당.
   final d1 = buildDonationDocData(rows: rows, options: opt, won: won);
   check(
-    '기본 필드 열 = 후원자·후원항목·세부항목·금액·금액 상당',
-    d1.columns.join(',') == '연번,후원자,후원항목,세부항목,금액,금액 상당',
+    // (요구) 메모를 기본 노출로 올렸다.
+    '기본 필드 열 = 후원자·후원항목·세부항목·금액·금액 상당·메모',
+    d1.columns.join(',') == '연번,후원자,후원항목,세부항목,금액,금액 상당,메모',
     d1.columns.join(','),
   );
 

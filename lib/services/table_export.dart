@@ -38,7 +38,16 @@ class TsakTableDoc {
     this.footerLeft = '한국범스카우트중앙회',
     this.landscape = false,
     this.options,
+    this.reportBlocks,
   });
+
+  /// 보고서형 블록 — 있으면 PDF/JPG 가 **무인양품 표 대신** 블록 그래픽으로
+  /// 출력된다. (요구: "결산 PDF 를 계산서가 아니라 보고서처럼")
+  ///
+  /// null 이면 종전과 완전히 동일하게 동작한다(다른 문서 영향 0).
+  /// CSV/TXT/PPT/워드/HTML 인쇄는 이 값이 있어도 [columns]/[rows] 를 그대로
+  /// 쓰므로 **형식별 결과가 깨지지 않는다**.
+  final List<DocReportBlock>? reportBlocks;
 
   final String title;
   final String subtitle;
@@ -230,32 +239,12 @@ Future<({Uint8List bytes, String ext, String mime})> buildTsakTableFile(
   switch (format) {
     case TsakOutputFormat.pdf:
       return (
-        bytes: await DocPdf.buildSimple(
-          meta: doc.meta,
-          columns: doc.viewColumns,
-          rows: doc.viewRows,
-          summary: doc.summary,
-          footerLeft: doc.footerLeft,
-          landscape: doc.effectiveLandscape,
-          scale: doc.options?.scale ?? 1.0,
-          rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
-          noWrapCols: doc.effectiveNoWrapCols,
-        ),
+        bytes: await _buildPdf(doc),
         ext: 'pdf',
         mime: 'application/pdf',
       );
     case TsakOutputFormat.jpg:
-      final pdf = await DocPdf.buildSimple(
-        meta: doc.meta,
-        columns: doc.viewColumns,
-        rows: doc.viewRows,
-        summary: doc.summary,
-        footerLeft: doc.footerLeft,
-        landscape: doc.effectiveLandscape,
-        scale: doc.options?.scale ?? 1.0,
-        rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
-        noWrapCols: doc.effectiveNoWrapCols,
-      );
+      final pdf = await _buildPdf(doc);
       return (bytes: await pdfToJpg(pdf), ext: 'jpg', mime: 'image/jpeg');
     case TsakOutputFormat.excel:
       // 규칙: excel 은 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 한다.
@@ -406,6 +395,36 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
 
 // ── 내부 헬퍼 ──
 Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
+
+/// PDF 바이트 — [TsakTableDoc.reportBlocks] 가 있으면 **보고서형**으로 그린다.
+///
+/// (요구) 결산 PDF 는 계산서가 아니라 보고서처럼 → 미리보기와 같은 블록 그래픽.
+/// 블록이 없으면 종전 무인양품 표([DocPdf.buildSimple]) 그대로다.
+Future<Uint8List> _buildPdf(TsakTableDoc doc) {
+  final blocks = doc.reportBlocks;
+  if (blocks != null && blocks.isNotEmpty) {
+    return DocPdf.buildReport(
+      meta: doc.meta,
+      blocks: blocks,
+      summary: doc.summary,
+      footerLeft: doc.footerLeft,
+      landscape: doc.effectiveLandscape,
+      scale: doc.options?.scale ?? 1.0,
+      rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
+    );
+  }
+  return DocPdf.buildSimple(
+    meta: doc.meta,
+    columns: doc.viewColumns,
+    rows: doc.viewRows,
+    summary: doc.summary,
+    footerLeft: doc.footerLeft,
+    landscape: doc.effectiveLandscape,
+    scale: doc.options?.scale ?? 1.0,
+    rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
+    noWrapCols: doc.effectiveNoWrapCols,
+  );
+}
 
 /// 출력물(HTML 인쇄/PDF)에 넣을 **중앙회 엠블럼(data URI)** 을 한 번만 읽어 캐시.
 ///

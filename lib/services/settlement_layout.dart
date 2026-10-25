@@ -19,6 +19,7 @@ library;
 
 import 'donation_kinds.dart';
 import 'event_settlement.dart';
+import 'print_doc.dart';
 import 'table_options.dart';
 
 /// 결산서를 구성하는 항목 블록.
@@ -107,6 +108,8 @@ class SettlementLayout {
     this.landscape = false,
     this.noWrap = true,
     this.showNotes = true,
+    this.showMemo = true,
+    this.reportStyle = true,
     Set<SettlementBlock>? detailOff,
   }) : order = order ?? [...SettlementBlock.values],
        excluded = excluded ?? <SettlementBlock>{},
@@ -194,6 +197,22 @@ class SettlementLayout {
   /// 두 줄 방지.
   bool noWrap;
 
+  /// 상세 내역에 **메모**를 함께 보여줄지.
+  ///
+  /// (요구) "결산시에도 메모 내역을 추가해서 보여주고, 항목을 선택할 수 있도록"
+  /// → 메모는 원본 재무 행의 자유 입력란이라 길이·형식이 제각각이다.
+  ///   회계 보고서에 넣을지 말지는 **관리자가 고른다**(기본 켜짐).
+  bool showMemo;
+
+  /// 보고서형 출력(무인양품 표 대신 블록 제목 띠 + 4열 표)을 쓸지.
+  ///
+  /// (요구) "pdf 출력물의 형태는 결산의 경우 기존 무인양품 스타일을 버리고,
+  ///  미리보기 항목의 내용을 참조해서 항목별로 보기좋게 출력 … 계산서처럼
+  ///  보여지기보다는 보고서처럼"
+  /// → true 면 [SettlementPaperView] 와 **같은 그래픽**(블록 컬러 띠·4열)으로
+  ///   PDF 를 만든다. 화면 미리보기 = PDF 가 된다.
+  bool reportStyle;
+
   bool includes(SettlementBlock b) => !excluded.contains(b);
 
   /// 실제 출력에 포함되는 블록(순서 유지).
@@ -259,6 +278,8 @@ class SettlementLayout {
     landscape: landscape,
     noWrap: noWrap,
     showNotes: showNotes,
+    showMemo: showMemo,
+    reportStyle: reportStyle,
     detailOff: {...detailOff},
   );
 
@@ -269,6 +290,8 @@ class SettlementLayout {
     landscape = false;
     noWrap = true;
     showNotes = true;
+    showMemo = true;
+    reportStyle = true;
     detailOff.clear();
   }
 
@@ -279,7 +302,9 @@ class SettlementLayout {
       landscape ||
       !noWrap ||
       detailOff.isNotEmpty ||
-      !showNotes;
+      !showNotes ||
+      !showMemo ||
+      !reportStyle;
 
   /// 서식 요약 — 예: '가로 · 글씨 108% · 줄간격 92%'.
   String get styleBadge {
@@ -294,6 +319,8 @@ class SettlementLayout {
     if (!noWrap) parts.add('두줄허용');
     parts.add(anyDetail ? '상세 $detailCount/${includedCount}' : '상세 없음');
     if (!showNotes) parts.add('설명 없음');
+    if (!showMemo) parts.add('메모 없음');
+    parts.add(reportStyle ? '보고서형' : '표형');
     return parts.join(' · ');
   }
 
@@ -313,7 +340,6 @@ class SettlementLayout {
   List<String> toJson() => [for (final b in order) b.name];
   List<String> excludedJson() => [for (final b in excluded) b.name];
   List<String> detailOffJson() => [for (final b in detailOff) b.name];
-
   static SettlementLayout fromJson(
     List<dynamic>? order,
     List<dynamic>? excluded, {
@@ -323,6 +349,8 @@ class SettlementLayout {
     bool noWrap = true,
     bool showDetails = true,
     bool showNotes = true,
+    bool showMemo = true,
+    bool reportStyle = true,
     List<dynamic>? detailOff,
   }) {
     final ord = <SettlementBlock>[];
@@ -354,6 +382,8 @@ class SettlementLayout {
       landscape: landscape,
       noWrap: noWrap,
       showNotes: showNotes,
+      showMemo: showMemo,
+      reportStyle: reportStyle,
       detailOff: off,
     );
   }
@@ -376,6 +406,8 @@ class SettlementBuilder {
     required List<Map<String, dynamic>> expenses,
     required List<Map<String, dynamic>> attendees,
     String Function(int) won = _wonDefault,
+    /// (요구) 상세 내역에 **메모**를 넣을지 — 미리보기에서 켜고 끈다.
+    bool memo = true,
   }) {
     final out = <SettlementBlock, SettlementBlockData>{};
 
@@ -434,7 +466,7 @@ class SettlementBuilder {
           if (DonationKind.parse(f['category'] as String? ?? '').isIncome ||
               '${f['category'] ?? ''}'.trim() == '참가비' ||
               '${f['category'] ?? ''}'.trim() == '기타수입')
-            _moneyLine(f, won),
+            _moneyLine(f, won, memo: memo),
       ],
     );
 
@@ -475,7 +507,9 @@ class SettlementBuilder {
             r.kind.label,
             if (r.item.isNotEmpty) r.item,
             r.displayAmount,
-          ].join(' · '),
+            // (요구) 후원자·후원금·후원물품의 **메모**도 상세에 함께.
+            if (memo) _memoPart(r.memo),
+          ].where((e) => e.isNotEmpty).join(' · '),
       ],
     );
 
@@ -499,7 +533,7 @@ class SettlementBuilder {
       rows: catRows,
       note: '지출 ${expenses.length}건 · 분류 ${byCat.length}종',
       empty: byCat.isEmpty,
-      details: [for (final e in expenses) _moneyLine(e, won)],
+      details: [for (final e in expenses) _moneyLine(e, won, memo: memo)],
     );
 
     // ── ⑤ 지출 (계좌별) ──────────────────────────────────────────────
@@ -521,7 +555,7 @@ class SettlementBuilder {
       rows: acctRows,
       note: '출금계좌를 지정하지 않은 지출은 (계좌 미지정)으로 묶입니다',
       empty: byAcct.isEmpty,
-      details: [for (final e in expenses) _moneyLine(e, won)],
+      details: [for (final e in expenses) _moneyLine(e, won, memo: memo)],
     );
 
     // ── ⑥ 잔액 ───────────────────────────────────────────────────────
@@ -545,7 +579,15 @@ class SettlementBuilder {
   }
 
   /// 원본 재무 행 1건 → `'2026-05-12 · 김철수 · 점심식사 12,000원 · 행사비'`.
-  static String _moneyLine(Map<String, dynamic> r, String Function(int) won) {
+  ///
+  /// (요구) "결산시에도 메모 내역을 추가해서 보여주고, 항목을 선택할 수 있도록"
+  /// → [memo] 가 켜져 있고 그 행에 메모가 있으면 끝에 `· 메모: …` 를 붙인다.
+  ///   메모는 여러 줄일 수 있으므로 한 줄로 눌러 담는다(표 안에서 안 터지게).
+  static String _moneyLine(
+    Map<String, dynamic> r,
+    String Function(int) won, {
+    bool memo = true,
+  }) {
     final amount =
         int.tryParse(
           '${r['amount'] ?? 0}'.replaceAll(RegExp(r'[^0-9-]'), ''),
@@ -564,8 +606,15 @@ class SettlementBuilder {
           : '${r['category']} · ${r['item']}'.trim(),
       amount > 0 ? won(amount) : '',
       val > 0 ? '${won(val)} 상당' : '',
+      if (memo) _memoPart(r['memo']),
     ];
     return parts.where((e) => e.isNotEmpty).join(' · ');
+  }
+
+  /// 메모 한 조각 — 비어 있으면 빈 문자열(목록에서 자동 생략).
+  static String _memoPart(Object? raw) {
+    final t = '${raw ?? ''}'.replaceAll(RegExp(r'\s*\n\s*'), ' ').trim();
+    return t.isEmpty ? '' : '메모: $t';
   }
 
   /// `100,000원 + 100,000원 상당` 형태 — 0 인 쪽은 생략.
@@ -578,4 +627,59 @@ class SettlementBuilder {
   }
 
   static String _wonDefault(int v) => '${EventSettlement.comma(v)}원';
+}
+
+/// 결산 블록 → **보고서형 PDF 블록** 변환.
+///
+/// ## 요구사항 (그대로)
+/// "pdf 출력물의 형태는 결산의 경우 기존 무인양품 스타일을 버리고, 미리보기
+///  항목의 내용을 참조해서 항목별로 보기좋게 출력 … 계산서처럼 보여지기보다는
+///  보고서처럼"
+///
+/// ## 규칙
+///  · 블록 색은 미리보기(`SettlementPaperView._blockColor`)와 **같은 값**을 쓴다.
+///  · 표 아래에 [SettlementLayout.showsDetail] 이 켜진 블록만 상세 내역을 붙인다.
+///  · 메모는 [SettlementLayout.showMemo] 가 켜져 있을 때만 상세 줄에 이미
+///    포함되어 있다(빌더가 이미 걸러 넣는다) — 여기서 또 거르지 않는다.
+///  · [SettlementLayout.showNotes] 가 꺼져 있으면 note 를 비운다.
+class SettlementReportBuilder {
+  const SettlementReportBuilder._();
+
+  /// 블록 강조색 — `SettlementPaperView._blockColor` 와 1:1 (hex).
+  static String accentOf(SettlementBlock b) => switch (b) {
+    SettlementBlock.attendees => '#2E5F8A', // taegeukBlue
+    SettlementBlock.income => '#4E7A4B', // scoutGreen
+    SettlementBlock.sponsor => '#A6763C', // tigerGold
+    SettlementBlock.expenseCategory => '#A63A3A', // taegeukRed
+    SettlementBlock.expenseAccount => '#7C6A9C', // purple
+    SettlementBlock.balance => '#3A3A3A', // masterInk
+  };
+
+  /// 결산 데이터 → 보고서 블록 목록(포함된 블록만, 고른 순서대로).
+  static List<DocReportBlock> build({
+    required SettlementLayout layout,
+    required Map<SettlementBlock, SettlementBlockData> data,
+    int detailMax = 40,
+  }) {
+    final out = <DocReportBlock>[];
+    for (final b in layout.included) {
+      final d = data[b];
+      if (d == null) continue;
+      // 상세 내역이 꺼져 있으면 표(합계)만 — '요약 보고서'.
+      final rows = <List<String>>[...d.rows];
+      if (layout.showsDetail(b)) {
+        rows.addAll(d.detailRows(max: detailMax));
+      }
+      out.add(
+        DocReportBlock(
+          title: b.label,
+          subtitle: rows.length == 1 ? '' : '${rows.length}행',
+          rows: rows,
+          accent: accentOf(b),
+          note: layout.showNotes ? d.note : '',
+        ),
+      );
+    }
+    return out;
+  }
 }

@@ -60,7 +60,10 @@ enum DonationField {
   amount('금액', '실제로 받은 현금', true, true),
   value('금액 상당', '"10만원 상당" 의 그 금액', true, true),
   date('날짜', '후원 접수일', false, false),
-  memo('메모', '비고·특이사항', false, false),
+  // (요구) "후원내역 출력시 메모내용을 추가해서 출력해줘"
+  //  종전엔 기본 OFF 라 실제 출력물에 메모가 거의 보이지 않았다.
+  //  후원자별·내역별 **둘 다 기본 ON** 으로 올린다(현장에서 가장 먼저 찾는 항목).
+  memo('메모', '비고·특이사항', true, true),
   attach('자료', '붙인 증빙 건수', false, false);
 
   const DonationField(this.label, this.hint, this.inBySponsor, this.inByKind);
@@ -285,10 +288,17 @@ DonationDocData buildDonationDocData({
   final cashSum = cash.fold<int>(0, (s, e) => s + e.amount);
   final sponsorCash = sponsors.fold<int>(0, (s, e) => s + e.amount);
   final sponsorValue = sponsors.fold<int>(0, (s, e) => s + e.value);
+
+  // (요구) 메모가 실제로 몇 건에 붙어 있는지 요약에서 보여준다 —
+  //  '메모 3건' 이 보이면 사용자는 출력물에 메모가 실렸음을 바로 안다.
+  final memoRows = donations.where((e) => e.memo.trim().isNotEmpty).length;
+
   final summary = <String>[
     '후원금(수입) ${cash.length}건 · ${won(cashSum)}',
     '현물후원 ${sponsors.length}건 · 금액 ${won(sponsorCash)}'
         ' + 상당 ${won(sponsorValue)}',
+    if (on(DonationField.memo))
+      memoRows == 0 ? '메모 없음' : '메모 $memoRows건 수록',
   ];
 
   return DonationDocData(
@@ -346,14 +356,35 @@ class _Group {
   }
 
   /// 메모들 — 중복 제거 후 줄바꿈 대신 ' / '.
+  ///
+  /// (요구) "후원내역 출력시 메모내용을 추가해서 출력해줘"
+  /// 메모는 **한 건에 여러 줄**이 들어오는 경우가 많다(예: "현장 전달\n영수증 별첨").
+  /// 그대로 이어 붙이면 표 안에서 한 줄이 터무니없이 길어지므로, 줄바꿈을
+  /// 공백으로 눌러 **한 줄 요약**으로 만든다. 표에서는 이 값이 쓰이고,
+  /// 전문(全文)이 필요하면 [memoLines] 를 쓴다.
   String get memoText {
     final out = <String>[];
     for (final e in items) {
-      final m = e.memo.trim();
+      final m = e.memo.replaceAll(RegExp(r'\s*\n\s*'), ' ').trim();
       if (m.isNotEmpty && !out.contains(m)) out.add(m);
     }
     return out.isEmpty ? '-' : out.join(' / ');
   }
+
+  /// 메모 원문(줄바꿈 유지) — 상세 내역·보고서형 출력에서 한 줄씩 보여준다.
+  List<String> get memoLines {
+    final out = <String>[];
+    for (final e in items) {
+      for (final line in e.memo.split('\n')) {
+        final t = line.trim();
+        if (t.isNotEmpty && !out.contains(t)) out.add(t);
+      }
+    }
+    return out;
+  }
+
+  /// 메모가 있는 후원 건수(요약 줄에 '메모 n건' 표기용).
+  int get memoCount => items.where((e) => e.memo.trim().isNotEmpty).length;
 
   /// 붙인 자료 건수 합.
   int get attachCount => items.fold(0, (sum, e) => sum + e.attach);

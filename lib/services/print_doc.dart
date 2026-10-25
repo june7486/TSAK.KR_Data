@@ -89,6 +89,43 @@ String sanitizeDocText(String? s) {
       .replaceAll(RegExp(r'\n{3,}'), '\n\n');
 }
 
+/// 보고서형 PDF 의 **한 블록** — 컬러 제목 띠 + 4열 표 + 하단 메모.
+///
+/// ## 요구사항 (그대로)
+/// "pdf 출력물의 형태는 결산의 경우 기존 무인양품 스타일을 버리고, 미리보기
+///  항목의 내용을 참조해서 항목별로 보기좋게 출력 … 계산서처럼 보여지기보다는
+///  보고서처럼 보여지는게 좋아서그래."
+///
+/// ## 설계
+/// 미리보기(`SettlementPaperView`)의 블록 하나와 **1:1 대응**한다.
+///  · [accent] : 좌측 3pt 컬러 바 + 10% 배경 틴트 색
+///  · [rows]   : 4열 [항목, 내용, 금액·인원, 비고/메모]
+///  · [note]   : 표 아래 작은 설명 한 줄
+class DocReportBlock {
+  const DocReportBlock({
+    required this.title,
+    required this.rows,
+    this.accent = '#7C6A9C',
+    this.subtitle = '',
+    this.note = '',
+  });
+
+  /// 블록 제목(예: '후원 내역').
+  final String title;
+
+  /// 우측 작은 글씨(예: '8건').
+  final String subtitle;
+
+  /// 4열 행 목록.
+  final List<List<String>> rows;
+
+  /// 강조색(hex) — 좌측 바·틴트·합계 행 글씨에 쓰인다.
+  final String accent;
+
+  /// 표 아래 한 줄 메모.
+  final String note;
+}
+
 /// 표 셀 — 좌측 컬러 바/정렬/굵기 옵션.
 class DocCell {
   const DocCell(

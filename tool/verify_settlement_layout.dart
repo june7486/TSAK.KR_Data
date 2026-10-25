@@ -97,7 +97,7 @@ void main() {
   final s = SettlementLayout();
   check('기본은 isStyled=false', s.isStyled == false);
   // (요구) 배지에 상세 내역 상태도 함께 드러난다 — 기본은 6/6.
-  eq('기본 배지', s.styleBadge, '세로 · 상세 6/6');
+  eq('기본 배지', s.styleBadge, '세로 · 상세 6/6 · 보고서형');
   s.fontScale = 1.18;
   s.rowSpace = 0.8;
   s.landscape = true;
@@ -329,6 +329,165 @@ void main() {
     );
     eq('상세 없으면 0행', none.detailRows().length, 0);
     check('hasDetails 거짓', !none.hasDetails);
+  }
+
+  // ignore: avoid_print
+  print('=== 4d. 메모 · 보고서형 블록 ===');
+  {
+    // (요구) "결산시에도 메모 내역을 추가해서 보여주고, 항목을 선택할 수 있도록"
+    final withMemo = SettlementBuilder.build(
+      settlement: EventSettlement(
+        title: 't',
+        year: '2026',
+        attendeeCount: EventAttendeeBreakdown.fromAttendees(const []),
+        attendees: const [],
+        fees: [
+          EventMoneyRow.fromMap(const {
+            'id': 'm1',
+            'date': '2026-05-01',
+            'name': '김철수',
+            'category': '참가비',
+            'amount': 50000,
+            'memo': '현장\n현금 수령',
+          }),
+        ],
+        expenses: [
+          EventMoneyRow.fromMap(const {
+            'id': 'e1',
+            'date': '2026-05-02',
+            'name': '식당',
+            'category': '행사비',
+            'amount': 30000,
+            'memo': '영수증 별첨',
+          }, expense: true),
+        ],
+      ),
+      fees: const [
+        {
+          'id': 'm1',
+          'date': '2026-05-01',
+          'name': '김철수',
+          'category': '참가비',
+          'amount': 50000,
+          'memo': '현장\n현금 수령',
+        },
+      ],
+      expenses: const [
+        {
+          'id': 'e1',
+          'date': '2026-05-02',
+          'name': '식당',
+          'category': '행사비',
+          'amount': 30000,
+          'memo': '영수증 별첨',
+        },
+      ],
+      attendees: const [],
+      memo: true,
+    );
+    final inc = withMemo[SettlementBlock.income]!;
+    check(
+      '메모 ON → 수입 상세에 메모 포함',
+      inc.details.any((d) => d.contains('메모: 현장 현금 수령')),
+      inc.details.join(' | '),
+    );
+    check('줄바꿈은 공백으로 접힘', !inc.details.any((d) => d.contains('\n')));
+    final exp = withMemo[SettlementBlock.expenseCategory]!;
+    check(
+      '메모 ON → 지출 상세에 메모 포함',
+      exp.details.any((d) => d.contains('메모: 영수증 별첨')),
+      exp.details.join(' | '),
+    );
+
+    // 메모 OFF 면 상세에서 사라져야 한다.
+    final noMemo = SettlementBuilder.build(
+      settlement: EventSettlement(
+        title: 't',
+        year: '2026',
+        attendeeCount: EventAttendeeBreakdown.fromAttendees(const []),
+        attendees: const [],
+        fees: const [],
+        expenses: const [],
+      ),
+      fees: const [
+        {
+          'id': 'm1',
+          'date': '2026-05-01',
+          'name': '김철수',
+          'category': '참가비',
+          'amount': 50000,
+          'memo': '현장 수령',
+        },
+      ],
+      expenses: const [],
+      attendees: const [],
+      memo: false,
+    );
+    final inc2 = noMemo[SettlementBlock.income]!;
+    check(
+      '메모 OFF → 상세에 메모 없음',
+      !inc2.details.any((d) => d.contains('메모')),
+      inc2.details.join(' | '),
+    );
+    check('메모 OFF 여도 행 자체는 남음', inc2.details.isNotEmpty);
+
+    // ── 보고서형 블록 변환
+    final lay = SettlementLayout();
+    final blocks = SettlementReportBuilder.build(layout: lay, data: withMemo);
+    eq('블록 수 = 포함 블록 수', blocks.length, lay.includedCount);
+    check(
+      '첫 블록 제목은 첫 포함 블록',
+      blocks.first.title == lay.included.first.label,
+      blocks.first.title,
+    );
+    check(
+      '블록마다 강조색 있음',
+      blocks.every((b) => b.accent.startsWith('#') && b.accent.length == 7),
+    );
+    // 상세 ON 이면 표 행에 '· 상세' 가 붙는다.
+    final incBlock = blocks.firstWhere(
+      (b) => b.title == SettlementBlock.income.label,
+    );
+    check(
+      '상세 ON → 블록에 상세 행 포함',
+      incBlock.rows.any((r) => r[0] == '· 상세'),
+      incBlock.rows.map((r) => r[0]).join(','),
+    );
+    // 상세 OFF 면 사라진다.
+    lay.setAllDetails(false);
+    final blocks2 = SettlementReportBuilder.build(layout: lay, data: withMemo);
+    final incBlock2 = blocks2.firstWhere(
+      (b) => b.title == SettlementBlock.income.label,
+    );
+    check(
+      '상세 OFF → 상세 행 없음',
+      !incBlock2.rows.any((r) => r[0] == '· 상세'),
+      incBlock2.rows.map((r) => r[0]).join(','),
+    );
+
+    // 설명 OFF 면 note 가 비워진다.
+    lay.setAllDetails(true);
+    lay.showNotes = false;
+    final blocks3 = SettlementReportBuilder.build(layout: lay, data: withMemo);
+    check('설명 OFF → note 비움', blocks3.every((b) => b.note.isEmpty));
+
+    // 블록 색은 미리보기와 동일해야 한다(핵심: 화면=출력).
+    eq(
+      '참가자 색',
+      SettlementReportBuilder.accentOf(SettlementBlock.attendees),
+      '#2E5F8A',
+    );
+    eq(
+      '잔액 색',
+      SettlementReportBuilder.accentOf(SettlementBlock.balance),
+      '#3A3A3A',
+    );
+
+    // 기본값 검증
+    final d0 = SettlementLayout();
+    eq('기본 showMemo', d0.showMemo, true);
+    eq('기본 reportStyle', d0.reportStyle, true);
+    eq('기본 showNotes', d0.showNotes, true);
   }
 
   // ignore: avoid_print

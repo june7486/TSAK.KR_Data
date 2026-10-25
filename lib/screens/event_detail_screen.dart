@@ -110,6 +110,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   DonationViewMode _donView = DonationViewMode.bySponsor;
   DonationFocus _donFocus = DonationFocus.both;
 
+  /// (요구) 출력에 노출할 항목 — '메모' 포함 9종을 직접 켜고 끈다.
+  Set<DonationField> _donFields = DonationDocOptions().fields;
+
   int _cols = 5;
   int _pinchBaseCols = 3;
 
@@ -4226,6 +4229,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       // 미리보기에서 고른 용지 방향과 서식(글씨·줄간격·두줄방지)을 그대로 넘긴다.
       landscape: layout.landscape,
       options: layout.toOutputOptions(),
+      // (요구) "pdf 출력물의 형태는 결산의 경우 기존 무인양품 스타일을 버리고,
+      //  미리보기 항목의 내용을 참조해서 항목별로 보기좋게 출력 … 보고서처럼"
+      //  → PDF/JPG 는 블록 컬러 띠 + 4열 표(미리보기와 동일 그래픽)로 나간다.
+      //  CSV/워드/TXT/HTML 인쇄는 위의 columns/rows 를 그대로 쓰므로 영향 없다.
+      reportBlocks: SettlementReportBuilder.build(
+        layout: layout,
+        data: data,
+      ),
     );
   }
 
@@ -4346,116 +4357,191 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }) async {
     var v = view ?? _donView;
     var f = focus ?? _donFocus;
+    var fields = <DonationField>{..._donFields};
     if (view == null) {
-      final picked = await _askDonationShape(initialView: v, initialFocus: f);
+      final picked = await _askDonationShape(
+        initialView: v,
+        initialFocus: f,
+        initialFields: fields,
+      );
       if (picked == null) return;
       v = picked.$1;
       f = picked.$2;
+      fields = picked.$3;
       _donView = v;
       _donFocus = f;
+      _donFields = fields;
     }
+    final opts = DonationDocOptions(view: v, focus: f, fields: {...fields});
     await _runOutputDoc(
-      () => _donationDoc(rows: list, view: v, focus: f),
+      () => _donationDoc(rows: list, options: opts),
       title: '${widget.title} · 후원 ${v.label}',
-      subtitle: '${list.length}건 · ${f.label} · 옵션·미리보기·인쇄',
+      subtitle:
+          '${list.length}건 · ${opts.badge} · 옵션·미리보기·인쇄',
     );
   }
 
-  /// 후원 출력 형태 선택 시트 — 보기(후원자별/내역별) + 초점(물품/금액).
-  Future<(DonationViewMode, DonationFocus)?> _askDonationShape({
+  /// 후원 출력 설정 시트 — 보기(후원자별/내역별) + 초점 + **노출 항목**.
+  ///
+  /// (요구) "후원내역 출력시 메모내용을 추가해서 출력해줘 / 항목 및 세부항목,
+  ///  메모, 내용등을 노출할지 선택할 수 있도록"
+  /// → 9개 항목(후원자·인가번호·후원항목·세부항목·금액·금액상당·날짜·메모·자료)을
+  ///   체크박스로 켜고 끈다. 물품중심/금액중심을 고르면 모순되는 항목은 자동 해제.
+  Future<(DonationViewMode, DonationFocus, Set<DonationField>)?>
+  _askDonationShape({
     required DonationViewMode initialView,
     required DonationFocus initialFocus,
+    required Set<DonationField> initialFields,
   }) async {
     var v = initialView;
     var f = initialFocus;
+    var fields = <DonationField>{...initialFields};
+
+    // 보기/초점이 바뀌면 기본값으로 다시 맞춘다(빈 표 방지).
+    void retune() {
+      final o = DonationDocOptions(view: v, focus: f, fields: {...fields});
+      o.applyFocus();
+      fields = o.fields;
+    }
+
     final ok = await showTsakFormSheet(
       context: context,
       title: '후원 출력 설정',
-      subtitle: '후원자별/내역별 · 물품중심/금액중심을 고르세요',
+      subtitle: '정리 방식 · 출력 초점 · 노출할 항목을 고르세요',
       icon: Icons.card_giftcard,
       saveLabel: '출력',
-      heightFactor: 0.62,
-      builder: (ctx, setSheetState) => SizedBox(
-        width: 460,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '정리 방식',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 4),
-            for (final e in DonationViewMode.values)
-              RadioListTile<DonationViewMode>(
-                value: e,
-                groupValue: v,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                activeColor: AppColors.tigerGold,
-                title: Text(
-                  e.label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
+      heightFactor: 0.9,
+      builder: (ctx, setSheetState) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── 정리 방식 ──
+          const _SheetLabel('정리 방식'),
+          for (final e in DonationViewMode.values)
+            RadioListTile<DonationViewMode>(
+              value: e,
+              groupValue: v,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              activeColor: AppColors.tigerGold,
+              title: Text(
+                e.label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                 ),
-                subtitle: Text(e.hint, style: const TextStyle(fontSize: 10.5)),
-                onChanged: (x) {
-                  if (x == null) return;
-                  setSheetState(() => v = x);
-                },
               ),
-            const SizedBox(height: 8),
-            const Text(
-              '출력 초점',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+              subtitle: Text(e.hint, style: const TextStyle(fontSize: 10.5)),
+              onChanged: (x) {
+                if (x == null) return;
+                setSheetState(() {
+                  v = x;
+                  retune();
+                });
+              },
             ),
-            const SizedBox(height: 4),
-            for (final e in DonationFocus.values)
-              RadioListTile<DonationFocus>(
-                value: e,
-                groupValue: f,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                activeColor: AppColors.tigerGold,
-                title: Text(
-                  e.label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
+          const SizedBox(height: 4),
+          // ── 출력 초점 ──
+          const _SheetLabel('출력 초점'),
+          for (final e in DonationFocus.values)
+            RadioListTile<DonationFocus>(
+              value: e,
+              groupValue: f,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              activeColor: AppColors.tigerGold,
+              title: Text(
+                e.label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                 ),
-                subtitle: Text(e.hint, style: const TextStyle(fontSize: 10.5)),
-                onChanged: (x) {
-                  if (x == null) return;
-                  setSheetState(() => f = x);
-                },
               ),
-            const SizedBox(height: 6),
-            const Text(
-              '※ 후원금(현금)은 수입으로, 현물후원은 참고 금액으로 따로 표기됩니다.',
-              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+              subtitle: Text(e.hint, style: const TextStyle(fontSize: 10.5)),
+              onChanged: (x) {
+                if (x == null) return;
+                setSheetState(() {
+                  f = x;
+                  retune();
+                });
+              },
             ),
-          ],
-        ),
+          const SizedBox(height: 8),
+          // ── 노출 항목 ──
+          Row(
+            children: [
+              const Expanded(child: _SheetLabel('노출할 항목')),
+              Text(
+                '${fields.length}개 선택',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textGray,
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final x in DonationField.values)
+                _FieldChip(
+                  label: x.label,
+                  hint: x.hint,
+                  on: fields.contains(x),
+                  // 초점과 모순되는 항목은 잠금(왜 꺼지는지 알 수 있게).
+                  locked:
+                      (f == DonationFocus.item &&
+                          (x == DonationField.amount ||
+                              x == DonationField.value)) ||
+                      (f == DonationFocus.money && x == DonationField.detail),
+                  onTap: () => setSheetState(() {
+                    if (fields.contains(x)) {
+                      // 최소 1개는 남긴다(빈 표 방지).
+                      if (fields.length > 1) fields.remove(x);
+                    } else {
+                      fields.add(x);
+                    }
+                  }),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.tigerGold.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              '※ 후원금(현금)은 수입으로, 현물후원은 참고 금액으로 따로 표기됩니다.\n'
+              '※ 물품중심을 고르면 금액 항목이, 금액중심을 고르면 세부항목이 자동으로 빠집니다.',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: AppColors.textGray,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
       ),
     );
     if (ok != true) return null;
-    return (v, f);
+    return (v, f, fields);
   }
 
   /// 후원 표 문서 — [buildDonationDocData] 가 만든 열/행/요약을 그대로 옮긴다.
   TsakTableDoc _donationDoc({
     required List<Map<String, dynamic>> rows,
-    required DonationViewMode view,
-    required DonationFocus focus,
+    required DonationDocOptions options,
   }) {
     final data = buildDonationDocData(
       rows: rows,
-      view: view,
-      focus: focus,
+      options: options,
       won: _won,
     );
+    final view = options.view;
+    final focus = options.focus;
     return TsakTableDoc(
       title: '${widget.year} ${widget.title}',
       subtitle: '후원 ${view.label} · ${data.subtitle}',
@@ -5400,6 +5486,88 @@ class _VideoBoxState extends State<_VideoBox> {
                 setState(() => c.value.isPlaying ? c.pause() : c.play()),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 출력 설정 시트의 작은 섹션 제목.
+class _SheetLabel extends StatelessWidget {
+  const _SheetLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 6, bottom: 2),
+    child: Text(
+      text,
+      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+    ),
+  );
+}
+
+/// 노출 항목 하나를 켜고 끄는 칩 — 잠긴 항목은 왜 못 켜는지 툴팁으로 알린다.
+class _FieldChip extends StatelessWidget {
+  const _FieldChip({
+    required this.label,
+    required this.hint,
+    required this.on,
+    required this.onTap,
+    this.locked = false,
+  });
+
+  final String label;
+  final String hint;
+  final bool on;
+  final bool locked;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = locked
+        ? AppColors.textGray.withValues(alpha: 0.55)
+        : (on ? AppColors.purple : AppColors.textGray);
+    return Tooltip(
+      message: locked ? '$hint — 출력 초점과 맞지 않아 빠집니다' : hint,
+      child: InkWell(
+        onTap: locked ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          decoration: BoxDecoration(
+            color: on
+                ? AppColors.purple.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: on
+                  ? AppColors.purple.withValues(alpha: 0.55)
+                  : const Color(0xFFD8D3CA),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                locked
+                    ? Icons.lock_outline
+                    : (on ? Icons.check_box : Icons.check_box_outline_blank),
+                size: 13,
+                color: c,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: on ? FontWeight.w800 : FontWeight.w600,
+                  color: on ? AppColors.purple : AppColors.textGray,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

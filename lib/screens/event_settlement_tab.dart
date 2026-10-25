@@ -97,6 +97,8 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
         expenses: widget.expenses,
         attendees: widget.attendees,
         won: _won,
+        // (요구) "결산시에도 메모 내역을 추가" — 미리보기의 '메모' 스위치를 따른다.
+        memo: _layout.showMemo,
       );
 
   String _won(int v) => '${EventSettlement.comma(v)}원';
