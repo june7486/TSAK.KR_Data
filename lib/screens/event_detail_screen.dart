@@ -131,6 +131,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   /// 방금 _load 에서 읽은 '지금 폴더' 항목들(자동 진입 판단용).
   List<Map<String, dynamic>> _mediaHere = const [];
 
+  /// (요구) "나스 내에 있는 폴더내 사진이 보여지지 않음" — 재귀 평탄화 보기.
+  ///  사진이 `00 사진+동영상` 처럼 한 겹 안쪽 폴더에 있어도 한 번에 보인다.
+  bool _mediaDeep = false;
+
+  /// (요구) "앱 상단 제목과 나스 폴더명이 다릅니다" — 불일치 시 실제 폴더명.
+  ///  {app: 앱 제목, nas: 나스 실제 폴더명} / null 이면 일치.
+  Map<String, dynamic>? _folderAlias;
+
   String get _mediaSub => _mediaPath.join('/');
 
   @override
@@ -198,9 +206,41 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       }
       final e = results[0] as Map<String, dynamic>;
       final plan = results[1] as List<Map<String, dynamic>>;
-      final media = results[2] as List<Map<String, dynamic>>;
+      var media = results[2] as List<Map<String, dynamic>>;
       final access = results[3] as Map<String, dynamic>;
       final fin = results[4] as Map<String, dynamic>;
+      // [요구] "나스 내에 있는 폴더내 사진이 보여지지 않음" — 근본 해결.
+      //  사진이 항목 폴더 바로 아래가 아니라 '00 사진+동영상' 처럼 한 겹
+      //  더 안쪽 폴더에 있으면, 앱은 폴더 카드만 보여줬다(사용자는 빈 화면으로
+      //  오해). 폴더만 있고 사진이 없으면 **재귀 평탄화(deep)** 로 다시 받아
+      //  하위 폴더의 사진·동영상을 '한 화면에' 모두 보여준다.
+      bool mediaDeep = false;
+      if (_mediaPath.isEmpty) {
+        final hasMediaHere = media.any((m) {
+          final k = '${m['kind'] ?? ''}';
+          return m['isdir'] != true && (k == 'image' || k == 'video');
+        });
+        final hasFolder = media.any((m) => m['isdir'] == true);
+        if (!hasMediaHere && hasFolder) {
+          try {
+            final deepList = await _nas.eventFiles(
+              widget.year,
+              widget.title,
+              'media',
+              fresh: fresh,
+              deep: true,
+            );
+            if (deepList.isNotEmpty) {
+              media = deepList;
+              mediaDeep = true;
+            }
+          } catch (_) {
+            // 평탄화 실패 시 폴더 탐색 방식으로 그대로 진행.
+          }
+        }
+      }
+      _mediaDeep = mediaDeep;
+      _folderAlias = _nas.lastFolderAlias;
       final atts = ((e['attendees'] as List?) ?? [])
           .map((x) => (x as Map).cast<String, dynamic>())
           .toList();
@@ -238,6 +278,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _event = e;
         _plan = plan;
         _media = media;
+        _mediaHere = media;
         _mediaHere = media;
         _access = access;
         _attendees = atts;
@@ -280,7 +321,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       //  있으면, 그 폴더가 유일할 때 자동으로 열어 준다.
       //  (PC 에서 만든 폴더에 사진을 몰아넣은 경우가 대부분 — 사용자는
       //   폴더 카드만 보고 "사진이 안 보인다"고 느꼈다.)
-      if (_mediaPath.isEmpty && !_mediaAutoOpened) {
+      if (!_mediaDeep && _mediaPath.isEmpty && !_mediaAutoOpened) {
         final hasMediaHere = media.any((m) {
           final k = '${m['kind'] ?? ''}';
           return m['isdir'] != true && (k == 'image' || k == 'video');
@@ -3109,6 +3150,96 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ],
           ),
         ),
+        // ── 폴더명 불일치 안내 ───────────────────────────────────────────
+        //  (요구) "결정적 단서를 찾았습니다. 앱 상단 제목과 나스 폴더명이
+        //  다릅니다." — 서버가 실제 나스 폴더명을 알려주면 그대로 노출한다.
+        if (_folderAlias != null &&
+            _mediaPath.isEmpty &&
+            widget.canManage)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(10, 2, 10, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: AppColors.tigerGold.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.tigerGold.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.drive_file_rename_outline,
+                  size: 18,
+                  color: AppColors.tigerGold,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '나스 실제 폴더명: '
+                        '${_folderAlias!['nas'] ?? ''}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          height: 1.35,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '앱 제목과 달라도 위 폴더의 사진을 그대로 불러옵니다.',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          height: 1.3,
+                          color: AppColors.textGray.withValues(alpha: 0.95),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // ── 재귀 평탄화 보기 안내 ────────────────────────────────────────
+        if (_mediaDeep && _mediaPath.isEmpty)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(10, 2, 10, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.scoutGreen.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.scoutGreen.withValues(alpha: 0.28),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.photo_library_outlined,
+                  size: 17,
+                  color: AppColors.scoutGreen,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '하위 폴더까지 모두 펼쳐서 보는 중 · ${visible.length}개',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      height: 1.3,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         // ── 폴더만 있는 상태 안내 ────────────────────────────────────────
         //  (요구) "나스 내에 있는 폴더내 사진이 보여지지 않음"
         //  폴더가 2개 이상이라 자동 진입을 하지 못한 경우, 폴더를 눌러야
