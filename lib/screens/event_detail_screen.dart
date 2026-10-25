@@ -121,6 +121,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   bool _mediaSelect = false;
   final Set<String> _mediaSel = {};
 
+  /// (버그 수정) 나스에 **폴더 하나만** 있고 그 안에 사진이 전부 들어 있는
+  /// 경우, 앱은 폴더 카드 1장만 보여줘 사용자에게는 "사진이 안 보인다"로
+  /// 보였다(실측: `00 사진+동영상` 안에 387장). 폴더를 **자동으로 열어**
+  /// 사진이 바로 보이게 한다. 사용자가 브레드크럼으로 루트에 돌아가면
+  /// [_mediaAutoOpened] 로 다시 자동 진입하지 않는다.
+  bool _mediaAutoOpened = false;
+
+  /// 방금 _load 에서 읽은 '지금 폴더' 항목들(자동 진입 판단용).
+  List<Map<String, dynamic>> _mediaHere = const [];
+
   String get _mediaSub => _mediaPath.join('/');
 
   @override
@@ -151,7 +161,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   NasApi get _nas => context.read<NasApi>();
 
-  Future<void> _load() async {
+  /// [fresh] true 면 서버 파일목록 캐시를 버리고 NAS 에서 다시 읽는다.
+  ///  (요구) "직접 업로드 한 폴더가 보여지지 않는 버그" — PC·NAS 탐색기에서
+  ///   직접 만든 폴더/사진은 서버 캐시에 없으므로 사용자가 새로고침할 수 있어야 한다.
+  Future<void> _load({bool fresh = false}) async {
     setState(() => _loading = true);
     try {
       // [요구] 행사 폴더 열기 속도 개선 — 5개 API(행사·기획서·미디어·접근·재무)를
@@ -162,7 +175,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       Future<List<Object>> _fetchAll() => Future.wait<Object>([
         _nas.eventGet(widget.year, widget.title),
         _nas.eventFiles(widget.year, widget.title, 'plan'),
-        _nas.eventFiles(widget.year, widget.title, 'media', sub: _mediaSub),
+        _nas.eventFiles(
+          widget.year,
+          widget.title,
+          'media',
+          sub: _mediaSub,
+          fresh: fresh,
+        ),
         _nas.eventAccessMap(widget.year, widget.title),
         widget.canManage
             ? _nas.eventFinance(widget.year, widget.title)
@@ -219,6 +238,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _event = e;
         _plan = plan;
         _media = media;
+        _mediaHere = media;
         _access = access;
         _attendees = atts;
         _isStaff = isStaff;
@@ -254,6 +274,30 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         }
         if (!fullView) _tab!.index = 0;
       });
+
+      // ── 사진 폴더 자동 진입 ────────────────────────────────────────────
+      //  이 행사의 '사진+동영상' 루트에 **미디어 파일이 하나도 없고 폴더만**
+      //  있으면, 그 폴더가 유일할 때 자동으로 열어 준다.
+      //  (PC 에서 만든 폴더에 사진을 몰아넣은 경우가 대부분 — 사용자는
+      //   폴더 카드만 보고 "사진이 안 보인다"고 느꼈다.)
+      if (_mediaPath.isEmpty && !_mediaAutoOpened) {
+        final hasMediaHere = media.any((m) {
+          final k = '${m['kind'] ?? ''}';
+          return m['isdir'] != true && (k == 'image' || k == 'video');
+        });
+        final dirs = media.where((m) => m['isdir'] == true).toList();
+        if (!hasMediaHere && dirs.length == 1) {
+          final only = '${dirs.first['name']}';
+          if (only.isNotEmpty && (dirs.first['count'] ?? 0) != 0) {
+            _mediaAutoOpened = true;
+            // 다음 프레임에 폴더 진입(현재 setState 사이클을 깨지 않도록).
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || _mediaPath.isNotEmpty) return;
+              _enterFolder(only, auto: true);
+            });
+          }
+        }
+      }
     } catch (err) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -2860,9 +2904,24 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     'webm',
   ];
 
+  /// 서버가 업로드 폴더를 처음 만들 때 넣어두는 **안내용 샘플 파일**.
+  ///
+  /// `샘플_사진설명.txt` 같은 파일이 실제 사진과 똑같은 카드로 보여
+  /// "사진이 이 파일 하나뿐"으로 오해되던 문제를 막는다(요구: "나스 내에
+  /// 있는 폴더내 사진이 보여지지 않음"). 이름이 `샘플_` 로 시작하면 목록에서
+  /// 감추되, 폴더가 완전히 비어 보이지 않도록 안내 문구는 따로 띄운다.
+  static bool _isSampleHint(String name) {
+    final n = name.trim();
+    return n.startsWith('샘플_') && n.toLowerCase().endsWith('.txt');
+  }
+
   Widget _mediaTab() {
-    final folders = _media.where((m) => m['isdir'] == true).toList();
-    final files = _media.where((m) => m['isdir'] != true).toList();
+    // 샘플 안내문(.txt)은 그리드에서 제외 — 사진/영상만 보이게.
+    final visible = _media
+        .where((m) => !_isSampleHint('${m['name'] ?? ''}'))
+        .toList();
+    final folders = visible.where((m) => m['isdir'] == true).toList();
+    final files = visible.where((m) => m['isdir'] != true).toList();
     return Column(
       children: [
         // ---- 브레드크럼 (하위폴더 탐색) ----
@@ -2946,6 +3005,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 ),
               ),
               IconButton(
+                tooltip: '나스에서 다시 불러오기\n(PC·탐색기에서 직접 올린 파일 반영)',
+                visualDensity: VisualDensity.compact,
+                onPressed: _refreshMedia,
+                icon: const Icon(Icons.refresh),
+              ),
+              IconButton(
                 tooltip: '열 늘리기 (사진 축소)',
                 visualDensity: VisualDensity.compact,
                 onPressed: _cols < 10
@@ -2999,7 +3064,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _media.isEmpty
+                  onPressed: visible.isEmpty
                       ? null
                       : () => _download(
                           _nas.eventZipUrl(
@@ -3044,8 +3109,50 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ],
           ),
         ),
+        // ── 폴더만 있는 상태 안내 ────────────────────────────────────────
+        //  (요구) "나스 내에 있는 폴더내 사진이 보여지지 않음"
+        //  폴더가 2개 이상이라 자동 진입을 하지 못한 경우, 폴더를 눌러야
+        //  사진이 보인다는 것을 **명시적으로** 알려준다(빈 화면 오해 방지).
+        if (visible.isNotEmpty &&
+            folders.isNotEmpty &&
+            files.isEmpty &&
+            _mediaPath.isEmpty)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(10, 2, 10, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: AppColors.purple.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.purple.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.folder_open,
+                  size: 18,
+                  color: AppColors.purple,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '사진은 아래 폴더 ${folders.length}개 안에 있습니다. '
+                    '폴더를 눌러 여세요.',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      height: 1.35,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         Expanded(
-          child: _media.isEmpty
+          child: visible.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -3081,8 +3188,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       crossAxisSpacing: _cols > 5 ? 3 : 6,
                       childAspectRatio: 0.82,
                     ),
-                    itemCount: _media.length,
-                    itemBuilder: (_, i) => _mediaTile(i),
+                    itemCount: visible.length,
+                    itemBuilder: (_, i) => _mediaTile(visible[i]),
                   ),
                 ),
         ),
@@ -3139,13 +3246,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     await _load();
   }
 
-  void _enterFolder(String name) {
+  /// 나스에서 **강제로 다시 읽기** — PC·탐색기에서 직접 올린 파일 반영.
+  Future<void> _refreshMedia() async {
+    _snack('나스에서 다시 불러오는 중…');
+    await _load(fresh: true);
+    if (!mounted) return;
+    final n = _mediaHere.where((m) => m['isdir'] != true).length;
+    final d = _mediaHere.where((m) => m['isdir'] == true).length;
+    _snack('새로고침 완료 · 폴더 $d개 / 파일 $n개');
+  }
+
+  void _enterFolder(String name, {bool auto = false}) {
     setState(() {
       _mediaPath = [..._mediaPath, name];
       _mediaSel.clear();
+      if (auto) _mediaAutoOpened = true;
     });
     // 폴더 진입: 썸네일·최적화본을 미리 만들며 불러오는 중임을 안내.
-    _showMediaBusy('사진 폴더를 여는 중입니다');
+    //  단, '자동 진입'은 사용자가 누른 게 아니므로 안내 오버레이를 띄우지
+    //  않는다(앱이 저절로 멈춘 것처럼 보이는 것을 막는다).
+    if (!auto) _showMediaBusy('사진 폴더를 여는 중입니다');
     _load();
   }
 
@@ -3239,8 +3359,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     _snack(fail == 0 ? '선택한 항목을 삭제했습니다' : '$fail개 삭제 실패');
   }
 
-  Widget _mediaTile(int i) {
-    final m = _media[i];
+  Widget _mediaTile(Map<String, dynamic> item) {
+    final m = item;
     final name = '${m['name']}';
     final isDir = m['isdir'] == true;
     final kind = '${m['kind'] ?? 'image'}';
@@ -3458,7 +3578,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               }
             });
           } else {
-            _openViewer(i);
+            _openViewer(m);
           }
         },
         onLongPress: () {
@@ -3670,16 +3790,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     return ext.length > 5 ? ext.substring(0, 5) : ext;
   }
 
-  void _openViewer(int index) {
+  void _openViewer(Map<String, dynamic> tile) {
     // 뷰어는 **미디어(이미지·영상)만** 받는다. 목록에 .txt 같은 일반 파일이
     //  섞여 있으면 뷰어 인덱스와 타일 인덱스가 어긋나 엉뚱한 사진이 열린다.
     //  → 뷰어에 넘길 목록을 먼저 만들고, 그 안에서의 위치를 계산해 넘긴다.
-    final items = _media.where((m) => m['isdir'] != true).where((m) {
+    //  (버그 수정) 인덱스가 아니라 **타일 항목 자체**를 넘겨, 샘플 안내문을
+    //   숨긴 뒤에도 순서가 어긋나지 않게 한다.
+    final items = _media
+        .where((m) => m['isdir'] != true)
+        .where((m) => !_isSampleHint('${m['name'] ?? ''}'))
+        .where((m) {
       final k = '${m['kind'] ?? 'image'}';
       return k == 'image' || k == 'video';
     }).toList();
     // 현재 타일이 가리키는 파일이 뷰어 목록에서 몇 번째인지.
-    final name = '${_media[index]['name']}';
+    final name = '${tile['name']}';
     var at = items.indexWhere((m) => '${m['name']}' == name);
     if (at < 0) at = 0;
     Navigator.push(

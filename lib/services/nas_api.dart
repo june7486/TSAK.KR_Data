@@ -1394,20 +1394,45 @@ class NasApi {
     String title,
     String key, {
     String sub = '',
+    bool fresh = false,
+    bool deep = false,
   }) async {
     // [안정] 인증 헤더 포함 + HTML/오류 응답 시 1회 재시도(_robustJson).
+    //
+    // [fresh] 서버의 파일목록 캐시를 **버리고** NAS 에서 다시 읽는다.
+    //  (요구: "직접 업로드 한 폴더가 보여지지 않는 버그" — PC 에서 올린
+    //   파일은 서버 캐시가 모르므로 사용자가 새로고침할 수 있어야 한다)
+    //
+    // [deep] 미디어 폴더를 **재귀 평탄화**해서 가져온다. 사진이
+    //  '00 사진+동영상' 처럼 한 겹 안쪽 폴더에 있어도 한 번에 보인다.
+    //  (요구: "나스 내에 있는 폴더내 사진이 보여지지 않음")
     final j = await _robustJson(
       _uri(
         '/api/event/files?year=${Uri.encodeComponent(year)}'
         '&title=${Uri.encodeComponent(title)}&key=$key'
-        '&sub=${Uri.encodeComponent(sub)}',
+        '&sub=${Uri.encodeComponent(sub)}'
+        '${fresh ? '&fresh=1' : ''}'
+        '${deep ? '&deep=1' : ''}',
       ),
-      timeout: const Duration(seconds: 40),
+      timeout: const Duration(seconds: 60),
     );
+    _lastFolderAlias = (j['folderAlias'] as Map?)?.cast<String, dynamic>();
+    _lastMediaDirs = ((j['mediaDirs'] as List?) ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
     return ((j['files'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
   }
+
+  /// 마지막 eventFiles 응답에 실린 폴더명 불일치 정보
+  /// {app: '앱 제목', nas: '나스 실제 폴더명'} — null 이면 일치.
+  Map<String, dynamic>? _lastFolderAlias;
+  Map<String, dynamic>? get lastFolderAlias => _lastFolderAlias;
+
+  /// 마지막 eventFiles 응답에서 '사진이 실제로 들어있는' 하위 폴더들.
+  List<Map<String, dynamic>> _lastMediaDirs = const [];
+  List<Map<String, dynamic>> get lastMediaDirs => _lastMediaDirs;
 
   /// 행사 항목 하위폴더 생성
   Future<bool> eventMediaMkdir(
