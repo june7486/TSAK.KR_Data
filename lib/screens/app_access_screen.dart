@@ -146,13 +146,17 @@ class AppAccessScreen extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                     SizedBox(height: 6),
+                    // (요구) 관리자 접근 안내 줄은 삭제 — 관리자는 별도 경로로 안내한다.
                     Text(
-                      '• 관리자 접근: ID = TSAK  ·  비밀번호는 관리자에게 문의',
+                      '• 범 인가자 접근: ID = tiger + 본인 인가번호 (예: tiger415)',
                       style: TextStyle(fontSize: 12.5),
                     ),
                     SizedBox(height: 3),
+                    // (요구) 문구 변경 — "비밀번호는 본인 설정: 최초 비밀번호는
+                    //  관리자께 문의 → 접속 후 비밀번호 변경 가능"
                     Text(
-                      '• 범 인가자 접근: ID = tiger + 본인 인가번호 (예: tiger415)  ·  비밀번호는 본인 설정',
+                      '• 비밀번호는 본인 설정: 최초 비밀번호는 관리자께 문의 '
+                      '→ 접속 후 비밀번호 변경 가능',
                       style: TextStyle(fontSize: 12.5),
                     ),
                   ],

@@ -836,7 +836,10 @@ class _LockScreenState extends State<LockScreen> {
         text = '모든 기능·초기화·통제 권한 (변경 불가)';
         break;
       case 'personal':
-        text = 'ID = tiger + 본인 인가번호 (예: tiger415)';
+        // (요구) 문구 변경 — 최초 비밀번호는 관리자 문의, 접속 후 변경 가능.
+        text = 'ID = tiger + 본인 인가번호 (예: tiger415)\n'
+            '비밀번호는 본인 설정: 최초 비밀번호는 관리자께 문의 '
+            '→ 접속 후 비밀번호 변경 가능';
         break;
       case 'eunha':
         // 은하스카우트 — ID 형식(은하+인가번호)만 안내, 비밀번호 규칙은 노출하지 않는다(요구).
