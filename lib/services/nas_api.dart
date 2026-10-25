@@ -59,10 +59,7 @@ class NasApi {
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final r = await http
-            .get(
-              uri,
-              headers: {..._authHeaders, 'Accept': 'application/json'},
-            )
+            .get(uri, headers: {..._authHeaders, 'Accept': 'application/json'})
             .timeout(timeout);
         final body = utf8.decode(r.bodyBytes);
         final t = body.trimLeft();
@@ -599,14 +596,17 @@ class NasApi {
 
   /// [raw] 회원 맵 목록 그대로 조회 — 대량(전체 명단)일 때 Member 변환(수 초 소요)
   ///  없이 즉시 반환한다. 저장소가 raw 맵을 보관하므로 화면 렌더도 빨라진다.
-  Future<List<Map<String, dynamic>>> fetchMembersRaw({bool self = false}) async {
+  Future<List<Map<String, dynamic>>> fetchMembersRaw({
+    bool self = false,
+  }) async {
     final path = self ? '/api/members?self=1' : '/api/members';
     final r = await http
         .get(_uri(path), headers: _authHeaders)
         .timeout(const Duration(seconds: 60));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
     final list = (j['members'] as List?) ?? [];
-    return list.map((e) => (e as Map).cast<String, dynamic>())
+    return list
+        .map((e) => (e as Map).cast<String, dynamic>())
         .where((m) => '${m['id'] ?? ''}'.isNotEmpty)
         .toList();
   }
@@ -686,8 +686,10 @@ class NasApi {
     if (query.trim().length < 2) return const [];
     final r = await http
         .get(
-          _uri('/api/geo/search?q=${Uri.encodeComponent(query.trim())}'
-              '&limit=$limit'),
+          _uri(
+            '/api/geo/search?q=${Uri.encodeComponent(query.trim())}'
+            '&limit=$limit',
+          ),
           headers: _authHeaders,
         )
         .timeout(const Duration(seconds: 20));
@@ -698,15 +700,25 @@ class NasApi {
   }
 
   /// [요구] 검색 위치 미리보기 정적지도 이미지 URL (OSM 타일 스티칭).
-  String geoStaticMapUrl(String lat, String lng,
-          {int zoom = 15, int w = 640, int h = 320}) =>
+  String geoStaticMapUrl(
+    String lat,
+    String lng, {
+    int zoom = 15,
+    int w = 640,
+    int h = 320,
+  }) =>
       '$_base/api/geo/staticmap?lat=${Uri.encodeComponent(lat)}'
       '&lng=${Uri.encodeComponent(lng)}&z=$zoom&w=$w&h=$h';
 
   /// [요구] 카카오 지도 정적 이미지 URL (JavaScript 키 필요).
   ///   앱에서 바로 표시할 수 있는 <img> 용 URL.
-  String geoKakaoMapUrl(String lat, String lng,
-          {int level = 3, int w = 640, int h = 320}) =>
+  String geoKakaoMapUrl(
+    String lat,
+    String lng, {
+    int level = 3,
+    int w = 640,
+    int h = 320,
+  }) =>
       '$_base/api/geo/kakaomap?lat=${Uri.encodeComponent(lat)}'
       '&lng=${Uri.encodeComponent(lng)}&level=$level&w=$w&h=$h';
 
@@ -1644,11 +1656,7 @@ class NasApi {
   }
 
   /// [요구] 배포용 자료 삭제.
-  Future<bool> eventDistDelete(
-    String year,
-    String title,
-    String name,
-  ) async {
+  Future<bool> eventDistDelete(String year, String title, String name) async {
     final r = await http
         .post(
           _uri('/api/event/dist/delete'),
@@ -1668,7 +1676,9 @@ class NasApi {
     final e = await eventGet(year, title);
     return {
       'count': (e['credViewers'] as num?)?.toInt() ?? 0,
-      'names': ((e['credViewerNames'] as List?) ?? []).map((x) => '$x').toList(),
+      'names': ((e['credViewerNames'] as List?) ?? [])
+          .map((x) => '$x')
+          .toList(),
     };
   }
 
@@ -1799,6 +1809,23 @@ class NasApi {
     return ((j['results'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
+  }
+
+  /// (요구) 인가번호/전화번호/이름으로 **개인정보 1건**을 조회한다.
+  ///
+  /// 행사 참가자 수동 입력에서 인가번호만 넣으면 이름·소속·성별·연락처·메일·
+  /// 주소를 자동으로 채우기 위한 조회. 범/은하 양쪽 명단을 서버가 함께 본다.
+  /// 반환: `{ok, found, member:{...}}` — 없으면 found=false.
+  Future<Map<String, dynamic>> memberLookup(String query) async {
+    final r = await http
+        .post(
+          _uri('/api/member/lookup'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'q': query}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j.cast<String, dynamic>();
   }
 
   /// 행사 참가자 일괄 추가(다중 선택) — 서버가 중복 제거 후 병합한다.

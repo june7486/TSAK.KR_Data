@@ -2246,6 +2246,63 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// (요구) 행사 참가자 연동을 **로컬 캐시에 즉시** 반영한다.
+  ///
+  /// 서버(`/api/event/attendee/set`)는 저장 직후 `eventAttend[행사명]=true` 를
+  /// members.json 에 기록하지만, 앱의 메모리 캐시는 그대로라 개인정보 화면의
+  /// "행사참가 이력"에 즉시 보이지 않는다(앱 재시작/새로고침 후에야 반영).
+  /// 행사 상세에서 참가자를 저장할 때 이 메서드로 캐시를 먼저 갱신해
+  /// 개인정보 창을 열었을 때 바로 참여 행사가 보이게 한다.
+  ///
+  /// 반환: 실제로 갱신된 회원 수.
+  Future<int> linkEventToMembers(
+    String eventName,
+    Iterable<String> idents,
+  ) async {
+    final name = eventName.trim();
+    if (name.isEmpty) return 0;
+    final digits = <String>{
+      for (final i in idents)
+        if (i.replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty)
+          i.replaceAll(RegExp(r'[^0-9]'), ''),
+    };
+    if (digits.isEmpty) return 0;
+    var hit = 0;
+    bool matched(Member m) {
+      final no = m.number.replaceAll(RegExp(r'[^0-9]'), '');
+      final ph = m.phone.replaceAll(RegExp(r'[^0-9]'), '');
+      final lid = m.loginId.replaceAll(RegExp(r'[^0-9]'), '');
+      return digits.contains(no) ||
+          (ph.isNotEmpty && digits.contains(ph)) ||
+          (lid.isNotEmpty && digits.contains(lid));
+    }
+
+    // ── 범스카우트(로컬 캐시) ──
+    final touched = <Member>[];
+    for (final m in repo.allUnscoped()) {
+      if (!matched(m) || m.eventAttend[name] == true) continue;
+      final map = Map<String, bool>.from(m.eventAttend)..[name] = true;
+      touched.add(m.copyWith(eventAttend: map));
+    }
+    if (touched.isNotEmpty) {
+      await repo.saveLocalOnlyAll(touched);
+      hit += touched.length;
+    }
+    // ── 은하스카우트(별도 캐시) ──
+    for (var i = 0; i < _eunhaMembers.length; i++) {
+      final m = _eunhaMembers[i];
+      if (!matched(m) || m.eventAttend[name] == true) continue;
+      final map = Map<String, bool>.from(m.eventAttend)..[name] = true;
+      _eunhaMembers[i] = m.copyWith(eventAttend: map);
+      hit++;
+    }
+    if (hit > 0) {
+      refresh();
+      notifyListeners();
+    }
+    return hit;
+  }
+
   /// 개인/비인가자 접근에서 특정 회원이 본인인지 여부
   bool isSelfNumber(String number) {
     if (!isSelfAccess || who.isEmpty) return true;

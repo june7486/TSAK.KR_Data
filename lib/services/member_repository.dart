@@ -546,6 +546,20 @@ class MemberRepository {
     revision.value++;
   }
 
+  /// 여러 회원을 **로컬 캐시에만** 일괄 반영한다(서버 저장 없음).
+  ///  · `saveLocalOnly` 를 반복 호출하면 `_unscopedCache` 무효화가 누락돼
+  ///    목록·개인정보 화면이 옛 값을 계속 보여준다. `_putAll` 은 캐시를
+  ///    무효화하므로 일괄 반영은 반드시 이 경로를 쓴다.
+  ///  · revision 은 1회만 올려 불필요한 리빌드를 막는다.
+  Future<void> saveLocalOnlyAll(List<Member> members) async {
+    if (members.isEmpty) return;
+    final batch = <String, Map<String, dynamic>>{
+      for (final m in members) m.id: m.toMap(),
+    };
+    await _putAll(batch);
+    revision.value++;
+  }
+
   /// 단일 인가자만 NAS에 부분 저장 (전체 DB 덮어쓰기 방지)
   Future<bool> _saveOne(
     Member member, {
