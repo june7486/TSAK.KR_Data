@@ -87,6 +87,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   List<Map<String, dynamic>> _plan = [];
+
+  /// 재무(참가비·후원금/후원/지출/결산) 로드 실패 사유.
+  ///
+  /// ## [버그 수정 2026-10-25]
+  /// 종전에는 인증·통신 오류가 나도 목록이 그냥 빈 배열이 되어 화면에
+  /// **"0건"** 으로 표시됐다. 사용자는 입력한 자료가 삭제된 것으로 오해했다.
+  /// 이제 실패 사유를 담아 "불러오지 못했습니다 + 다시 시도" 로 구분해 보여준다.
+  String? _financeError;
   List<Map<String, dynamic>> _media = [];
   List<Map<String, dynamic>> _attendees = [];
 
@@ -195,9 +203,6 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           fresh: fresh,
         ),
         _nas.eventAccessMap(widget.year, widget.title),
-        widget.canManage
-            ? _nas.eventFinance(widget.year, widget.title)
-            : Future<Map<String, dynamic>>.value(const {}),
       ]);
 
       List<Object> results;
@@ -212,7 +217,55 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       final plan = results[1] as List<Map<String, dynamic>>;
       var media = results[2] as List<Map<String, dynamic>>;
       final access = results[3] as Map<String, dynamic>;
-      final fin = results[4] as Map<String, dynamic>;
+
+      // ── 재무(참가비·후원금 / 후원 / 지출 / 결산)는 **따로** 불러온다 ──────
+      //
+      // ## [버그 수정 2026-10-25] "기존 입력자료도 안 보이고 새로 넣은 값도 사라짐"
+      //
+      //  종전에는 재무를 위 Future.wait 배치에 **함께** 넣었다. 그래서 재무만
+      //  인증오류(401)가 나도 배치 전체가 실패 → 참가자·사진·기획서까지
+      //  "불러오기 실패"가 되거나, 반대로 401 JSON 이 조용히 파싱되어
+      //  `fees`=null → **0건**으로 표시됐다. 사용자는 데이터가 삭제된 줄 알았다.
+      //
+      //  이제 재무는 분리해서:
+      //   ① 인증오류면 화면 권한등급으로 **세션을 다시 발급**받고 1회 재시도.
+      //   ② 그래도 실패하면 `_financeError` 에 사유를 담아 **0건과 구분**해
+      //      화면에 "불러오지 못했습니다 + 다시 시도" 로 보여준다.
+      Map<String, dynamic> fin = const {};
+      String? financeError;
+      if (widget.canManage) {
+        Future<Map<String, dynamic>> tryFin() =>
+            _nas.eventFinance(widget.year, widget.title);
+        try {
+          fin = await tryFin();
+        } on NasAuthException {
+          // 세션 등급 불일치(personal 세션으로 관리화면 진입 등) → 자동 승격.
+          //  await 전에 상태객체 참조를 잡아 두어 async gap 이후 context 사용을 피한다.
+          final appState = context.read<AppState>();
+          if (!mounted) return;
+          final recovered = await appState.ensureServerSession(needAdmin: true);
+          if (recovered) {
+            try {
+              fin = await tryFin();
+            } on NasAuthException catch (err) {
+              financeError = '$err';
+            } catch (err) {
+              financeError = '재무 자료를 불러오지 못했습니다. ($err)';
+            }
+          } else {
+            financeError = '재무 자료 열람 권한이 없습니다. 다시 로그인해 주세요.';
+          }
+        } catch (err) {
+          // 일시 오류는 1회만 더 시도(무한 대기 방지).
+          try {
+            await Future.delayed(const Duration(milliseconds: 500));
+            fin = await tryFin();
+          } catch (err2) {
+            financeError = '재무 자료를 불러오지 못했습니다. ($err2)';
+          }
+        }
+      }
+
       // [요구] "나스 내에 있는 폴더내 사진이 보여지지 않음" — 근본 해결.
       //  사진이 항목 폴더 바로 아래가 아니라 '00 사진+동영상' 처럼 한 겹
       //  더 안쪽 폴더에 있으면, 앱은 폴더 카드만 보여줬다(사용자는 빈 화면으로
@@ -258,6 +311,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             .map((x) => (x as Map).cast<String, dynamic>())
             .toList();
       }
+      // [버그 수정] 재무가 '진짜로 비었는지'와 '못 불러왔는지'를 구분해 둔다.
+      //  화면은 이 값으로 "0건" 대신 "불러오기 실패 + 다시 시도"를 보여준다.
+      _financeError = financeError;
       if (!mounted) return;
       // (요구 #14) 스텝 여부 판정 — 지정자는 전체 게시판 노출.
       final s = context.read<AppState>();
@@ -4203,14 +4259,114 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     _ => AppColors.taegeukRed,
   };
 
+  /// 재무 로드 실패 안내 — "0건"과 명확히 구분하기 위한 배너.
+  Widget _financeErrorBanner(String err) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 10, 10, 2),
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: AppColors.taegeukRed.withValues(alpha: 0.07),
+        border: Border.all(
+          color: AppColors.taegeukRed.withValues(alpha: 0.45),
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 18,
+            color: AppColors.taegeukRed,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '재무 자료를 불러오지 못했습니다',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.taegeukRed,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  // 자료가 없는 것이 아니라 '못 읽은' 상태임을 분명히 한다.
+                  '$err\n※ 자료가 삭제된 것이 아닙니다. 다시 시도해 주세요.',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          TextButton(
+            onPressed: () => _load(),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              foregroundColor: AppColors.taegeukRed,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              '다시 시도',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _financeTab(String kind) {
     final fk = FinanceKind.fromKey(kind);
     final rows = _rowsOf(kind);
+    // [버그 수정] "0건"과 "못 불러옴"을 구분한다 — 종전에는 401(세션만료·
+    //  등급부족)이 조용히 빈 목록이 되어 입력자료가 사라진 것처럼 보였다.
+    final err = _financeError;
     return EventFinanceTab(
       kind: fk,
       rows: rows,
       color: _financeColor(kind),
-      header: kind == 'fee'
+      // 재무 로드가 실패했으면 목록 위에 사유 + 다시 시도를 띄운다.
+      header: err != null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _financeErrorBanner(err),
+                if (kind == 'donation')
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                    child: DonationListPanel(
+                      rows: rows,
+                      won: _won,
+                      onAdd: () => _financeEdit(kind),
+                      onEdit: (r) => _financeEdit(kind, row: r),
+                      onDelete: (r) async {
+                        await _nas.eventFinanceDelete(
+                          widget.year,
+                          widget.title,
+                          kind,
+                          '${r['id']}',
+                        );
+                        await _load();
+                      },
+                      onOutput: (view, focus) => _outputDonationList(
+                        rows: rows,
+                        view: view,
+                        focus: focus,
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          : kind == 'fee'
           ? const Padding(
               padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
               child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),

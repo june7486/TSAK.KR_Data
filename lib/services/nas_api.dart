@@ -6,6 +6,20 @@ import 'package:http/http.dart' as http;
 import '../models/member.dart';
 import 'app_config.dart';
 
+/// 인증(세션·권한) 실패를 '데이터 없음'과 구분하기 위한 예외.
+///
+/// ## 왜 필요한가
+/// 종전에는 세션 만료나 등급 부족으로 온 401 응답이 **정상 JSON 으로 파싱**돼
+/// 화면이 조용히 "0건"이 됐다. 사용자는 데이터가 삭제된 것으로 오해했고,
+/// 오류 안내가 전혀 없어 원인을 알 수 없었다.
+/// 이 예외를 던져 호출부가 "다시 로그인해 주세요"를 보여줄 수 있게 한다.
+class NasAuthException implements Exception {
+  NasAuthException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// NAS 프록시 REST API 클라이언트
 ///
 /// baseUrl 이 비어 있으면 웹앱과 동일 origin(상대경로)으로 호출한다.
@@ -51,6 +65,21 @@ class NasApi {
   ///    명확한 예외를 던져 재시도를 유발한다.
   ///  · 일시적 오류(연결 끊김·HTML 오류·5xx)면 짧게 쉬고 1회 재시도한다.
   ///  → 서버가 잠깐 몰려도 '불러오기 실패' 창이 뜨지 않게 하는 안전망.
+  ///
+  /// ## [버그 수정 2026-10-25] 401 을 '정상 응답'으로 삼키던 문제
+  ///  증상: 행사 상세에서 **참가자는 보이는데** 참가비·후원금 / 후원내역 /
+  ///   지출내역 / 결산이 **전부 0건**으로 표시되고, 새로 입력한 값도 사라졌다.
+  ///
+  ///  원인: 종전에는 `statusCode >= 500` 만 예외로 걸렀다. 그래서 세션 만료나
+  ///   등급 부족으로 온 **401 JSON**(`{"ok":false,"error":"unauthorized"}`)이
+  ///   그대로 파싱되어 `j['fees']` 가 null → 호출부에서 조용히 빈 목록이 됐다.
+  ///   → 화면에는 "0건"만 남고 **오류 안내조차 없었다**(사용자 입장에선
+  ///     데이터가 사라진 것으로 보임).
+  ///
+  ///  해결: 401/403 과 `ok:false` 를 **반드시 예외**로 승격한다.
+  ///   · 401 인증 실패는 재시도해도 결과가 같으므로 즉시 던진다.
+  ///   · 호출부(`_load`)는 예외를 받아 재로그인 안내를 띄울 수 있다.
+  ///     "데이터 없음"과 "권한/세션 문제"를 사용자가 구분할 수 있게 된다.
   Future<Map<String, dynamic>> _robustJson(
     Uri uri, {
     Duration timeout = const Duration(seconds: 30),
@@ -63,10 +92,33 @@ class NasApi {
             .timeout(timeout);
         final body = utf8.decode(r.bodyBytes);
         final t = body.trimLeft();
+        // [수정] 인증 실패는 '데이터 없음'이 아니다 — 조용히 넘기지 않는다.
+        if (r.statusCode == 401 || r.statusCode == 403) {
+          throw NasAuthException(
+            '로그인 세션이 만료되었거나 이 항목의 열람 권한이 없습니다. '
+            '다시 로그인해 주세요. (HTTP ${r.statusCode})',
+          );
+        }
         if (r.statusCode >= 500 || t.startsWith('<')) {
           throw FormatException('gateway non-JSON (HTTP ${r.statusCode})');
         }
-        return json.decode(body) as Map<String, dynamic>;
+        final decoded = json.decode(body) as Map<String, dynamic>;
+        // [수정] 서버가 200 으로 `ok:false` 를 주는 경우도 실패로 본다.
+        //  (라우팅 폴백·권한 오류가 200 으로 새어 나오는 경로 차단)
+        if (decoded['ok'] == false) {
+          final msg = '${decoded['error'] ?? 'unknown'}';
+          if (msg.contains('unauthorized') || msg.contains('forbidden')) {
+            throw NasAuthException(
+              '로그인 세션이 만료되었거나 이 항목의 열람 권한이 없습니다. '
+              '다시 로그인해 주세요. ($msg)',
+            );
+          }
+          throw Exception('서버 응답 오류: $msg');
+        }
+        return decoded;
+      } on NasAuthException {
+        // 인증 실패는 재시도 무의미 → 즉시 중단(불필요한 30초 대기 방지).
+        rethrow;
       } catch (e) {
         lastErr = e;
         if (attempt == 0) {

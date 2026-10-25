@@ -1821,6 +1821,54 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// **화면 권한등급과 서버 세션등급의 불일치를 바로잡는다.**
+  ///
+  /// ## 왜 필요한가 (버그 수정 2026-10-25)
+  /// 사용자가 개인 인가번호(`tiger415` + `415!@@`)로 로그인하면, 앱은 그 사람이
+  /// 영구 마스터이거나 관리자 지정을 받은 경우 `isApp`/`isMaster` 를 true 로
+  /// 만들어 **관리 화면을 모두 열어 준다**. 그런데 그때 발급된 서버 세션은
+  /// `tier='personal'` 이다.
+  ///
+  /// 서버의 `_require("admin")` 는 personal 을 거부했기 때문에, 행사 상세에서
+  /// **참가자(6명)는 정상으로 보이는데 재무 4개 탭(참가비·후원금 / 후원 /
+  /// 지출 / 결산)만 전부 0건**이 되는 기묘한 증상이 생겼다(참가자는
+  /// `_require()` = 세션 존재만 요구). 새로 입력한 값도 401 로 사라졌다.
+  ///
+  /// 이 함수는 "관리 권한이 필요한 요청이 인증오류로 실패했을 때" 호출되어
+  /// **지금 화면이 요구하는 등급으로 세션을 다시 발급**받는다.
+  /// (서버 쪽 `_auth_ok` 도 personal 을 허용하도록 함께 고쳤으므로 이중 안전망)
+  ///
+  /// 반환: 세션이 (재)발급되면 true.
+  Future<bool> ensureServerSession({bool needAdmin = false}) async {
+    if (!repo.isNasMode) return false;
+    if (needAdmin && !(isApp || isMaster)) return false;
+    try {
+      if (isMaster) {
+        final ok = await nas.grantSession(
+          'master',
+          id: _who,
+          master: AppConfig.masterPassword,
+          corps: _corps,
+          log: false,
+        );
+        if (ok) await _persistSession();
+        return ok;
+      }
+      if (isApp) {
+        final ok = await nas.grantSession(
+          'app',
+          id: _who,
+          app: AppConfig.appPassword,
+          corps: _corps,
+          log: false,
+        );
+        if (ok) await _persistSession();
+        return ok;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   /// 소속 필터: '' (전체 = 범+은하) | 'tsak' (범스카우트) | 'eunha' (은하스카우트).
   ///   요구: "은하 스카우트도 명단검색되도록 하고 아래와 유사하게 말머리(소속 배지)를
   ///         만들어 노출할 것 / 상부노출 수정: 전체·범인가자수·검색결과"
