@@ -1106,12 +1106,24 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const TabBar(
-                  labelStyle: TextStyle(
+                // ⚠️ (버그수정) 상단 탭 테마가 '흰 글자'라 밝은 다이얼로그에서
+                //  '1. 행사 참가신청 / 2. 행사 게시판' 이 보이지 않았다.
+                //  여기서는 색을 **명시**해 테마와 무관하게 읽히도록 한다.
+                TabBar(
+                  labelColor: AppColors.purpleDark,
+                  unselectedLabelColor: AppColors.textGray,
+                  indicatorColor: AppColors.purple,
+                  dividerColor: AppColors.purple.withValues(alpha: 0.15),
+                  indicatorWeight: 2.5,
+                  labelStyle: const TextStyle(
                     fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                   ),
-                  tabs: [
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  tabs: const [
                     Tab(text: '1. 행사 참가신청'),
                     Tab(text: '2. 행사 게시판'),
                   ],
@@ -1127,7 +1139,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         who: '비회원·외부인 포함 — 스캔하면 신청 화면이 바로 열립니다',
                         payload: applyLink,
                         hasBase: state.hasQrBase,
-                        color: AppColors.scoutGreen,
+                        // (요구) 참가신청 QR 색상을 녹색 → **검정**으로.
+                        color: const Color(0xFF111111),
                         icon: Icons.how_to_reg_outlined,
                       ),
                       _qrPane(
