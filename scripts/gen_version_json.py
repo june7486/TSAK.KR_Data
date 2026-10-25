@@ -50,3 +50,32 @@ os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "w", encoding="utf-8") as f:
     json.dump(prev, f, ensure_ascii=False)
 print("wrote", out, "->", stamp)
+
+# ---------------------------------------------------------------------------
+# [아이콘 전멸 사고 재발 방지 · 2026-10-26]
+#   증상: 앱의 모든 Material 아이콘이 '☒'(tofu) 로 보임.
+#   원인: 프록시가 폰트를 `immutable, max-age=31536000` 으로 서빙하던 시기에
+#         사용자 브라우저에 **깨진/서브셋 폰트가 1년 캐시**로 박혔다.
+#         서버 정책을 no-cache 로 고쳐도 이미 오염된 캐시는 되돌릴 수 없다.
+#   해법: 폰트 자산 URL 에 **빌드 스탬프 쿼리**를 붙인다.
+#         · 브라우저는 URL 이 다르면 캐시를 재사용하지 않는다 → 즉시 새 폰트.
+#         · 매 빌드마다 스탬프가 바뀌므로 폰트 교체가 항상 반영된다.
+#         (Flutter 는 FontManifest 의 asset 경로에 쿼리스트링이 있어도 로드한다 — 실측 확인)
+# ---------------------------------------------------------------------------
+fm_path = os.path.abspath(
+    os.path.join(here, "..", "build", "web", "assets", "FontManifest.json"))
+FONT_QUERY_EXT = (".otf", ".ttf", ".woff", ".woff2")
+try:
+    import json as _json
+    _fm = _json.load(open(fm_path, encoding="utf-8"))
+    for _fam in _fm:
+        for _f in _fam.get("fonts", []):
+            _a = _f.get("asset", "")
+            _base = _a.split("?", 1)[0]
+            if _base.lower().endswith(FONT_QUERY_EXT):
+                _f["asset"] = f"{_base}?v={stamp}"
+    with open(fm_path, "w", encoding="utf-8") as _f:
+        _json.dump(_fm, _f, ensure_ascii=False, separators=(",", ":"))
+    print("font URLs versioned ->", fm_path, "v=" + stamp)
+except Exception as _e:
+    print("FontManifest versioning skipped:", _e)

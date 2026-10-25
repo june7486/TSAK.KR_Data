@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/event_custom_board.dart';
 import '../widgets/marquee_text.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
@@ -5472,6 +5473,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   // ======================== 메뉴추가(사용자 정의 탭) ========================
   /// 커스텀 탭 하나의 뷰 — 제목 + 관리자 편집 가능한 메모(내용).
   Widget _customTabView(Map<String, dynamic> t) {
+    // [요구 2026-10-26] '메뉴 추가'는 이제 **게시판형**이 기본이다.
+    //  글쓰기 + 첨부 업로드 + 다운로드 + 상단 열람권한 토글이 모두 동작한다.
+    //  kind='note' 인 기존 메뉴는 종전 메모장 UI 를 그대로 쓴다(하위 호환).
+    final kind = '${t['kind'] ?? 'board'}';
+    if (kind != 'note') {
+      return EventCustomBoard(
+        year: widget.year,
+        title: widget.title,
+        boardName: '${t['name'] ?? '게시판'}',
+        note: '${t['note'] ?? ''}',
+      );
+    }
     final note = '${t['note'] ?? ''}';
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
