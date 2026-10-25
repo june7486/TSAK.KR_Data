@@ -3549,7 +3549,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                 ),
                 Text(
-                  '$cnt개',
+                  ((m['photo'] as num?)?.toInt() ?? 0) +
+                              ((m['video'] as num?)?.toInt() ?? 0) >
+                          0
+                      ? '사진 ${(m['photo'] as num?)?.toInt() ?? 0} · '
+                          '영상 ${(m['video'] as num?)?.toInt() ?? 0}'
+                      : '$cnt개',
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textGray,
