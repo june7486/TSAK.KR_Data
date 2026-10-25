@@ -37,7 +37,8 @@ Future<void> _openSheet(WidgetTester tester, {double keyboard = 0}) async {
         body: Builder(
           builder: (ctx) => Center(
             child: ElevatedButton(
-              onPressed: () => showEventFormSheet(context: ctx, createMode: true),
+              onPressed: () =>
+                  showEventFormSheet(context: ctx, createMode: true),
               child: const Text('열기'),
             ),
           ),
@@ -91,8 +92,8 @@ void main() {
     await _openSheet(tester, keyboard: _keyboard);
 
     // 본문 스크롤 영역이 존재하고 '의미 있는 높이'를 가진다.
-    final scroll = find.byType(SingleChildScrollView);
-    expect(scroll, findsOneWidget);
+    //  세로(바깥) + 가로(안쪽) 2개이므로 첫 번째(세로)를 검사한다.
+    final scroll = find.byType(SingleChildScrollView).first;
     final r = tester.getSize(scroll);
     final expectH = (_phone.height - _keyboard) * 0.94;
     expect(r.height, greaterThan(expectH * 0.4));
@@ -105,11 +106,76 @@ void main() {
   testWidgets('스크롤을 내려도 예외가 없다(넘침 없음)', (tester) async {
     await _openSheet(tester, keyboard: _keyboard);
 
-    final scroll = find.byType(SingleChildScrollView);
+    final scroll = find.byType(SingleChildScrollView).first;
     for (var i = 0; i < 4; i++) {
       await tester.drag(scroll, const Offset(0, -300));
       await tester.pumpAndSettle();
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('상하좌우 스크롤 화살표가 헤더에 있고 동작한다', (tester) async {
+    await _openSheet(tester, keyboard: _keyboard);
+
+    // 4방향 + 맨위 버튼이 모두 존재해야 한다(툴팁으로 식별).
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_left), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_right), findsOneWidget);
+    expect(find.byIcon(Icons.vertical_align_top), findsOneWidget);
+
+    // 헤더 안에 있어야 한다 = 본문 입력칸을 덮지 않는다.
+    final up = tester.getRect(find.byIcon(Icons.keyboard_arrow_up));
+    final firstField = tester.getRect(find.text('연도 * (필수)'));
+    final dividerY = up.bottom;
+    expect(
+      dividerY,
+      lessThan(firstField.top),
+      reason: '화살표는 본문 첫 필드보다 위(헤더)에 있어야 한다',
+    );
+
+    // 아래 화살표를 누르면 실제로 스크롤된다.
+    double vPixels() => tester
+        .state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byType(SingleChildScrollView).first,
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        )
+        .position
+        .pixels;
+    final before = vPixels();
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+    await tester.pumpAndSettle();
+    final after = vPixels();
+    expect(after, greaterThan(before), reason: '▼ 를 누르면 아래로 스크롤되어야 한다');
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('좁은 화면(360px)에서 가로 스크롤이 생기고 ◀▶ 가 활성화된다', (tester) async {
+    // 360px 기기 — _formMinWidth(400) 보다 좁아 가로 스크롤이 필요하다.
+    await _openSheet(tester, keyboard: 0);
+
+    final hscroll = find.byWidgetPredicate(
+      (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    expect(hscroll, findsOneWidget);
+
+    final pos = tester
+        .state<ScrollableState>(
+          find.descendant(of: hscroll, matching: find.byType(Scrollable)).first,
+        )
+        .position;
+    // 가로 스크롤 여지가 있어야 좌우 화살표가 의미를 가진다.
+    expect(
+      pos.maxScrollExtent,
+      greaterThan(0),
+      reason: '360px 화면에서는 폼이 400px 라 가로 스크롤이 생겨야 한다',
+    );
+
     expect(tester.takeException(), isNull);
   });
 }
