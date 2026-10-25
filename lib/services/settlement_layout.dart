@@ -18,6 +18,7 @@
 library;
 
 import 'donation_kinds.dart';
+import 'output_templates.dart';
 import 'event_settlement.dart';
 import 'print_doc.dart';
 import 'table_options.dart';
@@ -110,6 +111,7 @@ class SettlementLayout {
     this.showNotes = true,
     this.showMemo = true,
     this.reportStyle = true,
+    this.template = DocTemplate.report,
     Set<SettlementBlock>? detailOff,
   }) : order = order ?? [...SettlementBlock.values],
        excluded = excluded ?? <SettlementBlock>{},
@@ -213,6 +215,12 @@ class SettlementLayout {
   ///   PDF 를 만든다. 화면 미리보기 = PDF 가 된다.
   bool reportStyle;
 
+  /// 출력 템플릿(6종) — 블록 그래픽의 **모양**.
+  ///
+  /// (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿을 만들어서 선택"
+  /// [reportStyle] 이 false 면 이 값은 무시된다(평평한 표).
+  DocTemplate template;
+
   bool includes(SettlementBlock b) => !excluded.contains(b);
 
   /// 실제 출력에 포함되는 블록(순서 유지).
@@ -280,6 +288,7 @@ class SettlementLayout {
     showNotes: showNotes,
     showMemo: showMemo,
     reportStyle: reportStyle,
+    template: template,
     detailOff: {...detailOff},
   );
 
@@ -292,6 +301,7 @@ class SettlementLayout {
     showNotes = true;
     showMemo = true;
     reportStyle = true;
+    template = DocTemplate.report;
     detailOff.clear();
   }
 
@@ -304,7 +314,8 @@ class SettlementLayout {
       detailOff.isNotEmpty ||
       !showNotes ||
       !showMemo ||
-      !reportStyle;
+      !reportStyle ||
+      template != DocTemplate.report;
 
   /// 서식 요약 — 예: '가로 · 글씨 108% · 줄간격 92%'.
   String get styleBadge {
@@ -320,7 +331,11 @@ class SettlementLayout {
     parts.add(anyDetail ? '상세 $detailCount/${includedCount}' : '상세 없음');
     if (!showNotes) parts.add('설명 없음');
     if (!showMemo) parts.add('메모 없음');
-    parts.add(reportStyle ? '보고서형' : '표형');
+    if (reportStyle) {
+      parts.add(template.label);
+    } else {
+      parts.add('표형');
+    }
     return parts.join(' · ');
   }
 
@@ -351,6 +366,7 @@ class SettlementLayout {
     bool showNotes = true,
     bool showMemo = true,
     bool reportStyle = true,
+    String template = 'report',
     List<dynamic>? detailOff,
   }) {
     final ord = <SettlementBlock>[];
@@ -384,6 +400,7 @@ class SettlementLayout {
       showNotes: showNotes,
       showMemo: showMemo,
       reportStyle: reportStyle,
+      template: DocTemplate.parse(template),
       detailOff: off,
     );
   }

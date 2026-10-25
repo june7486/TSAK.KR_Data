@@ -23,6 +23,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'output_templates.dart';
 import 'print_doc.dart';
 
 class DocPdf {
@@ -708,6 +709,7 @@ class DocPdf {
     bool landscape = false,
     double scale = 1.0,
     double rowSpaceMul = 1.0,
+    DocTemplate template = DocTemplate.report,
   }) async {
     await _ensureFonts();
     await _ensureEmblem();
@@ -716,8 +718,10 @@ class DocPdf {
     final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
     final fmt = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
-    final cellPt = (9.0 * scale * 10).roundToDouble() / 10;
-    final int padV = (4 * rowSpaceMul).round().clamp(1, 12);
+    final t = template;
+    final cellPt = ((t.compact ? 8.2 : 9.0) * scale * 10).roundToDouble() / 10;
+    final int padV =
+        (t.cellPadV * rowSpaceMul).round().clamp(1, 14);
     final base = pw.TextStyle(font: reg, fontSize: cellPt, color: _ink);
     final baseBold = pw.TextStyle(font: bold, fontSize: cellPt, color: _ink);
     // 블록 안 4열 비율 — 미리보기(SettlementPaperView)와 동일: 1.1 / 1.9 / 1.35 / 1.45
@@ -737,114 +741,177 @@ class DocPdf {
       ...meta.extra.entries,
     ];
 
-    // ── 블록 위젯 ──────────────────────────────────────────────────────
+    // ── 블록 위젯 — **템플릿이 모양을 결정한다** ──────────────────────
+    //
+    //  (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿을 만들어서 선택"
+    //  데이터(rows)는 하나이고, 여기서 색 띠·괘선·카드·큰 숫자만 갈아끼운다.
+    //  → 같은 결산서가 '보고서형 / 장부형 / 카드형 / 미니멀형 / 공문서형 /
+    //    브리핑형' 6가지 인상으로 나온다.
     pw.Widget blockWidget(DocReportBlock b, bool first) {
       final accent = _hex(b.accent);
-      return pw.Padding(
-        padding: pw.EdgeInsets.only(top: first ? 0 : 10 * rowSpaceMul),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-          children: [
-            // ① 제목 띠 — 좌측 3pt 컬러 바 + 10% 틴트 (미리보기와 동일)
-            pw.Container(
-              padding: const pw.EdgeInsets.fromLTRB(7, 4, 7, 4),
-              decoration: pw.BoxDecoration(
-                color: PdfColor(
-                  accent.red,
-                  accent.green,
-                  accent.blue,
-                  0.10,
-                ),
-                border: pw.Border(
-                  left: pw.BorderSide(color: accent, width: 3),
-                ),
-              ),
-              child: pw.Row(
-                children: [
-                  pw.Expanded(
-                    child: pw.Text(
-                      sanitize(b.title),
-                      style: pw.TextStyle(
-                        font: bold,
-                        fontSize: cellPt * 1.02,
-                        color: accent,
-                      ),
-                    ),
-                  ),
-                  if (b.subtitle.trim().isNotEmpty)
-                    pw.Text(
-                      sanitize(b.subtitle),
-                      style: pw.TextStyle(
-                        font: bold,
-                        fontSize: cellPt * 0.78,
-                        color: PdfColor(
-                          accent.red,
-                          accent.green,
-                          accent.blue,
-                          0.7,
-                        ),
-                      ),
-                    ),
-                ],
+      final bandTint = PdfColor(
+        accent.red,
+        accent.green,
+        accent.blue,
+        t.bandAlpha,
+      );
+      final totalTint = PdfColor(
+        accent.red,
+        accent.green,
+        accent.blue,
+        t.tintTotal,
+      );
+
+      // ① 제목부 — 띠(accentBand) / 가운데·좌측 / 괘선 유무
+      final titleRow = pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
+        children: [
+          pw.Expanded(
+            child: pw.Text(
+              sanitize(b.title),
+              style: pw.TextStyle(
+                font: bold,
+                fontSize: cellPt * (t.bigFigures ? 1.18 : 1.02),
+                color: t.accentBand || t.cardShell ? accent : _ink,
+                letterSpacing: 0.1,
               ),
             ),
-            // ② 4열 표
-            pw.Table(
-              columnWidths: widths,
-              border: pw.TableBorder(
-                horizontalInside: const pw.BorderSide(
-                  color: _border,
-                  width: 0.6,
-                ),
+          ),
+          if (b.subtitle.trim().isNotEmpty)
+            pw.Text(
+              sanitize(b.subtitle),
+              style: pw.TextStyle(
+                font: bold,
+                fontSize: cellPt * 0.76,
+                color: _gray,
               ),
+            ),
+        ],
+      );
+
+      pw.Widget header;
+      if (t.accentBand) {
+        header = pw.Container(
+          padding: pw.EdgeInsets.fromLTRB(
+            t.cellPadH + 1,
+            t.cellPadV,
+            t.cellPadH + 1,
+            t.cellPadV,
+          ),
+          decoration: pw.BoxDecoration(
+            color: bandTint,
+            border: t.bandWidth > 0
+                ? pw.Border(
+                    left: pw.BorderSide(color: accent, width: t.bandWidth),
+                  )
+                : null,
+          ),
+          child: titleRow,
+        );
+      } else {
+        header = pw.Container(
+          padding: const pw.EdgeInsets.only(bottom: 3),
+          decoration: pw.BoxDecoration(
+            border: pw.Border(
+              bottom: pw.BorderSide(
+                color: _border,
+                width: t.gridLines ? 0.9 : 0.6,
+              ),
+            ),
+          ),
+          child: titleRow,
+        );
+      }
+
+      // ② 행 표 — gridLines 면 격자, 아니면 가로 괘선만.
+      final tableBorder = t.gridLines
+          ? pw.TableBorder.all(color: _border, width: 0.5)
+          : pw.TableBorder(
+              horizontalInside: const pw.BorderSide(
+                color: _border,
+                width: 0.5,
+              ),
+            );
+
+      final rowsWidget = pw.Table(
+        columnWidths: widths,
+        border: tableBorder,
+        children: [
+          for (final r in b.rows)
+            pw.TableRow(
+              decoration: (_isReportTotal(r) && t.tintTotal > 0)
+                  ? pw.BoxDecoration(color: totalTint)
+                  : null,
               children: [
-                for (final r in b.rows)
-                  pw.TableRow(
-                    decoration: _isReportTotal(r)
-                        ? pw.BoxDecoration(
-                            color: PdfColor(
-                              accent.red,
-                              accent.green,
-                              accent.blue,
-                              0.055,
-                            ),
-                          )
-                        : null,
-                    children: [
-                      _rcell(
-                        r.isNotEmpty ? r[0] : '',
-                        base: baseBold,
-                        accent: _isReportTotal(r) ? accent : null,
-                        padV: padV,
-                      ),
-                      _rcell(r.length > 1 ? r[1] : '', base: base, padV: padV),
-                      _rcell(
-                        r.length > 2 ? r[2] : '',
-                        base: baseBold,
-                        align: 'right',
-                        accent: _isReportTotal(r) ? accent : null,
-                        padV: padV,
-                      ),
-                      _rcell(r.length > 3 ? r[3] : '', base: base, padV: padV),
-                    ],
-                  ),
+                _rcell(
+                  r.isNotEmpty ? r[0] : '',
+                  base: baseBold,
+                  accent: _isReportTotal(r) ? accent : null,
+                  padV: padV,
+                  padH: t.cellPadH,
+                ),
+                _rcell(
+                  r.length > 1 ? r[1] : '',
+                  base: base,
+                  padV: padV,
+                  padH: t.cellPadH,
+                ),
+                _rcell(
+                  r.length > 2 ? r[2] : '',
+                  base: baseBold,
+                  align: 'right',
+                  accent: _isReportTotal(r) ? accent : null,
+                  padV: padV,
+                  padH: t.cellPadH,
+                ),
+                _rcell(
+                  r.length > 3 ? r[3] : '',
+                  base: base,
+                  padV: padV,
+                  padH: t.cellPadH,
+                ),
               ],
             ),
-            // ③ 하단 메모
-            if (b.note.trim().isNotEmpty)
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(top: 3, left: 2),
-                child: pw.Text(
-                  sanitize(b.note),
-                  style: pw.TextStyle(
-                    font: reg,
-                    fontSize: cellPt * 0.82,
-                    color: _gray,
-                  ),
+        ],
+      );
+
+      // ③ 하단 메모
+      final noteWidget = b.note.trim().isEmpty
+          ? pw.SizedBox()
+          : pw.Padding(
+              padding: pw.EdgeInsets.only(top: 3, left: t.cellPadH),
+              child: pw.Text(
+                sanitize(b.note),
+                style: pw.TextStyle(
+                  font: reg,
+                  fontSize: cellPt * 0.8,
+                  color: _gray,
                 ),
               ),
-          ],
+            );
+
+      pw.Widget inner = pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [header, rowsWidget, noteWidget],
+      );
+
+      // ④ 카드 껍데기 — 블록을 둥근 테두리로 분리
+      if (t.cardShell) {
+        inner = pw.Container(
+          padding: const pw.EdgeInsets.fromLTRB(6, 6, 6, 5),
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _line, width: 0.9),
+            borderRadius: pw.BorderRadius.circular(3),
+          ),
+          child: inner,
+        );
+      }
+
+      return pw.Padding(
+        padding: pw.EdgeInsets.only(
+          top: first ? 0 : t.blockGap * rowSpaceMul,
         ),
+        child: inner,
       );
     }
 
@@ -1034,9 +1101,15 @@ class DocPdf {
     String align = 'left',
     PdfColor? accent,
     int padV = 4,
+    double padH = 5,
   }) {
     return pw.Container(
-      padding: pw.EdgeInsets.fromLTRB(5, padV.toDouble(), 5, padV.toDouble()),
+      padding: pw.EdgeInsets.fromLTRB(
+        padH,
+        padV.toDouble(),
+        padH,
+        padV.toDouble(),
+      ),
       child: pw.Text(
         sanitize(text),
         style: accent == null

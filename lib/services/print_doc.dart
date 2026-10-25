@@ -399,3 +399,183 @@ String wrapPrintHtml(String title, String inner, {bool landscape = false}) =>
   <div class="print-body">$inner</div>
 </div>
 </body></html>''';
+
+// ============================================================================
+//  보고서형 HTML — 결산서를 **블록 그래픽**으로 인쇄한다.
+// ============================================================================
+
+/// [DocReportBlock] 목록을 브라우저 인쇄용 HTML 로 만든다.
+///
+/// ## 왜 필요한가 (요구)
+/// "행사결산 출력시 보고서 형식이 아니라 계산서처럼 나열됨"
+/// → PDF 는 `DocPdf.buildReport` 로 보고서형이 됐지만, **브라우저 인쇄**는
+///   계속 무인양품 표(`doc.columns`/`doc.rows`)를 썼다. 같은 문서가 두 모습으로
+///   나오면 사용자 입장에서는 "고쳐지지 않았다"가 된다.
+/// → 이 함수가 [DocPdf.buildReport] 와 **같은 그래픽**을 HTML/CSS 로 그린다.
+///
+/// [template] 은 모양만 바꾼다(색 띠·괘선·카드·큰 숫자). 데이터는 동일하다.
+String buildReportDocHtml({
+  required DocMeta meta,
+  required List<DocReportBlock> blocks,
+  List<String> summary = const [],
+  String footerLeft = '한국범스카우트중앙회',
+  String footerRight = '',
+  bool landscape = false,
+  String? emblemDataUri,
+  double scale = 1.0,
+}) {
+  final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
+  final emblemSrc = (emblemDataUri != null && emblemDataUri.trim().isNotEmpty)
+      ? emblemDataUri
+      : 'assets/assets/images/tsak_emblem.png';
+
+  // ── 머리부 ──
+  final head = StringBuffer()
+    ..write(
+      '<div class="letter"><span class="lbrand">한국범스카우트중앙회 · TSAK</span>'
+      '<span class="lpage">1 of 1</span></div>',
+    )
+    ..write('<div class="title-row"><h1>${_esc(meta.title)}</h1>')
+    ..write(
+      '<img class="emblem" src="$emblemSrc" alt="" '
+      "onerror=\"this.style.display='none'\">",
+    )
+    ..write('</div>');
+  if (meta.subtitle.trim().isNotEmpty) {
+    head.write('<div class="sub2">${_esc(meta.subtitle)}</div>');
+  }
+  final facts = <String, String>{
+    if (meta.author.trim().isNotEmpty) '생성자': meta.author,
+    '생성일': now,
+    ...meta.extra,
+  };
+  head.write(
+    '<div class="meta">'
+    '${meta.description.trim().isNotEmpty ? '<div class="desc">${_esc(meta.description)}</div>' : ''}'
+    '<div class="facts">'
+    '${facts.entries.map((e) => '<div><b>${_esc(e.key)}</b> ${_esc(e.value)}</div>').join()}'
+    '</div></div>',
+  );
+
+  // ── 블록부 ──
+  final body = StringBuffer();
+  for (final b in blocks) {
+    final isTotalRow = <int>{};
+    final rowsHtml = StringBuffer();
+    for (var i = 0; i < b.rows.length; i++) {
+      final r = b.rows[i];
+      final total = _isTotalRowHtml(r);
+      if (total) isTotalRow.add(i);
+      final cells = <String>[];
+      for (var c = 0; c < 4; c++) {
+        final v = c < r.length ? r[c] : '';
+        final isDetail = c == 0 && v.startsWith('· ');
+        cells.add(
+          '<td class="c$c${isDetail ? ' detail' : ''}">${_esc(v)}</td>',
+        );
+      }
+      rowsHtml.write(
+        '<tr${total ? ' class="total"' : ''}>${cells.join()}</tr>',
+      );
+    }
+    body.write(
+      '<div class="blk" style="--ac:${b.accent}">'
+      '<div class="bh"><span class="bt">${_esc(b.title)}</span>'
+      '${b.subtitle.trim().isEmpty ? '' : '<span class="bs">${_esc(b.subtitle)}</span>'}'
+      '</div>'
+      '<table class="bt-tbl"><tbody>$rowsHtml</tbody></table>'
+      '${b.note.trim().isEmpty ? '' : '<div class="bn">${_esc(b.note)}</div>'}'
+      '</div>',
+    );
+  }
+
+  final sumHtml = summary.isEmpty
+      ? ''
+      : '<div class="sum">${summary.map(_esc).join(' · ')}</div>';
+
+  return '''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>${_esc(meta.title)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ *{box-sizing:border-box}
+ @page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:12mm}
+ body{font-family:$kDocFontStack;color:#3A3A3A;padding:24px;margin:0;
+   background:#EFEDE8;font-size:${(12.6 * scale).toStringAsFixed(1)}px}
+ .page{background:#fff;border:1px solid #D8D3CA;border-radius:4px;
+   padding:26px 26px 16px;max-width:860px;margin:16px auto;
+   box-shadow:0 1px 3px rgba(0,0,0,.05)}
+ .letter{display:flex;justify-content:space-between;align-items:center;
+   font-size:10px;letter-spacing:1.2px;color:#9A9388;padding-bottom:6px;
+   border-bottom:1px solid #EDEAE3}
+ .letter .lbrand{font-weight:700}
+ h1{font-size:22px;color:#3A3A3A;font-weight:800;margin:14px 0 6px;
+   letter-spacing:-.3px}
+ .title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+ .title-row h1{flex:1;margin:14px 0 6px}
+ .title-row .emblem{width:44px;height:44px;object-fit:contain;flex:none}
+ .sub2{font-size:12.5px;color:#8C877E;margin:0 0 12px}
+ .meta{padding:10px 0;border-top:1px solid #E4E0D8;
+   border-bottom:1px solid #E4E0D8;font-size:11px;line-height:1.7;
+   margin-bottom:14px}
+ .desc{font-size:12px;color:#5A564E;margin-bottom:8px;white-space:pre-wrap}
+ .facts{display:flex;flex-wrap:wrap;gap:0 22px;color:#8C877E}
+ .facts b{color:#6E6960;font-weight:600;display:inline-block;min-width:50px}
+ /* ── 블록 ── */
+ .blk{margin:0 0 13px;page-break-inside:avoid}
+ .blk:last-child{margin-bottom:0}
+ .bh{display:flex;align-items:baseline;justify-content:space-between;
+   gap:8px;padding:4px 7px;background:color-mix(in srgb,var(--ac) 10%,#fff);
+   border-left:3px solid var(--ac)}
+ .bt{font-size:12.5px;font-weight:800;color:var(--ac);letter-spacing:.2px}
+ .bs{font-size:10.5px;color:#9A9388;white-space:nowrap}
+ .bt-tbl{width:100%;border-collapse:collapse;table-layout:fixed}
+ .bt-tbl td{border-bottom:1px solid #EDEAE3;padding:4px 6px;
+   vertical-align:top;word-break:break-word}
+ .bt-tbl td.c0{width:22%;font-weight:600;color:#4A4A48}
+ .bt-tbl td.c1{width:38%}
+ .bt-tbl td.c2{width:20%;text-align:right;font-variant-numeric:tabular-nums}
+ .bt-tbl td.c3{width:20%;color:#7A756C;font-size:.94em}
+ .bt-tbl td.detail{color:#9A9388;font-weight:400;font-style:italic}
+ .bt-tbl tr.total td{background:color-mix(in srgb,var(--ac) 6%,#fff);
+   font-weight:700}
+ .bn{font-size:10.5px;color:#9A9388;padding:4px 7px 0;line-height:1.5}
+ /* ── 합계 ── */
+ .sum{margin-top:16px;padding:12px 16px;border-top:2px solid #3A3A3A;
+   background:#F8F7F4;text-align:right;font-size:12.5px;line-height:1.9;
+   font-weight:600}
+ .foot{margin-top:20px;padding-top:12px;border-top:1px solid #E4E0D8;
+   font-size:11px;color:#9A9388;display:flex;justify-content:space-between;
+   letter-spacing:.4px}
+ .tsak-bar{position:sticky;top:0;z-index:99;display:flex;gap:8px;
+   align-items:center;justify-content:flex-end;padding:10px 14px;
+   background:#F4F1EA;border-bottom:1px solid #E4E0D8;margin:-24px -24px 16px}
+ .tsak-bar .sp{flex:1;font-size:12px;color:#8C877E;text-align:center}
+ .tsak-bar button{font-family:inherit;font-size:13px;font-weight:700;
+   cursor:pointer;border-radius:8px;padding:8px 16px;
+   border:1px solid #7C6A9C;background:#fff;color:#5A4A78}
+ .tsak-bar button.pri{background:#7C6A9C;color:#fff}
+ .tsak-bar button.back{background:#5E7A4B;color:#fff;border-color:#5E7A4B}
+ @media print{body{background:#fff;padding:0}
+   .tsak-bar{display:none!important}
+   .page{border:0;box-shadow:none;margin:0;padding:0;max-width:none}
+   .blk{page-break-inside:avoid}}
+</style></head><body>
+<div class="tsak-bar">
+  <button class="back" onclick="window.close(); if(!window.closed){history.back();}" title="이전 화면으로">‹ 돌아가기</button>
+  <span class="sp">${_esc(meta.title)}</span>
+  <button class="pri" onclick="window.print()">인쇄 / PDF 저장</button>
+</div>
+<div class="page">
+$head
+$body
+$sumHtml
+<div class="foot"><span>${_esc(footerLeft)}</span><span>${_esc(footerRight.isNotEmpty ? footerRight : '출력규칙 · 보고서 · 1/1')}</span></div>
+</div>
+</body></html>''';
+}
+
+/// 합계 성격의 행인가(굵게/틴트).
+bool _isTotalRowHtml(List<String> r) {
+  final k = r.isNotEmpty ? r[0] : '';
+  return k.contains('합계') || k == '잔액' || k == '초과' || k == '이월';
+}

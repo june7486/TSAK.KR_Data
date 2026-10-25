@@ -3253,12 +3253,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // 썸네일 경로가 없으면 Image.network 을 만들지 않는다 —
     //  null URL 로 네트워크 요청이 나가는 것을 막는다.
     final thumbUrl = isMedia
-        ? _nas.eventThumb2Url(
-            widget.year,
-            widget.title,
-            name,
-            sub: _mediaSub,
-          )
+        ? _nas.eventThumb2Url(widget.year, widget.title, name, sub: _mediaSub)
         : '';
     // 화면 폭/열 수에 맞춰 디코딩 크기를 제한 → 메모리·디코딩 비용 절감(로딩 가속).
     final cacheW =
@@ -3675,13 +3670,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // 뷰어는 **미디어(이미지·영상)만** 받는다. 목록에 .txt 같은 일반 파일이
     //  섞여 있으면 뷰어 인덱스와 타일 인덱스가 어긋나 엉뚱한 사진이 열린다.
     //  → 뷰어에 넘길 목록을 먼저 만들고, 그 안에서의 위치를 계산해 넘긴다.
-    final items = _media
-        .where((m) => m['isdir'] != true)
-        .where((m) {
-          final k = '${m['kind'] ?? 'image'}';
-          return k == 'image' || k == 'video';
-        })
-        .toList();
+    final items = _media.where((m) => m['isdir'] != true).where((m) {
+      final k = '${m['kind'] ?? 'image'}';
+      return k == 'image' || k == 'video';
+    }).toList();
     // 현재 타일이 가리키는 파일이 뷰어 목록에서 몇 번째인지.
     final name = '${_media[index]['name']}';
     var at = items.indexWhere((m) => '${m['name']}' == name);
@@ -3822,6 +3814,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final isDonation = kind == 'donation';
     final isSponsor = isDonation && category != '후원금';
 
+    // (요구) "후원 및 후원금, 참가비 등은 행사비 항목에 인가번호를 기입하면
+    //  자동으로 개인카드에 반영되도록 함"
+    //
+    //  인가번호를 넣는 **그 자리에서** 회원을 찾아
+    //    ① 이름(후원자/납부자)을 자동으로 채우고
+    //    ② "○○○ (415호) 개인카드에 반영됩니다" 를 초록색으로 보여주고
+    //    ③ 못 찾으면 빨간색으로 '인가번호를 확인하세요' 를 보여준다.
+    //  서버(finance/add·update)도 같은 인가번호로 회원을 다시 확인해
+    //  status=matched / memberId 를 채우므로 개인카드 '입금 내역'에 즉시 뜬다.
+    var cardBusy = false;
+    var cardOk = false;
+    String cardHint = '인가번호를 넣으면 그분 개인카드에 자동 반영됩니다';
+    String cardName = '';
+
     // (요구) 모바일에서 키보드가 떠도 입력칸이 잘리지 않도록 전용 시트 사용.
     final ok = await showTsakFormSheet(
       context: context,
@@ -3837,193 +3843,302 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _ => Icons.payments,
       },
       accent: _financeColor(kind),
-      builder: (ctx, setD) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TsakField(
-            label: kind == 'expense' ? '지출처 / 사용내역' : '후원자 / 납부자',
-            required: true,
-            child: TextField(
-              controller: nameC,
-              decoration: const InputDecoration(isDense: true),
-            ),
-          ),
-          TsakField(
-            label: '인가번호',
-            hint: '선택 — 범 인가자면 입력',
-            child: TextField(
-              controller: numC,
-              decoration: const InputDecoration(isDense: true),
-            ),
-          ),
-          // ── 후원: 분류 세분화 (후원금/식사/물품/차량/기타) ──
-          if (isDonation)
+      builder: (ctx, setD) {
+        // ── 인가번호 → 회원 조회 → 개인카드 반영 안내 ─────────────────
+        //
+        //  참석자 수동입력(`autoFill`)과 **같은 2단 조회**를 쓴다:
+        //    ① 로컬 AppState 캐시(즉시·오프라인 안전)
+        //    ② 서버 `memberLookup`(범+은하 통합·최신값)
+        //  이름 칸이 비어 있으면 회원 이름을 **채워준다**(오타 방지).
+        //  이미 적어둔 이름은 건드리지 않는다.
+        Future<void> linkCard() async {
+          final q = numC.text.trim();
+          if (q.isEmpty || cardBusy) return;
+          setD(() {
+            cardBusy = true;
+            cardHint = '인가번호 확인 중…';
+          });
+          Map<String, dynamic>? m;
+          try {
+            final st = context.read<AppState>();
+            final local = st.byNumber(q);
+            if (local != null) {
+              m = {
+                'id': local.id,
+                'number': local.number,
+                'name': local.name,
+                'corps': local.corps,
+                'numberLabel': local.numberLabel,
+                'isRegular': local.isRegular,
+              };
+            }
+            if (m == null) {
+              final res = await _nas.memberLookup(q);
+              if (res['found'] == true && res['member'] is Map) {
+                m = (res['member'] as Map).cast<String, dynamic>();
+              }
+            }
+          } catch (_) {
+            m = null;
+          }
+          if (!mounted) return;
+          setD(() {
+            cardBusy = false;
+            if (m == null) {
+              cardOk = false;
+              cardName = '';
+              cardHint = '인가번호 $q 를 찾지 못했습니다 · 번호를 확인하세요';
+              return;
+            }
+            final mm = m;
+            cardOk = true;
+            cardName = '${mm['name'] ?? ''}'.trim();
+            final label = '${mm['numberLabel'] ?? mm['number'] ?? q}';
+            cardHint = '$cardName ($label) 개인카드에 반영됩니다';
+            // 이름이 비어 있을 때만 채운다(관리자가 고친 값 보존).
+            if (nameC.text.trim().isEmpty && cardName.isNotEmpty) {
+              nameC.text = cardName;
+            }
+          });
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             TsakField(
-              label: '후원 항목',
-              required: true,
-              child: DonationKindPicker(
-                value: category,
-                onChanged: (v) => setD(() => category = v),
-              ),
-            ),
-          // ── 후원: 후원 내역(무엇을 후원했는지) ──
-          if (isDonation)
-            TsakField(
-              label: '후원 내역',
-              hint: isSponsor ? '예: 김밥 100줄, 버스 1대' : '선택',
-              required: isSponsor,
-              child: TextField(
-                controller: itemC,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  hintText: '예: 김밥 100줄 / 생수 10박스 / 버스 1대',
-                ),
-              ),
-            ),
-          // ── (요구) 금액 · 상당액 두 개의 창 ──
-          if (isDonation)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TsakField(
-                    label: '금액(현금)',
-                    hint: '실제 낸 돈',
-                    child: TextField(
-                      controller: amtC,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        suffixText: '원',
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TsakField(
-                    label: '금액 상당',
-                    hint: '예: 10만원 상당',
-                    child: TextField(
-                      controller: valueC,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        suffixText: '원 상당',
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            TsakField(
-              label: '금액',
+              label: kind == 'expense' ? '지출처 / 사용내역' : '후원자 / 납부자',
               required: true,
               child: TextField(
-                controller: amtC,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  isDense: true,
-                  suffixText: '원',
-                ),
-              ),
-            ),
-          TsakField(
-            label: '날짜',
-            hint: '예: 2026-03-14',
-            child: TextField(
-              controller: dateC,
-              decoration: const InputDecoration(isDense: true),
-            ),
-          ),
-          // 참가비·지출 분류
-          if (!isDonation)
-            TsakField(
-              label: '구분',
-              child: DropdownButtonFormField<String>(
-                initialValue: category,
-                isExpanded: true,
+                controller: nameC,
                 decoration: const InputDecoration(isDense: true),
-                items: [
-                  for (final c
-                      in (kind == 'expense'
-                          ? const [
-                              '행사비',
-                              '각종 지출',
-                              '수품제작',
-                              '기념품제작',
-                              '수송지원',
-                              '장소임차',
-                              '식비',
-                              '기타',
-                            ]
-                          : const ['참가비']))
-                    DropdownMenuItem(
-                      value: c,
-                      child: Text(c, style: const TextStyle(fontSize: 12.5)),
+              ),
+            ),
+            // ── 인가번호 → 개인카드 자동 연결 (요구) ──
+            Focus(
+              onFocusChange: (has) {
+                if (!has) linkCard();
+              },
+              child: TsakField(
+                label: '인가번호',
+                hint: '넣으면 그분 개인카드에 자동 반영됩니다',
+                child: TextField(
+                  controller: numC,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (_) {
+                    // 번호를 고치면 이전 판정을 지운다(틀린 초록불 방지).
+                    if (cardOk || cardName.isNotEmpty) {
+                      setD(() {
+                        cardOk = false;
+                        cardName = '';
+                        cardHint = '인가번호를 넣으면 그분 개인카드에 자동 반영됩니다';
+                      });
+                    }
+                  },
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '예: 415',
+                    helperText: cardHint,
+                    helperMaxLines: 2,
+                    helperStyle: TextStyle(
+                      fontSize: 10.5,
+                      height: 1.3,
+                      color: cardOk ? AppColors.scoutGreen : AppColors.textGray,
                     ),
-                ],
-                onChanged: (v) => setD(() => category = v ?? category),
-              ),
-            ),
-          // 지출: 출금계좌
-          if (kind == 'expense')
-            TsakField(
-              label: '출금계좌',
-              child: EventAccountPicker(
-                value: accountC.text,
-                onChanged: (v) => setD(() => accountC.text = v),
-              ),
-            ),
-          TsakField(
-            label: '메모',
-            child: TextField(
-              controller: memoC,
-              maxLines: 2,
-              decoration: const InputDecoration(isDense: true),
-            ),
-          ),
-          // 안내 — 후원 수입 규칙을 현장에서 바로 확인.
-          if (isDonation)
-            Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: (isSponsor ? AppColors.tigerGold : AppColors.scoutGreen)
-                    .withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    isSponsor ? Icons.info_outline : Icons.check_circle_outline,
-                    size: 14,
-                    color: isSponsor
-                        ? AppColors.tigerGold
-                        : AppColors.scoutGreen,
+                    suffixIcon: cardBusy
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : IconButton(
+                            tooltip: '인가번호로 회원 확인',
+                            icon: const Icon(Icons.badge_outlined, size: 18),
+                            onPressed: linkCard,
+                          ),
                   ),
-                  const SizedBox(width: 5),
+                ),
+              ),
+            ),
+            // ── 후원: 분류 세분화 (후원금/식사/물품/차량/기타) ──
+            if (isDonation)
+              TsakField(
+                label: '후원 항목',
+                required: true,
+                child: DonationKindPicker(
+                  value: category,
+                  onChanged: (v) => setD(() => category = v),
+                ),
+              ),
+            // ── 후원: 후원 내역(무엇을 후원했는지) ──
+            if (isDonation)
+              TsakField(
+                label: '후원 내역',
+                hint: isSponsor ? '예: 김밥 100줄, 버스 1대' : '선택',
+                required: isSponsor,
+                child: TextField(
+                  controller: itemC,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: '예: 김밥 100줄 / 생수 10박스 / 버스 1대',
+                  ),
+                ),
+              ),
+            // ── (요구) 금액 · 상당액 두 개의 창 ──
+            if (isDonation)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Expanded(
-                    child: Text(
-                      isSponsor
-                          ? '${category}은(는) 수입에 넣지 않고 후원 내역으로만 집계합니다.'
-                                '금액·상당액은 결산의 후원 항목에 따로 표시됩니다.'
-                          : '후원금은 현금 수입으로 합산됩니다(수입 = 참가비 + 후원금).',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        height: 1.35,
-                        color: AppColors.textDark,
+                    child: TsakField(
+                      label: '금액(현금)',
+                      hint: '실제 낸 돈',
+                      child: TextField(
+                        controller: amtC,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          suffixText: '원',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TsakField(
+                      label: '금액 상당',
+                      hint: '예: 10만원 상당',
+                      child: TextField(
+                        controller: valueC,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          suffixText: '원 상당',
+                        ),
                       ),
                     ),
                   ),
                 ],
+              )
+            else
+              TsakField(
+                label: '금액',
+                required: true,
+                child: TextField(
+                  controller: amtC,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    suffixText: '원',
+                  ),
+                ),
+              ),
+            TsakField(
+              label: '날짜',
+              hint: '예: 2026-03-14',
+              child: TextField(
+                controller: dateC,
+                decoration: const InputDecoration(isDense: true),
               ),
             ),
-        ],
-      ),
+            // 참가비·지출 분류
+            if (!isDonation)
+              TsakField(
+                label: '구분',
+                child: DropdownButtonFormField<String>(
+                  initialValue: category,
+                  isExpanded: true,
+                  decoration: const InputDecoration(isDense: true),
+                  items: [
+                    for (final c
+                        in (kind == 'expense'
+                            ? const [
+                                '행사비',
+                                '각종 지출',
+                                '수품제작',
+                                '기념품제작',
+                                '수송지원',
+                                '장소임차',
+                                '식비',
+                                '기타',
+                              ]
+                            : const ['참가비']))
+                      DropdownMenuItem(
+                        value: c,
+                        child: Text(c, style: const TextStyle(fontSize: 12.5)),
+                      ),
+                  ],
+                  onChanged: (v) => setD(() => category = v ?? category),
+                ),
+              ),
+            // 지출: 출금계좌
+            if (kind == 'expense')
+              TsakField(
+                label: '출금계좌',
+                child: EventAccountPicker(
+                  value: accountC.text,
+                  onChanged: (v) => setD(() => accountC.text = v),
+                ),
+              ),
+            TsakField(
+              label: '메모',
+              child: TextField(
+                controller: memoC,
+                maxLines: 2,
+                decoration: const InputDecoration(isDense: true),
+              ),
+            ),
+            // 안내 — 후원 수입 규칙을 현장에서 바로 확인.
+            if (isDonation)
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color:
+                      (isSponsor ? AppColors.tigerGold : AppColors.scoutGreen)
+                          .withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isSponsor
+                          ? Icons.info_outline
+                          : Icons.check_circle_outline,
+                      size: 14,
+                      color: isSponsor
+                          ? AppColors.tigerGold
+                          : AppColors.scoutGreen,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        isSponsor
+                            ? '${category}은(는) 수입에 넣지 않고 후원 내역으로만 집계합니다.'
+                                  '금액·상당액은 결산의 후원 항목에 따로 표시됩니다.'
+                            : '후원금은 현금 수입으로 합산됩니다(수입 = 참가비 + 후원금).',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          height: 1.35,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
     if (ok != true) return;
     final amt = int.tryParse(amtC.text.trim()) ?? 0;
@@ -4233,10 +4348,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       //  미리보기 항목의 내용을 참조해서 항목별로 보기좋게 출력 … 보고서처럼"
       //  → PDF/JPG 는 블록 컬러 띠 + 4열 표(미리보기와 동일 그래픽)로 나간다.
       //  CSV/워드/TXT/HTML 인쇄는 위의 columns/rows 를 그대로 쓰므로 영향 없다.
-      reportBlocks: SettlementReportBuilder.build(
-        layout: layout,
-        data: data,
-      ),
+      reportBlocks: SettlementReportBuilder.build(layout: layout, data: data),
+      // (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿" — 미리보기에서 고른 모양.
+      template: layout.template,
     );
   }
 
@@ -4264,6 +4378,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     required String subtitle,
   }) async {
     TableOutputOptions? opts;
+    // (버그 수정) 결산이 "PDF 출력해도 계속 계산서처럼 나온다"의 **진짜 원인**.
+    //
+    //  `_settlementDoc` 은 reportBlocks(블록 그래픽)를 채워 넘겼지만,
+    //  이 함수가 문서를 **새로 조립**하면서 reportBlocks 를 **복사하지 않았다**.
+    //  → buildReport 라우터가 `null` 을 보고 무인양품 표로 폴백.
+    //  → PDF·JPG·HTML 인쇄 전부 계산서형. 화면 미리보기만 보고서형(모순).
+    //
+    //  reportBlocks / template 을 반드시 함께 넘긴다.
     TsakTableDoc doc() {
       final d = build();
       // 사용자가 고른 옵션을 반영(열 선택·순서·글씨·간격·용지).
@@ -4279,6 +4401,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         footerLeft: d.footerLeft,
         landscape: opts?.landscape ?? d.landscape,
         options: opts ?? d.options,
+        reportBlocks: d.reportBlocks,
+        template: d.template,
       );
     }
 
@@ -4376,8 +4500,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     await _runOutputDoc(
       () => _donationDoc(rows: list, options: opts),
       title: '${widget.title} · 후원 ${v.label}',
-      subtitle:
-          '${list.length}건 · ${opts.badge} · 옵션·미리보기·인쇄',
+      subtitle: '${list.length}건 · ${opts.badge} · 옵션·미리보기·인쇄',
     );
   }
 
@@ -4535,13 +4658,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     required List<Map<String, dynamic>> rows,
     required DonationDocOptions options,
   }) {
-    final data = buildDonationDocData(
-      rows: rows,
-      options: options,
-      won: _won,
-    );
+    final data = buildDonationDocData(rows: rows, options: options, won: _won);
     final view = options.view;
-    final focus = options.focus;
     return TsakTableDoc(
       title: '${widget.year} ${widget.title}',
       subtitle: '후원 ${view.label} · ${data.subtitle}',

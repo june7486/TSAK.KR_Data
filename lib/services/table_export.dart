@@ -19,6 +19,7 @@ import 'doc_pdf.dart';
 import 'file_save.dart';
 import 'mail_helper.dart';
 import 'output_formats.dart';
+import 'output_templates.dart';
 import 'pdf_to_jpg.dart';
 import 'print_doc.dart';
 import 'table_options.dart';
@@ -39,6 +40,7 @@ class TsakTableDoc {
     this.landscape = false,
     this.options,
     this.reportBlocks,
+    this.template = DocTemplate.report,
   });
 
   /// 보고서형 블록 — 있으면 PDF/JPG 가 **무인양품 표 대신** 블록 그래픽으로
@@ -48,6 +50,12 @@ class TsakTableDoc {
   /// CSV/TXT/PPT/워드/HTML 인쇄는 이 값이 있어도 [columns]/[rows] 를 그대로
   /// 쓰므로 **형식별 결과가 깨지지 않는다**.
   final List<DocReportBlock>? reportBlocks;
+
+  /// 출력 템플릿 — 블록 그래픽의 **모양**을 고른다(6종).
+  ///
+  /// (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿을 만들어서 선택"
+  /// `reportBlocks` 가 null 이면 이 값은 무시된다(다른 문서 영향 0).
+  final DocTemplate template;
 
   final String title;
   final String subtitle;
@@ -364,6 +372,26 @@ Future<void> emailTsakTable(BuildContext context, TsakTableDoc doc) async {
 
 /// 문서를 MUJI HTML로 만들어 브라우저 인쇄창을 연다(공용 '프린트').
 Future<void> printTsakTable(TsakTableDoc doc) async {
+  // (요구) "행사결산 출력시 보고서 형식이 아니라 계산서처럼 나열됨"
+  //  원인: 프린트 경로만 reportBlocks 를 **무시**하고 무인양품 표
+  //  (doc.columns/doc.rows)로 HTML 을 만들고 있었다. PDF 는 보고서형인데
+  //  프린트는 계산서형이라 같은 문서가 두 모습으로 나왔다.
+  //  → 블록이 있으면 블록 그래픽 HTML 로 인쇄한다.
+  final blocks = doc.reportBlocks;
+  if (blocks != null && blocks.isNotEmpty) {
+    final emblem0 = await _emblemDataUri();
+    final html0 = buildReportDocHtml(
+      meta: doc.meta,
+      blocks: blocks,
+      summary: doc.summary,
+      footerLeft: doc.footerLeft,
+      landscape: doc.effectiveLandscape,
+      emblemDataUri: emblem0,
+      scale: doc.options?.scale ?? 1.0,
+    );
+    await openPrintWindow(html0, doc.title);
+    return;
+  }
   final emblem = await _emblemDataUri();
   final html = buildMujiDoc(
     meta: doc.meta,
@@ -411,6 +439,7 @@ Future<Uint8List> _buildPdf(TsakTableDoc doc) {
       landscape: doc.effectiveLandscape,
       scale: doc.options?.scale ?? 1.0,
       rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
+      template: doc.template,
     );
   }
   return DocPdf.buildSimple(

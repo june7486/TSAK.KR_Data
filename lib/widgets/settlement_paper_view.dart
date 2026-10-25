@@ -19,6 +19,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../services/event_settlement.dart';
+import '../services/output_templates.dart';
 import '../services/settlement_layout.dart';
 import '../theme/app_theme.dart';
 
@@ -55,6 +56,25 @@ class SettlementPaperView extends StatelessWidget {
   final double? maxHeight;
 
   double get _fs => 11.2 * fontScale;
+
+  /// 지금 미리보기에 적용할 템플릿 — 표형이면 띠/카드를 쓰지 않는다.
+  DocTemplate get _tpl =>
+      layout.reportStyle ? layout.template : DocTemplate.minimal;
+
+  /// 카드형이면 블록을 둥근 테두리로 감싼다(다른 템플릿은 그대로 통과).
+  Widget _tplShell(Widget child) {
+    if (!_tpl.cardShell) return child;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 5),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: const Color(0xFFCDE7CD).withValues(alpha: 0.9),
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: child,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -116,113 +136,141 @@ class SettlementPaperView extends StatelessWidget {
   ) {
     final rows = d?.rows ?? const <List<String>>[];
     return Padding(
-      padding: EdgeInsets.only(top: first ? 0 : 9 * rowSpace),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 블록 제목 띠
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: 6,
-              vertical: 3.4 * rowSpace,
-            ),
-            decoration: BoxDecoration(
-              color: _blockColor(block).withValues(alpha: 0.10),
-              border: Border(
-                left: BorderSide(color: _blockColor(block), width: 3),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    block.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: _fs * 0.94,
-                      fontWeight: FontWeight.w900,
-                      color: _blockColor(block),
+      padding: EdgeInsets.only(top: first ? 0 : _tpl.blockGap * rowSpace),
+      child: _tplShell(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 블록 제목 띠 — 템플릿이 띠/밑줄을 결정한다.
+            Container(
+              padding: _tpl.accentBand
+                  ? EdgeInsets.fromLTRB(
+                      _tpl.cellPadH + 1,
+                      3.4 * rowSpace,
+                      _tpl.cellPadH + 1,
+                      3.4 * rowSpace,
+                    )
+                  : const EdgeInsets.only(bottom: 3),
+              decoration: _tpl.accentBand
+                  ? BoxDecoration(
+                      color: _blockColor(
+                        block,
+                      ).withValues(alpha: _tpl.bandAlpha),
+                      border: _tpl.bandWidth > 0
+                          ? Border(
+                              left: BorderSide(
+                                color: _blockColor(block),
+                                width: _tpl.bandWidth,
+                              ),
+                            )
+                          : null,
+                    )
+                  : BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: const Color(0xFFDBD6CC),
+                          width: _tpl.gridLines ? 0.9 : 0.6,
+                        ),
+                      ),
+                    ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      block.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: _fs * (_tpl.bigFigures ? 1.06 : 0.94),
+                        fontWeight: FontWeight.w900,
+                        color: _tpl.accentBand || _tpl.cardShell
+                            ? _blockColor(block)
+                            : AppColors.textDark,
+                      ),
                     ),
                   ),
-                ),
-                Text(
-                  '${rows.length}',
-                  style: TextStyle(
-                    fontSize: _fs * 0.72,
-                    fontWeight: FontWeight.w800,
-                    color: _blockColor(block).withValues(alpha: 0.7),
+                  Text(
+                    '${rows.length}',
+                    style: TextStyle(
+                      fontSize: _fs * 0.72,
+                      fontWeight: FontWeight.w800,
+                      color: _blockColor(block).withValues(alpha: 0.7),
+                    ),
                   ),
-                ),
+                ],
+              ),
+            ),
+            // 4열 표
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(1.1),
+                1: FlexColumnWidth(1.9),
+                2: FlexColumnWidth(1.35),
+                3: FlexColumnWidth(1.45),
+              },
+              border: _tpl.gridLines
+                  ? TableBorder.all(color: const Color(0xFFDBD6CC), width: 0.5)
+                  : TableBorder(
+                      horizontalInside: BorderSide(
+                        color: const Color(0xFFDBD6CC),
+                        width: 0.6,
+                      ),
+                    ),
+              children: [
+                // (요구) "미리보기에도 세부항목을 선택할 수 있도록"
+                //  → 이 블록의 '상세' 가 켜져 있으면 원본 행을 표 안에 이어 붙인다.
+                //   PDF(보고서형)도 같은 detailRows() 를 쓰므로 화면=출력이 된다.
+                for (final r in _visibleRows(block, d))
+                  TableRow(
+                    decoration: _isTotal(r) && _tpl.tintTotal > 0
+                        ? BoxDecoration(
+                            color: _blockColor(
+                              block,
+                            ).withValues(alpha: _tpl.tintTotal),
+                          )
+                        : null,
+                    children: [
+                      _cell(
+                        r.isNotEmpty ? r[0] : '',
+                        bold: true,
+                        color: _isTotal(r)
+                            ? _blockColor(block)
+                            : (_isDetail(r) ? AppColors.textGray : null),
+                      ),
+                      _cell(
+                        r.length > 1 ? r[1] : '',
+                        align: TextAlign.left,
+                        color: _isDetail(r) ? AppColors.textGray : null,
+                      ),
+                      _cell(
+                        r.length > 2 ? r[2] : '',
+                        align: TextAlign.right,
+                        bold: !_isDetail(r),
+                        color: _isTotal(r) ? _blockColor(block) : null,
+                      ),
+                      _cell(
+                        r.length > 3 ? r[3] : '',
+                        color: _isDetail(r) ? AppColors.textGray : null,
+                      ),
+                    ],
+                  ),
               ],
             ),
-          ),
-          // 4열 표
-          Table(
-            columnWidths: const {
-              0: FlexColumnWidth(1.1),
-              1: FlexColumnWidth(1.9),
-              2: FlexColumnWidth(1.35),
-              3: FlexColumnWidth(1.45),
-            },
-            border: TableBorder(
-              horizontalInside: BorderSide(
-                color: const Color(0xFFDBD6CC),
-                width: 0.6,
-              ),
-            ),
-            children: [
-              // (요구) "미리보기에도 세부항목을 선택할 수 있도록"
-              //  → 이 블록의 '상세' 가 켜져 있으면 원본 행을 표 안에 이어 붙인다.
-              //   PDF(보고서형)도 같은 detailRows() 를 쓰므로 화면=출력이 된다.
-              for (final r in _visibleRows(block, d))
-                TableRow(
-                  decoration: _isTotal(r)
-                      ? BoxDecoration(
-                          color: _blockColor(block).withValues(alpha: 0.055),
-                        )
-                      : null,
-                  children: [
-                    _cell(
-                      r.isNotEmpty ? r[0] : '',
-                      bold: true,
-                      color: _isTotal(r)
-                          ? _blockColor(block)
-                          : (_isDetail(r) ? AppColors.textGray : null),
-                    ),
-                    _cell(
-                      r.length > 1 ? r[1] : '',
-                      align: TextAlign.left,
-                      color: _isDetail(r) ? AppColors.textGray : null,
-                    ),
-                    _cell(
-                      r.length > 2 ? r[2] : '',
-                      align: TextAlign.right,
-                      bold: !_isDetail(r),
-                      color: _isTotal(r) ? _blockColor(block) : null,
-                    ),
-                    _cell(
-                      r.length > 3 ? r[3] : '',
-                      color: _isDetail(r) ? AppColors.textGray : null,
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          if (d != null && d.note.isNotEmpty && layout.showNotes)
-            Padding(
-              padding: EdgeInsets.only(top: 2.5 * rowSpace, left: 2),
-              child: Text(
-                d.note,
-                maxLines: noWrap ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: _fs * 0.74,
-                  color: AppColors.textGray,
+            if (d != null && d.note.isNotEmpty && layout.showNotes)
+              Padding(
+                padding: EdgeInsets.only(top: 2.5 * rowSpace, left: 2),
+                child: Text(
+                  d.note,
+                  maxLines: noWrap ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: _fs * 0.74,
+                    color: AppColors.textGray,
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -231,7 +279,10 @@ class SettlementPaperView extends StatelessWidget {
   ///
   /// 상세 행은 `['· 상세', 원본내용, '', '']` 형태라 합계 행과 시각적으로
   /// 구분된다(_isDetail 로 흐린 글씨). 미리보기와 PDF 가 **같은 규칙**을 쓴다.
-  List<List<String>> _visibleRows(SettlementBlock block, SettlementBlockData? d) {
+  List<List<String>> _visibleRows(
+    SettlementBlock block,
+    SettlementBlockData? d,
+  ) {
     final base = d?.rows ?? const <List<String>>[];
     if (d == null || !layout.showsDetail(block)) return base;
     return [...base, ...d.detailRows()];
@@ -241,7 +292,8 @@ class SettlementPaperView extends StatelessWidget {
   static bool _isDetail(List<String> r) =>
       r.isNotEmpty && r[0].startsWith('· 상세');
 
-  static bool _isTotal(List<String> r) {    final k = r.isNotEmpty ? r[0] : '';
+  static bool _isTotal(List<String> r) {
+    final k = r.isNotEmpty ? r[0] : '';
     return k.contains('합계') || k == '잔액' || k == '초과';
   }
 
@@ -746,6 +798,71 @@ class _PreviewSheetState extends State<_PreviewSheet> {
             ],
           ),
           const SizedBox(height: 2),
+          // (요구) "출력폼에 대한 옵션을 6가지 정도 템플릿을 만들어서 선택"
+          //
+          //  칩 6개를 한 줄에 밀어 넣으면 좁은 화면에서 넘친다.
+          //  → 가로 스크롤 한 줄로 두고, 고른 템플릿은 색으로 표시한다.
+          //  템플릿은 **미리보기 자체**에도 즉시 반영된다(아래 _templateOf).
+          SizedBox(
+            height: 34,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: DocTemplate.all.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 5),
+              itemBuilder: (_, i) {
+                final t = DocTemplate.all[i];
+                final on = _layout.reportStyle && _layout.template == t;
+                return Tooltip(
+                  message: t.hint,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _touch(() {
+                      _layout.template = t;
+                      // 표형이면 템플릿이 보이지 않으므로 보고서형으로 되돌린다.
+                      _layout.reportStyle = true;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: on
+                            ? AppColors.purple
+                            : AppColors.purple.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: on
+                              ? AppColors.purple
+                              : AppColors.purple.withValues(alpha: 0.22),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _templateIcon(t),
+                            size: 13,
+                            color: on ? Colors.white : AppColors.purple,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            t.label,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: on ? Colors.white : AppColors.purple,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 4),
           Row(
             children: [
               _chip(
@@ -770,19 +887,19 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               // (요구) 상세·메모·설명을 **전체 단위**로도 한 번에 켜고 끈다.
               _chip(
                 label: '상세',
-                icon: _layout.anyDetail ? Icons.subject : Icons.subject_outlined,
+                icon: _layout.anyDetail
+                    ? Icons.subject
+                    : Icons.subject_outlined,
                 on: _layout.anyDetail,
-                onTap: () => _touch(
-                  () => _layout.setAllDetails(!_layout.anyDetail),
-                ),
+                onTap: () =>
+                    _touch(() => _layout.setAllDetails(!_layout.anyDetail)),
               ),
               const SizedBox(width: 5),
               _chip(
                 label: '메모',
                 icon: Icons.sticky_note_2_outlined,
                 on: _layout.showMemo,
-                onTap: () =>
-                    _touch(() => _layout.showMemo = !_layout.showMemo),
+                onTap: () => _touch(() => _layout.showMemo = !_layout.showMemo),
               ),
               const SizedBox(width: 5),
               _chip(
@@ -823,6 +940,16 @@ class _PreviewSheetState extends State<_PreviewSheet> {
       ),
     );
   }
+
+  /// 템플릿 6종 아이콘 — 한눈에 구분되게.
+  static IconData _templateIcon(DocTemplate t) => switch (t) {
+    DocTemplate.report => Icons.article_outlined,
+    DocTemplate.ledger => Icons.table_chart_outlined,
+    DocTemplate.card => Icons.dashboard_customize_outlined,
+    DocTemplate.minimal => Icons.horizontal_rule,
+    DocTemplate.official => Icons.gavel_outlined,
+    DocTemplate.brief => Icons.insights_outlined,
+  };
 
   Widget _zoomChip() {
     final on = (_zoom - 1.0).abs() > 0.01;
