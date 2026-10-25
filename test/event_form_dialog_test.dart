@@ -114,24 +114,44 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('상하좌우 스크롤 화살표가 헤더에 있고 동작한다', (tester) async {
+  testWidgets('상하좌우 스크롤 화살표가 각 가장자리에 있고 동작한다', (tester) async {
     await _openSheet(tester, keyboard: _keyboard);
 
-    // 4방향 + 맨위 버튼이 모두 존재해야 한다(툴팁으로 식별).
+    // 4방향 화살표가 모두 존재해야 한다.
     expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_left), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_right), findsOneWidget);
-    expect(find.byIcon(Icons.vertical_align_top), findsOneWidget);
 
-    // 헤더 안에 있어야 한다 = 본문 입력칸을 덮지 않는다.
+    // (요구) "상단 스크롤 화살표는 상단에, 하단은 하단에 / 좌우도 동일"
+    //  → 화살표가 각 가장자리에 있어야 한다.
     final up = tester.getRect(find.byIcon(Icons.keyboard_arrow_up));
+    final down = tester.getRect(find.byIcon(Icons.keyboard_arrow_down));
+    final left = tester.getRect(find.byIcon(Icons.keyboard_arrow_left));
+    final rightA = tester.getRect(find.byIcon(Icons.keyboard_arrow_right));
     final firstField = tester.getRect(find.text('연도 * (필수)'));
-    final dividerY = up.bottom;
+
     expect(
-      dividerY,
+      up.bottom,
       lessThan(firstField.top),
-      reason: '화살표는 본문 첫 필드보다 위(헤더)에 있어야 한다',
+      reason: '▲ 는 본문 첫 필드보다 위(상단)에 있어야 한다',
+    );
+    expect(down.top, greaterThan(up.top), reason: '▼ 는 ▲ 보다 아래(하단)에 있어야 한다');
+    expect(
+      left.center.dx,
+      lessThan(rightA.center.dx),
+      reason: '◀ 는 ▶ 보다 왼쪽에 있어야 한다',
+    );
+    expect(
+      left.center.dy,
+      greaterThan(up.center.dy),
+      reason: '◀ 는 상단 화살표보다 아래(세로 중앙)에 있어야 한다',
+    );
+    // 화살표가 본문 첫 필드를 덮지 않아야 한다(가로로 비켜 있어야 함).
+    expect(
+      left.right,
+      lessThanOrEqualTo(firstField.left + 1),
+      reason: '◀ 는 본문 왼쪽 바깥 띠에 있어 입력칸을 덮지 않는다',
     );
 
     // 아래 화살표를 누르면 실제로 스크롤된다.
@@ -155,8 +175,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('좁은 화면(360px)에서 가로 스크롤이 생기고 ◀▶ 가 활성화된다', (tester) async {
-    // 360px 기기 — _formMinWidth(400) 보다 좁아 가로 스크롤이 필요하다.
+  testWidgets('첫 화면이 폰 폭에 맞는다 — 390px 에서 가로 스크롤 여지 0', (tester) async {
+    // (요구) "첫 화면 창은 스마트폰 창에 맞춰서 보여줘"
+    //  종전 _formMinWidth(400) 고정 탓에 390px 폰에서도 첫 화면부터
+    //  가로 스크롤이 생겼다. 이제는 화면 폭을 그대로 쓴다.
     await _openSheet(tester, keyboard: 0);
 
     final hscroll = find.byWidgetPredicate(
@@ -169,13 +191,51 @@ void main() {
           find.descendant(of: hscroll, matching: find.byType(Scrollable)).first,
         )
         .position;
-    // 가로 스크롤 여지가 있어야 좌우 화살표가 의미를 가진다.
+
+    expect(
+      pos.maxScrollExtent,
+      0,
+      reason: '390px 폰에서는 폼이 화면 안에 들어와 가로 스크롤이 없어야 한다',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('아주 좁은 화면(280px)에서만 가로 스크롤이 생긴다', (tester) async {
+    tester.view.physicalSize = const Size(280, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => Center(
+              child: ElevatedButton(
+                onPressed: () =>
+                    showEventFormSheet(context: ctx, createMode: true),
+                child: const Text('열기'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('열기'));
+    await tester.pumpAndSettle();
+
+    final hscroll = find.byWidgetPredicate(
+      (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    final pos = tester
+        .state<ScrollableState>(
+          find.descendant(of: hscroll, matching: find.byType(Scrollable)).first,
+        )
+        .position;
     expect(
       pos.maxScrollExtent,
       greaterThan(0),
-      reason: '360px 화면에서는 폼이 400px 라 가로 스크롤이 생겨야 한다',
+      reason: '280px 처럼 아주 좁을 때만 가로 스크롤이 생겨야 한다',
     );
-
     expect(tester.takeException(), isNull);
   });
 }
