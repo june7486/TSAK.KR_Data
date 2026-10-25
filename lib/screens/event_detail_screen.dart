@@ -25,6 +25,7 @@ import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_form_sheet.dart';
 import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
+import '../widgets/donation_list_panel.dart';
 import '../widgets/confirm.dart';
 import '../widgets/event_account_picker.dart';
 import '../widgets/hscroll_menu.dart';
@@ -4057,7 +4058,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
               child: DonationAccounts(title: '참가비·후원 납부 계좌', showHolder: true),
             )
-          : null,
+          // (요구) "후원리스트에는 후원자와 후원내역을 별도로 정리할 것,
+          //  후원항목만 출력시 후원물품 혹은 금액에 대한 선택할 수 있도록 할 것."
+          //  → 후원·기타수입 탭 상단에 '후원자별 ↔ 내역별' 전환 패널을 둔다.
+          : kind == 'donation'
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                  child: DonationListPanel(
+                    rows: rows,
+                    won: _won,
+                    onAdd: () => _financeEdit(kind),
+                    onEdit: (r) => _financeEdit(kind, row: r),
+                    onDelete: (r) async {
+                      await _nas.eventFinanceDelete(
+                        widget.year,
+                        widget.title,
+                        kind,
+                        '${r['id']}',
+                      );
+                      await _load();
+                    },
+                    onOutput: (view, focus) => _outputDonationList(
+                      rows: rows,
+                      view: view,
+                      focus: focus,
+                    ),
+                  ),
+                )
+              : null,
       won: _won,
       onAdd: () => _financeEdit(kind),
       onEdit: (r) => _financeEdit(kind, row: r),
@@ -4969,6 +4997,25 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       options: TableOutputOptions(
         noWrap: const {'연번', '후원분류', '건수', '인가번호', '금액', '금액 상당'},
       ),
+    );
+  }
+
+  /// (요구) 후원 목록 출력 — 패널에서 고른 '보기(후원자별/내역별)'와
+  ///  '출력초점(물품중심/금액중심/둘 다)'을 그대로 문서에 반영한다.
+  void _outputDonationList({
+    required List<Map<String, dynamic>> rows,
+    required DonationViewMode view,
+    required DonationFocus focus,
+  }) {
+    if (rows.isEmpty) {
+      _snack('후원 내역이 없습니다');
+      return;
+    }
+    final opts = DonationDocOptions(view: view, focus: focus)..applyFocus();
+    _runOutputDoc(
+      () => _donationDoc(rows: rows, options: opts),
+      title: '${widget.title} · 후원목록',
+      subtitle: '${rows.length}건 · ${view.label} · ${focus.label}',
     );
   }
 
