@@ -521,14 +521,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Row(
               children: [
-                Expanded(child: _sectionTitle('후원 안내', Icons.volunteer_activism)),
+                Expanded(
+                  child: _sectionTitle('후원 안내', Icons.volunteer_activism),
+                ),
                 if (canEdit)
                   FilledButton.tonalIcon(
                     style: FilledButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                       minimumSize: Size.zero,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                     ),
                     onPressed: _busy ? null : () => _addDonationAccount(state),
                     icon: const Icon(Icons.add, size: 16),
@@ -654,7 +658,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       visualDensity: VisualDensity.compact,
                       minimumSize: Size.zero,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                     ),
                     onPressed: _busy ? null : () => _editDonationHolder(state),
                     icon: const Icon(Icons.person_outline, size: 15),
@@ -782,7 +788,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -791,7 +799,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (ok != true || !mounted) return;
     setState(() => _busy = true);
-    final done = await state.saveDonationAccounts(action: 'delete', index: index);
+    final done = await state.saveDonationAccounts(
+      action: 'delete',
+      index: index,
+    );
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     _snack(done ? '계좌를 삭제했습니다' : '삭제에 실패했습니다');

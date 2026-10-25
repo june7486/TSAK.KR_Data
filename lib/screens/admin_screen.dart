@@ -149,9 +149,9 @@ class _AdminScreenState extends State<AdminScreen> {
           InkWell(
             onTap: () {
               Clipboard.setData(ClipboardData(text: pw));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('비번($pw)을 복사했습니다')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('비번($pw)을 복사했습니다')));
             },
             child: const Icon(
               Icons.copy,
@@ -354,9 +354,7 @@ class _AdminScreenState extends State<AdminScreen> {
           Expanded(
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
-              onTap: _busy
-                  ? null
-                  : () => _openAdminPerms(state, no),
+              onTap: _busy ? null : () => _openAdminPerms(state, no),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Column(
@@ -446,7 +444,11 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title('아이디/암호 관리자 계정', Icons.manage_accounts, AppColors.taegeukBlue),
+            _title(
+              '아이디/암호 관리자 계정',
+              Icons.manage_accounts,
+              AppColors.taegeukBlue,
+            ),
             const SizedBox(height: 6),
             const Text(
               '인가번호 관리자와 별개로, 로그인용 「아이디 + 암호」를 새로 만들어 '
@@ -491,7 +493,10 @@ class _AdminScreenState extends State<AdminScreen> {
                 const SizedBox(width: 6),
                 Text(
                   '(${_idAccounts.length})',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
                 ),
               ],
             ),
@@ -531,11 +536,17 @@ class _AdminScreenState extends State<AdminScreen> {
       decoration: BoxDecoration(
         color: AppColors.taegeukBlue.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.taegeukBlue.withValues(alpha: 0.22)),
+        border: Border.all(
+          color: AppColors.taegeukBlue.withValues(alpha: 0.22),
+        ),
       ),
       child: Row(
         children: [
-          const Icon(Icons.badge_outlined, size: 18, color: AppColors.taegeukBlue),
+          const Icon(
+            Icons.badge_outlined,
+            size: 18,
+            color: AppColors.taegeukBlue,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: InkWell(
@@ -621,11 +632,8 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _openAdminPermsForUsername(AppState state, String uname) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => AdminPermScreen(
-          number: uname,
-          name: '아이디 관리자',
-          isUsername: true,
-        ),
+        builder: (_) =>
+            AdminPermScreen(number: uname, name: '아이디 관리자', isUsername: true),
       ),
     );
   }
@@ -751,7 +759,9 @@ class _AdminScreenState extends State<AdminScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),

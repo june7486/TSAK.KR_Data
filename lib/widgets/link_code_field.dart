@@ -345,23 +345,27 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final leagueCtrl = TextEditingController(text: '${prof['league'] ?? ''}');
     final unitCtrl = TextEditingController(text: '${prof['unit'] ?? ''}');
     // [요구] 개인정보 상세 입력 — ① 범스카우트 인가 정보 / ② 현재 활동정보.
-    var isScouter = (prof['isScouter'] == true) ||
+    var isScouter =
+        (prof['isScouter'] == true) ||
         '${prof['scoutNo'] ?? ''}'.trim().isNotEmpty ||
         '${prof['inductedAt'] ?? ''}'.trim().isNotEmpty ||
         '${prof['atasNo'] ?? ''}'.trim().isNotEmpty;
     final scoutNoCtrl = TextEditingController(text: '${prof['scoutNo'] ?? ''}');
-    final inductedCtrl =
-        TextEditingController(text: '${prof['inductedAt'] ?? ''}');
+    final inductedCtrl = TextEditingController(
+      text: '${prof['inductedAt'] ?? ''}',
+    );
     final atasCtrl = TextEditingController(text: '${prof['atasNo'] ?? ''}');
     final positionCtrl = TextEditingController(
       text: '${prof['position'] ?? ''}'.trim().isNotEmpty
           ? '${prof['position']}'
           : (isMentor ? '멘토(지도대장)' : '페런츠(보호자)'),
     );
-    final activityCtrl =
-        TextEditingController(text: '${prof['activity'] ?? ''}');
-    final trainingCtrl =
-        TextEditingController(text: '${prof['trainingStatus'] ?? ''}');
+    final activityCtrl = TextEditingController(
+      text: '${prof['activity'] ?? ''}',
+    );
+    final trainingCtrl = TextEditingController(
+      text: '${prof['trainingStatus'] ?? ''}',
+    );
 
     final saved = await showDialog<bool>(
       context: context,
@@ -369,29 +373,26 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
         final isEdit = existing != null;
         // 섹션 헤더 (요구: '① 범스카우트 인가시 / ② 현재 활동정보' 구분).
         Widget secHdr(String text, IconData icon, Color color) => Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 2),
-              child: Row(
-                children: [
-                  Icon(icon, size: 15, color: color),
-                  const SizedBox(width: 5),
-                  Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Divider(
-                      color: color.withValues(alpha: 0.30),
-                      height: 1,
-                    ),
-                  ),
-                ],
+          padding: const EdgeInsets.only(top: 4, bottom: 2),
+          child: Row(
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 5),
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
               ),
-            );
+              const SizedBox(width: 8),
+              Expanded(
+                child: Divider(color: color.withValues(alpha: 0.30), height: 1),
+              ),
+            ],
+          ),
+        );
         return StatefulBuilder(
           builder: (ctx, setDlg) {
             final previewPhone = phoneCtrl.text;
@@ -406,9 +407,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                 vertical: 16,
               ),
               title: Text(
-                isMentor
-                    ? '멘토 인적사항 · 본인(멘티) 인가번호'
-                    : '페런츠 인적사항 (범을 배출한 부모님)',
+                isMentor ? '멘토 인적사항 · 본인(멘티) 인가번호' : '페런츠 인적사항 (범을 배출한 부모님)',
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -422,17 +421,19 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     decoration: BoxDecoration(
                       color: _accent.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _accent.withValues(alpha: 0.35)),
+                      border: Border.all(
+                        color: _accent.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Text(
                       isMentor
                           ? '멘토 = 이 회원(멘티)을 배출한 지도 대장입니다.\n'
-                              '· 인가번호(멘티) : 이 회원 본인의 범 인가번호 (자동 입력)\n'
-                              '· 아래 [① 범스카우트 인가]·[② 현재 활동정보]로 멘토(대장)의\n'
-                              '  인적사항을 상세히 입력하세요.'
+                                '· 인가번호(멘티) : 이 회원 본인의 범 인가번호 (자동 입력)\n'
+                                '· 아래 [① 범스카우트 인가]·[② 현재 활동정보]로 멘토(대장)의\n'
+                                '  인적사항을 상세히 입력하세요.'
                           : '페런츠 = 이 회원(범)을 배출한 부모님입니다.\n'
-                              '· 부모님이 범스카우트 인가자이면 [① 범스카우트 인가]에 입력\n'
-                              '· 아래 [② 현재 활동정보]로 부모님의 인적사항을 상세히 입력',
+                                '· 부모님이 범스카우트 인가자이면 [① 범스카우트 인가]에 입력\n'
+                                '· 아래 [② 현재 활동정보]로 부모님의 인적사항을 상세히 입력',
                       style: const TextStyle(
                         fontSize: 11,
                         height: 1.45,
@@ -514,8 +515,11 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                   ),
                   const SizedBox(height: 14),
                   // ───────── ① 범스카우트 인가 정보 ─────────
-                  secHdr('① 범스카우트 인가 정보', Icons.verified_user_outlined,
-                      _accent),
+                  secHdr(
+                    '① 범스카우트 인가 정보',
+                    Icons.verified_user_outlined,
+                    _accent,
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -566,8 +570,11 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                   ],
                   const SizedBox(height: 14),
                   // ───────── ② 현재 활동정보 ─────────
-                  secHdr('② 현재 활동정보', Icons.local_activity_outlined,
-                      AppColors.scoutGreen),
+                  secHdr(
+                    '② 현재 활동정보',
+                    Icons.local_activity_outlined,
+                    AppColors.scoutGreen,
+                  ),
                   const SizedBox(height: 2),
                   TextField(
                     controller: leagueCtrl,

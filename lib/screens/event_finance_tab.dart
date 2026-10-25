@@ -282,11 +282,7 @@ class _EventFinanceTabState extends State<EventFinanceTab> {
                 padding: EdgeInsets.only(right: 4),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.sync,
-                      size: 12,
-                      color: AppColors.scoutGreen,
-                    ),
+                    Icon(Icons.sync, size: 12, color: AppColors.scoutGreen),
                     SizedBox(width: 3),
                     Text(
                       '재무관리 연동',
@@ -511,9 +507,7 @@ class _EventFinanceTabState extends State<EventFinanceTab> {
                 const PopupMenuItem(value: 'edit', child: Text('수정')),
                 PopupMenuItem(
                   value: 'attach',
-                  child: Text(
-                    attach > 0 ? '자료 보기/추가 ($attach)' : '자료 추가',
-                  ),
+                  child: Text(attach > 0 ? '자료 보기/추가 ($attach)' : '자료 추가'),
                 ),
                 const PopupMenuItem(value: 'del', child: Text('삭제')),
               ],

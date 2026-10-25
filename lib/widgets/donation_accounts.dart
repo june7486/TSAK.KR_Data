@@ -184,10 +184,7 @@ class _DonationAccountsState extends State<DonationAccounts> {
             ],
           ),
           // 접힘 상태가 아닐 때만 계좌 목록 노출 (기본값: 펼침).
-          if (!_collapsed) ...[
-            const SizedBox(height: 6),
-            ...rows,
-          ],
+          if (!_collapsed) ...[const SizedBox(height: 6), ...rows],
         ],
       ),
     );

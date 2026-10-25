@@ -84,8 +84,9 @@ class FinancePickSet {
   }
 
   /// 목록의 모든 id.
-  static List<String> idsOf(List<Map<String, dynamic>> rows) =>
-      [for (final r in rows) rowId(r)];
+  static List<String> idsOf(List<Map<String, dynamic>> rows) => [
+    for (final r in rows) rowId(r),
+  ];
 
   /// 선택 상태를 다른 목록에도 안전하게 맞춘다(사라진 id 정리).
   void prune(Iterable<String> liveIds) {

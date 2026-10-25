@@ -2675,9 +2675,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: '아타스 ${state.atasCount}',
                   selected: state.kindFilter == 'atas',
                   color: AppColors.lifetimeGold,
-                  onTap: () => state.setKind(
-                    state.kindFilter == 'atas' ? '' : 'atas',
-                  ),
+                  onTap: () =>
+                      state.setKind(state.kindFilter == 'atas' ? '' : 'atas'),
                 ),
               ],
             ),
@@ -3004,7 +3003,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text(
               '등록할 회원의 유형을 선택하세요. 유형에 따라 입력 항목과 '
               '계정 생성 방식(인가번호/전화번호)이 달라집니다.',
-              style: TextStyle(fontSize: 12.5, color: AppColors.textGray, height: 1.4),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: AppColors.textGray,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 14),
             _regTypeTile(

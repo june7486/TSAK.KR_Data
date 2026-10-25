@@ -68,12 +68,7 @@ class _RosterScreenState extends State<RosterScreen> {
   ///   · options = 글씨 크기·줄 간격·용지 방향·열 선택/순서(공용).
   ///   옵션(선택/순서·글씨·줄간격·용지)은 `TsakTableDoc` 이 PDF·JPG·문서에 반영한다.
   TsakTableDoc _doc() {
-    final cols = <String>[
-      '#',
-      '접속',
-      '인가번호',
-      '이름',
-    ];
+    final cols = <String>['#', '접속', '인가번호', '이름'];
     if (_showUnit) cols.add('소속(활동)');
     if (_showGender) cols.add('성별');
     cols.add('연락처');
@@ -201,8 +196,7 @@ class _RosterScreenState extends State<RosterScreen> {
       if (!open && !share && !justPrint) {
         final loc = await askTsakSaveLocation(
           context,
-          info:
-              '${widget.title} · ${doc.rows.length}명 · ${format.label}',
+          info: '${widget.title} · ${doc.rows.length}명 · ${format.label}',
         );
         if (loc == null) {
           if (mounted) _snack('저장을 취소했습니다');
@@ -491,7 +485,10 @@ class _RosterScreenState extends State<RosterScreen> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       '# · 접속 · 인가번호 · 이름 · 연락처는 항상 인쇄됩니다.\n아래 항목을 골라 함께 출력하세요.',
-                      style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textGray,
+                      ),
                     ),
                   ),
                 ),
@@ -712,10 +709,9 @@ class _RosterScreenState extends State<RosterScreen> {
                       ),
                     ),
                   DataCell(
-                    Text(_first(widget.attendees[i], const [
-                      'phoneText',
-                      'phone',
-                    ])),
+                    Text(
+                      _first(widget.attendees[i], const ['phoneText', 'phone']),
+                    ),
                   ),
                   if (_showEmail)
                     DataCell(

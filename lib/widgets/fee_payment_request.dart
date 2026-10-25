@@ -33,7 +33,8 @@ String feeTimingLabel(String type, String timing) {
 }
 
 /// 타입 라벨 (요청 시트 제목용).
-String _typeTitle(String type) => type == 'lifetime' ? '평생회원 등록요청' : '연회비 납부 요청';
+String _typeTitle(String type) =>
+    type == 'lifetime' ? '평생회원 등록요청' : '연회비 납부 요청';
 
 /// 평생회비·연회비 납부 요청 시트를 연다. 제출 성공 시 true.
 ///
@@ -46,9 +47,8 @@ Future<bool> showFeePaymentRequestSheet(
 }) async {
   final state = context.read<AppState>();
   final now = DateTime.now();
-  final years = <String>{
-    '2024', '2025', '2026', '2027', '${now.year}',
-  }.toList()..sort();
+  final years = <String>{'2024', '2025', '2026', '2027', '${now.year}'}.toList()
+    ..sort();
   String year = initialYear.trim();
   if (!years.contains(year)) {
     year = years.contains('${now.year}')
@@ -96,8 +96,12 @@ Future<bool> showFeePaymentRequestSheet(
                 Row(
                   children: [
                     Icon(
-                      isLifetime ? Icons.workspace_premium : Icons.card_membership,
-                      color: isLifetime ? AppColors.lifetimeGold : AppColors.scoutGreen,
+                      isLifetime
+                          ? Icons.workspace_premium
+                          : Icons.card_membership,
+                      color: isLifetime
+                          ? AppColors.lifetimeGold
+                          : AppColors.scoutGreen,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -118,7 +122,10 @@ Future<bool> showFeePaymentRequestSheet(
                 Text(
                   '요청하면 관리자·마스터가 확인 후 승인합니다. '
                   '승인 시 ${isLifetime ? '평생회원 등록' : '연회비 납부 이력'}과 연동됩니다.',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 if (!isLifetime) ...[
@@ -130,7 +137,9 @@ Future<bool> showFeePaymentRequestSheet(
                       isDense: true,
                     ),
                     items: years
-                        .map((y) => DropdownMenuItem(value: y, child: Text('$y년')))
+                        .map(
+                          (y) => DropdownMenuItem(value: y, child: Text('$y년')),
+                        )
                         .toList(),
                     onChanged: (v) => setSheet(() => year = v ?? year),
                   ),
@@ -138,7 +147,10 @@ Future<bool> showFeePaymentRequestSheet(
                 ],
                 Text(
                   isLifetime ? '평생회비 납부 여부' : '연회비 납부 여부',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -223,7 +235,10 @@ Future<bool> showFeePaymentRequestSheet(
                   controlAffinity: ListTileControlAffinity.leading,
                   title: const Text(
                     '인가자와 동일 (본인 이름으로 자동 입력)',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   onChanged: (v) => setSheet(() {
                     payerIsSelf = v ?? false;
@@ -240,7 +255,10 @@ Future<bool> showFeePaymentRequestSheet(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                         onPressed: () => showPaymentAccountsSheet(context),
-                        icon: const Icon(Icons.account_balance_wallet, size: 17),
+                        icon: const Icon(
+                          Icons.account_balance_wallet,
+                          size: 17,
+                        ),
                         label: const Text(
                           '지급납부 (계좌 보기)',
                           style: TextStyle(fontWeight: FontWeight.w800),
@@ -263,9 +281,7 @@ Future<bool> showFeePaymentRequestSheet(
                         : () => Navigator.pop(ctx, true),
                     icon: const Icon(Icons.send, size: 18),
                     label: Text(
-                      timing.isEmpty
-                          ? '납부 여부를 선택하세요'
-                          : '등록요청 제출',
+                      timing.isEmpty ? '납부 여부를 선택하세요' : '등록요청 제출',
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
@@ -323,7 +339,10 @@ Future<void> showPaymentAccountsSheet(
           children: [
             Row(
               children: [
-                const Icon(Icons.account_balance_wallet, color: AppColors.purple),
+                const Icon(
+                  Icons.account_balance_wallet,
+                  color: AppColors.purple,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

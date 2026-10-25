@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/event_finance_picks.dart';
+import '../services/donation_doc.dart';
 import '../services/event_settlement.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
@@ -84,6 +85,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   List<Map<String, dynamic>> _plan = [];
   List<Map<String, dynamic>> _media = [];
   List<Map<String, dynamic>> _attendees = [];
+
+  /// 참가자 일괄 선택 모드.
+  ///
+  /// ## 요구: "참가자 삭제시 개인정보카드와 연계해서 참가행사에서도 삭제"
+  ///  한 명씩 지우는 것만으로는 행사 정리 때 너무 느리다. 여러 명을 체크해
+  ///  한 번에 삭제하면 서버가 그 인원 전원을 프로필에서 해제한다
+  ///  (`linkedRemoved` 로 인원이 돌아온다).
+  bool _selMode = false;
+
+  /// 선택된 참가자 인덱스 집합.
+  final Set<int> _selIdx = <int>{};
   Map<String, dynamic> _access = {};
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
@@ -93,6 +105,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   /// (요구) 결산서 항목 배치(순서·출력 포함) — 탭을 오가도 유지.
   SettlementLayout? _settleLayout;
+
+  /// (요구) 후원 출력 설정 — 후원자별/내역별 · 물품중심/금액중심.
+  DonationViewMode _donView = DonationViewMode.bySponsor;
+  DonationFocus _donFocus = DonationFocus.both;
 
   int _cols = 5;
   int _pinchBaseCols = 3;
@@ -775,26 +791,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   Future<void> _renameFile(String key, String name, {String sub = ''}) async {
     final ctrl = TextEditingController(text: name);
-    final ok = await showDialog<bool>(
+    // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 바텀시트로 전환.
+    final ok = await showTsakFormSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
-        scrollable: true,
-        title: const Text('이름 변경'),
-        content: TextField(
+      title: '이름 변경',
+      subtitle: '파일 이름을 새로 입력하세요',
+      icon: Icons.drive_file_rename_outline,
+      saveLabel: '저장',
+      builder: (ctx, setSheetState) => SizedBox(
+        width: 420,
+        child: TextField(
           controller: ctrl,
+          autofocus: true,
           decoration: const InputDecoration(labelText: '새 이름'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('저장'),
-          ),
-        ],
       ),
     );
     if (ok != true || ctrl.text.trim().isEmpty) return;
@@ -1093,6 +1103,89 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               ],
             ),
           ),
+        // ── 일괄 선택 툴바 (요구: 여러 명 한 번에 삭제) ──────────────────
+        if (widget.canManage && _attendees.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: _selMode
+                ? Row(
+                    children: [
+                      Text(
+                        '${_selIdx.length}명 선택',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.purple,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => setState(() {
+                          if (_selIdx.length == _attendees.length) {
+                            _selIdx.clear();
+                          } else {
+                            _selIdx
+                              ..clear()
+                              ..addAll(
+                                List<int>.generate(_attendees.length, (i) => i),
+                              );
+                          }
+                        }),
+                        child: Text(
+                          _selIdx.length == _attendees.length
+                              ? '전체 해제'
+                              : '전체 선택',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: AppColors.taegeukRed,
+                        ),
+                        onPressed: _selIdx.isEmpty ? null : _deleteSelected,
+                        icon: const Icon(Icons.delete_sweep, size: 17),
+                        label: Text(
+                          '선택 삭제 (${_selIdx.length})',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => setState(() {
+                          _selMode = false;
+                          _selIdx.clear();
+                        }),
+                        child: const Text('취소', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  )
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => setState(() {
+                        _selMode = true;
+                        _selIdx.clear();
+                      }),
+                      icon: const Icon(Icons.checklist, size: 17),
+                      label: const Text(
+                        '여러 명 선택',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+          ),
         if (_isStaff && !widget.canManage)
           const Padding(
             padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
@@ -1262,6 +1355,56 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final canOpenCard = canManage && (a['linkable'] == true || hasCard);
     // [요구] 개인카드가 없어도 클릭은 가능해야 한다(신규 등록 유도).
     final canTap = canManage;
+    // ── 일괄 선택 모드 ──────────────────────────────────────────────────
+    //  체크박스가 leading 을 대체하고, 타일 탭 = 선택 토글이 된다.
+    final selected = _selIdx.contains(i);
+    if (_selMode) {
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        color: selected ? AppColors.purple.withValues(alpha: 0.08) : null,
+        child: InkWell(
+          onTap: () => setState(() {
+            if (selected) {
+              _selIdx.remove(i);
+            } else {
+              _selIdx.add(i);
+            }
+          }),
+          child: ListTile(
+            dense: true,
+            leading: Checkbox(
+              value: selected,
+              activeColor: AppColors.purple,
+              onChanged: (_) => setState(() {
+                if (selected) {
+                  _selIdx.remove(i);
+                } else {
+                  _selIdx.add(i);
+                }
+              }),
+            ),
+            title: Text(
+              '${a['name'] ?? ''}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              [
+                if (numLabel.isNotEmpty) numLabel,
+                if (_roleDisplay(a).isNotEmpty) _roleDisplay(a),
+              ].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+            ),
+          ),
+        ),
+      );
+    }
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: InkWell(
@@ -2062,6 +2205,65 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     return res;
   }
 
+  /// 선택한 참가자를 **한 번에** 삭제한다.
+  ///
+  /// ## 요구: "참가자 삭제시 개인정보카드와 연계해서 참가행사에서도 삭제"
+  ///  한 명씩 지우던 흐름을 여러 명으로 확장한다.
+  ///  서버는 저장된 명단에 없는 회원을 모두 프로필에서 해제하므로,
+  ///  한 번의 저장으로 N명이 정리된다.
+  Future<void> _deleteSelected() async {
+    if (_selIdx.isEmpty || !widget.canManage) return;
+    final idx = _selIdx.toList()..sort((a, b) => b.compareTo(a));
+    final names = [
+      for (final i in idx)
+        if (i >= 0 && i < _attendees.length) '${_attendees[i]['name'] ?? ''}',
+    ].where((e) => e.trim().isNotEmpty).toList();
+    if (names.isEmpty) return;
+
+    // 실수 방지 — 몇 명이 사라지는지, 어디까지 반영되는지 명시.
+    final head = names.length <= 5
+        ? names.join(', ')
+        : '${names.take(5).join(', ')} 외 ${names.length - 5}명';
+    final ok = await confirmDialog(
+      context,
+      title: '참가자 ${names.length}명 삭제',
+      message:
+          '$head\n\n'
+          '삭제하면 개인정보카드의 「행사참가 이력」에서도 함께 제외됩니다.',
+    );
+    if (!ok) return;
+
+    // 내림차순으로 지워야 인덱스가 밀리지 않는다.
+    setState(() {
+      for (final i in idx) {
+        if (i >= 0 && i < _attendees.length) _attendees.removeAt(i);
+      }
+      _selIdx.clear();
+      _selMode = false;
+    });
+
+    final res = await _saveAttendeesLinked();
+    var localFreed = 0;
+    if (mounted) {
+      try {
+        localFreed = await context.read<AppState>().unlinkEventFromMembers(
+          widget.title,
+          keepIdents: [
+            for (final x in _attendees) '${x['number'] ?? ''}',
+            for (final x in _attendees) '${x['phone'] ?? ''}',
+          ],
+        );
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    final freed = int.tryParse('${res['linkedRemoved'] ?? 0}') ?? 0;
+    final total = freed > localFreed ? freed : localFreed;
+    _snack(
+      '${names.length}명 삭제 완료'
+      '${total > 0 ? ' · 개인정보카드 「행사참가 이력」에서도 $total명 제외' : ''}',
+    );
+  }
+
   /// 인가자 다중 검색 & 일괄 추가.
   /// - 한 번에 여러 명을 체크해 추가(반복 입력 불필요).
   /// - 검색어가 비어 있으면 최근/전체 목록을 보여주고, 항목 선택 시 일괄 적용.
@@ -2340,274 +2542,254 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     var lookupHint = '인가번호를 넣으면 개인정보를 자동으로 불러옵니다';
     // 매칭된 회원(있으면 저장 시 corps/numberLabel 판단에 쓴다).
     Map<String, dynamic>? matched;
-    final saved = await showDialog<bool>(
+    // ── 바텀시트로 전환 ────────────────────────────────────────────────
+    //  ## 왜 (요구: 키보드가 창을 줄여 입력칸이 안 보이던 문제)
+    //   AlertDialog(scrollable:true) 는 여전히 키보드가 올라오면 창 자체가
+    //   줄어든다. 이 폼은 입력칸이 15개라 증상이 가장 심했다.
+    //   showTsakFormSheet 는 높이를 (화면−키보드)×0.94 로 고정하고
+    //   헤더/스크롤본문/버튼 3단으로 나눠 입력칸이 사라지지 않는다.
+    final saved = await showTsakFormSheet(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) {
-          // ---- 인가번호 → 개인정보 자동채움 ----
-          //   관리자가 이미 입력/수정한 칸은 덮어쓰지 않는다(빈 칸만 채움).
-          Future<void> autoFill() async {
-            final q = numC.text.trim();
-            if (q.isEmpty || lookupBusy) return;
-            setD(() {
-              lookupBusy = true;
-              lookupHint = '개인정보 불러오는 중…';
-            });
-            Map<String, dynamic>? m;
-            try {
-              // 1) 로컬 캐시 우선(즉시·오프라인 안전).
-              final s = context.read<AppState>();
-              final local = s.byNumber(q) ?? s.byId(q);
-              if (local != null) {
-                m = {
-                  'id': local.id,
-                  'number': local.number,
-                  'name': local.name,
-                  'corps': local.corps,
-                  'corpsLabel': local.corpsMarkLabel,
-                  'numberLabel': local.numberLabel,
-                  'isRegular': local.isRegular,
-                  'league': local.regLeague.trim().isNotEmpty
-                      ? local.regLeague
-                      : local.league,
-                  'unit': local.regUnit.trim().isNotEmpty
-                      ? local.regUnit
-                      : local.unit,
-                  'gender': local.gender,
-                  'phone': local.phone,
-                  'email': local.email,
-                  'address': local.address,
-                };
-              }
-              // 2) 로컬에 없으면 서버 조회(범+은하 통합, 최신값).
-              if (m == null) {
-                final res = await _nas.memberLookup(q);
-                if (res['found'] == true && res['member'] is Map) {
-                  m = (res['member'] as Map).cast<String, dynamic>();
-                }
-              }
-            } catch (_) {
-              m = null;
+      title: editIndex != null ? '참석자 수정' : '참석자 수동 입력',
+      subtitle: '인가번호를 넣으면 개인정보를 자동으로 불러옵니다',
+      icon: Icons.edit_note,
+      saveLabel: '저장',
+      heightFactor: 0.94,
+      builder: (ctx, setSheetState) {
+        // ---- 인가번호 → 개인정보 자동채움 ----
+        //   관리자가 이미 입력/수정한 칸은 덮어쓰지 않는다(빈 칸만 채움).
+        Future<void> autoFill() async {
+          final q = numC.text.trim();
+          if (q.isEmpty || lookupBusy) return;
+          setSheetState(() {
+            lookupBusy = true;
+            lookupHint = '개인정보 불러오는 중…';
+          });
+          Map<String, dynamic>? m;
+          try {
+            // 1) 로컬 캐시 우선(즉시·오프라인 안전).
+            final s = context.read<AppState>();
+            final local = s.byNumber(q) ?? s.byId(q);
+            if (local != null) {
+              m = {
+                'id': local.id,
+                'number': local.number,
+                'name': local.name,
+                'corps': local.corps,
+                'corpsLabel': local.corpsMarkLabel,
+                'numberLabel': local.numberLabel,
+                'isRegular': local.isRegular,
+                'league': local.regLeague.trim().isNotEmpty
+                    ? local.regLeague
+                    : local.league,
+                'unit': local.regUnit.trim().isNotEmpty
+                    ? local.regUnit
+                    : local.unit,
+                'gender': local.gender,
+                'phone': local.phone,
+                'email': local.email,
+                'address': local.address,
+              };
             }
-            if (!mounted) return;
-            setD(() {
-              lookupBusy = false;
-              if (m == null) {
-                lookupOk = false;
-                lookupHint = '해당 인가번호의 회원 정보를 찾지 못했습니다';
-                return;
+            // 2) 로컬에 없으면 서버 조회(범+은하 통합, 최신값).
+            if (m == null) {
+              final res = await _nas.memberLookup(q);
+              if (res['found'] == true && res['member'] is Map) {
+                m = (res['member'] as Map).cast<String, dynamic>();
               }
-              final mm = m;
-              matched = mm;
-              lookupOk = true;
-              final label = '${mm['numberLabel'] ?? mm['number'] ?? ''}';
-              lookupHint = '${mm['name'] ?? ''} ($label) 정보를 불러왔습니다';
-              // 빈 칸만 채운다(관리자가 고친 값 보존).
-              void fill(TextEditingController c, String? v) {
-                final t = '${v ?? ''}'.trim();
-                if (c.text.trim().isEmpty && t.isNotEmpty) c.text = t;
-              }
-
-              fill(nameC, '${mm['name'] ?? ''}');
-              fill(unitC, '${mm['unit'] ?? ''}');
-              fill(genderC, '${mm['gender'] ?? ''}');
-              fill(phoneC, '${mm['phone'] ?? ''}');
-              fill(emailC, '${mm['email'] ?? ''}');
-              fill(addrC, '${mm['address'] ?? ''}');
-            });
+            }
+          } catch (_) {
+            m = null;
           }
+          if (!mounted) return;
+          setSheetState(() {
+            lookupBusy = false;
+            if (m == null) {
+              lookupOk = false;
+              lookupHint = '해당 인가번호의 회원 정보를 찾지 못했습니다';
+              return;
+            }
+            final mm = m;
+            matched = mm;
+            lookupOk = true;
+            final label = '${mm['numberLabel'] ?? mm['number'] ?? ''}';
+            lookupHint = '${mm['name'] ?? ''} ($label) 정보를 불러왔습니다';
+            // 빈 칸만 채운다(관리자가 고친 값 보존).
+            void fill(TextEditingController c, String? v) {
+              final t = '${v ?? ''}'.trim();
+              if (c.text.trim().isEmpty && t.isNotEmpty) c.text = t;
+            }
 
-          return AlertDialog(
-            // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
-            scrollable: true,
-            title: Text(editIndex != null ? '참석자 수정' : '참석자 수동 입력'),
-            content: SizedBox(
-              width: 360,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameC,
-                      decoration: const InputDecoration(labelText: '이름 *'),
+            fill(nameC, '${mm['name'] ?? ''}');
+            fill(unitC, '${mm['unit'] ?? ''}');
+            fill(genderC, '${mm['gender'] ?? ''}');
+            fill(phoneC, '${mm['phone'] ?? ''}');
+            fill(emailC, '${mm['email'] ?? ''}');
+            fill(addrC, '${mm['address'] ?? ''}');
+          });
+        }
+
+        return SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: nameC,
+                decoration: const InputDecoration(labelText: '이름 *'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: unitC,
+                decoration: const InputDecoration(labelText: '소속'),
+              ),
+              const SizedBox(height: 8),
+              // (요구) 인가번호를 넣으면 그 회원의 개인정보를 자동으로 채운다.
+              //   · 숫자 입력 후 포커스를 잃거나 돋보기(조회)를 누르면 조회.
+              //   · 이름·소속·성별·연락처·메일·주소를 비어 있는 칸에만 채워
+              //     관리자가 이미 고친 값은 덮어쓰지 않는다.
+              Focus(
+                onFocusChange: (has) {
+                  if (!has) autoFill();
+                },
+                child: TextField(
+                  controller: numC,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: '인가번호 (인가자만)',
+                    helperText: lookupHint,
+                    helperStyle: TextStyle(
+                      fontSize: 10.5,
+                      color: lookupOk
+                          ? AppColors.scoutGreen
+                          : AppColors.textGray,
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: unitC,
-                      decoration: const InputDecoration(labelText: '소속'),
-                    ),
-                    const SizedBox(height: 8),
-                    // (요구) 인가번호를 넣으면 그 회원의 개인정보를 자동으로 채운다.
-                    //   · 숫자 입력 후 포커스를 잃거나 돋보기(조회)를 누르면 조회.
-                    //   · 이름·소속·성별·연락처·메일·주소를 비어 있는 칸에만 채워
-                    //     관리자가 이미 고친 값은 덮어쓰지 않는다.
-                    Focus(
-                      onFocusChange: (has) {
-                        if (!has) autoFill();
-                      },
-                      child: TextField(
-                        controller: numC,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: '인가번호 (인가자만)',
-                          helperText: lookupHint,
-                          helperStyle: TextStyle(
-                            fontSize: 10.5,
-                            color: lookupOk
-                                ? AppColors.scoutGreen
-                                : AppColors.textGray,
-                          ),
-                          suffixIcon: lookupBusy
-                              ? const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                )
-                              : IconButton(
-                                  tooltip: '개인정보 불러오기',
-                                  icon: const Icon(
-                                    Icons.person_search,
-                                    size: 20,
-                                  ),
-                                  onPressed: autoFill,
-                                ),
-                        ),
-                        onSubmitted: (_) => autoFill(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: genderC,
-                      decoration: const InputDecoration(labelText: '성별'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: phoneC,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(labelText: '연락처'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: emailC,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: '메일주소'),
-                    ),
-                    const SizedBox(height: 8),
-                    AddressField(
-                      controller: addrC,
-                      label: '현재 주소 (회원정보에 반영)',
-                      hint: '주소검색 버튼으로 검색하세요',
-                    ),
-                    const SizedBox(height: 8),
-                    // (요구) 참가신청 창과 동일한 '추가 입력 사항'.
-                    TextField(
-                      controller: transportC,
-                      decoration: const InputDecoration(labelText: '이동 방법'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: transportNoteC,
-                      decoration: const InputDecoration(
-                        labelText: '이동 방법 직접입력 (기타)',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: lodgingC,
-                      decoration: const InputDecoration(labelText: '숙박 여부'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: arriveC,
-                      decoration: const InputDecoration(labelText: '도착 예정 시간'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: arriveNoteC,
-                      decoration: const InputDecoration(
-                        labelText: '도착 예정 시간 직접입력 (기타)',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: fromC,
-                      decoration: const InputDecoration(labelText: '출발 장소'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: etaC,
-                      decoration: const InputDecoration(labelText: '예상 소요시간'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: companionC,
-                      decoration: const InputDecoration(labelText: '동행자 이름'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: messageC,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: '운영진께 전달할 내용',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '항목 (복수 선택)',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final r in all)
-                          FilterChip(
-                            label: Text(r),
-                            selected: roles.contains(r),
-                            selectedColor: AppColors.purple,
-                            labelStyle: TextStyle(
-                              color: roles.contains(r)
-                                  ? Colors.white
-                                  : AppColors.purple,
+                    suffixIcon: lookupBusy
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            onSelected: (v) =>
-                                setD(() => v ? roles.add(r) : roles.remove(r)),
+                          )
+                        : IconButton(
+                            tooltip: '개인정보 불러오기',
+                            icon: const Icon(Icons.person_search, size: 20),
+                            onPressed: autoFill,
                           ),
-                      ],
+                  ),
+                  onSubmitted: (_) => autoFill(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: genderC,
+                decoration: const InputDecoration(labelText: '성별'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: phoneC,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: '연락처'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: emailC,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: '메일주소'),
+              ),
+              const SizedBox(height: 8),
+              AddressField(
+                controller: addrC,
+                label: '현재 주소 (회원정보에 반영)',
+                hint: '주소검색 버튼으로 검색하세요',
+              ),
+              const SizedBox(height: 8),
+              // (요구) 참가신청 창과 동일한 '추가 입력 사항'.
+              TextField(
+                controller: transportC,
+                decoration: const InputDecoration(labelText: '이동 방법'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: transportNoteC,
+                decoration: const InputDecoration(labelText: '이동 방법 직접입력 (기타)'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: lodgingC,
+                decoration: const InputDecoration(labelText: '숙박 여부'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: arriveC,
+                decoration: const InputDecoration(labelText: '도착 예정 시간'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: arriveNoteC,
+                decoration: const InputDecoration(
+                  labelText: '도착 예정 시간 직접입력 (기타)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: fromC,
+                decoration: const InputDecoration(labelText: '출발 장소'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: etaC,
+                decoration: const InputDecoration(labelText: '예상 소요시간'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: companionC,
+                decoration: const InputDecoration(labelText: '동행자 이름'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: messageC,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: '운영진께 전달할 내용'),
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '항목 (복수 선택)',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final r in all)
+                    FilterChip(
+                      label: Text(r),
+                      selected: roles.contains(r),
+                      selectedColor: AppColors.purple,
+                      labelStyle: TextStyle(
+                        color: roles.contains(r)
+                            ? Colors.white
+                            : AppColors.purple,
+                      ),
+                      onSelected: (v) => setSheetState(
+                        () => v ? roles.add(r) : roles.remove(r),
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.purple,
-                ),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('저장'),
+                ],
               ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
+    // 시트는 true(저장)/null(취소) 을 돌려준다.
     if (saved != true) return;
     if (nameC.text.trim().isEmpty) {
       _snack('이름을 입력하세요');
@@ -2918,31 +3100,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   Future<void> _createMediaFolder() async {
     final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 바텀시트로 전환.
+    final ok = await showTsakFormSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
-        scrollable: true,
-        title: const Text('새 폴더 만들기'),
-        content: TextField(
+      title: '새 폴더 만들기',
+      subtitle: _mediaPath.isEmpty ? '사진첩 폴더를 만듭니다' : '하위 폴더를 만듭니다',
+      icon: Icons.create_new_folder_outlined,
+      saveLabel: '만들기',
+      builder: (ctx, setSheetState) => SizedBox(
+        width: 420,
+        child: TextField(
           controller: ctrl,
           autofocus: true,
           decoration: InputDecoration(
             labelText: '폴더 이름',
             hintText: _mediaPath.isEmpty ? '예: 1일차, 단체사진' : '하위 폴더',
           ),
-          onSubmitted: (_) => Navigator.pop(ctx, true),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('만들기'),
-          ),
-        ],
       ),
     );
     final name = ctrl.text.trim();
@@ -3375,7 +3549,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///  · `donation` → 후원·기타수입 (후원 / 후원금 / 기타)
   ///  · `expense`  → 행사비지출 (_expenses 전체)
   /// (요구) "참가비/후원금, 후원·기타수입, 행사비지출을 각각 따로 관리"
-  static const List<String> _donationCats = ['후원', '후원금', '기타', '수송지원'];
+  /// ※ 후원 카테고리 판정은 `lib/services/donation_kinds.dart` 의
+  ///   `DonationKind.isNonDonation()` 하나만 쓴다(중복 정의 금지).
 
   List<Map<String, dynamic>> _rowsOf(String kind) {
     if (kind == 'expense') return _expenses;
@@ -3964,15 +4139,157 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   /// (요구) 출력 시 포함여부 — `rows` 를 주면 그 행만 출력한다.
-  void _outputFinance(String kind, {List<Map<String, dynamic>>? rows}) {
+  Future<void> _outputFinance(String kind, {List<Map<String, dynamic>>? rows}) {
     final list = rows ?? _rowsOf(kind);
     final picked = rows != null && list.length != _rowsOf(kind).length;
-    _runOutputDoc(
+    // (요구) "후원항목만 출력시 후원물품 혹은 금액에 대한 선택할 수 있도록"
+    //  → 후원 탭은 후원자별/내역별 · 물품중심/금액중심을 먼저 고르게 한다.
+    if (kind == 'donation') {
+      return _outputDonation(list, view: null, focus: null);
+    }
+    return _runOutputDoc(
       () => _financeDoc(kind, rows: list),
       title: '${widget.title} · ${_financeTitle(kind)}',
       subtitle:
           '${list.length}건'
           '${picked ? ' (선택 출력)' : ''} · 옵션·미리보기·인쇄',
+    );
+  }
+
+  /// 후원 전용 출력 — 보기 방식/초점을 고르고 문서를 만든다.
+  Future<void> _outputDonation(
+    List<Map<String, dynamic>> list, {
+    DonationViewMode? view,
+    DonationFocus? focus,
+  }) async {
+    var v = view ?? _donView;
+    var f = focus ?? _donFocus;
+    if (view == null) {
+      final picked = await _askDonationShape(initialView: v, initialFocus: f);
+      if (picked == null) return;
+      v = picked.$1;
+      f = picked.$2;
+      _donView = v;
+      _donFocus = f;
+    }
+    await _runOutputDoc(
+      () => _donationDoc(rows: list, view: v, focus: f),
+      title: '${widget.title} · 후원 ${v.label}',
+      subtitle: '${list.length}건 · ${f.label} · 옵션·미리보기·인쇄',
+    );
+  }
+
+  /// 후원 출력 형태 선택 시트 — 보기(후원자별/내역별) + 초점(물품/금액).
+  Future<(DonationViewMode, DonationFocus)?> _askDonationShape({
+    required DonationViewMode initialView,
+    required DonationFocus initialFocus,
+  }) async {
+    var v = initialView;
+    var f = initialFocus;
+    final ok = await showTsakFormSheet(
+      context: context,
+      title: '후원 출력 설정',
+      subtitle: '후원자별/내역별 · 물품중심/금액중심을 고르세요',
+      icon: Icons.card_giftcard,
+      saveLabel: '출력',
+      heightFactor: 0.62,
+      builder: (ctx, setSheetState) => SizedBox(
+        width: 460,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '정리 방식',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            for (final e in DonationViewMode.values)
+              RadioListTile<DonationViewMode>(
+                value: e,
+                groupValue: v,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                activeColor: AppColors.tigerGold,
+                title: Text(
+                  e.label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: Text(e.hint, style: const TextStyle(fontSize: 10.5)),
+                onChanged: (x) {
+                  if (x == null) return;
+                  setSheetState(() => v = x);
+                },
+              ),
+            const SizedBox(height: 8),
+            const Text(
+              '출력 초점',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            for (final e in DonationFocus.values)
+              RadioListTile<DonationFocus>(
+                value: e,
+                groupValue: f,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                activeColor: AppColors.tigerGold,
+                title: Text(
+                  e.label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: Text(e.hint, style: const TextStyle(fontSize: 10.5)),
+                onChanged: (x) {
+                  if (x == null) return;
+                  setSheetState(() => f = x);
+                },
+              ),
+            const SizedBox(height: 6),
+            const Text(
+              '※ 후원금(현금)은 수입으로, 현물후원은 참고 금액으로 따로 표기됩니다.',
+              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return null;
+    return (v, f);
+  }
+
+  /// 후원 표 문서 — [buildDonationDocData] 가 만든 열/행/요약을 그대로 옮긴다.
+  TsakTableDoc _donationDoc({
+    required List<Map<String, dynamic>> rows,
+    required DonationViewMode view,
+    required DonationFocus focus,
+  }) {
+    final data = buildDonationDocData(
+      rows: rows,
+      view: view,
+      focus: focus,
+      won: _won,
+    );
+    return TsakTableDoc(
+      title: '${widget.year} ${widget.title}',
+      subtitle: '후원 ${view.label} · ${data.subtitle}',
+      description: view == DonationViewMode.bySponsor
+          ? '후원자 한 명을 한 줄로 묶어 후원내역·금액을 정리합니다. '
+                '후원금(현금)은 수입으로, 현물후원은 수입에 넣지 않고 참고로 표기합니다.'
+          : '후원 분류별로 묶어 후원자와 내역을 정리합니다. '
+                '후원금(현금)은 수입으로, 현물후원은 수입에 넣지 않고 참고로 표기합니다.',
+      columns: data.columns,
+      rows: data.rows,
+      summary: data.summary,
+      footerLeft: '한국범스카우트중앙회 · 행사 후원목록',
+      landscape: true,
+      options: TableOutputOptions(
+        noWrap: const {'연번', '후원분류', '건수', '인가번호', '금액', '금액 상당'},
+      ),
     );
   }
 
@@ -4331,13 +4648,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Future<void> _addCustomTab() async {
     final nameCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 바텀시트로 전환.
+    final ok = await showTsakFormSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
-        scrollable: true,
-        title: const Text('메뉴 추가'),
-        content: Column(
+      title: '메뉴 추가',
+      subtitle: '행사 전용 메뉴를 하나 만듭니다',
+      icon: Icons.add_box_outlined,
+      saveLabel: '추가',
+      builder: (ctx, setSheetState) => SizedBox(
+        width: 420,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
@@ -4356,16 +4676,6 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('추가'),
-          ),
-        ],
       ),
     );
     if (ok != true || !mounted) return;
@@ -4384,13 +4694,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Future<void> _editCustomTab(Map<String, dynamic> t) async {
     final nameCtrl = TextEditingController(text: '${t['name'] ?? ''}');
     final noteCtrl = TextEditingController(text: '${t['note'] ?? ''}');
-    final ok = await showDialog<bool>(
+    final ok = await showTsakFormSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        // (요구) 키보드가 창을 줄여도 입력칸이 잘리지 않도록 스크롤.
-        scrollable: true,
-        title: const Text('메뉴 편집'),
-        content: Column(
+      title: '메뉴 편집',
+      subtitle: '이름과 내용을 고칩니다',
+      icon: Icons.edit_note,
+      saveLabel: '저장',
+      builder: (ctx, setSheetState) => SizedBox(
+        width: 420,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
@@ -4408,16 +4720,6 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('저장'),
-          ),
-        ],
       ),
     );
     if (ok != true || !mounted) return;

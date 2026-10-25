@@ -511,13 +511,15 @@ Future<Map<String, String>?> openKakaoMapPicker({
       return Future.value(null);
     }
 
-    final opts = <String, Object?>{
-      'key': key,
-      'title': title,
-      'place': place,
-      'lat': lat,
-      'lng': lng,
-    }.jsify()! as JSObject;
+    final opts =
+        <String, Object?>{
+              'key': key,
+              'title': title,
+              'place': place,
+              'lat': lat,
+              'lng': lng,
+            }.jsify()!
+            as JSObject;
     _tsakOpenKakaoMapPicker(opts, done.toJS);
 
     // ★ 안전 타임아웃: 오버레이가 어떤 이유로든 콜백을 못 주면 45초 뒤 실패 처리

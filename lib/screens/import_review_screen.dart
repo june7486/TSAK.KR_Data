@@ -58,11 +58,9 @@ class _Diff {
 }
 
 class _RevItem {
-  _RevItem({
-    required this.row,
-    required this.prev,
-  }) : action = prev == null ? 'add' : 'update',
-       selected = true {
+  _RevItem({required this.row, required this.prev})
+    : action = prev == null ? 'add' : 'update',
+      selected = true {
     final p = prev;
     if (p != null) {
       _diffs = _computeDiffs(p, row);
@@ -145,7 +143,8 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       Member? prev;
       final no = m.number.trim();
       if (no.isNotEmpty) prev = state.byNumber(no);
-      if (prev != null && prev.name.trim().isNotEmpty &&
+      if (prev != null &&
+          prev.name.trim().isNotEmpty &&
           m.name.trim().isNotEmpty &&
           prev.name.trim() != m.name.trim()) {
         // 이름이 다르면 동일 번호라도 '신규'로 보지 않도록 중복 유지(수동 판단).
@@ -174,12 +173,9 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   int get _newCount => _items.where((e) => e.isNew).length;
   int get _dupCount => _items.where((e) => !e.isNew).length;
 
-  int get _addCount =>
-      _items.where((e) => e.action == 'add').length;
-  int get _updateCount =>
-      _items.where((e) => e.action == 'update').length;
-  int get _skipCount =>
-      _items.where((e) => e.action == 'skip').length;
+  int get _addCount => _items.where((e) => e.action == 'add').length;
+  int get _updateCount => _items.where((e) => e.action == 'update').length;
+  int get _skipCount => _items.where((e) => e.action == 'skip').length;
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +282,10 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
               const Spacer(),
               Text(
                 '${_items.where((e) => e.selected).length}건 선택',
-                style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textGray,
+                ),
               ),
             ],
           ),
@@ -356,9 +355,9 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       n++;
     }
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('선택 $n건에 규칙을 적용했습니다')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('선택 $n건에 규칙을 적용했습니다')));
   }
 
   Widget _list() {
@@ -411,9 +410,11 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
                     ),
                     if (it.isNew)
                       Text(
-                        [m['league'], m['unit'], m['phone']]
-                            .where((x) => '${x ?? ''}'.isNotEmpty)
-                            .join(' · '),
+                        [
+                          m['league'],
+                          m['unit'],
+                          m['phone'],
+                        ].where((x) => '${x ?? ''}'.isNotEmpty).join(' · '),
                         style: const TextStyle(
                           fontSize: 11.5,
                           color: AppColors.textGray,
@@ -446,8 +447,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       initialValue: it.action,
       onSelected: (v) => setState(() => it.action = v),
       itemBuilder: (c) => [
-        if (it.isNew)
-          const PopupMenuItem(value: 'add', child: Text('신규 등록')),
+        if (it.isNew) const PopupMenuItem(value: 'add', child: Text('신규 등록')),
         if (!it.isNew) ...[
           const PopupMenuItem(value: 'update', child: Text('업데이트 (기존 갱신)')),
           const PopupMenuItem(value: 'add', child: Text('새 항목으로 등록')),
@@ -458,13 +458,13 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         it.action == 'add'
             ? '등록'
             : it.action == 'update'
-                ? '업데이트'
-                : '건너뜀',
+            ? '업데이트'
+            : '건너뜀',
         it.action == 'add'
             ? AppColors.taegeukBlue
             : it.action == 'update'
-                ? AppColors.purple
-                : AppColors.textGray,
+            ? AppColors.purple
+            : AppColors.textGray,
       ),
     );
   }
@@ -477,11 +477,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
     ),
     child: Text(
       label,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        color: color,
-      ),
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color),
     ),
   );
 
@@ -656,8 +652,11 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.notifications_active,
-                      size: 16, color: AppColors.tigerGold),
+                  Icon(
+                    Icons.notifications_active,
+                    size: 16,
+                    color: AppColors.tigerGold,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -776,8 +775,11 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.notifications_active,
-                      size: 16, color: AppColors.taegeukBlue),
+                  Icon(
+                    Icons.notifications_active,
+                    size: 16,
+                    color: AppColors.taegeukBlue,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(

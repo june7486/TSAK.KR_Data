@@ -54,9 +54,7 @@ class _AtasRosterScreenState extends State<AtasRosterScreen> {
   static List<String> get _allHeaders => [..._beomFields, ..._atasFields];
 
   /// 현재 옵션을 적용한 실제 출력 (헤더, 행) 쌍.
-  ({List<String> headers, List<List<String>> rows}) _view(
-    List<Member> list,
-  ) {
+  ({List<String> headers, List<List<String>> rows}) _view(List<Member> list) {
     final all = _allHeaders;
     final full = <List<String>>[
       for (final m in list)

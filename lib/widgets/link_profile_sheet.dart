@@ -31,9 +31,7 @@ Future<bool> showLinkProfileSheet(
   final isMentor = kind == 'mentor';
 
   final codeCtrl = TextEditingController(
-    text: code.isNotEmpty
-        ? code
-        : (isMentor ? selfNumber : ''),
+    text: code.isNotEmpty ? code : (isMentor ? selfNumber : ''),
   );
   final nameCtrl = TextEditingController(text: '${profile['name'] ?? ''}');
   final phoneCtrl = TextEditingController(text: '${profile['phone'] ?? ''}');
@@ -48,22 +46,29 @@ Future<bool> showLinkProfileSheet(
         : defaultUnit,
   );
   // [요구] 개인정보 상세 입력 — ① 범스카우트 인가 정보 / ② 현재 활동정보.
-  var isScouter = (profile['isScouter'] == true) ||
+  var isScouter =
+      (profile['isScouter'] == true) ||
       '${profile['scoutNo'] ?? ''}'.trim().isNotEmpty ||
       '${profile['inductedAt'] ?? ''}'.trim().isNotEmpty ||
       '${profile['atasNo'] ?? ''}'.trim().isNotEmpty;
-  final scoutNoCtrl = TextEditingController(text: '${profile['scoutNo'] ?? ''}');
-  final inductedCtrl =
-      TextEditingController(text: '${profile['inductedAt'] ?? ''}');
+  final scoutNoCtrl = TextEditingController(
+    text: '${profile['scoutNo'] ?? ''}',
+  );
+  final inductedCtrl = TextEditingController(
+    text: '${profile['inductedAt'] ?? ''}',
+  );
   final atasCtrl = TextEditingController(text: '${profile['atasNo'] ?? ''}');
   final positionCtrl = TextEditingController(
     text: '${profile['position'] ?? ''}'.trim().isNotEmpty
         ? '${profile['position']}'
         : (isMentor ? '멘토(지도대장)' : '페런츠(보호자)'),
   );
-  final activityCtrl = TextEditingController(text: '${profile['activity'] ?? ''}');
-  final trainingCtrl =
-      TextEditingController(text: '${profile['trainingStatus'] ?? ''}');
+  final activityCtrl = TextEditingController(
+    text: '${profile['activity'] ?? ''}',
+  );
+  final trainingCtrl = TextEditingController(
+    text: '${profile['trainingStatus'] ?? ''}',
+  );
 
   final saved = await showDialog<bool>(
     context: context,
@@ -71,32 +76,31 @@ Future<bool> showLinkProfileSheet(
       builder: (ctx, setDlg) {
         final ph = phoneCtrl.text;
         final digits = ph.replaceAll(RegExp(r'[^0-9]'), '');
-        final last4 = digits.length >= 4 ? digits.substring(digits.length - 4) : '';
+        final last4 = digits.length >= 4
+            ? digits.substring(digits.length - 4)
+            : '';
         // 섹션 헤더 (요구: '① 범스카우트 인가시 / ② 현재 활동정보' 구분).
         Widget secHdr(String text, IconData icon, Color color) => Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 2),
-              child: Row(
-                children: [
-                  Icon(icon, size: 15, color: color),
-                  const SizedBox(width: 5),
-                  Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Divider(
-                      color: color.withValues(alpha: 0.30),
-                      height: 1,
-                    ),
-                  ),
-                ],
+          padding: const EdgeInsets.only(top: 4, bottom: 2),
+          child: Row(
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 5),
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
               ),
-            );
+              const SizedBox(width: 8),
+              Expanded(
+                child: Divider(color: color.withValues(alpha: 0.30), height: 1),
+              ),
+            ],
+          ),
+        );
         return AlertDialog(
           scrollable: true,
           title: Row(
@@ -120,7 +124,10 @@ Future<bool> showLinkProfileSheet(
                   isMentor
                       ? '범스카우트를 배출한 대장(멘토)의 인적사항을 입력하세요.'
                       : '범스카우트를 배출한 부모님(페런츠)의 인적사항을 입력하세요.',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textGray,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (codeEditable)
@@ -148,8 +155,11 @@ Future<bool> showLinkProfileSheet(
                 ),
                 const SizedBox(height: 14),
                 // ───────── ① 범스카우트 인가 정보 ─────────
-                secHdr('① 범스카우트 인가 정보', Icons.verified_user_outlined,
-                    AppColors.purple),
+                secHdr(
+                  '① 범스카우트 인가 정보',
+                  Icons.verified_user_outlined,
+                  AppColors.purple,
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -194,8 +204,11 @@ Future<bool> showLinkProfileSheet(
                 ],
                 const SizedBox(height: 14),
                 // ───────── ② 현재 활동정보 ─────────
-                secHdr('② 현재 활동정보', Icons.local_activity_outlined,
-                    AppColors.scoutGreen),
+                secHdr(
+                  '② 현재 활동정보',
+                  Icons.local_activity_outlined,
+                  AppColors.scoutGreen,
+                ),
                 const SizedBox(height: 2),
                 Row(
                   children: [
@@ -297,9 +310,9 @@ Future<bool> showLinkProfileSheet(
   final ph = phoneCtrl.text.trim();
   if (nm.isEmpty || ph.isEmpty || digits(ph).length < 7) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이름과 전화번호를 정확히 입력하세요')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('이름과 전화번호를 정확히 입력하세요')));
     }
     return false;
   }
@@ -343,17 +356,17 @@ Future<bool> showLinkProfileSheet(
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('저장 실패: ${r['error'] ?? ''}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('저장 실패: ${r['error'] ?? ''}')));
       }
     }
     return r['ok'] == true;
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('저장 실패: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
     }
     return false;
   }

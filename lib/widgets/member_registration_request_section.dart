@@ -551,9 +551,7 @@ class _MemberRegistrationRequestSectionState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.',
-        ),
+        content: Text(ok ? '등록요청을 제출했습니다. 관리자 승인을 기다려 주세요.' : '요청이 취소되었습니다.'),
       ),
     );
     if (ok) _load();
@@ -611,9 +609,8 @@ class _MemberRegistrationRequestSectionState
       ),
     );
   }
-
-
 }
+
 /// 등록요청 유형 라벨/아이콘 — 위젯·화면 공용.
 class MemberRequestLabels {
   static String label(String t) => switch (t) {
@@ -649,4 +646,3 @@ class MemberRequestLabels {
     _ => AppColors.textGray,
   };
 }
-

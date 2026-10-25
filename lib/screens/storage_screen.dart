@@ -181,8 +181,8 @@ class _StorageScreenState extends State<StorageScreen> {
                   type == 'nas'
                       ? Icons.dns
                       : type == 'gdrive'
-                          ? Icons.add_to_drive
-                          : Icons.storage,
+                      ? Icons.add_to_drive
+                      : Icons.storage,
                   color: active ? AppColors.purple : AppColors.textGray,
                 ),
                 const SizedBox(width: 8),
@@ -340,10 +340,7 @@ class _StorageScreenState extends State<StorageScreen> {
           children: [
             Text(
               '기존자료를 저장 후 업로드하시겠습니까?',
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 10),
             Text(
@@ -403,7 +400,7 @@ class _StorageScreenState extends State<StorageScreen> {
           "'$label' 로 전환했습니다.\n"
           '성공 $copied건${failed > 0 ? ' · 실패 $failed건' : ''}'
           '${pending ? '\n\n※ 업로드 엔드포인트가 미설정이라 일부 자료는 보류되었습니다. '
-              '설정 저장 후 다시 시도하세요.' : ''}\n\n'
+                    '설정 저장 후 다시 시도하세요.' : ''}\n\n'
           '기존 저장공간의 자료를 삭제할까요?',
           style: const TextStyle(fontSize: 13, height: 1.5),
         ),

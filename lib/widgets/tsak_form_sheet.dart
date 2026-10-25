@@ -118,9 +118,7 @@ Future<bool?> showTsakFormSheet({
                     decoration: BoxDecoration(
                       color: Colors.white,
                       border: Border(
-                        top: BorderSide(
-                          color: color.withValues(alpha: 0.12),
-                        ),
+                        top: BorderSide(color: color.withValues(alpha: 0.12)),
                       ),
                     ),
                     child: Row(

@@ -1808,10 +1808,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Widget _credentialCards(Member m) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _credentialCard(m),
-        _atasCard(m),
-      ],
+      children: [_credentialCard(m), _atasCard(m)],
     );
   }
 
@@ -2035,7 +2032,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     '요청: ${m.linkFixRequestedBy.isEmpty ? '본인' : m.linkFixRequestedBy}'
                     '${m.linkFixRequestedAt.trim().isEmpty ? '' : ' · ${m.linkFixRequestedAt}'}'
                     '${m.linkFixScope.trim().isEmpty ? '' : ' · ${m.linkFixScope}'}',
-                    style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
                   ),
                 ],
               ),
@@ -2060,9 +2060,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
                 onPressed: () => _sendFixNote(m),
                 icon: const Icon(Icons.send, size: 16),
-                label: Text(
-                  hasNote ? '수정요청 메모 수정·재전송' : '정보 수정요청 메모 보내기',
-                ),
+                label: Text(hasNote ? '수정요청 메모 수정·재전송' : '정보 수정요청 메모 보내기'),
               ),
             ),
           ],

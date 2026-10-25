@@ -69,12 +69,21 @@ void main() {
   check('벤처 1', b.venture == 1);
   check('일반 2', b.regular == 2);
   check('참가비합계 100000', s.feeTotal == 100000);
-  check('수입합계 700000', s.incomeTotal == 700000);
+
+  // ── 수입 규칙 (요구: "후원금만 수입으로 잡을 것") ──────────────────────
+  //  참가비 100,000 + 후원금 300,000 = 수입 400,000.
+  //  '후원'(→기타후원) 200,000 과 '수송지원'(→차량후원) 100,000 은
+  //  현물후원이므로 **수입에 넣지 않는다**. 대신 sponsorCashTotal 로만 집계.
+  check('후원금(현금) 300000', s.donationFund == 300000);
+  check('현물후원 현금 300000', s.donation == 300000);
+  check('기타수입 0', s.otherIncome == 0);
+  check('수입합계 400000 (참가비+후원금만)', s.incomeTotal == 400000);
   check('지출합계 230000', s.expenseTotal == 230000);
-  check('잔액 470000', s.balance == 470000);
+  check('잔액 170000', s.balance == 170000);
+  check('현물후원 참고합계 300000', s.sponsorReferenceTotal == 300000);
   check('행사비계좌 80000',
       s.expenseByAccount['행사비 · 우리은행 1005-003-886274'] == 80000);
-  check('콤마표기', EventSettlement.comma(470000) == '470,000');
+  check('콤마표기', EventSettlement.comma(170000) == '170,000');
 
   for (final r in ok) {
     print(r);

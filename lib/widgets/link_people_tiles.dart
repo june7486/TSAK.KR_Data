@@ -84,7 +84,9 @@ class LinkPeopleTiles extends StatelessWidget {
   /// 소속정보 = **현재활동 등록정보**(없으면 인가 당시로 폴백).
   String _activity(Member? m) {
     if (m == null) return '';
-    final l = m.regLeague.trim().isNotEmpty ? m.regLeague.trim() : m.league.trim();
+    final l = m.regLeague.trim().isNotEmpty
+        ? m.regLeague.trim()
+        : m.league.trim();
     final u = m.regUnit.trim().isNotEmpty ? m.regUnit.trim() : m.unit.trim();
     return [l, u].where((s) => s.isNotEmpty).join(' · ');
   }
@@ -98,7 +100,12 @@ class LinkPeopleTiles extends StatelessWidget {
       if (d.isEmpty || d == self) continue; // 자기참조 제외
       final m = state.byNumber(d);
       out.add(
-        _Ref(code: d, name: (m?.name ?? '').trim(), info: _activity(m), target: m),
+        _Ref(
+          code: d,
+          name: (m?.name ?? '').trim(),
+          info: _activity(m),
+          target: m,
+        ),
       );
     }
     return out;
@@ -217,8 +224,9 @@ class LinkPeopleTiles extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final selfNumber =
-        member.regLeague.isNotEmpty ? member.number : member.number;
+    final selfNumber = member.regLeague.isNotEmpty
+        ? member.number
+        : member.number;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -240,7 +248,9 @@ class LinkPeopleTiles extends StatelessWidget {
           refs: _links(state, parent: false),
           empty: '등록된 멘토(범을 배출한 대장) 없음',
           addLabel: '멘토 추가',
-          onAdd: canEdit ? () => _addProfile(context, 'mentor', selfNumber) : null,
+          onAdd: canEdit
+              ? () => _addProfile(context, 'mentor', selfNumber)
+              : null,
         ),
         const SizedBox(height: 8),
         _section(
@@ -297,7 +307,10 @@ class LinkPeopleTiles extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
                 onTap: onAdd,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -386,7 +399,9 @@ class LinkPeopleTiles extends StatelessWidget {
                         Flexible(
                           child: Text(
                             r.name.isEmpty
-                                ? (needsProfile ? '(인적사항 미등록 · 눌러서 등록)' : '(이름 미확인 · 눌러서 등록)')
+                                ? (needsProfile
+                                      ? '(인적사항 미등록 · 눌러서 등록)'
+                                      : '(이름 미확인 · 눌러서 등록)')
                                 : r.name,
                             style: TextStyle(
                               fontSize: 13,
@@ -409,8 +424,8 @@ class LinkPeopleTiles extends StatelessWidget {
                           needsProfile
                               ? Icons.person_add_alt_1
                               : (hasCard
-                                  ? Icons.open_in_new
-                                  : Icons.person_add_alt_1),
+                                    ? Icons.open_in_new
+                                    : Icons.person_add_alt_1),
                           size: 13,
                           color: hasCard || isLinkKind
                               ? AppColors.taegeukBlue

@@ -95,7 +95,11 @@ Future<bool> _appleMobileSaveToShare(
 ) async {
   if (!webSupportsShareFiles) return false;
   try {
-    final r = await shareFileNamed(bytes: bytes, filename: filename, mime: mime);
+    final r = await shareFileNamed(
+      bytes: bytes,
+      filename: filename,
+      mime: mime,
+    );
     // 공유 시트가 떴거나 사용자가 닫았으면 다운로드 폴백을 하지 않는다.
     return r == TsakShareResult.shared || r == TsakShareResult.dismissed;
   } catch (_) {
@@ -113,7 +117,10 @@ Future<bool> _appleMobileSaveToShare(
 /// 기존에는 [기본 폴더에 저장]만 뜨고 그 경로(Blob)가 실패했다. 이제
 /// **공유 시트(사진에 저장·외부앱)** 선택지를 추가하고, 애플 기기에서는
 /// 그 선택지를 기본(강조)으로 제시한다.
-Future<TsakSaveOption?> askSaveOption(BuildContext context, {String? info}) async {
+Future<TsakSaveOption?> askSaveOption(
+  BuildContext context, {
+  String? info,
+}) async {
   final canPick = supportsLocationPicker;
   final canShare = supportsShareExport;
   final apple = isAppleMobile;
@@ -150,8 +157,7 @@ Future<TsakSaveOption?> askSaveOption(BuildContext context, {String? info}) asyn
                 apple
                     ? '* [위치 직접 선택] → 파일 앱·드라이브 등 저장 위치를 고릅니다.'
                     : '* [위치 직접 선택] → 저장 위치·앱을 고릅니다(PC: 폴더·파일명).',
-              if (canShare)
-                '* [공유·내보내기] → 카톡·메일·드라이브, 아이폰은 「이미지 저장」·「사진에 저장」.',
+              if (canShare) '* [공유·내보내기] → 카톡·메일·드라이브, 아이폰은 「이미지 저장」·「사진에 저장」.',
               '* [기본 폴더에 저장] → 다운로드(Downloads) 폴더에 바로 저장.',
             ].join('\n'),
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
@@ -172,7 +178,9 @@ Future<TsakSaveOption?> askSaveOption(BuildContext context, {String? info}) asyn
         if (canShare)
           apple
               ? FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.purple),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                  ),
                   onPressed: () => Navigator.pop(ctx, TsakSaveOption.share),
                   icon: const Icon(Icons.ios_share, size: 17),
                   label: const Text('공유·내보내기'),
@@ -184,7 +192,8 @@ Future<TsakSaveOption?> askSaveOption(BuildContext context, {String? info}) asyn
                 ),
         apple
             ? OutlinedButton.icon(
-                onPressed: () => Navigator.pop(ctx, TsakSaveOption.defaultFolder),
+                onPressed: () =>
+                    Navigator.pop(ctx, TsakSaveOption.defaultFolder),
                 icon: const Icon(Icons.download, size: 17),
                 label: const Text('기본 폴더에 저장'),
               )
@@ -192,7 +201,8 @@ Future<TsakSaveOption?> askSaveOption(BuildContext context, {String? info}) asyn
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.purple,
                 ),
-                onPressed: () => Navigator.pop(ctx, TsakSaveOption.defaultFolder),
+                onPressed: () =>
+                    Navigator.pop(ctx, TsakSaveOption.defaultFolder),
                 icon: const Icon(Icons.download, size: 17),
                 label: const Text('기본 폴더에 저장'),
               ),

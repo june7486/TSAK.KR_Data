@@ -62,7 +62,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
       '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
       '${_fontScale.toStringAsFixed(2)}';
 
-  String get _base => widget.doc.baseName();  // 예: TSAK_출력_게시판 출력
+  String get _base => widget.doc.baseName(); // 예: TSAK_출력_게시판 출력
 
   /// 현재 옵션으로 PDF를 만든다.
   Future<Uint8List> _buildPdf() {
@@ -296,7 +296,9 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _save(TsakOutputFormat.pdf),
+                      onPressed: _busy
+                          ? null
+                          : () => _save(TsakOutputFormat.pdf),
                       icon: const Icon(Icons.picture_as_pdf_outlined, size: 17),
                       label: const Text('PDF'),
                     ),
@@ -304,7 +306,9 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _save(TsakOutputFormat.jpg),
+                      onPressed: _busy
+                          ? null
+                          : () => _save(TsakOutputFormat.jpg),
                       icon: const Icon(Icons.image_outlined, size: 17),
                       label: const Text('이미지'),
                     ),

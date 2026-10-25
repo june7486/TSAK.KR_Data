@@ -211,9 +211,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     _snack(
-      done
-          ? (delegated ? '마스터 위임을 해제했습니다' : '마스터에게 위임했습니다')
-          : '위임 처리에 실패했습니다',
+      done ? (delegated ? '마스터 위임을 해제했습니다' : '마스터에게 위임했습니다') : '위임 처리에 실패했습니다',
     );
     if (done) await _refresh();
   }
@@ -786,9 +784,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                         size: 20,
                         color: _isLocked(m)
                             ? AppColors.tigerGold
-                            : (sel
-                                  ? AppColors.scoutGreen
-                                  : AppColors.textGray),
+                            : (sel ? AppColors.scoutGreen : AppColors.textGray),
                       ),
                     ),
                   ),
@@ -947,8 +943,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                 if (mentors.isNotEmpty)
                   _linkRow('멘토 (범을 배출한 대장)', mentors, AppColors.purple),
                 if (parents.isNotEmpty)
-                  _linkRow(
-                      '페런츠 (범을 배출한 부모님)', parents, AppColors.taegeukBlue),
+                  _linkRow('페런츠 (범을 배출한 부모님)', parents, AppColors.taegeukBlue),
                 // (요구 #3) 멘티·자녀대원 등록정보 — 본인이 멘토/페런츠로서 등록.
                 if ((((m['menteeLabels'] as List?) ??
                             (m['mentees'] as List?) ??
@@ -1667,10 +1662,7 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
       final rt = '${rs['type'] ?? ''}'.trim();
       final rtiming = '${rs['timing'] ?? ''}'.trim();
       kv('연도', '${rs['year'] ?? ''}');
-      kv(
-        '납부 여부',
-        rtiming.isEmpty ? '' : feeTimingLabel(rt, rtiming),
-      );
+      kv('납부 여부', rtiming.isEmpty ? '' : feeTimingLabel(rt, rtiming));
       kv('납부자 이름', '${rs['payer'] ?? ''}');
       kv('납부일', '${rs['date'] ?? ''}');
       kv('행사', '${rs['event'] ?? ''}');

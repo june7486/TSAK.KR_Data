@@ -55,8 +55,7 @@ class _LinkMemberPickerDialogState extends State<_LinkMemberPickerDialog> {
   Color get _accent =>
       widget.kind == 'parent' ? AppColors.taegeukBlue : AppColors.purple;
 
-  String get _kindLabel =>
-      widget.kind == 'parent' ? '페런츠(범을 배출한 부모님)' : '멘토';
+  String get _kindLabel => widget.kind == 'parent' ? '페런츠(범을 배출한 부모님)' : '멘토';
 
   @override
   void initState() {

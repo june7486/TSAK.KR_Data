@@ -46,7 +46,10 @@ class ApkUpdateBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.35), width: 1.4),
+        border: Border.all(
+          color: AppColors.purple.withValues(alpha: 0.35),
+          width: 1.4,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.purple.withValues(alpha: 0.14),
@@ -102,7 +105,11 @@ class ApkUpdateBanner extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               u.notes,
-              style: const TextStyle(fontSize: 11.5, color: AppColors.textGray, height: 1.4),
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: AppColors.textGray,
+                height: 1.4,
+              ),
             ),
           ],
           const SizedBox(height: 10),
@@ -112,7 +119,10 @@ class ApkUpdateBanner extends StatelessWidget {
                 const SizedBox(
                   width: 15,
                   height: 15,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.purple),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.purple,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Text(

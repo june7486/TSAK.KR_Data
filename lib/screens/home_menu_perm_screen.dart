@@ -280,9 +280,7 @@ class _HomeMenuPermScreenState extends State<HomeMenuPermScreen> {
       if (!onM && !onA) return '숨김 · 어디에도 표시되지 않음';
       if (onM && onA) return '마스터 · 관리자 모두 열람';
       if (onM) {
-        return masterGroup
-            ? '마스터 전용 (관리자에게 숨김)'
-            : '마스터만 열람 (관리자에게 숨김)';
+        return masterGroup ? '마스터 전용 (관리자에게 숨김)' : '마스터만 열람 (관리자에게 숨김)';
       }
       return '관리자 전용 (마스터에게 숨김)';
     }();

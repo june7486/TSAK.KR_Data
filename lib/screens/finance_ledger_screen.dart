@@ -73,8 +73,7 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
       return ks;
     }
     if (_groupBy == '항목별') {
-      final ks = _byCategory.keys.toList()
-        ..sort((a, b) => a.compareTo(b));
+      final ks = _byCategory.keys.toList()..sort((a, b) => a.compareTo(b));
       return ks;
     }
     return [];
@@ -297,11 +296,7 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
         ),
         Text(
           v,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: c,
-          ),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: c),
         ),
       ],
     ),
@@ -339,7 +334,10 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
   Widget _list(List<Map<String, dynamic>> list) {
     if (list.isEmpty) {
       return const Center(
-        child: Text('해당 조건의 내역이 없습니다', style: TextStyle(color: AppColors.textGray)),
+        child: Text(
+          '해당 조건의 내역이 없습니다',
+          style: TextStyle(color: AppColors.textGray),
+        ),
       );
     }
     // 그룹핑 보기면 그룹 헤더를 사이에 넣어 리스트업.
@@ -404,12 +402,12 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
         onTap: () => _open(t),
         onLongPress: canFinance
             ? () => setState(() {
-                  if (selected) {
-                    _sel.remove(id);
-                  } else {
-                    _sel.add(id);
-                  }
-                })
+                if (selected) {
+                  _sel.remove(id);
+                } else {
+                  _sel.add(id);
+                }
+              })
             : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -417,9 +415,7 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
             children: [
               if (canFinance)
                 Icon(
-                  selected
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
+                  selected ? Icons.check_box : Icons.check_box_outline_blank,
                   size: 18,
                   color: AppColors.purple,
                 ),
@@ -654,7 +650,9 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -698,7 +696,9 @@ class _FinanceLedgerScreenState extends State<FinanceLedgerScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),

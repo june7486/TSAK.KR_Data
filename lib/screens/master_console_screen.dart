@@ -612,12 +612,10 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                                   testMsg = null;
                                 });
                                 try {
-                                  final saved = await nas.saveConfig(
-                                    {
-                                      'kakaoRestKey': ctrl.text.trim(),
-                                      'kakaoJsKey': jsCtrl.text.trim(),
-                                    },
-                                  );
+                                  final saved = await nas.saveConfig({
+                                    'kakaoRestKey': ctrl.text.trim(),
+                                    'kakaoJsKey': jsCtrl.text.trim(),
+                                  });
                                   // 실제 카카오 응답으로 키 유효성 진단.
                                   final diag = await nas.geoKakaoTest();
                                   final items = await nas.geoSearch(
@@ -637,14 +635,16 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                                       final em = (kk is Map)
                                           ? '${kk['message'] ?? kk['errorType'] ?? ''}'
                                           : '${diag['error'] ?? ''}';
-                                      diagMsg = '⚠ 카카오 오류(${diag['status']}): $em';
+                                      diagMsg =
+                                          '⚠ 카카오 오류(${diag['status']}): $em';
                                     } else {
                                       diagMsg = '⚠ ${diag['error'] ?? '진단 실패'}';
                                     }
                                   }
                                   setSt(() {
                                     busy = false;
-                                    testMsg = '저장됨 ${saved['ok'] == true ? '✓' : '?'}\n'
+                                    testMsg =
+                                        '저장됨 ${saved['ok'] == true ? '✓' : '?'}\n'
                                         '$diagMsg\n'
                                         '${hasJs ? 'JavaScript 키 ✓ (지도 표시)' : '⚠ JavaScript 키가 비어 카카오맵이 안 뜹니다'}\n'
                                         '좌표검색 ${items.length}건'
@@ -658,7 +658,10 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                                 }
                               },
                         icon: const Icon(Icons.check_circle_outline, size: 16),
-                        label: const Text('저장 + 시험', style: TextStyle(fontSize: 12)),
+                        label: const Text(
+                          '저장 + 시험',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
@@ -670,16 +673,19 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   if (testMsg != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
-                      child: Text(testMsg!,
-                          style: const TextStyle(fontSize: 12, height: 1.4)),
+                      child: Text(
+                        testMsg!,
+                        style: const TextStyle(fontSize: 12, height: 1.4),
+                      ),
                     ),
                   const SizedBox(height: 10),
                   Row(
                     children: [
                       OutlinedButton.icon(
                         onPressed: () async {
-                          await nas.saveConfig(
-                            {'kakaoJsKey': jsCtrl.text.trim()});
+                          await nas.saveConfig({
+                            'kakaoJsKey': jsCtrl.text.trim(),
+                          });
                           setSt(() {
                             mapMsg = jsCtrl.text.trim().isEmpty
                                 ? 'JS 키가 비어 있어 지도는 OSM 미리보기로 표시됩니다.'
@@ -687,8 +693,10 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                           });
                         },
                         icon: const Icon(Icons.map, size: 16),
-                        label: const Text('JS 키 저장 + 지도 확인',
-                            style: TextStyle(fontSize: 12)),
+                        label: const Text(
+                          'JS 키 저장 + 지도 확인',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
@@ -697,7 +705,12 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(
-                        nas.geoKakaoMapUrl('35.1798', '129.0750', w: 480, h: 200),
+                        nas.geoKakaoMapUrl(
+                          '35.1798',
+                          '129.0750',
+                          w: 480,
+                          h: 200,
+                        ),
                         height: 120,
                         width: double.infinity,
                         fit: BoxFit.cover,
@@ -707,7 +720,9 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                             '지도 이미지를 불러올 수 없습니다. '
                             '(JavaScript SDK 도메인에 이 앱 주소를 등록했는지 확인)',
                             style: TextStyle(
-                                fontSize: 11, color: AppColors.taegeukRed),
+                              fontSize: 11,
+                              color: AppColors.taegeukRed,
+                            ),
                           ),
                         ),
                       ),
@@ -716,9 +731,10 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   if (mapMsg != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
-                      child: Text(mapMsg!,
-                          style: const TextStyle(
-                              fontSize: 11.5, height: 1.4)),
+                      child: Text(
+                        mapMsg!,
+                        style: const TextStyle(fontSize: 11.5, height: 1.4),
+                      ),
                     ),
                 ],
               ),

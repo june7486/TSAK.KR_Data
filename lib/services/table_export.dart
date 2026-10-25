@@ -432,7 +432,6 @@ Future<String?> _emblemDataUri() async {
   return null;
 }
 
-
 /// CSV 는 맨 앞에 UTF-8 BOM 을 붙여 엑셀에서 한글이 깨지지 않게 저장한다.
 Uint8List _csvBytes(String s) =>
     Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(s)]);

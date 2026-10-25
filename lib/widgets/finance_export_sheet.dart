@@ -209,10 +209,7 @@ class _FinanceExportSheetState extends State<_FinanceExportSheet> {
   }
 
   Future<void> _doExport() async {
-    final opt = await askSaveOption(
-      context,
-      info: '재무 보고서 (${_format.label})',
-    );
+    final opt = await askSaveOption(context, info: '재무 보고서 (${_format.label})');
     if (opt == null) return; // 취소
     setState(() => _busy = true);
     try {

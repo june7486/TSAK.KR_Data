@@ -119,10 +119,7 @@ class DonationKindPicker extends StatelessWidget {
         DropdownButtonFormField<String>(
           initialValue: value,
           isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: '후원 항목',
-            isDense: true,
-          ),
+          decoration: const InputDecoration(labelText: '후원 항목', isDense: true),
           items: [
             for (final k in DonationKindOptions.all)
               DropdownMenuItem(
@@ -149,19 +146,8 @@ class DonationKindPicker extends StatelessWidget {
 class DonationKindOptions {
   const DonationKindOptions._();
 
-  static const List<String> all = [
-    '후원금',
-    '식사후원',
-    '물품후원',
-    '차량후원',
-    '기타후원',
-  ];
+  static const List<String> all = ['후원금', '식사후원', '물품후원', '차량후원', '기타후원'];
 
   /// 후원(현물)만 — 후원금 제외.
-  static const List<String> sponsors = [
-    '식사후원',
-    '물품후원',
-    '차량후원',
-    '기타후원',
-  ];
+  static const List<String> sponsors = ['식사후원', '물품후원', '차량후원', '기타후원'];
 }

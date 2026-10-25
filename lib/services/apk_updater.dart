@@ -4,7 +4,15 @@ import 'build_info.dart';
 import 'installer.dart';
 
 /// APK 원격 업데이트 상태.
-enum ApkUpdatePhase { idle, available, downloading, verifying, installing, done, error }
+enum ApkUpdatePhase {
+  idle,
+  available,
+  downloading,
+  verifying,
+  installing,
+  done,
+  error,
+}
 
 /// APK 자기 업데이트 컨트롤러 (앱 전역 싱글턴).
 ///
@@ -39,8 +47,7 @@ class ApkUpdater extends ChangeNotifier {
 
   /// 배너를 그릴 조건 — 새 버전이 있거나, 진행 중일 때.
   bool get showBanner =>
-      _update != null &&
-      (_phase == ApkUpdatePhase.available || isBusy);
+      _update != null && (_phase == ApkUpdatePhase.available || isBusy);
 
   /// 서버에서 최신 APK 정보를 조회한다. (조용히 실패)
   Future<void> check({bool force = false}) async {

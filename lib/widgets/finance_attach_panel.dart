@@ -115,10 +115,7 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
               Text(
                 '${_fmtSize(f['size'])} · ${f['storage'] ?? 'nas'} · '
                 '${f['uploaded'] ?? ''}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textGray,
-                ),
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
               ),
               const SizedBox(height: 14),
               if (isImg)
@@ -202,7 +199,10 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _rename(f),
-                        icon: const Icon(Icons.drive_file_rename_outline, size: 18),
+                        icon: const Icon(
+                          Icons.drive_file_rename_outline,
+                          size: 18,
+                        ),
                         label: const Text('이름변경/이동'),
                       ),
                     ),
@@ -242,9 +242,7 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
 
   Future<void> _share(String name, String url) async {
     // 다운로드 후 저장/공유 — 다른 앱으로 넘길 수 있게 파일 저장 창을 띄운다.
-    await _download(
-      {'name': name, 'size': 0},
-    );
+    await _download({'name': name, 'size': 0});
   }
 
   Future<void> _rename(Map<String, dynamic> f) async {
@@ -305,14 +303,19 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('첨부 삭제'),
-        content: Text("'$name' 을(를) 삭제할까요?", style: const TextStyle(fontSize: 13)),
+        content: Text(
+          "'$name' 을(를) 삭제할까요?",
+          style: const TextStyle(fontSize: 13),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -332,14 +335,19 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('선택 첨부 삭제'),
-        content: Text('선택한 $n개 첨부를 삭제할까요?', style: const TextStyle(fontSize: 13)),
+        content: Text(
+          '선택한 $n개 첨부를 삭제할까요?',
+          style: const TextStyle(fontSize: 13),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -371,7 +379,11 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
           children: [
             Row(
               children: [
-                const Icon(Icons.attach_file, size: 18, color: AppColors.purple),
+                const Icon(
+                  Icons.attach_file,
+                  size: 18,
+                  color: AppColors.purple,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   '${widget.title} (${_files.length})',
@@ -416,11 +428,7 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
                 ),
               )
             else
-              Column(
-                children: [
-                  for (final f in _files) _attachRow(f),
-                ],
-              ),
+              Column(children: [for (final f in _files) _attachRow(f)]),
           ],
         ),
       ),
@@ -434,12 +442,12 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
       onTap: () => _open(f),
       onLongPress: _canEdit
           ? () => setState(() {
-                if (selected) {
-                  _sel.remove(name);
-                } else {
-                  _sel.add(name);
-                }
-              })
+              if (selected) {
+                _sel.remove(name);
+              } else {
+                _sel.add(name);
+              }
+            })
           : null,
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -458,9 +466,7 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
           children: [
             if (_canEdit)
               Icon(
-                selected
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
+                selected ? Icons.check_box : Icons.check_box_outline_blank,
                 size: 18,
                 color: AppColors.purple,
               ),
@@ -491,7 +497,11 @@ class _FinanceAttachPanelState extends State<FinanceAttachPanel> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.textGray),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.textGray,
+            ),
           ],
         ),
       ),

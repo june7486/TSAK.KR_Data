@@ -69,22 +69,22 @@ class _ImportLogScreenState extends State<ImportLogScreen> {
           _loading
               ? const Center(child: CircularProgressIndicator())
               : _items.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          '아직 자료 가져오기(업데이트) 기록이 없습니다.\n'
-                          '자료를 반영하면 누가·무엇을·언제 했는지 이곳에 기록됩니다.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textGray),
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: _items.length,
-                      itemBuilder: (c, i) => _entryCard(_items[i]),
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      '아직 자료 가져오기(업데이트) 기록이 없습니다.\n'
+                      '자료를 반영하면 누가·무엇을·언제 했는지 이곳에 기록됩니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textGray),
                     ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: _items.length,
+                  itemBuilder: (c, i) => _entryCard(_items[i]),
+                ),
           BusyOverlay(
             visible: _busy,
             title: '복원하는 중입니다',
@@ -160,7 +160,10 @@ class _ImportLogScreenState extends State<ImportLogScreen> {
     return TextButton.icon(
       onPressed: _busy || restored ? null : () => _confirmRestore(e, changes),
       icon: const Icon(Icons.restore, size: 16),
-      label: Text('복원${restored ? '됨' : ''}', style: const TextStyle(fontSize: 12)),
+      label: Text(
+        '복원${restored ? '됨' : ''}',
+        style: const TextStyle(fontSize: 12),
+      ),
     );
   }
 
@@ -236,10 +239,7 @@ class _ImportLogScreenState extends State<ImportLogScreen> {
     );
   }
 
-  Future<void> _confirmRestore(
-    Map<String, dynamic> e,
-    List changes,
-  ) async {
+  Future<void> _confirmRestore(Map<String, dynamic> e, List changes) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -252,7 +252,10 @@ class _ImportLogScreenState extends State<ImportLogScreen> {
             Text(
               '${e['name'] ?? '자료'} (${e['at'] ?? ''}) 의 '
               '업데이트를 이전 항목으로 복원하시겠습니까?',
-              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
             Text('· 복원 대상 : ${changes.length}건의 회원'),

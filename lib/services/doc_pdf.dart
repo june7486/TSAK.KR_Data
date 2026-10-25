@@ -57,7 +57,11 @@ class DocPdf {
   }
 
   /// 제목 + (선택) 엠블럼 아이콘 행.
-  static pw.Widget _titleRow(String title, pw.Font bold, {double emblemH = 30}) {
+  static pw.Widget _titleRow(
+    String title,
+    pw.Font bold, {
+    double emblemH = 30,
+  }) {
     final t = pw.Text(
       sanitize(title),
       style: pw.TextStyle(
@@ -430,8 +434,7 @@ class DocPdf {
                             sanitize(e.value.sub!),
                             style: pw.TextStyle(
                               font: reg,
-                              fontSize:
-                                  (7.5 * scale * 10).roundToDouble() / 10,
+                              fontSize: (7.5 * scale * 10).roundToDouble() / 10,
                               color: _gray,
                             ),
                           ),
@@ -452,8 +455,9 @@ class DocPdf {
     //  추정값 대신 측정값을 쓰므로 '행 1개가 넘쳐서 머리행 없는 페이지'가 생기지
     //  않는다. (측정은 순수 계산이라 부작용 없음 — pdf 패키지 layout 단계)
     final measureDoc = pw.Document();
-    final measureCtx = pw.Context(document: measureDoc.document)
-        .inheritFromAll(<pw.Inherited>[pw.ThemeData.base()]);
+    final measureCtx = pw.Context(
+      document: measureDoc.document,
+    ).inheritFromAll(<pw.Inherited>[pw.ThemeData.base()]);
 
     double measure(pw.Widget w) {
       try {
@@ -468,7 +472,10 @@ class DocPdf {
     final footerH = measure(pageFooter(_FakeCtx()));
     final headH = columns.isEmpty ? 0.0 : measure(headRow());
     final firstH = measure(
-      pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: firstHead),
+      pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: firstHead,
+      ),
     );
     final rowHeights = <double>[
       for (var i = 0; i < rows.length; i++) measure(bodyRow(i)),
@@ -476,6 +483,7 @@ class DocPdf {
 
     /// 1페이지 본문 가용 높이 = 전체 − 레터헤드 − 푸터 − 1페이지 머리 − (반복)머리행
     final firstCap = availBody - headerH - footerH - firstH - headH;
+
     /// 2페이지 이후 = 전체 − 레터헤드 − 푸터 − (반복)머리행
     final contCap = availBody - headerH - footerH - headH;
 
@@ -562,7 +570,6 @@ class DocPdf {
     }
     return doc.save();
   }
-
 
   /// 열 폭을 **내용 길이에 비례**해 자동 배분한다.
   ///

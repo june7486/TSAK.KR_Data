@@ -48,22 +48,102 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
 
   /// 메뉴 키 → 표시 이름/설명/아이콘 (역할 권한 화면과 동일 카탈로그).
   static const List<Map<String, dynamic>> _menus = [
-    {'key': 'board', 'label': '게시판', 'desc': '게시글 열람·작성·댓글', 'icon': Icons.forum_outlined},
-    {'key': 'events', 'label': '행사관리', 'desc': '행사 사진·동영상·참가자', 'icon': Icons.event_note},
-    {'key': 'merchBuy', 'label': '수품구매', 'desc': '굿즈 주문·결제', 'icon': Icons.shopping_cart_checkout},
-    {'key': 'memberSearch', 'label': '명단검색', 'desc': '이름·번호 조회(타인 개인정보 제외)', 'icon': Icons.search},
-    {'key': 'memberDetail', 'label': '타인 상세열람', 'desc': '타인의 개인정보 상세 열람', 'icon': Icons.badge_outlined},
-    {'key': 'merchMgmt', 'label': '수품관리', 'desc': '수품 판매관리·등록·재고·통계', 'icon': Icons.inventory_2},
-    {'key': 'supplies', 'label': '비품재고 관리', 'desc': '중앙회 비품 리스트 등록·수정·삭제·정렬', 'icon': Icons.inventory},
-    {'key': 'finance', 'label': '재무관리', 'desc': '참가비·지출·결산 (기본자료는 마스터 전용)', 'icon': Icons.account_balance_wallet},
-    {'key': 'stats', 'label': '통계', 'desc': '명단·연맹·연회비 통계', 'icon': Icons.insights},
-    {'key': 'bulk', 'label': '단체문자', 'desc': '단체 소식/문자 발송 · 일괄작업', 'icon': Icons.campaign},
-    {'key': 'memberAdd', 'label': '인가자 생성', 'desc': '범스카우트 인가자 신규 등록', 'icon': Icons.person_add_alt_1},
-    {'key': 'finIncome', 'label': '재무 · 입금 입력', 'desc': '입금내역 입력·수정 (재무 하위)', 'icon': Icons.south_west},
-    {'key': 'finExpense', 'label': '재무 · 지출 입력', 'desc': '지출내역 입력·수정 (재무 하위)', 'icon': Icons.north_east},
-    {'key': 'finAttach', 'label': '재무 · 첨부파일', 'desc': '첨부 업로드·확인·다운로드·공유', 'icon': Icons.attach_file},
-    {'key': 'finOutput', 'label': '재무 · 출력', 'desc': '재무 항목 출력(PDF·엑셀·PPT 등)', 'icon': Icons.ios_share},
-    {'key': 'nasRefresh', 'label': 'NAS 최신 데이터 불러오기', 'desc': '기본은 마스터 전용 · 관리자에게 선택 부여', 'icon': Icons.cloud_download},
+    {
+      'key': 'board',
+      'label': '게시판',
+      'desc': '게시글 열람·작성·댓글',
+      'icon': Icons.forum_outlined,
+    },
+    {
+      'key': 'events',
+      'label': '행사관리',
+      'desc': '행사 사진·동영상·참가자',
+      'icon': Icons.event_note,
+    },
+    {
+      'key': 'merchBuy',
+      'label': '수품구매',
+      'desc': '굿즈 주문·결제',
+      'icon': Icons.shopping_cart_checkout,
+    },
+    {
+      'key': 'memberSearch',
+      'label': '명단검색',
+      'desc': '이름·번호 조회(타인 개인정보 제외)',
+      'icon': Icons.search,
+    },
+    {
+      'key': 'memberDetail',
+      'label': '타인 상세열람',
+      'desc': '타인의 개인정보 상세 열람',
+      'icon': Icons.badge_outlined,
+    },
+    {
+      'key': 'merchMgmt',
+      'label': '수품관리',
+      'desc': '수품 판매관리·등록·재고·통계',
+      'icon': Icons.inventory_2,
+    },
+    {
+      'key': 'supplies',
+      'label': '비품재고 관리',
+      'desc': '중앙회 비품 리스트 등록·수정·삭제·정렬',
+      'icon': Icons.inventory,
+    },
+    {
+      'key': 'finance',
+      'label': '재무관리',
+      'desc': '참가비·지출·결산 (기본자료는 마스터 전용)',
+      'icon': Icons.account_balance_wallet,
+    },
+    {
+      'key': 'stats',
+      'label': '통계',
+      'desc': '명단·연맹·연회비 통계',
+      'icon': Icons.insights,
+    },
+    {
+      'key': 'bulk',
+      'label': '단체문자',
+      'desc': '단체 소식/문자 발송 · 일괄작업',
+      'icon': Icons.campaign,
+    },
+    {
+      'key': 'memberAdd',
+      'label': '인가자 생성',
+      'desc': '범스카우트 인가자 신규 등록',
+      'icon': Icons.person_add_alt_1,
+    },
+    {
+      'key': 'finIncome',
+      'label': '재무 · 입금 입력',
+      'desc': '입금내역 입력·수정 (재무 하위)',
+      'icon': Icons.south_west,
+    },
+    {
+      'key': 'finExpense',
+      'label': '재무 · 지출 입력',
+      'desc': '지출내역 입력·수정 (재무 하위)',
+      'icon': Icons.north_east,
+    },
+    {
+      'key': 'finAttach',
+      'label': '재무 · 첨부파일',
+      'desc': '첨부 업로드·확인·다운로드·공유',
+      'icon': Icons.attach_file,
+    },
+    {
+      'key': 'finOutput',
+      'label': '재무 · 출력',
+      'desc': '재무 항목 출력(PDF·엑셀·PPT 등)',
+      'icon': Icons.ios_share,
+    },
+    {
+      'key': 'nasRefresh',
+      'label': 'NAS 최신 데이터 불러오기',
+      'desc': '기본은 마스터 전용 · 관리자에게 선택 부여',
+      'icon': Icons.cloud_download,
+    },
   ];
 
   @override
@@ -133,9 +213,9 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
     if (ok) {
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('관리자 ${_label()} 권한을 저장했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('관리자 ${_label()} 권한을 저장했습니다')));
     } else {
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -174,14 +254,14 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
     if (done) {
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('기본 권한으로 되돌렸습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('기본 권한으로 되돌렸습니다')));
     } else {
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('되돌리기에 실패했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('되돌리기에 실패했습니다')));
     }
   }
 
@@ -225,9 +305,7 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
                         child: Column(
-                          children: [
-                            for (final m in _menus) _menuSwitch(m),
-                          ],
+                          children: [for (final m in _menus) _menuSwitch(m)],
                         ),
                       ),
                     ),
@@ -305,7 +383,9 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
       children: [
         Expanded(
           child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
             onPressed: _busy ? null : () => _setAll(true),
             icon: const Icon(Icons.done_all, size: 16),
             label: const Text('전체 허용'),
@@ -314,7 +394,9 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
         const SizedBox(width: 8),
         Expanded(
           child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
             onPressed: _busy ? null : () => _setAll(false),
             icon: const Icon(Icons.block, size: 16),
             label: const Text('전체 해제'),
@@ -378,7 +460,10 @@ class _AdminPermScreenState extends State<AdminPermScreen> {
                 ),
                 Text(
                   m['desc'] as String,
-                  style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGray,
+                  ),
                 ),
               ],
             ),
