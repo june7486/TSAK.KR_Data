@@ -1135,11 +1135,37 @@ class AppState extends ChangeNotifier {
 
   /// 행사 QR 딥링크 (절대 URL).
   /// 전용 경량 착지 페이지(/qr.html)로 연결한다 — 앱(5MB) 로딩 없이 즉시 뜬다.
+  ///
+  /// (요구) 행사별 QR은 **두 종류**다. 이 함수는 그중 **참가 신청**용이다.
+  ///  ① 참가 신청 → `/qr.html`  (가벼운 신청/등록 페이지, [eventApplyQrLink])
+  ///  ② 행사 게시판 → `/?access=event` (앱을 열어 행사 상세로 직행,
+  ///     [eventBoardQrLink])
   String eventQrLink(String year, String title) {
     final base = qrBaseUrl;
     final q =
         '/qr.html'
         '?year=${Uri.encodeComponent(year)}'
+        '&title=${Uri.encodeComponent(title)}';
+    return base.isEmpty ? q : '$base$q';
+  }
+
+  /// ① **행사 참가 신청** QR — 경량 착지 페이지(`/qr.html`).
+  ///
+  /// 스캔하면 앱(수 MB)을 받지 않고 바로 신청 화면이 뜬다. 비회원·외부인이
+  /// 행사 참가를 신청할 때 쓰는 QR이다.
+  String eventApplyQrLink(String year, String title) => eventQrLink(year, title);
+
+  /// ② **행사 게시판** QR — 앱을 열어 그 행사의 상세 화면으로 직행한다.
+  ///
+  /// `/?access=event&year=…&title=…` 딥링크는 [main.dart] 의 `_readDeepLink`
+  /// → `HomeScreen.openEventYear/openEventTitle` → `EventDetailScreen` 으로
+  /// 이미 연결돼 있다. 로그인한 회원이 행사 자료·사진·후기 게시판을 바로
+  /// 여는 QR이다.
+  String eventBoardQrLink(String year, String title) {
+    final base = qrBaseUrl;
+    final q =
+        '/?access=event'
+        '&year=${Uri.encodeComponent(year)}'
         '&title=${Uri.encodeComponent(title)}';
     return base.isEmpty ? q : '$base$q';
   }

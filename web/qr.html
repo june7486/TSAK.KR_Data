@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1B4F9C">
-<title>행사 참여 등록 · TSAK</title>
+<title>1. 행사 참가신청 · TSAK</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <style>
   :root{
@@ -57,6 +57,11 @@
     color:var(--fr-blue);text-transform:uppercase;}
   .brand .red{color:var(--fr-red);}
   .event-title{font-size:22px;font-weight:900;margin-top:7px;letter-spacing:-.4px;}
+  /* (요구) QR 종류 배지 — 행사명 위에 '1. 행사 참가신청' 을 명확히 표시. */
+  .qr-kind{display:inline-flex;align-items:center;gap:5px;margin-top:10px;
+    padding:5px 13px;border-radius:999px;font-size:12.5px;font-weight:900;
+    letter-spacing:.2px;color:#1E7A46;background:rgba(30,122,70,.10);
+    border:1px solid rgba(30,122,70,.42);}
   .event-meta{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.7;}
   .event-meta b{color:var(--ink);}
   .chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11.5px;
@@ -315,6 +320,9 @@
              onerror="this.src='assets/assets/images/tsak_emblem.png'">
       </a>
       <div class="brand"><span class="red">Tiger Scout</span> Association of Korea</div>
+      <!-- (요구) "각 QR 상단에 그 행사명과 QR 의 종류를 명확히 해줘"
+           이 페이지는 **행사 참가신청 전용**이다. 게시판 QR 은 앱을 연다. -->
+      <div class="qr-kind" id="qrKind">1. 행사 참가신청</div>
       <div class="event-title" id="evTitle">행사</div>
       <div class="event-meta" id="evMeta"></div>
       <div class="place-link hide" id="placeLink"></div>
