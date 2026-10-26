@@ -419,18 +419,52 @@ class SettlementPaperView extends StatelessWidget {
               letterSpacing: 0.2,
             ),
           ),
-          SizedBox(height: 2.0 * rowSpace),
-          // 한 문단으로 이어 붙인다 — 좁은 열에 갇히지 않는다.
-          Text(
-            items.join('   ·   '),
-            maxLines: noWrap ? 1 : 12,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: _fs * 0.76,
-              height: 1.5,
-              color: AppColors.textGray,
+          SizedBox(height: 2.5 * rowSpace),
+          // ── [요구 2026-10-26] "상세내역은 항목별 연번을 매기고 구분해서
+          //  각각의 내역을 보여줘야 읽을 수가 있어"
+          //
+          //  종전에는 `items.join('   ·   ')` 로 **한 덩어리**로 이어 붙였다.
+          //  전폭이라 글자는 다 들어가지만, 어디서 한 건이 끝나고 다음 건이
+          //  시작하는지 알 수 없어 읽을 수가 없었다.
+          //  → 한 건 = 한 줄, 앞에 **연번(1, 2, 3 …)** 을 붙인다.
+          //    (인쇄 · PDF 도 같은 규칙을 쓴다)
+          for (var i = 0; i < items.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: 1.5 * rowSpace),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 연번 — 고정폭으로 두 자리까지 정렬한다.
+                  SizedBox(
+                    width: _fs * 1.35,
+                    child: Text(
+                      '${i + 1}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: _fs * 0.72,
+                        height: 1.5,
+                        fontWeight: FontWeight.w800,
+                        color: c.withValues(alpha: 0.85),
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: _fs * 0.35),
+                  Expanded(
+                    child: Text(
+                      items[i],
+                      maxLines: noWrap ? 1 : 6,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: _fs * 0.76,
+                        height: 1.5,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

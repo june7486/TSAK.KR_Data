@@ -41,6 +41,28 @@ void main() {
     expect(html.contains('상세 내역 · 2건'), isTrue);
   });
 
+  // ── [요구 2026-10-26] "상세내역은 항목별 연번을 매기고 구분해서 각각의
+  //   내역을 보여줘야 읽을 수가 있어"
+  test('상세는 연번 목록(ol/li)으로 나간다 — 이어 붙이지 않는다', () {
+    final html = buildReportDocHtml(meta: meta, blocks: blocks());
+    // <ol class="bdb"> … <li>…</li><li>…</li> … </ol>
+    expect(html.contains('<ol class="bdb">'), isTrue);
+    final liCount = RegExp(r'<li>').allMatches(html).length;
+    expect(liCount, 2, reason: '상세 2건 → li 2개');
+    // 건별로 분리되어야 한다(한 문단 join 금지).
+    //  ⚠️ 원본 텍스트 끝에 ', '', ''` 잔여물이 붙을 수 있으므로
+    //     `</li>` 바로 앞을 기대하지 않고 li 블록 안에 있는지만 본다.
+    final items = RegExp(r'<li>(.*?)</li>', dotAll: true)
+        .allMatches(html)
+        .map((m) => m.group(1) ?? '')
+        .toList();
+    expect(items.length, 2);
+    expect(items[0].contains('박스40병'), isTrue);
+    expect(items[1].contains('제944기지도자훈련상급과정'), isTrue);
+    // 두 건이 같은 li 에 뭉쳐 있으면 실패한다.
+    expect(items[0].contains('제944기지도자훈련상급과정'), isFalse);
+  });
+
   test('상세 원본 문자열이 잘리지 않고 모두 실린다', () {
     final html = buildReportDocHtml(meta: meta, blocks: blocks());
     expect(html.contains('박스40병'), isTrue);

@@ -523,7 +523,11 @@ String buildReportDocHtml({
         ? ''
         : '<div class="bdet">'
               '<div class="bdh">상세 내역 · ${detailLines.length}건</div>'
-              '<div class="bdb">${detailLines.map(_esc).join('   ·   ')}</div>'
+              // [요구 2026-10-26] "상세내역은 항목별 연번을 매기고 구분해서
+              //  각각의 내역을 보여줘야 읽을 수가 있어"
+              //  한 덩어리로 이어 붙이면 어디서 끊기는지 알 수 없다.
+              //  → 한 건 = 한 줄, 앞에 연번을 붙인다.
+              '${_detailListHtml(detailLines)}'
               '</div>';
     body.write(
       '<div class="blk" style="--ac:${b.accent}">'
@@ -601,8 +605,13 @@ String buildReportDocHtml({
    border-radius:3px}
  .bdh{font-size:10px;font-weight:800;letter-spacing:.2px;
    color:color-mix(in srgb,var(--ac) 70%,#111);margin-bottom:2px}
- .bdb{font-size:11px;line-height:1.55;color:#5A564E;
-   word-break:break-word;white-space:normal}
+ /* 한 건 = 한 줄, 앞에 연번. 이어 붙이면 건별 경계가 사라져 못 읽는다. */
+ .bdb{margin:0;padding-left:2.2em}
+ .bdb li{font-size:11px;line-height:1.6;color:#3A3A3A;
+   word-break:break-word;white-space:normal;
+   list-style-position:outside;padding-left:2px}
+ .bdb li::marker{font-weight:700;
+   color:color-mix(in srgb,var(--ac) 80%,#111)}
  .bt-tbl tr.total td{background:#F6F4F9;
    background:color-mix(in srgb,var(--ac) 7%,#fff);
    font-weight:700;color:#2A2A2A;
@@ -656,3 +665,16 @@ bool _isTotalRowHtml(List<String> r) {
 ///  미리보기(`SettlementPaperView._isDetail`)와 **같은 규칙**을 쓴다.
 bool _isDetailRowHtml(List<String> r) =>
     r.isNotEmpty && r[0].startsWith('· 상세');
+
+/// 상세 내역을 **연번 목록**(`<ol>`)으로 만든다.
+///
+/// [요구 2026-10-26] "상세내역은 항목별 연번을 매기고 구분해서 각각의 내역을
+///  보여줘야 읽을 수가 있어" — 이어 붙이면 건별 경계가 사라진다.
+String _detailListHtml(List<String> lines) {
+  final b = StringBuffer('<ol class="bdb">');
+  for (final t in lines) {
+    b.write('<li>${_esc(t)}</li>');
+  }
+  b.write('</ol>');
+  return b.toString();
+}

@@ -1172,18 +1172,47 @@ class DocPdf {
                     ),
                   ),
                   pw.SizedBox(height: 1.6),
-                  // 한 문단으로 이어 붙인다 — 좁은 열에 갇히지 않는다.
-                  pw.Text(
-                    sanitize(detailLines.join('   ·   ')),
-                    style: pw.TextStyle(
-                      font: reg,
-                      fontSize: (cellPt * 0.94).clamp(8.2, 13.0),
-                      // 본문은 배경과 무관하게 **진한 잉크색**으로 고정한다.
-                      //  (악센트 틴트를 쓰면 배경과 명도가 붙어 묻힌다)
-                      color: _ink,
-                      lineSpacing: 1.32,
-                    ),
-                  ),
+                  // ── [요구 2026-10-26] "상세내역은 항목별 연번을 매기고
+                  //  구분해서 각각의 내역을 보여줘야 읽을 수가 있어"
+                  //  이어 붙이면 건별 경계가 사라진다 → 한 건 = 한 줄 + 연번.
+                  ...detailLines.asMap().entries.map((e) {
+                    final n = e.key + 1;
+                    return pw.Padding(
+                      padding: const pw.EdgeInsets.only(bottom: 1.2),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          // 연번 — 고정폭으로 정렬한다.
+                          pw.SizedBox(
+                            width: cellPt * 1.5,
+                            child: pw.Text(
+                              '$n.',
+                              textAlign: pw.TextAlign.right,
+                              style: pw.TextStyle(
+                                font: bold,
+                                fontSize: (cellPt * 0.90).clamp(8.0, 12.4),
+                                color: _darken(accent, 0.30),
+                                lineSpacing: 1.3,
+                              ),
+                            ),
+                          ),
+                          pw.SizedBox(width: 3),
+                          pw.Expanded(
+                            child: pw.Text(
+                              sanitize(e.value),
+                              style: pw.TextStyle(
+                                font: reg,
+                                fontSize: (cellPt * 0.94).clamp(8.2, 13.0),
+                                // 본문은 배경과 무관하게 **진한 잉크색** 고정.
+                                color: _ink,
+                                lineSpacing: 1.30,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
               ),
             );

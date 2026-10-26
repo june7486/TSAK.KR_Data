@@ -63,11 +63,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('상세 문장이 한 줄로 이어 붙는다(· 구분자)', (tester) async {
+  // ── [요구 2026-10-26] "상세내역은 항목별 연번을 매기고 구분해서 각각의
+  //   내역을 보여줘야 읽을 수가 있어"
+  //   종전에는 이어 붙여 한 덩어리였다(건별 경계 없음). 이제 한 건 = 한 줄.
+  testWidgets('상세는 건별로 줄이 나뉘고 앞에 연번이 붙는다', (tester) async {
     final layout = SettlementLayout(detailOff: {});
     await _pump(tester, layout);
 
-    // join('   ·   ') 로 합쳐졌는지 — 두 상세가 한 Text 안에 있으면 통과.
+    // ① 한 Text 안에 여러 건이 뭉쳐 있으면 안 된다(이어 붙이기 금지).
     final joined = find.byWidgetPredicate(
       (w) =>
           w is Text &&
@@ -75,7 +78,15 @@ void main() {
           (w.data ?? '').contains('너른마당') &&
           (w.data ?? '').contains('비타500'),
     );
-    expect(joined, findsWidgets, reason: '상세가 하나로 합쳐져야 한다');
+    expect(joined, findsNothing, reason: '상세를 한 덩어리로 이어 붙이면 못 읽는다');
+
+    // ② 각 건이 따로 그려진다.
+    expect(find.textContaining('이항복'), findsWidgets);
+    expect(find.textContaining('비타500'), findsWidgets);
+
+    // ③ 연번이 1, 2, 3 … 으로 붙는다.
+    expect(find.text('1'), findsWidgets, reason: '연번 1 이 있어야 한다');
+    expect(find.text('2'), findsWidgets, reason: '연번 2 가 있어야 한다');
   });
 
   testWidgets('상세를 끄면 상세 블록이 사라진다', (tester) async {
