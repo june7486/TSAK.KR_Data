@@ -318,25 +318,88 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // 원형 대신 각진 박스로 인가번호 표시
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.tigerGold, width: 2),
-                  ),
-                  child: Text(
-                    m.numberLabel,
-                    style: const TextStyle(
-                      color: AppColors.purple,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 22,
+                // 인가번호 박스 + (있으면) ATAS 인가번호 배지 — 같은 줄에 나란히.
+                //  (요구: "atas 인가 번호를 범 옆에 배치해서 보여줘")
+                //  ATAS 인가번호는 '범인가 정보' 카드 안에만 있으면 눈에 띄지
+                //  않으므로, 명부·상세에서 바로 식별되도록 헤더로 끌어올린다.
+                //  값이 없으면 배지를 만들지 않는다(자리만 차지하는 빈 박스 방지).
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 원형 대신 각진 박스로 인가번호 표시
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.tigerGold,
+                            width: 2,
+                          ),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            m.numberLabel,
+                            style: const TextStyle(
+                              color: AppColors.purple,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 22,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (m.atasNo.trim().isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.tigerGold,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.military_tech,
+                                size: 14,
+                                color: AppColors.purpleDark,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'ATAS ${m.atasNo.trim()}',
+                                    style: const TextStyle(
+                                      color: AppColors.purpleDark,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Row(
