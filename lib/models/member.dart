@@ -376,6 +376,21 @@ class Member {
   /// 소속(corps) 표기 말머리 — 범스카우트 '범' / 은하스카우트 '은하'.
   String get corpsPrefix => corps == 'eunha' ? '은하' : '범';
 
+  /// ── [번호체계 2026-10-26] 은하 번호는 이미 'G43' 이다 ──────────────────
+  ///  요구: "은하스카우트는 1~165 … G1~G165 … G는 Galaxy(은하)의 약자임"
+  ///
+  ///  번호 자체에 G 가 붙었으므로 '은하#G43' 처럼 말머리를 **또** 붙이면
+  ///  중복된다. 범스카우트는 종전대로 '범#43'.
+  ///
+  ///  하위호환: 서버 캐시 등으로 '43' 처럼 G 없는 값이 와도 화면에는
+  ///  'G43' 으로 보이게 정규화한다(체계가 눈에 보여야 혼동이 줄어든다).
+  String get _numKey {
+    final d = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.isEmpty) return '';
+    if (corps == 'eunha') return 'G$d';
+    return d;
+  }
+
   /// 말머리(소속 배지) 라벨 — 은하'은하' / 범'범' / 일반회원(비인가)'일반'.
   ///   (요구) "일반 비인가자는 범 단추 대신 일반 단추를 달아줘.
   ///    범 단추는 인가자 중심(=인가자에게만 범 단추)."
@@ -404,7 +419,10 @@ class Member {
       final tail = d.isNotEmpty ? d : number.replaceAll(RegExp(r'[^0-9]'), '');
       return tail.isEmpty ? '' : '일반#$tail';
     }
-    return number.trim().isEmpty ? '' : '$corpsPrefix#$number';
+    if (number.trim().isEmpty) return '';
+    // 은하 번호는 이미 G 를 포함하므로 말머리를 붙이지 않는다('G43').
+    if (corps == 'eunha') return _numKey;
+    return '$corpsPrefix#$number';
   }
 
   /// 소속 말머리를 붙인 번호(은하#43). [prefixHash] 면 '#' 표기, 아니면 '은하43'.
@@ -412,6 +430,8 @@ class Member {
   String numPrefix({bool prefixHash = true}) {
     if (isRegular) return numberLabel;
     if (number.trim().isEmpty) return '';
+    // [번호체계 2026-10-26] 은하 = G번호 그대로('G43'), 범 = '범#43'/'범43'.
+    if (corps == 'eunha') return _numKey;
     return prefixHash ? '$corpsPrefix#$number' : '$corpsPrefix$number';
   }
 
@@ -425,9 +445,8 @@ class Member {
       final d = phoneDigits;
       return d.isEmpty ? number : '일반$d';
     }
-    return corps == 'eunha'
-        ? '은하${number.replaceAll(RegExp(r'[^0-9]'), '')}'
-        : number;
+    // [번호체계 2026-10-26] 은하는 'G43' 자체가 표기다(은하G43 아님).
+    return corps == 'eunha' ? _numKey : number;
   }
 
   /// (정적) Raw 값용 인가번호 표기 — 서버 map 등 Member 미생성 데이터용.
@@ -441,7 +460,12 @@ class Member {
     final n = number.trim();
     if (n.isEmpty) return '';
     if (isRegular) return '일반#$n';
-    return '${corps == 'eunha' ? '은하' : '범'}#$n';
+    // [번호체계 2026-10-26] 은하는 G번호가 곧 표기 — 말머리 중복 제거.
+    if (corps == 'eunha') {
+      final d = n.replaceAll(RegExp(r'[^0-9]'), '');
+      return d.isEmpty ? '' : 'G$d';
+    }
+    return '범#$n';
   }
 
   /// 납부한 연도 목록
