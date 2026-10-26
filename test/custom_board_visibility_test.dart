@@ -78,4 +78,104 @@ void main() {
       expect('415$personalSuffix', '415!@@');
     });
   });
+
+  // ── [요구 2026-10-26] "관리자/마스터 권한으로 구분해서 정리해줘" ──
+  group('메뉴 관리 — 권한별 동작 구분', () {
+    // 마스터: 추가/변경/삭제/게시판삭제/노출권한 전부
+    test('마스터는 모든 동작이 가능하다', () {
+      const r = MenuManageRights(isAdmin: true, isMaster: true);
+      expect(r.canAdd, isTrue);
+      expect(r.canRename, isTrue);
+      expect(r.canReorder, isTrue);
+      expect(r.canRemoveTab, isTrue);
+      expect(r.canDeleteBoard, isTrue);
+      expect(r.canChangeVisibility, isTrue);
+      expect(r.canSeeMenu, isTrue);
+    });
+
+    // 관리자: 삭제까지 가능하되 '게시판 통째로 삭제'만 불가
+    test('관리자는 추가·변경·삭제가 가능하지만 게시판 삭제는 불가', () {
+      const r = MenuManageRights(isAdmin: true, isMaster: false);
+      expect(r.canAdd, isTrue);
+      expect(r.canRename, isTrue);
+      expect(r.canReorder, isTrue);
+      // 1차 요구 "관리자도 삭제할 수 있음" — 여기가 false 면 지적이 반복된다.
+      expect(r.canRemoveTab, isTrue);
+      // 글·첨부가 통째로 소멸하는 동작만 마스터에 남긴다.
+      expect(r.canDeleteBoard, isFalse);
+      expect(r.canChangeVisibility, isTrue);
+    });
+
+    test('권한이 없으면 아무 동작도 못 하지만 메뉴는 보인다', () {
+      const r = MenuManageRights(isAdmin: false, isMaster: false);
+      expect(r.canAdd, isFalse);
+      expect(r.canRename, isFalse);
+      expect(r.canReorder, isFalse);
+      expect(r.canRemoveTab, isFalse);
+      expect(r.canDeleteBoard, isFalse);
+      expect(r.canChangeVisibility, isFalse);
+      // 종전 버그: 메뉴 자체가 사라져 "기능이 없다"고 보였다.
+      expect(r.canSeeMenu, isTrue);
+    });
+
+    test('마스터는 반드시 관리자이기도 하다(부분집합 관계)', () {
+      // isMaster=true 인데 isAdmin=false 인 조합은 서버(_auth_ok)에서도
+      //  나오지 않는다. UI 도 같은 전제를 쓴다.
+      const master = MenuManageRights(isAdmin: true, isMaster: true);
+      const admin = MenuManageRights(isAdmin: true, isMaster: false);
+      const guest = MenuManageRights(isAdmin: false, isMaster: false);
+
+      // 마스터 ⊃ 관리자 ⊃ 비권한자
+      expect(master.canRemoveTab && admin.canRemoveTab, isTrue);
+      expect(admin.canRemoveTab && !guest.canRemoveTab, isTrue);
+      // 게시판 삭제만 마스터 단독
+      expect(master.canDeleteBoard, isTrue);
+      expect(admin.canDeleteBoard || guest.canDeleteBoard, isFalse);
+    });
+
+    test('게시판 통째로 삭제는 서버 require("admin")보다 좁다', () {
+      // 서버 /cboard/board/delete 는 _require("admin") 이지만,
+      //  앱에서는 UI 를 마스터로 더 좁게 잠근다(오조작 방지).
+      //  → 서버가 허용하는 것을 앱이 막는 것은 안전한 방향.
+      const r = MenuManageRights(isAdmin: true, isMaster: false);
+      expect(r.canDeleteBoard, isFalse,
+          reason: '관리자에게 게시판 삭제 UI 를 노출하지 않는다');
+    });
+  });
+}
+
+// ── [추가 요구 2026-10-26] "관리자/마스터 권한으로 구분해서 정리해줘" ──
+//  메뉴(⋯) 항목과 메뉴 관리 창의 버튼이 **권한별로 정확히 갈리는지** 고정한다.
+//  서버(_auth_ok / _require)와 짝을 이루는 클라이언트 측 규칙.
+//
+//  ## 확정된 권한 경계 (2026-10-26)
+//   1차 요구: "관리자 / 마스터는 생성, 삭제, 변경 등의 관리 기능을 할 수 있음"
+//   2차 요구: "관리자/마스터 권한으로 구분해서 정리해줘"
+//   → 관리자도 **삭제할 수 있다**(탭에서 빼기). 다만 '게시판 통째로 삭제'
+//     (글·첨부목록이 전부 소멸)만 마스터에 남긴다. 이렇게 해야 1차 지적
+//     ("메뉴 삭제 기능이 없음")이 다시 나오지 않는다.
+/// 메뉴 관리 창에서 각 동작이 허용되는지 — UI 조건과 1:1 대응.
+class MenuManageRights {
+  const MenuManageRights({required this.isAdmin, required this.isMaster});
+
+  final bool isAdmin;
+  final bool isMaster;
+
+  /// 메뉴 추가 / 이름·내용 변경 / 순서 이동 — 관리자·마스터
+  bool get canAdd => isAdmin;
+  bool get canRename => isAdmin;
+  bool get canReorder => isAdmin;
+
+  /// 항목 삭제(탭에서 빼기) — 관리자·마스터.
+  ///  게시판 데이터는 NAS 에 남으므로 되돌릴 수 있다.
+  bool get canRemoveTab => isAdmin;
+
+  /// 게시판 통째로 삭제(글·첨부목록까지 소멸) — **마스터 전용**.
+  bool get canDeleteBoard => isMaster;
+
+  /// 노출권한 변경(all/staff/admin) — 관리자·마스터
+  bool get canChangeVisibility => isAdmin;
+
+  /// 메뉴(⋯) 자체는 모든 인가자에게 보인다(권한 판정 실패로 사라지면 안 됨).
+  bool get canSeeMenu => true;
 }

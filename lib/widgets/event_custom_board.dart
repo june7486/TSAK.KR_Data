@@ -140,6 +140,10 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
     });
     try {
       var bid = _bid.isNotEmpty ? _bid : widget.boardId;
+      // 목록에서 이 게시판이 "내게 보이는지" 먼저 확인한다.
+      //  → 볼 수 없으면 get(403) 을 부르지 않고 바로 권한 안내를 띄운다
+      //    (불필요한 요청·세션만료 오해 방지).
+      bool? listedVisible;
       if (bid.isEmpty) {
         final ls = await _nas.customBoards(widget.year, widget.title);
         final admin = ls['canManage'] == true || ls['isAdmin'] == true;
@@ -147,6 +151,7 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
           final m = (b as Map).cast<String, dynamic>();
           if ('${m['name'] ?? ''}' == widget.boardName) {
             bid = '${m['id'] ?? ''}';
+            listedVisible = m['visible'] == true;
             break;
           }
         }
@@ -172,6 +177,15 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
         }
         _bid = bid;
       }
+      if (listedVisible == false) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = '이 게시판은 열람 권한이 있는 사람에게만 공개됩니다.\n'
+              '관리자·마스터에게 노출권한 변경을 요청하세요.';
+        });
+        return;
+      }
       await _loadPosts();
     } catch (e) {
       if (!mounted) return;
@@ -189,6 +203,16 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
       return '서버가 올바른 응답을 주지 않았습니다. 잠시 후 다시 시도해 주세요.';
     }
     return s;
+  }
+
+  /// 403 인가를 "세션 만료"와 "이 게시판 열람권한 없음"으로 갈라 준다.
+  ///
+  ///  [요구 2026-10-26] "상부 버튼은 모두에게 노출되지만, 게시물은 권한이
+  ///   있는 사람에게만 노출됨" → 탭은 보이되, 열 권한이 없으면 **재로그인
+  ///   안내가 아니라** 권한 안내를 보여야 한다(사용자 혼란 방지).
+  static bool _isForbidden(Object e) {
+    final s = '$e';
+    return s.contains('403') || s.contains('forbidden');
   }
 
   Future<void> _loadPosts() async {
@@ -211,11 +235,13 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
       });
     } catch (e) {
       if (!mounted) return;
-      final msg = '$e';
       setState(() {
         _loading = false;
-        _error = msg.contains('권한')
-            ? '이 게시판을 볼 권한이 없습니다.'
+        // 403 은 "세션 만료"가 아니라 "이 게시판 열람권한 없음"이다.
+        //  (탭은 모두에게 보이지만 글은 권한자에게만 — 요구 2026-10-26)
+        _error = _isForbidden(e)
+            ? '이 게시판은 열람 권한이 있는 사람에게만 공개됩니다.\n'
+                '관리자·마스터에게 노출권한 변경을 요청하세요.'
             : '게시판을 불러오지 못했습니다.\n${_niceErr(e)}';
       });
     }

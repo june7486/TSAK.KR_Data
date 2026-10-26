@@ -449,13 +449,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       '행사결산',
     ];
     // (요구) 관리자권한 — 마스터 항목은 마스터에게만 노출한다.
+    // ── [요구 2026-10-26] "상부 버튼은 모두에게 노출되지만, 게시물은
+    //   권한이 있는 사람에게만 노출됨"
+    //   → 커스텀 게시판 **탭(버튼)** 은 모든 인가자에게 보인다. 글 목록은
+    //     서버가 노출권한(all/staff/admin)으로 거르고, 볼 수 없으면 게시판
+    //     안에서 "권한이 없습니다"만 안내한다(탭 자체를 숨기지 않는다).
     final tabs = _fullView
         ? <String>[
             ...baseTabs,
             if (_isMasterView) '관리',
             ..._customTabs.map((e) => '${e['name'] ?? ''}'),
           ]
-        : const <String>['참가자', '사진+동영상', '후기'];
+        : <String>[
+            '참가자',
+            '사진+동영상',
+            '후기',
+            ..._customTabs.map((e) => '${e['name'] ?? ''}'),
+          ];
     return Scaffold(
       appBar: TsakAppBar(
         title: Row(
@@ -513,58 +523,144 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             onPressed: _load,
             icon: const Icon(Icons.refresh),
           ),
-          if (widget.canManage)
-            PopupMenuButton<String>(
-              onSelected: (v) {
-                switch (v) {
-                  case 'zip':
-                    _download(
-                      context.read<NasApi>().eventZipUrl(
-                        widget.year,
-                        widget.title,
-                        'media',
-                      ),
-                    );
-                    break;
-                  case 'request':
-                    _requestPhoto();
-                    break;
-                  case 'qr':
-                    _showEventQr();
-                    break;
-                  case 'staff':
-                    _manageStaff();
-                    break;
-                  case 'addmenu':
-                    _addCustomTab();
-                    break;
-                  case 'managemenu':
-                    _manageCustomTabs();
-                    break;
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'qr', child: Text('행사 QR 코드 (참가신청 / 게시판)')),
-                PopupMenuItem(value: 'zip', child: Text('사진 전체 ZIP 다운로드')),
-                PopupMenuItem(
+          // ── [요구 2026-10-26] 메뉴(⋯)는 **항상 노출**한다.
+          //  종전에는 `if (widget.canManage)` 로 통째로 감싸서, 권한 판정이
+          //  어긋나면(예: 스탭 계정·세션 등급 불일치) 메뉴 자체가 사라져
+          //  "메뉴 관리 기능이 없다"고 보였다.
+          //  이제는 누구에게나 보이고, 항목을 **권한별 구역**으로 나눈다.
+          PopupMenuButton<String>(
+            tooltip: '행사 메뉴',
+            onSelected: (v) {
+              switch (v) {
+                case 'zip':
+                  _download(
+                    context.read<NasApi>().eventZipUrl(
+                      widget.year,
+                      widget.title,
+                      'media',
+                    ),
+                  );
+                  break;
+                case 'request':
+                  _requestPhoto();
+                  break;
+                case 'qr':
+                  _showEventQr();
+                  break;
+                case 'staff':
+                  _manageStaff();
+                  break;
+                case 'addmenu':
+                  _addCustomTab();
+                  break;
+                case 'managemenu':
+                  _manageCustomTabs();
+                  break;
+                case 'boarddelete':
+                  _deleteCustomBoard();
+                  break;
+              }
+            },
+            itemBuilder: (_) {
+              // 권한 3단계를 **구역으로 분리**해 보여준다(요구: "관리자/마스터
+              //  권한으로 구분해서 정리해줘").
+              final isMaster = _isMasterView;
+              final isAdmin = widget.canManage;
+              return [
+                // ── 공통(모든 인가자) ──────────────────────────────
+                const PopupMenuItem<String>(
+                  enabled: false,
+                  height: 26,
+                  child: Text(
+                    '공통',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textGray,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'zip',
+                  child: Text('사진 전체 ZIP 다운로드'),
+                ),
+                const PopupMenuItem(
                   value: 'request',
                   child: Text('전체 참가자 사진 업로드 요청'),
                 ),
-                PopupMenuItem(value: 'staff', child: Text('행사 스텝(STAFF) 등록')),
-                PopupMenuItem(
-                  value: 'addmenu',
-                  child: Text('메뉴 추가 (사용자 정의 탭)'),
-                ),
-                // ── [요구 2026-10-26] "메뉴추가 기능은 있는데, 메뉴 삭제
-                //   및 관리 기능이 없음 / 관리자·마스터는 생성·삭제·변경
-                //   등의 관리 기능을 할 수 있음"
-                //   → 추가/삭제를 한 화면에서 보고 고칠 수 있는 관리 창구.
-                PopupMenuItem(
-                  value: 'managemenu',
-                  child: Text('메뉴 관리 (추가·변경·삭제)'),
-                ),
-              ],
-            ),
+                // ── 관리자 이상 ────────────────────────────────────
+                if (isAdmin) ...[
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    enabled: false,
+                    height: 26,
+                    child: Text(
+                      '관리자${isMaster ? '·마스터' : ''} 전용',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.purple,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'qr',
+                    child: Text('행사 QR 코드 (참가신청 / 게시판)'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'staff',
+                    child: Text('행사 스텝(STAFF) 등록'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'addmenu',
+                    child: Text('메뉴 추가 (사용자 정의 탭)'),
+                  ),
+                  // 메뉴 관리 — 관리자도 열 수 있다. 단, 삭제는 마스터만.
+                  PopupMenuItem(
+                    value: 'managemenu',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.dashboard_customize_outlined,
+                            size: 15, color: AppColors.purple),
+                        const SizedBox(width: 6),
+                        const Text('메뉴 관리 (추가·변경·삭제)'),
+                      ],
+                    ),
+                  ),
+                ],
+                // ── 마스터 전용 ────────────────────────────────────
+                if (isMaster) ...[
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<String>(
+                    enabled: false,
+                    height: 26,
+                    child: Text(
+                      '마스터 전용',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.tigerGold,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'boarddelete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_forever_outlined,
+                            size: 15, color: AppColors.taegeukRed),
+                        SizedBox(width: 6),
+                        Text('게시판 통째로 삭제'),
+                      ],
+                    ),
+                  ),
+                ],
+              ];
+            },
+          ),
         ],
       ),
       body: _loading || _tab == null
@@ -656,6 +752,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               title: widget.title,
                               embedded: true,
                             ),
+                            //  [요구 2026-10-26] "상부 버튼은 모두에게 노출되지만,
+                            //   게시물은 권한이 있는 사람에게만 노출됨"
+                            //   → 커스텀 게시판 탭은 일반 참가자에게도 노출한다.
+                            //     글은 서버가 노출권한(all/staff/admin)으로 거르고,
+                            //     볼 수 없으면 게시판 안에서 안내만 한다.
+                            for (final t in _customTabs) _customTabView(t),
                           ],
                   ),
                 ),
@@ -5833,10 +5935,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   /// [요구 2026-10-26] "메뉴추가 기능은 있는데, 메뉴 삭제 및 관리 기능이
   ///  없음 / 관리자·마스터는 생성·삭제·변경 등의 관리 기능을 할 수 있음"
   ///
-  ///  기존 [추가]는 있었지만 [삭제]는 그 탭에 들어가서야 보였고, 순서 변경은
-  ///  아예 없었다. 여기서 한 화면에 모아 관리한다.
-  ///   · 추가 / 이름·내용 변경 / 삭제 / 순서 위·아래 이동
-  ///   · 각 항목의 게시판 노출권한도 함께 보여준다(변경은 게시판 탭 상단에서).
+  ///  요구(2차): "관리자/마스터 권한으로 구분해서 정리해줘"
+  ///   → 이 창에서 **현재 내 권한**을 제목에 명시하고, 동작마다 허용 범위를
+  ///     서버(_auth_ok / _require)와 똑같이 맞춘다.
+  ///
+  ///  ## 권한 경계 (2026-10-26 확정)
+  ///   1차 요구: "관리자 / 마스터는 생성, 삭제, 변경 등의 관리 기능을 할 수 있음"
+  ///   2차 요구: "관리자/마스터 권한으로 구분해서 정리해줘"
+  ///   → **관리자도 삭제할 수 있다.** 다만 '게시판 통째로 삭제'(글·첨부목록이
+  ///     전부 소멸)만 마스터에 남긴다. 탭에서 빼는 것(항목 삭제)은 관리자도
+  ///     가능하다 — 그래야 "삭제 기능이 없다"는 1차 지적이 다시 나오지 않는다.
+  ///
+  ///   · 메뉴 추가 / 이름·내용 변경 / 순서 이동      → 관리자·마스터
+  ///   · 항목 삭제(탭에서 빼기, 게시판 데이터는 보존) → 관리자·마스터
+  ///   · 게시판 통째로 삭제(글·첨부목록까지 소멸)     → 마스터 전용
+  ///   · 노출권한 변경(all/staff/admin)              → 관리자·마스터
   Future<void> _manageCustomTabs() async {
     // 최신 목록을 서버에서 다시 받아온다(다른 기기에서 바꿨을 수 있다).
     await _load();
@@ -5844,11 +5957,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
     // 게시판별 노출권한을 함께 보여준다(실패해도 관리 창은 열린다).
     Map<String, String> visOf = {};
+    // 이름 → 게시판 id (노출권한 변경에 필요)
+    Map<String, String> idOf = {};
     try {
       final ls = await _nas.customBoards(widget.year, widget.title);
       for (final b in ((ls['boards'] as List?) ?? [])) {
         final m = (b as Map).cast<String, dynamic>();
-        visOf['${m['name'] ?? ''}'] = '${m['visibility'] ?? ''}';
+        final nm = '${m['name'] ?? ''}';
+        visOf[nm] = '${m['visibility'] ?? ''}';
+        final bid = '${m['id'] ?? ''}';
+        if (bid.isNotEmpty) idOf[nm] = bid;
       }
     } catch (_) {}
     if (!mounted) return;
@@ -5860,6 +5978,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           _ => '—',
         };
 
+    // ── 권한 구분 (요구: "관리자/마스터 권한으로 구분해서 정리해줘") ──
+    final isAdmin = widget.canManage;
+    final isMaster = _isMasterView;
+
     var changed = false;
     await showDialog<void>(
       context: context,
@@ -5868,12 +5990,35 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           builder: (ctx, setD) {
             final tabs = _customTabs;
             return AlertDialog(
-              title: const Row(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.dashboard_customize_outlined,
-                      size: 20, color: AppColors.purple),
-                  SizedBox(width: 8),
-                  Text('메뉴 관리', style: TextStyle(fontSize: 16)),
+                  const Row(
+                    children: [
+                      Icon(Icons.dashboard_customize_outlined,
+                          size: 20, color: AppColors.purple),
+                      SizedBox(width: 8),
+                      Text('메뉴 관리', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  // 현재 권한을 명시 — "관리자/마스터 권한으로 구분"
+                  Text(
+                    isMaster
+                        ? '마스터 권한 · 추가 / 변경 / 삭제 / 게시판 통째로 삭제'
+                        : (isAdmin
+                            ? '관리자 권한 · 추가 / 변경 / 삭제 가능 '
+                                '(게시판 통째로 삭제는 마스터만)'
+                            : '권한 없음 · 보기만 가능'),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: isMaster
+                          ? AppColors.tigerGold
+                          : (isAdmin ? AppColors.purple : AppColors.textGray),
+                    ),
+                  ),
                 ],
               ),
               content: SizedBox(
@@ -5927,70 +6072,161 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         ],
                                       ),
                                     ),
-                                    IconButton(
-                                      tooltip: '위로',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.arrow_upward,
-                                          size: 16),
-                                      onPressed: i == 0
-                                          ? null
-                                          : () async {
-                                              final next = [
-                                                ...tabs.map((e) => {
-                                                      'name': '${e['name'] ?? ''}',
-                                                      'note': '${e['note'] ?? ''}',
-                                                    })
-                                              ];
-                                              final t = next.removeAt(i);
-                                              next.insert(i - 1, t);
-                                              await _saveCustomTabs(next);
-                                              changed = true;
-                                              if (ctx.mounted) setD(() {});
-                                            },
-                                    ),
-                                    IconButton(
-                                      tooltip: '아래로',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.arrow_downward,
-                                          size: 16),
-                                      onPressed: i == tabs.length - 1
-                                          ? null
-                                          : () async {
-                                              final next = [
-                                                ...tabs.map((e) => {
-                                                      'name': '${e['name'] ?? ''}',
-                                                      'note': '${e['note'] ?? ''}',
-                                                    })
-                                              ];
-                                              final t = next.removeAt(i);
-                                              next.insert(i + 1, t);
-                                              await _saveCustomTabs(next);
-                                              changed = true;
-                                              if (ctx.mounted) setD(() {});
-                                            },
-                                    ),
-                                    IconButton(
-                                      tooltip: '이름·내용 변경',
-                                      visualDensity: VisualDensity.compact,
-                                      icon:
-                                          const Icon(Icons.edit_outlined, size: 16),
-                                      onPressed: () async {
-                                        await _editCustomTab(tabs[i]);
-                                        changed = true;
+                                    // ── 노출권한 변경 (관리자·마스터) ──
+                                    //  게시판 상단 칩과 같은 값을 여기서도 바꾼다.
+                                    if (isAdmin)
+                                      PopupMenuButton<String>(
+                                        tooltip: '노출권한 변경',
+                                        enabled: !(idOf['${tabs[i]['name'] ?? ''}']
+                                                    ?.isEmpty ??
+                                                true),
+                                        onSelected: (v) async {
+                                          final nm =
+                                              '${tabs[i]['name'] ?? ''}';
+                                          final bid = idOf[nm] ?? '';
+                                          if (bid.isEmpty) {
+                                            _snack('게시판을 찾지 못했습니다 '
+                                                '(아직 개설 전일 수 있습니다)');
+                                            return;
+                                          }
+                                          try {
+                                            final r = await _nas
+                                                .customBoardVisibility(
+                                              year: widget.year,
+                                              title: widget.title,
+                                              id: bid,
+                                              visibility: v,
+                                            );
+                                            if (r['ok'] != true) {
+                                              _snack('변경하지 못했습니다 '
+                                                  '(${r['error'] ?? '권한'})');
+                                              return;
+                                            }
+                                            visOf[nm] = v;
+                                            _snack('노출권한 → ${visLabel(v)}');
+                                            changed = true;
+                                            if (ctx.mounted) setD(() {});
+                                          } catch (e) {
+                                            _snack('변경하지 못했습니다: $e');
+                                          }
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(
+                                              value: 'all',
+                                              child: Text('전체 노출')),
+                                          PopupMenuItem(
+                                              value: 'staff',
+                                              child: Text('스탭 이상')),
+                                          PopupMenuItem(
+                                              value: 'admin',
+                                              child: Text('관리자·마스터')),
+                                        ],
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 8),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.visibility_outlined,
+                                                  size: 15,
+                                                  color: AppColors.purple),
+                                              SizedBox(width: 3),
+                                              Text(
+                                                '노출',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.purple,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    // ── 한 줄에 아이콘 5개를 늘어놓으면
+                                    //  모바일 좁은 화면에서 넘친다(overflow).
+                                    //  권한별 동작을 **하나의 ⋮ 메뉴**로 묶어
+                                    //  "관리자/마스터 권한으로 구분"을 한 눈에
+                                    //  보이게 한다(요구 2026-10-26).
+                                    PopupMenuButton<String>(
+                                      tooltip: '이 메뉴 관리',
+                                      onSelected: (v) async {
+                                        final nm = '${tabs[i]['name'] ?? ''}';
+                                        switch (v) {
+                                          case 'up':
+                                          case 'down':
+                                            final next = [
+                                              ...tabs.map((e) => {
+                                                    'name': '${e['name'] ?? ''}',
+                                                    'note': '${e['note'] ?? ''}',
+                                                  })
+                                            ];
+                                            final t = next.removeAt(i);
+                                            next.insert(
+                                                v == 'up' ? i - 1 : i + 1, t);
+                                            await _saveCustomTabs(next);
+                                            changed = true;
+                                            break;
+                                          case 'rename':
+                                            await _editCustomTab(tabs[i]);
+                                            changed = true;
+                                            break;
+                                          case 'remove':
+                                            await _removeCustomTab(tabs[i]);
+                                            changed = true;
+                                            break;
+                                          case 'boarddelete':
+                                            final ok = await _deleteBoard(nm);
+                                            if (ok) changed = true;
+                                            break;
+                                        }
                                         if (ctx.mounted) setD(() {});
                                       },
-                                    ),
-                                    IconButton(
-                                      tooltip: '삭제',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: Icon(Icons.delete_outline,
-                                          size: 17,
-                                          color: AppColors.taegeukRed),
-                                      onPressed: () async {
-                                        await _removeCustomTab(tabs[i]);
-                                        changed = true;
-                                        if (ctx.mounted) setD(() {});
-                                      },
+                                      itemBuilder: (_) => [
+                                        if (isAdmin) ...[
+                                          PopupMenuItem(
+                                            value: 'up',
+                                            enabled: i > 0,
+                                            child: const Text('위로 이동'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'down',
+                                            enabled: i < tabs.length - 1,
+                                            child: const Text('아래로 이동'),
+                                          ),
+                                          const PopupMenuItem(
+                                            value: 'rename',
+                                            child: Text('이름·내용 변경'),
+                                          ),
+                                          const PopupMenuDivider(),
+                                          const PopupMenuItem(
+                                            value: 'remove',
+                                            child: Text('메뉴 삭제 (탭에서 빼기)'),
+                                          ),
+                                        ],
+                                        // 게시판 통째로 삭제는 마스터만 —
+                                        //  글·첨부목록이 전부 소멸한다.
+                                        if (isMaster)
+                                          PopupMenuItem(
+                                            value: 'boarddelete',
+                                            child: Row(
+                                              children: const [
+                                                Icon(
+                                                    Icons.delete_forever_outlined,
+                                                    size: 15,
+                                                    color:
+                                                        AppColors.taegeukRed),
+                                                SizedBox(width: 6),
+                                                Text('게시판 통째로 삭제'),
+                                              ],
+                                            ),
+                                          ),
+                                        if (!isAdmin && !isMaster)
+                                          const PopupMenuItem(
+                                            enabled: false,
+                                            child: Text('권한이 없습니다'),
+                                          ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -6022,13 +6258,129 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     if (changed && mounted) await _load();
   }
 
+  /// 게시판 하나를 **통째로** 삭제한다(글·첨부목록 포함). 마스터 전용.
+  ///  ⚠️ NAS 의 실제 첨부파일은 지우지 않는다 — 서버가 글 목록만 비운다.
+  ///  돌려주는 값: 삭제했으면 true.
+  Future<bool> _deleteBoard(String boardName) async {
+    // 해당 게시판 id 찾기
+    String bid = '';
+    try {
+      final ls = await _nas.customBoards(widget.year, widget.title);
+      for (final b in ((ls['boards'] as List?) ?? [])) {
+        final m = (b as Map).cast<String, dynamic>();
+        if ('${m['name'] ?? ''}' == boardName) {
+          bid = '${m['id'] ?? ''}';
+          break;
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return false;
+    if (bid.isEmpty) {
+      _snack('게시판을 찾지 못했습니다 (아직 개설 전일 수 있습니다)');
+      return false;
+    }
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('게시판 삭제', style: TextStyle(fontSize: 16)),
+        content: Text(
+          '"$boardName" 게시판을 통째로 삭제할까요?\n\n'
+          '· 게시글과 첨부 목록이 모두 사라집니다.\n'
+          '· NAS 의 실제 첨부파일은 남습니다.\n'
+          '· 이 작업은 되돌릴 수 없습니다.',
+          style: const TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return false;
+    try {
+      final r = await _nas.customBoardDeleteBoard(
+        year: widget.year,
+        title: widget.title,
+        id: bid,
+      );
+      if (!mounted) return false;
+      if (r['ok'] == true) {
+        _snack('게시판을 삭제했습니다 (글 ${r['removedPosts'] ?? 0}건)');
+        return true;
+      }
+      _snack('삭제하지 못했습니다 (${r['error'] ?? '권한 확인'})');
+    } catch (e) {
+      if (mounted) _snack('삭제하지 못했습니다: $e');
+    }
+    return false;
+  }
+
+  /// 메뉴(⋯) → '게시판 통째로 삭제' — 어느 게시판인지 고르게 한다.
+  Future<void> _deleteCustomBoard() async {
+    if (_customTabs.isEmpty) {
+      _snack('삭제할 게시판이 없습니다');
+      return;
+    }
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('게시판 통째로 삭제', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final t in _customTabs)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.forum_outlined,
+                      size: 18, color: AppColors.purple),
+                  title: Text(
+                    '${t['name'] ?? ''}',
+                    style: const TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w700),
+                  ),
+                  trailing: const Icon(Icons.delete_forever_outlined,
+                      size: 18, color: AppColors.taegeukRed),
+                  onTap: () => Navigator.pop(ctx, '${t['name'] ?? ''}'),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    final ok = await _deleteBoard(name);
+    if (ok && mounted) await _load();
+  }
+
   /// 커스텀 탭 삭제.
   Future<void> _removeCustomTab(Map<String, dynamic> t) async {
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('메뉴 삭제'),
-        content: Text('"${t['name'] ?? ''}" 메뉴를 삭제할까요?'),
+        title: const Text('메뉴 삭제', style: TextStyle(fontSize: 16)),
+        content: Text(
+          '"${t['name'] ?? ''}" 메뉴를 목록에서 뺄까요?\n\n'
+          '· 탭에서만 사라지고, 그 게시판의 글·첨부는 NAS 에 그대로 남습니다.\n'
+          '· 같은 이름으로 다시 [메뉴 추가]하면 글이 그대로 되살아납니다.\n'
+          '· 글까지 완전히 지우려면 [게시판 통째로 삭제](마스터)를 쓰세요.',
+          style: const TextStyle(fontSize: 13, height: 1.5),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
