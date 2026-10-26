@@ -540,16 +540,21 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
   // ───────────────────────── 읽기 (비번 통과 + 읽음 기록) ─────────────────────────
   /// 글 본문 펼치기. 비밀번호가 걸려 있으면 입력받아 통과 후 열고,
   /// 통과하면 **읽음 기록**을 1회 남긴다.
+  ///
+  ///  ⚠️ 서버는 잠긴 글의 `body` 를 아예 내려주지 않는다(`locked:true`).
+  ///     그래서 통과 후에는 `/post/unlock` 응답의 `post` 로 본문을 받아
+  ///     그 글만 화면에서 갱신한다.
   Future<void> _openPost(Map<String, dynamic> post) async {
     final pid = '${post['id'] ?? ''}';
     if (_opened.contains(pid)) {
       setState(() => _opened.remove(pid));
       return;
     }
-    if (post['hasPassword'] == true && post['canSeePassword'] != true) {
+    Map<String, dynamic>? revealed;
+    if (post['locked'] == true) {
       final ctrl = TextEditingController();
       String? err;
-      final pw = await showDialog<String>(
+      final okPw = await showDialog<String>(
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setD) => AlertDialog(
@@ -586,7 +591,11 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
                       password: ctrl.text,
                     );
                     if (!ctx.mounted) return;
-                    Navigator.pop(ctx, r['ok'] == true ? ctrl.text : null);
+                    if (r['ok'] == true) {
+                      Navigator.pop(ctx, ctrl.text);
+                    } else {
+                      setD(() => err = '비밀번호가 다릅니다');
+                    }
                   } catch (_) {
                     setD(() => err = '비밀번호가 다릅니다');
                   }
@@ -597,10 +606,32 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
           ),
         ),
       );
-      if (pw == null || !mounted) return;
+      if (okPw == null || !mounted) return;
+      // 통과한 본문을 받아온다(서버가 이때만 body 를 내려준다).
+      try {
+        final r = await _nas.customBoardUnlock(
+          year: widget.year,
+          title: widget.title,
+          boardId: _bid.isNotEmpty ? _bid : widget.boardId,
+          postId: pid,
+          password: okPw,
+        );
+        final rp = (r['post'] as Map?)?.cast<String, dynamic>();
+        if (rp != null) revealed = rp;
+      } catch (_) {}
     }
-    setState(() => _opened.add(pid));
+    final revealedFinal = revealed;
+    setState(() {
+      _opened.add(pid);
+      if (revealedFinal != null) {
+        final i = _posts.indexWhere((e) => '${e['id']}' == pid);
+        if (i >= 0) {
+          _posts[i] = {..._posts[i], ...revealedFinal};
+        }
+      }
+    });
     // 읽음 기록 — 실패해도 화면 동작에는 지장이 없도록 조용히 넘긴다.
+    if (!mounted) return;
     try {
       final nm = context.read<AppState>();
       await _nas.customBoardMarkRead(
@@ -610,8 +641,6 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
         postId: pid,
         name: nm.who,
       );
-      if (mounted) await _loadPosts();
-      if (mounted) setState(() => _opened.add(pid));
     } catch (_) {}
   }
 
@@ -923,7 +952,8 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
     final hasPw = p['hasPassword'] == true;
     final canSeePw = p['canSeePassword'] == true;
     final pwValue = '${p['password'] ?? ''}';
-    final locked = hasPw && !canSeePw && !_opened.contains(pid);
+    // 서버가 실제로 본문을 지워 보낸 글 = 잠김. (앱은 화면만 가리는 게 아니다)
+    final locked = p['locked'] == true && !_opened.contains(pid);
     final isMine = _isAdmin;
 
     return Container(
