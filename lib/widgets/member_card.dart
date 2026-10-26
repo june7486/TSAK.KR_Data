@@ -179,9 +179,21 @@ class MemberCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
-                              // 소속 접두어 — 은하 회원은 인가번호 앞에 '은하'를 붙인다
-                              //  (예: '은하46호'). 범스카우트는 기존 '305호' 유지.
-                              '${member.corps == 'eunha' ? '은하' : ''}${member.number}호',
+                              // ── 인가번호 표기 (요구 2026-10-27) ──────────
+                              //  "은하 스카우트를 G라고 구분하는 것은 매우 좋음 /
+                              //   개인카드에는 G대신 은하로 표기해야 함"
+                              //
+                              //  · **명부·목록(이 카드)** → `G43호`
+                              //      수천 건을 훑을 때 `G` 한 글자가 범 43 과
+                              //      은하 43 을 즉시 갈라준다(구분자로서 최적).
+                              //  · **개인카드(단일 열람)** → `은하#43`
+                              //      Member.cardNumberLabel 이 담당한다.
+                              //
+                              //  종전에는 여기서도 '은하43호' 로 말을 썼는데,
+                              //  목록에서는 길이만 늘고 구분력은 G 보다 떨어진다.
+                              member.corps == 'eunha'
+                                  ? '${member.rosterNumber}호'
+                                  : '${member.number}호',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 15 * s,

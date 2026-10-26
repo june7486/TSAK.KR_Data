@@ -1861,7 +1861,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         me.isRegular
                             ? '서포터즈'
-                            : '${me.corpsFullName} ${me.number.isEmpty ? '-' : me.displayNumber}',
+                            // (요구 2026-10-27) 본인 카드 번호도 명부와 같은
+                            //  구분자 체계를 쓴다 — 은하는 `G43`.
+                            //  (개인 상세카드는 cardNumberLabel = '은하#43')
+                            : '${me.corpsFullName} ${me.number.isEmpty ? '-' : me.rosterNumber}',
                         style: const TextStyle(
                           color: AppColors.purple,
                           fontWeight: FontWeight.w900,

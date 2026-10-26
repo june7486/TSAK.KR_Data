@@ -353,8 +353,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         // ① 범스카우트(은하스카우트) 인가번호 — 주 정보
+                        //
+                        //  [요구 2026-10-27] "은하 스카우트를 G라고 구분하는 것은
+                        //   매우 좋음 / 개인카드에는 G대신 은하로 표기해야 함"
+                        //  → 명부·목록은 `G43`(구분자) 그대로 두고, **개인카드**
+                        //    에서만 `은하#43` 으로 말머리를 쓴다(cardNumberLabel).
+                        //    범 카드의 `범#415` 와 같은 문법이 되어 두 카드가
+                        //    한 규칙으로 읽힌다.
                         Text(
-                          m.numberLabel,
+                          m.cardNumberLabel,
                           style: const TextStyle(
                             color: AppColors.purple,
                             fontWeight: FontWeight.w900,
@@ -2009,7 +2016,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _plainRow('범인가번호', m.numberLabel),
+          _plainRow(m.numberRowLabel, m.cardNumberLabel),
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
@@ -2746,7 +2753,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                m.isRegular ? '현재: 일반회원 (비인가자)' : '현재: 인가자 (${m.numberLabel})',
+                m.isRegular ? '현재: 일반회원 (비인가자)' : '현재: 인가자 (${m.cardNumberLabel})',
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
@@ -2840,7 +2847,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (updated == null) {
       _snack('승격 실패: 인가번호가 비었거나 중복됩니다');
     } else {
-      _snack('인가자로 승격했습니다 (${updated.numberLabel})');
+      _snack('인가자로 승격했습니다 (${updated.cardNumberLabel})');
       setState(() {});
     }
   }
@@ -3903,7 +3910,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       MaterialPageRoute(
         builder: (_) => ExportScreen(
           members: [m],
-          title: '개인정보 출력 — ${m.name} (${m.numberLabel})',
+          title: '개인정보 출력 — ${m.name} (${m.cardNumberLabel})',
         ),
       ),
     );

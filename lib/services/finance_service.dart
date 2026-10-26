@@ -50,7 +50,25 @@ class FinanceService extends ChangeNotifier {
     _status = 'loading';
     notifyListeners();
     try {
-      final fin = await nas.fetchFinance();
+      final raw = await nas.fetchFinance();
+      // ⚠️ [버그 수정 2026-10-26] 응답 봉투(envelope)를 풀지 않고 넘기고 있었다.
+      //
+      //  `/api/finance` 의 응답은 `{"ok":true, "finance":{...}}` 인데
+      //  종전 코드는 `_apply(raw)` 로 **봉투째** 넘겼다. `_apply()` 는
+      //  `fin['transactions']` 를 찾으므로 항상 null → `_tx` 는 영원히 빈 목록.
+      //  결과: 개인카드의 '후원금·후원물품 이력' 이 행사에서 후원을 등록해도
+      //  **항상 0건 / 0원** 으로 남았다(실측: 이승준 #415, 이항복 #75).
+      //  재무관리 화면은 자체적으로 `r['finance']` 를 풀어 쓰기 때문에 정상으로
+      //  보였고, 그래서 이 버그가 오래 숨어 있었다.
+      //
+      //  `save()` 는 이미 `r['finance']` 로 올바르게 풀고 있다(아래 참조).
+      //  load() 만 봉투를 풀지 않았던 것이 원인이므로 동일한 방식으로 맞춘다.
+      //  혹시 서버가 봉투 없이 바로 주는 경우(구버전/목업)도 있으므로
+      //  `finance` 키가 없으면 원본을 그대로 쓴다(방어적).
+      final wrapped = raw['finance'];
+      final fin = (wrapped is Map)
+          ? wrapped.cast<String, dynamic>()
+          : raw;
       _apply(fin);
       try {
         final r = await nas.fetchRules();
