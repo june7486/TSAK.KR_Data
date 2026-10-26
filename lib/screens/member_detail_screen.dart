@@ -293,6 +293,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
+  /// 헤더 인가번호 서체 — `범#415` 와 `ATAS #13702` 가 **같은 상수**를 쓴다.
+  ///
+  ///  [요구 2026-10-27] "아타스글자 앞에 있는 아이콘은 삭제하고, 아타스
+  ///   font사이즈와 크기를 범과 동일하게 해줘"
+  ///
+  ///  두 곳에 같은 숫자를 각각 적어 두면 다음 사람이 한쪽만 고쳐서
+  ///  다시 어긋난다(이 화면에서 이미 한 번 겪은 일이다). 스타일을
+  ///  하나로 묶어 **구조적으로** 같게 만든다.
+  static const TextStyle _kHeaderNumberStyle = TextStyle(
+    color: AppColors.purple,
+    fontWeight: FontWeight.w900,
+    fontSize: 22,
+    height: 1.15,
+  );
+
   /// 상세 헤더 — 좌(번호 박스+이름) / 우(사진) 2분할, 축소
   Widget _header(Member m) {
     return Container(
@@ -330,14 +345,34 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 //  두 개를 따로 두는 한 높이를 맞춰도 '크기가 다른 두 물건'이
                 //  남는다. 그래서 **하나의 흰 카드 안**에 좌(범인가번호) ·
                 //  구분선 · 우(ATAS 인가번호)를 넣어 한 덩어리로 묶었다.
-                //   · 좌 : 범인가번호 — 주 정보(22, 굵게, 진한 보라)
-                //   · 우 : ATAS 인가번호 — 부 정보(14, 중간, 연한 보라)
+                //   · 좌 : 범인가번호(은하인가번호) — 22pt / w900
+                //   · 우 : ATAS 인가번호 — **22pt / w900 (좌와 동일)**
                 //   · 사이에 얇은 세로 구분선 → "서로 다른 두 체계"임을 표시
                 //  높이가 구조적으로 같아질 수밖에 없고, 폭이 모자라면
                 //  FittedBox 가 통째로 축소해 잘림이 없다.
+                //
+                // [요구 2026-10-27] "아타스글자 앞에 있는 아이콘은 삭제하고,
+                //  아타스font사이즈와 크기를 범과 동일하게 해줘"
+                //  → 종전에는 ATAS 앞에 금색 훈장 아이콘(Icons.military_tech,
+                //    16dp)을 두고 글자를 15pt/w800 으로 '부 정보'로 낮춰
+                //    두었다. 사용자는 ① 아이콘을 없애고 ② **글자 크기·굵기를
+                //    범인가번호와 똑같이** 해 달라고 했다. 두 번호가 같은
+                //    무게로 읽히도록 아이콘·여백을 제거하고 22pt/w900 로
+                //    통일했다. 두 체계의 구분은 **세로 구분선 하나**가 맡는다.
+                //
+                // ## 폭 예산 (실측: NanumGothic Bold @22 → 범#415=74.0px,
+                //    ATAS #13702=142.1px). 390px 기기에서 흰 카드 가용폭은
+                //    `390 - 16*2 - 12(사진간격) - 104(사진) - 4(테두리)` ≈ 234px.
+                //    두 글자 + 구분선(1) + 좌우여백(6*2) = 229px → **거의 꽉
+                //    차지만 잘리지 않는다.** 22pt 를 그대로 살리려고 카드
+                //    내부 여백 14→10, 구분선 여백 11→6 으로 줄였다(종전엔
+                //    239px 라 0.88배로 축소됐다). 더 좁은 기기에서는
+                //    FittedBox 가 좌·우를 **같은 배율로** 줄이므로 두 글자의
+                //    상대 크기는 언제나 동일하다 — 이게 `_kHeaderNumberStyle`
+                //    을 공유하는 이유이기도 하다.
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
+                    horizontal: 10,
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
@@ -362,36 +397,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         //    한 규칙으로 읽힌다.
                         Text(
                           m.cardNumberLabel,
-                          style: const TextStyle(
-                            color: AppColors.purple,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 22,
-                            height: 1.15,
-                          ),
+                          style: _kHeaderNumberStyle,
                         ),
                         // ② ATAS 인가번호 — 값이 있을 때만. 범인가와 별개이므로
                         //    세로 구분선으로 '다른 체계'임을 드러낸다.
+                        //    서체 스펙은 ①과 **완전히 동일**(22/w900/purple).
+                        //    ATAS 는 부제가 아니라 동급의 인가번호다.
+                        //    (아이콘을 없앤 이유는 위 카드 주석 참조)
                         if (m.atasNo.trim().isNotEmpty) ...[
                           Container(
                             width: 1,
                             height: 24,
-                            margin: const EdgeInsets.symmetric(horizontal: 11),
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
                             color: AppColors.purple.withValues(alpha: 0.22),
                           ),
-                          const Icon(
-                            Icons.military_tech,
-                            size: 16,
-                            color: AppColors.lifetimeGold,
-                          ),
-                          const SizedBox(width: 4),
                           Text(
                             'ATAS #${m.atasNo.trim()}',
-                            style: TextStyle(
-                              color: AppColors.purple.withValues(alpha: 0.72),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 15,
-                              height: 1.15,
-                            ),
+                            style: _kHeaderNumberStyle,
                           ),
                         ],
                       ],
@@ -804,8 +826,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                     vertical: 1,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.tigerGold
-                                        .withValues(alpha: 0.20),
+                                    color: AppColors.tigerGold.withValues(
+                                      alpha: 0.20,
+                                    ),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: const Text(
@@ -2177,7 +2200,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           Text(
             hasAtas || hasEn
                 ? 'ATAS(국제 범스카우트 인가) 기록입니다. 비어 있는 항목(—)은 추후 입력할 수 있습니다. '
-                    'ATAS 인가는 범인가와 별개이므로 범인가 정보를 가져오지 않습니다.'
+                      'ATAS 인가는 범인가와 별개이므로 범인가 정보를 가져오지 않습니다.'
                 : 'ATAS 인가 정보가 아직 등록되지 않았습니다. ATAS 인가를 받은 경우에만 입력합니다.',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
@@ -2753,7 +2776,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                m.isRegular ? '현재: 일반회원 (비인가자)' : '현재: 인가자 (${m.cardNumberLabel})',
+                m.isRegular
+                    ? '현재: 일반회원 (비인가자)'
+                    : '현재: 인가자 (${m.cardNumberLabel})',
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
@@ -3357,8 +3382,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       (s, d) => s + ((d['amount'] as num?)?.toInt() ?? 0),
     );
 
-    final isEmpty =
-        fin.isEmpty && manualDon.isEmpty && manualSup.isEmpty;
+    final isEmpty = fin.isEmpty && manualDon.isEmpty && manualSup.isEmpty;
 
     return _section(
       title: '후원금 · 후원물품 이력',
@@ -3465,11 +3489,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            _depositIcon(t.category),
-            size: 16,
-            color: color,
-          ),
+          Icon(_depositIcon(t.category), size: 16, color: color),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
