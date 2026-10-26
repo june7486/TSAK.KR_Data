@@ -19,7 +19,33 @@ import 'member_detail_screen.dart';
 
 /// 은하스카우트 명단 — 범스카우트와 **분리 관리**되는 별도 명단.
 ///
-/// 관리자·마스터 전용. 항목: 인가번호(은하N) · 성명 · 생년월일 · 소속 · 인가년월일.
+/// 관리자·마스터 전용. 항목: 인가번호(G1~G165) · 성명 · 생년월일 · 소속 · 인가년월일.
+///
+/// ── [번호체계 2026-10-26] 은하 = **G + 번호** (G = Galaxy) ──────────────────
+///  요구(원문): "은하스카우트는 1~165와 같은 단순 번호를 G1~G165로 알파벳과
+///              합친 넘버 체계로 모두 다시 바꾸면 좋겠음 / G는 Galaxy(은하)의
+///              약자임"
+///
+///  ## 왜 바꿨나
+///   은하와 범의 번호 공간이 **똑같이 1~165** 라서, 번호만 보고는 누구인지
+///   구분할 수 없었다. 그 결과 은하 43호 화면에 **범 43호 사진**이 뜨고,
+///   개인카드·세션·권한이 서로 뒤바뀌는 사고가 반복됐다.
+///   접두어 G 하나로 두 체계가 **절대 겹치지 않게** 된다(범 43 / 은하 G43).
+///
+///  ## 표시 규칙
+///   이제 번호 자체가 'G43' 이므로 '은하G43' 처럼 **접두어를 두 번 붙이지
+///   않는다**. `eunhaLabel()` 이 그 규칙을 한 곳에서 보장한다.
+///
+///  ## 하위호환
+///   서버가 아직 '43' 처럼 G 없이 내려주는 경우(구 캐시·구 응답)에도 화면에는
+///   'G43' 으로 보이게 한다. 사용자가 번호를 눈으로 확인할 때 체계가 드러나야
+///   같은 실수가 반복되지 않는다.
+String eunhaLabel(String number) {
+  final d = number.replaceAll(RegExp(r'[^0-9]'), '');
+  if (d.isEmpty) return number.trim().isEmpty ? 'G-' : 'G-';
+  return 'G$d';
+}
+
 class EunhaRosterScreen extends StatefulWidget {
   const EunhaRosterScreen({super.key});
 
@@ -85,7 +111,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
         .where(
           (m) =>
               m.searchText.contains(q) ||
-              '은하${m.number}'.contains(q) ||
+              eunhaLabel(m.number).contains(q) ||
               m.name.contains(q),
         )
         .toList();
@@ -270,7 +296,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
     final rows = <List<String>>[];
     for (final m in list) {
       rows.add([
-        '은하${m.number}',
+        eunhaLabel(m.number),
         // (요구) 이름은 '한글 (영어)'로 합치지 않는다 — 합치면 두 줄로 접혀
         //       표가 지저분해진다. 성명·영문 이름을 별도 열로 분리한다.
         m.name,
@@ -351,7 +377,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
               // (요구) 한글 이름 옆에 영문 이름을 함께 배치한다(없으면 한글만).
               for (final m in members)
                 [
-                  '은하${m.number}',
+                  eunhaLabel(m.number),
                   m.nameEn.trim().isEmpty
                       ? m.name
                       : '${m.name} (${m.nameEn.trim()})',
@@ -600,7 +626,7 @@ class _EunhaRosterScreenState extends State<EunhaRosterScreen> {
       title: Row(
         children: [
           Text(
-            '은하${m.number}',
+            eunhaLabel(m.number),
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,

@@ -2076,6 +2076,22 @@ class AppState extends ChangeNotifier {
 
   /// 사진이 비어 있지만 서버에 파일이 있으면 즉시 URL 을 돌려준다(위젯 폴백용).
   ///  syncPhotos() 를 기다리지 않고도 화면에서 바로 사진을 찾을 수 있게 한다.
+  ///
+  /// ── [버그 수정 2026-10-26] 은하 사진에 범 사진이 뜨던 문제(앱 쪽 원인) ────
+  ///  요구(원문): "은하스카우트 사진에 범스카우트 동일인가번호의 사진이
+  ///              표시되고 있음"
+  ///
+  ///  ## 종전 코드 (문제)
+  ///    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+  ///  은하 번호 'G43' 이 **'43'** 으로 깎여, 보유목록에서 '43'(범 43호)을
+  ///  찾아 `/api/photo/43` 을 요청했다 → **범 43호 사진**이 표시됐다.
+  ///  서버를 고쳐도 앱이 이렇게 깎으면 그대로 재현되므로 반드시 함께 고쳐야 한다.
+  ///
+  ///  ## 수정
+  ///   은하 접두어(G)를 **보존**해 키를 만든다.
+  ///     범 43호  → '43'  → `/api/photo/43`
+  ///     은하 43호 → 'G43' → `/api/photo/G43`
+  ///   접두어 표기 변형('g43','은하43','갤럭시43')도 모두 'G43' 으로 통일한다.
   String? serverPhotoUrlFor(String number) {
     // 아직 보유목록을 안 받았고 로그인 상태면, 화면 프레임 이후 1회 지연 로드.
     //  (빌드 중 notifyListeners 를 피하려 Future 로 미룬다.)
@@ -2083,12 +2099,35 @@ class AppState extends ChangeNotifier {
       _photoSyncStarted = true;
       Future<void>(() => syncPhotos());
     }
-    final n = number.replaceAll(RegExp(r'[^0-9]'), '');
+    final n = eunhaAwareKey(number);
     if (n.isEmpty) return null;
     if (_photoHave.isNotEmpty && _photoHave.contains(n)) {
       return nas.photoUrl(n);
     }
     return null;
+  }
+
+  /// ── [번호체계 2026-10-26] 은하 G접두어를 보존하는 번호 정규화 ──────────
+  ///  서버의 `_ck()` 와 **반드시 같은 규칙**이어야 한다(앱↔서버 키 불일치 =
+  ///  사진·개인카드가 서로 다른 사람을 가리키는 사고).
+  ///    'G43' / 'g43' / 'G-43' / '은하43' / '갤럭시43' / 'galaxy43' → 'G43'
+  ///    '43' / 'tiger43'                                          → '43'
+  static String eunhaAwareKey(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return '';
+    final low = s.toLowerCase();
+    var isEunha = low.startsWith('g') && low.length > 1;
+    if (!isEunha) {
+      for (final mk in const ['은하', '갤럭시', 'galaxy', 'eunha']) {
+        if (low.contains(mk)) {
+          isEunha = true;
+          break;
+        }
+      }
+    }
+    final d = s.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.isEmpty) return '';
+    return isEunha ? 'G$d' : d;
   }
 
   void setCorpsFilter(String v) {
