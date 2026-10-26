@@ -318,11 +318,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // 인가번호 박스 + (있으면) ATAS 인가번호 배지 — 같은 줄에 나란히.
-                //  (요구: "atas 인가 번호를 범 옆에 배치해서 보여줘")
-                //  ATAS 인가번호는 '범인가 정보' 카드 안에만 있으면 눈에 띄지
-                //  않으므로, 명부·상세에서 바로 식별되도록 헤더로 끌어올린다.
-                //  값이 없으면 배지를 만들지 않는다(자리만 차지하는 빈 박스 방지).
+                // 인가번호 박스.
+                //  ※ 헤더에 ATAS 인가번호 배지를 붙이는 안은 ** 철회**했다.
+                //    (요구: "atas 인가 번호를 범 옆에 배치해서 보여줘" →
+                //           "오히려 범스카우트인가정보 맨 위에 atas처럼
+                //            범스카우트인가번호를 넣어줘")
+                //    ATAS 인가번호는 ② ATAS 카드의 첫 줄에 그대로 남긴다.
+                //    헤더는 '범#590' 하나만 두어 폭이 좁은 기기에서도 잘리지 않게 한다
+                //    (범#01074451179 처럼 긴 일반회원 번호도 있다).
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -355,50 +358,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         ),
                       ),
                     ),
-                    if (m.atasNo.trim().isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.tigerGold,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.military_tech,
-                                size: 14,
-                                color: AppColors.purpleDark,
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    'ATAS ${m.atasNo.trim()}',
-                                    style: const TextStyle(
-                                      color: AppColors.purpleDark,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -2003,8 +1962,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// ① 범스카우트 인가 정보 (인가 당시 정보) — **인가 근거 3항목만**.
+  /// ① 범스카우트 인가 정보 (인가 당시 정보) — **인가 근거 항목만**.
   ///    ATAS 항목은 ②, 멘토·페런츠 연결은 ③ 으로 분리했다.
+  ///
+  /// (요구: **"범스카우트인가정보 맨 위에 atas처럼 범스카우트인가번호를 넣어줘"**)
+  ///  ATAS 카드가 'ATAS 인가번호'를 첫 줄에 두듯, 범인가 카드도 **범인가번호**를
+  ///  첫 줄에 둔다. 헤더의 큰 '범#590' 박스와 중복처럼 보일 수 있지만, 카드만
+  ///  떼어 보거나 출력·캡처했을 때 어느 인가자의 카드인지 즉시 알 수 있어야 한다.
   Widget _credentialCard(Member m) {
     return _section(
       title: '${m.corpsFullName} 인가 정보 (인가 당시 정보)',
@@ -2012,6 +1976,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _plainRow('${m.corpsFullName} 인가번호', m.numberLabel),
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
@@ -2102,42 +2067,29 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// ② **ATAS 인가 정보 (인가 당시 정보)** — 범스카우트 인가 정보와 분리된 카드.
+  /// ② **ATAS 인가 정보 (인가 당시 정보)** — 범스카우트 인가 정보와 **완전히 별개**.
   ///
   /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
   ///        + "아타스 인가정보: 인가번호 / 소속연맹·단위대 / 인가일")
   /// (요구: "인가번호만 있다면 나머지는 추후 입력할 수 있도록 항목만 만들고 비워 놔")
   /// (요구: "모든 회원 카드에 있던 atas 인가정보가 사라짐, 다시 노출해줘")
+  /// (요구: **"atas인가 정보는 범인가정보와 달라 / atas 인가 정보가 입력되지
+  ///          않은 경우 공란으로 둬"**)
   ///
-  /// ## 표시 원칙
+  /// ## 표시 원칙 (2026-10-26 확정)
   ///  · **항목은 항상 전부 노출**한다 — ATAS 인가번호 · 소속 연맹 · 등록 단위대 ·
-  ///    인가일 · 영문 이름.
-  ///  · ATAS 전용 값(`atasLeague`/`atasUnit`/`atasDate`)이 비어 있으면
-  ///    **범인가 기준값(league/unit/date)을 상속**해 보여주고, 뒤에
-  ///    `(범인가 기준)` 을 붙여 출처를 밝힌다.
-  ///    → 왜: 실측 결과 ATAS 전용 소속/인가일 필드는 **DB 전체에 값이 0건**
-  ///      (2,233명 전원 공백, 과거 스냅샷 6,932개에도 없음). 상속을 끊으면
-  ///      카드가 `—` 만 남아 "정보가 사라진 것"처럼 보인다(사용자 신고).
-  ///      ATAS 는 범인가를 받은 사람에게 발급되므로 소속·인가일이 같다.
-  ///  · ATAS 전용 값이 입력되면 **그 값이 우선**한다(상속은 대체재일 뿐).
-  ///  · 카드는 **항상 노출**한다 — 인가자라면 ATAS 발급 대상이므로, 빈 카드가
-  ///    곧 "등록 필요" 안내가 된다. 비인가회원(일반)은 ATAS 대상이 아니므로
-  ///    값이 있을 때만 노출한다(빈 카드 소음 방지).
+  ///    인가일 · 영문 이름. 값이 없으면 `공란(—)`.
+  ///  · ⚠️ **범인가 값을 절대 상속하지 않는다.** ATAS 인가는 범인가와 별개의
+  ///    인가이므로(사용자 지침), 범인가의 연맹·단위대·인가일을 끌어오면
+  ///    "ATAS 로 제405단 샘물지역대에서 1997-02-19 인가"라는 **거짓 정보**가
+  ///    된다. 값이 없으면 비워 두는 것이 정확하다.
+  ///  · 카드는 인가자에게 **항상 노출**한다 — 빈 카드가 곧 "등록 필요" 안내다.
+  ///    비인가회원(일반)은 ATAS 대상이 아니므로 값이 있을 때만 노출한다.
   Widget _atasCard(Member m) {
     final hasAtas = m.atasNo.trim().isNotEmpty;
     final hasEn = m.nameEn.trim().isNotEmpty;
     // 비인가회원(일반)은 ATAS 대상이 아니다 — 값이 없으면 카드를 만들지 않는다.
     if (m.isRegular && !hasAtas && !hasEn) return const SizedBox.shrink();
-    final league = m.atasLeague.trim().isNotEmpty
-        ? m.atasLeague.trim()
-        : m.league.trim();
-    final unit =
-        m.atasUnit.trim().isNotEmpty ? m.atasUnit.trim() : m.unit.trim();
-    final date =
-        m.atasDate.trim().isNotEmpty ? m.atasDate.trim() : m.date.trim();
-    final inherited = (m.atasLeague.trim().isEmpty && league.isNotEmpty) ||
-        (m.atasUnit.trim().isEmpty && unit.isNotEmpty) ||
-        (m.atasDate.trim().isEmpty && date.isNotEmpty);
 
     return _section(
       title: 'ATAS 인가 정보 (인가 당시 정보)',
@@ -2146,20 +2098,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _blankRow('ATAS 인가번호', m.atasNo),
-          _blankRow('소속 연맹', league),
-          _blankRow('등록 단위대', unit),
-          _blankRow('인가일', date),
+          // ATAS 전용 필드 — **범인가 값을 상속하지 않는다**(요구).
+          //  값이 없으면 공란. ATAS 인가를 따로 받은 경우에만 채워진다.
+          _blankRow('소속 연맹', m.atasLeague),
+          _blankRow('등록 단위대', m.atasUnit),
+          _blankRow('인가일', m.atasDate),
           _blankRow('영문 이름', m.nameEn),
           const SizedBox(height: 2),
           Text(
-            inherited
-                ? 'ATAS 는 범인가를 받은 분에게 발급되므로, ATAS 전용 값이 없을 때는 '
-                    '범인가 기준값으로 표시합니다. 전용 값을 입력하면 그 값이 우선합니다.'
-                : (hasAtas
-                    ? 'ATAS(국제 범스카우트 인가) 기록입니다. 비어 있는 항목(—)은 추후 입력할 수 있습니다.'
-                    : (hasEn
-                        ? 'ATAS 인가번호가 등록되지 않았습니다. 인가번호를 입력해 주세요.'
-                        : 'ATAS 인가 정보가 아직 등록되지 않았습니다.')),
+            hasAtas || hasEn
+                ? 'ATAS(국제 범스카우트 인가) 기록입니다. 비어 있는 항목(—)은 추후 입력할 수 있습니다. '
+                    'ATAS 인가는 범인가와 별개이므로 범인가 정보를 가져오지 않습니다.'
+                : 'ATAS 인가 정보가 아직 등록되지 않았습니다. ATAS 인가를 받은 경우에만 입력합니다.',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
         ],
