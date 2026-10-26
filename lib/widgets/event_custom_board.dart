@@ -39,10 +39,50 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+
+/// ── [요구 2026-10-26] "자료를 읽고 **공감**하고, 다운받을 수 있도록"
+///
+/// 공감 집계 규칙을 **순수 함수**로 떼어 둔다.
+///  · 화면 코드에 섞어 두면 "0에서 취소하면 -1" 같은 실수를 잡을 수 없다.
+///  · 서버(`/api/event/cboard/react`)는 인가번호로 중복을 막고,
+///    앱은 **낙관적 갱신**을 하므로 두 곳의 계산이 어긋나면 안 된다.
+class LikeMath {
+  const LikeMath._();
+
+  /// 다음 공감 건수 — 같은 사람이 여러 번 눌러도 1로 센다(토글).
+  static int nextCount({required int prev, required bool wasLiked}) {
+    final v = prev + (wasLiked ? -1 : 1);
+    return v < 0 ? 0 : v; // 음수 방지
+  }
+
+  /// 서버 응답 → 화면 건수. `likeCount` 가 없으면 **기존 값을 유지**한다
+  /// (0으로 튀면 사용자가 "공감이 사라졌다"고 오해한다).
+  static int applyResponse({required int current, required Map<String, dynamic> resp}) {
+    final v = resp['likeCount'];
+    if (v is num) return v.toInt();
+    return current;
+  }
+
+  /// 실패 시 낙관적 갱신을 되돌려야 하는가.
+  static bool shouldRollback(Map<String, dynamic> resp) => resp['ok'] != true;
+
+  /// 내가 이미 공감했는지 — 명단에서 인가번호로 찾는다.
+  /// 빈 인가번호(비로그인)는 **항상 false** — 익명 공감은 만들지 않는다.
+  static bool iLiked(List? likes, String myIdent) {
+    if (myIdent.isEmpty || likes == null) return false;
+    for (final e in likes) {
+      if (e is! Map) continue;
+      if ('${e['number'] ?? ''}' == myIdent) return true;
+    }
+    return false;
+  }
+}
+
 
 /// 게시판 노출 등급 — 서버(`visibility`)와 1:1 대응.
 enum BoardVisibility { all, staff, admin }
@@ -1166,23 +1206,97 @@ class _EventCustomBoardState extends State<EventCustomBoard> {
               ),
             ),
           ],
-          if (isMine && (p['reads'] as List?)?.isNotEmpty == true) ...[
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => _showReads(p),
-                icon: const Icon(Icons.people_outline, size: 14),
-                label: Text(
-                  '읽은 사람 ${p['readCount'] ?? 0}명',
-                  style: const TextStyle(fontSize: 11.5),
+          // ── [요구 2026-10-26] "자료를 읽고 **공감**하고, 다운받을 수 있도록"
+          //  읽음(자동)과 달리 공감은 **누르는 행동**이다. 읽은 사람 줄과
+          //  같은 줄에 두어 "몇 명이 읽고 몇 명이 공감했는지"를 한눈에 본다.
+          Row(
+            children: [
+              if (isMine && (p['reads'] as List?)?.isNotEmpty == true)
+                TextButton.icon(
+                  onPressed: () => _showReads(p),
+                  icon: const Icon(Icons.people_outline, size: 14),
+                  label: Text(
+                    '읽은 사람 ${p['readCount'] ?? 0}명',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
                 ),
-              ),
-            ),
-          ],
+              const Spacer(),
+              _likeButton(p),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  /// 공감(좋아요) 버튼 — 같은 사람이 여러 번 눌러도 1로 센다(토글).
+  Widget _likeButton(Map<String, dynamic> p) {
+    final n = (p['likeCount'] as num?)?.toInt() ?? 0;
+    final liked = p['iLiked'] == true;
+    final pid = '${p['id'] ?? ''}';
+    return TextButton.icon(
+      onPressed: pid.isEmpty ? null : () => _toggleLike(p),
+      style: TextButton.styleFrom(
+        foregroundColor: liked ? AppColors.taegeukRed : AppColors.textGray,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 30),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(
+        liked ? Icons.favorite : Icons.favorite_border,
+        size: 15,
+      ),
+      label: Text(
+        n > 0 ? '공감 $n' : '공감',
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: liked ? FontWeight.w800 : FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleLike(Map<String, dynamic> p) async {
+    final pid = '${p['id'] ?? ''}';
+    if (pid.isEmpty) return;
+    // 낙관적 갱신 — 왕복을 기다리지 않고 바로 보여준다.
+    final prev = (p['likeCount'] as num?)?.toInt() ?? 0;
+    final wasLiked = p['iLiked'] == true;
+    setState(() {
+      p['iLiked'] = !wasLiked;
+      p['likeCount'] = LikeMath.nextCount(prev: prev, wasLiked: wasLiked);
+    });
+    try {
+      final r = await _nas.customBoardReact(
+        year: widget.year,
+        title: widget.title,
+        boardId: _bid.isNotEmpty ? _bid : widget.boardId,
+        postId: pid,
+      );
+      if (!mounted) return;
+      if (!LikeMath.shouldRollback(r)) {
+        setState(() {
+          p['iLiked'] = r['liked'] == true;
+          p['likeCount'] = LikeMath.applyResponse(
+            current: (p['likeCount'] as num?)?.toInt() ?? prev,
+            resp: r,
+          );
+        });
+      } else {
+        // 실패하면 되돌린다(눈속임 금지).
+        setState(() {
+          p['iLiked'] = wasLiked;
+          p['likeCount'] = prev;
+        });
+        _snack('공감 처리에 실패했습니다');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        p['iLiked'] = wasLiked;
+        p['likeCount'] = prev;
+      });
+    }
   }
 
   /// 읽은 사람 명단 — **마스터 전용**.

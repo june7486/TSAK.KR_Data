@@ -2983,6 +2983,36 @@ class NasApi {
     }
   }
 
+  /// ── [요구 2026-10-26] "자료를 읽고 **공감**하고, 다운받을 수 있도록"
+  /// 글에 공감(좋아요)을 남기거나 취소한다. `on` 을 주지 않으면 토글.
+  /// 반환: {ok, liked, likeCount}
+  Future<Map<String, dynamic>> customBoardReact({
+    required String year,
+    required String title,
+    required String boardId,
+    required String postId,
+    String name = '',
+    bool? on,
+  }) async {
+    try {
+      return await _robustJson(
+        _uri('/api/event/cboard/react'),
+        method: 'POST',
+        body: {
+          'year': year,
+          'title': title,
+          'boardId': boardId,
+          'postId': postId,
+          'name': name,
+          if (on != null) 'on': on,
+        },
+        timeout: const Duration(seconds: 30),
+      );
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
   /// 비밀번호가 걸린 글의 본문 열람 시도.
   ///  글쓴이·마스터는 비번 없이 통과, 그 외는 값을 맞춰야 한다.
   Future<Map<String, dynamic>> customBoardUnlock({
