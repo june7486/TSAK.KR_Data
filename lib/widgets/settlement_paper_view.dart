@@ -203,7 +203,23 @@ class SettlementPaperView extends StatelessWidget {
     SettlementBlockData? d,
     bool first,
   ) {
-    final rows = d?.rows ?? const <List<String>>[];
+    // ── [레이아웃 개선 2026-10-26] 상세 행을 표 밖으로 분리 ──────────────
+    //
+    //  증상: '상세' 를 켜면 결산 표가 세로로 길게 늘어나고, 상세 문장이
+    //        좁은 2번째 열에 갇혀 여러 줄로 쪼개져 읽기 어려웠다
+    //        (예: '이항복 · 기타후원 · 메모: 2026…' 이 3줄로 잘림).
+    //
+    //  원인: Flutter 의 `Table` 은 **colspan(열 병합)을 지원하지 않는다.**
+    //        상세 문장을 2번째 열에만 넣을 수밖에 없어, 4열 중 가장 좁은
+    //        칸에 긴 문장을 우겨넣는 구조였다.
+    //
+    //  해결: 상세 행은 표에서 빼고 **표 아래 전폭 흐름 블록**으로 모아
+    //        한 줄에 자연스럽게 이어지도록 그린다(요구: "글자가 한꺼번에
+    //        나열"). 표는 합계 행만 남아 훨씬 깔끔해진다.
+    //        미리보기와 PDF 가 같은 규칙을 쓰도록 `_visibleRows` 는 그대로 둔다.
+    final allRows = _visibleRows(block, d);
+    final mainRows = allRows.where((r) => !_isDetail(r)).toList();
+    final detailRows = allRows.where(_isDetail).toList();
     return Padding(
       padding: EdgeInsets.only(top: first ? 0 : _tpl.blockGap * rowSpace),
       child: _tplShell(
@@ -267,7 +283,12 @@ class SettlementPaperView extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${rows.length}',
+                    // 상세를 표에서 분리했으므로 '표에 그려지는 행 수'를
+                    //  그대로 세면 상세가 켜졌을 때 숫자가 줄어 보인다.
+                    //  → 합계·소계 행 + 상세 건수를 함께 표기한다.
+                    detailRows.isEmpty
+                        ? '${mainRows.length}'
+                        : '${mainRows.length} + ${detailRows.length}',
                     style: TextStyle(
                       fontSize: _fs * 0.72,
                       fontWeight: FontWeight.w800,
@@ -297,9 +318,9 @@ class SettlementPaperView extends StatelessWidget {
                     ),
               children: [
                 // (요구) "미리보기에도 세부항목을 선택할 수 있도록"
-                //  → 이 블록의 '상세' 가 켜져 있으면 원본 행을 표 안에 이어 붙인다.
-                //   PDF(보고서형)도 같은 detailRows() 를 쓰므로 화면=출력이 된다.
-                for (final r in _visibleRows(block, d))
+                //  → 상세 여부는 위에서 mainRows/detailRows 로 이미 갈랐다.
+                //   표에는 **합계·소계 행만** 들어간다(전폭 상세는 표 아래).
+                for (final r in mainRows)
                   TableRow(
                     decoration: _isTotal(r) && _tpl.tintTotal > 0
                         ? BoxDecoration(
@@ -348,8 +369,69 @@ class SettlementPaperView extends StatelessWidget {
                   ),
                 ),
               ),
+            // 전폭 상세 내역 — 표 밖에서 한 줄로 이어 읽힌다.
+            if (detailRows.isNotEmpty)
+              _detailBlock(block, detailRows),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 상세 내역 전폭 블록.
+  ///
+  /// 상세는 `['· 상세', 원본내용, '', '']` 형태라 2번째 칸 문자열만 쓰면 된다.
+  /// 한 줄에 이어 붙이되(요구: "글자가 한꺼번에 나열"), 문장 사이는 `·` 로
+  /// 구분하고, 항목이 많으면 자동으로 다음 줄로 흐른다.
+  Widget _detailBlock(SettlementBlock block, List<List<String>> detailRows) {
+    final c = _blockColor(block);
+    final items = <String>[];
+    for (final r in detailRows) {
+      final t = (r.length > 1 ? r[1] : '').trim();
+      if (t.isNotEmpty) items.add(t);
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: EdgeInsets.only(top: 3.0 * rowSpace),
+      padding: EdgeInsets.fromLTRB(
+        _tpl.cellPadH + 1,
+        4.0 * rowSpace,
+        _tpl.cellPadH + 1,
+        4.0 * rowSpace,
+      ),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(5),
+        border: Border(
+          left: BorderSide(color: c.withValues(alpha: 0.55), width: 2.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '상세 내역 · ${items.length}건',
+            style: TextStyle(
+              fontSize: _fs * 0.68,
+              fontWeight: FontWeight.w900,
+              color: c,
+              letterSpacing: 0.2,
+            ),
+          ),
+          SizedBox(height: 2.0 * rowSpace),
+          // 한 문단으로 이어 붙인다 — 좁은 열에 갇히지 않는다.
+          Text(
+            items.join('   ·   '),
+            maxLines: noWrap ? 1 : 12,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: _fs * 0.76,
+              height: 1.5,
+              color: AppColors.textGray,
+            ),
+          ),
+        ],
       ),
     );
   }

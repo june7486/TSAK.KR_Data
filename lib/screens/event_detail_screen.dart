@@ -4360,15 +4360,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               won: _won,
               onAdd: () => _financeEdit(kind),
               onEdit: (r) => _financeEdit(kind, row: r),
-              onDelete: (r) async {
-                await _nas.eventFinanceDelete(
-                  widget.year,
-                  widget.title,
-                  kind,
-                  '${r['id']}',
-                );
-                await _load();
-              },
+              onDelete: (r) => _deleteFinanceRow(kind, r),
               onOutput: (view, focus) =>
                   _outputDonationList(rows: rows, view: view, focus: focus),
             ),
@@ -4393,15 +4385,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       won: _won,
       onAdd: () => _financeEdit(kind),
       onEdit: (r) => _financeEdit(kind, row: r),
-      onDelete: (r) async {
-        await _nas.eventFinanceDelete(
-          widget.year,
-          widget.title,
-          kind,
-          '${r['id']}',
-        );
-        await _load();
-      },
+      onDelete: (r) => _deleteFinanceRow(kind, r),
       onReload: _load,
       // (요구) 출력 시 포함여부 — 선택된 행만 문서로 만든다.
       onOutput: (included) => _outputFinance(kind, rows: included),
@@ -4801,6 +4785,52 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       );
     }
     await _load();
+  }
+
+  /// 재무 행 삭제 — **화면 종류(kind)를 서버 종류로 변환해서** 보낸다.
+  ///
+  /// ── [버그 수정 2026-10-26] 후원 탭에서 '삭제'가 안 되던 문제 ──────────
+  ///
+  ///  증상: 후원 상세의 ⋮ → 삭제를 눌러도 목록에서 사라지지 않았다.
+  ///
+  ///  원인: 화면의 kind 는 `fee | donation | expense` 인데, 서버는
+  ///        `fee | expense` **두 가지**만 안다.
+  ///        · 저장은 `kind == 'expense' ? 'expense' : 'fee'` 로 변환해
+  ///          올바로 `fees` 배열에 들어갔다.
+  ///        · 그런데 **삭제만 `kind` 를 그대로**(`'donation'`) 보냈다.
+  ///        → 서버는 `kind == 'fee'` 가 아니므로 `expenses` 배열을 뒤졌고,
+  ///          해당 id 가 없으니 아무것도 지우지 않은 채
+  ///          **`{"ok": true}` 를 돌려줬다.**
+  ///        → 화면은 성공으로 오해하고 다시 불러왔지만 그대로였다.
+  ///
+  ///  수정: 저장과 **똑같은 변환 규칙**을 적용하고, 실패하면 사용자에게
+  ///        명확히 알린다(조용한 성공 위장 금지).
+  Future<bool> _deleteFinanceRow(String kind, Map<String, dynamic> row) async {
+    final id = '${row['id'] ?? ''}';
+    if (id.isEmpty) {
+      _snack('삭제할 항목의 식별자가 없습니다. 새로고침 후 다시 시도해 주세요.');
+      return false;
+    }
+    final serverKind = kind == 'expense' ? 'expense' : 'fee';
+    try {
+      final ok = await _nas.eventFinanceDelete(
+        widget.year,
+        widget.title,
+        serverKind,
+        id,
+      );
+      if (!mounted) return ok;
+      if (!ok) {
+        _snack('삭제하지 못했습니다 — 서버가 거부했습니다. 다시 로그인 후 시도해 주세요.');
+        return false;
+      }
+      await _load();
+      if (mounted) _snack('삭제했습니다');
+      return true;
+    } catch (e) {
+      if (mounted) _snack('삭제 실패: $e');
+      return false;
+    }
   }
 
   String _today() {

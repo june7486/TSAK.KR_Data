@@ -61,7 +61,7 @@ Widget _panel() => DonationListPanel(
   rows: _rows,
   onAdd: () {},
   onEdit: (_) {},
-  onDelete: (_) async {},
+  onDelete: (_) async => true,
   onOutput: (DonationViewMode v, DonationFocus f) {},
 );
 

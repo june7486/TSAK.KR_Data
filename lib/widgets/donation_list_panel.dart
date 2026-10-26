@@ -36,7 +36,9 @@ class DonationListPanel extends StatefulWidget {
   final void Function(DonationViewMode view, DonationFocus focus) onOutput;
 
   final void Function(Map<String, dynamic> row) onEdit;
-  final Future<void> Function(Map<String, dynamic> row) onDelete;
+
+  /// 삭제 — 성공 여부를 돌려준다. `false` 면 화면에서 실패를 알린다.
+  final Future<bool> Function(Map<String, dynamic> row) onDelete;
   final VoidCallback onAdd;
 
   final String Function(int)? won;
@@ -577,28 +579,70 @@ class _DonationListPanelState extends State<DonationListPanel> {
   }
 
   Widget _rowMenu(DonationRow e) {
-    final row = widget.rows.firstWhere(
-      (r) =>
-          '${r['name'] ?? ''}'.trim() == e.name &&
-          '${r['category'] ?? ''}'.trim() == e.category &&
-          '${r['item'] ?? ''}'.trim() == e.item &&
-          ((r['amount'] as num?)?.toInt() ?? 0) == e.amount,
-      orElse: () => const {},
-    );
+    // ── [버그 수정 2026-10-26] '수정'은 되는데 '삭제'가 안 되던 문제 ──
+    //
+    //  원인: 삭제 대상을 찾을 때 **이름/분류/품목/금액 4개가 모두 같아야**
+    //        매칭됐다(orElse → 빈 맵 → 메뉴 자체가 사라짐). 같은 후원자가
+    //        같은 분류로 금액까지 같은 건을 두 번 넣으면 **어느 행인지
+    //        특정할 수 없어** 삭제 버튼이 아예 렌더되지 않았다.
+    //  해결: `id` 를 우선 사용하고, id 가 없을 때만 4-필드 매칭으로 되돌아간다.
+    final row = _rowOf(e);
     if (row.isEmpty) return const SizedBox.shrink();
     return PopupMenuButton<String>(
       padding: EdgeInsets.zero,
       iconSize: 16,
       icon: const Icon(Icons.more_vert, color: AppColors.textGray),
       onSelected: (v) async {
-        if (v == 'edit') widget.onEdit(row);
-        if (v == 'del') await widget.onDelete(row);
+        if (v == 'edit') {
+          widget.onEdit(row);
+          return;
+        }
+        if (v == 'del') {
+          final ok = await widget.onDelete(row);
+          if (!mounted) return;
+          _snack(ok ? '삭제했습니다' : '삭제하지 못했습니다 — 다시 시도해 주세요');
+        }
       },
       itemBuilder: (_) => const [
         PopupMenuItem(value: 'edit', child: Text('수정')),
         PopupMenuItem(value: 'del', child: Text('삭제')),
       ],
     );
+  }
+
+  /// [DonationRow] 에 대응하는 원본 행을 찾는다.
+  ///
+  /// `id` 가 있으면 **id 만으로** 찾는다 — 같은 후원자가 동일 분류·동일
+  /// 금액으로 여러 건을 후원해도 정확히 그 행을 지목할 수 있다.
+  Map<String, dynamic> _rowOf(DonationRow e) {
+    final rows = widget.rows;
+    if (e.id.isNotEmpty) {
+      for (final r in rows) {
+        if ('${r['id'] ?? ''}' == e.id) return r;
+      }
+    }
+    for (final r in rows) {
+      if ('${r['name'] ?? ''}'.trim() == e.name &&
+          '${r['category'] ?? ''}'.trim() == e.category &&
+          '${r['item'] ?? ''}'.trim() == e.item &&
+          ((r['amount'] as num?)?.toInt() ?? 0) == e.amount) {
+        return r;
+      }
+    }
+    return const {};
+  }
+
+  void _snack(String msg) {
+    final ctx = context;
+    try {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {}
   }
 
   // --------------------------------------------------------------- 내역별
