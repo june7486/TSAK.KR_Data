@@ -318,88 +318,78 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // 인가번호 박스 + **ATAS 인가번호 배지** — 같은 줄에 나란히.
+                // 인가번호 + ATAS 인가번호 — **하나의 카드**에 나란히.
                 //
-                // (요구 2026-10-26 확정)
-                //   "atas인가번호를 범스카우트 표시 옆에 노출할 것"
-                //   "범스카우트 인가번호 기입할것"
-                //   "ATAS인가정보는 비워두고 직접 입력할 수 있도록 할것"
-                //   "범스카우트 인가정보와 ATAS인가 정보는 다를 수 있고,
-                //    현재 ATAS인가정보는 입력된 적이 없음"
+                // (요구) "atas인가번호를 범스카우트 표시 옆에 노출할 것"
+                // (요구) "디자인 발란스를 맞춰야지 / 너무 언발란스 해"
                 //
-                // → 범인가번호('범#415')와 ATAS 인가번호('ATAS #13702')를
-                //   **나란히** 두어 두 체계가 다르다는 사실이 한눈에 보이게 한다.
-                //   (이전 build 508 에서 헤더 배지를 뺐으나 사용자 요구로 복원.
-                //    대신 두 박스 모두 Flexible+FittedBox 로 감싸 좁은 화면에서도
-                //    잘리지 않게 한다 — '범#01074451179' 같은 긴 번호 대비.)
-                //
-                // ⚠️ **폭이 좁은 기기**(갤럭시 폴드 커버 280dp 등)에서는 두 박지가
-                //    한 줄에 안 들어간다. 그때는 `Wrap` 이 자동으로 다음 줄로
-                //    내려 겹침/잘림을 막는다(요구 3번 스크린샷: 우측 잘림 현상).
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    // ① 범스카우트(은하스카우트) 인가번호 박스
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.tigerGold, width: 2),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
+                // ## 왜 두 개의 박스 → 하나의 카드로 바꿨나
+                //  이전 구현은 흰 박스(높이 44dp, 글자 22)와 금색 배지
+                //  (높이 32dp, 글자 14)를 Wrap 으로 나란히 두었다. 높이·글자
+                //  크기·테두리가 모두 달라 **두 칸이 어긋나 보였다**(사용자 지적).
+                //  두 개를 따로 두는 한 높이를 맞춰도 '크기가 다른 두 물건'이
+                //  남는다. 그래서 **하나의 흰 카드 안**에 좌(범인가번호) ·
+                //  구분선 · 우(ATAS 인가번호)를 넣어 한 덩어리로 묶었다.
+                //   · 좌 : 범인가번호 — 주 정보(22, 굵게, 진한 보라)
+                //   · 우 : ATAS 인가번호 — 부 정보(14, 중간, 연한 보라)
+                //   · 사이에 얇은 세로 구분선 → "서로 다른 두 체계"임을 표시
+                //  높이가 구조적으로 같아질 수밖에 없고, 폭이 모자라면
+                //  FittedBox 가 통째로 축소해 잘림이 없다.
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.tigerGold, width: 2),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // ① 범스카우트(은하스카우트) 인가번호 — 주 정보
+                        Text(
                           m.numberLabel,
                           style: const TextStyle(
                             color: AppColors.purple,
                             fontWeight: FontWeight.w900,
                             fontSize: 22,
+                            height: 1.15,
                           ),
                         ),
-                      ),
+                        // ② ATAS 인가번호 — 값이 있을 때만. 범인가와 별개이므로
+                        //    세로 구분선으로 '다른 체계'임을 드러낸다.
+                        if (m.atasNo.trim().isNotEmpty) ...[
+                          Container(
+                            width: 1,
+                            height: 24,
+                            margin: const EdgeInsets.symmetric(horizontal: 11),
+                            color: AppColors.purple.withValues(alpha: 0.22),
+                          ),
+                          const Icon(
+                            Icons.military_tech,
+                            size: 16,
+                            color: AppColors.lifetimeGold,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'ATAS #${m.atasNo.trim()}',
+                            style: TextStyle(
+                              color: AppColors.purple.withValues(alpha: 0.72),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                              height: 1.15,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    // ② ATAS 인가번호 배지 — **값이 있을 때만** 노출.
-                    //    ATAS 인가는 범인가와 별개이므로, 없는 사람에게
-                    //    빈 배지를 띄우면 '0' 이나 '미등록'으로 오해된다.
-                    if (m.atasNo.trim().isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 11,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.tigerGold,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.military_tech,
-                              size: 14,
-                              color: AppColors.purpleDark,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'ATAS #${m.atasNo.trim()}',
-                              style: const TextStyle(
-                                color: AppColors.purpleDark,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -2003,21 +1993,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// ① 범스카우트 인가 정보 (인가 당시 정보) — **인가 근거 항목만**.
+  /// ① 범인가 정보 (인가 당시 정보) — **인가 근거 항목만**.
   ///    ATAS 항목은 ②, 멘토·페런츠 연결은 ③ 으로 분리했다.
   ///
-  /// (요구: **"범스카우트인가정보 맨 위에 atas처럼 범스카우트인가번호를 넣어줘"**)
-  ///  ATAS 카드가 'ATAS 인가번호'를 첫 줄에 두듯, 범인가 카드도 **범인가번호**를
-  ///  첫 줄에 둔다. 헤더의 큰 '범#590' 박스와 중복처럼 보일 수 있지만, 카드만
-  ///  떼어 보거나 출력·캡처했을 때 어느 인가자의 카드인지 즉시 알 수 있어야 한다.
+  /// (요구: "범스카우트인가정보 맨 위에 atas처럼 범스카우트인가번호를 넣어줘")
+  /// (요구: **"범스카우트인가정보 라고 길게 쓰니까 글자가 2줄 생김 /
+  ///          범인가정보 로 줄여줘"**)
+  ///  → 카드 제목을 '범인가 정보 (인가 당시 정보)' 로 축약하고, 항목 라벨도
+  ///    '범인가번호' 로 짧게 쓴다. 은하스카우트도 같은 카드 구조를 쓰므로
+  ///    제목은 소속에 따라 '은하인가 정보' 가 된다(길이가 짧아 1줄에 들어간다).
   Widget _credentialCard(Member m) {
     return _section(
-      title: '${m.corpsFullName} 인가 정보 (인가 당시 정보)',
+      title: '${m.corps == 'eunha' ? '은하' : '범'}인가 정보 (인가 당시 정보)',
       icon: Icons.verified_user,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _plainRow('${m.corpsFullName} 인가번호', m.numberLabel),
+          _plainRow('범인가번호', m.numberLabel),
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
@@ -2074,18 +2066,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   ///        항목만 만들고 비워 놔")
   /// [_plainRow] 는 빈 값을 숨기므로, 항목이 사라져 나중에 입력할 자리가 없어진다.
   /// 이 헬퍼는 비어 있으면 `—` 로 표시해 **항목을 항상 노출**한다.
-  Widget _blankRow(String label, String value) {
+  Widget _blankRow(String label, String value, {bool dense = false}) {
     final v = value.trim();
     final empty = v.isEmpty;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: dense ? 5 : 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 96,
+            width: 104,
             child: Text(
               label,
+              // 라벨 2줄 방지 — ①범인가 카드(_plainRow)와 동일 규칙.
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.textGray,
                 fontSize: 13,
@@ -2165,10 +2161,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _blankRow('ATAS 인가번호', m.atasNo),
           // ATAS 전용 필드 — **범인가 값을 상속하지 않는다**(요구).
           //  값이 없으면 공란. ATAS 인가를 따로 받은 경우에만 채워진다.
-          _blankRow('소속 연맹', m.atasLeague),
-          _blankRow('등록 단위대', m.atasUnit),
-          _blankRow('인가일', m.atasDate),
-          _blankRow('영문 이름', m.nameEn),
+          //  dense: 값이 '—' 인 행이 이어져도 ①범인가 카드와 행 높이가 같아지게.
+          _blankRow('소속 연맹', m.atasLeague, dense: true),
+          _blankRow('등록 단위대', m.atasUnit, dense: true),
+          _blankRow('인가일', m.atasDate, dense: true),
+          _blankRow('영문 이름', m.nameEn, dense: true),
           const SizedBox(height: 2),
           Text(
             hasAtas || hasEn
@@ -2558,17 +2555,30 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   /// 값 없는 일반 행(구조 항목용).
-  Widget _plainRow(String label, String value) {
+  /// 항목 1줄 — 라벨 / 값.
+  ///
+  /// ## 라벨 2줄 문제 (요구)
+  ///  "범스카우트인가정보 라고 길게 쓰니까 글자가 2줄 생김 / 범인가정보 로 줄여줘"
+  ///  라벨 폭 96px 에 '범스카우트 인가번호'(9자)를 넣으면 두 줄로 넘쳤다.
+  ///  → 호출부에서 라벨 자체를 줄이고(범인가번호), 여기서는 폭을 104px 로
+  ///    조금 넓히고 `maxLines: 1` + `softWrap: false` 로 **두 줄을 원천 차단**한다.
+  ///    (폭만 늘리면 더 긴 라벨에서 또 넘친다 — 줄바꿈 금지가 확실한 방어다.)
+  ///  · [dense] : ATAS 카드처럼 값이 '—' 인 행이 이어질 때 세로 여백을 줄인다.
+  ///    두 카드의 행 높이를 같게 맞춰 좌우 균형을 잡기 위한 것이다.
+  Widget _plainRow(String label, String value, {bool dense = false}) {
     if (value.trim().isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: dense ? 5 : 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 96,
+            width: 104,
             child: Text(
               label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.textGray,
                 fontSize: 13,
