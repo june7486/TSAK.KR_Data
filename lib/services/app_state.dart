@@ -431,10 +431,17 @@ class AppState extends ChangeNotifier {
           // [보안] 저장된 세션토큰 복원 → 이후 API 요청이 인증된다.
           if (sid.isNotEmpty) {
             nas.sessionId = sid;
+            // 저장된 앱 등급(_tier)은 '앱이 마지막으로 승격한 값'이지 **서버 세션
+            // 등급이 아니다**. (개인 탭 415 로그인은 앱=master / 서버=personal)
+            //  여기서 serverTier 를 낙관적으로 채우면 401 복구가 무력화되므로
+            //  비워 두고, 실제 마스터 API 가 401 을 받으면 그때 재발급한다.
+            nas.serverTier = '';
           } else if (repo.isNasMode) {
             // 토큰이 없으면 서버에서 재발급 시도(개인 QR 세션 등).
             try {
-              await nas.grantSession(tier, id: who);
+              final g = await nas.grantSession(tier, id: who);
+              // grantSession 이 서버 응답의 tier 로 serverTier 를 채운다.
+              if (!g) nas.serverTier = '';
             } catch (_) {}
           }
           _unlocked = true;
@@ -709,31 +716,69 @@ class AppState extends ChangeNotifier {
       // [보안] 서버측 세션이 없으면 반드시 확보한다.
       //  앱은 일부 자격(예: 개인 415!@@)을 로컬에서 검증하므로 서버 세션이
       //  비어 있을 수 있다. 세션 없으면 이후 민감 API 가 전부 401 이 된다.
-      if (repo.isNasMode && nas.sessionId.isEmpty) {
+    if (repo.isNasMode && nas.sessionId.isEmpty) {
+      try {
+        if (finalTier == 'master') {
+          await nas.grantSession(
+            'master',
+            id: personalNo,
+            master: AppConfig.masterPassword,
+            log: true,
+          );
+        } else if (finalTier == 'app') {
+          await nas.grantSession(
+            'app',
+            master: AppConfig.masterPassword,
+            log: true,
+          );
+        } else if (tier == 'personal' || tier == 'guest') {
+          await nas.grantSession(
+            tier,
+            id: personalNo.isNotEmpty ? personalNo : id,
+            corps: _corps,
+            log: true,
+          );
+        }
+      } catch (_) {}
+    }
+    // ── [버그 수정 2026-10-26] 앱 등급은 master 인데 서버 세션이 personal ──
+    //  개인 탭에서 415(영구 마스터)로 로그인하면 서버는 personal 세션을
+    //  발급한다. 앱은 로컬에서 master 로 승격하므로 화면은 마스터 기능을
+    //  보여주는데, 서버는 계속 401(unauthorized)을 돌려줬다.
+    //  → 대표 증상: '접속 비밀번호 관리' 카드에 **현재 비밀번호 조회 실패**,
+    //    '회원 접속·열람 기록'이 비어 있음.
+    //
+    //  해결: 승격된 등급이 서버 세션 등급보다 높으면 **세션을 다시 발급**한다.
+    //   · 최초 로그인에서 이미 받은 세션이면 재사용한다(personal → personal).
+    //   · master 승격인데 서버가 personal 이면 마스터 비번으로 재발급.
+    //  ⚠️ 세션 **복원(restoreSession)** 경로는 여기를 거치지 않는다(login() 밖).
+    //    복원 시에는 자동 승격하지 않고, 실제 마스터 API 가 401 을 받을 때
+    //    `ensureServerSession()` 이 그때서야 재발급한다 — 저장된 세션만으로
+    //    조용히 권한이 올라가는 통로를 만들지 않기 위해서다.
+    if (repo.isNasMode && nas.sessionId.isNotEmpty) {
+      final bool needUpgrade =
+          (finalTier == 'master' && !nas.serverIsMaster) ||
+          (finalTier == 'app' &&
+              (nas.serverTier == 'personal' || nas.serverTier.isEmpty));
+      if (needUpgrade) {
         try {
           if (finalTier == 'master') {
             await nas.grantSession(
               'master',
               id: personalNo,
               master: AppConfig.masterPassword,
-              log: true,
+              log: false,
             );
           } else if (finalTier == 'app') {
             await nas.grantSession(
               'app',
               master: AppConfig.masterPassword,
-              log: true,
-            );
-          } else if (tier == 'personal' || tier == 'guest') {
-            await nas.grantSession(
-              tier,
-              id: personalNo.isNotEmpty ? personalNo : id,
-              corps: _corps,
-              log: true,
+              log: false,
             );
           }
         } catch (_) {}
       }
+    }
       _unlocked = true;
       _tier = finalTier;
       // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
@@ -819,6 +864,7 @@ class AppState extends ChangeNotifier {
     try {
       await nas.logout();
     } catch (_) {}
+    nas.serverTier = '';
     try {
       final p = await SharedPreferences.getInstance();
       await p.remove(AppConfig.kSessionTs);
@@ -1359,14 +1405,58 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 마지막 [fetchMemberPassword] 실패 사유.
+  ///  ── 화면이 "조회 실패"만 띄우면 사용자가 원인을 알 수 없다(요구 2026-10-26).
+  String _lastPasswordError = '';
+  String get lastPasswordError => _lastPasswordError;
+
   /// 접속 비밀번호 현재값 조회 (마스터 전용).
   /// 반환: {'password','defaultPassword','isDefault','isRegular'} 또는 null.
+  ///
+  /// ── [버그 수정 2026-10-26] "마스터권한으로 접속시 패스워드 조회가 안됨" ──
+  ///  증상: 개인 탭에서 415(영구 마스터) 로 로그인한 뒤 회원 편집 화면의
+  ///        '접속 비밀번호 관리' 카드에 **현재 비밀번호 조회 실패**가 떴다.
+  ///
+  ///  원인(서버 로그로 확정):
+  ///   ① 개인 탭 로그인(tier=personal)은 서버 세션도 `personal` 로 발급된다.
+  ///      앱은 로컬에서 `_tier='master'` 로 승격하지만 **서버 세션은 personal**.
+  ///   ② `/api/member/password` 는 `_require("master")` → 세션 tier 가
+  ///      personal 이면 **401 unauthorized**.
+  ///   ③ nas.memberPassword 가 401 을 예외로 올리지 않고 응답을 그대로 파싱해
+  ///      `ok:false` → 여기서 null 반환 → 화면 "조회 실패".
+  ///      (게다가 `catch (_) {}` 로 사유까지 삼켰다.)
+  ///   → 같은 이유로 '회원 접속·열람 기록'(/api/member/access-log)도 401.
+  ///
+  ///  해결: 호출 전에 **서버 세션을 마스터 등급으로 재확인**하고(ensureServerSession),
+  ///        그래도 401 이면 1회 재시도, 최종 실패는 **사유를 남긴다**.
   Future<Map<String, dynamic>?> fetchMemberPassword(String number) async {
-    if (!repo.isNasMode) return null;
-    try {
-      final r = await nas.memberPassword(number);
-      if (r['ok'] == true) return r;
-    } catch (_) {}
+    _lastPasswordError = '';
+    if (!repo.isNasMode) {
+      _lastPasswordError = '로컬 모드에서는 비밀번호를 조회할 수 없습니다';
+      return null;
+    }
+    if (!isMaster) {
+      _lastPasswordError = '마스터만 비밀번호를 열람할 수 있습니다';
+      return null;
+    }
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final r = await nas.memberPassword(number);
+        if (r['ok'] == true) return r;
+        _lastPasswordError = '${r['error'] ?? '알 수 없는 오류'}';
+      } on NasAuthException catch (e) {
+        // 세션이 personal 등급이면 여기로 온다 → 마스터 세션으로 재발급 후 재시도.
+        _lastPasswordError = '$e';
+        if (attempt == 0) {
+          final renewed = await ensureServerSession(needAdmin: true);
+          if (renewed) continue;
+          _lastPasswordError = '서버 세션을 마스터 등급으로 갱신하지 못했습니다';
+        }
+      } catch (e) {
+        _lastPasswordError = '서버에 연결하지 못했습니다: $e';
+      }
+      if (attempt == 0) break;
+    }
     return null;
   }
 
@@ -1381,13 +1471,24 @@ class AppState extends ChangeNotifier {
   }
 
   /// 회원 접속 로그 조회 (마스터 전용, 최신 100건).
+  ///  ── [버그 수정 2026-10-26] 위 fetchMemberPassword 와 **같은 원인**으로
+  ///    개인 탭 마스터 로그인 시 기록이 비어 보였다(401 → catch(_) → []).
   Future<List<Map<String, dynamic>>> fetchMemberAccessLog(String number) async {
     if (!repo.isNasMode || !isMaster) return [];
-    try {
-      return await nas.memberAccessLog(number);
-    } catch (_) {
-      return [];
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await nas.memberAccessLog(number);
+      } on NasAuthException {
+        if (attempt == 0) {
+          final renewed = await ensureServerSession(needAdmin: true);
+          if (renewed) continue;
+        }
+        return [];
+      } catch (_) {
+        return [];
+      }
     }
+    return [];
   }
 
   /// 전체 회원 접속·열람 로그 조회 (마스터 전용, 최신 limit건).
@@ -1897,9 +1998,12 @@ class AppState extends ChangeNotifier {
     if (needAdmin && !(isApp || isMaster)) return false;
     try {
       if (isMaster) {
+        // 이미 마스터 세션이면 서버를 다시 부르지 않는다(불필요한 왕복·세션 churn 방지).
+        if (nas.serverIsMaster) return true;
         final ok = await nas.grantSession(
           'master',
           id: _who,
+          // 영구 마스터(PM:번호)든 일반 마스터 비번이든 서버가 판정한다.
           master: AppConfig.masterPassword,
           corps: _corps,
           log: false,
@@ -2639,6 +2743,10 @@ class AppState extends ChangeNotifier {
     if (newPw.isEmpty) return '비밀번호가 비어 있습니다';
 
     if (repo.isNasMode) {
+      // ⓪ 마스터라면 서버 세션 등급을 먼저 마스터로 맞춘다.
+      //    개인 탭 로그인(tiger415)은 서버 세션이 personal 이라, 종전에는
+      //    마스터 전용 변경이 서버에서 거부됐다(화면만 성공처럼 보임).
+      if (isMaster) await ensureServerSession(needAdmin: true);
       // ① 서버가 권위 저장소 — 먼저 적용하고 결과를 확인한다.
       Map<String, dynamic> r;
       try {

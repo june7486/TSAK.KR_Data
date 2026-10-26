@@ -46,6 +46,18 @@ class NasApi {
   /// 서포터즈는 개인접근 화면은 보되 타인 개인정보는 열람할 수 없다.
   bool lastLoginSupporter = false;
 
+  /// 현재 발급된 **서버 세션의 등급** ('master' | 'app' | 'personal' | 'guest').
+  ///  ── [버그 수정 2026-10-26] 앱 등급과 서버 등급이 어긋나던 문제 ──────────
+  ///   개인 탭에서 415(영구 마스터)로 로그인하면 앱은 `_tier='master'` 로
+  ///   승격되지만, 서버 세션은 `personal` 로 발급된다. 그래서 앱이 마스터
+  ///   전용 API(`/api/member/password`, `/api/member/access-log` …)를 부르면
+  ///   서버가 401 을 돌려줬다. "앱은 마스터인데 서버는 아니라고 하는" 상태를
+  ///   감지하려면 서버가 알려준 등급을 기억해야 한다.
+  String serverTier = '';
+
+  /// 서버 세션이 마스터 등급인지.
+  bool get serverIsMaster => serverTier == 'master';
+
   String get baseUrl => _base;
 
   /// 모든 요청에 공통으로 붙는 인증 헤더.
@@ -222,7 +234,11 @@ class NasApi {
     final sid = '${j['sid'] ?? ''}';
     lastLoginAdmin = j['admin'] == true;
     lastLoginSupporter = j['supporter'] == true;
-    if (j['ok'] == true && sid.isNotEmpty) sessionId = sid;
+    if (j['ok'] == true && sid.isNotEmpty) {
+      sessionId = sid;
+      // 서버가 알려준 **실제 세션 등급**을 기억한다(개인 로그인은 personal).
+      serverTier = tier;
+    }
     return j;
   }
 
@@ -257,6 +273,7 @@ class NasApi {
       final sid = '${j['sid'] ?? ''}';
       if (j['ok'] == true && sid.isNotEmpty) {
         sessionId = sid;
+        serverTier = '${j['tier'] ?? tier}';
         return true;
       }
     } catch (_) {}
@@ -2235,25 +2252,28 @@ class NasApi {
   }
 
   /// 현재 접속 비밀번호 조회 (마스터 전용) — 실제 지정 비번값 반환
+  ///
+  /// ── [버그 수정 2026-10-26] 마스터인데 '조회 실패'가 뜨던 문제 ─────────────
+  ///  원인: 이 함수만 `_robustJson` 을 쓰지 않고 **생 HTTP 응답을 그대로
+  ///   json.decode** 했다. 서버가 401 `{"ok":false,"error":"unauthorized"}`
+  ///   를 돌려주면 디코딩은 성공하고, 상위(`fetchMemberPassword`)에서
+  ///   `r['ok'] == true` 가 아니므로 **null 을 반환** → 화면은 "조회 실패".
+  ///   401 이 예외로 승격되지 않아 재인증·재시도 기회도 없었다.
+  ///  해결: `_robustJson` 경유 → 401/403 은 `NasAuthException` 으로 승격.
   Future<Map<String, dynamic>> memberPassword(String number) async {
-    final r = await http
-        .get(
-          _uri('/api/member/password?number=${Uri.encodeComponent(number)}'),
-          headers: _authHeaders,
-        )
-        .timeout(const Duration(seconds: 15));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri('/api/member/password?number=${Uri.encodeComponent(number)}'),
+      timeout: const Duration(seconds: 15),
+    );
   }
 
   /// 회원 접속 로그 조회 (마스터 전용) — 최신 100건.
+  ///  위와 같은 이유로 `_robustJson` 경유(401 → NasAuthException).
   Future<List<Map<String, dynamic>>> memberAccessLog(String number) async {
-    final r = await http
-        .get(
-          _uri('/api/member/access-log?number=${Uri.encodeComponent(number)}'),
-          headers: _authHeaders,
-        )
-        .timeout(const Duration(seconds: 15));
-    final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    final j = await _robustJson(
+      _uri('/api/member/access-log?number=${Uri.encodeComponent(number)}'),
+      timeout: const Duration(seconds: 15),
+    );
     return ((j['logs'] as List?) ?? [])
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();

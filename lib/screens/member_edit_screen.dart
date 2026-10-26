@@ -125,6 +125,15 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   /// 마스터 비밀번호 열람 시 가림 여부(기본: 가림).
   bool _pwObscured = true;
 
+  /// 현재 비밀번호 조회 Future — build 마다 새로 만들지 않도록 캐시한다.
+  ///  ── [버그 수정 2026-10-26] `_passwordReveal` 이 build 안에서
+  ///    `state.fetchMemberPassword(...)` 를 **직접 호출**하고 있었다.
+  ///    FutureBuilder 에 매 build 새 Future 가 들어가면 재조회가 반복되고,
+  ///    (세션 갱신 로직이 붙으면서) 조회가 영원히 'waiting' 처럼 보이거나
+  ///    실패 문구가 깜빡였다. 회원 키 기준으로 1회만 만든다.
+  Future<Map<String, dynamic>?>? _pwFuture;
+  String _pwFutureKey = '';
+
   /// 성별 — '남' | '여' | ''. **선택 항목**(미선택 허용). 공개여부는 기본 노출.
   String _gender = '';
   bool _genderVisible = true;
@@ -937,14 +946,22 @@ class _MemberEditScreenState extends State<MemberEditScreen>
 
   /// 마스터 전용 — 현재 비밀번호 실제값(가림/보기 + 복사).
   Widget _passwordReveal(AppState state) {
+    final key = _loginId();
+    if (_pwFutureKey != key || _pwFuture == null) {
+      _pwFutureKey = key;
+      _pwFuture = state.fetchMemberPassword(key);
+    }
     return FutureBuilder<Map<String, dynamic>?>(
-      future: state.fetchMemberPassword(_loginId()),
+      future: _pwFuture,
       builder: (ctx, snap) {
         final loading = snap.connectionState == ConnectionState.waiting;
         final d = snap.data;
         final pw = d == null ? null : '${d['password'] ?? ''}';
         final isDefault = d?['isDefault'] == true;
         final obscured = _pwObscured;
+        final failed = !loading && (pw == null || pw.isEmpty);
+        // 실패 사유를 그대로 보여준다(종전엔 무조건 "조회 실패" 한 마디였다).
+        final why = state.lastPasswordError.trim();
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
@@ -969,17 +986,31 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 child: Text(
                   loading
                       ? '조회 중…'
-                      : (pw == null || pw.isEmpty
-                            ? '조회 실패'
+                      : (failed
+                            ? (why.isEmpty ? '조회 실패' : why)
                             : '${obscured ? '••••••' : pw}${isDefault ? '  (기본값)' : ''}'),
-                  style: const TextStyle(
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.0,
-                    color: AppColors.textDark,
+                    color: failed ? AppColors.taegeukRed : AppColors.textDark,
                   ),
                 ),
               ),
+              if (failed && !loading)
+                IconButton(
+                  tooltip: '다시 조회',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.refresh, size: 17),
+                  onPressed: () {
+                    setState(() {
+                      _pwFutureKey = '';
+                      _pwFuture = null;
+                    });
+                  },
+                ),
               if (pw != null && pw.isNotEmpty) ...[
                 IconButton(
                   tooltip: obscured ? '보기' : '가리기',
@@ -1176,6 +1207,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       reset: true,
     );
     if (!mounted) return;
+    // 초기화·변경 후에는 '현재 비밀번호' 표시를 새 값으로 갱신한다.
+    if (err == null) setState(() { _pwFutureKey = ''; _pwFuture = null; });
     _snack(err == null ? '비밀번호를 초기화했습니다 ($target)' : '실패: $err');
   }
 
@@ -1215,6 +1248,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     }
     final err = await context.read<AppState>().setMemberPassword(m, value: nw);
     if (!mounted) return;
+    if (err == null) setState(() { _pwFutureKey = ''; _pwFuture = null; });
     _snack(err == null ? '비밀번호를 변경했습니다' : '실패: $err');
   }
 

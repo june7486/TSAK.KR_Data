@@ -1659,9 +1659,16 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<String?> _askMaster(String action) async {
-    // 영구 마스터(예: 415)는 비번 확인 없이 진행.
+    // 영구 마스터 토큰(PM:번호)이 **실제로 발급되는 경우에만** 비번 확인을 건너뛴다.
+    //  ── [버그 수정 2026-10-26] 415 영구 마스터 권한 삭제에 따른 보정 ──────
+    //   종전: `if (s.isPermanentMaster) return s.masterToken();`
+    //   → 영구 마스터 목록이 비면 masterToken() 이 **빈 문자열**을 돌려주는데
+    //     그 빈 값이 마스터 확인값으로 서버에 전달돼 "권한 없음"으로 실패했다.
     final s = context.read<AppState>();
-    if (s.isPermanentMaster) return s.masterToken();
+    if (s.isPermanentMaster) {
+      final tok = s.masterToken();
+      if (tok.isNotEmpty) return tok;
+    }
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,

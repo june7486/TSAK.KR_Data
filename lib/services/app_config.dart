@@ -14,9 +14,18 @@ class AppConfig {
   /// 마스터 비밀번호 (불변, 절대 변경 금지)
   static const String masterPassword = 'Corbuser7!@@';
 
-  /// 영구 마스터 인가번호 — 개인 로그인/QR 스캔 시에도 마스터와 동일 권한.
-  /// (예: 대표 개발자 415)
-  static const Set<String> permanentMasterNumbers = {'415'};
+  /// 영구 마스터 인가번호 — 이 번호는 '개인 권한'으로 로그인해도 앱이 마스터로
+  ///  승격해 주던 예외 목록이다.
+  ///
+  /// ── [요구 2026-10-26] 415 의 영구 마스터 권한 삭제 ─────────────────────
+  ///  사용자 지시: "415호의 마스터 영구권한 삭제할 것"
+  ///  · 이제 415 는 **일반 인가자**(tiger415 / 415!@@) 로만 동작한다.
+  ///  · 마스터 기능은 마스터 탭에서 **마스터 비밀번호**로 로그인해야 한다.
+  ///  · 프록시(PERMANENT_MASTERS)도 같은 값(빈 집합)으로 맞춰 두었다.
+  ///    ⚠️ 한쪽만 바꾸면 "앱은 마스터 / 서버는 아님" 이 되어 마스터 전용 API
+  ///       (비번 조회·접속기록·강제 변경)가 조용히 401 로 실패한다.
+  ///  · 되살리려면 여기에 번호를 다시 넣고 프록시도 같이 고쳐야 한다.
+  static const Set<String> permanentMasterNumbers = <String>{};
 
   /// 주어진 인가번호가 영구 마스터인지 판정.
   static bool isPermanentMaster(String number) {
@@ -73,6 +82,7 @@ class AppConfig {
   static const String kSessionSid = 'auth_session_sid'; // 서버 발급 세션토큰
   static const String kAuthCorps = 'auth_corps'; // 로그인 소속('tsak'|'eunha')
   static const String kAdminEmail = 'admin_email';
-  // 영구 마스터(415)의 권한 선택 — true=마스터 권한, false=개인 권한.
+  // 영구 마스터 권한 선택 — true=마스터 권한, false=개인 권한.
+  //  (목록이 비어 있으면 아무 효과 없음. 나중에 번호를 다시 넣을 때를 위해 유지)
   static const String kPermanentMasterMode = 'permanent_master_mode';
 }
