@@ -37,10 +37,17 @@ class MemberEditScreen extends StatefulWidget {
     this.prefillPhone = '',
     this.prefillUnit = '',
     this.prefillEmail = '',
+    this.focusAtas = false,
   });
 
   final String? memberId;
   final String? suggestedNumber;
+
+  /// [요구] "ATAS인가정보는 비워두고 직접 입력할 수 있도록 할것"
+  ///  · true 면 화면을 연 직후 **ATAS 인가번호 입력란으로 스크롤 + 포커스**한다.
+  ///    상세화면 ATAS 카드의 '직접 입력' 버튼이 이 값을 true 로 넘긴다.
+  ///    폼이 길어 그냥 열면 ATAS 칸이 화면 밖에 있어 어디를 채워야 할지 모른다.
+  final bool focusAtas;
 
   /// (요구) 신규 등록 시 유형 구분 — "회원 추가할 때 범인가자/일반회원 구분".
   ///  · true  : 일반회원(비인가)으로 등록 — 인가번호 대신 전화번호로 계정 생성.
@@ -96,6 +103,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       _anniversary;
   String _photoPath = '';
   String _trainingStatus = '';
+  /// ATAS 인가번호 입력란의 포커스 — 상세화면 '직접 입력' 에서 이 칸으로
+  /// 바로 이동시키기 위해 필요하다(요구: "ATAS인가정보는 비워두고 직접 입력할
+  /// 수 있도록 할것"). 폼이 길어 스크롤하지 않으면 ATAS 칸이 화면 밖에 있다.
+  final FocusNode _atasFocus = FocusNode();
   late TextEditingController _awards;
   late TextEditingController _specialty;
   late TextEditingController _purchases;
@@ -174,6 +185,24 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     final m = _existing;
     // 신규 등록 유형 — 기존 회원이면 그 값을 따르고, 신규면 화면 인자로 결정.
     _registerAsRegular = _existing?.isRegular ?? widget.registerAsRegular;
+
+    // [요구] ATAS 카드의 '직접 입력' 으로 들어온 경우 — 첫 프레임 후
+    //  ATAS 인가번호 칸으로 스크롤 + 포커스(+ 키보드)를 올린다.
+    if (widget.focusAtas) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _atasFocus.requestFocus();
+        final c = _atasFocus.context;
+        if (c != null) {
+          Scrollable.ensureVisible(
+            c,
+            duration: const Duration(milliseconds: 350),
+            alignment: 0.2,
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
 
     _number = TextEditingController(
       text: m?.number ?? widget.suggestedNumber ?? '',
@@ -282,6 +311,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _draftDebounce?.cancel();
     _draftPeriodic?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    _atasFocus.dispose();
     for (final c in _allControllers) {
       c.removeListener(_scheduleDraft);
     }
@@ -400,8 +430,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
               _field(
                 'ATAS 인가번호',
                 _atas,
-                hint: 'ATAS 번호',
+                hint: 'ATAS 번호 — ATAS 인가를 받은 경우에만 입력 (모르면 비워 두세요)',
                 icon: Icons.confirmation_number,
+                focusNode: _atasFocus,
               ),
               // (요구) 영문 이름 — ATAS 인가정보에서 가져온 로마자 표기.
               //  · 값이 없으면 **빈칸**으로 두고 여기서 직접 입력할 수 있다.
@@ -2261,11 +2292,13 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     TextInputType? keyboard,
     bool phone = false,
     bool readOnly = false,
+    FocusNode? focusNode,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: TextFormField(
         controller: ctrl,
+        focusNode: focusNode,
         maxLines: maxLines,
         keyboardType: keyboard,
         readOnly: readOnly,

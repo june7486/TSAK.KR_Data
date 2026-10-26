@@ -318,46 +318,87 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // 인가번호 박스.
-                //  ※ 헤더에 ATAS 인가번호 배지를 붙이는 안은 ** 철회**했다.
-                //    (요구: "atas 인가 번호를 범 옆에 배치해서 보여줘" →
-                //           "오히려 범스카우트인가정보 맨 위에 atas처럼
-                //            범스카우트인가번호를 넣어줘")
-                //    ATAS 인가번호는 ② ATAS 카드의 첫 줄에 그대로 남긴다.
-                //    헤더는 '범#590' 하나만 두어 폭이 좁은 기기에서도 잘리지 않게 한다
-                //    (범#01074451179 처럼 긴 일반회원 번호도 있다).
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                // 인가번호 박스 + **ATAS 인가번호 배지** — 같은 줄에 나란히.
+                //
+                // (요구 2026-10-26 확정)
+                //   "atas인가번호를 범스카우트 표시 옆에 노출할 것"
+                //   "범스카우트 인가번호 기입할것"
+                //   "ATAS인가정보는 비워두고 직접 입력할 수 있도록 할것"
+                //   "범스카우트 인가정보와 ATAS인가 정보는 다를 수 있고,
+                //    현재 ATAS인가정보는 입력된 적이 없음"
+                //
+                // → 범인가번호('범#415')와 ATAS 인가번호('ATAS #13702')를
+                //   **나란히** 두어 두 체계가 다르다는 사실이 한눈에 보이게 한다.
+                //   (이전 build 508 에서 헤더 배지를 뺐으나 사용자 요구로 복원.
+                //    대신 두 박스 모두 Flexible+FittedBox 로 감싸 좁은 화면에서도
+                //    잘리지 않게 한다 — '범#01074451179' 같은 긴 번호 대비.)
+                //
+                // ⚠️ **폭이 좁은 기기**(갤럭시 폴드 커버 280dp 등)에서는 두 박지가
+                //    한 줄에 안 들어간다. 그때는 `Wrap` 이 자동으로 다음 줄로
+                //    내려 겹침/잘림을 막는다(요구 3번 스크린샷: 우측 잘림 현상).
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    // 원형 대신 각진 박스로 인가번호 표시
-                    Flexible(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: AppColors.tigerGold,
-                            width: 2,
-                          ),
-                        ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            m.numberLabel,
-                            style: const TextStyle(
-                              color: AppColors.purple,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 22,
-                            ),
+                    // ① 범스카우트(은하스카우트) 인가번호 박스
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.tigerGold, width: 2),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          m.numberLabel,
+                          style: const TextStyle(
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 22,
                           ),
                         ),
                       ),
                     ),
+                    // ② ATAS 인가번호 배지 — **값이 있을 때만** 노출.
+                    //    ATAS 인가는 범인가와 별개이므로, 없는 사람에게
+                    //    빈 배지를 띄우면 '0' 이나 '미등록'으로 오해된다.
+                    if (m.atasNo.trim().isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.tigerGold,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.military_tech,
+                              size: 14,
+                              color: AppColors.purpleDark,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'ATAS #${m.atasNo.trim()}',
+                              style: const TextStyle(
+                                color: AppColors.purpleDark,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -2091,9 +2132,33 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     // 비인가회원(일반)은 ATAS 대상이 아니다 — 값이 없으면 카드를 만들지 않는다.
     if (m.isRegular && !hasAtas && !hasEn) return const SizedBox.shrink();
 
+    // 편집 권한 — 본인 / 관리자 / 마스터만 ATAS 값을 직접 입력할 수 있다.
+    final state = context.watch<AppState>();
+    final canEdit =
+        state.isApp || state.isMaster || state.isSelfNumber(m.number);
+
     return _section(
       title: 'ATAS 인가 정보 (인가 당시 정보)',
       icon: Icons.military_tech,
+      // [요구] "ATAS인가정보는 비워두고 **직접 입력할 수 있도록** 할것"
+      //  · 카드 제목 오른쪽에 '직접 입력' 버튼을 두어, 값이 비어 있는 상태에서도
+      //    어디를 눌러 채우는지 즉시 알 수 있게 한다(빈 카드에 갇히지 않게).
+      //  · 권한이 없으면 버튼을 만들지 않는다(눌러도 안 되는 버튼은 혼란만 준다).
+      action: canEdit
+          ? TextButton.icon(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 30),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                foregroundColor: AppColors.purple,
+              ),
+              onPressed: () => _edit(m, focusAtas: true),
+              icon: const Icon(Icons.edit, size: 15),
+              label: const Text(
+                '직접 입력',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2112,6 +2177,28 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 : 'ATAS 인가 정보가 아직 등록되지 않았습니다. ATAS 인가를 받은 경우에만 입력합니다.',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
+          // 값이 하나도 없고 편집 권한이 있으면, 큰 입력 유도 버튼을 하나 더 둔다.
+          if (!hasAtas && !hasEn && canEdit) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.purple,
+                  side: BorderSide(
+                    color: AppColors.purple.withValues(alpha: 0.45),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onPressed: () => _edit(m, focusAtas: true),
+                icon: const Icon(Icons.add, size: 17),
+                label: const Text(
+                  'ATAS 인가 정보 입력',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -3495,6 +3582,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     required String title,
     required IconData icon,
     required Widget child,
+    Widget? action,
   }) {
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -3507,14 +3595,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 Icon(icon, color: AppColors.purple, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                    color: AppColors.textDark,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: AppColors.textDark,
+                    ),
                   ),
                 ),
+                // 카드 제목 오른쪽 액션(직접 입력 등).
+                if (action != null) action,
               ],
             ),
             const SizedBox(height: 12),
@@ -3545,10 +3637,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _snack('복사되었습니다');
   }
 
-  void _edit(Member m) async {
+  void _edit(Member m, {bool focusAtas = false}) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => MemberEditScreen(memberId: m.id)),
+      MaterialPageRoute(
+        builder: (_) => MemberEditScreen(
+          memberId: m.id,
+          // [요구] ATAS 카드의 '직접 입력' → 편집화면의 ATAS 인가번호 칸으로
+          //  바로 이동. 폼이 길어 그냥 열면 어디를 채울지 알 수 없다.
+          focusAtas: focusAtas,
+        ),
+      ),
     );
     if (mounted) context.read<AppState>().refresh();
     _loadDraftCount();
