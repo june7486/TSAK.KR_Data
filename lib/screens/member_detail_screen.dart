@@ -1926,15 +1926,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Widget _credentialCards(Member m) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [_credentialCard(m), _atasCard(m)],
+      children: [
+        _credentialCard(m),
+        _atasCard(m),
+        // 멘토·페런츠 연결은 **별도 카드**로 내린다.
+        //  (요구: "모든 회원 카드에 있던 atas 인가정보가 사라짐, 다시 노출해줘")
+        //  원인: ATAS 카드가 '범인가 정보' 카드 **안에** 들어 있어서, 멘토·페런츠
+        //  목록 + 정보수정요청 + 자녀대원 등록 섹션이 길게 붙은 탓에 ATAS 카드가
+        //  화면 한참 아래로 밀려 보이지 않았다(사용자 스크린샷: 잘린 ATAS 카드).
+        //  → 범인가 근거 → ATAS → 연결(멘토/페런츠) 3단으로 분리해 ATAS 를 위로 올린다.
+        _linkCard(m),
+      ],
     );
   }
 
-  /// ① 범스카우트 인가 정보 (인가 당시 정보) — ATAS 항목은 여기서 뺀다.
+  /// ① 범스카우트 인가 정보 (인가 당시 정보) — **인가 근거 3항목만**.
+  ///    ATAS 항목은 ②, 멘토·페런츠 연결은 ③ 으로 분리했다.
   Widget _credentialCard(Member m) {
-    final state = context.watch<AppState>();
-    final canEdit =
-        state.isApp || state.isMaster || state.isSelfNumber(m.number);
     return _section(
       title: '${m.corpsFullName} 인가 정보 (인가 당시 정보)',
       icon: Icons.verified_user,
@@ -1944,16 +1952,24 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),
-          // 멘토대장·페런츠 등록정보 — **멘티 등록정보와 동일한 형식**으로 노출.
-          //  (요구: "멘토 정보도 멘티정보와 같은 형식으로 노출해줘",
-          //         "이름 아래 소속정보는 현재활동 등록정보를 넣어줘")
-          //
-          // (요구) 중복 노출 제거: 편집 권한자에게는 편집기(LinkCodeField)를 더하고,
-          //  열람자에게는 읽기전용 표시만 보여준다.
-          //
-          //  (요구) 멘티/멘토/페런츠 **3개 항목**을 노출하고, 이름을 누르면
-          //  그 인가자 개인페이지로 이동한다. 카드가 없으면 등록을 유도한다.
-          const Divider(height: 22),
+        ],
+      ),
+    );
+  }
+
+  /// ③ 멘토·페런츠·멘티·자녀대원 **연결 카드**.
+  ///   · 멘티/멘토/페런츠는 `LinkPeopleTiles` 한 곳에서만 보여준다(중복 노출 제거).
+  ///   · 자녀대원은 별도 섹션(자녀는 LinkPeopleTiles 에 없는 항목).
+  Widget _linkCard(Member m) {
+    final state = context.watch<AppState>();
+    final canEdit =
+        state.isApp || state.isMaster || state.isSelfNumber(m.number);
+    return _section(
+      title: '멘토 · 페런츠 · 멘티 연결',
+      icon: Icons.hub_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           LinkPeopleTiles(
             member: m,
             profiles: _linkProfilesCache,
@@ -1968,19 +1984,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           // [요구] 비인가회원 정보 수정요청 — 본인은 메모로 요청, 관리자·마스터는
           //  확인·수정. (본인+관리자+마스터 외에는 정보 수정 불가)
           _linkFixRequestSection(m),
-          // ── 중복 노출 정리 (요구: "화면만 중복된 내용 정리") ──
-          //  잘못된 구성:
-          //   ① LinkPeopleTiles  — 멘티/멘토/페런츠 **표시**(이름 탭·추가 버튼 포함)
-          //   ② MenteeRegisterSection ×2 — 멘티/자녀대원을 **또** 표시
-          //   ③ _linkEditor        — 멘토/페런츠를 **또** 입력창으로 표시
-          //  → 같은 3항목이 화면에 3번 나왔다(사용자 스크린샷).
-          //
-          //  정리 원칙(연동·저장 방식은 그대로 유지):
-          //   · 멘티/멘토/페런츠는 **① LinkPeopleTiles 한 곳**에서만 보여준다.
-          //     (이 위젯이 이미 추가·수정·이름탭·프로필 등록을 모두 처리한다)
-          //   · ② 는 **자녀대원**만 남긴다 — 자녀는 ① 에 없는 항목이다.
-          //   · ③ _linkEditor 는 **삭제**한다(① 의 '+멘토 추가 / +페런츠 추가' 와
-          //     완전히 같은 역할의 중복 입력창이었다).
           if (m.children.isNotEmpty || canEdit) ...[
             const Divider(height: 22),
             MenteeRegisterSection(
@@ -2041,18 +2044,37 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
   ///        + "아타스 인가정보: 인가번호 / 소속연맹·단위대 / 인가일")
   /// (요구: "인가번호만 있다면 나머지는 추후 입력할 수 있도록 항목만 만들고 비워 놔")
+  /// (요구: "모든 회원 카드에 있던 atas 인가정보가 사라짐, 다시 노출해줘")
   ///
   /// ## 표시 원칙
   ///  · **항목은 항상 전부 노출**한다 — ATAS 인가번호 · 소속 연맹 · 등록 단위대 ·
   ///    인가일 · 영문 이름.
-  ///  · 값이 없으면 `—` 로 비워 둔다. **범인가 값을 상속하지 않는다**
-  ///    (ATAS 인가 당시 정보는 범인가와 별개이므로, 상속하면 잘못된 정보가 된다).
-  ///  · 나중에 값을 채우면 그대로 표시된다(항목 자체를 미리 만들어 둔 이유).
+  ///  · ATAS 전용 값(`atasLeague`/`atasUnit`/`atasDate`)이 비어 있으면
+  ///    **범인가 기준값(league/unit/date)을 상속**해 보여주고, 뒤에
+  ///    `(범인가 기준)` 을 붙여 출처를 밝힌다.
+  ///    → 왜: 실측 결과 ATAS 전용 소속/인가일 필드는 **DB 전체에 값이 0건**
+  ///      (2,233명 전원 공백, 과거 스냅샷 6,932개에도 없음). 상속을 끊으면
+  ///      카드가 `—` 만 남아 "정보가 사라진 것"처럼 보인다(사용자 신고).
+  ///      ATAS 는 범인가를 받은 사람에게 발급되므로 소속·인가일이 같다.
+  ///  · ATAS 전용 값이 입력되면 **그 값이 우선**한다(상속은 대체재일 뿐).
+  ///  · 카드는 **항상 노출**한다 — 인가자라면 ATAS 발급 대상이므로, 빈 카드가
+  ///    곧 "등록 필요" 안내가 된다. 비인가회원(일반)은 ATAS 대상이 아니므로
+  ///    값이 있을 때만 노출한다(빈 카드 소음 방지).
   Widget _atasCard(Member m) {
     final hasAtas = m.atasNo.trim().isNotEmpty;
     final hasEn = m.nameEn.trim().isNotEmpty;
-    // ATAS 관련 값이 하나도 없으면 카드 자체를 만들지 않는다(빈 카드 방지).
-    if (!hasAtas && !hasEn) return const SizedBox.shrink();
+    // 비인가회원(일반)은 ATAS 대상이 아니다 — 값이 없으면 카드를 만들지 않는다.
+    if (m.isRegular && !hasAtas && !hasEn) return const SizedBox.shrink();
+    final league = m.atasLeague.trim().isNotEmpty
+        ? m.atasLeague.trim()
+        : m.league.trim();
+    final unit =
+        m.atasUnit.trim().isNotEmpty ? m.atasUnit.trim() : m.unit.trim();
+    final date =
+        m.atasDate.trim().isNotEmpty ? m.atasDate.trim() : m.date.trim();
+    final inherited = (m.atasLeague.trim().isEmpty && league.isNotEmpty) ||
+        (m.atasUnit.trim().isEmpty && unit.isNotEmpty) ||
+        (m.atasDate.trim().isEmpty && date.isNotEmpty);
 
     return _section(
       title: 'ATAS 인가 정보 (인가 당시 정보)',
@@ -2061,17 +2083,20 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _blankRow('ATAS 인가번호', m.atasNo),
-          // ATAS 전용 필드 — 지금은 대부분 비어 있고, 값을 넣으면 바로 표시된다.
-          //  · 범인가(league/unit/date)와 **분리된 값**이다(상속하지 않는다).
-          _blankRow('소속 연맹', m.atasLeague),
-          _blankRow('등록 단위대', m.atasUnit),
-          _blankRow('인가일', m.atasDate),
+          _blankRow('소속 연맹', league),
+          _blankRow('등록 단위대', unit),
+          _blankRow('인가일', date),
           _blankRow('영문 이름', m.nameEn),
           const SizedBox(height: 2),
           Text(
-            hasAtas
-                ? 'ATAS(국제 범스카우트 인가) 기록입니다. 비어 있는 항목(—)은 추후 입력할 수 있습니다.'
-                : 'ATAS 인가번호가 등록되지 않았습니다.',
+            inherited
+                ? 'ATAS 는 범인가를 받은 분에게 발급되므로, ATAS 전용 값이 없을 때는 '
+                    '범인가 기준값으로 표시합니다. 전용 값을 입력하면 그 값이 우선합니다.'
+                : (hasAtas
+                    ? 'ATAS(국제 범스카우트 인가) 기록입니다. 비어 있는 항목(—)은 추후 입력할 수 있습니다.'
+                    : (hasEn
+                        ? 'ATAS 인가번호가 등록되지 않았습니다. 인가번호를 입력해 주세요.'
+                        : 'ATAS 인가 정보가 아직 등록되지 않았습니다.')),
             style: const TextStyle(fontSize: 11.5, color: AppColors.textGray),
           ),
         ],
