@@ -1089,7 +1089,13 @@ class DocPdf {
                 ),
               ),
         children: [
-          for (final r in b.rows)
+          // ── [요구 2026-10-26] "결산자료 출력시 상세항목이 칸을 넓게 사용하지
+          //  않는 레이아웃임 → 옆간을 모두 사용하도록 변경 (기존요청사항임)"
+          //
+          //  상세 행(`['· 상세', 원본내용, '', '']`)을 4열 표에 그대로 넣으면
+          //  긴 원본내용이 **2번째 칸(33%)에만** 갇히고 3·4번째 칸(43%)이 빈다.
+          //  → 표에서 빼고 아래 **전폭 블록**으로 내보낸다(미리보기와 동일).
+          for (final r in b.rows.where((r) => !_isReportDetail(r)))
             pw.TableRow(
               decoration: (_isReportTotal(r) && t.tintTotal > 0)
                   ? pw.BoxDecoration(color: totalTint)
@@ -1127,6 +1133,61 @@ class DocPdf {
         ],
       );
 
+      // ③ 상세 내역 — 전폭 블록(표 밖).
+      final detailLines = <String>[];
+      for (final r in b.rows) {
+        if (!_isReportDetail(r)) continue;
+        final t2 = (r.length > 1 ? r[1] : '').trim();
+        if (t2.isNotEmpty) detailLines.add(t2);
+      }
+      final detailWidget = detailLines.isEmpty
+          ? null
+          : pw.Container(
+              margin: pw.EdgeInsets.only(top: 4, left: t.cellPadH * 0.4),
+              padding: pw.EdgeInsets.fromLTRB(
+                (t.cellPadH * 0.9).clamp(4.0, 10.0),
+                3,
+                5,
+                4,
+              ),
+              decoration: pw.BoxDecoration(
+                // ⚠️ `_tint(c, a)` 는 **a 가 작을수록 흰색에 가깝다**.
+                //  처음엔 0.94 로 줬다가 원색에 가까운 진한 면이 되어
+                //  상세 글씨가 배경에 묻혔다(인쇄 가독성 사고).
+                //  → 0.07 = 아주 옅은 틴트. 좌측 바만 악센트로 남긴다.
+                color: _tint(accent, 0.07),
+                border: pw.Border(
+                  left: pw.BorderSide(color: _tint(accent, 0.5), width: 1.8),
+                ),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    sanitize('상세 내역 · ${detailLines.length}건'),
+                    style: pw.TextStyle(
+                      font: bold,
+                      fontSize: (cellPt * 0.86).clamp(7.8, 12.0),
+                      color: _darken(accent, 0.35),
+                    ),
+                  ),
+                  pw.SizedBox(height: 1.6),
+                  // 한 문단으로 이어 붙인다 — 좁은 열에 갇히지 않는다.
+                  pw.Text(
+                    sanitize(detailLines.join('   ·   ')),
+                    style: pw.TextStyle(
+                      font: reg,
+                      fontSize: (cellPt * 0.94).clamp(8.2, 13.0),
+                      // 본문은 배경과 무관하게 **진한 잉크색**으로 고정한다.
+                      //  (악센트 틴트를 쓰면 배경과 명도가 붙어 묻힌다)
+                      color: _ink,
+                      lineSpacing: 1.32,
+                    ),
+                  ),
+                ],
+              ),
+            );
+
       // ③ 하단 메모
       final noteWidget = b.note.trim().isEmpty
           ? null
@@ -1161,6 +1222,12 @@ class DocPdf {
           child: header,
         ),
         if (b.rows.isNotEmpty) rowsTable,
+        // 상세 내역 — 표 아래 전폭 블록(요구: 옆간을 모두 사용).
+        if (detailWidget != null)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 1),
+            child: detailWidget,
+          ),
         if (noteWidget != null)
           pw.Padding(
             padding: const pw.EdgeInsets.only(bottom: 1),
@@ -1475,6 +1542,12 @@ class DocPdf {
     final k = r.isNotEmpty ? r[0] : '';
     return k.contains('합계') || k == '잔액' || k == '초과';
   }
+
+  /// 상세 행인가 — `['· 상세', 원본내용, '', '']`.
+  ///  미리보기(`SettlementPaperView._isDetail`)와 **같은 규칙**.
+  ///  상세는 4열 표에 넣지 않고 전폭 블록으로 내보낸다(요구 2026-10-26).
+  static bool _isReportDetail(List<String> r) =>
+      r.isNotEmpty && r[0].startsWith('· 상세');
 
   /// 문자열 표(헤더/행)로 **실제 PDF**를 만든다.
   ///

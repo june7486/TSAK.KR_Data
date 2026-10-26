@@ -488,28 +488,50 @@ String buildReportDocHtml({
   for (final b in blocks) {
     final isTotalRow = <int>{};
     final rowsHtml = StringBuffer();
-    for (var i = 0; i < b.rows.length; i++) {
-      final r = b.rows[i];
+    // ── [요구 2026-10-26] "결산자료 출력시 상세항목이 칸을 넓게 사용하지 않는
+    //  레이아웃임 → 옆간을 모두 사용하도록 변경 (기존요청사항임)"
+    //
+    //  ## 원인
+    //  상세 행은 `['· 상세', 원본내용, '', '']` 4칸짜리다. 종전에는 이것을
+    //  일반 4열 표에 그대로 넣어서, 긴 원본내용이 **c1(38%) 칸에만** 갇히고
+    //  c2(20%)·c3(20%) 는 빈 채로 남았다. 종이의 40% 를 버린 셈이다.
+    //
+    //  ## 해결 — 미리보기(SettlementPaperView._detailBlock)와 같은 모양
+    //  상세 행을 표에서 **빼고**, 표 아래에 **전폭(full-width) 블록**으로
+    //  내보낸다. 한 줄에 이어 붙이되 가운데점(` · `)으로 구분해 흐르게 한다.
+    //  → 화면 미리보기 = 인쇄물 = PDF 가 같은 모양이 된다.
+    final detailLines = <String>[];
+    for (final r in b.rows) {
+      if (_isDetailRowHtml(r)) {
+        // 2번째 칸이 원본 한 줄. (비어 있으면 1번째 칸 사용)
+        final t = (r.length > 1 ? r[1] : r.isNotEmpty ? r[0] : '').trim();
+        if (t.isNotEmpty) detailLines.add(t);
+        continue;
+      }
       final total = _isTotalRowHtml(r);
-      if (total) isTotalRow.add(i);
+      if (total) isTotalRow.add(detailLines.length);
       final cells = <String>[];
       for (var c = 0; c < 4; c++) {
         final v = c < r.length ? r[c] : '';
-        final isDetail = c == 0 && v.startsWith('· ');
-        cells.add(
-          '<td class="c$c${isDetail ? ' detail' : ''}">${_esc(v)}</td>',
-        );
+        cells.add('<td class="c$c">${_esc(v)}</td>');
       }
       rowsHtml.write(
         '<tr${total ? ' class="total"' : ''}>${cells.join()}</tr>',
       );
     }
+    final detailHtml = detailLines.isEmpty
+        ? ''
+        : '<div class="bdet">'
+              '<div class="bdh">상세 내역 · ${detailLines.length}건</div>'
+              '<div class="bdb">${detailLines.map(_esc).join('   ·   ')}</div>'
+              '</div>';
     body.write(
       '<div class="blk" style="--ac:${b.accent}">'
       '<div class="bh"><span class="bt">${_esc(b.title)}</span>'
       '${b.subtitle.trim().isEmpty ? '' : '<span class="bs">${_esc(b.subtitle)}</span>'}'
       '</div>'
       '<table class="bt-tbl"><tbody>$rowsHtml</tbody></table>'
+      '$detailHtml'
       '${b.note.trim().isEmpty ? '' : '<div class="bn">${_esc(b.note)}</div>'}'
       '</div>',
     );
@@ -569,6 +591,18 @@ String buildReportDocHtml({
  .bt-tbl td.c2{width:20%;text-align:right;font-variant-numeric:tabular-nums}
  .bt-tbl td.c3{width:20%;color:#57534B;font-size:.94em}
  .bt-tbl td.detail{color:#5A564E;font-weight:400;font-style:italic}
+ /* ── 상세 내역 — 표 아래 **전폭** 블록 ────────────────────────────────
+    [요구 2026-10-26] "상세항목이 칸을 넓게 사용하지 않는 레이아웃 →
+     옆간을 모두 사용하도록 변경". 종전에는 표의 c1 칸(38%)에만 갇혀
+     오른쪽 40%가 비어 있었다. 이제 표 밖 전폭으로 내보낸다. */
+ .bdet{margin:6px 0 0;padding:5px 8px 6px;
+   background:color-mix(in srgb,var(--ac) 5%,#fff);
+   border-left:2px solid color-mix(in srgb,var(--ac) 55%,#fff);
+   border-radius:3px}
+ .bdh{font-size:10px;font-weight:800;letter-spacing:.2px;
+   color:color-mix(in srgb,var(--ac) 70%,#111);margin-bottom:2px}
+ .bdb{font-size:11px;line-height:1.55;color:#5A564E;
+   word-break:break-word;white-space:normal}
  .bt-tbl tr.total td{background:#F6F4F9;
    background:color-mix(in srgb,var(--ac) 7%,#fff);
    font-weight:700;color:#2A2A2A;
@@ -617,3 +651,8 @@ bool _isTotalRowHtml(List<String> r) {
   final k = r.isNotEmpty ? r[0] : '';
   return k.contains('합계') || k == '잔액' || k == '초과' || k == '이월';
 }
+
+/// 상세 행 판별 — `['· 상세', 원본내용, '', '']`.
+///  미리보기(`SettlementPaperView._isDetail`)와 **같은 규칙**을 쓴다.
+bool _isDetailRowHtml(List<String> r) =>
+    r.isNotEmpty && r[0].startsWith('· 상세');
