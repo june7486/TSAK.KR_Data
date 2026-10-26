@@ -538,6 +538,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   case 'addmenu':
                     _addCustomTab();
                     break;
+                  case 'managemenu':
+                    _manageCustomTabs();
+                    break;
                 }
               },
               itemBuilder: (_) => const [
@@ -551,6 +554,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 PopupMenuItem(
                   value: 'addmenu',
                   child: Text('메뉴 추가 (사용자 정의 탭)'),
+                ),
+                // ── [요구 2026-10-26] "메뉴추가 기능은 있는데, 메뉴 삭제
+                //   및 관리 기능이 없음 / 관리자·마스터는 생성·삭제·변경
+                //   등의 관리 기능을 할 수 있음"
+                //   → 추가/삭제를 한 화면에서 보고 고칠 수 있는 관리 창구.
+                PopupMenuItem(
+                  value: 'managemenu',
+                  child: Text('메뉴 관리 (추가·변경·삭제)'),
                 ),
               ],
             ),
@@ -5816,6 +5827,199 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           : {'name': '${e['name'] ?? ''}', 'note': '${e['note'] ?? ''}'};
     }).toList();
     await _saveCustomTabs(next);
+  }
+
+  // ==================== 메뉴 관리 (추가·변경·삭제) ====================
+  /// [요구 2026-10-26] "메뉴추가 기능은 있는데, 메뉴 삭제 및 관리 기능이
+  ///  없음 / 관리자·마스터는 생성·삭제·변경 등의 관리 기능을 할 수 있음"
+  ///
+  ///  기존 [추가]는 있었지만 [삭제]는 그 탭에 들어가서야 보였고, 순서 변경은
+  ///  아예 없었다. 여기서 한 화면에 모아 관리한다.
+  ///   · 추가 / 이름·내용 변경 / 삭제 / 순서 위·아래 이동
+  ///   · 각 항목의 게시판 노출권한도 함께 보여준다(변경은 게시판 탭 상단에서).
+  Future<void> _manageCustomTabs() async {
+    // 최신 목록을 서버에서 다시 받아온다(다른 기기에서 바꿨을 수 있다).
+    await _load();
+    if (!mounted) return;
+
+    // 게시판별 노출권한을 함께 보여준다(실패해도 관리 창은 열린다).
+    Map<String, String> visOf = {};
+    try {
+      final ls = await _nas.customBoards(widget.year, widget.title);
+      for (final b in ((ls['boards'] as List?) ?? [])) {
+        final m = (b as Map).cast<String, dynamic>();
+        visOf['${m['name'] ?? ''}'] = '${m['visibility'] ?? ''}';
+      }
+    } catch (_) {}
+    if (!mounted) return;
+
+    String visLabel(String v) => switch (v) {
+          'all' => '전체 노출',
+          'staff' => '스탭 이상',
+          'admin' => '관리자·마스터',
+          _ => '—',
+        };
+
+    var changed = false;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setD) {
+            final tabs = _customTabs;
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.dashboard_customize_outlined,
+                      size: 20, color: AppColors.purple),
+                  SizedBox(width: 8),
+                  Text('메뉴 관리', style: TextStyle(fontSize: 16)),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: tabs.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 18),
+                        child: Text(
+                          '추가된 메뉴가 없습니다.\n아래 [메뉴 추가]로 첫 게시판을 만드세요.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 13, color: AppColors.textGray),
+                        ),
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < tabs.length; i++)
+                            Card(
+                              elevation: 0,
+                              margin: const EdgeInsets.only(bottom: 6),
+                              color: const Color(0xFFFBF9F4),
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(10, 6, 4, 6),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.forum_outlined,
+                                        size: 16, color: AppColors.purple),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${tabs[i]['name'] ?? ''}',
+                                            style: const TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          Text(
+                                            '노출: '
+                                            '${visLabel(visOf['${tabs[i]['name'] ?? ''}'] ?? '')}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textGray,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: '위로',
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.arrow_upward,
+                                          size: 16),
+                                      onPressed: i == 0
+                                          ? null
+                                          : () async {
+                                              final next = [
+                                                ...tabs.map((e) => {
+                                                      'name': '${e['name'] ?? ''}',
+                                                      'note': '${e['note'] ?? ''}',
+                                                    })
+                                              ];
+                                              final t = next.removeAt(i);
+                                              next.insert(i - 1, t);
+                                              await _saveCustomTabs(next);
+                                              changed = true;
+                                              if (ctx.mounted) setD(() {});
+                                            },
+                                    ),
+                                    IconButton(
+                                      tooltip: '아래로',
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.arrow_downward,
+                                          size: 16),
+                                      onPressed: i == tabs.length - 1
+                                          ? null
+                                          : () async {
+                                              final next = [
+                                                ...tabs.map((e) => {
+                                                      'name': '${e['name'] ?? ''}',
+                                                      'note': '${e['note'] ?? ''}',
+                                                    })
+                                              ];
+                                              final t = next.removeAt(i);
+                                              next.insert(i + 1, t);
+                                              await _saveCustomTabs(next);
+                                              changed = true;
+                                              if (ctx.mounted) setD(() {});
+                                            },
+                                    ),
+                                    IconButton(
+                                      tooltip: '이름·내용 변경',
+                                      visualDensity: VisualDensity.compact,
+                                      icon:
+                                          const Icon(Icons.edit_outlined, size: 16),
+                                      onPressed: () async {
+                                        await _editCustomTab(tabs[i]);
+                                        changed = true;
+                                        if (ctx.mounted) setD(() {});
+                                      },
+                                    ),
+                                    IconButton(
+                                      tooltip: '삭제',
+                                      visualDensity: VisualDensity.compact,
+                                      icon: Icon(Icons.delete_outline,
+                                          size: 17,
+                                          color: AppColors.taegeukRed),
+                                      onPressed: () async {
+                                        await _removeCustomTab(tabs[i]);
+                                        changed = true;
+                                        if (ctx.mounted) setD(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              actions: [
+                TextButton.icon(
+                  onPressed: () async {
+                    await _addCustomTab();
+                    changed = true;
+                    if (ctx.mounted) setD(() {});
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('메뉴 추가'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('닫기'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (changed && mounted) await _load();
   }
 
   /// 커스텀 탭 삭제.

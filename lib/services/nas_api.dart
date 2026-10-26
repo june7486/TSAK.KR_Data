@@ -95,15 +95,29 @@ class NasApi {
   Future<Map<String, dynamic>> _robustJson(
     Uri uri, {
     Duration timeout = const Duration(seconds: 30),
+    String method = 'GET',
+    Map<String, dynamic>? body,
   }) async {
     Object? lastErr;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final r = await http
-            .get(uri, headers: {..._authHeaders, 'Accept': 'application/json'})
+        final isPost = method.toUpperCase() == 'POST';
+        final payload = isPost ? json.encode(body ?? const {}) : null;
+        final r = await (isPost
+                ? http.post(
+                    uri,
+                    headers: {
+                      ..._authHeaders,
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                    },
+                    body: payload,
+                  )
+                : http.get(uri,
+                    headers: {..._authHeaders, 'Accept': 'application/json'}))
             .timeout(timeout);
-        final body = utf8.decode(r.bodyBytes);
-        final t = body.trimLeft();
+        final respBody = utf8.decode(r.bodyBytes);
+        final t = respBody.trimLeft();
         // [수정] 인증 실패는 '데이터 없음'이 아니다 — 조용히 넘기지 않는다.
         if (r.statusCode == 401 || r.statusCode == 403) {
           throw NasAuthException(
@@ -114,7 +128,7 @@ class NasApi {
         if (r.statusCode >= 500 || t.startsWith('<')) {
           throw FormatException('gateway non-JSON (HTTP ${r.statusCode})');
         }
-        final decoded = json.decode(body) as Map<String, dynamic>;
+        final decoded = json.decode(respBody) as Map<String, dynamic>;
         // [수정] 서버가 200 으로 `ok:false` 를 주는 경우도 실패로 본다.
         //  (라우팅 폴백·권한 오류가 200 으로 새어 나오는 경로 차단)
         if (decoded['ok'] == false) {
@@ -2773,92 +2787,98 @@ class NasApi {
   }
 
   // ================= 행사 커스텀 게시판 (메뉴추가 → 게시판형) =================
-  //  [요구 2026-10-26] "메뉴를 추가할 경우 게시판 기능을 활성화시켜주고,
-  //   첨부파일을 올릴 수 있는 게시판도 생성해줘. 후기 게시판처럼 글쓰기 기능을
-  //   추가하고 첨부파일을 올리고 다운받고 확인할 수 있도록. 열람권한은 관리자는
-  //   기본이지만 모든 회원에게 노출할지 여부를 게시판 상단에 선택 버튼으로."
+  //  [요구 2026-10-26] "메뉴 추가"로 만든 탭 = 게시판.
+  //   · 글쓰기 / 첨부 업로드 / 다운로드 / 열람권한(3단계) / 게시글 비밀번호
+  //   · 마스터는 읽은 사람 명단을 본다.
+  //
+  //  ⚠️ 서버 엔드포인트가 **do_GET 에 잘못 들어가 있어서** POST 가 전부
+  //     404 HTML 을 받아 `FormatException: Unexpected token '<'` 로 터졌다.
+  //     (빌드 495 까지의 증상) → 프록시에서 do_POST 로 이동 완료.
+  //     여기서는 방어적으로 `_robustJson` 을 써서 HTML/401 을 예외로 승격한다.
 
   /// 게시판 목록 — 현재 세션 기준 `visible` 플래그가 함께 온다.
   Future<Map<String, dynamic>> customBoards(String year, String title) async {
-    final r = await http
-        .get(
-          _uri(
-            '/api/event/cboard/list?year=${Uri.encodeComponent(year)}'
-            '&title=${Uri.encodeComponent(title)}',
-          ),
-          headers: _authHeaders,
-        )
-        .timeout(const Duration(seconds: 40));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri('/api/event/cboard/list?year=${Uri.encodeComponent(year)}'
+          '&title=${Uri.encodeComponent(title)}'),
+      timeout: const Duration(seconds: 40),
+    );
   }
 
-  /// 게시판 하나의 글 목록(첨부 포함) — 권한 없으면 서버가 403.
+  /// 게시판 하나의 글 목록(첨부·비번 노출여부·읽음수 포함) — 권한 없으면 403.
   Future<Map<String, dynamic>> customBoardGet(
     String year,
     String title,
     String id,
   ) async {
-    final r = await http
-        .get(
-          _uri(
-            '/api/event/cboard/get?year=${Uri.encodeComponent(year)}'
-            '&title=${Uri.encodeComponent(title)}&id=${Uri.encodeComponent(id)}',
-          ),
-          headers: _authHeaders,
-        )
-        .timeout(const Duration(seconds: 40));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri('/api/event/cboard/get?year=${Uri.encodeComponent(year)}'
+          '&title=${Uri.encodeComponent(title)}&id=${Uri.encodeComponent(id)}'),
+      timeout: const Duration(seconds: 40),
+    );
   }
 
-  /// 게시판 생성/수정(관리자). `id` 없으면 새로 만든다. 반환: {ok, id}
+  /// 게시판 생성/수정(관리자·마스터). `id` 없으면 새로 만든다. 반환: {ok, id}
   Future<Map<String, dynamic>> customBoardCreate({
     required String year,
     required String title,
     String id = '',
     required String name,
     String note = '',
-    bool openToAll = false,
+    String visibility = 'admin',
   }) async {
-    final r = await http
-        .post(
-          _uri('/api/event/cboard/create'),
-          headers: _authHeaders,
-          body: json.encode({
-            'year': year,
-            'title': title,
-            'id': id,
-            'name': name,
-            'note': note,
-            'openToAll': openToAll,
-          }),
-        )
-        .timeout(const Duration(seconds: 40));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri('/api/event/cboard/create'),
+      method: 'POST',
+      body: {
+        'year': year,
+        'title': title,
+        'id': id,
+        'name': name,
+        'note': note,
+        'visibility': visibility,
+      },
+      timeout: const Duration(seconds: 40),
+    );
   }
 
-  /// 열람 권한 토글(관리자). `value` 미지정이면 서버가 반전한다.
-  Future<Map<String, dynamic>> customBoardToggle({
+  /// 노출권한 지정(관리자·마스터). visibility: all | staff | admin
+  Future<Map<String, dynamic>> customBoardVisibility({
     required String year,
     required String title,
     required String id,
-    bool? value,
+    required String visibility,
   }) async {
-    final r = await http
-        .post(
-          _uri('/api/event/cboard/toggle'),
-          headers: _authHeaders,
-          body: json.encode({
-            'year': year,
-            'title': title,
-            'id': id,
-            if (value != null) 'value': value,
-          }),
-        )
-        .timeout(const Duration(seconds: 40));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri('/api/event/cboard/visibility'),
+      method: 'POST',
+      body: {
+        'year': year,
+        'title': title,
+        'id': id,
+        'visibility': visibility,
+      },
+      timeout: const Duration(seconds: 40),
+    );
+  }
+
+  /// 게시판 삭제(글·첨부목록 포함). 관리자·마스터 전용.
+  Future<Map<String, dynamic>> customBoardDeleteBoard({
+    required String year,
+    required String title,
+    required String id,
+  }) async {
+    return _robustJson(
+      _uri('/api/event/cboard/board/delete'),
+      method: 'POST',
+      body: {'year': year, 'title': title, 'id': id},
+      timeout: const Duration(seconds: 40),
+    );
   }
 
   /// 게시판 글 작성/수정. 반환: {ok, id}
+  ///  `password` 를 넘기면 그 글이 잠긴다(글쓴이·마스터만 열람 가능).
+  ///  빈 문자열을 넘기면 잠금 해제.
   Future<Map<String, dynamic>> customBoardPost({
     required String year,
     required String title,
@@ -2868,27 +2888,27 @@ class NasApi {
     String number = '',
     required String body,
     List<String>? attachments,
+    String? password,
   }) async {
-    final r = await http
-        .post(
-          _uri('/api/event/cboard/post'),
-          headers: _authHeaders,
-          body: json.encode({
-            'year': year,
-            'title': title,
-            'boardId': boardId,
-            'id': id,
-            'author': author,
-            'number': number,
-            'body': body,
-            'attachments': attachments ?? const <String>[],
-          }),
-        )
-        .timeout(const Duration(seconds: 40));
-    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return _robustJson(
+      _uri('/api/event/cboard/post'),
+      method: 'POST',
+      body: {
+        'year': year,
+        'title': title,
+        'boardId': boardId,
+        'id': id,
+        'author': author,
+        'number': number,
+        'body': body,
+        'attachments': attachments ?? const <String>[],
+        if (password != null) 'password': password,
+      },
+      timeout: const Duration(seconds: 40),
+    );
   }
 
-  /// 게시판 글 삭제(관리자 또는 본인 글).
+  /// 게시판 글 삭제(관리자·마스터 또는 작성자 본인).
   Future<bool> customBoardDelete({
     required String year,
     required String title,
@@ -2898,25 +2918,92 @@ class NasApi {
     String number = '',
   }) async {
     try {
-      final r = await http
-          .post(
-            _uri('/api/event/cboard/delete'),
-            headers: _authHeaders,
-            body: json.encode({
-              'year': year,
-              'title': title,
-              'boardId': boardId,
-              'postId': postId,
-              'author': author,
-              'number': number,
-            }),
-          )
-          .timeout(const Duration(seconds: 40));
-      final d = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      final d = await _robustJson(
+        _uri('/api/event/cboard/delete'),
+        method: 'POST',
+        body: {
+          'year': year,
+          'title': title,
+          'boardId': boardId,
+          'postId': postId,
+          'author': author,
+          'number': number,
+        },
+        timeout: const Duration(seconds: 40),
+      );
       return d['ok'] == true;
     } catch (_) {
       return false;
     }
+  }
+
+  /// 게시글 비밀번호 초기화 → 글쓴이 인가번호 + '!@@' 로 조용히 재설정.
+  Future<Map<String, dynamic>> customBoardPasswordReset({
+    required String year,
+    required String title,
+    required String boardId,
+    required String postId,
+  }) async {
+    return _robustJson(
+      _uri('/api/event/cboard/password/reset'),
+      method: 'POST',
+      body: {
+        'year': year,
+        'title': title,
+        'boardId': boardId,
+        'postId': postId,
+      },
+      timeout: const Duration(seconds: 40),
+    );
+  }
+
+  /// 읽음 기록 — 글을 실제로 열었을 때 1회 기록.
+  Future<Map<String, dynamic>> customBoardMarkRead({
+    required String year,
+    required String title,
+    required String boardId,
+    required String postId,
+    String name = '',
+  }) async {
+    try {
+      return await _robustJson(
+        _uri('/api/event/cboard/read'),
+        method: 'POST',
+        body: {
+          'year': year,
+          'title': title,
+          'boardId': boardId,
+          'postId': postId,
+          'name': name,
+        },
+        timeout: const Duration(seconds: 30),
+      );
+    } catch (_) {
+      return {'ok': false};
+    }
+  }
+
+  /// 비밀번호가 걸린 글의 본문 열람 시도.
+  ///  글쓴이·마스터는 비번 없이 통과, 그 외는 값을 맞춰야 한다.
+  Future<Map<String, dynamic>> customBoardUnlock({
+    required String year,
+    required String title,
+    required String boardId,
+    required String postId,
+    String password = '',
+  }) async {
+    return _robustJson(
+      _uri('/api/event/cboard/post/unlock'),
+      method: 'POST',
+      body: {
+        'year': year,
+        'title': title,
+        'boardId': boardId,
+        'postId': postId,
+        'password': password,
+      },
+      timeout: const Duration(seconds: 30),
+    );
   }
 
 
