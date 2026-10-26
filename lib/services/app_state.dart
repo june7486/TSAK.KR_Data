@@ -1758,14 +1758,25 @@ class AppState extends ChangeNotifier {
   }
 
   /// 개인 셀프 비밀번호 변경 (본인) — 성공 시 null, 실패 시 오류 메시지
+  ///
+  /// ── [버그 수정 2026-10-26] 성공으로 표시됐지만 실제로는 안 바뀌던 문제 ──
+  ///  서버가 `ok:false`(예: 현재 비번 불일치 401)를 돌려줘도 화면에는
+  ///  '변경되었습니다' 가 떴다. → 응답의 `ok` 를 반드시 확인하고,
+  ///  실패 사유를 그대로 사용자에게 전달한다.
   Future<String?> changePersonalPassword(String current, String newPw) async {
     if (who.isEmpty) return '본인 인가번호를 확인할 수 없습니다';
     try {
       final r = await nas.changePersonalPassword(who, current, newPw);
       if (r['ok'] == true) return null;
-      return '${r['error'] ?? '실패'}';
-    } catch (e) {
+      final why = '${r['error'] ?? '실패'}';
+      if (why.contains('현재 비밀번호')) {
+        return '현재 비밀번호가 올바르지 않습니다';
+      }
+      return why;
+    } on NasAuthException catch (e) {
       return '$e';
+    } catch (e) {
+      return '서버에 연결하지 못했습니다: $e';
     }
   }
 
@@ -2599,6 +2610,22 @@ class AppState extends ChangeNotifier {
   }
 
   /// 특정 회원(인가자/일반회원) 비밀번호 강제 변경/초기화 (마스터·관리자 전용)
+  ///
+  /// ── [버그 수정 2026-10-26] '비번 강제 변경'이 안 되던 문제 ──────────────
+  ///
+  ///  증상: 강제 변경을 실행하면 "변경했습니다" 라고 뜨는데, 실제로는
+  ///        이전 비밀번호로 계속 로그인됐다.
+  ///
+  ///  원인 1(클라): 서버 호출을 `try { ... } catch (_) {}` 로 감싸 **오류를
+  ///    통째로 삼켰다.** 서버가 400/401 을 돌려줘도 화면은 성공으로 표시됐다.
+  ///  원인 2(클라): 서버 호출보다 **먼저** 로컬 DB(repo.save)에 새 비번을
+  ///    써버렸다. 서버가 거부해도 로컬에는 남아 화면·DB 가 어긋났다.
+  ///  원인 3(서버): stale 캐시 백그라운드 갱신이 방금 저장한 값을 옛 값으로
+  ///    덮어쓰는 경쟁 상태(lost update) — proxy `_save_json`/`_json_refresh_bg`
+  ///    에 세대(generation) 가드를 넣어 수정.
+  ///
+  ///  수정: **서버를 진실원으로 삼는다.** 서버를 먼저 호출해 성공을 확인한
+  ///        뒤에만 로컬을 갱신하고, 실패하면 서버가 준 사유를 그대로 돌려준다.
   Future<String?> setMemberPassword(
     Member m, {
     String? value,
@@ -2610,18 +2637,41 @@ class AppState extends ChangeNotifier {
               : '${m.number}${AppConfig.personalSuffix}')
         : (value ?? '').trim();
     if (newPw.isEmpty) return '비밀번호가 비어 있습니다';
-    await repo.save(m.copyWith(personalPassword: newPw));
+
     if (repo.isNasMode) {
+      // ① 서버가 권위 저장소 — 먼저 적용하고 결과를 확인한다.
+      Map<String, dynamic> r;
       try {
-        await nas.setAdminPassword(
+        r = await nas.setAdminPassword(
           tier: isMaster ? 'master' : 'app',
           id: m.loginId,
           value: newPw,
           reset: reset,
           master: isPermanentMaster ? masterToken() : null,
         );
-      } catch (_) {}
+      } catch (e) {
+        return '서버에 연결하지 못했습니다: $e';
+      }
+      if (r['ok'] != true) {
+        final why = '${r['error'] ?? '알 수 없는 오류'}';
+        // 서버가 실제로 적용한 값을 알려주면 그 값으로 맞춘다(불일치 방지).
+        final applied = '${r['newPassword'] ?? ''}'.trim();
+        if (applied.isNotEmpty && applied != newPw) {
+          await repo.save(m.copyWith(personalPassword: applied));
+          return '서버가 다른 값을 적용했습니다 ($why) — 화면을 새로고침합니다';
+        }
+        return why;
+      }
+      // ② 서버 성공 확인 후에만 로컬 반영.
+      final applied = '${r['newPassword'] ?? ''}'.trim();
+      await repo.save(
+        m.copyWith(personalPassword: applied.isNotEmpty ? applied : newPw),
+      );
+      return null;
     }
+
+    // NAS 모드가 아니면(로컬 단독) 로컬 저장이 곧 진실원.
+    await repo.save(m.copyWith(personalPassword: newPw));
     return null;
   }
 
