@@ -218,6 +218,32 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       var media = results[2] as List<Map<String, dynamic>>;
       final access = results[3] as Map<String, dynamic>;
 
+      // ── (요구 #14) 스탭 여부를 **재무 요청보다 먼저** 판정한다 ────────────
+      //  종전에는 스탭 판정이 재무 조회 뒤에 있어서, 재무를 띄우려면
+      //  `widget.canManage`(관리자·마스터)만 볼 수밖에 없었다.
+      //  → 스탭에게 재무 탭이 0건으로 보이던 원인.
+      //  이제 스탭이면 `canSeeFinance` 가 참이 되어 재무도 함께 불러온다.
+      final staffList = ((e['staff'] as List?) ?? [])
+          .map((x) => (x as Map).cast<String, dynamic>())
+          .toList();
+      //  async gap 이후이므로 mounted 확인 후에만 context 를 쓴다.
+      if (!mounted) return;
+      final appStateForStaff = context.read<AppState>();
+      final myIdent = appStateForStaff.who.replaceAll(RegExp(r'[^0-9]'), '');
+      bool isStaff = false;
+      if (myIdent.isNotEmpty) {
+        for (final a in staffList) {
+          final id =
+              '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
+                  .replaceAll(RegExp(r'[^0-9]'), '');
+          if (id.isNotEmpty && id == myIdent) {
+            isStaff = true;
+            break;
+          }
+        }
+      }
+      final bool canSeeFinance = widget.canManage || isStaff;
+
       // ── 재무(참가비·후원금 / 후원 / 지출 / 결산)는 **따로** 불러온다 ──────
       //
       // ## [버그 수정 2026-10-25] "기존 입력자료도 안 보이고 새로 넣은 값도 사라짐"
@@ -233,7 +259,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       //      화면에 "불러오지 못했습니다 + 다시 시도" 로 보여준다.
       Map<String, dynamic> fin = const {};
       String? financeError;
-      if (widget.canManage) {
+      // ── [버그 수정 2026-10-26] 스탭인데 재무가 안 보이던 문제 ────────────
+      //  증상: 스탭으로 등록된 계정으로 행사에 들어가면 참가자·사진·계획서는
+      //        보이는데 **참가비·후원금 / 후원·기타수입 / 행사비지출 / 결산**
+      //        이 0원·"없음"으로 비어 있었다(마스터는 정상).
+      //  원인: 재무 조회를 `widget.canManage`(= 관리자·마스터)로만 감쌌다.
+      //        스탭 여부는 아래에서 판정하지만 **재무 요청 조건에 쓰지 않았다.**
+      //        (서버도 `_require("admin")` 이라 스탭 세션은 401 이었다)
+      //  해결: 재무 요청 조건을 `전체 열람 권한`(= 관리자·마스터·스탭)과 같게 둔다.
+      //        스탭은 앱에서 이미 해당 행사 전체 열람 권한을 갖는다.
+      if (canSeeFinance) {
         Future<Map<String, dynamic>> tryFin() =>
             _nas.eventFinance(widget.year, widget.title);
         try {
@@ -303,7 +338,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           .toList();
       List<Map<String, dynamic>> fees = [];
       List<Map<String, dynamic>> exps = [];
-      if (widget.canManage) {
+      if (canSeeFinance) {
         fees = ((fin['fees'] as List?) ?? [])
             .map((x) => (x as Map).cast<String, dynamic>())
             .toList();
@@ -315,25 +350,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       //  화면은 이 값으로 "0건" 대신 "불러오기 실패 + 다시 시도"를 보여준다.
       _financeError = financeError;
       if (!mounted) return;
-      // (요구 #14) 스텝 여부 판정 — 지정자는 전체 게시판 노출.
-      final s = context.read<AppState>();
-      final staffList = ((e['staff'] as List?) ?? [])
-          .map((x) => (x as Map).cast<String, dynamic>())
-          .toList();
-      final myIdent = s.who.replaceAll(RegExp(r'[^0-9]'), '');
-      bool isStaff = false;
-      if (myIdent.isNotEmpty) {
-        for (final a in staffList) {
-          final id =
-              '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
-                  .replaceAll(RegExp(r'[^0-9]'), '');
-          if (id.isNotEmpty && id == myIdent) {
-            isStaff = true;
-            break;
-          }
-        }
-      }
-      final fullView = widget.canManage || isStaff;
+      // (요구 #14) 스텝 여부는 위에서 이미 판정했다(isStaff) — 전체 게시판 노출.
+      final fullView = canSeeFinance;
       setState(() {
         _event = e;
         _plan = plan;
