@@ -74,7 +74,29 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       _loadLinkProfiles();
       _logView();
       _loadDraftCount();
+      _ensureFinanceLoaded();
     });
+  }
+
+  /// ── [요구 2026-10-26] 개인카드에 후원금·참가비 내역이 보이게 ─────────────
+  ///  요구: "행사관리에서 후원금, 후원물품, 참가비, 각종 찬조 등록시 인가번호를
+  ///        넣으면 개인카드에 후원금 및 금액 상당의 내역을 추가할 것"
+  ///
+  ///  ## 왜 비어 있었나
+  ///   `_depositSection` 은 `context.watch<FinanceService>()` 로 **보기만** 하고
+  ///   `load()` 를 부르는 곳이 **아무 데도 없었다**. 재무관리 화면을 한 번 열어야만
+  ///   원장이 채워졌으므로, 개인 상세를 바로 열면 항상 '입금 내역이 없습니다' 였다.
+  ///   (서버 401 문제와 **별개로** 존재하던 두 번째 원인)
+  ///
+  ///  ## 왜 force reload 가 아니라 '비었을 때만' 인가
+  ///   상세 화면을 여러 번 오갈 때 매번 왕복하면 느려진다. 이미 채워져 있으면
+  ///   건너뛰고, 비어 있을 때만 1회 조회한다. 새로고침은 당겨서 새로고침/재진입이
+  ///   담당한다.
+  void _ensureFinanceLoaded() {
+    if (!mounted) return;
+    final fs = context.read<FinanceService>();
+    if (fs.transactions.isNotEmpty || fs.loading) return;
+    fs.load();
   }
 
   /// 관리자·마스터에게 임시저장 개수를 알린다(상단 버튼 배지).
@@ -684,13 +706,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 child: Row(
                   children: [
                     Icon(
-                      t.category == '후원'
-                          ? Icons.volunteer_activism
-                          : t.category == '수품구매'
-                          ? Icons.shopping_bag
-                          : t.category == '참가비'
-                          ? Icons.event_available
-                          : Icons.savings,
+                      _depositIcon(t.category),
                       size: 18,
                       color: AppColors.scoutGreen,
                     ),
@@ -699,18 +715,55 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${t.category}'
-                            '${t.event.isNotEmpty ? ' · ${t.event}' : ''}',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark,
-                            ),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  '${_depositLabel(t.category)}'
+                                  '${t.event.isNotEmpty ? ' · ${t.event}' : ''}',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textDark,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              // ── [요구 2026-10-26] '기타후원' 꼬리표 ──
+                              //  요구: "기타후원도 표시할 것"
+                              //  후원금/후원물품/참가비 로 분류되지 않는 찬조·기타
+                              //  후원(차량·의전 등)을 한눈에 구분할 수 있게 배지를
+                              //  붙인다. 금액이 0원이어도(현물·재능 후원) 목록에는
+                              //  남겨 '무엇을 후원했는지' 기록이 사라지지 않게 한다.
+                              if (_isOtherDonation(t.category)) ...[
+                                const SizedBox(width: 5),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.tigerGold
+                                        .withValues(alpha: 0.20),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    '기타후원',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           Text(
                             '${t.date}'
-                            '${t.context.isNotEmpty ? ' · ${t.context}' : ''}',
+                            '${t.context.isNotEmpty ? ' · ${t.context}' : ''}'
+                            '${t.memo.isNotEmpty ? ' · ${t.memo}' : ''}',
                             style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.textGray,
@@ -772,6 +825,71 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ),
     );
     if (mounted) fs.load();
+  }
+
+  /// ── [요구 2026-10-26] 입금 내역 카테고리 표시 규칙 ──────────────────────
+  ///  요구: "기타후원도 표시할 것"
+  ///
+  ///  ## 왜 필요했나
+  ///   종전에는 아이콘 분기가 `후원 / 수품구매 / 참가비` **3개만** 알고,
+  ///   나머지는 전부 `Icons.savings` 로 떨어졌다. 그래서 행사관리에서
+  ///   `기타후원`·`식사후원`·`물품후원`·`후원금` 으로 등록한 내역이
+  ///   회색 저금통 아이콘 + 원문 그대로의 라벨로만 보여 **구분이 안 됐다**.
+  ///
+  ///  ## 분류 원칙
+  ///   후원 계열(후원/후원금/후원물품/식사후원/물품후원/찬조/기타/기타후원)을
+  ///   한 묶음으로 보되, **라벨과 아이콘은 원문을 살려** 무엇을 후원했는지
+  ///   알 수 있게 한다. 금액만 뭉개면 기록의 의미가 사라진다.
+  static bool _isOtherDonation(String cat) {
+    final c = cat.trim();
+    if (c.isEmpty) return true;
+    if (c == '기타' || c == '기타후원' || c == '찬조' || c == '각종찬조') {
+      return true;
+    }
+    // 후원 계열인데 후원금/후원물품 어느 쪽으로도 명시되지 않은 것.
+    return c.contains('후원') == false &&
+        c.contains('식사') == false &&
+        c.contains('물품') &&
+        c != '후원';
+  }
+
+  static IconData _depositIcon(String cat) {
+    final c = cat.trim();
+    switch (c) {
+      case '후원':
+      case '후원금':
+      case '기타후원':
+      case '찬조':
+      case '각종찬조':
+        return Icons.volunteer_activism;
+      case '후원물품':
+      case '물품후원':
+        return Icons.inventory_2;
+      case '식사후원':
+        return Icons.restaurant;
+      case '수품구매':
+        return Icons.shopping_bag;
+      case '참가비':
+        return Icons.event_available;
+      case '연회비':
+      case '평생회비':
+        return Icons.badge;
+      default:
+        // '기타' 등 — 후원 계열이면 후원 아이콘, 아니면 저금통.
+        if (c.contains('후원') || c.contains('찬조')) {
+          return Icons.volunteer_activism;
+        }
+        return Icons.savings;
+    }
+  }
+
+  /// 카테고리 원문을 그대로 살리되 빈 값만 '기타후원' 으로 보정한다.
+  static String _depositLabel(String cat) {
+    final c = cat.trim();
+    if (c.isEmpty) return '기타후원';
+    // 금액 0원짜리 현물·재능 후원은 '기타' 만으로는 의미가 없어 후원임을 밝힌다.
+    if (c == '기타') return '기타후원';
+    return c;
   }
 
   static String _won(int v) {
