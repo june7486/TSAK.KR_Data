@@ -3287,12 +3287,72 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   //  요구: "후원금/후원물품 이력 추가(수동입력) → 관리자·마스터 인증요청버튼 →
   //  통합승인관리에 승인항목 표시 및 승인 / 이력 하단에 합계 표시."
   //   · 승인된 이력만 목록에 나타나고, 수동입력은 승인요청 큐로 접수된다.
+  /// 후원금 · 후원물품 이력 — **행사 후원(찬조)까지 한 곳에** 모아 보여준다.
+  ///
+  /// ## 왜 두 곳을 합쳤나 (요구)
+  ///  "이전에 요청한 내용인데, 후원금, 물품 등의 이력을 가져와야해"
+  ///  "2026 atas mou 행사에 후원한 이승준, 이항복 회원 카드에 후원내역 추가해줘
+  ///   (연동필수)"
+  ///
+  ///  문제는 **데이터가 두 곳에 따로** 있었다는 점이다.
+  ///   ① `member.donations`  — 개인카드에서 직접 입력한 후원(승인 후 반영)
+  ///   ② `finance.json`      — 행사에서 등록한 후원금/후원물품/찬조
+  ///                            (`source="event"` 로 기록됨)
+  ///  이 카드는 ① 만 읽고 있었다. 그래서 행사에서 후원을 등록해도 개인카드의
+  ///  '후원금·후원물품 이력' 은 **0건**으로 남았다(실측: 이승준·이항복이
+  ///  2026 ATAS MOU 행사에 후원했는데 카드는 비어 있었다).
+  ///
+  ///  → 이제 **재무(finance) 기록을 1차 소스**로 삼고, ① 은 보조로 합친다.
+  ///    행사 등록 시 `finance.json` 에 자동 기록되므로(연동), 앞으로 행사에서
+  ///    후원을 넣으면 개인카드에 **자동으로** 나타난다.
+  ///    직접 입력(①)은 승인 전에도 보여야 하므로 그대로 유지한다.
   Widget _donationSection(Member m) {
     final state = context.watch<AppState>();
+    final fs = context.watch<FinanceService>();
     final canEdit = state.isApp || state.isMaster || state.isSelfAccess;
+
+    // ── ① 재무 기록(행사 후원 포함) — 후원 성격만 ──
+    //  참가비·연회비·수품구매는 '입금 내역' 카드에서 다루므로 여기서 뺀다.
+    final fin = fs
+        .depositsOf(m.number)
+        .where((t) => _isDonationCategory(t.category))
+        .toList();
+
+    // ── ② 개인카드 직접 입력분 ──
     final items = m.donations;
-    final donations = items.where((d) => '${d['kind']}' == 'donation').toList();
-    final supplies = items.where((d) => '${d['kind']}' == 'supply').toList();
+    final manualDon = items.where((d) => '${d['kind']}' == 'donation').toList();
+    final manualSup = items.where((d) => '${d['kind']}' == 'supply').toList();
+
+    // 후원금 = 재무의 후원금/기타후원 + 직접입력 donation
+    // 후원물품 = 재무의 물품후원/식사후원 + 직접입력 supply
+    final donCount =
+        fin.where((t) => !_isSupplyCategory(t.category)).length +
+        manualDon.length;
+    final supCount =
+        fin.where((t) => _isSupplyCategory(t.category)).length +
+        manualSup.length;
+
+    // 합계 — 재무(금액) + 직접입력(금액)
+    var donTotal = 0, supTotal = 0;
+    for (final t in fin) {
+      if (_isSupplyCategory(t.category)) {
+        supTotal += t.amount;
+      } else {
+        donTotal += t.amount;
+      }
+    }
+    donTotal += manualDon.fold<int>(
+      0,
+      (s, d) => s + ((d['amount'] as num?)?.toInt() ?? 0),
+    );
+    supTotal += manualSup.fold<int>(
+      0,
+      (s, d) => s + ((d['amount'] as num?)?.toInt() ?? 0),
+    );
+
+    final isEmpty =
+        fin.isEmpty && manualDon.isEmpty && manualSup.isEmpty;
+
     return _section(
       title: '후원금 · 후원물품 이력',
       icon: Icons.volunteer_activism,
@@ -3301,13 +3361,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         children: [
           Row(
             children: [
-              _donationChip('후원금', donations.length, AppColors.taegeukRed),
+              _donationChip('후원금', donCount, AppColors.taegeukRed),
               const SizedBox(width: 6),
-              _donationChip('후원물품', supplies.length, AppColors.taegeukBlue),
+              _donationChip('후원물품', supCount, AppColors.taegeukBlue),
             ],
           ),
           const SizedBox(height: 10),
-          if (items.isEmpty)
+          if (isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 6),
               child: Text(
@@ -3315,17 +3375,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 style: TextStyle(fontSize: 12, color: AppColors.textGray),
               ),
             )
-          else
-            for (final d in items) _donationRow(d),
+          else ...[
+            // 행사·재무 기록(연동) 먼저 — 최신순
+            for (final t in fin) _finDonationRow(t),
+            // 개인카드 직접 입력분
+            for (final d in manualDon) _donationRow(d),
+            for (final d in manualSup) _donationRow(d),
+          ],
           // ── 합계 ──
           const Divider(height: 22),
-          _donationTotalRow('후원금 합계', m.donationTotal, AppColors.taegeukRed),
+          _donationTotalRow('후원금 합계', donTotal, AppColors.taegeukRed),
           const SizedBox(height: 4),
-          _donationTotalRow('후원물품 합계', m.supplyTotal, AppColors.taegeukBlue),
+          _donationTotalRow('후원물품 합계', supTotal, AppColors.taegeukBlue),
           const SizedBox(height: 4),
           _donationTotalRow(
             '총 합계',
-            m.donationTotal + m.supplyTotal,
+            donTotal + supTotal,
             AppColors.purple,
             strong: true,
           ),
@@ -3345,10 +3410,148 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              '※ 입력하면 관리자·마스터의 통합승인관리에서 승인 후 이력에 반영됩니다.',
+              '※ 입력하면 관리자·마스터의 통합승인관리에서 승인 후 이력에 반영됩니다. '
+              '행사에서 등록한 후원은 자동으로 반영됩니다.',
               style: TextStyle(fontSize: 11, color: AppColors.textGray),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// 후원 성격 분류 — 이 카드에 넣을 것인가.
+  ///  · 후원금/후원물품/식사후원/기타(찬조)/찬조 = 후원
+  ///  · 참가비/연회비/수품구매/행사비/운영비 = 후원 아님(입금내역 카드에서 처리)
+  static bool _isDonationCategory(String cat) {
+    final c = cat.replaceAll(' ', '');
+    if (c.isEmpty) return false;
+    const excluded = ['참가비', '연회비', '수품구매', '행사비', '운영비', '회비'];
+    for (final e in excluded) {
+      if (c.contains(e)) return false;
+    }
+    const included = ['후원', '찬조', '기부', '기타'];
+    for (final e in included) {
+      if (c.contains(e)) return true;
+    }
+    return false;
+  }
+
+  /// 물품 성격인가 — 후원물품/식사후원(현물 제공).
+  static bool _isSupplyCategory(String cat) {
+    final c = cat.replaceAll(' ', '');
+    return c.contains('물품') || c.contains('식사') || c.contains('현물');
+  }
+
+  /// 재무(행사 연동) 후원 1건 표시.
+  Widget _finDonationRow(FinanceTransaction t) {
+    final isSup = _isSupplyCategory(t.category);
+    final color = isSup ? AppColors.taegeukBlue : AppColors.taegeukRed;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            _depositIcon(t.category),
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _depositLabel(t.category),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                        ),
+                      ),
+                    ),
+                    if (_isOtherDonation(t.category)) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.tigerGold.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          '기타후원',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.tigerGold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                // 행사명 — 어느 행사 후원인지 명확히(연동 근거).
+                if (t.event.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      t.event,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                if (t.memo.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      t.memo,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textGray,
+                        height: 1.3,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    t.date,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            t.amount > 0 ? '${_won(t.amount)}원' : '재능·물품',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
