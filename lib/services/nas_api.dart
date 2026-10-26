@@ -1529,16 +1529,30 @@ class NasApi {
   }
 
   /// 행사 썸네일 URL (size: normal=480px, view=1600px 최적본, orig=원본)
+  /// 행사 폴더 파일의 썸네일 URL.
+  ///
+  /// ── [개선 2026-10-26] 지출·영수증 화면에 썸네일이 안 뜨던 문제 ─────────
+  ///  서버(`/api/event/thumb2`)는 `key` 로 **어느 하위폴더인지** 판단한다
+  ///  (`media | expense | plan | review | attendees`, 미지정이면 `media`).
+  ///  그런데 이 함수가 `key` 를 **보내지 않아** 지출(expense)·계획서(plan)
+  ///  썸네일 요청이 전부 media 폴더를 뒤졌고, 못 찾아 빈 응답이 왔다.
+  ///  → 파일 목록이 아이콘만 보이고 미리보기가 없었다.
+  ///  [key] 를 넘기면 해당 폴더에서 찾는다.
   String eventThumb2Url(
     String year,
     String title,
     String name, {
     String size = 'normal',
     String sub = '',
+    String key = 'media',
   }) =>
       '$_base/api/event/thumb2?year=${Uri.encodeComponent(year)}'
       '&title=${Uri.encodeComponent(title)}&name=${Uri.encodeComponent(name)}'
-      '&sub=${Uri.encodeComponent(sub)}&size=$size';
+      '&sub=${Uri.encodeComponent(sub)}&size=$size'
+      '&key=${Uri.encodeComponent(key)}';
+
+  /// 썸네일 URL 에 인증 헤더를 붙일 때 쓰는 공개 접근자(Image.network 용).
+  Map<String, String> get imageAuthHeaders => _authHeaders;
 
   /// 행사 썸네일 일괄 생성(백필) 시작 — 관리자·마스터 전용.
   Future<Map<String, dynamic>> eventThumbsBackfill({

@@ -748,15 +748,40 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     final size = (f['size'] as num?)?.toInt() ?? 0;
                     final kind = '${f['kind'] ?? 'other'}';
                     final up = '${f['uploader'] ?? ''}';
+                    // ── [개선 2026-10-26] 이미지 파일은 아이콘 대신 **미리보기** ──
+                    //  종전엔 kind 와 무관하게 아이콘만 그려서, 계획서·영수증
+                    //  폴더에 사진을 올려도 목록에서 내용을 확인할 수 없었다.
+                    //  썸네일은 이 패널의 폴더 key 를 그대로 넘겨 받는다
+                    //  (key 를 안 넘기면 서버가 media 폴더를 뒤져 404 가 된다).
+                    final lead = kind == 'image'
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              _nas.eventThumb2Url(
+                                widget.year,
+                                widget.title,
+                                name,
+                                size: 'normal',
+                                key: key,
+                              ),
+                              width: 44,
+                              height: 44,
+                              fit: BoxFit.cover,
+                              headers: _nas.imageAuthHeaders,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.image_outlined,
+                                color: AppColors.purple,
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            kind == 'video'
+                                ? Icons.videocam_outlined
+                                : Icons.description_outlined,
+                            color: AppColors.purple,
+                          );
                     return ListTile(
-                      leading: Icon(
-                        kind == 'image'
-                            ? Icons.image_outlined
-                            : kind == 'video'
-                            ? Icons.videocam_outlined
-                            : Icons.description_outlined,
-                        color: AppColors.purple,
-                      ),
+                      leading: lead,
                       title: Text(name),
                       subtitle: Text(
                         '${_fmtSize(size)}'
