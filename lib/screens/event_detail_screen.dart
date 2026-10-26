@@ -75,6 +75,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   /// (요구 #14) 스텝 포함 전체 게시판 노출 여부.
   bool get _fullView => widget.canManage || _isStaff;
 
+  /// ── [요구 2026-10-26] "B + A 조합" ───────────────────────────────────
+  ///  사용자 선택: **B(권한 없어도 항목은 회색으로 보이게) + A(스탭도 관리)**
+  ///
+  ///  ## 왜 이 조합인가
+  ///   `widget.canManage` 는 `state.isApp || state.isMaster` 다. 그래서 스탭
+  ///   계정(tiger415 등)은 `false` 가 되고, 종전에는 관리자 구역이 **통째로
+  ///   렌더되지 않아** "메뉴 관리가 어디 있냐"는 문의가 반복됐다.
+  ///   · A: 스탭도 그 행사의 메뉴/게시판을 관리할 수 있게 한다(서버도 수정).
+  ///   · B: 그래도 권한이 없는 사람에게는 **항목을 회색으로 보여준다.**
+  ///        기능이 어디 있는지는 알아야 요청할 수 있다.
+  ///  → 두 가지를 합쳐 "보이되, 누를 수 있는 것만 눌린다"로 만든다.
+  bool get _canManageMenu =>
+      widget.canManage || _isStaff || _isMasterView;
+
   /// (요구) 마스터 전용 항목 노출 여부 — '관리'(관리자 세부권한) 탭은
   ///   마스터에게만 보인다.
   bool get _isMasterView {
@@ -564,8 +578,32 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             itemBuilder: (_) {
               // 권한 3단계를 **구역으로 분리**해 보여준다(요구: "관리자/마스터
               //  권한으로 구분해서 정리해줘").
+              //  ── [요구 2026-10-26] "B + A 조합" ────────────────────────
+              //  B: 권한이 없어도 항목을 **회색(disabled)** 으로 보여준다.
+              //     → 기능이 어디 있는지 알 수 있어야 요청도 할 수 있다.
+              //  A: 행사 스탭은 실제로 **누를 수 있다**(서버도 스탭 허용).
               final isMaster = _isMasterView;
-              final isAdmin = widget.canManage;
+              final isAdmin = _canManageMenu;
+              // 실제로 실행 가능한가 (스탭 포함)
+              final canRun = _canManageMenu;
+              // 회색 처리 + 오른쪽에 사유 배지
+              Widget gate(String label, {IconData? icon, Color? color}) => Row(
+                    children: [
+                      if (icon != null) ...[
+                        Icon(icon, size: 15,
+                            color: canRun ? (color ?? AppColors.purple)
+                                          : AppColors.textGray),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(child: Text(label)),
+                      if (!canRun)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Icon(Icons.lock_outline,
+                              size: 13, color: AppColors.textGray),
+                        ),
+                    ],
+                  );
               return [
                 // ── 공통(모든 인가자) ──────────────────────────────
                 const PopupMenuItem<String>(
@@ -589,48 +627,69 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   value: 'request',
                   child: Text('전체 참가자 사진 업로드 요청'),
                 ),
-                // ── 관리자 이상 ────────────────────────────────────
-                if (isAdmin) ...[
-                  const PopupMenuDivider(),
-                  PopupMenuItem<String>(
+                // ── 관리자·마스터·스탭 ─────────────────────────────
+                //  ⚠️ 종전 `if (isAdmin) ...` 로 **통째로 감싸서** 권한이
+                //   없으면 항목이 아예 안 보였다(B 요구의 원인).
+                //   이제는 **항상 그리고**, 권한이 없으면 enabled:false 로
+                //   회색 처리한다.
+                const PopupMenuDivider(),
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 26,
+                  child: Text(
+                    isMaster
+                        ? '관리자·마스터 전용'
+                        : (canRun ? '관리자·스탭 전용' : '관리자·스탭 전용 (권한 없음)'),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: canRun ? AppColors.purple : AppColors.textGray,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'qr',
+                  enabled: isAdmin,
+                  child: gate('행사 QR 코드 (참가신청 / 게시판)'),
+                ),
+                PopupMenuItem(
+                  value: 'staff',
+                  enabled: isAdmin,
+                  child: gate('행사 스텝(STAFF) 등록',
+                      icon: Icons.badge_outlined),
+                ),
+                PopupMenuItem(
+                  value: 'addmenu',
+                  enabled: isAdmin,
+                  child: gate('메뉴 추가 (사용자 정의 탭)',
+                      icon: Icons.add_box_outlined),
+                ),
+                // 메뉴 관리 — 관리자·스탭도 열 수 있다. 단, 게시판 통째로
+                //  삭제는 마스터만.
+                PopupMenuItem(
+                  value: 'managemenu',
+                  enabled: isAdmin,
+                  child: gate('메뉴 관리 (추가·변경·삭제)',
+                      icon: Icons.dashboard_customize_outlined),
+                ),
+                // ── 마스터 전용 ────────────────────────────────────
+                //  B 요구에 따라 마스터가 아니어도 **회색으로 보여준다**.
+                if (!isMaster) const PopupMenuDivider(),
+                if (!isMaster)
+                  const PopupMenuItem<String>(
                     enabled: false,
                     height: 26,
                     child: Text(
-                      '관리자${isMaster ? '·마스터' : ''} 전용',
-                      style: const TextStyle(
+                      '마스터 전용 (권한 없음)',
+                      style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.purple,
+                        color: AppColors.textGray,
                         letterSpacing: 0.4,
                       ),
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'qr',
-                    child: Text('행사 QR 코드 (참가신청 / 게시판)'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'staff',
-                    child: Text('행사 스텝(STAFF) 등록'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'addmenu',
-                    child: Text('메뉴 추가 (사용자 정의 탭)'),
-                  ),
-                  // 메뉴 관리 — 관리자도 열 수 있다. 단, 삭제는 마스터만.
-                  PopupMenuItem(
-                    value: 'managemenu',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.dashboard_customize_outlined,
-                            size: 15, color: AppColors.purple),
-                        const SizedBox(width: 6),
-                        const Text('메뉴 관리 (추가·변경·삭제)'),
-                      ],
-                    ),
-                  ),
-                ],
-                // ── 마스터 전용 ────────────────────────────────────
                 if (isMaster) ...[
                   const PopupMenuDivider(),
                   const PopupMenuItem<String>(
@@ -646,18 +705,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       ),
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'boarddelete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_forever_outlined,
-                            size: 15, color: AppColors.taegeukRed),
-                        SizedBox(width: 6),
-                        Text('게시판 통째로 삭제'),
-                      ],
-                    ),
-                  ),
                 ],
+                // B 요구: 마스터가 아니어도 **회색으로는 보여준다**.
+                PopupMenuItem(
+                  value: 'boarddelete',
+                  enabled: isMaster,
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_forever_outlined,
+                          size: 15,
+                          color: isMaster
+                              ? AppColors.taegeukRed
+                              : AppColors.textGray),
+                      const SizedBox(width: 6),
+                      const Expanded(child: Text('게시판 통째로 삭제')),
+                      if (!isMaster)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Icon(Icons.lock_outline,
+                              size: 13, color: AppColors.textGray),
+                        ),
+                    ],
+                  ),
+                ),
               ];
             },
           ),
@@ -5979,7 +6049,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         };
 
     // ── 권한 구분 (요구: "관리자/마스터 권한으로 구분해서 정리해줘") ──
-    final isAdmin = widget.canManage;
+    //  [요구 2026-10-26] "B + A 조합"
+    //   A: 스탭도 관리 가능(_canManageMenu)
+    //   B: 권한이 없으면 동작을 **회색으로 노출**(기능 위치를 알 수 있게)
+    final isAdmin = _canManageMenu;
     final isMaster = _isMasterView;
 
     var changed = false;
@@ -6008,9 +6081,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     isMaster
                         ? '마스터 권한 · 추가 / 변경 / 삭제 / 게시판 통째로 삭제'
                         : (isAdmin
-                            ? '관리자 권한 · 추가 / 변경 / 삭제 가능 '
-                                '(게시판 통째로 삭제는 마스터만)'
-                            : '권한 없음 · 보기만 가능'),
+                            ? (_isStaff && !widget.canManage
+                                ? '스탭 권한 · 추가 / 변경 / 삭제 가능 '
+                                    '(게시판 통째로 삭제는 마스터만)'
+                                : '관리자 권한 · 추가 / 변경 / 삭제 가능 '
+                                    '(게시판 통째로 삭제는 마스터만)')
+                            : '권한 없음 · 항목은 보이지만 실행할 수 없습니다'),
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -6072,14 +6148,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         ],
                                       ),
                                     ),
-                                    // ── 노출권한 변경 (관리자·마스터) ──
-                                    //  게시판 상단 칩과 같은 값을 여기서도 바꾼다.
-                                    if (isAdmin)
-                                      PopupMenuButton<String>(
-                                        tooltip: '노출권한 변경',
-                                        enabled: !(idOf['${tabs[i]['name'] ?? ''}']
-                                                    ?.isEmpty ??
-                                                true),
+                                    // ── 노출권한 변경 (관리자·마스터·스탭) ──
+                                    //  [요구 2026-10-26] "B + A" — 권한이 없어도
+                                    //  버튼은 보이게 하고(회색), 눌리지 않게 한다.
+                                    PopupMenuButton<String>(
+                                      tooltip: isAdmin
+                                          ? '노출권한 변경'
+                                          : '노출권한 변경 (권한 없음)',
+                                      enabled: isAdmin &&
+                                          !(idOf['${tabs[i]['name'] ?? ''}']
+                                                  ?.isEmpty ??
+                                              true),
                                         onSelected: (v) async {
                                           final nm =
                                               '${tabs[i]['name'] ?? ''}';
@@ -6121,22 +6200,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                               value: 'admin',
                                               child: Text('관리자·마스터')),
                                         ],
-                                        child: const Padding(
-                                          padding: EdgeInsets.symmetric(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 8),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Icon(Icons.visibility_outlined,
                                                   size: 15,
-                                                  color: AppColors.purple),
-                                              SizedBox(width: 3),
+                                                  color: isAdmin
+                                                      ? AppColors.purple
+                                                      : AppColors.textGray),
+                                              const SizedBox(width: 3),
                                               Text(
                                                 '노출',
                                                 style: TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w700,
-                                                  color: AppColors.purple,
+                                                  color: isAdmin
+                                                      ? AppColors.purple
+                                                      : AppColors.textGray,
                                                 ),
                                               ),
                                             ],
@@ -6149,7 +6232,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                     //  "관리자/마스터 권한으로 구분"을 한 눈에
                                     //  보이게 한다(요구 2026-10-26).
                                     PopupMenuButton<String>(
-                                      tooltip: '이 메뉴 관리',
+                                      tooltip: isAdmin
+                                          ? '이 메뉴 관리'
+                                          : '이 메뉴 관리 (권한 없음)',
                                       onSelected: (v) async {
                                         final nm = '${tabs[i]['name'] ?? ''}';
                                         switch (v) {
@@ -6183,49 +6268,60 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         if (ctx.mounted) setD(() {});
                                       },
                                       itemBuilder: (_) => [
-                                        if (isAdmin) ...[
-                                          PopupMenuItem(
-                                            value: 'up',
-                                            enabled: i > 0,
-                                            child: const Text('위로 이동'),
-                                          ),
-                                          PopupMenuItem(
-                                            value: 'down',
-                                            enabled: i < tabs.length - 1,
-                                            child: const Text('아래로 이동'),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'rename',
-                                            child: Text('이름·내용 변경'),
-                                          ),
-                                          const PopupMenuDivider(),
-                                          const PopupMenuItem(
-                                            value: 'remove',
-                                            child: Text('메뉴 삭제 (탭에서 빼기)'),
-                                          ),
-                                        ],
+                                        // [요구 2026-10-26] "B + A" — 항목은
+                                        //  항상 보이고, 권한이 없으면 회색.
+                                        PopupMenuItem(
+                                          value: 'up',
+                                          enabled: isAdmin && i > 0,
+                                          child: const Text('위로 이동'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'down',
+                                          enabled: isAdmin &&
+                                              i < tabs.length - 1,
+                                          child: const Text('아래로 이동'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'rename',
+                                          enabled: isAdmin,
+                                          child: const Text('이름·내용 변경'),
+                                        ),
+                                        const PopupMenuDivider(),
+                                        PopupMenuItem(
+                                          value: 'remove',
+                                          enabled: isAdmin,
+                                          child: const Text(
+                                              '메뉴 삭제 (탭에서 빼기)'),
+                                        ),
                                         // 게시판 통째로 삭제는 마스터만 —
                                         //  글·첨부목록이 전부 소멸한다.
-                                        if (isMaster)
-                                          PopupMenuItem(
-                                            value: 'boarddelete',
-                                            child: Row(
-                                              children: const [
-                                                Icon(
-                                                    Icons.delete_forever_outlined,
-                                                    size: 15,
-                                                    color:
-                                                        AppColors.taegeukRed),
-                                                SizedBox(width: 6),
-                                                Text('게시판 통째로 삭제'),
-                                              ],
-                                            ),
+                                        PopupMenuItem(
+                                          value: 'boarddelete',
+                                          enabled: isMaster,
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                  Icons
+                                                      .delete_forever_outlined,
+                                                  size: 15,
+                                                  color: isMaster
+                                                      ? AppColors.taegeukRed
+                                                      : AppColors.textGray),
+                                              const SizedBox(width: 6),
+                                              const Text('게시판 통째로 삭제'),
+                                              if (!isMaster)
+                                                const Padding(
+                                                  padding:
+                                                      EdgeInsets.only(left: 6),
+                                                  child: Icon(
+                                                      Icons.lock_outline,
+                                                      size: 13,
+                                                      color:
+                                                          AppColors.textGray),
+                                                ),
+                                            ],
                                           ),
-                                        if (!isAdmin && !isMaster)
-                                          const PopupMenuItem(
-                                            enabled: false,
-                                            child: Text('권한이 없습니다'),
-                                          ),
+                                        ),
                                       ],
                                     ),
                                   ],
