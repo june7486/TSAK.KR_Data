@@ -478,9 +478,26 @@ class SettlementPaperView extends StatelessWidget {
     SettlementBlockData? d,
   ) {
     final base = d?.rows ?? const <List<String>>[];
-    if (d == null || !layout.showsDetail(block)) return base;
-    // (요구 2026-10-27) 줄 단위 체크 — 끈 줄은 미리보기에서도 즉시 사라진다.
-    return [...base, ...d.detailRows(keep: layout.lineKeeper(block))];
+    // ── [요구 2026-10-27] 결산 탭에서 체크한 것이 **미리보기·출력에 그대로** ──
+    //  "결산 자료에서 체크한 항목이 미리보기 항목과도 연동되어야 하니,
+    //   기본적으로 선택한 항목은 출력시 미리보기에서 다 보여야 하며,
+    //   상세항목을 선택하면 모든 상세가 다 보여지는 기능으로 하면 좋겠음"
+    //
+    //  종전 `_visibleRows` 는 `d.rows` 를 **필터 없이** 그대로 그렸다.
+    //  그래서 결산 탭에서 표 행 체크를 꺼도 미리보기는 그대로였고,
+    //  PDF(Builder)만 달라져 "보이는 것 ≠ 인쇄되는 것"이 되던 지점이다.
+    //  → 표 행 필터를 **여기 한 곳**에서 적용해 화면·미리보기·파일이
+    //    모두 같은 [SettlementLayout.filterRows] 를 통과하게 한다.
+    final shown = layout.filterRows(block, base);
+    if (d == null || !layout.showsDetail(block)) return shown;
+    // 줄 단위 체크 — 끈 줄은 미리보기에서도 즉시 사라진다.
+    return [
+      ...shown,
+      ...d.detailRows(
+        max: layout.detailMax,
+        keep: layout.lineKeeper(block),
+      ),
+    ];
   }
 
   /// 상세 행인가 — 첫 칸이 '· 상세'.

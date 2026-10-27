@@ -153,6 +153,7 @@ class SettlementLayout {
     Set<SettlementBlock>? detailOff,
     Set<String>? detailLineOff,
     Set<String>? rowOff,
+    this.detailMax = 40,
   }) : order = order ?? [...SettlementBlock.values],
        excluded = excluded ?? <SettlementBlock>{},
        detailOff = detailOff ?? <SettlementBlock>{},
@@ -341,6 +342,18 @@ class SettlementLayout {
   /// 행 단위로 하나라도 제외된 표가 있는가(배지 표기용).
   bool get hasRowFilter => rowOff.isNotEmpty;
 
+  /// ── [요구 2026-10-27] 상세 내역 출력 상한 ───────────────────────────
+  /// "상세항목을 선택하면 모든 상세가 다 보여지는 기능으로 하면 좋겠음"
+  ///
+  /// 종전 상한은 PDF 빌더에 `detailMax = 40` 으로 **하드코딩**돼 있었다.
+  /// 41건째부터는 `… 외 N건 (출력에서 제외)` 로 잘려, 사용자가 상세를
+  /// 아무리 켜도 **모든 상세를 볼 방법이 없었다**. 이제 값을 화면에서
+  /// 정한다(기본 40, '전체' 선택 시 99999).
+  int detailMax;
+
+  /// 상세 상한 없음(전부 출력).
+  static const int detailMaxAll = 99999;
+
   /// 상세 내역을 **전체로** 붙이는가(어느 한 블록이라도 켜져 있으면 true).
   bool get showDetails => order.any((b) => !detailOff.contains(b));
 
@@ -483,6 +496,7 @@ class SettlementLayout {
     detailOff: {...detailOff},
     detailLineOff: {...detailLineOff},
     rowOff: {...rowOff},
+    detailMax: detailMax,
   );
 
   /// 서식만 기본값으로.
@@ -886,7 +900,7 @@ class SettlementReportBuilder {
   static List<DocReportBlock> build({
     required SettlementLayout layout,
     required Map<SettlementBlock, SettlementBlockData> data,
-    int detailMax = 40,
+    int? detailMax,
   }) {
     final out = <DocReportBlock>[];
     for (final b in layout.included) {
@@ -897,7 +911,12 @@ class SettlementReportBuilder {
       final rows = <List<String>>[...layout.filterRows(b, d.rows)];
       if (layout.showsDetail(b)) {
         // (요구 2026-10-27) 줄 단위 체크 — 사용자가 끈 줄은 출력하지 않는다.
-        rows.addAll(d.detailRows(max: detailMax, keep: layout.lineKeeper(b)));
+        rows.addAll(
+          d.detailRows(
+            max: detailMax ?? layout.detailMax,
+            keep: layout.lineKeeper(b),
+          ),
+        );
       }
       out.add(
         DocReportBlock(

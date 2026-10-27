@@ -244,6 +244,53 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
             ],
           ),
           const SizedBox(height: 4),
+          // ── [요구 2026-10-27] 상세 내역 **전체 출력** 스위치 ─────────────
+          //  "상세항목을 선택하면 모든 상세가 다 보여지는 기능으로 하면 좋겠음"
+          //
+          //  종전에는 PDF 빌더에 상한 40줄이 하드코딩돼 있어, 상세를 켜도
+          //  41건째부터는 `… 외 N건 (출력에서 제외)` 로 잘렸다. 상한을 올릴
+          //  방법이 아예 없었다. 여기서 한 번 켜면 상한이 사라진다.
+          Row(
+            children: [
+              Icon(
+                Icons.all_inclusive,
+                size: 12,
+                color: _layout.detailMax >= SettlementLayout.detailMaxAll
+                    ? AppColors.purple
+                    : AppColors.textGray,
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _bump(
+                  () => _layout.detailMax =
+                      _layout.detailMax >= SettlementLayout.detailMaxAll
+                      ? 40
+                      : SettlementLayout.detailMaxAll,
+                ),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  child: Text(
+                    _layout.detailMax >= SettlementLayout.detailMaxAll
+                        ? '상세 전체 출력 중'
+                        : '상세 전체 출력',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: _layout.detailMax >= SettlementLayout.detailMaxAll
+                          ? AppColors.purple
+                          : AppColors.textGray,
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+            ],
+          ),
+          const SizedBox(height: 4),
           // 서식 줄 — 미리보기에서 정한 서식이 지금 출력에 걸려 있음을 보여준다.
           Row(
             children: [
@@ -787,13 +834,13 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
                 _cell(
                   rows[i].isNotEmpty ? rows[i][0] : '',
                   bold: true,
-                  color: _isTotalRow(r) ? color : AppColors.textDark,
+                  color: _isTotalRow(rows[i]) ? color : AppColors.textDark,
                 ),
                 _cell(
                   rows[i].length > 1 ? rows[i][1] : '',
                   align: TextAlign.right,
-                  bold: _isTotalRow(r),
-                  color: _isTotalRow(r) ? color : AppColors.textDark,
+                  bold: _isTotalRow(rows[i]),
+                  color: _isTotalRow(rows[i]) ? color : AppColors.textDark,
                 ),
                 // 참가자 수 블록은 3번째 칸을 비율 막대로 쓴다(여백 대신 정보).
                 _thirdCell(rows[i], color),
