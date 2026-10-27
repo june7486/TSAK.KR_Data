@@ -288,13 +288,18 @@ class _DonationListPanelState extends State<DonationListPanel> {
           ),
           const SizedBox(height: 3),
           // 수입에 넣지 않는 것 — 현물후원. 금액과 상당을 **따로**.
+          // ── [요구 2026-10-27] "항목은 2개인데 내역이 3개" ──────────────
+          //  `count` 는 **후원 행 수**(3), 카드 수는 **후원자 수**(2).
+          //  두 수가 왜 다른지 화면에서 바로 읽히도록 병기한다.
           _sumRow(
             icon: Icons.card_giftcard,
             color: AppColors.hermesInk,
             label: '현물후원',
             count: sponsors.length,
             value: '${_won(sCash)} + 상당 ${_won(sValue)}',
-            note: '수입 미포함',
+            note:
+                '수입 미포함 · 후원자 '
+                '${sponsors.map((e) => '${e.name}|${e.number}').toSet().length}명',
           ),
         ],
       ),
@@ -477,8 +482,16 @@ class _DonationListPanelState extends State<DonationListPanel> {
                             ),
                             const SizedBox(height: 1),
                             Text(
-                              // (요구) 후원자와 후원내역을 **별도로** 정리.
-                              '${kinds.join('·')} · ${items.length}건',
+                              // ── [요구 2026-10-27] "항목은 2개인데 내역이
+                              //   3개로 표시" ────────────────────────────────
+                              //  원인은 **두 숫자가 서로 다른 것을 세고 있었던**
+                              //  것이다. (실측 데이터 확인)
+                              //   · 카드 2개   = 후원자 수(이항복·이승준)
+                              //   · 요약 '3건' = 후원 행 수
+                              //     (이항복 식사 1 + 물품 1 + 이승준 기타 0원 1)
+                              //  둘 다 맞는 숫자인데 화면에 '2'와 '3'만 나오니
+                              //  모순으로 보였다. 세는 대상을 **글자로 밝힌다**.
+                              '${items.length}건 · ${kinds.join('·')}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
