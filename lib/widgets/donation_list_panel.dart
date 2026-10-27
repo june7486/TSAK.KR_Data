@@ -163,7 +163,8 @@ class _DonationListPanelState extends State<DonationListPanel> {
               Expanded(
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.tigerGold,
+                    // (요구 2026-10-27) 후원 관련 색을 '에르메스 오렌지'로.
+                    backgroundColor: AppColors.hermesOrange,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: widget.onAdd,
@@ -177,9 +178,9 @@ class _DonationListPanelState extends State<DonationListPanel> {
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.tigerGold,
+                  foregroundColor: AppColors.hermesInk,
                   side: BorderSide(
-                    color: AppColors.tigerGold.withValues(alpha: 0.55),
+                    color: AppColors.hermesOrange.withValues(alpha: 0.55),
                   ),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -245,7 +246,9 @@ class _DonationListPanelState extends State<DonationListPanel> {
     required bool active,
     required VoidCallback onTap,
   }) {
-    final c = active ? AppColors.tigerGold : AppColors.textGray;
+    // (요구 2026-10-27) 활성 칩 글자가 금색(tigerGold)이라 흰 배경에서
+    //  대비 1.9:1 → 사실상 안 보였다. 작은 글씨용 진한 오렌지로 바꾼다.
+    final c = active ? AppColors.hermesInk : AppColors.textGray;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -287,7 +290,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
           // 수입에 넣지 않는 것 — 현물후원. 금액과 상당을 **따로**.
           _sumRow(
             icon: Icons.card_giftcard,
-            color: AppColors.tigerGold,
+            color: AppColors.hermesInk,
             label: '현물후원',
             count: sponsors.length,
             value: '${_won(sCash)} + 상당 ${_won(sValue)}',
@@ -397,7 +400,22 @@ class _DonationListPanelState extends State<DonationListPanel> {
         final open = _open.contains(key);
         final cash = items.fold<int>(0, (s, e) => s + e.amount);
         final value = items.fold<int>(0, (s, e) => s + e.value);
-        final kinds = <String>{for (final e in items) e.kind.label};
+        // ── [버그 수정 2026-10-27] "항목은 2개인데 내역이 3개로 표시" ──────
+        //  종전: `<String>{for (...) e.kind.label}` — **Set** 이라 같은 분류가
+        //        두 번 나오면 하나로 합쳐졌다. 이항복(75)은 식사후원 1건 +
+        //        물품후원 1건이 **정상**인데, 테스트로 넣었던 기타후원이
+        //        겹치면서 '식사후원·물품후원 · 3건' 처럼 개수와 목록이
+        //        어긋나 보였다(사용자 지적: "항목은 2개인데 내역이 3개").
+        //  수정: 분류별 **건수**를 세어 `식사후원 1 · 물품후원 2` 처럼 보인다.
+        //        '몇 건이 어떤 분류인지'가 한 줄에서 맞아떨어진다.
+        final kindCount = <String, int>{};
+        for (final e in items) {
+          kindCount[e.kind.label] = (kindCount[e.kind.label] ?? 0) + 1;
+        }
+        final kinds = [
+          for (final e in kindCount.entries)
+            e.value > 1 ? '${e.key} ${e.value}' : e.key,
+        ];
 
         return Card(
           margin: const EdgeInsets.only(bottom: 7),
@@ -417,15 +435,13 @@ class _DonationListPanelState extends State<DonationListPanel> {
                     children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundColor: AppColors.tigerGold.withValues(
-                          alpha: 0.18,
-                        ),
+                        backgroundColor: AppColors.hermesTint,
                         child: Text(
                           '${i + 1}',
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
-                            color: AppColors.tigerGold,
+                            color: AppColors.hermesInk,
                           ),
                         ),
                       ),
@@ -491,7 +507,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
                               style: const TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.tigerGold,
+                                color: AppColors.hermesInk,
                               ),
                             ),
                         ],
@@ -542,7 +558,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
-              color: AppColors.tigerGold.withValues(alpha: 0.14),
+              color: AppColors.hermesTint,
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -550,7 +566,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
               style: const TextStyle(
                 fontSize: 9.5,
                 fontWeight: FontWeight.w800,
-                color: AppColors.tigerGold,
+                color: AppColors.hermesInk,
               ),
             ),
           ),
@@ -691,7 +707,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.tigerGold.withValues(alpha: 0.14),
+                        color: AppColors.hermesTint,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -699,7 +715,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
                         style: const TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w900,
-                          color: AppColors.tigerGold,
+                          color: AppColors.hermesInk,
                         ),
                       ),
                     ),
@@ -735,7 +751,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
                         style: const TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.tigerGold,
+                          color: AppColors.hermesInk,
                         ),
                       ),
                   ],

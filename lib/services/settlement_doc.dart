@@ -50,8 +50,9 @@ class SettlementDoc {
         ]);
       }
       // 상세 내역(원본 행) — 미리보기에서 켠 블록만. PDF 와 **같은 규칙**.
+      // (요구 2026-10-27) 줄 단위 체크로 끈 행은 여기서도 빠진다.
       if (layout.showsDetail(b)) {
-        for (final r in d.detailRows()) {
+        for (final r in d.detailRows(keep: layout.lineKeeper(b))) {
           rows.add([
             '',
             r.isNotEmpty ? r[0] : '',

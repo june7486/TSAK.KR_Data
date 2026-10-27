@@ -181,7 +181,26 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           controller: _scroll,
           slivers: [
             SliverAppBar(
-              expandedHeight: 176,
+              // ── 헤더 높이 (요구 2026-10-27) ─────────────────────────
+              //  "개인카드에서 글자가 아래로 밀려서 안보임"
+              //
+              //  ## 원인 (실측)
+              //   헤더 내용의 실제 필요 높이는 약 187dp 였다.
+              //     상단 패딩 44 + 소속 13 + 6 + 인가번호카드 40 + 8 +
+              //     이름 29 + 4 + '인가시:' 16 + 2 + '현재활동:' 15 + 하단 10
+              //   그런데 expandedHeight 가 **176** 이라 마지막 두 줄
+              //   ('인가시' / '현재활동')이 하단에서 잘려 나갔다.
+              //   SliverAppBar 는 flexibleSpace 를 **클립**하므로 넘친
+              //   글자는 '사라진 것처럼' 보인다. (사용자 스크린샷의 빨간 박스)
+              //
+              //  ## 수정
+              //   ① expandedHeight 176 → **204** : 여유 17dp 확보.
+              //   ② 상단 패딩 44 → 52 : 고정 툴바(56dp) 아래로 내려 소속명이
+              //      툴바 아이콘과 겹치지 않게.
+              //   ③ 그래도 넘칠 경우(폰트 스케일 확대·긴 '현재활동' 등)를 위해
+              //      _header 안에서 FittedBox 로 **통째로 축소**한다.
+              //      → 어떤 경우에도 글자가 잘리지 않는다(줄이지 않고 줄인다).
+              expandedHeight: 204,
               pinned: true,
               backgroundColor: AppColors.purple,
               leading: const AppBackButton(label: '뒤로'),
@@ -312,212 +331,243 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Widget _header(Member m) {
     return Container(
       decoration: const BoxDecoration(gradient: AppColors.brandGradient),
-      padding: const EdgeInsets.fromLTRB(16, 44, 16, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 좌측 패널: 인가번호(박스) + 이름
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // (요구#2) 모든 창 상단에 중앙회 브랜드 동일 노출
-                Text(
-                  m.corpsOrgName,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                // 인가번호 + ATAS 인가번호 — **하나의 카드**에 나란히.
-                //
-                // (요구) "atas인가번호를 범스카우트 표시 옆에 노출할 것"
-                // (요구) "디자인 발란스를 맞춰야지 / 너무 언발란스 해"
-                //
-                // ## 왜 두 개의 박스 → 하나의 카드로 바꿨나
-                //  이전 구현은 흰 박스(높이 44dp, 글자 22)와 금색 배지
-                //  (높이 32dp, 글자 14)를 Wrap 으로 나란히 두었다. 높이·글자
-                //  크기·테두리가 모두 달라 **두 칸이 어긋나 보였다**(사용자 지적).
-                //  두 개를 따로 두는 한 높이를 맞춰도 '크기가 다른 두 물건'이
-                //  남는다. 그래서 **하나의 흰 카드 안**에 좌(범인가번호) ·
-                //  구분선 · 우(ATAS 인가번호)를 넣어 한 덩어리로 묶었다.
-                //   · 좌 : 범인가번호(은하인가번호) — 22pt / w900
-                //   · 우 : ATAS 인가번호 — **22pt / w900 (좌와 동일)**
-                //   · 사이에 얇은 세로 구분선 → "서로 다른 두 체계"임을 표시
-                //  높이가 구조적으로 같아질 수밖에 없고, 폭이 모자라면
-                //  FittedBox 가 통째로 축소해 잘림이 없다.
-                //
-                // [요구 2026-10-27] "아타스글자 앞에 있는 아이콘은 삭제하고,
-                //  아타스font사이즈와 크기를 범과 동일하게 해줘"
-                //  → 종전에는 ATAS 앞에 금색 훈장 아이콘(Icons.military_tech,
-                //    16dp)을 두고 글자를 15pt/w800 으로 '부 정보'로 낮춰
-                //    두었다. 사용자는 ① 아이콘을 없애고 ② **글자 크기·굵기를
-                //    범인가번호와 똑같이** 해 달라고 했다. 두 번호가 같은
-                //    무게로 읽히도록 아이콘·여백을 제거하고 22pt/w900 로
-                //    통일했다. 두 체계의 구분은 **세로 구분선 하나**가 맡는다.
-                //
-                // ## 폭 예산 (실측: NanumGothic Bold @22 → 범#415=74.0px,
-                //    ATAS #13702=142.1px). 390px 기기에서 흰 카드 가용폭은
-                //    `390 - 16*2 - 12(사진간격) - 104(사진) - 4(테두리)` ≈ 234px.
-                //    두 글자 + 구분선(1) + 좌우여백(6*2) = 229px → **거의 꽉
-                //    차지만 잘리지 않는다.** 22pt 를 그대로 살리려고 카드
-                //    내부 여백 14→10, 구분선 여백 11→6 으로 줄였다(종전엔
-                //    239px 라 0.88배로 축소됐다). 더 좁은 기기에서는
-                //    FittedBox 가 좌·우를 **같은 배율로** 줄이므로 두 글자의
-                //    상대 크기는 언제나 동일하다 — 이게 `_kHeaderNumberStyle`
-                //    을 공유하는 이유이기도 하다.
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.tigerGold, width: 2),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+      padding: const EdgeInsets.fromLTRB(16, 52, 16, 10),
+      // ── [요구 2026-10-27] "개인카드에서 글자가 아래로 밀려서 안보임" ──
+      //  expandedHeight 를 204 로 늘려 여유를 두었지만, 그것만으로는
+      //  폰트 스케일 확대·긴 소속명 같은 경우를 보장하지 못한다.
+      //  SliverAppBar 의 flexibleSpace 는 넘친 부분을 **클립**하기 때문에
+      //  한 번 잘리면 사용자에게는 '데이터가 없는 것'처럼 보인다.
+      //  → 내용 전체를 FittedBox(scaleDown) 로 감싸, 넘칠 때 **줄이지 않고
+      //    통째로 축소**한다. 어떤 조건에서도 글자가 사라지지 않는다.
+      child: LayoutBuilder(
+        builder: (context, c) {
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: c.maxWidth,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 좌측 패널: 인가번호(박스) + 이름
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ① 범스카우트(은하스카우트) 인가번호 — 주 정보
-                        //
-                        //  [요구 2026-10-27] "은하 스카우트를 G라고 구분하는 것은
-                        //   매우 좋음 / 개인카드에는 G대신 은하로 표기해야 함"
-                        //  → 명부·목록은 `G43`(구분자) 그대로 두고, **개인카드**
-                        //    에서만 `은하#43` 으로 말머리를 쓴다(cardNumberLabel).
-                        //    범 카드의 `범#415` 와 같은 문법이 되어 두 카드가
-                        //    한 규칙으로 읽힌다.
+                        // (요구#2) 모든 창 상단에 중앙회 브랜드 동일 노출
                         Text(
-                          m.cardNumberLabel,
-                          style: _kHeaderNumberStyle,
+                          m.corpsOrgName,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                          ),
                         ),
-                        // ② ATAS 인가번호 — 값이 있을 때만. 범인가와 별개이므로
-                        //    세로 구분선으로 '다른 체계'임을 드러낸다.
-                        //    서체 스펙은 ①과 **완전히 동일**(22/w900/purple).
-                        //    ATAS 는 부제가 아니라 동급의 인가번호다.
-                        //    (아이콘을 없앤 이유는 위 카드 주석 참조)
-                        if (m.atasNo.trim().isNotEmpty) ...[
-                          Container(
-                            width: 1,
-                            height: 24,
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            color: AppColors.purple.withValues(alpha: 0.22),
+                        const SizedBox(height: 6),
+                        // 인가번호 + ATAS 인가번호 — **하나의 카드**에 나란히.
+                        //
+                        // (요구) "atas인가번호를 범스카우트 표시 옆에 노출할 것"
+                        // (요구) "디자인 발란스를 맞춰야지 / 너무 언발란스 해"
+                        //
+                        // ## 왜 두 개의 박스 → 하나의 카드로 바꿨나
+                        //  이전 구현은 흰 박스(높이 44dp, 글자 22)와 금색 배지
+                        //  (높이 32dp, 글자 14)를 Wrap 으로 나란히 두었다. 높이·글자
+                        //  크기·테두리가 모두 달라 **두 칸이 어긋나 보였다**(사용자 지적).
+                        //  두 개를 따로 두는 한 높이를 맞춰도 '크기가 다른 두 물건'이
+                        //  남는다. 그래서 **하나의 흰 카드 안**에 좌(범인가번호) ·
+                        //  구분선 · 우(ATAS 인가번호)를 넣어 한 덩어리로 묶었다.
+                        //   · 좌 : 범인가번호(은하인가번호) — 22pt / w900
+                        //   · 우 : ATAS 인가번호 — **22pt / w900 (좌와 동일)**
+                        //   · 사이에 얇은 세로 구분선 → "서로 다른 두 체계"임을 표시
+                        //  높이가 구조적으로 같아질 수밖에 없고, 폭이 모자라면
+                        //  FittedBox 가 통째로 축소해 잘림이 없다.
+                        //
+                        // [요구 2026-10-27] "아타스글자 앞에 있는 아이콘은 삭제하고,
+                        //  아타스font사이즈와 크기를 범과 동일하게 해줘"
+                        //  → 종전에는 ATAS 앞에 금색 훈장 아이콘(Icons.military_tech,
+                        //    16dp)을 두고 글자를 15pt/w800 으로 '부 정보'로 낮춰
+                        //    두었다. 사용자는 ① 아이콘을 없애고 ② **글자 크기·굵기를
+                        //    범인가번호와 똑같이** 해 달라고 했다. 두 번호가 같은
+                        //    무게로 읽히도록 아이콘·여백을 제거하고 22pt/w900 로
+                        //    통일했다. 두 체계의 구분은 **세로 구분선 하나**가 맡는다.
+                        //
+                        // ## 폭 예산 (실측: NanumGothic Bold @22 → 범#415=74.0px,
+                        //    ATAS #13702=142.1px). 390px 기기에서 흰 카드 가용폭은
+                        //    `390 - 16*2 - 12(사진간격) - 104(사진) - 4(테두리)` ≈ 234px.
+                        //    두 글자 + 구분선(1) + 좌우여백(6*2) = 229px → **거의 꽉
+                        //    차지만 잘리지 않는다.** 22pt 를 그대로 살리려고 카드
+                        //    내부 여백 14→10, 구분선 여백 11→6 으로 줄였다(종전엔
+                        //    239px 라 0.88배로 축소됐다). 더 좁은 기기에서는
+                        //    FittedBox 가 좌·우를 **같은 배율로** 줄이므로 두 글자의
+                        //    상대 크기는 언제나 동일하다 — 이게 `_kHeaderNumberStyle`
+                        //    을 공유하는 이유이기도 하다.
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
                           ),
-                          Text(
-                            'ATAS #${m.atasNo.trim()}',
-                            style: _kHeaderNumberStyle,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: AppColors.tigerGold,
+                              width: 2,
+                            ),
                           ),
-                        ],
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // ① 범스카우트(은하스카우트) 인가번호 — 주 정보
+                                //
+                                //  [요구 2026-10-27] "은하 스카우트를 G라고 구분하는 것은
+                                //   매우 좋음 / 개인카드에는 G대신 은하로 표기해야 함"
+                                //  → 명부·목록은 `G43`(구분자) 그대로 두고, **개인카드**
+                                //    에서만 `은하#43` 으로 말머리를 쓴다(cardNumberLabel).
+                                //    범 카드의 `범#415` 와 같은 문법이 되어 두 카드가
+                                //    한 규칙으로 읽힌다.
+                                Text(
+                                  m.cardNumberLabel,
+                                  style: _kHeaderNumberStyle,
+                                ),
+                                // ② ATAS 인가번호 — 값이 있을 때만. 범인가와 별개이므로
+                                //    세로 구분선으로 '다른 체계'임을 드러낸다.
+                                //    서체 스펙은 ①과 **완전히 동일**(22/w900/purple).
+                                //    ATAS 는 부제가 아니라 동급의 인가번호다.
+                                //    (아이콘을 없앤 이유는 위 카드 주석 참조)
+                                if (m.atasNo.trim().isNotEmpty) ...[
+                                  Container(
+                                    width: 1,
+                                    height: 24,
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                    color: AppColors.purple.withValues(
+                                      alpha: 0.22,
+                                    ),
+                                  ),
+                                  Text(
+                                    'ATAS #${m.atasNo.trim()}',
+                                    style: _kHeaderNumberStyle,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: MarqueeText(
+                                m.name.isEmpty ? '(이름없음)' : m.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            if (m.lifetimeMember) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.star,
+                                color: AppColors.tigerGold,
+                                size: 20,
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        // 범인가시(인가 당시) 소속 — 현재활동과 구분.
+                        if (m.league.isNotEmpty || m.unit.isNotEmpty)
+                          MarqueeText(
+                            '인가시: ${[m.league, m.unit].where((e) => e.isNotEmpty).join(' · ')}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        // 현재활동 소속 — 인가시와 다르거나 값이 있으면 노출.
+                        if ((m.regLeague.isNotEmpty &&
+                                m.regLeague != m.league) ||
+                            (m.regUnit.isNotEmpty && m.regUnit != m.unit) ||
+                            m.position.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: MarqueeText(
+                              '현재활동: ${[if (m.regLeague.isNotEmpty) m.regLeague, if (m.regUnit.isNotEmpty) m.regUnit, if (m.position.isNotEmpty) m.position].join(' · ')}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Flexible(
-                      child: MarqueeText(
-                        m.name.isEmpty ? '(이름없음)' : m.name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
+                  const SizedBox(width: 12),
+                  // 우측 패널: 사진 (없으면 회색 스카우트 실루엣)
+                  GestureDetector(
+                    onTap: () => showPhotoPip(
+                      context,
+                      name: m.name,
+                      number: m.number,
+                      atasNo: m.atasNo,
+                      league: m.league,
+                      unit: m.unit,
+                      photoPath: m.photoPath,
+                      fallbackPhotoUrl:
+                          context.read<AppState>().serverPhotoUrlFor(
+                            m.number,
+                          ) ??
+                          '',
+                    ),
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        MemberAvatar(
+                          name: m.name,
+                          photoPath: m.photoPath,
+                          fallbackPhotoUrl:
+                              context.watch<AppState>().serverPhotoUrlFor(
+                                m.number,
+                              ) ??
+                              '',
+                          league: m.league,
+                          number: m.number,
+                          showNumber: false,
+                          square: true,
+                          size: 104,
                         ),
-                      ),
-                    ),
-                    if (m.lifetimeMember) ...[
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.star,
-                        color: AppColors.tigerGold,
-                        size: 20,
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                // 범인가시(인가 당시) 소속 — 현재활동과 구분.
-                if (m.league.isNotEmpty || m.unit.isNotEmpty)
-                  MarqueeText(
-                    '인가시: ${[m.league, m.unit].where((e) => e.isNotEmpty).join(' · ')}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                        // 확대 아이콘 힌트
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(
+                            Icons.zoom_out_map,
+                            size: 13,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                // 현재활동 소속 — 인가시와 다르거나 값이 있으면 노출.
-                if ((m.regLeague.isNotEmpty && m.regLeague != m.league) ||
-                    (m.regUnit.isNotEmpty && m.regUnit != m.unit) ||
-                    m.position.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: MarqueeText(
-                      '현재활동: ${[if (m.regLeague.isNotEmpty) m.regLeague, if (m.regUnit.isNotEmpty) m.regUnit, if (m.position.isNotEmpty) m.position].join(' · ')}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          // 우측 패널: 사진 (없으면 회색 스카우트 실루엣)
-          GestureDetector(
-            onTap: () => showPhotoPip(
-              context,
-              name: m.name,
-              number: m.number,
-              atasNo: m.atasNo,
-              league: m.league,
-              unit: m.unit,
-              photoPath: m.photoPath,
-              fallbackPhotoUrl:
-                  context.read<AppState>().serverPhotoUrlFor(m.number) ?? '',
-            ),
-            child: Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                MemberAvatar(
-                  name: m.name,
-                  photoPath: m.photoPath,
-                  fallbackPhotoUrl:
-                      context.watch<AppState>().serverPhotoUrlFor(m.number) ??
-                      '',
-                  league: m.league,
-                  number: m.number,
-                  showNumber: false,
-                  square: true,
-                  size: 104,
-                ),
-                // 확대 아이콘 힌트
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(
-                    Icons.zoom_out_map,
-                    size: 13,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

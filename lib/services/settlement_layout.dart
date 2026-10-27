@@ -86,16 +86,54 @@ class SettlementBlockData {
   /// (미리보기·PDF·HTML 이 모두 이 함수를 쓰므로 화면=출력이 유지된다)
   ///
   /// [max] 를 주면 상세 줄 수를 제한한다(너무 길어지는 것 방지).
-  List<List<String>> detailRows({int max = 40}) {
+  ///
+  /// ## [keep] — 상세 줄 **하나하나**를 고를 수 있게 한다
+  /// (요구 2026-10-27) "모든 항목의 우측 끝에, 그 항목에 체크박스를 넣어서
+  ///  출력시 포함할지 여부를 선택할 수 있도록 … 기본값은 모두 선택"
+  /// → 블록 통째로만 켜고 끄면 "3건 중 1건만 빼고 출력" 같은 실제 회계
+  ///   요구를 못 맞춘다. [keep] 이 주어지면 그 인덱스만 남긴다.
+  ///   `max` 는 **남긴 뒤의 개수** 기준으로 센다.
+  List<List<String>> detailRows({
+    int max = 40,
+    bool Function(int index)? keep,
+  }) {
     if (details.isEmpty) return const [];
     final out = <List<String>>[];
-    for (var i = 0; i < details.length && i < max; i++) {
+    var kept = 0;
+    var skipped = 0;
+    var overflow = 0;
+    for (var i = 0; i < details.length; i++) {
+      if (keep != null && !keep(i)) {
+        skipped++;
+        continue;
+      }
+      if (kept >= max) {
+        // 지면 제한으로 잘린 건수 — 사용자가 뺀 것과 **다르게** 표기한다.
+        overflow++;
+        continue;
+      }
       out.add(['· 상세', details[i], '', '']);
+      kept++;
     }
-    if (details.length > max) {
-      out.add(['· 상세', '… 외 ${details.length - max}건', '', '']);
+    // 두 사유를 구분해 남긴다. 예전에는 둘 다 '출력에서 제외'라고 적어
+    //  사용자가 빼지도 않은 건이 빠진 것처럼 읽혔다.
+    if (overflow > 0) {
+      out.add(['· 상세', '… 외 $overflow건 (지면상 생략 — 미리보기에서 전체)', '', '']);
+    }
+    if (skipped > 0) {
+      out.add(['· 상세', '… $skipped건은 출력에서 제외(사용자 선택)', '', '']);
     }
     return out;
+  }
+
+  /// 상세 줄 중 몇 건이 출력에 포함되는가([keep] 기준).
+  int keptDetailCount({bool Function(int index)? keep}) {
+    if (keep == null) return details.length;
+    var n = 0;
+    for (var i = 0; i < details.length; i++) {
+      if (keep(i)) n++;
+    }
+    return n;
   }
 }
 
@@ -113,9 +151,11 @@ class SettlementLayout {
     this.reportStyle = true,
     this.template = DocTemplate.report,
     Set<SettlementBlock>? detailOff,
+    Set<String>? detailLineOff,
   }) : order = order ?? [...SettlementBlock.values],
        excluded = excluded ?? <SettlementBlock>{},
-       detailOff = detailOff ?? <SettlementBlock>{};
+       detailOff = detailOff ?? <SettlementBlock>{},
+       detailLineOff = detailLineOff ?? <String>{};
 
   /// 출력 순서.
   List<SettlementBlock> order;
@@ -145,10 +185,91 @@ class SettlementLayout {
   /// 상세 내역을 **빼기로 한** 블록 — 이 집합 하나가 진실원이다.
   Set<SettlementBlock> detailOff;
 
-  /// 상세 내역을 통째로 끄면 쓰는 표식(6개 블록 전부 제외 = 전체 끔).
+  // ── [요구 2026-10-27] 상세 줄 **하나하나**의 출력 여부 ──────────────
+  //
+  //  "결산 기본페이지에도 출력 미리보기 상세항목처럼 상세내역을 노출할 것
+  //   (모든 항목의 우측 끝에, 그 항목에 체크박스를 넣어서 출력시 포함할지
+  //    여부를 선택할 수 있도록 직관적으로 만들 것, 기본값은 모두 선택)"
+  //
+  //  ## 왜 필요한가
+  //   종전에는 '블록(소제목)'과 '블록의 상세 전체'만 켜고 끌 수 있었다.
+  //   실제 회계에서는 "후원 3건 중 이 1건은 내부 사정으로 빼고 인쇄" 같은
+  //   요구가 흔한데, 블록 전체를 끄면 나머지 2건까지 사라졌다.
+  //
+  //  ## 설계 (예외만 저장 — 기본값은 '전부 포함')
+  //   수천 건짜리 원본 행 목록을 **포함 목록으로 저장하면** 나중에 새 거래가
+  //   추가됐을 때 목록에 없어서 **자동으로 빠진다**(조용한 데이터 누락).
+  //   그래서 **제외된 줄만** [detailLineOff] 에 담는다.
+  //     · 새 줄이 생기면 → 목록에 없음 → 자동 포함 (기본값 = 모두 선택 ✅)
+  //     · 사용자가 끄면      → 그 (블록, 줄) 쌍만 기록
+  //   키는 `'<블록name>#<줄인덱스>'`. 블록 안에서의 순서가 바뀌면 어긋날 수
+  //   있지만, 상세 줄은 원본 재무 행에서 **결정적으로** 생성되므로
+  //   같은 데이터면 같은 순서다(재무 탭에서 행을 지우면 그 아래가 당겨지는데,
+  //   이때도 '제외' 표시가 남는 편이 '몰래 포함'보다 안전하다).
+  //
+  //  ## 블록 전체 스위치([detailOff])와의 관계
+  //   `detailOff` = 그 블록의 **모든** 상세를 끈다(기존 동작, 유지).
+  //   `detailLineOff` = 블록은 켜되 **일부 줄만** 끈다(새 기능).
+  //   둘은 독립이며, 한 줄이 실제로 출력되려면 **둘 다** 통과해야 한다.
+  Set<String> detailLineOff;
+
+  /// (블록, 줄) 제외 키.
+  static String lineKey(SettlementBlock b, int index) => '${b.name}#$index';
+
+  /// 이 블록의 [index]번째 상세 줄을 출력하는가.
   ///
-  /// `detailOff` 가 모든 블록을 담고 있으면 '전체 끔' 상태로 본다.
-  static Set<SettlementBlock> get _all => SettlementBlock.values.toSet();
+  /// 블록 단위 스위치([showsDetail])가 꺼져 있으면 무조건 false.
+  bool showsDetailLine(SettlementBlock b, int index) =>
+      showsDetail(b) && !detailLineOff.contains(lineKey(b, index));
+
+  /// 상세 줄 하나를 켜고 끈다.
+  void toggleDetailLine(SettlementBlock b, int index) {
+    final k = lineKey(b, index);
+    if (detailLineOff.contains(k)) {
+      detailLineOff.remove(k);
+    } else {
+      detailLineOff.add(k);
+    }
+  }
+
+  /// 이 블록의 상세 줄을 **전부** 포함/제외한다(줄 단위 예외를 초기화).
+  void setBlockDetailLines(SettlementBlock b, bool on, int count) {
+    if (on) {
+      detailLineOff.removeWhere((k) => k.startsWith('${b.name}#'));
+    } else {
+      for (var i = 0; i < count; i++) {
+        detailLineOff.add(lineKey(b, i));
+      }
+    }
+  }
+
+  /// 블록 [b] 에서 실제로 출력되는 상세 줄 수.
+  int visibleDetailCount(SettlementBlock b, int total) {
+    if (!showsDetail(b)) return 0;
+    var n = 0;
+    for (var i = 0; i < total; i++) {
+      if (!detailLineOff.contains(lineKey(b, i))) n++;
+    }
+    return n;
+  }
+
+  /// 블록 [b] 의 상세 줄에 넘길 [keep] 함수 — 없으면 null(전부 포함).
+  bool Function(int index)? lineKeeper(SettlementBlock b) {
+    if (!showsDetail(b)) return null;
+    final prefix = '${b.name}#';
+    final offs = <int>{};
+    for (final k in detailLineOff) {
+      if (k.startsWith(prefix)) {
+        final n = int.tryParse(k.substring(prefix.length));
+        if (n != null) offs.add(n);
+      }
+    }
+    if (offs.isEmpty) return null;
+    return (i) => !offs.contains(i);
+  }
+
+  /// 줄 단위로 하나라도 제외된 상세가 있는가(배지 표기용).
+  bool get hasLineFilter => detailLineOff.isNotEmpty;
 
   /// 상세 내역을 **전체로** 붙이는가(어느 한 블록이라도 켜져 있으면 true).
   bool get showDetails => order.any((b) => !detailOff.contains(b));
@@ -290,6 +411,7 @@ class SettlementLayout {
     reportStyle: reportStyle,
     template: template,
     detailOff: {...detailOff},
+    detailLineOff: {...detailLineOff},
   );
 
   /// 서식만 기본값으로.
@@ -303,6 +425,7 @@ class SettlementLayout {
     reportStyle = true;
     template = DocTemplate.report;
     detailOff.clear();
+    detailLineOff.clear();
   }
 
   /// 서식이 기본값과 다른가(배지 표기용).
@@ -312,6 +435,7 @@ class SettlementLayout {
       landscape ||
       !noWrap ||
       detailOff.isNotEmpty ||
+      detailLineOff.isNotEmpty ||
       !showNotes ||
       !showMemo ||
       !reportStyle ||
@@ -328,7 +452,11 @@ class SettlementLayout {
       parts.add('줄간격 ${(rowSpace * 100).round()}%');
     }
     if (!noWrap) parts.add('두줄허용');
-    parts.add(anyDetail ? '상세 $detailCount/${includedCount}' : '상세 없음');
+    parts.add(anyDetail ? '상세 $detailCount/$includedCount' : '상세 없음');
+    if (hasLineFilter) {
+      final filterOff = detailLineOff.length;
+      parts.add('상세줄 $filterOff개 제외');
+    }
     if (!showNotes) parts.add('설명 없음');
     if (!showMemo) parts.add('메모 없음');
     if (reportStyle) {
@@ -355,6 +483,7 @@ class SettlementLayout {
   List<String> toJson() => [for (final b in order) b.name];
   List<String> excludedJson() => [for (final b in excluded) b.name];
   List<String> detailOffJson() => [for (final b in detailOff) b.name];
+  List<String> detailLineOffJson() => [...detailLineOff];
   static SettlementLayout fromJson(
     List<dynamic>? order,
     List<dynamic>? excluded, {
@@ -368,6 +497,7 @@ class SettlementLayout {
     bool reportStyle = true,
     String template = 'report',
     List<dynamic>? detailOff,
+    List<dynamic>? detailLineOff,
   }) {
     final ord = <SettlementBlock>[];
     for (final e in order ?? const []) {
@@ -390,6 +520,11 @@ class SettlementLayout {
     }
     // 옛 저장값 호환 — showDetails=false 였으면 '전체 상세 끔'으로 복원한다.
     if (!showDetails) off.addAll(SettlementBlock.values);
+    final lineOff = <String>{};
+    for (final e in detailLineOff ?? const []) {
+      final s = '$e'.trim();
+      if (s.contains('#')) lineOff.add(s);
+    }
     return SettlementLayout(
       order: ord,
       excluded: exc,
@@ -402,6 +537,7 @@ class SettlementLayout {
       reportStyle: reportStyle,
       template: DocTemplate.parse(template),
       detailOff: off,
+      detailLineOff: lineOff,
     );
   }
 }
@@ -423,6 +559,7 @@ class SettlementBuilder {
     required List<Map<String, dynamic>> expenses,
     required List<Map<String, dynamic>> attendees,
     String Function(int) won = _wonDefault,
+
     /// (요구) 상세 내역에 **메모**를 넣을지 — 미리보기에서 켜고 끈다.
     bool memo = true,
   }) {
@@ -666,7 +803,8 @@ class SettlementReportBuilder {
   static String accentOf(SettlementBlock b) => switch (b) {
     SettlementBlock.attendees => '#2E5F8A', // taegeukBlue
     SettlementBlock.income => '#4E7A4B', // scoutGreen
-    SettlementBlock.sponsor => '#A6763C', // tigerGold
+    // [요구 2026-10-27] 후원 = 에르메스 오렌지 (금색 #A6763C 는 인쇄에서 흐림)
+    SettlementBlock.sponsor => '#BF4E0B', // hermesInk
     SettlementBlock.expenseCategory => '#A63A3A', // taegeukRed
     SettlementBlock.expenseAccount => '#7C6A9C', // purple
     SettlementBlock.balance => '#3A3A3A', // masterInk
@@ -685,7 +823,8 @@ class SettlementReportBuilder {
       // 상세 내역이 꺼져 있으면 표(합계)만 — '요약 보고서'.
       final rows = <List<String>>[...d.rows];
       if (layout.showsDetail(b)) {
-        rows.addAll(d.detailRows(max: detailMax));
+        // (요구 2026-10-27) 줄 단위 체크 — 사용자가 끈 줄은 출력하지 않는다.
+        rows.addAll(d.detailRows(max: detailMax, keep: layout.lineKeeper(b)));
       }
       out.add(
         DocReportBlock(

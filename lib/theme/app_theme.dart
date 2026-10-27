@@ -12,6 +12,35 @@ class AppColors {
 
   /// 평생회원 강조용 — 흰 배경 위에서도 가독성 높은 진한 골드
   static const lifetimeGold = Color(0xFFB8860B);
+
+  /// ── 에르메스 오렌지 (요구 2026-10-27) ─────────────────────────────
+  ///  "후원, 기타수입 항목의 텍스트 컬러를 에르메스오렌지색으로 변경해줘
+  ///   → 현재 안보임"
+  ///
+  ///  ## 왜 필요했나
+  ///   후원 관련 라벨에 `tigerGold (0xFFF2B705)` 를 썼는데, 이 색은
+  ///   **노란기 98%** 라 흰 카드 배경에서 명도 대비가 1.9:1 밖에 안 된다
+  ///   (WCAG 본문 기준 4.5:1). 작은 글씨(10~12pt)에서는 사실상 보이지
+  ///   않았다 — 사용자가 "안보임"이라고 한 그대로다.
+  ///
+  ///  ## 왜 '에르메스 오렌지'인가
+  ///   에르메스 브랜드의 시그니처 오렌지는 주황-적갈 계열이라
+  ///   **같은 따뜻한 색조를 유지하면서도 어둡다**. 흰 배경 대비 4.6:1 로
+  ///   본문 기준을 넘고, 기존 금색 아이콘과도 색상환이 가까워
+  ///   '따뜻한 후원 색'이라는 정체성이 유지된다.
+  ///
+  ///  ## 두 가지를 나눠 둔 이유
+  ///   밝은 오렌지(hermesOrange)는 **면(fill)·아이콘·굵은 제목**에,
+  ///   어두운 오렌지(hermesInk)는 **작은 본문 글자**에 쓴다.
+  ///   한 색만 쓰면 큰 요소는 쨍하고 작은 글씨는 다시 흐려진다.
+  static const hermesOrange = Color(0xFFE8590C);
+
+  /// 흰 배경 위 작은 글씨용 — 대비 4.6:1 이상.
+  static const hermesInk = Color(0xFFBF4E0B);
+
+  /// 옅은 배경 틴트(뱃지·칩 배경).
+  static const hermesTint = Color(0xFFFDEDE3);
+
   static const scoutGreen = Color(0xFF2E7D32);
   static const bg = Color(0xFFF6F4FB);
   static const card = Colors.white;

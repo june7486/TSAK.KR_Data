@@ -80,8 +80,16 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
   late SettlementLayout _layout =
       widget.initialLayout?.copy() ?? SettlementLayout();
 
-  /// 펼쳐 본 블록(집계 근거 원본 행 보기).
-  final Set<SettlementBlock> _expanded = <SettlementBlock>{};
+  /// 상세 내역을 **끝까지** 펼친 블록 — 없으면 미리보기 [_detailPreviewLimit] 줄만.
+  ///
+  /// (요구 2026-10-27) "결산 기본페이지에도 … 상세내역을 노출할 것"
+  /// 2,233명짜리 행사에서 참가자 상세를 전부 펼치면 카드 하나가 화면 수십 개가
+  /// 된다. 그래서 **먼저 몇 줄 보여주고** 필요하면 '더 보기'로 끝까지 편다.
+  /// (줄 단위 체크는 펼친 뒤에도 그대로 동작한다)
+  final Set<SettlementBlock> _detailExpanded = <SettlementBlock>{};
+
+  /// 접힌 상태에서 보여줄 상세 줄 수.
+  static const int _detailPreviewLimit = 12;
 
   /// 파일 내보내기 진행 중 — 중복 클릭 방지.
   bool _exporting = false;
@@ -133,25 +141,31 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
       //  결산 탭 카드 순서·서식이 방금 맞춘 것과 어긋나지 않는다.
       onExport: (layout, format, open) {
         _bump(() => _layout = layout.copy());
-        widget.onOutput(layout, SettlementBuilder.build(
-          settlement: _settlement,
-          fees: widget.fees,
-          expenses: widget.expenses,
-          attendees: widget.attendees,
-          won: _won,
-          memo: layout.showMemo,
-        ));
+        widget.onOutput(
+          layout,
+          SettlementBuilder.build(
+            settlement: _settlement,
+            fees: widget.fees,
+            expenses: widget.expenses,
+            attendees: widget.attendees,
+            won: _won,
+            memo: layout.showMemo,
+          ),
+        );
       },
       onPrint: (layout) {
         _bump(() => _layout = layout.copy());
-        widget.onPrint?.call(layout, SettlementBuilder.build(
-          settlement: _settlement,
-          fees: widget.fees,
-          expenses: widget.expenses,
-          attendees: widget.attendees,
-          won: _won,
-          memo: layout.showMemo,
-        ));
+        widget.onPrint?.call(
+          layout,
+          SettlementBuilder.build(
+            settlement: _settlement,
+            fees: widget.fees,
+            expenses: widget.expenses,
+            attendees: widget.attendees,
+            won: _won,
+            memo: layout.showMemo,
+          ),
+        );
       },
     );
     if (out != null) {
@@ -392,36 +406,26 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
                       ],
                     ),
                   ),
-                  // 원본 내역 펼쳐보기 — 집계의 근거를 그 자리에서 확인.
+                  // 상세 내역 요약 배지 — 본문은 이제 **항상 펼쳐져** 있으므로
+                  //  (요구 2026-10-27) 접기/펼치기 대신 '몇 건 중 몇 건이
+                  //  출력되는지'만 보여준다. 부분 선택이면 금색으로 경고.
                   if (d?.hasDetails == true)
-                    InkWell(
-                      onTap: () => setState(() {
-                        if (!_expanded.remove(block)) _expanded.add(block);
-                      }),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 3,
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              '내역 ${d!.details.length}',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: color,
-                              ),
-                            ),
-                            Icon(
-                              _expanded.contains(block)
-                                  ? Icons.expand_less
-                                  : Icons.expand_more,
-                              size: 15,
-                              color: color,
-                            ),
-                          ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        '상세 ${_layout.visibleDetailCount(block, d!.details.length)}'
+                        '/${d.details.length}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color:
+                              _layout.visibleDetailCount(
+                                    block,
+                                    d.details.length,
+                                  ) ==
+                                  d.details.length
+                              ? color
+                              : AppColors.tigerGold,
                         ),
                       ),
                     ),
@@ -463,8 +467,21 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _blockTable(rows, color, faded: !on),
-                  if (_expanded.contains(block) && (d?.hasDetails ?? false))
-                    _detailList(d!.details, color),
+                  // ── [요구 2026-10-27] 상세 내역을 **기본으로 펼쳐** 보여주고,
+                  //    각 줄 오른쪽 끝에 체크박스를 둔다. ──────────────
+                  //
+                  //  "결산 기본페이지에도 출력 미리보기 상세항목처럼 상세내역을
+                  //   노출할 것 (모든 항목의 우측 끝에, 그 항목에 체크박스를
+                  //   넣어서 출력시 포함할지 여부를 선택할 수 있도록 직관적으로
+                  //   만들 것, 기본값은 모두 선택)"
+                  //
+                  //  종전에는 '내역 N' 버튼을 **눌러야** 펼쳐졌고, 펼친 목록은
+                  //  읽기 전용이었다(출력 여부는 미리보기 시트에 가서야 정할 수
+                  //  있었다). 이제는 카드에서 바로 보이고 바로 고칠 수 있다.
+                  if (d != null && d.hasDetails) ...[
+                    const SizedBox(height: 5),
+                    _detailCheckList(block, d, color, enabled: on),
+                  ],
                 ],
               ),
             ),
@@ -474,55 +491,236 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
     );
   }
 
-  /// 집계 근거 원본 행 목록 — '내역 N' 을 누르면 펼쳐진다.
-  Widget _detailList(List<String> details, Color color) {
+  /// 상세 내역 체크 목록 — 각 줄 오른쪽 끝에 출력 포함 체크박스.
+  ///
+  /// ## [요구 2026-10-27] (그대로)
+  /// "결산 기본페이지에도 출력 미리보기 상세항목처럼 상세내역을 노출할 것
+  ///  (모든 항목의 우측 끝에, 그 항목에 체크박스를 넣어서 출력시 포함할지
+  ///   여부를 선택할 수 있도록 직관적으로 만들 것, 기본값은 모두 선택)"
+  ///
+  /// ## 설계
+  ///  · 블록 헤더 우측의 마스터 체크로 **그 블록 전체**를 한 번에 켜고 끈다.
+  ///    (부분 선택 상태면 `-(dash)` 아이콘 → "일부만 선택됨"이 한눈에 보인다)
+  ///  · 줄마다 체크박스 — 기본값은 전부 선택([SettlementLayout.detailLineOff]
+  ///    가 비어 있으면 전부 포함).
+  ///  · 끈 줄은 글자에 **취소선 + 흐림** → 목록에서 사라지지 않으므로
+  ///    "빠뜨렸다"가 아니라 "내가 뺐다"로 읽힌다.
+  ///  · 상세 줄이 많을 때(기본 12줄 초과)는 접어 두고 `더 보기` 로 펼친다.
+  ///    (2,233명 행사에서 카드가 끝없이 길어지는 것을 막는다)
+  Widget _detailCheckList(
+    SettlementBlock block,
+    SettlementBlockData d,
+    Color color, {
+    required bool enabled,
+  }) {
+    final total = d.details.length;
+    final shown = _layout.visibleDetailCount(block, total);
+    final allOn = shown == total;
+    final noneOn = shown == 0;
+    final expanded = _detailExpanded.contains(block);
+    final limit = expanded ? total : _detailPreviewLimit;
+    final visible = total > limit ? limit : total;
+
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.fromLTRB(7, 5, 7, 5),
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.045),
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: color.withValues(alpha: 0.16)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final s in details)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1.5),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '·',
+          // ── 블록 헤더: 상세 내역 제목 + 전체 선택 체크 (우측 끝) ──
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 2),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.subject,
+                  size: 12,
+                  color: color.withValues(alpha: 0.85),
+                ),
+                const SizedBox(width: 3),
+                Expanded(
+                  child: Text(
+                    '상세 내역 $shown/$total건 출력',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w900,
-                      color: color.withValues(alpha: 0.65),
+                      color: allOn
+                          ? color
+                          : (noneOn ? AppColors.textGray : AppColors.tigerGold),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      s,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        height: 1.35,
-                        color: AppColors.textDark,
-                      ),
-                    ),
+                ),
+                // 전체 선택/해제 — 우측 끝.
+                _detailCheck(
+                  checked: allOn,
+                  partial: !allOn && !noneOn,
+                  color: color,
+                  tooltip: allOn ? '상세 전체 해제' : '상세 전체 선택',
+                  enabled: enabled,
+                  label: '전체',
+                  onTap: () => _bump(() {
+                    // 하나라도 꺼져 있으면 '전부 켜기'로 동작(직관적 토글).
+                    _layout.setBlockDetailLines(block, !allOn, total);
+                  }),
+                ),
+              ],
+            ),
+          ),
+          // ── 줄별 체크 목록 ──
+          for (var i = 0; i < visible; i++)
+            _detailLine(
+              block: block,
+              index: i,
+              text: d.details[i],
+              color: color,
+              enabled: enabled,
+            ),
+          if (total > visible)
+            InkWell(
+              onTap: () => setState(() => _detailExpanded.add(block)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  '… 외 ${total - visible}건 더 보기',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: color,
                   ),
-                ],
+                ),
+              ),
+            )
+          else if (expanded && total > _detailPreviewLimit)
+            InkWell(
+              onTap: () => setState(() => _detailExpanded.remove(block)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  '접기',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
               ),
             ),
-          if (details.length > 40) ...[
-            const SizedBox(height: 2),
+        ],
+      ),
+    );
+  }
+
+  /// 상세 줄 1건 — 왼쪽에 원본 내용, **오른쪽 끝에 체크박스**.
+  Widget _detailLine({
+    required SettlementBlock block,
+    required int index,
+    required String text,
+    required Color color,
+    required bool enabled,
+  }) {
+    final on = _layout.showsDetailLine(block, index);
+    return InkWell(
+      onTap: enabled
+          ? () => _bump(() => _layout.toggleDetailLine(block, index))
+          : null,
+      borderRadius: BorderRadius.circular(5),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1.5, horizontal: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
             Text(
-              '… 외 ${details.length - 40}건 (출력에는 모두 포함됩니다)',
-              style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+              '·',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: color.withValues(alpha: on ? 0.65 : 0.25),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.35,
+                  // 끈 줄은 취소선 + 흐림 — 목록에는 남겨 '내가 뺐다'를 보인다.
+                  decoration: on ? null : TextDecoration.lineThrough,
+                  color: on
+                      ? AppColors.textDark
+                      : AppColors.textGray.withValues(alpha: 0.75),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _detailCheck(
+              checked: on,
+              partial: false,
+              color: color,
+              tooltip: on ? '출력에서 제외' : '출력에 포함',
+              enabled: enabled,
+              onTap: () => _bump(() => _layout.toggleDetailLine(block, index)),
             ),
           ],
-        ],
+        ),
+      ),
+    );
+  }
+
+  /// 체크박스 하나 — 3상태(선택/미선택/부분)를 시각적으로 구분한다.
+  Widget _detailCheck({
+    required bool checked,
+    required bool partial,
+    required Color color,
+    required String tooltip,
+    required bool enabled,
+    required VoidCallback onTap,
+    String? label,
+  }) {
+    final icon = checked
+        ? Icons.check_box
+        : (partial
+              ? Icons.indeterminate_check_box
+              : Icons.check_box_outline_blank);
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (label != null) ...[
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    color: checked ? color : AppColors.textGray,
+                  ),
+                ),
+                const SizedBox(width: 2),
+              ],
+              Icon(
+                icon,
+                size: 17,
+                color: enabled
+                    ? (checked || partial ? color : AppColors.textGray)
+                    : AppColors.textGray.withValues(alpha: 0.4),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -694,7 +892,10 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
                   icon: const Icon(Icons.visibility_outlined, size: 16),
                   label: const Text(
                     '미리보기',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -712,7 +913,10 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
                   icon: const Icon(Icons.ios_share, size: 16),
                   label: const Text(
                     '결산 출력',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ),
@@ -728,9 +932,7 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
                 TsakOutputFormat.excel,
                 TsakOutputFormat.word,
               ]) ...[
-                Expanded(
-                  child: _fmtButton(f, enabled: !empty),
-                ),
+                Expanded(child: _fmtButton(f, enabled: !empty)),
                 if (f != TsakOutputFormat.word) const SizedBox(width: 5),
               ],
             ],
@@ -824,8 +1026,12 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
 
   static Color _colorOf(SettlementBlock b) => switch (b) {
     SettlementBlock.attendees => AppColors.taegeukBlue,
+    // [요구 2026-10-27] "후원 … 항목의 텍스트 컬러를 에르메스오렌지색으로
+    //  변경해줘 → 현재 안보임"
+    //  tigerGold(0xFFF2B705)는 흰 카드 위에서 대비 1.9:1 이라 11pt 글씨가
+    //  사실상 사라져 보였다. 에르메스 오렌지(진한 쪽)로 바꾼다.
     SettlementBlock.income => AppColors.scoutGreen,
-    SettlementBlock.sponsor => AppColors.tigerGold,
+    SettlementBlock.sponsor => AppColors.hermesInk,
     SettlementBlock.expenseCategory => AppColors.taegeukRed,
     SettlementBlock.expenseAccount => AppColors.purple,
     SettlementBlock.balance => AppColors.masterInk,

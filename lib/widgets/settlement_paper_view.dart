@@ -370,8 +370,7 @@ class SettlementPaperView extends StatelessWidget {
                 ),
               ),
             // 전폭 상세 내역 — 표 밖에서 한 줄로 이어 읽힌다.
-            if (detailRows.isNotEmpty)
-              _detailBlock(block, detailRows),
+            if (detailRows.isNotEmpty) _detailBlock(block, detailRows),
           ],
         ),
       ),
@@ -480,7 +479,8 @@ class SettlementPaperView extends StatelessWidget {
   ) {
     final base = d?.rows ?? const <List<String>>[];
     if (d == null || !layout.showsDetail(block)) return base;
-    return [...base, ...d.detailRows()];
+    // (요구 2026-10-27) 줄 단위 체크 — 끈 줄은 미리보기에서도 즉시 사라진다.
+    return [...base, ...d.detailRows(keep: layout.lineKeeper(block))];
   }
 
   /// 상세 행인가 — 첫 칸이 '· 상세'.
@@ -519,7 +519,9 @@ class SettlementPaperView extends StatelessWidget {
   static Color _blockColor(SettlementBlock b) => switch (b) {
     SettlementBlock.attendees => AppColors.taegeukBlue,
     SettlementBlock.income => AppColors.scoutGreen,
-    SettlementBlock.sponsor => AppColors.tigerGold,
+    // [요구 2026-10-27] 후원 항목을 '에르메스 오렌지'로 — 금색은 흰 종이에서
+    //  대비가 1.9:1 이라 미리보기·출력에서 글자가 보이지 않았다.
+    SettlementBlock.sponsor => AppColors.hermesInk,
     SettlementBlock.expenseCategory => AppColors.taegeukRed,
     SettlementBlock.expenseAccount => AppColors.purple,
     SettlementBlock.balance => AppColors.masterInk,
@@ -654,10 +656,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
             constraints: BoxConstraints(
               maxHeight: (mq.size.height * 0.34).clamp(120.0, 190.0),
             ),
-            child: SingleChildScrollView(
-              primary: false,
-              child: _optionsBar(),
-            ),
+            child: SingleChildScrollView(primary: false, child: _optionsBar()),
           ),
         ],
       ),
@@ -1148,11 +1147,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.ios_share,
-                size: 13,
-                color: AppColors.purple,
-              ),
+              const Icon(Icons.ios_share, size: 13, color: AppColors.purple),
               const SizedBox(width: 4),
               const Text(
                 '지금 서식 그대로 출력',
@@ -1197,7 +1192,10 @@ class _PreviewSheetState extends State<_PreviewSheet> {
                   icon: const Icon(Icons.picture_as_pdf, size: 14),
                   label: const Text(
                     'PDF',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ),
@@ -1472,11 +1470,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 2.5),
       alignment: Alignment.centerLeft,
-      child: Container(
-        height: 1.8,
-        width: 22,
-        color: textColor ?? ink,
-      ),
+      child: Container(height: 1.8, width: 22, color: textColor ?? ink),
     );
 
     final Widget body = switch (t) {
@@ -1500,11 +1494,17 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               Container(
                 height: 4.4,
                 decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: lineColor, width: 0.6)),
+                  border: Border(
+                    bottom: BorderSide(color: lineColor, width: 0.6),
+                  ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 alignment: Alignment.centerLeft,
-                child: Container(height: 1.4, width: i == 0 ? 16 : 26, color: ink),
+                child: Container(
+                  height: 1.4,
+                  width: i == 0 ? 16 : 26,
+                  color: ink,
+                ),
               ),
           ],
         ),
@@ -1523,7 +1523,11 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  band(bg: accent.withValues(alpha: 0.12), h: 4.5, leftBar: true),
+                  band(
+                    bg: accent.withValues(alpha: 0.12),
+                    h: 4.5,
+                    leftBar: true,
+                  ),
                   const SizedBox(height: 2),
                   bar(0.8, h: 1.6),
                 ],
@@ -1546,9 +1550,7 @@ class _PreviewSheetState extends State<_PreviewSheet> {
       ),
       // 전체 격자 + 가운데 제목
       DocTemplate.official => Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: ink, width: 1.0),
-        ),
+        decoration: BoxDecoration(border: Border.all(color: ink, width: 1.0)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1564,7 +1566,9 @@ class _PreviewSheetState extends State<_PreviewSheet> {
               Container(
                 height: 4.6,
                 decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: lineColor, width: 0.6)),
+                  border: Border(
+                    bottom: BorderSide(color: lineColor, width: 0.6),
+                  ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 alignment: Alignment.centerLeft,
