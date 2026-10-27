@@ -466,7 +466,13 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _blockTable(rows, color, faded: !on),
+                  _blockTable(
+                    rows,
+                    color,
+                    faded: !on,
+                    block: block,
+                    enabled: on,
+                  ),
                   // ── [요구 2026-10-27] 상세 내역을 **기본으로 펼쳐** 보여주고,
                   //    각 줄 오른쪽 끝에 체크박스를 둔다. ──────────────
                   //
@@ -730,10 +736,21 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
   /// (요구) "참가자 수도 좀더 정리가 잘되고 여백이 덜 보이게 세칸또는 그
   ///  이상을 사용해서 정리해도 될 듯 함"
   /// → 참가자 수는 3번째 칸에 **비율 막대**, 나머지 블록은 건수/비고를 넣는다.
+  /// 블록 표 — **모든 줄 오른쪽 끝에 출력 포함 체크박스**.
+  ///
+  /// ## [요구 2026-10-27] "나머지 항목에도 체크박스를 넣어줘요"
+  ///
+  /// 종전에는 체크박스가 `상세 내역`(원본 행)에만 있었고, 그 상세가 없는
+  /// 블록(수입=합계 1줄 등)은 체크박스가 **하나도 안 보였다**. 사용자가
+  /// '참가자 수'에는 체크가 보이는데 '수입'에는 없는 화면을 보고 지적한 것.
+  /// → 이제 **표의 모든 행**이 자기 체크박스를 갖는다. 기본값은 전부 선택.
+  ///   (끈 행은 취소선 + 흐림 → 목록에서 사라지지 않아 '내가 뺐다'로 읽힌다)
   Widget _blockTable(
     List<List<String>> rows,
     Color color, {
     bool faded = false,
+    SettlementBlock? block,
+    bool enabled = true,
   }) {
     if (rows.isEmpty) {
       return const Padding(
@@ -751,6 +768,8 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
           0: FlexColumnWidth(1.15),
           1: FlexColumnWidth(1.35),
           2: FlexColumnWidth(1.15),
+          // 체크박스 전용 칸 — 모든 행의 우측 끝.
+          3: FixedColumnWidth(32),
         },
         border: TableBorder(
           horizontalInside: BorderSide(
@@ -759,28 +778,62 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
           ),
         ),
         children: [
-          for (final r in rows)
+          for (var i = 0; i < rows.length; i++)
             TableRow(
-              decoration: _isTotalRow(r)
+              decoration: _isTotalRow(rows[i])
                   ? BoxDecoration(color: color.withValues(alpha: 0.055))
                   : null,
               children: [
                 _cell(
-                  r.isNotEmpty ? r[0] : '',
+                  rows[i].isNotEmpty ? rows[i][0] : '',
                   bold: true,
                   color: _isTotalRow(r) ? color : AppColors.textDark,
                 ),
                 _cell(
-                  r.length > 1 ? r[1] : '',
+                  rows[i].length > 1 ? rows[i][1] : '',
                   align: TextAlign.right,
                   bold: _isTotalRow(r),
                   color: _isTotalRow(r) ? color : AppColors.textDark,
                 ),
                 // 참가자 수 블록은 3번째 칸을 비율 막대로 쓴다(여백 대신 정보).
-                _thirdCell(r, color),
+                _thirdCell(rows[i], color),
+                // ── 우측 끝: 출력 포함 체크박스 ──
+                _rowCheck(
+                  checked: block == null
+                      ? true
+                      : _layout.showsRow(block, i),
+                  enabled: enabled && block != null,
+                  color: color,
+                  onTap: () {
+                    if (block == null || !enabled) return;
+                    _bump(() => _layout.toggleRow(block, i));
+                  },
+                ),
               ],
             ),
         ],
+      ),
+    );
+  }
+
+  /// 표 행 우측 끝 체크박스 — 출력 포함 여부.
+  Widget _rowCheck({
+    required bool checked,
+    required bool enabled,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Icon(
+          checked ? Icons.check_box : Icons.check_box_outline_blank,
+          size: 18,
+          color: !enabled
+              ? AppColors.textGray.withValues(alpha: 0.4)
+              : (checked ? color : AppColors.textGray),
+        ),
       ),
     );
   }

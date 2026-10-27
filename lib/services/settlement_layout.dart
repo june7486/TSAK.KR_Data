@@ -152,10 +152,12 @@ class SettlementLayout {
     this.template = DocTemplate.report,
     Set<SettlementBlock>? detailOff,
     Set<String>? detailLineOff,
+    Set<String>? rowOff,
   }) : order = order ?? [...SettlementBlock.values],
        excluded = excluded ?? <SettlementBlock>{},
        detailOff = detailOff ?? <SettlementBlock>{},
-       detailLineOff = detailLineOff ?? <String>{};
+       detailLineOff = detailLineOff ?? <String>{},
+       rowOff = rowOff ?? <String>{};
 
   /// 출력 순서.
   List<SettlementBlock> order;
@@ -270,6 +272,74 @@ class SettlementLayout {
 
   /// 줄 단위로 하나라도 제외된 상세가 있는가(배지 표기용).
   bool get hasLineFilter => detailLineOff.isNotEmpty;
+
+  // ── [요구 2026-10-27] **표 행**의 출력 여부 ─────────────────────────
+  //
+  //  "나머지 항목에도 체크박스를 넣어줘요"
+  //
+  //  ## 배경
+  //   종전 체크박스는 `상세 내역`(원본 행 목록)에만 붙어 있었다. 그런데
+  //   `수입` 블록처럼 **표가 한 줄(합계)뿐**인 블록은 상세 자체가 없어서
+  //   (또는 사용자가 상세를 꺼서) 체크박스가 **하나도 안 보였다**.
+  //   사용자 화면에서 '참가자 수'에는 체크가 보이는데 '수입'에는 안 보여
+  //   "나머지 항목에도 체크박스를 넣어줘요" 가 나온 이유다.
+  //
+  //  ## 설계 (상세와 동일 — 예외만 저장)
+  //   기본값은 '전부 포함'. 사용자가 끈 (블록, 행) 쌍만 기록한다.
+  //   새 행이 추가되면 목록에 없으므로 자동 포함 — 조용한 누락이 없다.
+  //   키는 `'<블록name>r<행인덱스>'` (상세 키 `… #N` 과 접두가 겹치지 않게 r).
+  Set<String> rowOff;
+
+  /// (블록, 표 행) 제외 키.
+  static String rowKey(SettlementBlock b, int index) => '${b.name}r$index';
+
+  /// 이 블록의 [index]번째 **표 행**을 출력하는가.
+  bool showsRow(SettlementBlock b, int index) =>
+      showsDetail(b) && !rowOff.contains(rowKey(b, index));
+
+  /// 표 행 하나를 켜고 끈다.
+  void toggleRow(SettlementBlock b, int index) {
+    final k = rowKey(b, index);
+    if (rowOff.contains(k)) {
+      rowOff.remove(k);
+    } else {
+      rowOff.add(k);
+    }
+  }
+
+  /// 이 블록의 표 행을 **전부** 포함/제외한다.
+  void setBlockRows(SettlementBlock b, bool on, int count) {
+    if (on) {
+      rowOff.removeWhere((k) => k.startsWith('${b.name}r'));
+    } else {
+      for (var i = 0; i < count; i++) {
+        rowOff.add(rowKey(b, i));
+      }
+    }
+  }
+
+  /// 블록 [b] 에서 실제로 출력되는 표 행 수.
+  int visibleRowCount(SettlementBlock b, int total) {
+    if (!showsDetail(b)) return 0;
+    var n = 0;
+    for (var i = 0; i < total; i++) {
+      if (!rowOff.contains(rowKey(b, i))) n++;
+    }
+    return n;
+  }
+
+  /// 표 행 목록을 걸러낸다 — 제외가 없으면 원본 그대로(불필요한 복사 방지).
+  List<List<String>> filterRows(SettlementBlock b, List<List<String>> rows) {
+    if (rowOff.isEmpty) return rows;
+    final out = <List<String>>[];
+    for (var i = 0; i < rows.length; i++) {
+      if (!rowOff.contains(rowKey(b, i))) out.add(rows[i]);
+    }
+    return out;
+  }
+
+  /// 행 단위로 하나라도 제외된 표가 있는가(배지 표기용).
+  bool get hasRowFilter => rowOff.isNotEmpty;
 
   /// 상세 내역을 **전체로** 붙이는가(어느 한 블록이라도 켜져 있으면 true).
   bool get showDetails => order.any((b) => !detailOff.contains(b));
@@ -412,6 +482,7 @@ class SettlementLayout {
     template: template,
     detailOff: {...detailOff},
     detailLineOff: {...detailLineOff},
+    rowOff: {...rowOff},
   );
 
   /// 서식만 기본값으로.
@@ -426,6 +497,7 @@ class SettlementLayout {
     template = DocTemplate.report;
     detailOff.clear();
     detailLineOff.clear();
+    rowOff.clear();
   }
 
   /// 서식이 기본값과 다른가(배지 표기용).
@@ -821,7 +893,8 @@ class SettlementReportBuilder {
       final d = data[b];
       if (d == null) continue;
       // 상세 내역이 꺼져 있으면 표(합계)만 — '요약 보고서'.
-      final rows = <List<String>>[...d.rows];
+      // (요구 2026-10-27) 표 행 단위 체크 — 사용자가 끈 행은 출력하지 않는다.
+      final rows = <List<String>>[...layout.filterRows(b, d.rows)];
       if (layout.showsDetail(b)) {
         // (요구 2026-10-27) 줄 단위 체크 — 사용자가 끈 줄은 출력하지 않는다.
         rows.addAll(d.detailRows(max: detailMax, keep: layout.lineKeeper(b)));

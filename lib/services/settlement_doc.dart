@@ -41,7 +41,8 @@ class SettlementDoc {
       if (d == null) continue;
       // 블록 구분 띠 — 첫 칸에 블록명, 나머지는 비운다(엑셀에서 병합 느낌).
       rows.add([b.label, '', '', '']);
-      for (final r in d.rows) {
+      // (요구 2026-10-27) 표 행 단위 체크 — 화면과 **같은 규칙**으로 뺀다.
+      for (final r in layout.filterRows(b, d.rows)) {
         rows.add([
           '',
           r.isNotEmpty ? r[0] : '',
