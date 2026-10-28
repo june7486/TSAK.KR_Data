@@ -146,7 +146,16 @@ class MemberCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
+                        // ── [요구 2026-10-27] "인가번호와 단추를 이름 옆으로" ──
+                        //  `Flexible` 은 기본값이 `FlexFit.loose` 지만, 자식이
+                        //  스스로 폭을 정하지 않으면 가용 폭을 다 받는다.
+                        //  MarqueeText 도 (종전엔) 넘치지 않을 때 전체 폭을
+                        //  잡아서, 이름이 짧아도 배지·버튼이 오른쪽 끝으로
+                        //  밀려났다. 이제 MarqueeText 가 제 폭만 쓰므로
+                        //  이름 바로 뒤에 배지가 붙는다 — 여기서 loose 를
+                        //  **명시**해 의도를 코드에 남긴다.
                         Flexible(
+                          fit: FlexFit.loose,
                           child: MarqueeText(
                             member.displayName(canSeeRealName: canSeeRealName),
                             style: TextStyle(

@@ -129,7 +129,19 @@ class _MarqueeTextState extends State<MarqueeText>
         final overflows = textWidth > viewWidth + 0.5;
         if (!overflows) {
           _ensureStopped();
-          return _staticText(width: viewWidth);
+          // ── [요구 2026-10-27] "인가번호와 단추를 이름 옆으로 옮겨줘" ──────
+          //
+          //  종전에는 넘치지 않을 때도 `SizedBox(width: viewWidth)` 로
+          //  **남는 폭을 전부** 차지했다. 이름이 '김용우'처럼 짧아도
+          //  Flexible 안에서 가용 폭을 다 먹어버려, 뒤따르는 인가번호 배지와
+          //  ⋮ 단추가 **화면 맨 오른쪽 끝으로 밀려났다**
+          //  (사용자 스크린샷의 빨간 박스: 이름은 왼쪽, 배지는 오른쪽).
+          //
+          //  넘치지 않는 경우엔 글자가 **제 폭만큼만** 차지하게 두면,
+          //  Row 가 배지를 바로 뒤에 붙여 '이름 옆'에 놓인다.
+          //  넘칠 때(마퀴)는 종전과 동일하게 가용 폭을 채운다 — 흐르는
+          //  애니메이션은 폭이 정해져야 하므로 그대로 둔다.
+          return _staticText();
         }
 
         _ensureRunning(textWidth);
