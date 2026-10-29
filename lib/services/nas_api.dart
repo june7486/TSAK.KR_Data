@@ -1601,6 +1601,32 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// NAS 폴더 중 **행사로 등록되지 않은 것** 미리 보기 (아무것도 쓰지 않음).
+  ///
+  /// ## [요구 2026-10-30] "나스에 행사들을 추가했는데, 행사관리에서 자동으로
+  ///  추가되지 않았음. 확인 후 업데이트 해줘"
+  ///
+  /// NAS 탐색기에서 폴더를 만들면 그게 곧 행사여야 한다. 이 API 는 실제
+  /// 폴더와 `events.json` 을 대조해 **추가될 목록만** 돌려준다.
+  Future<Map<String, dynamic>> eventNasPreview() async {
+    final r = await http
+        .get(_uri('/api/event/nas/preview'), headers: _authHeaders)
+        .timeout(const Duration(minutes: 4));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// NAS 폴더를 행사로 **실제 등록**한다 (+ 항목 폴더 생성).
+  Future<Map<String, dynamic>> eventNasSync({bool createDirs = true}) async {
+    final r = await http
+        .post(
+          _uri('/api/event/nas/sync'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'createDirs': createDirs}),
+        )
+        .timeout(const Duration(minutes: 10));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// 행사 항목 파일 URL (원본 보기 / 다운로드)
   String eventFile2Url(
     String year,

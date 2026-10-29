@@ -36,6 +36,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
   String _year = '';
   bool _backfillBusy = false;
 
+  /// NAS 폴더 동기화 진행 중.
+  bool _nasSyncing = false;
+
   /// 휴지통 펼침 여부 — 실수 삭제 대비, 기본은 접어 둔다.
   bool _trashOpen = false;
 
@@ -139,6 +142,131 @@ class _EventYearScreenState extends State<EventYearScreen> {
     }
   }
 
+  /// NAS 폴더 → 행사 자동 등록.
+  ///
+  /// ## [요구 2026-10-30] "나스에 행사들을 추가했는데, 행사관리에서 자동으로
+  ///  추가되지 않았음. 확인 후 업데이트 해줘"
+  ///
+  /// NAS 탐색기에서 `행사관리/<연도>/<행사명>` 폴더를 만들면 그게 곧 행사다.
+  /// 다만 앱은 events.json 을 기준으로 목록을 그리므로, 새 폴더는 **명시적
+  /// 동기화**가 필요하다(자동으로 하면 오등록 위험이 크다).
+  ///
+  /// 절차: ① 미리보기로 무엇이 추가될지 보여준다 → ② 사용자가 확인하면 등록.
+  /// 사용자가 목록을 **눈으로 확인한 뒤** 결정하게 하는 것이 핵심이다.
+  Future<void> _syncFromNas() async {
+    setState(() => _nasSyncing = true);
+    Map<String, dynamic> prev;
+    try {
+      prev = await context.read<NasApi>().eventNasPreview();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _nasSyncing = false);
+      _snack('NAS 확인 실패: $e');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _nasSyncing = false);
+    if (prev['ok'] != true) {
+      _snack('NAS 확인 실패');
+      return;
+    }
+    final added = (prev['added'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    if (added.isEmpty) {
+      _snack('NAS 와 앱이 이미 일치합니다 (새 행사 없음)');
+      return;
+    }
+
+    // ── 미리보기 다이얼로그 ──
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('NAS 에서 행사 ${added.length}건 발견'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '아래 폴더를 행사로 등록할까요?',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final a in added)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${a['year']}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.purple,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '${a['title']}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '· 기존 행사는 건드리지 않습니다\n'
+                '· 폴더명을 그대로 행사명으로 씁니다\n'
+                '· 항목 폴더(01~07)가 없으면 함께 만듭니다',
+                style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('${added.length}건 등록'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _nasSyncing = true);
+    try {
+      final r = await context.read<NasApi>().eventNasSync();
+      if (!mounted) return;
+      final n = (r['added'] as List? ?? const []).length;
+      setState(() => _nasSyncing = false);
+      _snack(n > 0 ? '행사 $n건을 등록했습니다' : '새로 등록할 행사가 없습니다');
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _nasSyncing = false);
+      _snack('등록 실패: $e');
+    }
+  }
+
   void _watchThumbBackfill() {
     context
         .read<NasApi>()
@@ -223,7 +351,7 @@ class _EventYearScreenState extends State<EventYearScreen> {
       appBar: TsakAppBar(
         title: const Text('행사관리'),
         // [요구 2026-10-29] 아이콘이 한 줄에 몰려 제목과 겹치던 문제 →
-        //  1줄 2개(엠블럼·행사자료) + 2줄 4개(게시판·사진·썸네일·새로고침).
+        //  1줄 2개(엠블럼·행사자료) + 2줄 4개(게시판·사진·썸네일·NAS·새로고침)
         actionRows: const [2, 4],
         actions: [
           const AppHomeEmblem(size: 22),
@@ -272,6 +400,23 @@ class _EventYearScreenState extends State<EventYearScreen> {
                       ),
                     )
                   : const Icon(Icons.auto_awesome_mosaic),
+            ),
+          if (_canManage(state))
+            IconButton(
+              // NAS 탐색기에서 폴더만 만들면 행사가 되어야 한다.
+              //  앱이 모르는 폴더를 찾아 등록한다.
+              tooltip: 'NAS 폴더에서 행사 가져오기',
+              onPressed: _nasSyncing ? null : _syncFromNas,
+              icon: _nasSyncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.sync),
             ),
           IconButton(
             tooltip: '새로고침',
