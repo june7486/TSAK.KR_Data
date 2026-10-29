@@ -49,6 +49,9 @@ class EventResource {
     return i <= 0 ? name : name.substring(0, i);
   }
 
+  /// 순서 저장 키 — `하위폴더/파일명` (서버 `_res_order_key` 와 동일 규칙).
+  String get orderKey => sub.isEmpty ? name : '$sub/$name';
+
   String get sizeLabel {
     if (size <= 0) return '';
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -206,5 +209,127 @@ class EventResourceApi {
     );
     final j = await api.robustGetJson(uri);
     return j['ok'] == true;
+  }
+
+  /// 표시 순서 저장 — [ordered] 에 보이는 순서 그대로 넣는다.
+  ///
+  /// ## [요구 2026-10-30] "행사자료(음원포함)들은 순서 변경할 수 있도록"
+  /// 파일은 NAS 에 그대로 두고 **순서만** `db/res_order.json` 에 기록한다.
+  /// 따라서 재생 URL·다운로드·백업은 전혀 영향받지 않는다.
+  Future<bool> reorder(List<EventResource> ordered) async {
+    final uri = Uri.parse('${api.baseUrl}/api/event/res/reorder');
+    final keys = ordered.map((r) => r.orderKey).toList();
+    final r = await http.post(
+      uri,
+      headers: {...api.authHeaderMap, 'Content-Type': 'application/json'},
+      body: json.encode({'keys': keys}),
+    );
+    final t = utf8.decode(r.bodyBytes).trimLeft();
+    if (!t.startsWith('{')) return false;
+    return (json.decode(t) as Map)['ok'] == true;
+  }
+
+  /// 순서 초기화(기본: 최신순) — [sub] 폴더 범위.
+  Future<bool> reorderReset({String sub = ''}) async {
+    final uri = Uri.parse('${api.baseUrl}/api/event/res/reorder/reset');
+    final r = await http.post(
+      uri,
+      headers: {...api.authHeaderMap, 'Content-Type': 'application/json'},
+      body: json.encode({'sub': sub}),
+    );
+    final t = utf8.decode(r.bodyBytes).trimLeft();
+    if (!t.startsWith('{')) return false;
+    return (json.decode(t) as Map)['ok'] == true;
+  }
+
+  // ============ 음원 폴더 외부 공유 (QR) ============
+  //
+  // ## [요구 2026-10-30] "음원 폴더만 외부로 QR을 보내서 재생"
+  // ##  "불특정 다수가 들어올 수 있으니 각별히 보안에 신경"
+  //
+  // 발급된 토큰은 **음원 읽기 전용**(scope=res:audio)이며, 세션과 완전히
+  // 별개다. 만료·폐기가 가능하고 발급/사용 기록이 남는다.
+
+  /// 공유 토큰 발급 — [sub] 폴더를 [days] 일간 외부 공개.
+  Future<ShareToken?> createShare({
+    String sub = '',
+    int days = 30,
+    String label = '',
+  }) async {
+    final uri = Uri.parse('${api.baseUrl}/api/event/res/share/create');
+    final r = await http.post(
+      uri,
+      headers: {...api.authHeaderMap, 'Content-Type': 'application/json'},
+      body: json.encode({'sub': sub, 'days': days, 'label': label}),
+    );
+    final t = utf8.decode(r.bodyBytes).trimLeft();
+    if (!t.startsWith('{')) return null;
+    final j = (json.decode(t) as Map).cast<String, dynamic>();
+    if (j['ok'] != true) return null;
+    return ShareToken(
+      token: '${j['token'] ?? ''}',
+      sub: '${j['sub'] ?? ''}',
+      days: (j['days'] as num?)?.toInt() ?? days,
+      exp: (j['exp'] as num?)?.toInt() ?? 0,
+      id: '${j['id'] ?? ''}',
+      label: label,
+    );
+  }
+
+  /// 발급된 공유 토큰 목록.
+  Future<List<Map<String, dynamic>>> listShares() async {
+    final uri = Uri.parse('${api.baseUrl}/api/event/res/share/list');
+    final j = await api.robustGetJson(uri);
+    return (j['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 공유 폐기 — 즉시 무효화된다.
+  Future<bool> revokeShare(String id) async {
+    final uri = Uri.parse('${api.baseUrl}/api/event/res/share/revoke');
+    final r = await http.post(
+      uri,
+      headers: {...api.authHeaderMap, 'Content-Type': 'application/json'},
+      body: json.encode({'id': id}),
+    );
+    final t = utf8.decode(r.bodyBytes).trimLeft();
+    if (!t.startsWith('{')) return false;
+    return (json.decode(t) as Map)['ok'] == true;
+  }
+}
+
+/// 발급된 공유 토큰 1건.
+class ShareToken {
+  const ShareToken({
+    required this.token,
+    required this.sub,
+    required this.days,
+    required this.exp,
+    required this.id,
+    required this.label,
+  });
+
+  final String token;
+  final String sub;
+  final int days;
+  final int exp;
+  final String id;
+  final String label;
+
+  /// QR 에 담길 공개 주소 — `/s/<token>`.
+  String playUrl(String baseUrl) {
+    final b = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    return '$b/s/$token';
+  }
+
+  String get expLabel {
+    if (exp <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
   }
 }

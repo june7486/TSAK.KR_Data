@@ -5,6 +5,7 @@ import 'dart:async' show unawaited;
 import '../models/member.dart';
 import 'ai_query.dart';
 import 'app_config.dart';
+import 'donation_kinds.dart';
 import 'finance_service.dart';
 import 'league_names.dart';
 import 'member_repository.dart';
@@ -2431,32 +2432,55 @@ class AppState extends ChangeNotifier {
         final fs = finance;
         if (fs == null) return [];
         final kw = ai.keyword.trim().toLowerCase();
-        // 후원 카테고리 + (선택)키워드/연도로 매칭된 인가번호 집합
-        final numbers = <String>{};
+        // 후원 카테고리 + (선택)키워드/연도로 매칭된 **(소속, 번호)** 집합
+        //
+        // ## [버그 수정 2026-10-30] 은하 G75 가 범 75호 후원자로 잡히던 문제
+        //  · ① 종전에는 `category == '후원'` 만 봤는데 실제 데이터는
+        //       '물품후원'·'식사후원'·'차량후원'·'기타후원'·'후원금' 이다.
+        //       → `contains('후원')` 로 넓히고, 참가비/기타수입은
+        //         `DonationKind.isNonDonation` 으로 먼저 배제한다.
+        //  · ② **번호에서 숫자만 뽑아 비교**(`G75` → `75`)해서 은하 G75 가
+        //       범 75호와 같은 사람이 됐다. → 소속까지 함께 본다.
+        final donors = <String>{};
         for (final t in fs.transactions) {
           if (t.isExpense) continue;
-          final isDonation =
-              t.category == '후원' ||
-              t.category == '찬조' ||
-              t.category == '기부' ||
-              t.category.contains('후원');
-          if (!isDonation) continue;
+          final cat = t.category.trim();
+          if (DonationKind.isNonDonation(cat)) continue;
+          if (!cat.contains('후원') &&
+              cat != '찬조' &&
+              cat != '기부' &&
+              cat != '기타' &&
+              cat != '기타수입') {
+            continue;
+          }
           if (ai.year.isNotEmpty && t.year != ai.year) continue;
           if (kw.isNotEmpty) {
             final hay = '${t.event} ${t.memo} ${t.context} ${t.payer}'
                 .toLowerCase();
             if (!hay.contains(kw)) continue;
           }
-          final no = t.number.replaceAll(RegExp(r'[^0-9]'), '');
-          if (no.isNotEmpty) numbers.add(no);
+          final key = _donorKey(t.number, t.corps);
+          if (key.isNotEmpty) donors.add(key);
         }
-        return list
-            .where(
-              (m) =>
-                  numbers.contains(m.number.replaceAll(RegExp(r'[^0-9]'), '')),
-            )
+        return list.where((m) => donors.contains(_donorKey(m.number, m.corps)))
             .toList();
     }
+  }
+
+  /// 후원자 식별 키 — **(소속, 번호)**. 은하 `G75` 와 범 `75` 는 다른 키.
+  ///
+  /// ## [버그 수정 2026-10-30] 숫자만 비교하면 은하 G75 = 범 75 가 된다.
+  /// 접두어 `G`/`은하` 를 보존하고, 소속 문자열이 있으면 그것을 우선한다.
+  static String _donorKey(String number, String corps) {
+    final s = number.trim();
+    final c = corps.trim().toLowerCase();
+    final isEunha = c == 'eunha' ||
+        s.toLowerCase().startsWith('g') ||
+        s.startsWith('은하') ||
+        s.startsWith('갤럭시');
+    final digits = s.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return '';
+    return '${isEunha ? 'eunha' : 'tsak'}:$digits';
   }
 
   void setQuery(String q) {
