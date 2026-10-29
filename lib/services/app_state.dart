@@ -2522,6 +2522,107 @@ class AppState extends ChangeNotifier {
       repo.byNumber(number) ?? _eunhaByNumber(number);
   Member? byName(String name) => repo.byName(name) ?? _eunhaByName(name);
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [신원 해석 2026-10-29] 카드 연결은 **이 함수 하나만** 통과한다.
+  //
+  //  ## 사고 배경
+  //   행사 참석자에 비인가자 '김순철' 을 수동 입력했는데, 예전 코드가
+  //   "번호가 없네 → 이름으로 찾자" 로 폴백해서 **범인가자 동명이인**의
+  //   개인카드를 열었다. 남의 후원·연회비·참가이력이 보이는 심각한 문제.
+  //
+  //  ## 규칙 (구조적으로 재발 불가)
+  //   ① 이름은 **절대** 회원을 단정하지 않는다.
+  //   ② 믿을 수 있는 키(인가번호/전화번호)로 정확히 1명일 때만 연다.
+  //   ③ 이름은 "후보가 정확히 1명"일 때만 **보조**로 쓴다(그마저도 근거 표시).
+  //   ④ 애매하면 **열지 않고** 후보 목록을 돌려준다 → 사용자가 고른다.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 신원 조회 결과 — "누구로 열 것인가"를 **명시적으로** 표현한다.
+  ///
+  /// `member != null` 이면 열어도 안전하다. `candidates` 가 2명 이상이면
+  /// **열면 안 되고** 사용자에게 선택을 받아야 한다.
+  MemberIdentity resolveIdentity({
+    String? number,
+    String? phone,
+    String? name,
+    String? corps,
+    bool allowNameFallback = true,
+  }) {
+    final rawNum = (number ?? '').trim();
+    final rawPhone = (phone ?? '').trim();
+    final nm = (name ?? '').trim();
+
+    // ── ① 인가번호(접두어 보존) ─────────────────────────────────────────
+    //  은하 G75 와 범 75 는 접두어가 다르므로 여기서 절대 섞이지 않는다.
+    final numKey = rawNum.replaceAll(RegExp(r'[^0-9]'), '');
+    if (numKey.isNotEmpty) {
+      final wantEunha = _looksEunha(rawNum, corps);
+      final pool = <Member>[
+        if (!wantEunha) ...repo.allUnscoped(),
+        if (wantEunha) ..._eunhaMembers,
+        // 접두어가 없으면 양쪽 다 본다(레거시 호환) — 단, 소속까지 일치해야.
+        if (!wantEunha) ..._eunhaMembers,
+      ];
+      final hits = pool.where((m) {
+        if (m.isRegular) return false;
+        if (m.number.replaceAll(RegExp(r'[^0-9]'), '') != numKey) return false;
+        if (corps == 'tsak' || corps == 'eunha') return m.corps == corps;
+        return true;
+      }).toList();
+      if (hits.length == 1) {
+        return MemberIdentity.single(hits.first, via: 'number');
+      }
+      if (hits.length > 1) {
+        return MemberIdentity.ambiguous(hits, via: 'number');
+      }
+    }
+
+    // ── ② 전화번호 ─────────────────────────────────────────────────────
+    final phKey = rawPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (phKey.length >= 7) {
+      final hits = <Member>[
+        ...repo.allUnscoped().where((m) => m.phoneDigits == phKey),
+        ..._eunhaMembers.where((m) => m.phoneDigits == phKey),
+      ];
+      if (hits.length == 1) {
+        return MemberIdentity.single(hits.first, via: 'phone');
+      }
+      if (hits.length > 1) {
+        return MemberIdentity.ambiguous(hits, via: 'phone');
+      }
+    }
+
+    // ── ③ 이름 — **보조**. 후보가 정확히 1명일 때만 쓴다. ───────────────
+    if (allowNameFallback && nm.isNotEmpty) {
+      final hits = <Member>[
+        ...repo.allByName(nm),
+        ..._eunhaMembers.where((m) => m.name.trim() == nm),
+      ];
+      // 같은 사람이 양쪽에 있으면 중복 제거(identityKey 기준).
+      final uniq = <String, Member>{};
+      for (final m in hits) {
+        uniq.putIfAbsent(m.identityKey, () => m);
+      }
+      final list = uniq.values.toList();
+      if (list.length == 1) {
+        // 이름만으로 1명 — 열 수는 있지만 근거가 약하다는 사실을 남긴다.
+        return MemberIdentity.single(list.first, via: 'name');
+      }
+      if (list.length > 1) {
+        // 동명이인 → **절대 단정하지 않는다**. 후보만 제시.
+        return MemberIdentity.ambiguous(list, via: 'name');
+      }
+    }
+    return MemberIdentity.none();
+  }
+
+  bool _looksEunha(String raw, String? corps) {
+    if (corps == 'eunha') return true;
+    if (corps == 'tsak') return false;
+    final s = raw.trim().toLowerCase();
+    return s.startsWith('g') || s.startsWith('은하') || s.startsWith('갤럭시');
+  }
+
   /// 은하스카우트 캐시에서 조회(통합 검색 목록에 노출되는 은하 회원 해석용).
   Member? _eunhaById(String id) {
     for (final m in _eunhaMembers) {
@@ -2976,5 +3077,63 @@ class AppState extends ChangeNotifier {
     repo.serverMeta.removeListener(_onMeta);
     repo.syncStatus.removeListener(_onSync);
     super.dispose();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 신원 해석 결과 — "이 참가자를 어떤 회원으로 열 것인가"
+//
+//  ## 왜 별도 타입인가
+//   예전에는 `Member?` 하나로 "찾음/못 찾음"만 표현했다. 그래서
+//   "동명이인 3명 중 하나를 **찍었다**" 와 "정확히 1명을 **찾았다**" 를
+//   구분할 수 없었고, 찍은 결과가 그대로 카드로 열렸다(사고의 근본 원인).
+//
+//  이제는 3-상태를 **타입으로 강제**한다:
+//    · single     → member != null, candidates.length == 1  → 열어도 됨
+//    · ambiguous  → member == null, candidates.length >= 2  → **열면 안 됨**
+//    · none       → 아무것도 못 찾음                        → 신규 등록 유도
+// ══════════════════════════════════════════════════════════════════════════
+class MemberIdentity {
+  const MemberIdentity._(this.member, this.candidates, this.via);
+
+  /// 열어도 안전한 단일 회원(없으면 null).
+  final Member? member;
+
+  /// 후보 전부(단일이면 1개, 없으면 0개).
+  final List<Member> candidates;
+
+  /// 어떤 근거로 찾았는가 — 'number' | 'phone' | 'name' | ''.
+  final String via;
+
+  factory MemberIdentity.single(Member m, {required String via}) =>
+      MemberIdentity._(m, [m], via);
+
+  factory MemberIdentity.ambiguous(List<Member> list, {required String via}) =>
+      MemberIdentity._(null, List.unmodifiable(list), via);
+
+  factory MemberIdentity.none() =>
+      const MemberIdentity._(null, [], '');
+
+  /// 카드를 열어도 되는가 — **단일** 후보이고 근거가 있을 때만.
+  bool get isResolved => member != null && candidates.length == 1;
+
+  /// 동명이인 등으로 사람이 직접 골라야 하는가.
+  bool get needsChoice => member == null && candidates.length > 1;
+
+  /// 근거가 이름뿐인가(약한 근거) — UI 에서 경고 배지를 띄우는 데 쓴다.
+  bool get viaNameOnly => isResolved && via == 'name';
+
+  /// 사용자 안내 문구.
+  String get message {
+    if (isResolved) {
+      final m = member!;
+      final label = m.isRegular ? '일반' : m.corpsMarkLabel;
+      return '${m.name} ($label ${m.number.isEmpty ? m.phone : m.number})';
+    }
+    if (needsChoice) {
+      return '동명이인 ${candidates.length}명 — 이름으로는 열 수 없습니다. '
+          '인가번호나 연락처로 구분해 주세요.';
+    }
+    return '일치하는 회원이 없습니다';
   }
 }

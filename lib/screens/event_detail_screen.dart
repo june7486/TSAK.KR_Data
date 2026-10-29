@@ -2493,19 +2493,27 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     }
   }
 
-  /// 참가자 항목 → 회원(개인카드) 조회. 인가번호/전화번호/이름 순으로 시도한다.
+  /// 참가자 항목 → 회원(개인카드) 조회.
+  ///
+  /// ⚠️ **[버그 수정 2026-10-29] 이름 폴백 제거**
+  ///  종전: 인가번호가 없으면 `s.byName(nm)` 으로 폴백했고, `byName` 은
+  ///        동명이인이면 **첫 번째를 조용히** 돌려줬다.
+  ///        → 비인가자 '김순철' 을 수동 입력하면 **범인가자 김순철** 의 카드가
+  ///          열려 남의 후원·연회비·참가이력이 보였다.
+  ///        '번호가 없다' 는 비인가자의 **정상 상태**인데 실패로 오해한 설계.
+  ///
+  ///  이제 `AppState.resolveIdentity` 한 곳만 통과한다:
+  ///   · 인가번호(접두어 보존) → 전화번호 → (보조)이름 순으로 시도하되
+  ///   · **정확히 1명일 때만** 회원을 돌려주고, 동명이인이면 null 을 준다.
   Member? _resolveMember(AppState s, Map<String, dynamic> a, String ident) {
-    Member? m = ident.isNotEmpty ? s.byNumber(ident) : null;
-    if (m == null) {
-      final ph = '${a['phone'] ?? a['loginId'] ?? ''}'.replaceAll(
-        RegExp(r'[^0-9]'),
-        '',
-      );
-      if (ph.isNotEmpty) m = s.byNumber(ph);
-    }
-    final nm = '${a['name'] ?? ''}'.trim();
-    if (m == null && nm.isNotEmpty) m = s.byName(nm);
-    return m;
+    final idn = s.resolveIdentity(
+      number: ident.isNotEmpty ? ident : '${a['number'] ?? ''}',
+      phone: '${a['phone'] ?? a['loginId'] ?? ''}',
+      name: '${a['name'] ?? ''}',
+      corps: '${a['corps'] ?? ''}'.trim(),
+    );
+    // 동명이인/미확인 → null. 호출부가 '신규 등록' 흐름으로 안내한다.
+    return idn.isResolved ? idn.member : null;
   }
 
   /// [요구] 참가자 이름 클릭:
@@ -2517,6 +2525,25 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final s = context.read<AppState>();
     final ident = '${a['number'] ?? a['phone'] ?? a['loginId'] ?? ''}'
         .replaceAll(RegExp(r'[^0-9]'), '');
+    final idn = s.resolveIdentity(
+      number: '${a['number'] ?? ''}',
+      phone: '${a['phone'] ?? a['loginId'] ?? ''}',
+      name: '${a['name'] ?? ''}',
+      corps: '${a['corps'] ?? ''}'.trim(),
+    );
+
+    // ── 동명이인: **절대 단정하지 않는다** → 사용자가 직접 고른다 ─────────
+    if (idn.needsChoice) {
+      final picked = await _pickSameNameCandidate(a, idn.candidates);
+      if (picked == null || !mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: picked.id)),
+      );
+      if (mounted) _load();
+      return;
+    }
+
     final m = _resolveMember(s, a, ident);
     if (m != null) {
       await Navigator.push(
@@ -2558,6 +2585,110 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     );
     if (mounted) _load();
   }
+
+  /// 동명이인 후보 선택 창.
+  ///
+  /// ## [2026-10-29] 왜 필요한가
+  ///  이름만 같은 여러 회원 중 하나를 **코드가 찍는 것**이 사고의 원인이었다.
+  ///  대신 후보를 소속·인가번호·연락처와 함께 보여주고 사람이 고르게 한다.
+  ///  여기서 고른 결과는 **세션 동안만** 기억한다(다음부터 자동 연결).
+  Future<Member?> _pickSameNameCandidate(
+    Map<String, dynamic> a,
+    List<Member> cands,
+  ) async {
+    // 이미 이 참가자에 대해 선택한 적이 있으면 그 회원으로 바로 연다.
+    final memoKey = '${a['number'] ?? ''}|${a['phone'] ?? ''}|'
+        '${a['name'] ?? ''}'.toLowerCase();
+    final memoId = _sameNameChoice[memoKey];
+    if (memoId != null) {
+      for (final m in cands) {
+        if (m.id == memoId) return m;
+      }
+    }
+    final nm = '${a['name'] ?? ''}'.trim();
+    final picked = await showDialog<Member>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.people_alt_outlined,
+            color: AppColors.hermesOrange, size: 30),
+        title: Text('동명이인 ${cands.length}명'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '“${nm.isEmpty ? '이름 없음' : nm}” 과(와) 이름이 같은 회원이 '
+                '${cands.length}명입니다.\n'
+                '잘못 열면 다른 사람의 개인정보가 보이므로 자동으로 열지 '
+                '않았습니다. 열 사람을 직접 선택해 주세요.',
+                style: const TextStyle(fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 10),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final m in cands)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: m.isRegular
+                                ? AppColors.textGray
+                                : (m.corps == 'eunha'
+                                    ? AppColors.taegeukBlue
+                                    : AppColors.purple),
+                            child: Text(
+                              m.corpsMarkLabel,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            '${m.name}  ·  ${m.rosterNumber}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: Text(
+                            [
+                              if (m.regLeague.trim().isNotEmpty) m.regLeague,
+                              if (m.regUnit.trim().isNotEmpty) m.regUnit,
+                              if (m.phone.trim().isNotEmpty) m.phone,
+                            ].join(' · '),
+                            style: const TextStyle(fontSize: 10.5),
+                          ),
+                          trailing: const Icon(Icons.chevron_right, size: 18),
+                          onTap: () => Navigator.pop(ctx, m),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) _sameNameChoice[memoKey] = picked.id;
+    return picked;
+  }
+
+  /// 동명이인 선택 기억(참가자 키 → 회원 id). 화면 수명 동안만 유지.
+  final Map<String, String> _sameNameChoice = {};
 
   /// (요구 #14) 행사 스텝(STAFF) 등록 — 관리자·마스터만. 인가자 검색 후 스텝 등록.
   Future<void> _manageStaff() async {
@@ -3327,15 +3458,48 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       _snack('이름을 입력하세요');
       return;
     }
-    final row = {
-      'number': numC.text.trim(),
+    // ══════════════════════════════════════════════════════════════════
+    // [신원 명시 저장 2026-10-29] "이 사람이 인가자인가" 를 **저장**한다.
+    //
+    //  ## 사고 재발 방지의 핵심
+    //   예전에는 인가번호가 없으면 그냥 빈 문자열이었고, 조회할 때
+    //   "번호가 없네 → 이름으로 찾자" 는 폴백이 사고를 만들었다.
+    //   이제는 저장 시점에 신원을 **못박아** 둔다:
+    //     · identityType = 'licensed'(인가자) | 'regular'(비인가/일반)
+    //     · identityKey  = 'tsak:415' | 'eunha:G75' | 'reg:010…'
+    //     · licensed     = bool (서버·구버전 호환용 명시 필드)
+    //   → 나중에 이름이 같아도 이 키로만 연결하므로 절대 섞이지 않는다.
+    // ══════════════════════════════════════════════════════════════════
+    final identNum = numC.text.trim();
+    final identPhone = phoneC.text.trim();
+    final identDigits = identNum.replaceAll(RegExp(r'[^0-9]'), '');
+    // 인가번호가 있으면 인가자, 없으면 일반(비인가).
+    final isLicensed = identDigits.isNotEmpty;
+    // 은하 여부 — 입력 접두어(G/은하) 또는 자동채움으로 매칭된 회원의 corps.
+    final matchedCorps = '${matched?['corps'] ?? ''}'.trim();
+    final wantsEunha = matchedCorps == 'eunha' ||
+        RegExp(r'^(g|G|은하|갤럭시)').hasMatch(identNum);
+    final identityType = isLicensed ? 'licensed' : 'regular';
+    final identityKey = isLicensed
+        ? (wantsEunha ? 'eunha:G$identDigits' : 'tsak:$identDigits')
+        : (identPhone.replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty
+            ? 'reg:${identPhone.replaceAll(RegExp(r'[^0-9]'), '')}'
+            : '');
+
+    final row = <String, dynamic>{
+      'number': identNum,
       'name': nameC.text.trim(),
       'unit': unitC.text.trim(),
       'gender': genderC.text.trim(),
-      'phone': phoneC.text.trim(),
+      'phone': identPhone,
       'email': emailC.text.trim(),
       'address': addrC.text.trim(),
       'roles': roles.toList(),
+      // ── 신원 명시 필드(위 설명) ──────────────────────────────────────
+      'identityType': identityType,
+      'identityKey': identityKey,
+      'licensed': isLicensed,
+      if (isLicensed) 'corps': wantsEunha ? 'eunha' : 'tsak',
       // (요구) 참가신청 창과 동일한 추가 입력 항목.
       'transport': transportC.text.trim(),
       'transportNote': transportNoteC.text.trim(),
@@ -6605,9 +6769,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         (name.isNotEmpty && feeKeys.contains(name));
 
     // 회원 원본 조회 → 평생회원 여부 + 해당 행사년도 연회비 납부 여부
+    //  ⚠️ [2026-10-29] 이름 단독 조회 제거 — 동명이인의 연회비를 잘못 읽으면
+    //     "납부했는데 미납으로" 또는 그 반대로 결산이 틀어진다.
+    //     번호가 없으면 이름은 **후보가 1명일 때만** 인정한다.
     Member? m;
-    if (num.isNotEmpty) m = s.byNumber(num);
-    m ??= (name.isNotEmpty ? s.byName(name) : null);
+    final idn = s.resolveIdentity(
+      number: num,
+      phone: '${a['phone'] ?? a['loginId'] ?? ''}',
+      name: name,
+      corps: '${a['corps'] ?? ''}'.trim(),
+    );
+    if (idn.isResolved) m = idn.member;
 
     final lifetime = a['lifetime'] == true || (m?.lifetimeMember ?? false);
     var yearFee = a['yearFee'] == true;

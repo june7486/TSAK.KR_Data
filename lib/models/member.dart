@@ -412,6 +412,45 @@ class Member {
     return corps == 'eunha' ? '은하' : '범';
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [신원 모델 2026-10-29] 이름은 ID 가 아니다 — 구조적 재발 방지
+  //
+  //  ## 사고: 비인가자 '김순철' 이 범인가자 동명이인 카드로 연결됨
+  //   원인은 두 가지가 겹친 것이다.
+  //     ① 참가자 항목에 "이 사람이 인가자인지" 를 **저장하지 않았다**.
+  //     ② 조회 함수가 번호가 없으면 **이름으로 폴백**했고,
+  //        `byName()` 은 동명이인이면 **첫 번째를 조용히** 돌려줬다.
+  //   → '번호 없음' 이 정상 상태(비인가자)인데 '실패' 로 오해한 설계 결함.
+  //
+  //  ## 해결: 신원을 **타입**으로 못박는다
+  //   · `identityKey` = 카드 연결에 쓰는 **유일한 키** (이름 절대 사용 금지)
+  //   · `isVerifiedIdentity` = 신뢰할 수 있는 키인가
+  //   이름은 `nameHint`(표시용 힌트)로만 쓰고, **동명이인이면 힌트로도 쓰지 않는다**.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 카드 연결용 **정규 신원 키** — `tsak:415` / `eunha:G75` / `reg:01074451179`.
+  ///
+  /// · 인가자: `corps:번호`  (은하는 접두어 G 보존 → 범 75 와 절대 충돌 안 함)
+  /// · 비인가(일반): `reg:전화숫자`
+  /// · 전화번호도 없으면 **빈 문자열** — 이때는 카드 연결을 포기한다.
+  ///   (이름으로 대신 찾지 않는다. 그게 사고의 원인이었다.)
+  String get identityKey {
+    final d = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (!isRegular && d.isNotEmpty) {
+      return corps == 'eunha' ? 'eunha:G$d' : 'tsak:$d';
+    }
+    final ph = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (ph.isNotEmpty) return 'reg:$ph';
+    return '';
+  }
+
+  /// [identityKey] 가 **믿을 수 있는** 키인지 — 빈 키로 카드를 열면 안 된다.
+  bool get isVerifiedIdentity => identityKey.isNotEmpty;
+
+  /// 동명이인 판별에 쓰는 정규화 이름(공백 제거).
+  String get nameKey => name.replaceAll(RegExp(r'\s+'), '').trim();
+
+
   /// 소속 단체 정식 명칭 — 개인창 명칭 전환용(범스카우트 → 은하스카우트).
   String get corpsFullName => corps == 'eunha' ? '은하스카우트' : '범스카우트';
 
@@ -612,8 +651,9 @@ class Member {
     }
 
     List<String> castStrList(dynamic v) {
-      if (v is List)
+      if (v is List) {
         return v.map((e) => '$e').where((s) => s.isNotEmpty).toList();
+      }
       if (v is String && v.trim().isNotEmpty) {
         return v.split(RegExp(r'[,\s]+')).where((s) => s.isNotEmpty).toList();
       }

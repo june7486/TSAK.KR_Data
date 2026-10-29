@@ -348,6 +348,10 @@ class MemberRepository {
   }
 
   /// 이름으로 회원 조회 (동명이인은 첫 번째 반환).
+  ///
+  /// ⚠️ **카드 연결에 쓰지 말 것** — 동명이인 사고의 원인이었다.
+  ///    카드 연결은 [lookupIdentity] / `Member.identityKey` 를 쓴다.
+  ///    이 함수는 "표시용 첫 번째"가 정말 필요한 곳(자동완성 등)에만 쓴다.
   Member? byName(String name) {
     final q = name.trim();
     if (q.isEmpty) return null;
@@ -358,6 +362,29 @@ class MemberRepository {
       return Member.fromMap(m);
     }
     return null;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [신원 조회 2026-10-29] 이름 → 회원 단정 금지
+  //
+  //  `byName()` 은 동명이인이어도 **조용히 첫 번째**를 돌려준다. 카드 연결에
+  //  쓰면 비인가자 '김순철' 이 인가자 '김순철' 카드로 열린다(실제 사고).
+  //
+  //  그래서 "이름으로 찾을 때는 **반드시 결과 개수를 함께** 돌려준다"는
+  //  규칙으로 API 를 바꾼다. 호출자는 n==1 일 때만 그 회원을 쓸 수 있다.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 이름으로 **후보 전부** 조회 — 동명이인 판정용.
+  List<Member> allByName(String name) {
+    final q = name.trim();
+    if (q.isEmpty) return const [];
+    final out = <Member>[];
+    for (final v in _values) {
+      if ('${v['name'] ?? ''}'.trim() != q) continue;
+      if (!_matchesRestrictedRaw(v)) continue;
+      out.add(Member.fromMap(v));
+    }
+    return out;
   }
 
   /// ID 문자열(문자 포함 가능)로 회원 조회 — loginId/전화번호/인가번호 순으로 대조.
