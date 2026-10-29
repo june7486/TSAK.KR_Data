@@ -2556,36 +2556,51 @@ class AppState extends ChangeNotifier {
     final nm = (name ?? '').trim();
 
     // ══════════════════════════════════════════════════════════════════
-    // [2026-10-29] 가장 강한 방어 — **저장된 신원을 최우선으로 신뢰**한다.
+    // [수정 2026-10-29] `licensed == false` 를 **"회원 아님"** 으로 해석하면 틀린다.
     //
-    //  참석자 행에 `licensed:false` 가 있으면 그 사람은 **비인가자로 확정**이다.
-    //  이때 번호가 우연히 회원과 겹치거나 이름이 같아도 회원을 찾지 않는다.
-    //  (사고: 비인가 '김종선' 이 범 222호 '김종선' 카드로 열림)
+    //  `licensed` 의 참뜻은 **"인가자(범/은하)인가"** 이지 "회원인가" 가 아니다.
+    //  일반회원(비인가)도 우리 회원 명부에 존재한다 → 반드시 찾아야 한다.
     //
-    //  `licensed:true` 인데 번호가 없으면 이름으로도 찾지 않는다 —
-    //  신원이 확정된 사람은 **정확한 키**로만 연결한다.
+    //  ## 실제 사고
+    //   참석자 김종선(licensed:false, 010-6269-1740) 을 클릭했더니
+    //   "신규 등록" 만 반복 제안되고, 등록할 때마다 reg_<타임스탬프> 로
+    //   **새 레코드가 쌓였다.** 이미 guest_900001(같은 전화) 이 있었는데도
+    //   licensed:false 라서 조회를 아예 건너뛴 것이 원인.
+    //
+    //  ## 고친 규칙
+    //   · licensed == false → **일반회원만** 대상으로 조회(인가자 카드로는 절대
+    //     가지 않는다 = 첫 사고 방지). phone → 이름 순.
+    //   · licensed == true  → 인가자만 대상(이름 폴백 금지).
+    //   · null(구데이터)     → 전체 대상(기존 규칙).
     // ══════════════════════════════════════════════════════════════════
-    if (licensed == false) {
-      return MemberIdentity.none();       // 비인가 확정 → 절대 회원 연결 안 함
-    }
+    final regularOnly = licensed == false;
     final strongOnly = licensed == true; // 인가 확정 → 이름 폴백 금지
 
-    // ── ① 인가번호(접두어 보존) ─────────────────────────────────────────
+    // ── 후보 풀 구성 (신원 조건을 **한 곳에서** 적용) ────────────────────
+    //  regularOnly → 일반회원(isRegular)만. 인가자 카드로는 절대 가지 않는다.
+    //  strongOnly  → 인가자만. 일반회원 계정으로 새지 않게.
+    //  둘 다 아님(구데이터) → 전체.
+    final all = <Member>[
+      ...repo.allUnscoped(),
+      ..._eunhaMembers,
+    ];
+    final pool = all.where((m) {
+      if (regularOnly) return m.isRegular;
+      if (strongOnly) return !m.isRegular;
+      return true;
+    }).toList();
+
+    // ── ① 인가번호 ─────────────────────────────────────────────────────
     //  은하 G75 와 범 75 는 접두어가 다르므로 여기서 절대 섞이지 않는다.
     final numKey = rawNum.replaceAll(RegExp(r'[^0-9]'), '');
     if (numKey.isNotEmpty) {
       final wantEunha = _looksEunha(rawNum, corps);
-      final pool = <Member>[
-        if (!wantEunha) ...repo.allUnscoped(),
-        if (wantEunha) ..._eunhaMembers,
-        // 접두어가 없으면 양쪽 다 본다(레거시 호환) — 단, 소속까지 일치해야.
-        if (!wantEunha) ..._eunhaMembers,
-      ];
       final hits = pool.where((m) {
-        if (m.isRegular) return false;
+        if (m.isRegular) return false;   // 일반회원은 인가번호로 찾지 않는다
         if (m.number.replaceAll(RegExp(r'[^0-9]'), '') != numKey) return false;
         if (corps == 'tsak' || corps == 'eunha') return m.corps == corps;
-        return true;
+        // 접두어 없이 들어온 경우 은하/범 둘 다 가능 → 접두어 규칙으로 판정
+        return wantEunha ? m.corps == 'eunha' : true;
       }).toList();
       if (hits.length == 1) {
         return MemberIdentity.single(hits.first, via: 'number');
@@ -2596,32 +2611,29 @@ class AppState extends ChangeNotifier {
     }
 
     // ── ② 전화번호 ─────────────────────────────────────────────────────
+    //  일반회원은 인가번호가 없고 전화번호가 사실상의 키다.
     final phKey = rawPhone.replaceAll(RegExp(r'[^0-9]'), '');
     if (phKey.length >= 7) {
-      final hits = <Member>[
-        ...repo.allUnscoped().where((m) => m.phoneDigits == phKey),
-        ..._eunhaMembers.where((m) => m.phoneDigits == phKey),
-      ];
+      final hits = pool.where((m) => m.phoneDigits == phKey).toList();
       if (hits.length == 1) {
         return MemberIdentity.single(hits.first, via: 'phone');
       }
       if (hits.length > 1) {
+        // 같은 번호의 중복 레코드(예: reg_… 와 guest_…) → 가장 최근 것 하나로
+        //  수렴시키지 않고, 사람에게 보여 준다(엉뚱한 카드 방지).
         return MemberIdentity.ambiguous(hits, via: 'phone');
       }
     }
 
     // ── ③ 이름 — **보조**. 후보가 정확히 1명일 때만 쓴다. ───────────────
-    //   단, 신원이 '인가자'로 확정된(stored licensed=true) 경우에는 이름을
+    //   신원이 '인가자'로 확정된(stored licensed=true) 경우에는 이름을
     //   쓰지 않는다. 확정된 사람은 정확한 키로만 연결해야 한다.
     if (allowNameFallback && !strongOnly && nm.isNotEmpty) {
-      final hits = <Member>[
-        ...repo.allByName(nm),
-        ..._eunhaMembers.where((m) => m.name.trim() == nm),
-      ];
-      // 같은 사람이 양쪽에 있으면 중복 제거(identityKey 기준).
+      final hits = pool.where((m) => m.name.trim() == nm).toList();
+      // 같은 사람이 양쪽 저장소에 있으면 중복 제거(identityKey 기준).
       final uniq = <String, Member>{};
       for (final m in hits) {
-        uniq.putIfAbsent(m.identityKey, () => m);
+        uniq.putIfAbsent(m.identityKey.isEmpty ? m.id : m.identityKey, () => m);
       }
       final list = uniq.values.toList();
       if (list.length == 1) {

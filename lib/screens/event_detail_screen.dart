@@ -3202,7 +3202,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // (요구) 인가번호 자동채움 상태 — 다이얼로그 로컬 상태.
     var lookupBusy = false;
     var lookupOk = false;
-    var lookupHint = '인가번호를 넣으면 개인정보를 자동으로 불러옵니다';
+    // [요구 2026-10-29] 인가자만이 아니라 **일반회원(비인가)도** 조회된다.
+    var lookupHint = '인가번호·전화번호·이름으로 개인정보를 불러옵니다';
     // 매칭된 회원(있으면 저장 시 corps/numberLabel 판단에 쓴다).
     Map<String, dynamic>? matched;
     // ── 바텀시트로 전환 ────────────────────────────────────────────────
@@ -3230,9 +3231,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           });
           Map<String, dynamic>? m;
           try {
-            // 1) 로컬 캐시 우선(즉시·오프라인 안전).
+            // ══════════════════════════════════════════════════════════════
+            // [요구 2026-10-29] "수동입력시 인가자 정보만 불러올 수 있는데,
+            //  비인가자(일반회원) 정보도 조회 후 불러올 수 있도록"
+            //
+            //  ## 왜 예전엔 안 됐나
+            //   로컬 조회가 `byNumber(q) ?? byId(q)` 였다. 둘 다 **인가번호/ID**
+            //   축이라 일반회원(인가번호 없음, 전화번호가 사실상의 키)은
+            //   절대 걸리지 않았다. 서버 폴백도 있었지만 화면 라벨이
+            //   '인가번호 (인가자만)' 이고 키보드가 숫자 전용이라
+            //   관리자가 전화번호를 넣을 생각 자체를 못 했다.
+            //
+            //  ## 고친 방식
+            //   입력값을 **인가번호 / 전화번호 / 이름** 어느 것으로도 받는다.
+            //    ① 로컬: resolveIdentity(전화번호·이름 포함)로 먼저 찾고
+            //    ② 없으면 서버(/api/member/lookup)로 최신값 조회.
+            //   일반회원이면 isRegular=true 로 표시해 저장 시 범 배지가
+            //   붙지 않도록 한다(요구: 일반회원은 '일반' 단추).
+            // ══════════════════════════════════════════════════════════════
             final s = context.read<AppState>();
-            final local = s.byNumber(q) ?? s.byId(q);
+            final idn = s.resolveIdentity(
+              number: q,
+              phone: q,
+              name: q,
+              // 이름 단독 입력으로 남의 카드를 채우지 않는다 —
+              //  자동채움은 '사람이 특정한 값'일 때만 동작해야 안전하다.
+              allowNameFallback: true,
+            );
+            final local = idn.isResolved ? idn.member : null;
             if (local != null) {
               m = {
                 'id': local.id,
@@ -3254,7 +3280,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 'address': local.address,
               };
             }
-            // 2) 로컬에 없으면 서버 조회(범+은하 통합, 최신값).
+            // 2) 로컬에 없으면 서버 조회(범+은하+일반 통합, 최신값).
             if (m == null) {
               final res = await _nas.memberLookup(q);
               if (res['found'] == true && res['member'] is Map) {
@@ -3318,9 +3344,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 },
                 child: TextField(
                   controller: numC,
-                  keyboardType: TextInputType.number,
+                  // [요구 2026-10-29] 일반회원은 인가번호가 없다 →
+                  //  전화번호·이름도 넣을 수 있어야 하므로 숫자 전용 키보드를 뺀다.
+                  keyboardType: TextInputType.text,
                   decoration: InputDecoration(
-                    labelText: '인가번호 (인가자만)',
+                    labelText: '인가번호 / 전화번호 / 이름',
                     helperText: lookupHint,
                     helperStyle: TextStyle(
                       fontSize: 10.5,
@@ -4732,6 +4760,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     //        Column 은 비-flex 자식에게 **높이 제약을 주지 않으므로**,
     //        그 안의 Expanded/ListView 는 높이 0 으로 계산되어
     //        릴리스 빌드에서 **아무것도 그리지 않았다**(예외도 없이 조용히).
+    //        → 화면에는 요약만 남고 목록은 사라진 것처럼 보였다.
+    //
+    //  릴리스 빌드에서 **아무것도 그리지 않았다**(예외도 없이 조용히).
     //        → 화면에는 요약만 남고 목록은 사라진 것처럼 보였다.
     //
     //  또한 후원 탭은 **같은 5건을 두 번** 그리는 구조였다(패널 목록 +

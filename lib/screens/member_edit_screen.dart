@@ -2538,9 +2538,55 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       }
       return false;
     }
-    final id =
-        _existing?.id ??
-        '${_registerAsRegular ? 'reg_' : 'u'}${DateTime.now().millisecondsSinceEpoch}';
+    // ══════════════════════════════════════════════════════════════════════
+    // [중복 등록 방지 2026-10-29] 신규 일반회원 저장 시 **같은 사람이 이미
+    //  명부에 있는지 먼저 확인**하고, 있으면 그 레코드를 갱신한다.
+    //
+    // ## 실제 사고 (요구: "신규등록을 하면 동일이름이 계속 추가되는 버그")
+    //  종전에는 신규 저장마다 `reg_<밀리초>` 를 **새로 찍었다.**
+    //  그래서 같은 김종선(010-6269-1740)이 등록할 때마다 새 행이 쌓여
+    //   · 명부에 동명이인이 계속 늘고(reg_…, guest_900001 …)
+    //   · 참석자 클릭 시 어느 것을 열지 몰라 "신규 등록" 을 무한 반복했다.
+    //
+    // ## 규칙
+    //  · 편집 중인 회원이 있으면 그 id 그대로(기존 동작).
+    //  · 신규 일반회원이면 **전화번호 우선**으로 기존 레코드를 찾는다.
+    //    인가번호가 없는 계층에서 전화번호는 사실상의 유일 키다.
+    //  · 전화가 없을 때만 이름으로 찾되 **후보가 정확히 1명**일 때만 재사용.
+    //  · 재사용 시 `_existing` 을 채워 eventAttend·비밀번호 등 기존 값을
+    //    덮어쓰지 않고 그대로 이어받게 한다.
+    // ══════════════════════════════════════════════════════════════════════
+    String id;
+    if (_existing != null) {
+      id = _existing!.id;
+    } else {
+      Member? reuse;
+      final newPhone = _phone.text.replaceAll(RegExp(r'[^0-9]'), '');
+      if (_registerAsRegular && newPhone.length >= 7) {
+        for (final c in state.repo.allUnscoped()) {
+          if (!c.isRegular) continue;
+          if (c.id.startsWith('guest_') || c.id.startsWith('reg_') ||
+              c.isRegular) {
+            if (c.phoneDigits == newPhone) {
+              reuse = c;
+              break;
+            }
+          }
+        }
+      }
+      if (reuse == null && _registerAsRegular) {
+        final same = state.repo
+            .allByName(_name.text.trim())
+            .where((c) => c.isRegular)
+            .toList();
+        if (same.length == 1) reuse = same.first;
+      }
+      if (reuse != null) _existing = reuse;
+      id =
+          _existing?.id ??
+          '${_registerAsRegular ? 'reg_' : 'u'}'
+              '${DateTime.now().millisecondsSinceEpoch}';
+    }
     // 최초 동의 시각 기록
     if (_privacyAgreedAt.isEmpty) {
       _privacyAgreedAt = _nowStamp();
