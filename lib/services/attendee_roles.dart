@@ -193,3 +193,129 @@ class AttendeeRoles {
     return corps.isEmpty;
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// [요구 2026-10-29] 결산자료 표시·출력의 **표현 순서**를 한 곳에서 정의한다.
+//
+//  "일반 회원은 범인가자정보가 아니라, 서포터즈 인가자 정보로 표시함
+//   상세내역에 표현순서: 이름 / 범인가번호 / 은하인가번호 /
+//   등급(리더,로버,벤처,스카우트,컵,비버,일반,서포터츠 등) / 연맹, 단위대 등의 순"
+//
+//  ## 왜 문제였나
+//   `_credentialCard` 가 `m.corps == 'eunha' ? '은하' : '범'` 로 **이분법**이었다.
+//   일반회원(서포터즈)은 corps 가 비어 있어서 `범` 가지로 떨어졌고,
+//   카드 제목이 **'범인가 정보'**, 항목이 **'범인가번호'** 로 표시됐다.
+//   서포터즈는 범 인가자가 **아니다**. 인가번호도 없다(전화번호가 계정).
+// ══════════════════════════════════════════════════════════════════════════
+
+/// 신원 구분 — 카드·표·출력에서 쓰는 **정규 명칭**.
+enum AttendeeKind {
+  /// 범스카우트 인가자 (`tsak:415`)
+  tsak('범', '범인가번호', '범스카우트'),
+
+  /// 은하스카우트 인가자 (`eunha:G75`)
+  eunha('은하', '은하인가번호', '은하스카우트'),
+
+  /// 서포터즈 = 비인가 일반회원 (`reg:010…`). **범 인가자가 아니다.**
+  supporter('서포터즈', '서포터즈 번호', '서포터즈');
+
+  const AttendeeKind(this.mark, this.numberLabel, this.fullName);
+
+  /// 말머리 — '범' / '은하' / '서포터즈'
+  final String mark;
+
+  /// 인가번호 항목 라벨 — 서포터즈는 인가번호가 없으므로 '번호'로 쓴다.
+  final String numberLabel;
+
+  /// 단체 정식 명칭.
+  final String fullName;
+
+  /// 카드 제목 — '범인가 정보' / '은하인가 정보' / '서포터즈 정보'.
+  String get cardTitle => this == AttendeeKind.supporter
+      ? '서포터즈 정보 (인가 당시 정보)'
+      : '$fullName 인가 정보 (인가 당시 정보)';
+}
+
+/// 결산 상세 한 줄의 **표현 순서**와 직책 표기를 담당한다.
+///
+/// 고정 순서: `이름 → 범인가번호 → 은하인가번호 → 등급 → 연맹/단위대 …`
+class SettlementLine {
+  const SettlementLine._();
+
+  /// 필드 안의 구분자 충돌 제거 — 줄 구분자가 `·` 이므로
+  /// 값 안의 `·` 는 `/` 로 바꾼다(예: '스카우트비피클럽 · 지역대 대장').
+  static String _clean(String v) => v
+      .replaceAll(RegExp(r'\s*[·ㅡ]\s*'), ' / ')
+      .replaceAll(RegExp(r'\s{2,}'), ' ')
+      .trim();
+
+  /// 상세 한 줄(가운뎃점 구분).
+  ///
+  /// [a] 는 참석자 map. 회원 명부의 값이 있으면 그쪽을 우선한다
+  /// ([tsakNo]/[eunhaNo]/[league]/[unit] 인자).
+  static String of(
+    Map<String, dynamic> a, {
+    String tsakNo = '',
+    String eunhaNo = '',
+    String league = '',
+    String unit = '',
+  }) {
+    final name = '${a['name'] ?? ''}'.trim();
+    if (name.isEmpty) return '';
+
+    // ── ②③ 인가번호 — 범 / 은하를 **따로** 둔다(동시 보유 가능). ────────
+    var tNo = tsakNo.trim();
+    var eNo = eunhaNo.trim();
+    if (tNo.isEmpty && eNo.isEmpty) {
+      // 인자로 안 들어왔으면 행 자체에서 복원한다.
+      final num = '${a['number'] ?? ''}'.trim();
+      if (AttendeeRoles.hasRealLicenseNumber(a)) {
+        final d = num.replaceAll(RegExp(r'[^0-9]'), '');
+        if (RegExp(r'^(g|은하|갤럭시|galaxy|eunha)', caseSensitive: false)
+            .hasMatch(num)) {
+          eNo = d.isEmpty ? '' : '은하#$d';
+        } else {
+          tNo = d.isEmpty ? '' : '범#$d';
+        }
+      }
+    }
+    if (eNo.isNotEmpty && !eNo.contains('#')) eNo = '은하#$eNo';
+    if (tNo.isNotEmpty && !tNo.contains('#')) tNo = '범#$tNo';
+
+    // ── ④ 등급 — 직책 우선, 없으면 신원으로. ─────────────────────────
+    var grade = AttendeeRoles.canonicalOfRow(a) ?? '';
+    if (grade.isEmpty) {
+      if (tNo.isNotEmpty || eNo.isNotEmpty) {
+        grade = '인가자';
+      } else if (AttendeeRoles.isRegularRow(a)) {
+        grade = AttendeeKind.supporter.mark; // '서포터즈'
+      }
+    } else if (grade == AttendeeRole.regular &&
+        AttendeeRoles.isRegularRow(a)) {
+      // '일반' 보다는 '서포터즈' 가 정확한 호칭이다(요구).
+      grade = AttendeeKind.supporter.mark;
+    }
+
+    // ── ⑤ 연맹 · 단위대 ───────────────────────────────────────────────
+    final lg = _clean(league);
+    final un0 = _clean(unit).isNotEmpty
+        ? _clean(unit)
+        : _clean('${a['role'] ?? a['unit'] ?? ''}');
+    // 단위대 문자열이 이미 연맹을 포함하면 중복해서 붙이지 않는다.
+    //  예) league='인천연맹', unit='인천연맹 별무리지역대' → '인천연맹 별무리지역대'
+    String place;
+    if (lg.isNotEmpty && un0.isNotEmpty) {
+      place = (un0.startsWith(lg) || un0.contains(lg)) ? un0 : '$lg $un0';
+    } else {
+      place = un0.isNotEmpty ? un0 : lg;
+    }
+
+    return [
+      _clean(name),
+      if (tNo.isNotEmpty) tNo,
+      if (eNo.isNotEmpty) eNo,
+      if (grade.isNotEmpty) grade,
+      if (place.isNotEmpty) place,
+    ].join(' · ');
+  }
+}

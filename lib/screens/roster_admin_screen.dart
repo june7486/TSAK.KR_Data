@@ -1095,7 +1095,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
       rows.add([
         _numCell('r$i', i),
         _t(m.atasNo, bold: true),
-        _t(m.corps == 'eunha' ? '은하' : '범'),
+        // [2026-10-29] 일반회원은 '범' 이 아니라 '일반'.
+        _t(m.corpsMarkLabel),
         _t(m.numberLabel),
         _nameCell(m),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),

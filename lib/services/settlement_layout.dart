@@ -17,10 +17,12 @@
 /// ([SettlementBlockData])를 쓰므로 "보이는 것 = 인쇄되는 것"이 보장된다.
 library;
 
+import '../models/member.dart';
 import 'attendee_roles.dart';
 import 'donation_kinds.dart';
 import 'output_templates.dart';
 import 'event_settlement.dart';
+import 'member_repository.dart';
 import 'print_doc.dart';
 import 'table_options.dart';
 
@@ -640,28 +642,72 @@ class SettlementLayout {
 class SettlementBuilder {
   const SettlementBuilder._();
 
-  /// 참석자 한 줄 — `이름 · 역할/소속 · 신원` 형태.
-  ///
-  /// [2026-10-29] 인가번호 칸에 **이름이나 전화번호**가 들어 있던 행이
-  /// `인가 류호준` 처럼 표시되던 문제를 없앴다.
-  ///  · 진짜 인가번호(짧은 숫자/G표기)일 때만 `인가 N`
-  ///  · 일반회원은 `일반 #전화번호`
-  static String _attendeeDetailLine(Map<String, dynamic> a) {
-    final name = '${a['name'] ?? ''}'.trim();
-    final roleOrUnit = '${a['role'] ?? a['unit'] ?? ''}'.trim();
-    final num = '${a['number'] ?? ''}'.trim();
-    final phone = '${a['phone'] ?? ''}'.trim();
-
-    String identity = '';
-    if (AttendeeRoles.hasRealLicenseNumber(a)) {
-      identity = '인가 $num';
-    } else if (AttendeeRoles.isRegularRow(a) && phone.isNotEmpty) {
-      identity = '일반 #$phone';
+  // ══════════════════════════════════════════════════════════════════
+  // 연맹 / 단위대 — **행에 없으면 명부에서 채운다**.
+  //  참석자 행은 unit 만 갖고 있는 경우가 많다(league 없음).
+  //  요구 순서(… / 등급 / 연맹, 단위대)를 지키려면 연맹이 필요하다.
+  // ══════════════════════════════════════════════════════════════════
+  static Member? _memberOf(Map<String, dynamic> a) {
+    // 신원 키 → 회원 조회. 전역 리포지토리를 쓴다(있으면).
+    final repo = MemberRepository.instanceOrNull;
+    if (repo == null) return null;
+    final key = '${a['identityKey'] ?? ''}'.trim();
+    if (key.startsWith('reg:')) {
+      final d = key.substring(4);
+      for (final c in repo.allUnscoped()) {
+        if (c.phoneDigits == d) return c;
+      }
+    } else if (key.startsWith('tsak:')) {
+      final d = key.substring(5);
+      for (final c in repo.allUnscoped()) {
+        if (!c.isRegular &&
+            c.corps != 'eunha' &&
+            c.number.replaceAll(RegExp(r'[^0-9]'), '') == d) {
+          return c;
+        }
+      }
+    } else if (key.startsWith('eunha:')) {
+      final d = key.substring(6).replaceAll(RegExp(r'[^0-9]'), '');
+      for (final c in repo.allUnscoped()) {
+        if (c.corps == 'eunha' &&
+            c.number.replaceAll(RegExp(r'[^0-9]'), '') == d) {
+          return c;
+        }
+      }
     }
-    return [name, roleOrUnit, identity]
-        .where((e) => e.isNotEmpty)
-        .join(' · ');
+    return null;
   }
+
+  static String _leagueOf(Map<String, dynamic> a) {
+    final direct = '${a['league'] ?? a['leagueName'] ?? ''}'.trim();
+    if (direct.isNotEmpty) return direct;
+    return _memberOf(a)?.league.trim() ?? '';
+  }
+
+  static String _unitOf(Map<String, dynamic> a) {
+    final direct = '${a['unit'] ?? a['unitText'] ?? ''}'.trim();
+    if (direct.isNotEmpty) return direct;
+    return _memberOf(a)?.unit.trim() ?? '';
+  }
+
+  /// 참석자 한 줄 — **표현 순서 고정**.
+  ///
+  /// `이름 / 범인가번호 / 은하인가번호 / 등급 / 연맹·단위대`
+  ///
+  /// ## [요구 2026-10-29]
+  ///  "일반 회원은 범인가자정보가 아니라, 서포터즈 인가자 정보로 표시함
+  ///   상세내역에 표현순서: 이름 / 범인가번호 / 은하인가번호 /
+  ///   등급(리더,로버,벤처,스카우트,컵,비버,일반,서포터츠 등) / 연맹, 단위대"
+  static String _attendeeDetailLine(
+    Map<String, dynamic> a, {
+    String leagueOf = '',
+    String unitOf = '',
+  }) =>
+      SettlementLine.of(
+        a,
+        league: leagueOf,
+        unit: unitOf,
+      );
 
   static Map<SettlementBlock, SettlementBlockData> build({
     required EventSettlement settlement,
@@ -693,7 +739,11 @@ class SettlementBuilder {
         //  · 진짜 인가번호(짧은 숫자/G표기)일 때만 '인가 N'
         //  · 일반회원은 '일반 #전화번호'
         for (final a in attendees)
-          _attendeeDetailLine(a),
+          _attendeeDetailLine(
+            a,
+            leagueOf: _leagueOf(a),
+            unitOf: _unitOf(a),
+          ),
       ],
     );
 

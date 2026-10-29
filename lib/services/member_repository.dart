@@ -51,12 +51,28 @@ class MemberRepository {
     _byIdCache.clear();
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // [2026-10-29] 마지막으로 만들어진 리포지토리 — **읽기 전용 조회용**.
+  //
+  //  결산 상세에서 참석자 행에 없는 연맹/단위대를 명부에서 보충하려면
+  //  서비스 계층이 리포지토리에 접근해야 한다. 화면 위젯 트리 밖에서도
+  //  동작해야 하므로(AppState 없이도) 정적 참조를 하나 둔다.
+  //  ⚠️ **쓰기에는 절대 쓰지 않는다** — 조회 전용 편의 접근자다.
+  // ══════════════════════════════════════════════════════════════════
+  static MemberRepository? _last;
+  static MemberRepository? get instanceOrNull => _last;
+
   /// Hive 기반 (프로덕션, 오프라인 전용)
   MemberRepository({this.nas})
-    : _mem = nas != null ? <String, Map<String, dynamic>>{} : null;
+    : _mem = nas != null ? <String, Map<String, dynamic>>{} : null {
+    _last = this;
+  }
 
   /// 인메모리 기반 (테스트/미리보기)
-  MemberRepository.memory({this.nas}) : _mem = <String, Map<String, dynamic>>{};
+  MemberRepository.memory({this.nas})
+    : _mem = <String, Map<String, dynamic>>{} {
+    _last = this;
+  }
 
   bool get isMemory => _mem != null;
   bool get isNasMode => nas != null;

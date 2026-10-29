@@ -243,9 +243,11 @@ const Set<String> kNoWrapDefault = {
 const Map<String, String> kNoWrapLabels = {
   'name': '이름',
   'nameEn': '영어이름',
-  'number': '범인가번호',
+  // [2026-10-29] 일반회원(서포터즈)은 범 인가자가 아니다.
+  //  열 이름에서 '범' 을 빼서 오해를 없앤다(요구: 서포터즈로 표시).
+  'number': '인가번호',
   'atasNo': '아타스인가번호',
-  'eunhaNo': '은하인가번호',
+  'eunhaNo': '은하 인가번호',
   'phone': '핸드폰번호',
   'email': '이메일',
   'unit': '소속대',

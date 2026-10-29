@@ -1,3 +1,4 @@
+import '../services/attendee_roles.dart';
 import '../services/league_names.dart';
 
 /// 한국범스카우트 중앙회 인가자(회원) 모델
@@ -508,7 +509,10 @@ class Member {
   ///   · 은하 : `은하#43`
   ///   · 일반 : `일반#0107445…`  (인가번호 없음 — 전화번호)
   String get cardNumberLabel {
-    if (isRegular) return numberLabel;
+    // [2026-10-29] 서포터즈는 인가번호가 없다. 전화번호를 그대로 크게
+    //  노출하면 개인카드 첫 줄이 '일반#01027021126' 처럼 길고 어색해진다.
+    //  머리글은 '서포터즈'로 짧게 쓰고, 실제 번호는 아래 항목 행에서 보여준다.
+    if (isRegular) return '서포터즈';
     if (number.trim().isEmpty) return '';
     if (corps == 'eunha') {
       final d = number.replaceAll(RegExp(r'[^0-9]'), '');
@@ -517,9 +521,30 @@ class Member {
     return '범#$number';
   }
 
-  /// 인가정보 카드의 항목 라벨 — '범인가번호' / '은하인가번호'.
+  /// 신원 구분 — 카드·표·출력의 정규 명칭.
+  ///
+  /// ## [2026-10-29 서포터즈 사고] 이분법이 원인이었다
+  /// 종전에는 `corps == 'eunha' ? 은하 : 범` **이분법**이라, 일반회원
+  /// (서포터즈)이 corps 가 비어 있다는 이유로 **'범' 가지로 떨어졌다**.
+  /// 그래서 서포터즈 개인카드에 **'범인가 정보'**, 항목에 **'범인가번호'**가
+  /// 표시됐다. 서포터즈는 범 인가자가 아니고 인가번호도 없다.
+  AttendeeKind get kind {
+    if (isRegular) return AttendeeKind.supporter;
+    return corps == 'eunha' ? AttendeeKind.eunha : AttendeeKind.tsak;
+  }
+
+  /// 인가정보 카드의 항목 라벨 — '범인가번호' / '은하인가번호' / '서포터즈 번호'.
   ///  (카드 제목이 '은하인가 정보' 인데 항목이 '범인가번호' 면 어긋난다.)
-  String get numberRowLabel => corps == 'eunha' ? '은하인가번호' : '범인가번호';
+  String get numberRowLabel => kind.numberLabel;
+
+  /// 인가정보 카드 항목의 **값** — 라벨과 짝을 맞춘다.
+  ///  · 범/은하 : `범#415`, `은하#43`
+  ///  · 서포터즈: `일반#010…`(인가번호가 아니라 계정 전화번호임을 명시)
+  String get numberRowValue => cardNumberLabel;
+
+  /// 인가정보 카드 제목 — '범스카우트 인가 정보' / '은하스카우트 인가 정보'
+  /// / **'서포터즈 정보'**.
+  String get credentialCardTitle => kind.cardTitle;
 
   /// 화면 표기용 인가번호 — **은하스카우트는 '은하'+번호**(예: 은하46),
   ///   범스카우트는 기존처럼 번호만(예: 46). '#' 없이 붙여 쓴다.

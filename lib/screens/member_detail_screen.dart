@@ -2083,13 +2083,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   ///    '범인가번호' 로 짧게 쓴다. 은하스카우트도 같은 카드 구조를 쓰므로
   ///    제목은 소속에 따라 '은하인가 정보' 가 된다(길이가 짧아 1줄에 들어간다).
   Widget _credentialCard(Member m) {
+    // [2026-10-29 서포터즈 사고] `corps == 'eunha' ? 은하 : 범` 이분법이라
+    //  일반회원(서포터즈)이 **'범인가 정보'** 로 표시됐다. 서포터즈는 범
+    //  인가자가 아니고 인가번호도 없다 → 3분법(범/은하/서포터즈)으로 고쳤다.
     return _section(
-      title: '${m.corps == 'eunha' ? '은하' : '범'}인가 정보 (인가 당시 정보)',
+      title: m.credentialCardTitle,
       icon: Icons.verified_user,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _plainRow(m.numberRowLabel, m.cardNumberLabel),
+          _plainRow(m.numberRowLabel, m.numberRowValue),
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
           _plainRow('인가일', m.date),

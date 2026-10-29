@@ -472,7 +472,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
               ),
               const SizedBox(height: 4),
               _subHead(
-                '${_existing?.corpsFullName ?? '범스카우트'} 인가 정보 (인가 당시 정보)',
+                // [2026-10-29] 서포터즈(일반회원)는 범 인가자가 아니다.
+                //  corpsFullName 은 이분법이라 '범스카우트' 로 떨어졌다.
+                _existing?.credentialCardTitle ?? '범스카우트 인가 정보 (인가 당시 정보)',
                 Icons.verified_user,
                 AppColors.purple,
               ),
