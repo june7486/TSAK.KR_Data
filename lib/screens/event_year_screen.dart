@@ -51,6 +51,12 @@ class _EventYearScreenState extends State<EventYearScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void dispose() {
+    _thumbProgressNotifier.dispose();
+    super.dispose();
+  }
+
   /// [요구] 행사 목록 로딩. [silent]=true 이면 로딩 스피너를 띄우지 않고
   ///   기존 목록을 유지한 채 조용히 갱신한다(뒤로가기 복귀 시 깜빡임/지연 제거).
   Future<void> _load({bool silent = false}) async {
@@ -277,18 +283,115 @@ class _EventYearScreenState extends State<EventYearScreen> {
           final running = job['running'] == true;
           final total = (job['total'] as num?)?.toInt() ?? 0;
           final done = (job['done'] as num?)?.toInt() ?? 0;
-          _snack('썸네일 진행: $done / $total');
+          final images = (job['images'] as num?)?.toInt() ?? 0;
+          final videos = (job['videos'] as num?)?.toInt() ?? 0;
+          final failed = (job['failed'] as num?)?.toInt() ?? 0;
+          final last = '${job['last'] ?? ''}';
+
+          // 진행률이 있으면 **다이얼로그**로 보여준다(스낵바는 계속 사라져
+          //  진행 상황을 볼 수 없다). 완료·중단 시 자동으로 닫는다.
+          if (running && total > 0) {
+            final pct = ((done / total) * 100).clamp(0, 100).toStringAsFixed(1);
+            final head = done == 0
+                ? '준비 중… (대상 $total건)'
+                : '$done / $total  ($pct%)';
+            final msg = [
+              head,
+              if (images + videos > 0) '사진 $images · 동영상 $videos',
+              if (failed > 0) '실패 $failed',
+              if (last.isNotEmpty) '최근: ${last.split('/').last}',
+            ].join('\n');
+            _showThumbProgressDialog(msg, done, total);
+          } else if (!running) {
+            // 진행 중 다이얼로그가 떠 있으면 닫는다.
+            if (_thumbDlgOpen && mounted) {
+              Navigator.of(context, rootNavigator: true).pop();
+              _thumbDlgOpen = false;
+            }
+          }
+
           if (running) {
             Future.delayed(const Duration(seconds: 3), _watchThumbBackfill);
           } else {
-            setState(() => _backfillBusy = false);
-            _snack('썸네일 생성 완료 ($done건)');
+            if (mounted) setState(() => _backfillBusy = false);
+            _snack('썸네일 생성 완료 — 사진 $images · 동영상 $videos'
+                '${failed > 0 ? ' · 실패 $failed' : ''}');
           }
         })
         .catchError((_) {
-          if (mounted) setState(() => _backfillBusy = false);
+          if (!mounted) return;
+          setState(() => _backfillBusy = false);
         });
   }
+
+  /// 썸네일 진행 다이얼로그 — 떠 있는 동안 내용만 갱신한다(깜빡임 없음).
+  bool _thumbDlgOpen = false;
+
+  void _showThumbProgressDialog(String msg, int done, int total) {
+    if (_thumbDlgOpen) {
+      _thumbProgressNotifier.value = msg;
+      return;
+    }
+    _thumbDlgOpen = true;
+    _thumbProgressNotifier.value = msg;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(
+          Icons.auto_awesome_mosaic,
+          color: AppColors.purple,
+          size: 30,
+        ),
+        title: const Text('썸네일 생성 중'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ValueListenableBuilder<String>(
+              valueListenable: _thumbProgressNotifier,
+              builder: (_, v, __) => Text(
+                v,
+                style: const TextStyle(fontSize: 12.5, height: 1.5),
+              ),
+            ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: total > 0 ? (done / total).clamp(0.0, 1.0) : null,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '백그라운드에서 계속 진행되므로 창을 닫아도 됩니다.\n'
+              '중단해도 이미 만든 썸네일은 그대로 남습니다.',
+              style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _thumbDlgOpen = false;
+            },
+            child: const Text('닫기'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                await context.read<NasApi>().eventThumbsStop();
+                _snack('중단 요청했습니다 — 현재 파일 처리 후 멈춥니다');
+              } catch (e) {
+                _snack('중단 실패: $e');
+              }
+            },
+            child: const Text('중단', style: TextStyle(color: AppColors.taegeukRed)),
+          ),
+        ],
+      ),
+    ).then((_) => _thumbDlgOpen = false);
+  }
+
+  final ValueNotifier<String> _thumbProgressNotifier = ValueNotifier<String>('');
 
   void _snack(String msg) {
     if (!mounted) return;

@@ -1601,6 +1601,21 @@ class NasApi {
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// 행사 썸네일 백필 **중단** — 관리자·마스터 전용.
+  ///
+  /// 대량 백필은 수십 분 걸릴 수 있으므로 사용자가 멈출 수 있어야 한다.
+  /// 서버는 현재 파일 처리가 끝난 뒤 안전하게 빠져나온다(이미 만든 썸네일 유지).
+  Future<Map<String, dynamic>> eventThumbsStop() async {
+    final r = await http
+        .post(
+          _uri('/api/event/thumbs/stop'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: '{}',
+        )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   /// NAS 폴더 중 **행사로 등록되지 않은 것** 미리 보기 (아무것도 쓰지 않음).
   ///
   /// ## [요구 2026-10-30] "나스에 행사들을 추가했는데, 행사관리에서 자동으로
