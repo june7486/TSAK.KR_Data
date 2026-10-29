@@ -27,6 +27,7 @@ class DonationListPanel extends StatefulWidget {
     required this.onDelete,
     required this.onAdd,
     this.won,
+    this.onOpenMember,
   });
 
   /// '후원·기타수입' 탭의 행 그대로(참가비 제외).
@@ -43,6 +44,16 @@ class DonationListPanel extends StatefulWidget {
 
   final String Function(int)? won;
 
+  /// 후원자 이름을 눌렀을 때 회원 상세로 이동.
+  ///
+  /// ## [요구 2026-10-30] "서로간의 링크도 잘 연계되어서 클릭하면 서로
+  ///  스위칭되는 링크가 잘 작동되어야 모든 회원들의 후원을 이끌어 낼 수 있어"
+  ///
+  /// 후원 통계 → 회원 상세로 **한 번에** 건너뛴다. 사람을 찾는 데 3단계를
+  /// 거치게 만들면 현장에서 안 쓰게 된다.
+  /// 인자: (인가번호, 이름). 번호가 없으면 이름으로만 찾는다.
+  final void Function(String number, String name)? onOpenMember;
+
   @override
   State<DonationListPanel> createState() => _DonationListPanelState();
 }
@@ -51,6 +62,13 @@ class _DonationListPanelState extends State<DonationListPanel> {
   DonationViewMode _view = DonationViewMode.bySponsor;
   DonationFocus _focus = DonationFocus.both;
   final Set<String> _open = <String>{};
+
+  /// 연도 배지를 눌러 좁힌 연도 — null 이면 전체.
+  ///
+  /// ## [요구 2026-10-30] 연도별 정리
+  /// 연도 카드에서 특정 연도를 누르면 그 해만 남는다. 같은 배지를 다시 누르면
+  /// 해제된다(토글). 별도 화면 없이 한 화면에서 왕복할 수 있게 한다.
+  String? _yearFilter;
 
   String _won(int v) => widget.won?.call(v) ?? '${_comma(v)}원';
 
@@ -71,8 +89,12 @@ class _DonationListPanelState extends State<DonationListPanel> {
 
   List<DonationRow> get _cash => _donations.where((e) => e.isIncome).toList();
 
-  List<DonationRow> get _sponsors =>
-      _donations.where((e) => e.isSponsor).toList();
+  List<DonationRow> get _sponsors {
+    final all = _donations.where((e) => e.isSponsor).toList();
+    final y = _yearFilter;
+    if (y == null) return all;
+    return all.where((e) => _donationYearOf(e) == y).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,9 +147,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
                 else
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: _view == DonationViewMode.bySponsor
-                        ? _sponsorList(sponsors, scrollable: false)
-                        : _kindList(sponsors, scrollable: false),
+                    child: _bodyList(sponsors, scrollable: false),
                   ),
               ],
             ),
@@ -141,9 +161,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
             Expanded(
               child: sponsors.isEmpty
                   ? empty
-                  : (_view == DonationViewMode.bySponsor
-                        ? _sponsorList(sponsors)
-                        : _kindList(sponsors)),
+                  : _bodyList(sponsors),
             ),
           ],
         );
@@ -215,6 +233,53 @@ class _DonationListPanelState extends State<DonationListPanel> {
               ],
             ],
           ),
+          // 연도 필터가 걸려 있으면 해제 버튼을 띄운다 — 갇히지 않게.
+          if (_yearFilter != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(
+                  Icons.filter_alt,
+                  size: 13,
+                  color: AppColors.hermesInk,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    '$_yearFilter년만 보는 중',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.hermesInk,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => setState(() => _yearFilter = null),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.hermesTint,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: const Text(
+                      '전체 보기 ✕',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.hermesInk,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 4),
           Row(
             children: [
@@ -231,7 +296,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
               ],
               const Spacer(),
               Text(
-                _view == DonationViewMode.bySponsor ? '후원자별' : '내역별',
+                _view.label,
                 style: const TextStyle(fontSize: 10, color: AppColors.textGray),
               ),
             ],
@@ -239,6 +304,23 @@ class _DonationListPanelState extends State<DonationListPanel> {
         ],
       ),
     );
+  }
+
+  /// 현재 보기 모드에 맞는 목록 — 후원자별 / 내역별 / 연도별.
+  ///
+  /// ## [요구 2026-10-30] "후원자료는 연도별, 이름별, 후원내역별로 구분 및
+  ///  출력이 가능하도록"
+  /// 세 가지 축을 **같은 데이터에서** 전환한다. 별도 화면·별도 폴더를 만들지
+  /// 않으므로 한 건을 고치면 세 보기에 동시에 반영된다(링크가 끊길 수 없음).
+  Widget _bodyList(List<DonationRow> sponsors, {bool scrollable = true}) {
+    switch (_view) {
+      case DonationViewMode.bySponsor:
+        return _sponsorList(sponsors, scrollable: scrollable);
+      case DonationViewMode.byKind:
+        return _kindList(sponsors, scrollable: scrollable);
+      case DonationViewMode.byYear:
+        return _yearList(sponsors, scrollable: scrollable);
+    }
   }
 
   Widget _chip({
@@ -792,4 +874,251 @@ class _DonationListPanelState extends State<DonationListPanel> {
       },
     );
   }
+
+  /// 후원 **연도별** 묶음 — 연도 카드 안에 그 해의 후원자·내역을 그대로.
+  ///
+  /// ## [요구 2026-10-30] "후원자료는 연도별, 이름별, 후원내역별로 구분 및
+  ///  출력이 가능하도록 폴더가 정리되고 연동되어야 함"
+  ///
+  /// 연도는 날짜에서 뽑는다([_donationYearOf]). 최신 연도가 위.
+  /// 각 카드의 '후원자 N명'을 누르면 **후원자별**로, 분류 배지를 누르면
+  /// **내역별**로 즉시 전환된다 — 요구하신 "서로 스위칭되는 링크".
+  Widget _yearList(List<DonationRow> sponsors, {bool scrollable = true}) {
+    final map = <String, List<DonationRow>>{};
+    for (final e in sponsors) {
+      map.putIfAbsent(_donationYearOf(e), () => []).add(e);
+    }
+    final years = map.keys.toList()
+      ..sort((a, b) {
+        final na = int.tryParse(a);
+        final nb = int.tryParse(b);
+        if (na == null && nb == null) return a.compareTo(b);
+        if (na == null) return 1;
+        if (nb == null) return -1;
+        return nb.compareTo(na);
+      });
+
+    if (years.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            '후원 내역이 없습니다',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: !scrollable,
+      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 16),
+      itemCount: years.length,
+      itemBuilder: (_, i) {
+        final y = years[i];
+        final items = map[y]!;
+        final cash = items.fold<int>(0, (s, e) => s + e.amount);
+        final value = items.fold<int>(0, (s, e) => s + e.value);
+        final names = items
+            .map((e) => e.name)
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
+        final kinds = items.map((e) => e.kind.label).toSet().toList();
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 7),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    // 연도 배지 — 누르면 그 해만 남기고, 다시 누르면 해제.
+                    InkWell(
+                      onTap: () => setState(
+                        () => _yearFilter = _yearFilter == y ? null : y,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _yearFilter == y
+                              ? AppColors.purple
+                              : AppColors.purple.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          y == '연도미상' ? y : '$y년',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                            color: _yearFilter == y
+                                ? Colors.white
+                                : AppColors.purple,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    // 후원자 수 — 누르면 '후원자별' 보기로 전환.
+                    InkWell(
+                      onTap: () =>
+                          setState(() => _view = DonationViewMode.bySponsor),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 3,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          '후원자 ${names.length}명 · ${items.length}건',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w700,
+                            decoration: TextDecoration.underline,
+                            decorationStyle: TextDecorationStyle.dotted,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (cash > 0)
+                      Text(
+                        _won(cash),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    if (cash > 0 && value > 0)
+                      const Text(
+                        ' · ',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    if (value > 0)
+                      Text(
+                        '상당 ${_won(value)}',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.hermesInk,
+                        ),
+                      ),
+                  ],
+                ),
+                if (names.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  // 후원자 이름 — 누르면 그 회원 상세로 이동.
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 3,
+                    children: [
+                      for (final nm in names)
+                        InkWell(
+                          onTap: widget.onOpenMember == null
+                              ? null
+                              : () => widget.onOpenMember!(
+                                  _numberOf(items, nm),
+                                  nm,
+                                ),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2,
+                              vertical: 1,
+                            ),
+                            child: Text(
+                              nm,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: widget.onOpenMember == null
+                                    ? AppColors.textGray
+                                    : AppColors.purple,
+                                fontWeight: FontWeight.w700,
+                                decoration: widget.onOpenMember == null
+                                    ? null
+                                    : TextDecoration.underline,
+                                decorationStyle: TextDecorationStyle.dotted,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                if (kinds.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 3,
+                    children: [
+                      for (final k in kinds)
+                        // 분류 배지 — 누르면 '내역별' 보기로 전환.
+                        InkWell(
+                          onTap: () => setState(
+                            () => _view = DonationViewMode.byKind,
+                          ),
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.hermesTint,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              k,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.hermesInk,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 4),
+                for (var j = 0; j < items.length; j++)
+                  _itemLine(items[j], j + 1),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 후원 행의 **연도** — 날짜 앞 4자리(없으면 '연도미상').
+String _donationYearOf(DonationRow r) {
+  final m = RegExp(r'(19|20)\d{2}').firstMatch(r.date);
+  if (m != null) return m.group(0)!;
+  final m2 = RegExp(r'(19|20)\d{2}').firstMatch(r.id);
+  if (m2 != null) return m2.group(0)!;
+  return '연도미상';
+}
+
+/// 묶음 안에서 [name] 의 인가번호를 찾는다 — 회원 상세 이동용.
+String _numberOf(List<DonationRow> items, String name) {
+  for (final e in items) {
+    if (e.name.trim() == name.trim() && e.number.trim().isNotEmpty) {
+      return e.number.trim();
+    }
+  }
+  return '';
 }

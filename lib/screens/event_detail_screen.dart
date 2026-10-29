@@ -4587,6 +4587,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               onAdd: () => _financeEdit(kind),
               onEdit: (r) => _financeEdit(kind, row: r),
               onDelete: (r) => _deleteFinanceRow(kind, r),
+              // 후원자 이름 → 회원 상세. "클릭하면 서로 스위칭되는 링크".
+              onOpenMember: _openMemberByDonor,
               onOutput: (view, focus) =>
                   _outputDonationList(rows: rows, view: view, focus: focus),
             ),
@@ -5524,6 +5526,66 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         noWrap: const {'연번', '후원분류', '건수', '인가번호', '금액', '금액 상당'},
       ),
     );
+  }
+
+  /// 후원자 이름 → 회원 상세로 이동.
+  ///
+  /// ## [요구 2026-10-30] "서로간의 링크도 잘 연계되어서 클릭하면 서로
+  ///  스위칭되는 링크가 잘 작동되어야 모든 회원들의 후원을 이끌어 낼 수 있어"
+  ///
+  /// ## ⚠️ 소속(corps)을 반드시 본다
+  /// 후원 행의 인가번호는 `G75`(은하) 일 수도 `75`(범) 일 수도 있다. 숫자만
+  /// 비교하면 **은하 G75 를 눌렀는데 범 75호(다른 사람)가 열린다.**
+  /// (이번 세션에서 고친 것과 같은 종류의 버그 — 여기서도 막는다.)
+  ///   ① 번호 문자열에 `G`/`은하` 가 있으면 은하 명단에서 먼저 찾는다.
+  ///   ② 없으면 범 명단에서 찾는다.
+  ///   ③ 번호로 못 찾으면 이름으로 찾되, **동명이인이면 열지 않고 알린다**.
+  Future<void> _openMemberByDonor(String number, String name) async {
+    final s = context.read<AppState>();
+    final raw = number.trim();
+    final low = raw.toLowerCase();
+    final wantEunha = low.startsWith('g') ||
+        raw.startsWith('은하') ||
+        raw.startsWith('갤럭시');
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+
+    Member? pick;
+    // ① 번호 + 소속으로 정확히 찾기
+    if (digits.isNotEmpty) {
+      for (final m in s.members) {
+        if (m.number.replaceAll(RegExp(r'[^0-9]'), '') != digits) continue;
+        final isEunha = m.corps == 'eunha';
+        if (isEunha == wantEunha) {
+          pick = m;
+          break;
+        }
+      }
+    }
+    // ② 번호가 없거나 못 찾으면 이름으로
+    if (pick == null && name.trim().isNotEmpty) {
+      final hits = s.members
+          .where((m) => m.name.trim() == name.trim())
+          .toList();
+      if (hits.length == 1) {
+        pick = hits.first;
+      } else if (hits.length > 1) {
+        // 동명이인 — 잘못 열면 남의 후원내역을 보여주게 된다. 열지 않는다.
+        _snack('동명이인 ${hits.length}명입니다. 이름으로는 열 수 없습니다'
+            ' (인가번호를 확인하세요)');
+        return;
+      }
+    }
+    if (pick == null) {
+      _snack(name.trim().isEmpty
+          ? '회원을 찾을 수 없습니다'
+          : '${name.trim()} 님의 회원 등록정보가 없습니다');
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: pick!.id)),
+    );
+    if (mounted) _load();
   }
 
   /// (요구) 후원 목록 출력 — 패널에서 고른 '보기(후원자별/내역별)'와

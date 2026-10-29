@@ -23,7 +23,8 @@ import 'donation_kinds.dart';
 /// 후원 목록 보기 방식.
 enum DonationViewMode {
   bySponsor('후원자별', '후원자 한 명을 한 줄로 묶어 정리합니다'),
-  byKind('내역별', '후원 분류(식사·물품·차량·기타)별로 묶어 정리합니다');
+  byKind('내역별', '후원 분류(식사·물품·차량·기타)별로 묶어 정리합니다'),
+  byYear('연도별', '후원 연도별로 묶어 정리합니다 (연도 → 후원자 순)');
 
   const DonationViewMode(this.label, this.hint);
 
@@ -282,6 +283,32 @@ DonationDocData buildDonationDocData({
       for (var i = 0; i < kinds.length; i++) {
         body.add(cellsFor(map[kinds[i]]!, i + 1));
       }
+
+    case DonationViewMode.byYear:
+      // ## [요구 2026-10-30] "후원자료는 연도별, 이름별, 후원내역별로 구분 및
+      //  출력이 가능하도록 폴더가 정리되고 연동되어야 함"
+      //
+      //  연도 1개 = 1 묶음. 연도는 **날짜(date)의 앞 4자리**에서 뽑는다.
+      //  서버가 별도 year 필드를 항상 주지는 않으므로(레거시 행 존재)
+      //  날짜가 진실의 원천이다. 날짜가 없으면 '연도미상'.
+      //  정렬은 최신 연도부터(2026 → 2025 → …), '연도미상'은 맨 뒤.
+      final map = <String, _Group>{};
+      for (final e in sponsors) {
+        final y = _yearOf(e);
+        map.putIfAbsent(y, () => _Group('$y년', '')).add(e);
+      }
+      final years = map.keys.toList()
+        ..sort((a, b) {
+          final na = int.tryParse(a);
+          final nb = int.tryParse(b);
+          if (na == null && nb == null) return a.compareTo(b);
+          if (na == null) return 1;   // 연도미상은 뒤로
+          if (nb == null) return -1;
+          return nb.compareTo(na);    // 최신 연도 먼저
+        });
+      for (var i = 0; i < years.length; i++) {
+        body.add(cellsFor(map[years[i]]!, i + 1));
+      }
   }
 
   // ── 요약 — 후원금(수입)과 현물후원을 **절대 섞지 않는다**.
@@ -309,6 +336,20 @@ DonationDocData buildDonationDocData({
         '후원 ${v.label} · ${f.label} · ${visible.length}개 항목 · '
         '현물 ${sponsors.length}건 / 후원금 ${cash.length}건',
   );
+}
+
+/// 후원 행 1건의 **연도** — 날짜 앞 4자리. 없으면 '연도미상'.
+///
+/// ## [요구 2026-10-30] 연도별 정리
+/// 서버가 별도 year 필드를 항상 내려주지는 않는다(레거시 행). 날짜 문자열이
+/// `2026-05-01` / `2026.05.01` / `2026/05/01` 어느 형식이어도 앞 4자리를
+/// 숫자로 뽑으면 되므로, 날짜를 진실의 원천으로 삼는다.
+String _yearOf(DonationRow r) {
+  final m = RegExp(r'(19|20)\d{2}').firstMatch(r.date);
+  if (m != null) return m.group(0)!;
+  final m2 = RegExp(r'(19|20)\d{2}').firstMatch(r.id);
+  if (m2 != null) return m2.group(0)!;
+  return '연도미상';
 }
 
 /// 후원자 또는 분류 1묶음.
