@@ -71,6 +71,16 @@ class NasApi {
 
   Uri _uri(String path) => Uri.parse('$_base$path');
 
+  /// [요구 2026-10-28] 외부 서비스(행사자료 등)가 쓰는 **공개** JSON GET.
+  ///
+  /// `_robustJson` 은 401/HTML/5xx 를 예외로 승격하고 1회 재시도하는
+  /// 검증된 경로다. 새 기능이 http 를 직접 부르면 인증 헤더 누락·오류
+  /// 삼킴 같은 문제가 반복되므로, 이 한 곳만 공개해 재사용한다.
+  Future<Map<String, dynamic>> robustGetJson(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 30),
+  }) => _robustJson(uri, timeout: timeout);
+
   /// 행사 화면 등에서 쓰는 '견고한 JSON GET'.
   ///  · 인증 헤더를 항상 실어(쿠키 의존 제거) 보낸다.
   ///  · 응답이 JSON 이 아니면(예: 앞단 게이트웨이가 폭주 시 HTML 오류 반환)

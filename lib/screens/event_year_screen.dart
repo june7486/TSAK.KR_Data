@@ -13,6 +13,7 @@ import 'all_photos_screen.dart';
 import 'board_screen.dart';
 import 'event_detail_screen.dart';
 import 'event_form_dialog.dart';
+import 'event_resource_screen.dart';
 
 /// 행사관리 — 연도별 탭 + 행사 목록/생성
 ///
@@ -223,6 +224,18 @@ class _EventYearScreenState extends State<EventYearScreen> {
         title: const Text('행사관리'),
         actions: [
           const AppHomeEmblem(size: 22),
+          // [요구 2026-10-28] 행사자료(음원·영상·문서) 재생/내려받기.
+          //  행사 때마다 반복해서 쓰는 자료라 목록 화면에서 한 번에 닿아야 한다.
+          IconButton(
+            tooltip: '행사자료 (음원·영상·문서 재생)',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const EventResourceScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.library_music_outlined),
+          ),
           // 행사+수품 게시판 — 개인(범스카우트·일반회원)도 모든 글을 열람한다.
           IconButton(
             tooltip: '게시판 (행사·수품 소식·후기)',
