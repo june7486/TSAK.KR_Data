@@ -2584,7 +2584,26 @@ class AppState extends ChangeNotifier {
       ...repo.allUnscoped(),
       ..._eunhaMembers,
     ];
+    // ══════════════════════════════════════════════════════════════════════
+    // [소속 분리 2026-10-29] **접두어가 곧 신원이다.**
+    //
+    // ## 실제 사고 (요구: "수동입력시 은하10 을 입력하면 또 범10이 검색됨")
+    //  범과 은하는 번호 공간이 겹친다(둘 다 1~165). 입력 '은하10' 에서
+    //  숫자만 뽑아 후보 풀 전체를 뒤지면 범10(이순욱)이 먼저 걸린다.
+    //  서버도 같은 버그가 있어 양쪽에서 남의 카드가 열렸다.
+    //
+    // ## 규칙 (클라이언트도 서버와 동일)
+    //  · 입력에 은하 표기(은하/갤럭시/G/g/galaxy) → **은하만** 후보.
+    //  · 범 소속 세션 → 은하 제외.
+    //  · 표기가 없고 소속도 없으면 → 전체(기존 규칙).
+    //  이 필터를 **모든 단계(번호·전화·이름) 앞에** 두어 한 곳에서 끝낸다.
+    // ══════════════════════════════════════════════════════════════════════
+    final eunhaPrefix = _hasEunhaPrefix(rawNum);
+    final forceEunha = eunhaPrefix || corps == 'eunha';
+    final forceTsak = !eunhaPrefix && corps == 'tsak';
     final pool = all.where((m) {
+      if (forceEunha && m.corps != 'eunha') return false;
+      if (forceTsak && m.corps == 'eunha') return false;
       if (regularOnly) return m.isRegular;
       if (strongOnly) return !m.isRegular;
       return true;
@@ -2594,13 +2613,10 @@ class AppState extends ChangeNotifier {
     //  은하 G75 와 범 75 는 접두어가 다르므로 여기서 절대 섞이지 않는다.
     final numKey = rawNum.replaceAll(RegExp(r'[^0-9]'), '');
     if (numKey.isNotEmpty) {
-      final wantEunha = _looksEunha(rawNum, corps);
       final hits = pool.where((m) {
         if (m.isRegular) return false;   // 일반회원은 인가번호로 찾지 않는다
-        if (m.number.replaceAll(RegExp(r'[^0-9]'), '') != numKey) return false;
-        if (corps == 'tsak' || corps == 'eunha') return m.corps == corps;
-        // 접두어 없이 들어온 경우 은하/범 둘 다 가능 → 접두어 규칙으로 판정
-        return wantEunha ? m.corps == 'eunha' : true;
+        // pool 이 이미 소속(은하/범)을 걸러 놓았다 — 여기선 번호만 대조.
+        return m.number.replaceAll(RegExp(r'[^0-9]'), '') == numKey;
       }).toList();
       if (hits.length == 1) {
         return MemberIdentity.single(hits.first, via: 'number');
@@ -2648,11 +2664,16 @@ class AppState extends ChangeNotifier {
     return MemberIdentity.none();
   }
 
-  bool _looksEunha(String raw, String? corps) {
-    if (corps == 'eunha') return true;
-    if (corps == 'tsak') return false;
+  /// 입력에 **은하 표기**가 있는지 — 소속과 무관하게 문자열만 본다.
+  ///  '은하10' / '갤럭시10' / 'G10' / 'g10' / 'galaxy10' / 'eunha10' → true
+  bool _hasEunhaPrefix(String raw) {
     final s = raw.trim().toLowerCase();
-    return s.startsWith('g') || s.startsWith('은하') || s.startsWith('갤럭시');
+    if (s.isEmpty) return false;
+    if (s.startsWith('g') && s.length > 1) return true;
+    return s.startsWith('은하') ||
+        s.startsWith('갤럭시') ||
+        s.startsWith('galaxy') ||
+        s.startsWith('eunha');
   }
 
   /// 은하스카우트 캐시에서 조회(통합 검색 목록에 노출되는 은하 회원 해석용).

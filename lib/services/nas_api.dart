@@ -2017,12 +2017,22 @@ class NasApi {
   /// 행사 참가자 수동 입력에서 인가번호만 넣으면 이름·소속·성별·연락처·메일·
   /// 주소를 자동으로 채우기 위한 조회. 범/은하 양쪽 명단을 서버가 함께 본다.
   /// 반환: `{ok, found, member:{...}}` — 없으면 found=false.
-  Future<Map<String, dynamic>> memberLookup(String query) async {
+  /// 회원 조회 — **인가번호·전화번호·이름** 모두 지원(일반회원 포함).
+  ///
+  /// [corps] 를 넘기면 그 명단만 조회한다. '은하10' 처럼 입력에 은하 표기가
+  /// 있으면 서버가 알아서 은하만 보지만, 화면이 이미 소속을 알고 있을 때
+  /// (은하 관리 화면 등) 명시하면 실수 여지가 더 줄어든다.
+  Future<Map<String, dynamic>> memberLookup(
+    String query, {
+    String corps = '',
+  }) async {
+    final body = <String, dynamic>{'q': query};
+    if (corps == 'eunha' || corps == 'tsak') body['corps'] = corps;
     final r = await http
         .post(
           _uri('/api/member/lookup'),
           headers: {..._authHeaders, 'Content-Type': 'application/json'},
-          body: json.encode({'q': query}),
+          body: json.encode(body),
         )
         .timeout(const Duration(seconds: 20));
     final j = json.decode(utf8.decode(r.bodyBytes)) as Map;

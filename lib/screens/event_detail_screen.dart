@@ -3202,6 +3202,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // (요구) 인가번호 자동채움 상태 — 다이얼로그 로컬 상태.
     var lookupBusy = false;
     var lookupOk = false;
+    // 동명이인 응답(후보 목록) — 있으면 조회 결과 대신 선택 UI 를 보여준다.
+    Map<String, dynamic>? lookupAmbiguous;
     // [요구 2026-10-29] 인가자만이 아니라 **일반회원(비인가)도** 조회된다.
     var lookupHint = '인가번호·전화번호·이름으로 개인정보를 불러옵니다';
     // 매칭된 회원(있으면 저장 시 corps/numberLabel 판단에 쓴다).
@@ -3227,6 +3229,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           if (q.isEmpty || lookupBusy) return;
           setSheetState(() {
             lookupBusy = true;
+            lookupAmbiguous = null;
             lookupHint = '개인정보 불러오는 중…';
           });
           Map<String, dynamic>? m;
@@ -3280,11 +3283,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 'address': local.address,
               };
             }
-            // 2) 로컬에 없으면 서버 조회(범+은하+일반 통합, 최신값).
+            // 2) 로컬에 없으면 서버 조회(최신값).
+            //   접두어(은하/G/갤럭시)가 있으면 은하 명단만 — 서버가 판정한다.
             if (m == null) {
               final res = await _nas.memberLookup(q);
               if (res['found'] == true && res['member'] is Map) {
                 m = (res['member'] as Map).cast<String, dynamic>();
+              } else if (res['ambiguous'] == true &&
+                  res['candidates'] is List) {
+                // 동명이인 — 아무나 채우지 않고 사람이 고르게 한다.
+                lookupAmbiguous = res;
               }
             }
           } catch (_) {
@@ -3295,14 +3303,21 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             lookupBusy = false;
             if (m == null) {
               lookupOk = false;
-              lookupHint = '해당 인가번호의 회원 정보를 찾지 못했습니다';
+              lookupHint = lookupAmbiguous != null
+                  ? '이름이 같은 회원이 여러 명입니다 — 오른쪽 목록에서 선택하세요'
+                  : '일치하는 회원(인가자·일반회원)을 찾지 못했습니다';
               return;
             }
             final mm = m;
             matched = mm;
             lookupOk = true;
+            //  소속을 문구에 **명시**한다 — 범/은하 혼동을 눈으로 확인할 수 있게.
             final label = '${mm['numberLabel'] ?? mm['number'] ?? ''}';
-            lookupHint = '${mm['name'] ?? ''} ($label) 정보를 불러왔습니다';
+            final corpTag = (mm['isRegular'] == true)
+                ? '일반회원'
+                : (mm['corps'] == 'eunha' ? '은하스카우트' : '범스카우트');
+            lookupHint =
+                '$corpTag · ${mm['name'] ?? ''} ($label) 정보를 불러왔습니다';
             // 빈 칸만 채운다(관리자가 고친 값 보존).
             void fill(TextEditingController c, String? v) {
               final t = '${v ?? ''}'.trim();
@@ -3374,6 +3389,106 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   onSubmitted: (_) => autoFill(),
                 ),
               ),
+              // ── 동명이인 후보 선택 ────────────────────────────────
+              //  이름으로 조회했을 때 후보가 여러 명이면 **아무나 채우지
+              //  않는다.** 범/은하 번호가 겹치는 체계에서 자동 선택은 곧
+              //  남의 개인정보 노출이다. 사람이 직접 고른다.
+              if (lookupAmbiguous != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.hermesTint,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.hermesOrange.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '이름이 같은 회원 ${lookupAmbiguous!['count'] ?? ''}명 '
+                        '— 열 사람을 선택하세요',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.hermesInk,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      for (final c in ((lookupAmbiguous!['candidates']
+                                  as List?) ??
+                              const [])
+                          .whereType<Map>())
+                        InkWell(
+                          onTap: () {
+                            final cc = c.cast<String, dynamic>();
+                            setSheetState(() {
+                              matched = cc;
+                              lookupOk = true;
+                              lookupAmbiguous = null;
+                              lookupHint =
+                                  '${cc['numberLabel'] ?? ''} · ${cc['name'] ?? ''} 선택됨';
+                              void fill(TextEditingController t, String? v) {
+                                final x = '$v'.trim();
+                                if (t.text.trim().isEmpty && x.isNotEmpty) {
+                                  t.text = x;
+                                }
+                              }
+
+                              fill(nameC, '${cc['name'] ?? ''}');
+                              fill(unitC, '${cc['unit'] ?? ''}');
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 5),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: c['corps'] == 'eunha'
+                                        ? AppColors.taegeukBlue
+                                        : (c['isRegular'] == true
+                                            ? AppColors.textGray
+                                            : AppColors.taegeukRed),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    c['corps'] == 'eunha'
+                                        ? '은하'
+                                        : (c['isRegular'] == true
+                                            ? '일반'
+                                            : '범'),
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '${c['name'] ?? ''} · '
+                                    '${c['numberLabel'] ?? ''}'
+                                    '${'${c['unit'] ?? ''}'.trim().isEmpty ? '' : ' · ${c['unit']}'}',
+                                    style: const TextStyle(fontSize: 11.5),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right, size: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 8),
               TextField(
                 controller: genderC,
