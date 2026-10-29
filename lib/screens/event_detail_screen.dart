@@ -2493,28 +2493,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     }
   }
 
-  /// 참가자 항목 → 회원(개인카드) 조회.
-  ///
-  /// ⚠️ **[버그 수정 2026-10-29] 이름 폴백 제거**
-  ///  종전: 인가번호가 없으면 `s.byName(nm)` 으로 폴백했고, `byName` 은
-  ///        동명이인이면 **첫 번째를 조용히** 돌려줬다.
-  ///        → 비인가자 '김순철' 을 수동 입력하면 **범인가자 김순철** 의 카드가
-  ///          열려 남의 후원·연회비·참가이력이 보였다.
-  ///        '번호가 없다' 는 비인가자의 **정상 상태**인데 실패로 오해한 설계.
-  ///
-  ///  이제 `AppState.resolveIdentity` 한 곳만 통과한다:
-  ///   · 인가번호(접두어 보존) → 전화번호 → (보조)이름 순으로 시도하되
-  ///   · **정확히 1명일 때만** 회원을 돌려주고, 동명이인이면 null 을 준다.
-  Member? _resolveMember(AppState s, Map<String, dynamic> a, String ident) {
-    final idn = s.resolveIdentity(
-      number: ident.isNotEmpty ? ident : '${a['number'] ?? ''}',
-      phone: '${a['phone'] ?? a['loginId'] ?? ''}',
-      name: '${a['name'] ?? ''}',
-      corps: '${a['corps'] ?? ''}'.trim(),
-    );
-    // 동명이인/미확인 → null. 호출부가 '신규 등록' 흐름으로 안내한다.
-    return idn.isResolved ? idn.member : null;
-  }
+  // ⚠️ [2026-10-29] `_resolveMember()` 를 **삭제**했다.
+  //   그 함수는 "번호가 없으면 이름으로 찾는다" 는 폴백을 담고 있었고,
+  //   그것이 비인가자 '김종선' 을 범 222호 '김종선' 카드로 열게 만든
+  //   직접 원인이었다. 같은 실수를 다시 만들 수 없도록 **함수 자체를 없앴다.**
+  //   카드 연결은 오직 `AppState.resolveIdentity()` 결과(`MemberIdentity`)
+  //   하나만 통과한다. 이름은 어떤 경우에도 회원을 단정하지 않는다.
 
   /// [요구] 참가자 이름 클릭:
   ///  · 개인카드(등록정보)가 있으면 → 개인카드 열기.
@@ -2523,13 +2507,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   Future<void> _openOrRegister(Map<String, dynamic> a) async {
     if (!widget.canManage) return;
     final s = context.read<AppState>();
-    final ident = '${a['number'] ?? a['phone'] ?? a['loginId'] ?? ''}'
-        .replaceAll(RegExp(r'[^0-9]'), '');
     final idn = s.resolveIdentity(
+      //  ⚠️ number 는 **원본 문자열**을 넘긴다(숫자만 뽑지 않는다).
+      //   'G75'(은하) 와 '75'(범) 를 구분해야 하므로 접두어를 반드시 보존.
       number: '${a['number'] ?? ''}',
       phone: '${a['phone'] ?? a['loginId'] ?? ''}',
       name: '${a['name'] ?? ''}',
       corps: '${a['corps'] ?? ''}'.trim(),
+      // 저장된 신원 — false 면 비인가 확정(회원 조회 안 함),
+      //                 true  면 인가 확정(이름 폴백 금지).
+      licensed: a['licensed'] is bool ? a['licensed'] as bool : null,
     );
 
     // ── 동명이인: **절대 단정하지 않는다** → 사용자가 직접 고른다 ─────────
@@ -2544,7 +2531,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       return;
     }
 
-    final m = _resolveMember(s, a, ident);
+    // ── 단일/미확인 — idn 하나만 신뢰한다(다른 조회 경로 없음) ────────────
+    final m = idn.isResolved ? idn.member : null;
     if (m != null) {
       await Navigator.push(
         context,
@@ -2557,15 +2545,27 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final nm = '${a['name'] ?? ''}'.trim();
     final ph = '${a['phone'] ?? a['loginId'] ?? a['number'] ?? ''}'.trim();
     // 인가자(범/은하)면 인가자로, 그 외(일반)면 일반회원으로 등록한다.
-    //   (요구) 판정은 서버 권위 필드 corps 로만 — corps 가 비면 비인가(일반).
-    final isRegular = '${a['corps'] ?? ''}'.trim().isEmpty;
+    //   ⚠️ [2026-10-29] 저장된 `licensed` 를 **최우선**으로 신뢰한다.
+    //     · licensed == false  → 비인가 확정(일반회원)
+    //     · licensed == true   → 인가 확정
+    //     · null(구데이터)      → corps 가 비면 일반(기존 규칙 유지)
+    final storedLic = a['licensed'];
+    final isRegular = storedLic is bool
+        ? !storedLic
+        : '${a['corps'] ?? ''}'.trim().isEmpty;
+    // 비인가자는 "회원 정보가 없다" 가 **정상**이므로 문구를 구분한다.
+    final msg = isRegular
+        ? '${nm.isEmpty ? '이 참가자' : nm}'
+            '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 일반(비인가) 참가자입니다.\n\n'
+            '일반회원으로 등록할까요?\n'
+            '· 인가번호가 없으므로 범/은하 인가자와는 연결되지 않습니다.'
+        : '${nm.isEmpty ? '이 참가자' : nm}'
+            '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 등록된 회원 정보가 없습니다.\n\n'
+            '인가자로 신규 등록할까요?';
     final ok = await confirmDialog(
       context,
-      title: '신규 회원 등록',
-      message:
-          '${nm.isEmpty ? '이 참가자' : nm}'
-          '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 등록된 회원 정보가 없습니다.\n\n'
-          '${isRegular ? '일반회원(비인가)' : '인가자'}로 신규 등록할까요?',
+      title: isRegular ? '일반회원 신규 등록' : '신규 회원 등록',
+      message: msg,
       confirmLabel: '신규 등록',
       cancelLabel: '취소',
       danger: false,

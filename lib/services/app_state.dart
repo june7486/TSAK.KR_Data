@@ -2547,10 +2547,28 @@ class AppState extends ChangeNotifier {
     String? name,
     String? corps,
     bool allowNameFallback = true,
+    /// 저장된 `licensed` 값. **false 이면 비인가자로 확정**되어 회원 조회를
+    /// 아예 하지 않는다(이름 폴백 포함). null 이면 미지정(추론).
+    bool? licensed,
   }) {
     final rawNum = (number ?? '').trim();
     final rawPhone = (phone ?? '').trim();
     final nm = (name ?? '').trim();
+
+    // ══════════════════════════════════════════════════════════════════
+    // [2026-10-29] 가장 강한 방어 — **저장된 신원을 최우선으로 신뢰**한다.
+    //
+    //  참석자 행에 `licensed:false` 가 있으면 그 사람은 **비인가자로 확정**이다.
+    //  이때 번호가 우연히 회원과 겹치거나 이름이 같아도 회원을 찾지 않는다.
+    //  (사고: 비인가 '김종선' 이 범 222호 '김종선' 카드로 열림)
+    //
+    //  `licensed:true` 인데 번호가 없으면 이름으로도 찾지 않는다 —
+    //  신원이 확정된 사람은 **정확한 키**로만 연결한다.
+    // ══════════════════════════════════════════════════════════════════
+    if (licensed == false) {
+      return MemberIdentity.none();       // 비인가 확정 → 절대 회원 연결 안 함
+    }
+    final strongOnly = licensed == true; // 인가 확정 → 이름 폴백 금지
 
     // ── ① 인가번호(접두어 보존) ─────────────────────────────────────────
     //  은하 G75 와 범 75 는 접두어가 다르므로 여기서 절대 섞이지 않는다.
@@ -2593,7 +2611,9 @@ class AppState extends ChangeNotifier {
     }
 
     // ── ③ 이름 — **보조**. 후보가 정확히 1명일 때만 쓴다. ───────────────
-    if (allowNameFallback && nm.isNotEmpty) {
+    //   단, 신원이 '인가자'로 확정된(stored licensed=true) 경우에는 이름을
+    //   쓰지 않는다. 확정된 사람은 정확한 키로만 연결해야 한다.
+    if (allowNameFallback && !strongOnly && nm.isNotEmpty) {
       final hits = <Member>[
         ...repo.allByName(nm),
         ..._eunhaMembers.where((m) => m.name.trim() == nm),
