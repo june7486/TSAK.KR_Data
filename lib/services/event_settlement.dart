@@ -4,15 +4,15 @@
 /// 1. 참가비/후원금, 후원·기타수입, 행사비지출, 행사결산 4개 탭으로 세분화
 /// 2. 각 항목별 출력 — **합산 기능** + **연번·이름 등 정보 선택**(출력 옵션으로 열 선택)
 ///    + **2줄 방지** + **미리보기** (기존 기본출력 법칙 그대로)
-/// 3. 행사결산 — `참가자 수`(인가자·리더·로버·비버·스카우트·벤처·일반·기타 각 수
-///    및 합산은 필수) + 참가비 + 후원금 + 후원 + 수송지원 등 + 행사비지출
+/// 3. 행사결산 — `참가자 수`(인가자·리더·로버·벤처·스카우트·**컵**·비버·일반·기타
+///    각 수 및 합산은 필수) + 참가비 + 후원금 + 후원 + 수송지원 등 + 행사비지출
 ///    (각종 지출·수품제작·기념물제작 등) + **출금계좌(대표 3계좌 선택/직접입력)**
 ///
 /// 이 파일은 계산(집계)과 표 데이터 생성만 담당한다. 출력 실행(PDF/인쇄/미리보기)은
 /// 기존 공용 엔진(`table_export.dart`, `tsak_output_sheet.dart`)을 그대로 쓴다.
 library;
 
-import '../models/member.dart';
+import 'attendee_roles.dart';
 import 'donation_kinds.dart';
 
 /// 대표 계좌 1개 — 지출 시 어느 계좌에서 나갔는지 기록/선택한다.
@@ -49,6 +49,7 @@ class EventAttendeeBreakdown {
     this.rover = 0,
     this.beaver = 0,
     this.scout = 0,
+    this.cub = 0,
     this.venture = 0,
     this.regular = 0,
     this.etc = 0,
@@ -60,6 +61,11 @@ class EventAttendeeBreakdown {
   final int rover;
   final int beaver;
   final int scout;
+
+  /// 컵스카우트 — [2026-10-29] 종전 8종 표에 **자리가 없어** 인가자로
+  /// 흡수되던 직책. 이제 정식 항목이다.
+  final int cub;
+
   final int venture;
 
   /// 일반(비인가 참가자).
@@ -67,18 +73,20 @@ class EventAttendeeBreakdown {
   final int etc;
 
   int get total =>
-      ivga + leader + rover + beaver + scout + venture + regular + etc;
+      ivga + leader + rover + venture + scout + cub + beaver + regular + etc;
 
   /// 필수 표기 순서(요구 고정). 각 항목을 (라벨, 값) 쌍으로.
+  /// 상위 섹션 → 하위 섹션 순(컵·비버는 스카우트 아래).
   List<MapEntry<String, int>> get ordered => [
     MapEntry('인가자', ivga),
-    MapEntry('리더', leader),
-    MapEntry('로버', rover),
-    MapEntry('비버', beaver),
-    MapEntry('스카우트', scout),
-    MapEntry('벤처', venture),
-    MapEntry('일반', regular),
-    MapEntry('기타', etc),
+    MapEntry(AttendeeRole.leader, leader),
+    MapEntry(AttendeeRole.rover, rover),
+    MapEntry(AttendeeRole.venture, venture),
+    MapEntry(AttendeeRole.scout, scout),
+    MapEntry(AttendeeRole.cub, cub),
+    MapEntry(AttendeeRole.beaver, beaver),
+    MapEntry(AttendeeRole.regular, regular),
+    MapEntry(AttendeeRole.etc, etc),
   ];
 
   /// '인가자 5 · 리더 2 · … · 합계 12' 한 줄 요약.
@@ -93,66 +101,73 @@ class EventAttendeeBreakdown {
 
   /// 참가자 배열 → 직책별 집계.
   ///
-  /// 판정 규칙(서버 `_ev_attendee_view` 와 동일한 우선순위):
-  ///  · `corps` 가 있고 인가자면 → 인가자. 단 직책(roles)에 리더/로버/비버/
-  ///    스카우트/벤처가 있으면 그 직책으로 센다(직책이 더 구체적).
-  ///  · `corps` 가 비어 있으면 → 일반(비인가).
-  ///  · 직책 문자열은 한글/영문 코드(L/B/S/V/R) 모두 인식한다.
+  /// ## [2026-10-29 "컵" 사고] 판정 규칙을 다시 세웠다
+  ///
+  /// 종전 규칙은 **직책이 표에 없으면 마지막 fallback** 으로 흘러가
+  /// `number` 가 비어 있지 않으면 인가자로 셌다. 그래서
+  ///   · `roles: ['컵']`(어야영) → 인가자
+  ///   · `number: '류호준'`(이름이 인가번호 칸에) → 인가자
+  /// 처럼 **갈 곳 없는 행이 전부 인가자로 흡수**됐다.
+  ///
+  /// 새 규칙(우선순위 고정):
+  ///   ① 직책이 있으면 **직책으로만** 센다. 표에 없는 직책은 `기타` 로
+  ///      **표시**한다(조용히 흡수 금지).
+  ///   ② 직책이 없으면 신원으로 판정 — 인가번호(짧은 숫자)가 **진짜로**
+  ///      있을 때만 인가자, 그 외는 일반.
   static EventAttendeeBreakdown fromAttendees(List<Map<String, dynamic>> list) {
-    var ivga = 0, leader = 0, rover = 0, beaver = 0, scout = 0, venture = 0;
-    var regular = 0, etc = 0;
+    var ivga = 0,
+        leader = 0,
+        rover = 0,
+        venture = 0,
+        scout = 0,
+        cub = 0,
+        beaver = 0,
+        regular = 0,
+        etc = 0;
+
     for (final a in list) {
-      final roles = <String>[
-        ...((a['roles'] as List?) ?? const []).map(
-          (e) => e.trim().toLowerCase(),
-        ),
-        if ('${a['roleCode'] ?? ''}'.trim().isNotEmpty)
-          '${a['roleCode']}'.trim().toLowerCase(),
-        if ('${a['roleLabel'] ?? ''}'.trim().isNotEmpty)
-          '${a['roleLabel']}'.trim().toLowerCase(),
-      ];
-      bool has(List<String> keys) =>
-          roles.any((r) => keys.any((k) => r == k || r.contains(k)));
-
-      final isRegular =
-          a['isRegular'] == true ||
-          '${a['corps'] ?? ''}'.trim().isEmpty &&
-              !Member.numLabelOf('${a['number'] ?? ''}').contains('범');
-
-      // 직책이 명시되어 있으면 직책 우선.
-      if (has(const ['리더', 'leader', '지도자', 'l'])) {
-        leader++;
-      } else if (has(const ['로버', 'rover', '로버스카우트', 'r'])) {
-        rover++;
-      } else if (has(const ['비버', 'beaver', 'b'])) {
-        beaver++;
-      } else if (has(const ['벤처', 'venture', '벤쳐', 'v'])) {
-        venture++;
-      } else if (has(const ['스카우트', 'scout', 's']) &&
-          !has(const ['로버', '벤처'])) {
-        scout++;
-      } else if (isRegular) {
-        regular++;
-      } else if ('${a['corps'] ?? ''}'.trim().isNotEmpty) {
-        ivga++;
-      } else if (has(const ['기타', 'etc'])) {
-        etc++;
-      } else {
-        // 인가번호(number)가 있으면 인가자, 없으면 일반으로 본다.
-        if ('${a['number'] ?? ''}'.trim().isEmpty) {
-          regular++;
-        } else {
-          ivga++;
+      // ── ① 직책 우선 ────────────────────────────────────────────────
+      final role = AttendeeRoles.canonicalOfRow(a);
+      if (role != null) {
+        switch (role) {
+          case AttendeeRole.leader:
+            leader++;
+          case AttendeeRole.rover:
+            rover++;
+          case AttendeeRole.venture:
+            venture++;
+          case AttendeeRole.scout:
+            scout++;
+          case AttendeeRole.cub:
+            cub++;
+          case AttendeeRole.beaver:
+            beaver++;
+          case AttendeeRole.regular:
+            regular++;
+          default:
+            etc++;
         }
+        continue;
+      }
+
+      // ── ② 직책 없음 → 신원으로 판정 ────────────────────────────────
+      if (AttendeeRoles.isRegularRow(a)) {
+        regular++;
+      } else if (AttendeeRoles.hasRealLicenseNumber(a)) {
+        ivga++;
+      } else {
+        // 인가자도 일반도 아닌 애매한 행 → 일반으로 센다(인가자 부풀림 금지).
+        regular++;
       }
     }
     return EventAttendeeBreakdown(
       ivga: ivga,
       leader: leader,
       rover: rover,
-      beaver: beaver,
-      scout: scout,
       venture: venture,
+      scout: scout,
+      cub: cub,
+      beaver: beaver,
       regular: regular,
       etc: etc,
     );

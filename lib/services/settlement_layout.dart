@@ -17,6 +17,7 @@
 /// ([SettlementBlockData])를 쓰므로 "보이는 것 = 인쇄되는 것"이 보장된다.
 library;
 
+import 'attendee_roles.dart';
 import 'donation_kinds.dart';
 import 'output_templates.dart';
 import 'event_settlement.dart';
@@ -639,6 +640,29 @@ class SettlementLayout {
 class SettlementBuilder {
   const SettlementBuilder._();
 
+  /// 참석자 한 줄 — `이름 · 역할/소속 · 신원` 형태.
+  ///
+  /// [2026-10-29] 인가번호 칸에 **이름이나 전화번호**가 들어 있던 행이
+  /// `인가 류호준` 처럼 표시되던 문제를 없앴다.
+  ///  · 진짜 인가번호(짧은 숫자/G표기)일 때만 `인가 N`
+  ///  · 일반회원은 `일반 #전화번호`
+  static String _attendeeDetailLine(Map<String, dynamic> a) {
+    final name = '${a['name'] ?? ''}'.trim();
+    final roleOrUnit = '${a['role'] ?? a['unit'] ?? ''}'.trim();
+    final num = '${a['number'] ?? ''}'.trim();
+    final phone = '${a['phone'] ?? ''}'.trim();
+
+    String identity = '';
+    if (AttendeeRoles.hasRealLicenseNumber(a)) {
+      identity = '인가 $num';
+    } else if (AttendeeRoles.isRegularRow(a) && phone.isNotEmpty) {
+      identity = '일반 #$phone';
+    }
+    return [name, roleOrUnit, identity]
+        .where((e) => e.isNotEmpty)
+        .join(' · ');
+  }
+
   static Map<SettlementBlock, SettlementBlockData> build({
     required EventSettlement settlement,
     required List<Map<String, dynamic>> fees,
@@ -664,12 +688,12 @@ class SettlementBuilder {
       note: bd.summaryLine,
       empty: attendees.isEmpty,
       details: [
+        // [2026-10-29] 인가번호 칸에 이름/전화번호가 들어 있던 행이
+        //  '인가 류호준' 처럼 표시되던 문제를 없앴다.
+        //  · 진짜 인가번호(짧은 숫자/G표기)일 때만 '인가 N'
+        //  · 일반회원은 '일반 #전화번호'
         for (final a in attendees)
-          [
-            '${a['name'] ?? ''}'.trim(),
-            '${a['role'] ?? a['unit'] ?? ''}'.trim(),
-            '${a['number'] ?? ''}'.trim().isEmpty ? '' : '인가 ${a['number']}',
-          ].where((e) => e.isNotEmpty).join(' · '),
+          _attendeeDetailLine(a),
       ],
     );
 

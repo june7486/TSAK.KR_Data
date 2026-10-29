@@ -12,6 +12,7 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../services/event_finance_picks.dart';
 import '../services/donation_doc.dart';
+import '../services/attendee_roles.dart';
 import '../services/event_settlement.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
@@ -2300,7 +2301,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 [])
             .map((e) => '$e')
             .toSet();
-    const all = ['지도자', '비버', '스카우트', '벤처', '로버', '본부', '학부모', '기타'];
+    // [2026-10-29] 직책 목록은 AttendeeRoles.picker 하나만 쓴다.
+    const all = AttendeeRoles.picker;
     final sel = {...cur};
     final ok = await showDialog<bool>(
       context: context,
@@ -2339,25 +2341,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     if (ok != true) return;
     _attendees[i]['roles'] = sel.toList();
     // 표시용 코드도 즉시 갱신(서버 재조회 전 화면 반영)
-    bool has(List<String> ks) => ks.any((k) => sel.any((s) => s.contains(k)));
-    String code = '';
-    if (has(['지도자', '멘토', '리더'])) {
-      code = 'L';
-    } else if (has(['비버'])) {
-      code = 'B';
-    } else if (has(['벤처'])) {
-      code = 'V';
-    } else if (has(['로버'])) {
-      code = 'R';
-    } else if (has(['스카우트'])) {
-      code = 'S';
-    } else if (has(['본부'])) {
-      code = '본부';
-    } else if (has(['학부모'])) {
-      code = '학부모';
-    } else if (sel.isNotEmpty) {
-      code = '기타';
-    }
+    // [2026-10-29] 코드 계산도 단일 정의로 — '컵' 누락 재발 방지.
+    final code = AttendeeRoles.codeOf(sel);
     _attendees[i]['roleCode'] = code;
     setState(() {});
     await _saveAttendees();
@@ -3150,7 +3135,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   }
 
   Future<List<String>?> _pickRoles() async {
-    const all = ['지도자', '멘토지도자', '비버', '스카우트', '벤처', '로버', '본부', '학부모', '기타'];
+    // [2026-10-29] 단일 정의(컵 포함).
+    const all = AttendeeRoles.picker;
     final sel = <String>{};
     return showDialog<List<String>>(
       context: context,
@@ -3219,7 +3205,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       ...((cur?['roles'] as List?)?.map((e) => '$e') ?? []),
     };
     // (요구) 직책: 비버/컵/스카우트/벤쳐스카우트/로버스카우트/리더/일반/기타.
-    const all = ['비버', '컵', '스카우트', '벤쳐스카우트', '로버스카우트', '리더', '일반', '기타'];
+    // [2026-10-29] 단일 정의 — 8종/9종 혼재 해소.
+    const all = AttendeeRoles.picker;
     // (요구) 인가번호 자동채움 상태 — 다이얼로그 로컬 상태.
     var lookupBusy = false;
     var lookupOk = false;
