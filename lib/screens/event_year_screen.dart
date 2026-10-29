@@ -222,6 +222,9 @@ class _EventYearScreenState extends State<EventYearScreen> {
     return Scaffold(
       appBar: TsakAppBar(
         title: const Text('행사관리'),
+        // [요구 2026-10-29] 아이콘이 한 줄에 몰려 제목과 겹치던 문제 →
+        //  1줄 2개(엠블럼·행사자료) + 2줄 4개(게시판·사진·썸네일·새로고침).
+        actionRows: const [2, 4],
         actions: [
           const AppHomeEmblem(size: 22),
           // [요구 2026-10-28] 행사자료(음원·영상·문서) 재생/내려받기.

@@ -18,6 +18,7 @@ class FinanceTransaction {
     this.status = 'unmatched', // matched | unmatched
     this.year = '',
     this.source = '', // manual | bank | excel
+    this.corps = '',
   });
 
   String id;
@@ -56,6 +57,19 @@ class FinanceTransaction {
   /// 입력 경로: manual(직접입력) | bank(은행파일) | excel
   String source;
 
+  /// 소속 — `tsak`(범스카우트) | `eunha`(은하스카우트) | ''(미지정).
+  ///
+  /// ## [버그 수정 2026-10-29] 범 75호와 은하 G75 가 같은 사람이 되던 문제
+  /// 서버는 처음부터 `corps` 를 내려주고 있었는데 이 모델이 필드를 갖고
+  /// 있지 않아 **조용히 버려졌다**. 그래서 번호만 비교할 수밖에 없었고,
+  /// `G75` → `75` 로 숫자만 남기는 정규화 탓에 은하 G75(김건우)가
+  /// 범 75호(이항복)의 후원 내역을 그대로 받았다.
+  /// 이제 신원은 **(corps, 번호)** 두 값으로 판정한다.
+  String corps;
+
+  /// 은하스카우트 소속인가.
+  bool get isEunha => corps == 'eunha';
+
   int get numberInt =>
       int.tryParse(number.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
   bool get isExpense => type == 'expense';
@@ -77,7 +91,26 @@ class FinanceTransaction {
     'status': status,
     'year': year,
     'source': source,
+    'corps': corps,
   };
+
+  /// 소속 추정 — 서버가 corps 를 안 내려준 **레거시 거래**용 보정.
+  ///
+  ///  · 이미 corps 가 있으면 그대로 쓴다.
+  ///  · 번호가 `G…`/`은하…` 로 시작하면 은하, 아니면 범.
+  ///  · 번호가 없으면 빈 값 — 어느 쪽에도 귀속하지 않는다(안전).
+  static String inferCorps(String number, String corps) {
+    final c = corps.trim().toLowerCase();
+    if (c == 'eunha' || c == 'tsak') return c;
+    final s = number.trim();
+    if (s.isEmpty) return '';
+    final low = s.toLowerCase();
+    if (low.startsWith('g') || s.startsWith('은하') ||
+        s.startsWith('갤럭시')) {
+      return 'eunha';
+    }
+    return 'tsak';
+  }
 
   factory FinanceTransaction.fromMap(Map<dynamic, dynamic> m) {
     final date = '${m['date'] ?? ''}';
@@ -105,6 +138,10 @@ class FinanceTransaction {
       status: '${m['status'] ?? 'unmatched'}',
       year: year,
       source: '${m['source'] ?? ''}',
+      corps: FinanceTransaction.inferCorps(
+        '${m['number'] ?? ''}',
+        '${m['corps'] ?? ''}',
+      ),
     );
   }
 
@@ -123,6 +160,7 @@ class FinanceTransaction {
     String? status,
     String? year,
     String? source,
+    String? corps,
   }) => FinanceTransaction(
     id: id,
     date: date ?? this.date,
@@ -139,6 +177,7 @@ class FinanceTransaction {
     status: status ?? this.status,
     year: year ?? this.year,
     source: source ?? this.source,
+    corps: corps ?? this.corps,
   );
 }
 

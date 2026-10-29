@@ -767,7 +767,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// 개인별 입금 내역 — 후원/수품구매/참가비 등 모든 입금을 즉시 확인
   Widget _depositSection(Member m) {
     final fs = context.watch<FinanceService>();
-    final deposits = fs.depositsOf(m.number);
+    final deposits = fs.depositsOf(m.number, corps: m.corps);
     final total = deposits.fold<int>(0, (s, t) => s + t.amount);
     final byCat = <String, int>{};
     for (final t in deposits) {
@@ -3396,7 +3396,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     // ── ① 재무 기록(행사 후원 포함) — 후원 성격만 ──
     //  참가비·연회비·수품구매는 '입금 내역' 카드에서 다루므로 여기서 뺀다.
     final fin = fs
-        .depositsOf(m.number)
+        .depositsOf(m.number, corps: m.corps)
         .where((t) => _isDonationCategory(t.category))
         .toList();
 

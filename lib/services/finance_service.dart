@@ -376,14 +376,43 @@ class FinanceService extends ChangeNotifier {
     return map;
   }
 
-  /// 특정 인가번호의 입금 내역
-  List<FinanceTransaction> depositsOf(String number) {
-    final no = number.replaceAll(RegExp(r'[^0-9]'), '');
+  /// 특정 인가번호의 입금 내역.
+  ///
+  /// ## [버그 수정 2026-10-29] 범 75호와 은하 G75 가 섞이던 문제
+  ///
+  /// 종전에는 번호에서 숫자만 뽑아 비교했다(`G75` → `75`). 그래서
+  /// 은하 G75(김건우)의 개인카드에 범 75호(이항복)의 후원이 그대로
+  /// 표시됐다. 두 번호 공간은 실제로 겹친다(둘 다 1~165).
+  ///
+  /// 수정: **(소속, 번호)** 두 값으로 판정한다.
+  ///   · `corps` 가 채워진 거래 → 소속까지 일치해야 인정.
+  ///   · `corps` 가 비어 있는 레거시 거래 → 번호 표기(`G75`)로 소속을 추정해
+  ///     비교한다(모르는 채로 남의 내역을 보여 주는 것보다 안전).
+  ///
+  /// [corps] 를 넘기지 않으면 종전과 같이 숫자만 비교한다(하위호환).
+  List<FinanceTransaction> depositsOf(String number, {String? corps}) {
+    if (corps == null) {
+      final no = number.replaceAll(RegExp(r'[^0-9]'), '');
+      return _tx
+          .where(
+            (t) => !t.isExpense &&
+                t.number.replaceAll(RegExp(r'[^0-9]'), '') == no,
+          )
+          .toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+    }
+    final wantNo = number.replaceAll(RegExp(r'[^0-9]'), '');
+    final wantCorps = corps == 'eunha' ? 'eunha' : 'tsak';
     return _tx
-        .where(
-          (t) =>
-              !t.isExpense && t.number.replaceAll(RegExp(r'[^0-9]'), '') == no,
-        )
+        .where((t) {
+          if (t.isExpense) return false;
+          if (t.number.replaceAll(RegExp(r'[^0-9]'), '') != wantNo) {
+            return false;
+          }
+          // 소속 판정 — 서버값 우선, 없으면 번호 표기로 추정.
+          final c = FinanceTransaction.inferCorps(t.number, t.corps);
+          return c == wantCorps;
+        })
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
   }
