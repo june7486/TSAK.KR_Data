@@ -3262,6 +3262,33 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               allowNameFallback: true,
             );
             final local = idn.isResolved ? idn.member : null;
+            //  로컬에서 **여러 명**이면 그 후보를 그대로 보여 준다(선택).
+            if (idn.needsChoice && idn.candidates.isNotEmpty) {
+              lookupAmbiguous = {
+                'count': idn.candidates.length,
+                'candidates': [
+                  for (final c in idn.candidates)
+                    {
+                      'id': c.id,
+                      'name': c.name,
+                      'numberLabel': c.numberLabel,
+                      'corps': c.isRegular ? '' : c.corps,
+                      'corpsLabel': c.corpsMarkLabel,
+                      'isRegular': c.isRegular,
+                      'unit': c.regUnit.trim().isNotEmpty
+                          ? c.regUnit
+                          : c.unit,
+                      'league': c.regLeague.trim().isNotEmpty
+                          ? c.regLeague
+                          : c.league,
+                      'phone': c.phone,
+                      'email': c.email,
+                      'address': c.address,
+                      'gender': c.gender,
+                    },
+                ],
+              };
+            }
             if (local != null) {
               m = {
                 'id': local.id,
@@ -3286,12 +3313,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             // 2) 로컬에 없으면 서버 조회(최신값).
             //   접두어(은하/G/갤럭시)가 있으면 은하 명단만 — 서버가 판정한다.
             if (m == null) {
-              final res = await _nas.memberLookup(q);
+              //  `allCandidates: true` → 일치 후보를 **전부** 받아 목록으로
+              //   보여 준다. 1명뿐이면 서버가 found=true 로 바로 확정해 준다.
+              final res = await _nas.memberLookup(q, allCandidates: true);
               if (res['found'] == true && res['member'] is Map) {
                 m = (res['member'] as Map).cast<String, dynamic>();
-              } else if (res['ambiguous'] == true &&
-                  res['candidates'] is List) {
-                // 동명이인 — 아무나 채우지 않고 사람이 고르게 한다.
+              } else if (res['candidates'] is List &&
+                  (res['candidates'] as List).isNotEmpty) {
+                // 후보가 여럿(또는 1명인데 확정 못한 경우) → 사람이 고른다.
                 lookupAmbiguous = res;
               }
             }
@@ -3439,6 +3468,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
                               fill(nameC, '${cc['name'] ?? ''}');
                               fill(unitC, '${cc['unit'] ?? ''}');
+                              fill(genderC, '${cc['gender'] ?? ''}');
+                              fill(phoneC, '${cc['phone'] ?? ''}');
+                              fill(emailC, '${cc['email'] ?? ''}');
+                              fill(addrC, '${cc['address'] ?? ''}');
                             });
                           },
                           child: Padding(

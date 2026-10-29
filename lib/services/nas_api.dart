@@ -2022,12 +2022,20 @@ class NasApi {
   /// [corps] 를 넘기면 그 명단만 조회한다. '은하10' 처럼 입력에 은하 표기가
   /// 있으면 서버가 알아서 은하만 보지만, 화면이 이미 소속을 알고 있을 때
   /// (은하 관리 화면 등) 명시하면 실수 여지가 더 줄어든다.
+  /// 회원 조회 — **인가번호·전화번호·이름** 모두 지원(인가자·일반회원 전 계층).
+  ///
+  /// [corps] 를 넘기면 그 명단만 조회한다('은하'/'범').
+  /// [allCandidates] 가 true 면 서버가 **일치 후보를 전부** 내려준다.
+  ///  → 이름만 넣었을 때 동명이인(범/은하/일반)을 목록으로 보여 주고
+  ///    사용자가 직접 고르게 한다. 자동 단정은 하지 않는다.
   Future<Map<String, dynamic>> memberLookup(
     String query, {
     String corps = '',
+    bool allCandidates = false,
   }) async {
     final body = <String, dynamic>{'q': query};
     if (corps == 'eunha' || corps == 'tsak') body['corps'] = corps;
+    if (allCandidates) body['all'] = true;
     final r = await http
         .post(
           _uri('/api/member/lookup'),
