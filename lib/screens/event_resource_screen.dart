@@ -53,6 +53,9 @@ class _EventResourceScreenState extends State<EventResourceScreen> {
   /// `audio` | `video` | `doc`  (image 는 doc 탭에 함께)
   String _tab = 'audio';
 
+  /// 폴더 칩 필터 — null 이면 전체.
+  String? _folderFilter;
+
   @override
   void initState() {
     super.initState();
@@ -238,12 +241,15 @@ class _EventResourceScreenState extends State<EventResourceScreen> {
   // ── 화면 ───────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final audio = _data.byKind('audio');
-    final video = _data.byKind('video');
-    final docs = [
-      ..._data.byKind('doc'),
-      ..._data.byKind('image'),
-    ];
+    // [요구] 폴더 칩으로 좁힌다. null = 전체.
+    List<EventResource> narrowed(List<EventResource> src) =>
+        _folderFilter == null
+        ? src
+        : src.where((e) => e.sub == _folderFilter).toList();
+
+    final audio = narrowed(_data.byKind('audio'));
+    final video = narrowed(_data.byKind('video'));
+    final docs = narrowed([..._data.byKind('doc'), ..._data.byKind('image')]);
     final list = switch (_tab) {
       'audio' => audio,
       'video' => video,
@@ -291,6 +297,8 @@ class _EventResourceScreenState extends State<EventResourceScreen> {
           if (_upProgress != null) _uploadBar(),
           if (_nowPlaying != null) _playerBar(),
           _tabs(audio.length, video.length, docs.length),
+          // [요구] 폴더 칩 — NAS 폴더 구조를 그대로 눌러서 좁힐 수 있게 한다.
+          _folderChips(),
           if (_sub.isNotEmpty) _subBar(),
           Expanded(
             child: _loading
@@ -415,6 +423,79 @@ class _EventResourceScreenState extends State<EventResourceScreen> {
           chip('audio', '음원', a, Icons.music_note),
           chip('video', '영상', v, Icons.movie_outlined),
           chip('doc', '문서·기타', d, Icons.description_outlined),
+        ],
+      ),
+    );
+  }
+
+  /// 폴더 칩 — `전체` + 실제 NAS 하위 폴더들.
+  ///
+  /// 폴더가 하나도 없으면 아무것도 그리지 않는다(빈 줄로 공간 낭비 금지).
+  Widget _folderChips() {
+    final folders = _data.folders;
+    if (folders.isEmpty) return const SizedBox.shrink();
+    // 폴더가 여러 개일 때만 '전체' 칩을 보여 준다.
+    final showAll = folders.length > 1;
+    Widget chip(String? key, String label, int count) {
+      final on = _folderFilter == key;
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: InkWell(
+          onTap: () => setState(() {
+            _folderFilter = key;
+            _sub = key ?? '';
+          }),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: on
+                  ? AppColors.purple.withValues(alpha: 0.12)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppColors.purple.withValues(alpha: on ? 0.9 : 0.25),
+                width: on ? 1.4 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  on ? Icons.folder_open : Icons.folder_outlined,
+                  size: 13,
+                  color: AppColors.purple,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  count > 0 ? '$label ($count)' : label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: on ? FontWeight.w900 : FontWeight.w600,
+                    color: AppColors.purple,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 폴더별 파일 수 — 마지막 조각 이름으로 묶는다.
+    int countOf(String sub) =>
+        _data.files.where((e) => e.sub == sub).length;
+
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.only(left: 10),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          if (showAll)
+            chip(null, '전체', _data.files.length),
+          for (final f in folders)
+            chip(f, f.contains('/') ? f.split('/').last : f, countOf(f)),
         ],
       ),
     );

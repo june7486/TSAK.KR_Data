@@ -97,26 +97,40 @@ class EventResourceApi {
   EventResourceApi(this.api);
   final NasApi api;
 
-  /// 웹은 같은 출처(상대경로)를 쓴다. 모바일은 baseUrl 이 절대주소.
+  /// 재생·내려받기 URL.
   ///
-  /// ⚠️ `<audio>` 태그는 **헤더를 넣을 수 없다**. 그래서 재생 URL 은
-  ///   쿠키(`tsak_sid`)로 인증된다 — 웹에서는 같은 출처라 자동 전송된다.
-  ///   안드로이드 WebView/플러그인에서 쿠키가 없으면 재생이 401 이 될 수
-  ///   있으므로, 재생 실패 시 안내 문구로 알린다(조용히 멈추지 않게).
+  /// ## ⚠️ 왜 세션을 URL 에 붙이는가 (2026-10-29 실측)
+  /// 브라우저의 `<audio>` / `<video>` 엘리먼트는 **커스텀 헤더를 보낼 수
+  /// 없다**. `X-TSAK-Session` 이 없으면 프록시가 401 을 돌려주고, 화면에는
+  /// 아무 일도 일어나지 않는다(실제로 이 상태로 배포될 뻔했다).
+  /// 프록시는 쿼리 `sid` 도 세션으로 인정하므로(정책 by design) 그 경로를
+  /// 쓴다. 쿠키(`tsak_sid`)는 HttpOnly 라 JS 로 못 넣고, 안드로이드
+  /// WebView 에서는 쿠키가 아예 없을 수 있다.
   String streamUrl(EventResource r, {bool download = false}) {
     final q = <String, String>{
       if (r.sub.isNotEmpty) 'sub': r.sub,
       'name': r.name,
       if (download) 'dl': '1',
+      // <audio>/<video> 는 헤더 불가 → 쿼리로 세션 전달.
+      // 세션은 서버 메모리에만 있고 로그아웃/재시작 시 즉시 무효.
+      if (api.sessionId.isNotEmpty) 'sid': api.sessionId,
     };
     return Uri.parse(
       '${api.baseUrl}/api/event/res/stream',
     ).replace(queryParameters: q).toString();
   }
 
-  Future<EventResourceList> list({String sub = ''}) async {
+  /// [요구] `deep=true` 면 **하위 폴더까지 한 번에** 모아 온다.
+  ///
+  /// 행사 게시판은 "전체 자료"가 먼저 보여야 쓸모가 있다. 폴더를 하나씩
+  /// 들어가며 찾게 만들면 현장에서 못 쓴다. 다만 폴더를 직접 탐색하고
+  /// 싶을 때를 위해 `deep=false` 도 남겨 둔다.
+  Future<EventResourceList> list({String sub = '', bool deep = true}) async {
     final uri = Uri.parse('${api.baseUrl}/api/event/res/list').replace(
-      queryParameters: {if (sub.isNotEmpty) 'sub': sub},
+      queryParameters: {
+        if (sub.isNotEmpty) 'sub': sub,
+        if (deep) 'deep': '1',
+      },
     );
     final j = await api.robustGetJson(uri);
     final files = (j['files'] as List? ?? const [])
