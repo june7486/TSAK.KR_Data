@@ -2626,11 +2626,25 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    // ── ② 전화번호 ─────────────────────────────────────────────────────
-    //  일반회원은 인가번호가 없고 전화번호가 사실상의 키다.
+    // ── ② 전화번호 — **가장 강한 키**. 소속/인가 여부로 거르지 않는다. ──
+    //  ══════════════════════════════════════════════════════════════════
+    // [2026-10-29 무한루프 사고] 왜 `pool` 대신 `all` 을 쓰는가
+    //
+    //  참석자 행의 `licensed` 값은 **믿을 수 없다**. 서버가 저장할 때마다
+    //  `number` 칸의 전화번호를 인가번호로 오인해 `licensed=true` 로
+    //  덮어썼기 때문이다(이지원 사고). 그래서 licensed=true 라고 해서
+    //  후보를 인가자로만 좁히면, 정작 명부에 있는 일반회원 레코드
+    //  (reg_1793253833650 / reg:01027021126)를 **영원히 못 찾는다**
+    //  → 이름을 누를 때마다 "신규 등록" 창이 다시 뜬다.
+    //
+    //  휴대폰 번호 11자리는 **정확 일치**라 오매칭 위험이 없다.
+    //  그러므로 소속(은하/범)·인가 여부 필터를 **걸지 않고** 전체에서 찾는다.
+    //  인가번호(①)는 여전히 소속 필터를 통과한 pool 에서만 찾는다 —
+    //  은하10/범10 충돌 방지는 그대로 유지된다.
+    //  ══════════════════════════════════════════════════════════════════
     final phKey = rawPhone.replaceAll(RegExp(r'[^0-9]'), '');
     if (phKey.length >= 7) {
-      final hits = pool.where((m) => m.phoneDigits == phKey).toList();
+      final hits = all.where((m) => m.phoneDigits == phKey).toList();
       if (hits.length == 1) {
         return MemberIdentity.single(hits.first, via: 'phone');
       }
@@ -2644,8 +2658,15 @@ class AppState extends ChangeNotifier {
     // ── ③ 이름 — **보조**. 후보가 정확히 1명일 때만 쓴다. ───────────────
     //   신원이 '인가자'로 확정된(stored licensed=true) 경우에는 이름을
     //   쓰지 않는다. 확정된 사람은 정확한 키로만 연결해야 한다.
-    if (allowNameFallback && !strongOnly && nm.isNotEmpty) {
-      final hits = pool.where((m) => m.name.trim() == nm).toList();
+    //   ⚠️ `strongOnly`(licensed=true) 여도 **일반회원 풀에서는** 이름을 본다.
+    //     인가 확정 참석자의 이름이 명부의 일반회원과 일치한다면, 그건
+    //     (a) 실제로 일반회원이거나 (b) 서버가 licensed 를 잘못 써 둔 경우다.
+    //     둘 다 틀리면 후보 목록으로 물어보면 되므로 인가자 카드로 새지 않는다.
+    final namePool = strongOnly
+        ? all.where((m) => m.isRegular).toList()
+        : pool;
+    if (allowNameFallback && nm.isNotEmpty) {
+      final hits = namePool.where((m) => m.name.trim() == nm).toList();
       // 같은 사람이 양쪽 저장소에 있으면 중복 제거(identityKey 기준).
       final uniq = <String, Member>{};
       for (final m in hits) {

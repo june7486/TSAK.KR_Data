@@ -2545,14 +2545,35 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final nm = '${a['name'] ?? ''}'.trim();
     final ph = '${a['phone'] ?? a['loginId'] ?? a['number'] ?? ''}'.trim();
     // 인가자(범/은하)면 인가자로, 그 외(일반)면 일반회원으로 등록한다.
-    //   ⚠️ [2026-10-29] 저장된 `licensed` 를 **최우선**으로 신뢰한다.
-    //     · licensed == false  → 비인가 확정(일반회원)
-    //     · licensed == true   → 인가 확정
-    //     · null(구데이터)      → corps 가 비면 일반(기존 규칙 유지)
+    //   ⚠️ [2026-10-29 무한루프 재수정] 저장된 `licensed` 를 **맹신하지 않는다.**
+    //
+    //   서버가 오랫동안 `number` 칸의 전화번호를 인가번호로 오인해
+    //   `licensed=true / corps='tsak'` 을 써 왔다(이지원 사고). 그 값을
+    //   그대로 믿으면 "인가자로 신규 등록" 을 계속 권하게 되고, 등록해도
+    //   일반회원 레코드와 키가 달라 다시 안 잡히는 **루틴**이 된다.
+    //
+    //   그래서 **행 자체의 모양**을 1차 근거로 삼는다.
+    //     · 인가번호 칸이 전화번호 모양(11자리) → 일반회원
+    //     · 인가번호 칸이 짧은 숫자 / G·은하 표기 → 인가자
+    //     · 판단 불가 → 저장된 licensed, 그것도 없으면 corps 공백 여부
+    final _nRaw = '${a['number'] ?? ''}'.trim();
+    final _nDig = _nRaw.replaceAll(RegExp(r'[^0-9]'), '');
+    final _nLooksPhone = _nDig.length >= 10 || _nDig.startsWith('01');
+    final _nLooksLicense = _nDig.isNotEmpty &&
+        !_nLooksPhone &&
+        (RegExp(r'^(g|G|은하|갤럭시|갤럭시)').hasMatch(_nRaw) ||
+            _nDig.length <= 4);
     final storedLic = a['licensed'];
-    final isRegular = storedLic is bool
-        ? !storedLic
-        : '${a['corps'] ?? ''}'.trim().isEmpty;
+    final bool isRegular;
+    if (_nLooksPhone) {
+      isRegular = true;
+    } else if (_nLooksLicense) {
+      isRegular = false;
+    } else if (storedLic is bool) {
+      isRegular = !storedLic;
+    } else {
+      isRegular = '${a['corps'] ?? ''}'.trim().isEmpty;
+    }
     // 비인가자는 "회원 정보가 없다" 가 **정상**이므로 문구를 구분한다.
     final msg = isRegular
         ? '${nm.isEmpty ? '이 참가자' : nm}'
@@ -3646,36 +3667,102 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     //     · licensed     = bool (서버·구버전 호환용 명시 필드)
     //   → 나중에 이름이 같아도 이 키로만 연결하므로 절대 섞이지 않는다.
     // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // [사고 수정 2026-10-29] **전화번호를 인가번호로 오인하던 버그**
+    //
+    // ## 실제 사고 (요구: "이지원 일반회원을 클릭 → 신규등록 → 또 신규등록")
+    //  조회 결과가 없어 관리자가 [인가번호] 칸에 전화번호
+    //  `010-2702-1126` 을 넣고 저장하면, 종전 코드는 "숫자가 있으니 인가자"
+    //  로 단정해 `identityKey = tsak:01027021126` 을 저장했다.
+    //  그런데 회원 명부의 이지원은 `reg:01027021126`(일반회원) 이다.
+    //  키가 **영원히 만나지 않으니** 등록을 몇 번 해도 매번 "신규 등록" 이
+    //  떴다. 루틴이 반복된 진짜 이유가 이것이다.
+    //
+    // ## 고친 규칙 (우선순위)
+    //   ① 자동채움으로 **매칭된 회원**이 있으면 그 회원의 신원을 그대로 쓴다.
+    //      (사람이 이미 조회해서 고른 결과가 가장 믿을 만하다)
+    //   ② 매칭이 없으면 **전화번호 모양(11자리)** 은 인가번호로 보지 않는다.
+    //      인가번호는 1~4자리 수준이고, 010으로 시작하는 11자리는 연락처다.
+    //   ③ 그래도 숫자가 남으면 인가번호로 본다.
+    // ══════════════════════════════════════════════════════════════════
     final identNum = numC.text.trim();
     final identPhone = phoneC.text.trim();
-    final identDigits = identNum.replaceAll(RegExp(r'[^0-9]'), '');
-    // 인가번호가 있으면 인가자, 없으면 일반(비인가).
-    final isLicensed = identDigits.isNotEmpty;
-    // 은하 여부 — 입력 접두어(G/은하) 또는 자동채움으로 매칭된 회원의 corps.
+    final identRawDigits = identNum.replaceAll(RegExp(r'[^0-9]'), '');
+    final phoneDigits = identPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    // 11자리(휴대폰) 모양은 인가번호가 아니라 연락처다.
+    final looksLikePhone =
+        identRawDigits.length >= 10 || identRawDigits.startsWith('01');
+    final identDigits = looksLikePhone ? '' : identRawDigits;
+
+    // ── ① 매칭된 회원 우선 ────────────────────────────────────────────
+    final matchedNumber =
+        '${matched?['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final matchedIsRegular = matched?['isRegular'] == true;
     final matchedCorps = '${matched?['corps'] ?? ''}'.trim();
-    final wantsEunha = matchedCorps == 'eunha' ||
-        RegExp(r'^(g|G|은하|갤럭시)').hasMatch(identNum);
-    final identityType = isLicensed ? 'licensed' : 'regular';
-    final identityKey = isLicensed
-        ? (wantsEunha ? 'eunha:G$identDigits' : 'tsak:$identDigits')
-        : (identPhone.replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty
-            ? 'reg:${identPhone.replaceAll(RegExp(r'[^0-9]'), '')}'
-            : '');
+
+    bool isLicensed;
+    String identityType;
+    String identityKey;
+    String rowNumber = identNum;
+    String rowPhone = identPhone;
+    String rowCorps = '';
+
+    if (matched != null && !matchedIsRegular && matchedNumber.isNotEmpty) {
+      // 매칭된 **인가자** → 그 번호를 신원으로 못박는다.
+      isLicensed = true;
+      identityType = 'licensed';
+      final isE = matchedCorps == 'eunha';
+      identityKey = isE ? 'eunha:G$matchedNumber' : 'tsak:$matchedNumber';
+      rowCorps = isE ? 'eunha' : 'tsak';
+      // 인가번호 칸에 전화번호를 넣었더라도 실제 인가번호로 바로잡는다.
+      rowNumber = isE ? 'G$matchedNumber' : matchedNumber;
+    } else if (matched != null && matchedIsRegular) {
+      // 매칭된 **일반회원** → 전화번호가 신원.
+      final mm = matched!;
+      isLicensed = false;
+      identityType = 'regular';
+      final mpRaw = '${mm['phone'] ?? ''}';
+      final mp = mpRaw.replaceAll(RegExp(r'[^0-9]'), '');
+      final keyPh = phoneDigits.isNotEmpty ? phoneDigits : mp;
+      identityKey = keyPh.isNotEmpty ? 'reg:$keyPh' : '';
+      // 인가번호 칸에 전화번호가 들어와 있으면 번호 칸은 비운다.
+      rowNumber = looksLikePhone ? '' : identNum;
+      if (rowPhone.isEmpty && mp.isNotEmpty) rowPhone = mpRaw;
+    } else if (identDigits.isNotEmpty) {
+      // 매칭 없음 + 진짜 인가번호 모양 → 인가자로 저장.
+      isLicensed = true;
+      identityType = 'licensed';
+      final wantsEunha =
+          RegExp(r'^(g|G|은하|갤럭시)').hasMatch(identNum);
+      identityKey = wantsEunha ? 'eunha:G$identDigits' : 'tsak:$identDigits';
+      rowCorps = wantsEunha ? 'eunha' : 'tsak';
+    } else {
+      // 일반(비인가) — 전화번호가 신원.
+      isLicensed = false;
+      identityType = 'regular';
+      // 인가번호 칸에 전화번호가 들어와 있으면 그 값을 전화번호로 옮긴다.
+      final keyPh = phoneDigits.isNotEmpty
+          ? phoneDigits
+          : (looksLikePhone ? identRawDigits : '');
+      identityKey = keyPh.isNotEmpty ? 'reg:$keyPh' : '';
+      if (rowPhone.isEmpty && looksLikePhone) rowPhone = identNum;
+      rowNumber = looksLikePhone ? '' : identNum;
+    }
 
     final row = <String, dynamic>{
-      'number': identNum,
+      'number': rowNumber,
       'name': nameC.text.trim(),
       'unit': unitC.text.trim(),
       'gender': genderC.text.trim(),
-      'phone': identPhone,
+      'phone': rowPhone,
       'email': emailC.text.trim(),
       'address': addrC.text.trim(),
       'roles': roles.toList(),
-      // ── 신원 명시 필드(위 설명) ──────────────────────────────────────
+      // ── 신원 명시 필드(위 규칙) ──────────────────────────────────────
       'identityType': identityType,
       'identityKey': identityKey,
       'licensed': isLicensed,
-      if (isLicensed) 'corps': wantsEunha ? 'eunha' : 'tsak',
+      if (isLicensed) 'corps': rowCorps,
       // (요구) 참가신청 창과 동일한 추가 입력 항목.
       'transport': transportC.text.trim(),
       'transportNote': transportNoteC.text.trim(),
