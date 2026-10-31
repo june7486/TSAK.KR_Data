@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/file_save.dart';
+import '../services/extra_fields.dart';
 import '../services/output_formats.dart';
 import '../services/table_export.dart';
 import '../theme/app_theme.dart';
@@ -53,7 +54,27 @@ class _RosterScreenState extends State<RosterScreen> {
   bool _showEventFee = false; // 참가비 납부 여부
   bool _showLifetime = false; // 평생회원 여부
   bool _showYearFee = false; // 행사년도 연회비 납부 여부
-  bool _showApply = false; // 참가신청 입력항목
+  bool _showApply = false; // 참가신청 입력항목 (전체 1컬럼 — 호환용)
+
+  /// [요구 2026-10-30] 추가입력사항을 **항목별 개별 컬럼**으로 노출.
+  ///
+  /// > "추가입력사항도 매우 중요한 정보야 … 출력시 구분해서 보여져야 해"
+  ///
+  /// 종전에는 `_showApply` **한 컬럼**에
+  /// `이동 자차 · 숙박 숙박 · 도착 정시 · 동행 김철수` 처럼 몰아넣어
+  /// ① 항목이 늘면 한 칸이 터지고 ② Excel 에서 특정 항목만 골라 쓸 수 없었다.
+  /// → 항목마다 **독립 컬럼**을 두고, 필요한 항목만 켜고 끌 수 있게 한다.
+  final Set<String> _extraCols = <String>{};
+
+  bool _extraOn(String key) => _extraCols.contains(key);
+
+  void _toggleExtra(String key, bool v) {
+    if (v) {
+      _extraCols.add(key);
+    } else {
+      _extraCols.remove(key);
+    }
+  }
 
   String get _period => widget.period.isNotEmpty ? widget.period : widget.year;
 
@@ -530,10 +551,17 @@ class _RosterScreenState extends State<RosterScreen> {
                 ),
                 const Divider(height: 18),
                 _sectionLabel('참가신청 정보'),
-                _optTile('참가신청 입력항목 (도착·숙박·이동·동행·전달)', _showApply, (v) {
+                // [요구 2026-10-30] 추가입력사항 **항목별 컬럼** 토글.
+                //  필요한 항목만 켜면 Excel 에서 바로 집계·정렬할 수 있다.
+                _optTile('전체 (한 칸에 요약)', _showApply, (v) {
                   setD(() => _showApply = v);
                   setState(() => _showApply = v);
                 }),
+                for (final f in ExtraFields.all)
+                  _optTile(f.label, _extraOn(f.key), (v) {
+                    setD(() => _toggleExtra(f.key, v));
+                    setState(() => _toggleExtra(f.key, v));
+                  }),
                 // 전체 켜기 / 끄기 — 한 번에 선택.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -642,6 +670,9 @@ class _RosterScreenState extends State<RosterScreen> {
           label: Text('${widget.year.isNotEmpty ? '${widget.year}년 ' : ''}연회비'),
         ),
       if (_showApply) const DataColumn(label: Text('참가신청')),
+      // [요구 2026-10-30] 추가입력사항 — 항목마다 **독립 컬럼**(정의 순서).
+      for (final f in ExtraFields.all)
+        if (_extraOn(f.key)) DataColumn(label: Text(f.label)),
     ];
 
     return Container(
@@ -741,6 +772,23 @@ class _RosterScreenState extends State<RosterScreen> {
                         ),
                       ),
                     ),
+                  // [요구 2026-10-30] 항목별 개별 셀 — 값이 없으면 공란.
+                  for (final f in ExtraFields.all)
+                    if (_extraOn(f.key))
+                      DataCell(
+                        Text(
+                          f.valueOf(widget.attendees[i]),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: f.group == ExtraGroup.request
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                            color: f.group == ExtraGroup.request
+                                ? ExtraFields.colorOf(f.group)
+                                : AppColors.textDark,
+                          ),
+                        ),
+                      ),
                 ],
               ),
           ],

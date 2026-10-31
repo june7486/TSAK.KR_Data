@@ -13,6 +13,7 @@ import '../services/app_state.dart';
 import '../services/event_finance_picks.dart';
 import '../services/donation_doc.dart';
 import '../services/attendee_roles.dart';
+import '../services/extra_fields.dart';
 import '../services/event_settlement.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
@@ -36,6 +37,7 @@ import '../widgets/hscroll_menu.dart';
 import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_output_sheet.dart';
 import '../widgets/tsak_table_options.dart';
+import '../widgets/extra_fields_summary.dart';
 import 'roster_screen.dart';
 import 'event_finance_tab.dart';
 import 'event_review_screen.dart';
@@ -1745,6 +1747,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               children: [
                 _rosterButton(Icons.table_chart, '명단 출력', () => _openRoster()),
                 const SizedBox(width: 6),
+                // [요구 2026-10-30] 추가입력사항 **항목별 취합**.
+                //  "항목별로 취합도 가능해야 해" → 이동·숙박·도착 집계 +
+                //  자유입력 명단 + 전달사항 전문을 한 화면에.
+                _rosterButton(
+                  Icons.summarize,
+                  '추가입력 취합',
+                  _openExtraSummary,
+                ),
+                const SizedBox(width: 6),
                 _rosterButton(Icons.sms, '문자', _sendSms),
                 const SizedBox(width: 6),
                 _rosterButton(Icons.mail, '메일', _sendMail),
@@ -2098,47 +2109,86 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     );
                   },
                 ),
-              // (요구) 참가신청 상세정보를 '아주 작은 글씨'로 병기 —
-              //   도착예정시간·숙박·이동방법·동행자·전달사항. 없으면 숨김.
-              //   [개인정보] 참가자(_fullView=false)에게는 비노출.
+              // [요구 2026-10-30] 추가입력사항을 **항목별로** 표시 —
+              //   "추가입력사항도 매우 중요한 정보야 / 자세히 보여주고 정리되고
+              //    출력시 구분해서 보여져야 해, 항목별로 취합도 가능해야 해"
+              //
+              // ## 종전 문제
+              //  9.5pt **마퀴(흐르는 글자) 한 줄**에 이모지로 이어붙였다.
+              //  `⏰ 1일 14:30 · 🛏 숙박 · 🚗 자차 · 👥 김철수 · 💬 알레르기`
+              //  마퀴는 흐르기 때문에 **읽는 도중 사라지고**, 폭이 좁으면 잘렸다.
+              //  전달사항(알레르기·식이요법)은 놓치면 현장 사고로 이어진다.
+              //
+              // ## 지금
+              //  · 값이 있는 항목만 **한 줄에 하나씩** 라벨과 함께 표시.
+              //  · 항목 정의는 `ExtraFields` 단일 출처(입력·출력·취합과 동일 라벨).
+              //  · 전달사항은 색을 달리해 **강조**(굵게).
+              //  · 개인정보 보호: 참가자(_fullView=false)에게는 비노출(기존 정책 유지).
               if (_fullView)
                 Builder(
                   builder: (_) {
-                    final bits = <String>[];
-                    final arrive = '${a['arriveNote'] ?? ''}'.trim().isNotEmpty
-                        ? '${a['arriveNote']}'
-                        : '${a['arrive'] ?? ''}'.trim();
-                    if (arrive.isNotEmpty) bits.add('⏰ $arrive');
-                    final lodge = '${a['lodging'] ?? ''}'.trim();
-                    if (lodge.isNotEmpty) bits.add('🛏 $lodge');
-                    final tp = '${a['transportNote'] ?? ''}'.trim().isNotEmpty
-                        ? '${a['transportNote']}'
-                        : '${a['transport'] ?? ''}'.trim();
-                    if (tp.isNotEmpty) bits.add('🚗 $tp');
-                    final frm = '${a['from'] ?? ''}'.trim();
-                    if (frm.isNotEmpty) bits.add('출발 $frm');
-                    final eta = '${a['eta'] ?? ''}'.trim();
-                    if (eta.isNotEmpty) bits.add('소요 $eta');
-                    final comp = '${a['companion'] ?? ''}'.trim();
-                    if (comp.isNotEmpty) bits.add('👥 $comp');
-                    final addr = '${a['address'] ?? ''}'.trim();
-                    if (addr.isNotEmpty) bits.add('🏠 $addr');
-                    final msg = '${a['message'] ?? ''}'.trim();
-                    if (msg.isNotEmpty) bits.add('💬 $msg');
-                    if (bits.isEmpty) return const SizedBox.shrink();
-                    // 넘칠 경우 마퀴(흐리는 글자)로 표시 — 폭을 확정해야 감지된다.
+                    final filled = ExtraFields.filled(a);
+                    if (filled.isEmpty) return const SizedBox.shrink();
                     return Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: SizedBox(
-                        height: 13,
-                        child: MarqueeText(
-                          bits.join('  ·  '),
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            color: AppColors.textGray.withValues(alpha: 0.95),
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.purple.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: AppColors.purple.withValues(alpha: 0.12),
                           ),
-                          velocity: 18,
-                          height: 13,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final f in filled)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      f.icon,
+                                      size: 11,
+                                      color: ExtraFields.colorOf(f.group),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    SizedBox(
+                                      width: 78,
+                                      child: Text(
+                                        f.label,
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.textGray,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        f.valueOf(a),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          height: 1.3,
+                                          fontWeight:
+                                              f.group == ExtraGroup.request
+                                              ? FontWeight.w800
+                                              : FontWeight.w500,
+                                          color: f.group == ExtraGroup.request
+                                              ? ExtraFields.colorOf(f.group)
+                                              : AppColors.textDark,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     );
@@ -6273,6 +6323,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       message: '${widget.title} 사진을 올려주세요',
     );
     _snack('참가자에게 사진 업로드 요청을 등록했습니다');
+  }
+
+  /// 추가입력사항 **항목별 취합** 시트 열기.
+  ///
+  /// [요구 2026-10-30] "항목별로 취합도 가능해야 해"
+  ///  · 참석자 전원의 이동·숙박·도착·경로·동행·전달사항을 모아 보여준다.
+  ///  · 회원 명부를 함께 넘겨 이름 보정에 쓴다(참석자 행의 이름이 비어도
+  ///    인가번호로 찾아 표시).
+  Future<void> _openExtraSummary() async {
+    await showExtraFieldsSummary(
+      context,
+      eventTitle: widget.title,
+      attendees: _attendees,
+      members: context
+          .read<AppState>()
+          .allMembers
+          .map((m) => <String, dynamic>{
+            'number': m.number,
+            'name': m.name,
+            'phone': m.phone,
+          })
+          .toList(),
+    );
   }
 
   Future<void> _openRoster() async {

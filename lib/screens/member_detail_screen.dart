@@ -9,6 +9,7 @@ import '../services/app_state.dart';
 import '../services/finance_service.dart';
 import '../services/nas_api.dart';
 import '../services/member_draft_store.dart';
+import '../services/extra_fields.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/app_home_emblem.dart';
@@ -60,6 +61,62 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   /// 임시저장(초안) 개수 — 상단 버튼 배지용(관리자·마스터 전용).
   int _draftCount = 0;
+
+  /// 행사별 참석자 행 캐시 — `'<연도>::<행사명>'` → attendees 리스트.
+  ///
+  /// 추가입력사항 카드가 이 회원의 참가 행사를 훑을 때 쓴다.
+  /// 화면 진입 시 **한 번만** 받아오고, 실패한 키는 다시 시도하지 않는다.
+  final Map<String, List<Map<String, dynamic>>> _extraCache = {};
+  final Set<String> _extraTried = Set<String>();
+  bool _extraLoading = false;
+
+  /// 이 회원의 참가 행사들의 attendees 를 받아 캐시를 채운다.
+  ///
+  /// 과도한 요청을 막기 위해 **최대 12개 행사**까지만 조회한다(최근 순).
+  Future<void> _loadEventExtras(Member m) async {
+    if (_extraLoading) return;
+    final nas = context.read<NasApi>();
+    final names = m.eventAttend.entries
+        .where((e) => e.value == true)
+        .map((e) => e.key)
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (names.isEmpty) return;
+    final todo = <({String year, String name})>[];
+    for (final full in names.take(12)) {
+      final ym = RegExp(r'(\d{4})').firstMatch(full);
+      final year = ym?.group(1) ?? '';
+      final cands = <String>{full};
+      if (full.contains('_')) cands.add(full.split('_').first);
+      for (final t in cands) {
+        final key = '$year::$t';
+        if (_extraTried.contains(key)) continue;
+        todo.add((year: year, name: t));
+      }
+    }
+    if (todo.isEmpty) return;
+    _extraLoading = true;
+    var changed = false;
+    for (final t in todo) {
+      final key = '${t.year}::${t.name}';
+      _extraTried.add(key);
+      try {
+        final e = await nas.eventGet(t.year, t.name);
+        final inner = (e['event'] as Map?)?.cast<String, dynamic>() ?? e;
+        final atts = ((inner['attendees'] as List?) ?? [])
+            .map((x) => (x as Map).cast<String, dynamic>())
+            .toList();
+        if (atts.isNotEmpty) {
+          _extraCache[key] = atts;
+          changed = true;
+        }
+      } catch (_) {
+        // 조용히 건너뛴다 — 카드가 없다고 화면이 깨지면 안 된다.
+      }
+    }
+    _extraLoading = false;
+    if (changed && mounted) setState(() {});
+  }
 
   Future<void> _loadLinkProfiles() async {
     final p = await context.read<NasApi>().linkProfiles();
@@ -277,6 +334,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   // (요구 #5-1) 후원금·후원물품 이력 — 수동입력 + 관리자·마스터 인증요청.
                   _donationSection(m),
                   _eventSection(m),
+                  _eventExtraCard(m),
                   _depositSection(m),
                   _bankCard(m),
                   MerchActivitySection(
@@ -2187,7 +2245,176 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// ② **ATAS 인가 정보 (인가 당시 정보)** — 범스카우트 인가 정보와 **완전히 별개**.
+  /// **행사 추가입력사항 카드** — 참가신청서에서 받은 상세 정보를 항목별로.
+  ///
+  /// ## [요구 2026-10-30]
+  ///  > "추가입력사항도 매우 중요한 정보야 / 이 내용도 자세히 보여주고
+  ///  >  정리되고 출력시 구분해서 보여져야 해, 그리고 항목별로 취합도 가능해야 해"
+  ///
+  /// ## 종전 문제
+  ///  추가입력 항목(이동·숙박·도착·출발지·소요시간·동행자·전달사항)은
+  ///  **행사 상세의 참석자 카드에서 9.5pt 마퀴 한 줄**(`⏰ … · 🛏 … · 🚗 …`)로만
+  ///  보였다. 흐르는 글자라 읽기도 어렵고, **개인 상세화면에는 아예 없었다.**
+  ///  → 회원 한 사람의 참가 상세를 볼 방법이 없었다.
+  ///
+  /// ## 지금
+  ///  · 이 회원이 참가한 **모든 행사**를 훑어 추가입력 값을 모아 항목별로 보여준다.
+  ///  · 항목 정의는 `ExtraFields`(단일 출처)를 그대로 쓴다 — 입력·출력·취합과
+  ///    라벨이 어긋날 수 없다.
+  ///  · 그룹(이동/숙박/도착/경로/동행/요청)별로 묶고, 그룹 색을 쓴다.
+  ///  · **요청(전달사항)은 맨 앞에 강조**해 놓치지 않게 한다.
+  Widget _eventExtraCard(Member m) {
+    final hit = _extraRowsFor(m);
+    if (hit.isEmpty) {
+      // 아직 캐시가 비었으면 한 번 받아온다(중복 호출은 내부에서 막는다).
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadEventExtras(m));
+      return const SizedBox.shrink();
+    }
+    // 요청사항을 먼저, 그 다음 정의 순서.
+    final grouped = <ExtraGroup, List<MapEntry<ExtraField, String>>>{};
+    for (final e in hit) {
+      for (final f in ExtraFields.filled(e.rows)) {
+        grouped.putIfAbsent(f.group, () => []).add(MapEntry(f, f.valueOf(e.rows)));
+      }
+    }
+    final order = <ExtraGroup>[
+      ExtraGroup.request,
+      ExtraGroup.transport,
+      ExtraGroup.lodging,
+      ExtraGroup.arrival,
+      ExtraGroup.route,
+      ExtraGroup.companion,
+    ];
+    return _section(
+      title: '행사 추가입력사항',
+      icon: Icons.assignment_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${hit.length}개 행사에서 받은 상세 정보입니다. '
+            '항목별로 취합·출력에서도 그대로 구분됩니다.',
+            style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
+          const SizedBox(height: 6),
+          for (final g in order)
+            if (grouped[g] != null) ...[
+              _extraGroupHeader(g),
+              for (final entry in grouped[g]!)
+                _extraLine(entry.key, entry.value, g),
+              const SizedBox(height: 4),
+            ],
+        ],
+      ),
+    );
+  }
+
+  /// 이 회원이 참가한 행사들의 추가입력 행을 모은다.
+  ///
+  /// 매칭 규칙: 행사 참석자 행의 `number`(인가번호) 또는 `phone`(숫자만)이
+  /// 이 회원과 일치. 은하는 `G` 접두어를 무시하고 숫자로 비교한다.
+  List<({String year, String title, Map<String, dynamic> rows})> _extraRowsFor(
+    Member m,
+  ) {
+    final out = <({String year, String title, Map<String, dynamic> rows})>[];
+    final myNo = m.number.replaceAll(RegExp(r'[^0-9]'), '');
+    final myPh = m.phoneDigits;
+    if (myNo.isEmpty && myPh.isEmpty) return out;
+    final names = m.eventAttend.entries
+        .where((e) => e.value == true)
+        .map((e) => e.key)
+        .toList();
+    // 개인 프로필의 참가행사명에서 **연도**를 뽑아 (연도, 행사명)으로 조회한다.
+    for (final full in names) {
+      final ym = RegExp(r'(\d{4})').firstMatch(full);
+      final year = ym?.group(1) ?? '';
+      // 저장된 행사명에 연도 접두어가 붙어 있을 수 있으므로 후보를 모두 시도.
+      final cands = <String>{full};
+      if (full.contains('_')) cands.add(full.split('_').first);
+      for (final t in cands.toList()) {
+        final hit = _extraCache['$year::$t'] ?? _extraCache['::$t'];
+        if (hit == null) continue;
+        // 그 안에서 이 회원 행을 찾는다.
+        for (final a in hit) {
+          final ano = '${a['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+          final aph = '${a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+          final match = (myNo.isNotEmpty && ano == myNo) ||
+              (myPh.length >= 7 && aph == myPh);
+          if (!match) continue;
+          if (ExtraFields.filledCount(a) == 0) continue;
+          out.add((year: year, title: t, rows: a));
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  static Widget _extraGroupHeader(ExtraGroup g) => Padding(
+    padding: const EdgeInsets.only(top: 4, bottom: 2),
+    child: Row(
+      children: [
+        Icon(g.icon, size: 13, color: ExtraFields.colorOf(g)),
+        const SizedBox(width: 4),
+        Text(
+          g.label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w800,
+            color: ExtraFields.colorOf(g),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Divider(
+            height: 1,
+            color: ExtraFields.colorOf(g).withValues(alpha: 0.25),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _extraLine(ExtraField f, String value, ExtraGroup g) {
+    final accent = ExtraFields.colorOf(g);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, top: 3, bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              f.label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textGray,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: f.group == ExtraGroup.request
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+                color: f.group == ExtraGroup.request ? accent : AppColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
   ///
   /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
   ///        + "아타스 인가정보: 인가번호 / 소속연맹·단위대 / 인가일")
