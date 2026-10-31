@@ -170,11 +170,18 @@ class DocCell {
   final bool bold;
   final String? sub;
 
-  String toTd({bool nowrap = false}) {
+  String toTd({bool nowrap = false, int? maxLines}) {
     final style = StringBuffer('text-align:$align;');
     if (accent != null) style.write('border-left:4px solid $accent;');
     if (bold) style.write('font-weight:600;');
     if (nowrap) style.write('white-space:nowrap;');
+    // 셀 줄 수 상한 — 2줄 허용이면 그 안에서 접히게(넘치면 말줄임).
+    if (maxLines != null && maxLines > 0 && !nowrap) {
+      style.write(
+        'display:-webkit-box;-webkit-line-clamp:$maxLines;'
+        '-webkit-box-orient:vertical;overflow:hidden;',
+      );
+    }
     final subHtml = (sub != null && sub!.trim().isNotEmpty)
         ? '<div class="sub">${_esc(sub)}</div>'
         : '';
@@ -227,6 +234,7 @@ String buildMujiDoc({
   String? emblemDataUri,
   Set<int> noWrapCols = const {},
   List<List<int>>? bands,
+  int? maxCellLines,
 }) {
   final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
   final head = StringBuffer();
@@ -295,7 +303,11 @@ String buildMujiDoc({
     final tb = '<tbody>'
         '${rows.map((r) => '<tr>${idx.map((i) {
           final cell = i < r.length ? r[i] : const DocCell('');
-          return cell.toTd(nowrap: noWrapCols.contains(i));
+          return cell.toTd(
+            nowrap: noWrapCols.contains(i),
+            // 셀 줄 수 제한 — 넘치면 브라우저가 말줄임 대신 접도록 line-clamp.
+            maxLines: maxCellLines,
+          );
         }).join()}</tr>').join()}'
         '</tbody>';
     return '<table${lower ? ' class="lowband"' : ''}>$th$tb</table>';

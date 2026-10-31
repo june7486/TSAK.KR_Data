@@ -65,6 +65,7 @@ class TableOutputOptions {
     this.noWrap = const <String>{},
     this.rowBands = 1,
     this.bandAnchors = const <String>{},
+    this.cellLines,
   });
 
   /// 출력할 열(0-based) 순서 — null 이면 원본 전체 순서.
@@ -112,6 +113,17 @@ class TableOutputOptions {
   /// 실제로 쓸 띠 수(2 이상은 2로 고정 — A4 에서 3단은 글씨가 너무 작아진다).
   int get effectiveRowBands => rowBands >= 2 ? 2 : 1;
 
+  /// 셀 하나가 **가질 수 있는 최대 줄 수** — null 이면 제한 없음(종전 그대로).
+  ///
+  /// ## 요구 (원문 2026-10-31 2차)
+  /// > "항목이 너무 길어지면 이름하나당 2줄 이상을 넣도록 함"
+  ///
+  /// 지금까지는 A4 폭에 맞추려고 폰트와 열 폭을 자동으로 줄였다. 그 결과 이름
+  /// 하나가 1줄로 눌리거나, 반대로 긴 주소가 4~5줄로 터져 행 높이가 들쭉날쭉했다.
+  /// 이 값을 주면 셀 텍스트가 **그 줄 수 안에서** 접히도록 폭·폰트를 맞춘다
+  /// (2 = 이름 한 명이 최대 2줄까지 들어가게).
+  final int? cellLines;
+
   double get scale => fontSize.scale;
   double get rowSpaceMul => rowSpace.mul;
 
@@ -123,6 +135,7 @@ class TableOutputOptions {
     Set<String>? noWrap,
     int? rowBands,
     Set<String>? bandAnchors,
+    int? cellLines,
   }) => TableOutputOptions(
     cols: cols ?? this.cols,
     fontSize: fontSize ?? this.fontSize,
@@ -131,6 +144,7 @@ class TableOutputOptions {
     noWrap: noWrap ?? this.noWrap,
     rowBands: rowBands ?? this.rowBands,
     bandAnchors: bandAnchors ?? this.bandAnchors,
+    cellLines: cellLines ?? this.cellLines,
   );
 
   /// 부제/배지 표기 — 예: "글씨 보통 · 간격 넓게 · 가로 · 두줄방지 3".
@@ -139,6 +153,7 @@ class TableOutputOptions {
     if (landscape != null) parts.add(landscape! ? '가로' : '세로');
     if (noWrap.isNotEmpty) parts.add('두줄방지 ${noWrap.length}');
     if (effectiveRowBands > 1) parts.add('두 단');
+    if (cellLines != null) parts.add('셀 $cellLines줄');
     return parts.join(' · ');
   }
 }

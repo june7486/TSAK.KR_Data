@@ -372,6 +372,7 @@ class DocPdf {
     double rowSpaceMul = 1.0,
     Set<int> noWrapCols = const {},
     List<List<int>>? bands,
+    int? maxCellLines,
   }) async {
     await _ensureFonts();
     // 한자가 문서에 있을 때만 4.9MB 폴백 폰트를 읽는다(없으면 종전과 동일).
@@ -500,10 +501,15 @@ class DocPdf {
     // 같은 머리행 위젯을 **다시 그려** 넣는다. 헤더가 모든 페이지 상단에 반복된다.
     // ───────────────────────────────────────────────────────────────────────
 
+    // (요구 2026-10-31 2차) "항목이 너무 길어지면 이름하나당 2줄 이상"
+    //  maxCellLines 를 주면 열 폭을 그 줄 수만큼 나눠 잡아, 글씨를 2pt 로
+    //  깎아 1줄에 욱여넣는 대신 **2줄로 편하게** 접히게 한다.
+    final int cellLines = (maxCellLines ?? 1).clamp(1, 4);
     final widths = _contentCols(
       columns,
       rows,
       availableWidth: fmt.width - 36 * 2 - 8,
+      lines: cellLines,
     );
     final availW = fmt.width - 36 * 2;
     final margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30);
@@ -531,6 +537,7 @@ class DocPdf {
           [for (final i in b) i < r.length ? r[i] : const DocCell('')],
       ],
       availableWidth: fmt.width - 36 * 2 - 8,
+      lines: cellLines,
     );
 
     // ── 페이지 장식(레터헤드·푸터) — 높이를 **실제로 재어** 본문 가용 높이에서
@@ -714,7 +721,9 @@ class DocPdf {
                           textAlign: _align(cell.align),
                           // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
                           softWrap: !noWrapCols.contains(key),
-                          maxLines: noWrapCols.contains(key) ? 1 : null,
+                          maxLines: noWrapCols.contains(key)
+                              ? 1
+                              : (maxCellLines == null ? null : cellLines),
                         ),
                         if (cell.sub != null && cell.sub!.trim().isNotEmpty)
                           pw.Padding(
@@ -901,6 +910,9 @@ class DocPdf {
     List<String> columns,
     List<List<DocCell>> rows, {
     double availableWidth = 517.0,
+    /// 셀이 가질 수 있는 줄 수 — 2 이상이면 그 줄 수만큼 폭을 **미리** 잡아
+    /// 글씨를 깎지 않고도 접히게 한다(요구: "이름하나당 2줄 이상").
+    int lines = 1,
   }) {
     final n = columns.length;
     if (n <= 0) return const {};
@@ -933,8 +945,11 @@ class DocPdf {
     //  가로(landscape) 출력에서도 같은 비율이 되도록 A4 폭 기준값은 그대로 두되,
     //  호출부가 넘긴 사용 가능 폭이 있으면 그쪽을 우선한다([availableWidth]).
     final double avail = availableWidth;
+    // 줄 수([lines]) 를 반영 — 2줄 허용이면 필요한 **1줄 폭**을 절반으로 봐도
+    //  된다(그만큼 글씨를 깎지 않고 접혀 들어간다). 최소 폭은 지켜 준다.
+    final double lf = lines <= 1 ? 1.0 : (1.0 / lines);
     final req = <double>[
-      for (var i = 0; i < n; i++) units[i] * fontPt + padU + lead,
+      for (var i = 0; i < n; i++) (units[i] * fontPt * lf) + padU + lead,
     ];
     final reqSum = req.fold<double>(0, (a, b) => a + b);
     final unitSum = units.fold<double>(0, (a, b) => a + b);
@@ -947,10 +962,13 @@ class DocPdf {
         band = req[i] + extra;
       } else {
         // 폭이 부족한 극단적 경우엔 내용 비율대로 축소(최소 10pt 보장).
+        //  줄 수 허용([lf])을 반영해, 2줄 모드에서는 열 폭을 그만큼 적게
+        //  요구하게 한다(글씨가 2pt 로 깎이는 것을 막는다).
+        final uu = units[i] * lf;
         band =
             avail *
-            (units[i] + padU) /
-            (unitSum + padU * n).clamp(1.0, double.infinity);
+            (uu + padU) /
+            (unitSum * lf + padU * n).clamp(1.0, double.infinity);
       }
       m[i] = pw.FlexColumnWidth(band.clamp(10.0, 300.0));
     }
@@ -1681,6 +1699,7 @@ class DocPdf {
     double rowSpaceMul = 1.0,
     Set<int> noWrapCols = const {},
     List<List<int>>? bands,
+    int? maxCellLines,
   }) {
     final docRows = rows.asMap().entries.map((e) {
       final ac = kMujiAccents[e.key % kMujiAccents.length];
@@ -1703,6 +1722,7 @@ class DocPdf {
       rowSpaceMul: rowSpaceMul,
       noWrapCols: noWrapCols,
       bands: bands,
+      maxCellLines: maxCellLines,
     );
   }
 

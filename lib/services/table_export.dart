@@ -439,6 +439,7 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
     emblemDataUri: emblem,
     noWrapCols: doc.effectiveNoWrapCols,
     bands: doc.effectiveBands,
+    maxCellLines: doc.options?.cellLines,
   );
   await openPrintWindow(html, doc.title);
 }
@@ -475,6 +476,7 @@ Future<Uint8List> _buildPdf(TsakTableDoc doc) {
     rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
     noWrapCols: doc.effectiveNoWrapCols,
     bands: doc.effectiveBands,
+    maxCellLines: doc.options?.cellLines,
   );
 }
 

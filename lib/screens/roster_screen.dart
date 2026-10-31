@@ -177,7 +177,17 @@ class _RosterScreenState extends State<RosterScreen> {
       // 출력내용선택 · 위치이동 · 줄간격 · 글씨 · 용지 옵션(명부출력과 동일 화면).
       onOptions: _editOptions,
       // 실시간 미리보기 — 글씨·줄간격·2줄방지·가로세로를 확인 후 출력.
-      onPreview: () => showTsakOutputPreview(context, doc: _doc()),
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: _doc(),
+        // (요구 2026-10-31 2차) **이 화면(참가자 명단)에서도** 미리보기 중에
+        //  추가항목을 골라 출력 여부를 정할 수 있게 한다.
+        //  스크린샷 피드백: 칩이 안 보였다 → 원인은 여기에 extra 미전달.
+        extra: TsakExtraPick(
+          source: widget.attendees,
+          initial: _extraCols,
+        ),
+      ),
       onShareImage: () => _run(TsakOutputFormat.jpg, share: true),
       onShareLink: () => showLinkShareDialog(context, Uri.base.toString()),
     );

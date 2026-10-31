@@ -83,6 +83,10 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// 두 단(가로줄 추가) — 열을 위/아래로 쌓아 열당 폭을 두 배로.
   bool _twoBands = false;
 
+  /// 셀 한 칸이 가질 수 있는 최대 줄 수 — null 이면 제한 없음.
+  /// (요구 2026-10-31 2차) “항목이 너무 길어지면 이름하나당 2줄 이상”
+  int? _cellLines;
+
   /// 추가입력 항목 선택(켜진 항목 키).
   late final Set<String> _extraKeys = <String>{...?widget.extra?.initial};
 
@@ -93,7 +97,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// 옵션 서명 — 값이 바뀔 때만 미리보기를 다시 만든다.
   String get _key =>
       '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
-      '${_fontScale.toStringAsFixed(2)}|$_twoBands|'
+      '${_fontScale.toStringAsFixed(2)}|$_twoBands|${_cellLines ?? 0}|'
       '${(_extraKeys.toList()..sort()).join(',')}';
 
   String get _base => widget.doc.baseName(); // 예: TSAK_출력_게시판 출력
@@ -141,6 +145,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
           ? {for (var i = 0; i < n; i++) i}
           : d.effectiveNoWrapCols,
       bands: bands,
+      maxCellLines: _cellLines,
     );
   }
 
@@ -327,7 +332,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: _switchCell(
-                      '두 단 (가로줄+)',
+                      '두 단',
                       _twoBands,
                       (v) => setState(() => _twoBands = v),
                     ),
@@ -342,6 +347,8 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                   ),
                 ],
               ),
+              // ── 셀 줄 수 — 항목이 길 때 이름하나당 2줄 이상 허용 ──
+              _linesCell(),
               _sliderCell(
                 '줄간격',
                 _lineSpace,
@@ -532,6 +539,72 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
       ),
     ),
   );
+
+  /// 셀 줄 수 선택 — 자동/1줄/2줄/3줄.
+  ///
+  /// (요구 2026-10-31 2차) "항목이 너무 길어지면 이름하나당 2줄 이상을 넣도록 함"
+  ///  · 자동 = 종전대로 폰트·폭을 맞춰 1줄 유지(좁으면 글씨가 작아짐)
+  ///  · 2줄/3줄 = 그 줄 수만큼 접히도록 열 폭을 넉넉히 → **글씨가 안 깎인다**
+  Widget _linesCell() {
+    const opts = <int?>[null, 1, 2, 3];
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 58,
+            child: Text(
+              '셀 줄 수',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textGray,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                for (final v in opts) ...[
+                  if (v != opts.first) const SizedBox(width: 4),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _cellLines = v),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _cellLines == v
+                              ? AppColors.purple
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _cellLines == v
+                                ? AppColors.purple
+                                : const Color(0xFFD8D3CA),
+                          ),
+                        ),
+                        child: Text(
+                          v == null ? '자동' : '$v줄',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: _cellLines == v
+                                ? Colors.white
+                                : AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _switchCell(String label, bool value, ValueChanged<bool> onChanged) {
     return Container(
