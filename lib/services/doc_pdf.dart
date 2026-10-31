@@ -512,6 +512,7 @@ class DocPdf {
       rows,
       availableWidth: fmt.width - 36 * 2 - 8,
       lines: cellLines,
+      scale: scale,
     );
     final availW = fmt.width - 36 * 2;
     final margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30);
@@ -806,7 +807,9 @@ class DocPdf {
       final last = pi == pages.length - 1;
       doc.addPage(
         pw.MultiPage(
-          maxPages: 2,
+          // ⚠️ maxPages 를 지정하면 pdf 패키지가 **그 수를 넘길 때 예외**를
+          //  던지거나 잘라 버린다. 명부는 290명까지 나오므로 제한하지 않는다.
+          //  (페이지 나눔은 위에서 행 높이를 재어 이미 계산했다)
           pageTheme: pw.PageTheme(
             pageFormat: fmt,
             margin: margin,
@@ -854,6 +857,9 @@ class DocPdf {
     /// 셀이 가질 수 있는 줄 수 — 2 이상이면 그 줄 수만큼 폭을 **미리** 잡아
     /// 글씨를 깎지 않고도 접히게 한다(요구: "이름하나당 2줄 이상").
     int lines = 1,
+    /// 글씨 크기 배율 — 폰트·패딩을 함께 줄여 열 폭을 확보한다.
+    /// (요구 2026-10-31 6차) "폰트 더 작게 + 메일이 잘림"
+    double scale = 1.0,
   }) {
     final n = columns.length;
     if (n <= 0) return const {};
@@ -879,9 +885,18 @@ class DocPdf {
     //  좁은 열(예: 성명·인가년월일)이 셀 패딩에 잠식되어 글자가 2줄로 접히는
     //  문제를 막기 위해, 먼저 각 열에 "줄바꿈 없이 필요한 최소 폭"을 배정한 뒤
     //  남는 폭만 내용 비율대로 나눠 준다.
-    const double fontPt = 8.5; // 셀 본문 폰트
-    const double padU = 8.0; // 셀 좌우 패딩 합(좌 4 + 우 4)
-    const double lead = 3.0; // 헤어라인/렌더 오차 여유
+    // ── (요구 2026-10-31 6차) 패딩도 글씨 크기에 비례해 줄인다 ──
+    //
+    // ## 실측 (tool/measure_cols.dart)
+    //  17열 명부에서 좌우 패딩 합 8pt × 17 = **136pt**. A4 가로 가용폭 762pt 의
+    //  18% 를 여백이 먹는다. 폰트만 5.3pt 로 줄여도 합계가 762pt 에 붙어
+    //  메일에 111pt 밖에 못 준다(필요 127pt) → **여전히 잘린다**.
+    //  패딩을 폰트 배율에 맞춰 줄이면 그 몫이 내용으로 돌아간다.
+    //
+    //  scale 1.0 → 8.0pt(종전 동일) / 0.62 → 5.0pt(최소 4.4pt 보장)
+    final double fontPt = (8.5 * scale * 10).roundToDouble() / 10; // 셀 본문 폰트
+    final double padU = (8.0 * scale).clamp(4.4, 8.0);
+    final double lead = 3.0; // 헤어라인/렌더 오차 여유
     // 페이지 폭 − 좌우 여백 − 테두리(≈ 595 − 36·2 − 여유).
     //  가로(landscape) 출력에서도 같은 비율이 되도록 A4 폭 기준값은 그대로 두되,
     //  호출부가 넘긴 사용 가능 폭이 있으면 그쪽을 우선한다([availableWidth]).
@@ -894,13 +909,40 @@ class DocPdf {
     ];
     final reqSum = req.fold<double>(0, (a, b) => a + b);
     final unitSum = units.fold<double>(0, (a, b) => a + b);
+    // ── (요구 2026-10-31 6차) "접속 칸이 너무 넓음 … 전화번호·메일이 잘림" ──
+    //
+    // ## 원인
+    //  남는 폭을 **units 비례**로 나눴다. '접속'(V 한 글자)도 units 2.0 을
+    //  갖고 있어서, 남는 폭의 2/전체 를 그대로 받아 **한 글자 칸이 인가번호
+    //  만큼 넓어졌다**. 반대로 메일(units 큼)은 비례 배분만으로는 모자라
+    //  noWrap 과 만나면 잘렸다(…으로 truncate).
+    //
+    // ## 해결
+    //  · 내용이 짧은 열(units ≤ 3.5)은 **필요폭에서 멈춘다**(더 못 받는다).
+    //  · 그 몫을 내용이 긴 열에만 units 비례로 더 준다 → 메일이 살아난다.
+    //  · 모든 열이 짧으면(작은 표) 예전처럼 전체 비례로 돌아간다.
+    const double narrowUnit = 3.5;
+    final isNarrow = <bool>[for (var i = 0; i < n; i++) units[i] <= narrowUnit];
+    final wideUnitSum = <double>[
+      for (var i = 0; i < n; i++) isNarrow[i] ? 0.0 : units[i],
+    ].fold<double>(0, (a, b) => a + b);
+    // 넓은 열이 하나도 없으면 전부 비례 배분(종전 동작).
+    final bool hasWide = wideUnitSum > 0;
+
     final m = <int, pw.TableColumnWidth>{};
     for (var i = 0; i < n; i++) {
       double band;
       if (reqSum < avail) {
-        // 남는 폭을 내용 비율로 분배.
-        final extra = unitSum > 0 ? (avail - reqSum) * units[i] / unitSum : 0;
-        band = req[i] + extra;
+        final double extra = avail - reqSum;
+        if (isNarrow[i] && hasWide) {
+          // 좁은 열은 자기 필요폭까지만 — '접속'이 넓어지지 않는다.
+          band = req[i];
+        } else if (hasWide) {
+          band = req[i] + extra * units[i] / wideUnitSum;
+        } else {
+          // 남는 폭을 내용 비율로 분배(종전).
+          band = req[i] + (unitSum > 0 ? extra * units[i] / unitSum : 0);
+        }
       } else {
         // 폭이 부족한 극단적 경우엔 내용 비율대로 축소(최소 10pt 보장).
         //  줄 수 허용([lf])을 반영해, 2줄 모드에서는 열 폭을 그만큼 적게

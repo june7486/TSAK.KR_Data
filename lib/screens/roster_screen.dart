@@ -79,9 +79,15 @@ class _RosterScreenState extends State<RosterScreen> {
   String get _period => widget.period.isNotEmpty ? widget.period : widget.year;
 
   /// 출력 옵션(글씨크기·줄간격·용지·출력내용선택·위치이동) — 명부출력과 동일 규칙.
-  /// 두줄 방지(요구: 참가신청 열 등 두 줄로 접힘 방지) 기본값을 인가번호·이름·연락처·메일에 적용.
+  ///
+  /// ## 두줄 방지 기본값 — (요구 2026-10-31 6차) "전화번호, e-mail 내용이 잘림"
+  /// 종전에는 `{'인가번호','이름','연락처','메일'}` 네 개를 1줄로 고정했다.
+  /// 그런데 **메일은 평균 22~26자**(simonrhee75@gmail.com = 23 units)다.
+  /// 1줄 고정이면 열 폭이 모자랄 때 그대로 **잘려서** …으로 끝났다.
+  /// → 메일은 빼고, 접속·인가번호·연락처만 1줄 고정한다.
+  ///   (메일은 접혀도 두 줄이면 최대 12자씩만 쓰면 되므로 폭이 절반이면 된다)
   TableOutputOptions? _outOpts = const TableOutputOptions(
-    noWrap: {'인가번호', '이름', '연락처', '메일'},
+    noWrap: {'인가번호', '연락처'},
   );
 
   /// [공용] 행사 정보(제목·부제·설명) + 참가자 표를 담은 출력 문서.

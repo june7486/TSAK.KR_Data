@@ -107,13 +107,30 @@ Future<TableOutputOptions?> showTsakTableOptions(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // ── 글씨 크기 ──
-                          _sec('글씨 크기'),
+                          //  (요구 2026-10-31 6차) "폰트사이즈를 더 줄일 수 있도록
+                          //  하는 옵션 더 넣어줘(현재보다 더 작은 폰트)"
+                          //  → 5단계 + 실제 pt 를 함께 보여 준다. 열이 많은
+                          //    명부에서 '아주작게'(5.3pt)까지 내려갈 수 있다.
+                          Row(
+                            children: [
+                              _sec('글씨 크기'),
+                              const Spacer(),
+                              Text(
+                                '본문 ${fontSize.approxPt}pt',
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textGray,
+                                ),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 6),
                           _seg(
                             TsakFontSize.values,
                             fontSize,
                             (v) => v.label,
-                            (v) => v.note,
+                            (v) => '${v.approxPt}pt',
                             (v) => setSheet(() => fontSize = v),
                           ),
                           const SizedBox(height: 16),
@@ -540,12 +557,12 @@ Widget _seg<T>(
   return Row(
     children: [
       for (var i = 0; i < values.length; i++) ...[
-        if (i > 0) const SizedBox(width: 8),
+        if (i > 0) const SizedBox(width: 6),
         Expanded(
           child: GestureDetector(
             onTap: () => onTap(values[i]),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 9),
+              padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 2),
               decoration: BoxDecoration(
                 color: values[i] == sel ? AppColors.purple : Colors.white,
                 borderRadius: BorderRadius.circular(10),
@@ -557,24 +574,33 @@ Widget _seg<T>(
               ),
               child: Column(
                 children: [
-                  Text(
-                    label(values[i]),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
-                      color: values[i] == sel
-                          ? Colors.white
-                          : AppColors.textDark,
+                  // 5칸까지 늘어나도 잘리지 않게 — 칸 수에 따라 글자를 줄인다.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label(values[i]),
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: values.length >= 5 ? 11.5 : 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: values[i] == sel
+                            ? Colors.white
+                            : AppColors.textDark,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 1),
-                  Text(
-                    note(values[i]),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: values[i] == sel
-                          ? Colors.white.withValues(alpha: 0.85)
-                          : AppColors.textGray,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      note(values[i]),
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        color: values[i] == sel
+                            ? Colors.white.withValues(alpha: 0.85)
+                            : AppColors.textGray,
+                      ),
                     ),
                   ),
                 ],

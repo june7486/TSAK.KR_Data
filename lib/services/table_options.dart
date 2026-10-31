@@ -10,26 +10,42 @@
 library;
 
 /// 표 출력 **글씨 크기** (명단출력과 동일 개념).
-enum TsakFontSize { small, normal, large }
+/// 글씨 크기 — 표 출력 옵션.
+///
+/// (요구 2026-10-31 6차) "폰트사이즈를 더 줄일 수 있도록 하는 옵션 더 넣어줘
+///  (현재보다 더 작은 폰트)"
+/// → 열이 12개를 넘으면 '작게'(0.86)로도 A4 폭에 안 들어간다.
+///   그래서 [micro](0.62) · [tiny](0.72) 두 단계를 **아래쪽에** 더 붙였다.
+///   (기존 small/normal/large 는 배율을 건드리지 않았다 — 저장된 옵션 호환)
+enum TsakFontSize { micro, tiny, small, normal, large }
 
 extension TsakFontSizeX on TsakFontSize {
   String get label => switch (this) {
+    TsakFontSize.micro => '아주작게',
+    TsakFontSize.tiny => '더작게',
     TsakFontSize.small => '작게',
     TsakFontSize.normal => '보통',
     TsakFontSize.large => '크게',
   };
 
   String get note => switch (this) {
-    TsakFontSize.small => '촘촘하게',
+    TsakFontSize.micro => '최대한 촘촘히',
+    TsakFontSize.tiny => '촘촘히',
+    TsakFontSize.small => '약간 작게',
     TsakFontSize.normal => '기본',
     TsakFontSize.large => '또렷하게',
   };
 
   double get scale => switch (this) {
+    TsakFontSize.micro => 0.62,
+    TsakFontSize.tiny => 0.72,
     TsakFontSize.small => 0.86,
     TsakFontSize.normal => 1.0,
     TsakFontSize.large => 1.18,
   };
+
+  /// 이 단계에서 실제로 찍히는 본문 pt(기본 8.5pt 기준) — 화면 표기용.
+  double get approxPt => (8.5 * scale * 10).roundToDouble() / 10;
 }
 
 /// 표 출력 **줄 간격(밀도)** — "줄간격 유지" 항목.

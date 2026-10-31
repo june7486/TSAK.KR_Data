@@ -375,7 +375,18 @@ String buildMujiDoc({
  .tsak-bar button.back{background:#5E7A4B;color:#fff;border-color:#5E7A4B}
  @media print{body{background:#fff;padding:0}
    .tsak-bar{display:none!important}
-   .page{border:0;box-shadow:none;margin:0;padding:0;max-width:none}}
+   .page{border:0;box-shadow:none;margin:0;padding:0;max-width:none}
+   /* (요구 2026-10-31 6차) "출력페이지가 2장이상 되면 두번째 페이지부터는
+      페이지 상단에 구분메뉴가 노출되어 표의 내용이 무엇인지 확인 되어야 함"
+      → 인쇄에서 머리행을 **페이지마다 반복**시킨다. `<thead>` 만으로는
+        브라우저가 표를 쪼갤 때 머리행을 생략하는 경우가 있어, 명시적으로
+        table-header-group 을 지정한다. 또 tr 이 페이지 경계에서 잘리지
+        않도록 break-inside:avoid 를 준다(반 줄만 찍히는 것 방지). */
+   thead{display:table-header-group!important}
+   tfoot{display:table-footer-group!important}
+   tr{break-inside:avoid;page-break-inside:avoid}
+   table{break-inside:auto}
+   h1,.part{break-after:avoid}}
 </style></head><body>
 <div class="tsak-bar">
   <button class="back" onclick="window.close(); if(!window.closed){history.back();}" title="이전 화면으로">‹ 돌아가기</button>

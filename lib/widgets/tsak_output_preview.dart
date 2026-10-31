@@ -80,6 +80,46 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// 글자 크기 배율(1.0 = 기본).
   double _fontScale = 1.0;
 
+  /// **출력할 기본 열 선택** — 미리보기에서 직접 켜고 끈다.
+  ///
+  /// (요구 2026-10-31 6차) "미리보기 항목에도 출력시 선택할 수 있는 메뉴를
+  ///  출력옵션에 추가해줘"
+  ///  옵션 시트를 닫았다 다시 열지 않고도, 보면서 바로 열을 고를 수 있어야 한다.
+  ///  null 이면 '전체 열' 선택 상태.
+  late Set<int>? _pickedCols = _initialPickedCols();
+
+  Set<int>? _initialPickedCols() {
+    final o = widget.doc.options;
+    if (o?.cols == null) return null; // 옵션 없음 = 전체
+    return <int>{...o!.cols!};
+  }
+
+  /// 원본 열 목록(추가항목 열 제외) — 미리보기 선택 메뉴의 후보.
+  List<String> get _baseCols => widget.doc.columns;
+
+  bool _colOn(int i) {
+    final p = _pickedCols;
+    if (p == null) return true;
+    return p.contains(i);
+  }
+
+  void _toggleCol(int i) {
+    setState(() {
+      final p = <int>{...?_pickedCols};
+      // null(전체) 상태에서 하나를 끄면 나머지를 전부 채워 넣는다.
+      if (_pickedCols == null) {
+        for (var k = 0; k < _baseCols.length; k++) {
+          if (k != i) p.add(k);
+        }
+      } else if (p.contains(i)) {
+        p.remove(i);
+      } else {
+        p.add(i);
+      }
+      _pickedCols = p;
+    });
+  }
+
   /// **행 높이(줄 칸)** — 이름 하나가 들어가는 행을 몇 줄분 높이로 할지.
   ///
   /// (요구 2026-10-31 정정) "두단 세단으로 표시하라는 것은 **이름별로 칸을 더
@@ -123,7 +163,8 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   String get _key =>
       '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
       '${_fontScale.toStringAsFixed(2)}|$_rowLines|${_cellLines ?? 0}|'
-      '${(_extraKeys.toList()..sort()).join(',')}';
+      '${(_pickedCols?.toList() ?? const <int>[])..sort()}'
+      '|${(_extraKeys.toList()..sort()).join(',')}';
 
   String get _base => widget.doc.baseName(); // 예: TSAK_출력_게시판 출력
 
@@ -133,12 +174,48 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// (항목을 껐다 켜도 열이 중복되지 않는다).
   TsakTableDoc get _doc {
     final ex = widget.extra;
-    if (ex == null || _extraKeys.isEmpty) return widget.doc;
-    return extraColumns(
-      widget.doc,
-      source: ex.source,
-      keys: _extraKeys,
-    );
+    var d = (ex == null || _extraKeys.isEmpty)
+        ? widget.doc
+        : extraColumns(widget.doc, source: ex.source, keys: _extraKeys);
+    // (요구 2026-10-31 6차) 미리보기에서 고른 열을 반영.
+    //  순서는 원본 그대로 두고 **켜진 것만** 남긴다(옵션 시트의 순서 이동과
+    //  충돌하지 않게). 전부 켜져 있으면 옵션을 건드리지 않는다.
+    final p = _pickedCols;
+    if (p != null) {
+      final all = d.columns.length;
+      final allOn = p.length >= all;
+      if (!allOn) {
+        final keep = <int>[
+          for (var i = 0; i < all; i++)
+            if (p.contains(i)) i,
+        ];
+        if (keep.isNotEmpty) {
+          final cols = <String>[for (final i in keep) d.columns[i]];
+          final rows = <List<String>>[
+            for (final r in d.rows)
+              <String>[for (final i in keep) i < r.length ? r[i] : ''],
+          ];
+          // 추가항목 열(인덱스 >= 원본 열 수)은 extraColumns 가 붙인 것이므로
+          //  keep 에 자동 포함된다(사용자가 끄지 않는 한).
+          d = TsakTableDoc(
+            title: d.title,
+            subtitle: d.subtitle,
+            description: d.description,
+            author: d.author,
+            extra: d.extra,
+            columns: cols,
+            rows: rows,
+            summary: d.summary,
+            footerLeft: d.footerLeft,
+            landscape: d.landscape,
+            options: d.options?.copyWith(cols: null),
+            reportBlocks: d.reportBlocks,
+            template: d.template,
+          );
+        }
+      }
+    }
+    return d;
   }
 
   /// 현재 옵션으로 PDF를 만든다.
@@ -440,6 +517,10 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                         '${(_fontScale * 10).round()} pt',
                         (v) => setState(() => _fontScale = v),
                       ),
+                      // ── 출력항목 선택 — 미리보기에서 직접 켜고 끈다 ──
+                      //   (요구 2026-10-31 6차) "미리보기 항목에도 출력시
+                      //   선택할 수 있는 메뉴를 출력옵션에 추가해줘"
+                      if (_baseCols.isNotEmpty) _colPickBar(),
                       // ── 추가입력 항목 선택 (있을 때만) ──
                       if (widget.extra != null) ...[
                         const SizedBox(height: 4),
@@ -487,6 +568,108 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// **출력항목 선택 줄** — 원본 열을 칩으로 켜고 끈다(라이브).
+  ///
+  /// (요구 2026-10-31 6차) "미리보기 항목에도 출력시 선택할 수 있는 메뉴를
+  ///  출력옵션에 추가해줘" → 옵션 시트를 오가지 않고 보면서 고른다.
+  Widget _colPickBar() {
+    final total = _baseCols.length;
+    final onCount = _pickedCols == null
+        ? total
+        : _pickedCols!.where((i) => i >= 0 && i < total).length;
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.fromLTRB(9, 6, 9, 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFD8D3CA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                '출력항목',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textGray,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$onCount / $total 선택',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.purple,
+                ),
+              ),
+              const Spacer(),
+              if (onCount == 0)
+                const Text(
+                  '모두 끄면 원래대로',
+                  style: TextStyle(fontSize: 9.5, color: AppColors.hermesOrange),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = 0; i < _baseCols.length; i++)
+                _colChip(i, _baseCols[i]),
+              _miniChip('전체', () {
+                setState(() => _pickedCols = null);
+              }),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _colChip(int i, String label) {
+    final on = _colOn(i);
+    return InkWell(
+      onTap: () => _toggleCol(i),
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: on ? AppColors.purple : Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: on ? AppColors.purple : const Color(0xFFD8D3CA),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              on ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: 12,
+              color: on ? Colors.white : AppColors.textGray,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: on ? FontWeight.w800 : FontWeight.w500,
+                color: on ? Colors.white : AppColors.textDark,
+              ),
+            ),
+          ],
         ),
       ),
     );
