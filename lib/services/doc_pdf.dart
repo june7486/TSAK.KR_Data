@@ -371,7 +371,7 @@ class DocPdf {
     double scale = 1.0,
     double rowSpaceMul = 1.0,
     Set<int> noWrapCols = const {},
-    List<List<int>>? bands,
+    int rowLines = 1,
     int? maxCellLines,
   }) async {
     await _ensureFonts();
@@ -389,7 +389,9 @@ class DocPdf {
     //  낮추고 셀 좌우 패딩을 줄이며, 열 폭 계산에 패딩을 반영한다(_contentCols).
     //  (요구) 수품 출력에 글씨 크기·줄 간격 옵션 — 배율([scale]/[rowSpaceMul]) 반영.
     final double cellPt = (8.5 * scale * 10).roundToDouble() / 10;
-    final int padV = (5 * rowSpaceMul).round().clamp(1, 14);
+    // (요구 2026-10-31 정정) "이름별로 칸을 더 늘리라" — 행 높이를 rowLines 배로.
+    final int padV =
+        (5 * rowSpaceMul * (rowLines < 1 ? 1 : rowLines)).round().clamp(1, 40);
     final int headV = (6 * rowSpaceMul).round().clamp(1, 16);
     // [_fb] — 한자 폴백 폰트를 붙인다(로드되지 않았으면 원본 그대로).
     final base = _fb(pw.TextStyle(font: reg, fontSize: cellPt, color: _ink));
@@ -515,31 +517,6 @@ class DocPdf {
     final margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30);
     final availBody = fmt.height - margin.vertical;
 
-    // ── 두 단(가로 띠) 분할 정의 ─────────────────────────────────────────
-    //  bands 가 없으면 bandSplits 는 비어 있고, 아래 렌더링은 종전과 **완전히
-    //  동일**하게 동작한다(다른 문서 영향 0).
-    final bandSplits = <List<int>>[];
-    if (bands != null && bands.length > 1) {
-      var ok2 = true;
-      for (final b in bands) {
-        if (b.isEmpty) {
-          ok2 = false;
-          break;
-        }
-      }
-      if (ok2) bandSplits.addAll(bands);
-    }
-    // 단별 열 폭 — 각 단이 **페이지 전폭**을 쓰므로 열당 폭이 약 2배가 된다.
-    Map<int, pw.TableColumnWidth> bandWidthsOf(List<int> b) => _contentCols(
-      [for (final i in b) i < columns.length ? columns[i] : ''],
-      [
-        for (final r in rows)
-          [for (final i in b) i < r.length ? r[i] : const DocCell('')],
-      ],
-      availableWidth: fmt.width - 36 * 2 - 8,
-      lines: cellLines,
-    );
-
     // ── 페이지 장식(레터헤드·푸터) — 높이를 **실제로 재어** 본문 가용 높이에서
     //  뺀다. 추정값을 쓰면 첫 페이지에서 행이 한 줄 넘쳐 다음 페이지로 밀리고,
     //  그 페이지에 머리행이 없어 '구분표 없는 페이지'가 생긴다(실제 발생).
@@ -626,20 +603,14 @@ class DocPdf {
 
     /// 머리행 — 모든 페이지 상단에 반복 출력된다.
     ///
-    /// [pick] 을 주면 그 열 인덱스만 골라 **한 단**만 그린다(두 단 모드).
-    /// [isLower] 가 true 면 단과 단 사이의 **가로 구분선을 굵게** 그어
-    /// "가로줄을 하나 더" 보이게 한다.
-    pw.Widget headRow({List<int>? pick, bool isLower = false}) {
-      final idx = pick ?? List<int>.generate(columns.length, (i) => i);
-      // 두 단 모드 — 아래 단 머리행 위에 **굵은 가로 구분선**을 하나 더 긋는다.
-      const sep = pw.BorderSide(color: _strong, width: 1.2);
+    pw.Widget headRow() {
+      final idx = List<int>.generate(columns.length, (i) => i);
       return pw.Table(
         border: pw.TableBorder(
           horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
-          top: isLower ? sep : pw.BorderSide.none,
           bottom: const pw.BorderSide(color: _border, width: 0.8),
         ),
-        columnWidths: pick == null ? widths : bandWidthsOf(idx),
+        columnWidths: widths,
         children: [
           pw.TableRow(
             decoration: const pw.BoxDecoration(color: _head),
@@ -673,17 +644,15 @@ class DocPdf {
 
     /// 본문 행 하나.
     ///
-    /// [pick] 이 있으면 그 열만 골라 **한 단**으로 그린다(두 단 모드).
-    pw.Widget bodyRow(int i, {List<int>? pick}) {
+    pw.Widget bodyRow(int i) {
       final row = rows[i];
-      final idx =
-          pick ?? List<int>.generate(columns.length, (j) => j);
+      final idx = List<int>.generate(columns.length, (j) => j);
       return pw.Table(
         border: const pw.TableBorder(
           horizontalInside: pw.BorderSide(color: _line, width: 0.6),
           bottom: pw.BorderSide(color: _border, width: 0.8),
         ),
-        columnWidths: pick == null ? widths : bandWidthsOf(idx),
+        columnWidths: widths,
         children: [
           pw.TableRow(
             children: [
@@ -770,26 +739,15 @@ class DocPdf {
 
     final headerH = measure(pageHeader(_FakeCtx()));
     final footerH = measure(pageFooter(_FakeCtx()));
-    // 두 단 모드: 단마다 머리행이 하나씩 있으므로 머리 높이는 **단 수 × 단일 머리**.
-    final singleHeadH = columns.isEmpty ? 0.0 : measure(headRow());
-    final headH = bandSplits.isEmpty
-        ? singleHeadH
-        : singleHeadH * bandSplits.length;
+    final headH = columns.isEmpty ? 0.0 : measure(headRow());
     final firstH = measure(
       pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: firstHead,
       ),
     );
-    // 행 높이 — 두 단이면 각 단의 높이를 **합산**한다(위 단 + 가로줄 + 아래 단).
     final rowHeights = <double>[
-      for (var i = 0; i < rows.length; i++)
-        bandSplits.isEmpty
-            ? measure(bodyRow(i))
-            : bandSplits.fold<double>(
-                0,
-                (s, b) => s + measure(bodyRow(i, pick: b)),
-              ),
+      for (var i = 0; i < rows.length; i++) measure(bodyRow(i)),
     ];
 
     /// 1페이지 본문 가용 높이 = 전체 − 레터헤드 − 푸터 − 1페이지 머리 − (반복)머리행
@@ -873,24 +831,8 @@ class DocPdf {
             // ★ 머리행(구분표) — 모든 페이지 상단에 반복된다.
             //  두 단 모드에서는 **단마다** 머리행을 하나씩 두고, 두 번째 단의
             //  머리행 위에 굵은 가로 구분선을 그어 "가로줄이 하나 더" 생긴다.
-            if (columns.isNotEmpty && idxs.isNotEmpty) ...[
-              if (bandSplits.isEmpty)
-                headRow()
-              else
-                for (var bi = 0; bi < bandSplits.length; bi++) ...[
-                  if (bi > 0) pw.SizedBox(height: 7),
-                  headRow(pick: bandSplits[bi], isLower: bi > 0),
-                ],
-            ],
-            // 이 페이지에 담기는 본문 행 — 단이 있으면 단별로 쌓는다.
-            if (bandSplits.isEmpty) ...[
-              for (final i in idxs) bodyRow(i),
-            ] else ...[
-              for (var bi = 0; bi < bandSplits.length; bi++) ...[
-                if (bi > 0) pw.SizedBox(height: 7),
-                for (final i in idxs) bodyRow(i, pick: bandSplits[bi]),
-              ],
-            ],
+            if (columns.isNotEmpty && idxs.isNotEmpty) headRow(),
+            for (final i in idxs) bodyRow(i),
             if (last) ?sumWidget(),
           ],
         ),
@@ -1698,7 +1640,7 @@ class DocPdf {
     double scale = 1.0,
     double rowSpaceMul = 1.0,
     Set<int> noWrapCols = const {},
-    List<List<int>>? bands,
+    int rowLines = 1,
     int? maxCellLines,
   }) {
     final docRows = rows.asMap().entries.map((e) {
@@ -1721,7 +1663,7 @@ class DocPdf {
       scale: scale,
       rowSpaceMul: rowSpaceMul,
       noWrapCols: noWrapCols,
-      bands: bands,
+      rowLines: rowLines,
       maxCellLines: maxCellLines,
     );
   }

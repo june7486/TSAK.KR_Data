@@ -116,24 +116,6 @@ class TsakTableDoc {
   /// 옵션이 정한 용지 방향(없으면 문서 기본값).
   bool get effectiveLandscape => options?.landscape ?? landscape;
 
-  /// 열을 **두 단으로 쌓을 때의 열 인덱스 목록** — 없으면 null(종전 그대로).
-  ///
-  /// ## 요구 (원문 2026-10-31)
-  /// > "항목이 많을 경우에는 가로줄을 하나 더 추가해서 두줄방지 되도록
-  /// >  할 수 있는 옵션도 추가해줘"
-  ///
-  /// [TableOutputOptions.rowBands] 가 2 이상일 때만 값을 준다. 단 나누기는
-  /// [splitColumnBands] 가 하고, 이 인덱스는 **출력 열 기준**([viewColumns])
-  /// 이므로 열 선택·순서 변경과도 자동으로 맞는다.
-  List<List<int>>? get effectiveBands {
-    final o = options;
-    if (o == null || o.effectiveRowBands < 2) return null;
-    final cols = viewColumns;
-    final split = splitColumnBands(cols, anchors: o.bandAnchors);
-    if (!split.isSplit) return null;
-    return <List<int>>[split.first, split.second];
-  }
-
   DocMeta get meta => DocMeta(
     title: title,
     subtitle: subtitle,
@@ -438,7 +420,7 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
     landscape: doc.effectiveLandscape,
     emblemDataUri: emblem,
     noWrapCols: doc.effectiveNoWrapCols,
-    bands: doc.effectiveBands,
+    rowLines: doc.options?.rowLines ?? 1,
     maxCellLines: doc.options?.cellLines,
   );
   await openPrintWindow(html, doc.title);
@@ -475,7 +457,7 @@ Future<Uint8List> _buildPdf(TsakTableDoc doc) {
     scale: doc.options?.scale ?? 1.0,
     rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
     noWrapCols: doc.effectiveNoWrapCols,
-    bands: doc.effectiveBands,
+    rowLines: doc.options?.rowLines ?? 1,
     maxCellLines: doc.options?.cellLines,
   );
 }

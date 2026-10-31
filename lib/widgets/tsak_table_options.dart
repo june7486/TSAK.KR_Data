@@ -49,8 +49,9 @@ Future<TableOutputOptions?> showTsakTableOptions(
       var landscape = initial?.landscape ?? true;
       // 두줄 방지 대상 열(헤더 이름). (요구: 두줄방지 항목 선택)
       final noWrap = <String>{...?initial?.noWrap};
-      // (요구 2026-10-31) 항목이 많을 때 **가로줄을 하나 더** — 표를 두 단으로.
-      var twoBands = (initial?.effectiveRowBands ?? 1) > 1;
+      // (요구 2026-10-31 3차 정정) "두단 세단 = 이름별로 칸을 더 늘리라는 의미.
+      //  상하 두 단을 넣으라는 것이 아님" → 표를 쪼개지 않고 **행 높이**를 키운다.
+      var rowLines = (initial?.rowLines ?? 1).clamp(1, 3);
       // 셀 줄 수 — 이름하나당 2줄 이상 허용.
       int? cellLines = initial?.cellLines;
 
@@ -153,17 +154,64 @@ Future<TableOutputOptions?> showTsakTableOptions(
                             ),
                           ],
                           const SizedBox(height: 18),
-                          // ── 두 단 (가로줄 추가) · 셀 줄 수 ──
-                          //   (요구) "항목이 많을 경우에는 가로줄을 하나 더 추가해서
-                          //    두줄방지 되도록 할 수 있는 옵션도 추가해줘"
-                          _sec('항목이 많을 때 (열이 10개 이상)'),
+                          // ── 행 높이 (이름 칸 늘리기) · 셀 줄 수 ──
+                          //   (요구 2026-10-31 3차 정정) "이름별로 칸을 더 늘리라"
+                          _sec('행 높이 (이름 칸 늘리기)'),
                           const SizedBox(height: 6),
-                          _toggleRow(
-                            icon: Icons.view_agenda_outlined,
-                            title: '두 단으로 나누기',
-                            note: '표를 위/아래로 쌓아 열당 폭을 2배로. 단 사이에 가로줄이 하나 더 생깁니다.',
-                            value: twoBands,
-                            onChanged: (v) => setSheet(() => twoBands = v),
+                          Row(
+                            children: [
+                              for (final v in const <int>[1, 2, 3]) ...[
+                                if (v != 1) const SizedBox(width: 8),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setSheet(() => rowLines = v),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 9,
+                                      ),
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: rowLines == v
+                                            ? AppColors.purple
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: rowLines == v
+                                              ? AppColors.purple
+                                              : const Color(0xFFD8D3CA),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            '$v줄',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w800,
+                                              color: rowLines == v
+                                                  ? Colors.white
+                                                  : AppColors.textDark,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            v == 1 ? '기본' : '칸 $v배',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: rowLines == v
+                                                  ? Colors.white.withValues(
+                                                      alpha: 0.85,
+                                                    )
+                                                  : AppColors.textGray,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           const SizedBox(height: 8),
                           _sec('셀 줄 수 (이름하나당)'),
@@ -407,9 +455,7 @@ Future<TableOutputOptions?> showTsakTableOptions(
                                 rowSpace: rowSpace,
                                 landscape: allowLandscape ? landscape : null,
                                 noWrap: noWrap,
-                                rowBands: twoBands ? 2 : 1,
-                                bandAnchors:
-                                    initial?.bandAnchors ?? const <String>{},
+                                rowLines: rowLines,
                                 cellLines: cellLines,
                               ),
                             );
@@ -650,67 +696,6 @@ Widget _colRow({
           ),
         ],
       ),
-    ),
-  );
-}
-
-/// 스위치 한 줄 — 제목 + 설명 + 스위치.
-Widget _toggleRow({
-  required IconData icon,
-  required String title,
-  required String note,
-  required bool value,
-  required ValueChanged<bool> onChanged,
-}) {
-  return Container(
-    padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(
-        color: value ? AppColors.purple : const Color(0xFFD8D3CA),
-      ),
-    ),
-    child: Row(
-      children: [
-        Icon(icon, size: 17, color: value ? AppColors.purple : AppColors.textGray),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: value ? AppColors.purpleDark : AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                note,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: AppColors.textGray,
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          thumbColor: const WidgetStatePropertyAll(Colors.white),
-          trackColor: WidgetStatePropertyAll(
-            value ? AppColors.purple : const Color(0xFFCFC9C0),
-          ),
-          trackOutlineColor: WidgetStatePropertyAll(
-            value ? AppColors.purple : const Color(0xFFCFC9C0),
-          ),
-        ),
-      ],
     ),
   );
 }

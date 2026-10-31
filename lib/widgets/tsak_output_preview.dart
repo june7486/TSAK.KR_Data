@@ -10,7 +10,6 @@ import '../services/file_save.dart';
 import '../services/output_formats.dart';
 import '../services/pdf_to_jpg.dart';
 import '../services/table_export.dart';
-import '../services/table_options.dart';
 import '../theme/app_theme.dart';
 
 /// 추가입력 항목을 **미리보기에서 직접 켜고 끌 수 있게** 하기 위한 입력 정보.
@@ -39,9 +38,10 @@ class TsakExtraPick {
 ///  창을 띄워서 결과물을 실시간으로 확인 후 출력내보낼 수 있도록 해줘"
 ///
 /// 표 문서([TsakTableDoc])를 받아 MUJI PDF를 만들고, **첫 페이지를 이미지로
-/// 렌더**해 보여준다. `줄간격 · 글자 크기 · 2줄 방지 · 가로 모드 · 두 단` 을
-/// 바꾸면 **즉시 다시 그린다**(라이브). 확정하면 **PDF · 이미지(JPG) · 인쇄**로
-/// 내보낸다. 아이폰 등은 저장 옵션 창([askSaveOption])을 거쳐 사진앱에 저장된다.
+/// 렌더**해 보여준다. `줄간격 · 글자 크기 · 2줄 방지 · 가로 모드 · 행 높이 ·
+/// 셀 줄 수` 를 바꾸면 **즉시 다시 그린다**(라이브). 확정하면
+/// **PDF · 이미지(JPG) · 인쇄**로 내보낸다. 아이폰 등은 저장 옵션 창
+/// ([askSaveOption])을 거쳐 사진앱에 저장된다.
 ///
 /// [extra] 를 주면 **추가입력 항목 선택 칩**이 나타나고, 고른 항목이 열로
 /// 덧붙은 결과를 실시간으로 보여준다(원문은 그대로 두고 매번 새로 조립).
@@ -80,8 +80,12 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// 글자 크기 배율(1.0 = 기본).
   double _fontScale = 1.0;
 
-  /// 두 단(가로줄 추가) — 열을 위/아래로 쌓아 열당 폭을 두 배로.
-  bool _twoBands = false;
+  /// **행 높이(줄 칸)** — 이름 하나가 들어가는 행을 몇 줄분 높이로 할지.
+  ///
+  /// (요구 2026-10-31 정정) "두단 세단으로 표시하라는 것은 **이름별로 칸을 더
+  ///  늘리라는 의미**임. 상하 두 단을 넣으라는 것이 아님"
+  /// → 표를 쪼개지 않고 행 높이만 늘린다.
+  int _rowLines = 1;
 
   /// 셀 한 칸이 가질 수 있는 최대 줄 수 — null 이면 제한 없음.
   /// (요구 2026-10-31 2차) “항목이 너무 길어지면 이름하나당 2줄 이상”
@@ -97,7 +101,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// 옵션 서명 — 값이 바뀔 때만 미리보기를 다시 만든다.
   String get _key =>
       '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
-      '${_fontScale.toStringAsFixed(2)}|$_twoBands|${_cellLines ?? 0}|'
+      '${_fontScale.toStringAsFixed(2)}|$_rowLines|${_cellLines ?? 0}|'
       '${(_extraKeys.toList()..sort()).join(',')}';
 
   String get _base => widget.doc.baseName(); // 예: TSAK_출력_게시판 출력
@@ -120,16 +124,6 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   Future<Uint8List> _buildPdf() {
     final d = _doc;
     final n = d.viewColumns.length;
-    // 두 단 — 미리보기에서 켜면 옵션과 무관하게 강제로 2단.
-    final bands = _twoBands
-        ? () {
-            final s = splitColumnBands(
-              d.viewColumns,
-              anchors: d.options?.bandAnchors ?? const <String>{},
-            );
-            return s.isSplit ? <List<int>>[s.first, s.second] : null;
-          }()
-        : d.effectiveBands;
     return DocPdf.buildSimple(
       meta: d.meta,
       columns: d.viewColumns,
@@ -144,7 +138,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
       noWrapCols: _noWrap
           ? {for (var i = 0; i < n; i++) i}
           : d.effectiveNoWrapCols,
-      bands: bands,
+      rowLines: _rowLines,
       maxCellLines: _cellLines,
     );
   }
@@ -319,7 +313,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                 ),
               ),
               const SizedBox(height: 8),
-              // ── 옵션: 2줄 방지 · 두 단 · 가로 모드 ──
+              // ── 옵션: 2줄 방지 · 가로 모드 ──
               Row(
                 children: [
                   Expanded(
@@ -332,14 +326,6 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: _switchCell(
-                      '두 단',
-                      _twoBands,
-                      (v) => setState(() => _twoBands = v),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _switchCell(
                       '가로 모드',
                       _landscape,
                       (v) => setState(() => _landscape = v),
@@ -347,8 +333,22 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                   ),
                 ],
               ),
+              // ── 행 높이 — 이름별로 칸을 더 늘린다(요구 정정 반영) ──
+              _linesCell(
+                label: '행 높이',
+                value: _rowLines,
+                options: const <int>[1, 2, 3],
+                names: const <int, String>{1: '1줄', 2: '2줄', 3: '3줄'},
+                onPick: (v) => setState(() => _rowLines = v),
+              ),
               // ── 셀 줄 수 — 항목이 길 때 이름하나당 2줄 이상 허용 ──
-              _linesCell(),
+              _linesCell(
+                label: '셀 줄 수',
+                value: _cellLines,
+                options: const <int?>[null, 1, 2, 3],
+                names: const <int?, String>{null: '자동', 1: '1줄', 2: '2줄', 3: '3줄'},
+                onPick: (v) => setState(() => _cellLines = v),
+              ),
               _sliderCell(
                 '줄간격',
                 _lineSpace,
@@ -540,22 +540,30 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
     ),
   );
 
-  /// 셀 줄 수 선택 — 자동/1줄/2줄/3줄.
+  /// 줄 수 선택 칸 (행 높이 · 셀 줄 수 공용).
   ///
-  /// (요구 2026-10-31 2차) "항목이 너무 길어지면 이름하나당 2줄 이상을 넣도록 함"
-  ///  · 자동 = 종전대로 폰트·폭을 맞춰 1줄 유지(좁으면 글씨가 작아짐)
-  ///  · 2줄/3줄 = 그 줄 수만큼 접히도록 열 폭을 넉넉히 → **글씨가 안 깎인다**
-  Widget _linesCell() {
-    const opts = <int?>[null, 1, 2, 3];
+  /// (요구 2026-10-31 3차 정정)
+  ///  "두단 세단으로 표시하라는 것은 이름별로 간을 더 늘리라는 의미임
+  ///   상하 두 단을 넣으라는 것이 아님"
+  ///  · 행 높이 = **이름 한 줄의 세로 칸을 N줄분으로** → 행 사이에 여백이 생겨
+  ///    답답하지 않게. 표 구조는 그대로.
+  ///  · 셀 줄 수 = 셀 하나가 접힐 수 있는 최대 줄 수.
+  Widget _linesCell<T>({
+    required String label,
+    required T value,
+    required List<T> options,
+    required Map<T, String> names,
+    required ValueChanged<T> onPick,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Row(
         children: [
-          const SizedBox(
+          SizedBox(
             width: 58,
             child: Text(
-              '셀 줄 수',
-              style: TextStyle(
+              label,
+              style: const TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textGray,
@@ -565,31 +573,29 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
           Expanded(
             child: Row(
               children: [
-                for (final v in opts) ...[
-                  if (v != opts.first) const SizedBox(width: 4),
+                for (final v in options) ...[
+                  if (v != options.first) const SizedBox(width: 4),
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => setState(() => _cellLines = v),
+                      onTap: () => onPick(v),
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 5),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: _cellLines == v
-                              ? AppColors.purple
-                              : Colors.white,
+                          color: value == v ? AppColors.purple : Colors.white,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: _cellLines == v
+                            color: value == v
                                 ? AppColors.purple
                                 : const Color(0xFFD8D3CA),
                           ),
                         ),
                         child: Text(
-                          v == null ? '자동' : '$v줄',
+                          names[v] ?? '$v',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
-                            color: _cellLines == v
+                            color: value == v
                                 ? Colors.white
                                 : AppColors.textDark,
                           ),
