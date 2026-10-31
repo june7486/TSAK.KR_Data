@@ -126,6 +126,38 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   /// 선택된 참가자 인덱스 집합.
   final Set<int> _selIdx = <int>{};
+
+  /// 추가입력사항 블록을 **접어 둔** 참가자 키 집합.
+  ///
+  /// (요구 2026-10-31 5차) "접어두기 버튼 추가"
+  ///  추가입력 항목이 7~8개면 카드 한 장이 화면을 다 먹어, 5명만 넘어도
+  ///  명단이 안 보인다. 카드마다 **한 줄 요약 + 펼치기**로 접을 수 있게 한다.
+  ///  키는 인덱스가 아니라 **참가자 식별자**를 쓴다 — 목록을 새로고침하거나
+  ///  누군가를 삭제해도 접힘 상태가 엉뚱한 사람에게 붙지 않는다.
+  final Set<String> _extraCollapsed = <String>{};
+
+  /// 전체 접기/펼치기 상태 — null 이면 "사용자가 개별 조작한 상태".
+  bool? _extraAllCollapsed;
+
+  /// 참가자 한 명의 고유 키(접힘 상태 저장용).
+  ///
+  /// ⚠️ 번호 공간이 겹친다 — 은하 75 와 범 75 는 **다른 사람**이다.
+  ///  그래서 '은하'→'G' 로 바꿔 접두를 살린다([_normCode] 와 같은 규칙).
+  ///  이걸 빠뜨리면 은하75 와 범75 가 같은 키가 되어, 한 사람을 접으면
+  ///  다른 사람까지 같이 접힌다.
+  String _attendeeKey(Map<String, dynamic> a) {
+    final raw = '${a['number'] ?? a['ident'] ?? a['phone'] ?? ''}';
+    // 은하 표기 → G 접두 보존.
+    var s = raw.trim().toUpperCase().replaceAll('은하', 'G');
+    s = s.replaceAll('범', '').replaceAll(RegExp(r'[^0-9G]'), '');
+    if (s.isNotEmpty) {
+      final isG = s.startsWith('G');
+      final d = s.replaceAll(RegExp(r'[^0-9]'), '');
+      if (d.isNotEmpty) return isG ? 'G$d' : d;
+    }
+    final nm = '${a['name'] ?? ''}'.trim();
+    return nm.isEmpty ? 'row-${_attendees.indexOf(a)}' : 'nm:$nm';
+  }
   Map<String, dynamic> _access = {};
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
@@ -1795,6 +1827,78 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             ),
           ),
         const SizedBox(height: 6),
+        // (요구 2026-10-31 5차) "접어두기 버튼 추가" — 전체 접기/펼치기.
+        //  카드마다 하나씩 누르는 대신 **한 번에** 정리할 수 있게 한다.
+        if (_fullView && _attendees.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 2),
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: () => setState(() {
+                    final anyOpen = _attendees.any((a) {
+                      final filled = ExtraFields.filled(a);
+                      if (filled.isEmpty) return false;
+                      return !_extraCollapsed.contains(_attendeeKey(a));
+                    });
+                    // 하나라도 펼쳐져 있으면 → 전부 접기, 아니면 → 전부 펼치기.
+                    if (anyOpen) {
+                      _extraCollapsed.addAll(
+                        _attendees.map(_attendeeKey),
+                      );
+                      _extraAllCollapsed = true;
+                    } else {
+                      _extraCollapsed.clear();
+                      _extraAllCollapsed = false;
+                    }
+                  }),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.purple.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _extraAllCollapsed == true
+                              ? Icons.unfold_more
+                              : Icons.unfold_less,
+                          size: 14,
+                          color: AppColors.purple,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _extraAllCollapsed == true ? '추가입력 펼치기' : '추가입력 접기',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '접힘 ${_extraCollapsed.length}/${_attendees.length}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
+            ),
+          ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
           child: Row(
@@ -2137,10 +2241,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   builder: (_) {
                     final filled = ExtraFields.filled(a);
                     if (filled.isEmpty) return const SizedBox.shrink();
+                    // (요구 2026-10-31 5차) "접어두기 버튼 추가"
+                    //  카드마다 접힘 상태를 따로 기억한다(_extraCollapsed).
+                    //  전달사항(request)이 있는 사람은 **접어도 한 줄은 보이게**
+                    //  한다 — 놓치면 현장 사고로 이어지는 정보라서.
+                    final k = _attendeeKey(a);
+                    final collapsed = _extraCollapsed.contains(k);
+                    final req = filled
+                        .where((f) => f.group == ExtraGroup.request)
+                        .toList();
                     return Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Container(
-                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                        padding: const EdgeInsets.fromLTRB(8, 5, 6, 5),
                         decoration: BoxDecoration(
                           color: AppColors.purple.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(6),
@@ -2151,51 +2264,154 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            for (final f in filled)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 2),
+                            // ── 머리줄: 항목수 + 접기/펼치기 단추 ──
+                            InkWell(
+                              onTap: () => setState(() {
+                                if (collapsed) {
+                                  _extraCollapsed.remove(k);
+                                } else {
+                                  _extraCollapsed.add(k);
+                                }
+                              }),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 1,
+                                ),
                                 child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Icon(
-                                      f.icon,
-                                      size: 11,
-                                      color: ExtraFields.colorOf(f.group),
+                                      Icons.tune,
+                                      size: 12,
+                                      color: AppColors.purple.withValues(
+                                        alpha: 0.8,
+                                      ),
                                     ),
                                     const SizedBox(width: 4),
-                                    SizedBox(
-                                      width: 78,
-                                      child: Text(
-                                        f.label,
-                                        maxLines: 1,
-                                        softWrap: false,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: AppColors.textGray,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                    Text(
+                                      '추가입력 ${filled.length}항목',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.purple,
                                       ),
                                     ),
-                                    Expanded(
-                                      child: Text(
-                                        f.valueOf(a),
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          height: 1.3,
-                                          fontWeight:
-                                              f.group == ExtraGroup.request
-                                              ? FontWeight.w800
-                                              : FontWeight.w500,
-                                          color: f.group == ExtraGroup.request
-                                              ? ExtraFields.colorOf(f.group)
-                                              : AppColors.textDark,
-                                        ),
+                                    const Spacer(),
+                                    Text(
+                                      collapsed ? '펼치기' : '접어두기',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textGray,
                                       ),
+                                    ),
+                                    const SizedBox(width: 1),
+                                    Icon(
+                                      collapsed
+                                          ? Icons.keyboard_arrow_down
+                                          : Icons.keyboard_arrow_up,
+                                      size: 16,
+                                      color: AppColors.textGray,
                                     ),
                                   ],
                                 ),
                               ),
+                            ),
+                            // ── 접힌 상태: 한 줄 요약(+전달사항은 강조 유지) ──
+                            if (collapsed) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 2,
+                                  left: 16,
+                                  right: 2,
+                                ),
+                                child: Text(
+                                  filled
+                                      .map((f) => f.valueOf(a))
+                                      .where((v) => v.trim().isNotEmpty)
+                                      .join(' · '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    height: 1.3,
+                                    color: AppColors.textGray,
+                                  ),
+                                ),
+                              ),
+                              if (req.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 1,
+                                    left: 16,
+                                    right: 2,
+                                  ),
+                                  child: Text(
+                                    req
+                                        .map(
+                                          (f) => '${f.label}: ${f.valueOf(a)}',
+                                        )
+                                        .join(' · '),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: ExtraFields.colorOf(
+                                        ExtraGroup.request,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ] else ...[
+                              for (final f in filled)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        f.icon,
+                                        size: 11,
+                                        color: ExtraFields.colorOf(f.group),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      SizedBox(
+                                        width: 78,
+                                        child: Text(
+                                          f.label,
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: AppColors.textGray,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          f.valueOf(a),
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            height: 1.3,
+                                            fontWeight:
+                                                f.group == ExtraGroup.request
+                                                ? FontWeight.w800
+                                                : FontWeight.w500,
+                                            color:
+                                                f.group == ExtraGroup.request
+                                                ? ExtraFields.colorOf(f.group)
+                                                : AppColors.textDark,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ],
                         ),
                       ),
