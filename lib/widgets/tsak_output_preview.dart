@@ -92,7 +92,28 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   int? _cellLines;
 
   /// 추가입력 항목 선택(켜진 항목 키).
-  late final Set<String> _extraKeys = <String>{...?widget.extra?.initial};
+  ///
+  /// (요구 2026-10-31 4차) "추가항목 모두 노출 … 미리보기시 모두 노출"
+  /// → 처음 열 때 **값이 있는 항목은 전부 켜 둔다**. 사용자는 필요 없는 것만
+  ///   끄면 된다(켜는 것보다 끄는 게 빠르고, '안 보인다'는 오해도 사라진다).
+  late final Set<String> _extraKeys = _initialExtraKeys();
+
+  Set<String> _initialExtraKeys() {
+    final ex = widget.extra;
+    if (ex == null) return <String>{};
+    // 값이 하나라도 채워진 항목 — 이게 기본 노출 대상이다.
+    final filled = <String>{
+      for (final f in ExtraFields.all)
+        if (ex.source.any((a) => f.hasValue(a))) f.key,
+    };
+    // 화면이 넘겨준 초기 선택은 **필터가 아니라 보탬**이다.
+    // (종전: initial 이 그대로 대입 → 화면이 4개만 넘기면 나머지가 영영 안 보임)
+    final merged = <String>{...filled, ...ex.initial};
+    // 값이 아예 없는 행사라도 빈 표가 되지 않게 전 항목을 켠다.
+    return merged.isEmpty
+        ? <String>{for (final f in ExtraFields.all) f.key}
+        : merged;
+  }
 
   Future<Uint8List>? _previewFuture;
   String _previewKey = '';
@@ -124,6 +145,20 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   Future<Uint8List> _buildPdf() {
     final d = _doc;
     final n = d.viewColumns.length;
+    // ⚠️ 2줄 방지(_noWrap)와 셀 줄 수(_cellLines)는 **정면으로 충돌**한다.
+    //   종전에는 _noWrap 이 모든 열을 1줄로 고정해, 12열짜리 명부가 화면 밖으로
+    //   잘려 나갔다(사용자 스크린샷의 실제 증상).
+    //   → 사용자가 **셀 줄 수를 직접 고른 경우에는 그 선택을 우선**한다.
+    //     (요구: "2줄방지되고 추가입력 항목이 다 보여지도록")
+    final Set<int> nowrap;
+    if (_cellLines != null && _cellLines! > 1) {
+      // 셀 줄 수가 명시되면 문서 자체의 두줄방지 항목만 존중한다.
+      nowrap = d.effectiveNoWrapCols;
+    } else if (_noWrap) {
+      nowrap = {for (var i = 0; i < n; i++) i};
+    } else {
+      nowrap = d.effectiveNoWrapCols;
+    }
     return DocPdf.buildSimple(
       meta: d.meta,
       columns: d.viewColumns,
@@ -133,11 +168,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
       landscape: _landscape,
       scale: _fontScale,
       rowSpaceMul: _lineSpace,
-      // 문서가 지정한 항목별 두줄방지(effectiveNoWrapCols)를 존중하고,
-      //  전역 토글(_noWrap)이 켜지면 모든 열을 한 줄로 출력한다.
-      noWrapCols: _noWrap
-          ? {for (var i = 0; i < n; i++) i}
-          : d.effectiveNoWrapCols,
+      noWrapCols: nowrap,
       rowLines: _rowLines,
       maxCellLines: _cellLines,
     );
@@ -215,18 +246,21 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
     }
 
     final h = MediaQuery.of(context).size.height;
-    final previewHeight = h * (widget.extra == null ? 0.40 : 0.32);
+    // 미리보기 높이 — 화면이 작으면 줄이고, 크면 넉넉히. 나머지 옵션 영역은
+    //  스크롤되므로(=아래 Column 이 Expanded+ScrollView) 잘리지 않는다.
+    final previewHeight = (h * 0.34).clamp(180.0, 420.0);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(12),
       backgroundColor: const Color(0xFFF3F1EC),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 560, maxHeight: h * 0.92),
+        constraints: BoxConstraints(maxWidth: 560, maxHeight: h * 0.94),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            // maxHeight 까지 채운다 → 아래 Expanded(스크롤)가 동작한다.
+            mainAxisSize: MainAxisSize.max,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -301,75 +335,120 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                         ),
                       );
                     }
-                    return InteractiveViewer(
-                      maxScale: 5,
-                      child: Image.memory(
-                        snap.data!,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
+                    // (버그 수정) 표가 열을 많이 먹어 이미지 원본 폭이 커지면
+                    //  BoxFit.contain 만으로는 **카드 밖으로 잘려** 보였다.
+                    //  FittedBox 로 한 번 더 감싸 카드 안에 **반드시** 들어오게 한다.
+                    return LayoutBuilder(
+                      builder: (_, box) => SizedBox(
+                        width: box.maxWidth,
+                        height: box.maxHeight,
+                        child: InteractiveViewer(
+                          maxScale: 6,
+                          boundaryMargin: const EdgeInsets.all(24),
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: Image.memory(
+                              snap.data!,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                        ),
                       ),
                     );
                   },
                 ),
               ),
               const SizedBox(height: 8),
-              // ── 옵션: 2줄 방지 · 가로 모드 ──
-              Row(
-                children: [
-                  Expanded(
-                    child: _switchCell(
-                      '2줄 방지',
-                      _noWrap,
-                      (v) => setState(() => _noWrap = v),
-                    ),
+              // ── 옵션 영역 — 화면이 작아도 **잘리지 않게** 스크롤에 담는다.
+              //  (버그: Column 이 maxHeight 를 넘겨 칩·버튼이 겹쳐 보였다)
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── 옵션: 2줄 방지 · 가로 모드 ──
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _switchCell(
+                              '2줄 방지',
+                              _noWrap,
+                              (v) => setState(() => _noWrap = v),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _switchCell(
+                              '가로 모드',
+                              _landscape,
+                              (v) => setState(() => _landscape = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // ── 이름 줄 — 이름 한 칸의 세로 높이를 2·3줄분으로 ──
+                      //   (요구) "좌측 이름 하나당 세로줄 2줄 3줄"
+                      _linesCell(
+                        label: '이름줄',
+                        value: _rowLines,
+                        options: const <int>[1, 2, 3],
+                        names: const <int, String>{
+                          1: '1줄',
+                          2: '2줄',
+                          3: '3줄',
+                        },
+                        onPick: (v) => setState(() => _rowLines = v),
+                      ),
+                      // ── 셀 줄 수 — 항목이 길 때 이름하나당 2줄 이상 허용 ──
+                      _linesCell(
+                        label: '셀 줄 수',
+                        value: _cellLines,
+                        options: const <int?>[null, 1, 2, 3],
+                        names: const <int?, String>{
+                          null: '자동',
+                          1: '1줄',
+                          2: '2줄',
+                          3: '3줄',
+                        },
+                        onPick: (v) => setState(() => _cellLines = v),
+                      ),
+                      // 2줄 방지와 셀 줄 수가 **서로 싸우지 않게** 알려 준다.
+                      if (_noWrap && _cellLines != null)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 58, top: 3),
+                          child: Text(
+                            '셀 줄 수가 우선입니다 (2줄 방지는 잠시 쉼)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.hermesOrange,
+                            ),
+                          ),
+                        ),
+                      _sliderCell(
+                        '줄간격',
+                        _lineSpace,
+                        0.7,
+                        1.6,
+                        _lineSpace.toStringAsFixed(1),
+                        (v) => setState(() => _lineSpace = v),
+                      ),
+                      _sliderCell(
+                        '글자 크기',
+                        _fontScale,
+                        0.8,
+                        1.5,
+                        '${(_fontScale * 10).round()} pt',
+                        (v) => setState(() => _fontScale = v),
+                      ),
+                      // ── 추가입력 항목 선택 (있을 때만) ──
+                      if (widget.extra != null) ...[
+                        const SizedBox(height: 4),
+                        _extraPickBar(),
+                      ],
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _switchCell(
-                      '가로 모드',
-                      _landscape,
-                      (v) => setState(() => _landscape = v),
-                    ),
-                  ),
-                ],
+                ),
               ),
-              // ── 행 높이 — 이름별로 칸을 더 늘린다(요구 정정 반영) ──
-              _linesCell(
-                label: '행 높이',
-                value: _rowLines,
-                options: const <int>[1, 2, 3],
-                names: const <int, String>{1: '1줄', 2: '2줄', 3: '3줄'},
-                onPick: (v) => setState(() => _rowLines = v),
-              ),
-              // ── 셀 줄 수 — 항목이 길 때 이름하나당 2줄 이상 허용 ──
-              _linesCell(
-                label: '셀 줄 수',
-                value: _cellLines,
-                options: const <int?>[null, 1, 2, 3],
-                names: const <int?, String>{null: '자동', 1: '1줄', 2: '2줄', 3: '3줄'},
-                onPick: (v) => setState(() => _cellLines = v),
-              ),
-              _sliderCell(
-                '줄간격',
-                _lineSpace,
-                0.7,
-                1.6,
-                _lineSpace.toStringAsFixed(1),
-                (v) => setState(() => _lineSpace = v),
-              ),
-              _sliderCell(
-                '글자 크기',
-                _fontScale,
-                0.8,
-                1.5,
-                '${(_fontScale * 10).round()} pt',
-                (v) => setState(() => _fontScale = v),
-              ),
-              // ── 추가입력 항목 선택 (있을 때만) ──
-              if (widget.extra != null) ...[
-                const SizedBox(height: 4),
-                _extraPickBar(),
-              ],
               const SizedBox(height: 6),
               // ── 내보내기: PDF · 이미지 · 인쇄 ──
               Row(
@@ -438,7 +517,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
               ),
               const SizedBox(width: 6),
               Text(
-                '${_extraKeys.length}개 선택',
+                '${_extraKeys.length} / ${ExtraFields.all.length} 선택',
                 style: const TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
@@ -446,10 +525,10 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                 ),
               ),
               const Spacer(),
+              // 값이 하나라도 있는 **참석자 수** — 첫 사람만 보면 0으로 보여
+              //  "값이 없다"고 오해하게 된다(실제 버그).
               Text(
-                '값 있는 항목 ${ExtraFields.filledCount(
-                  src.isEmpty ? const <String, dynamic>{} : src.first,
-                )}',
+                '입력자 ${src.where((a) => ExtraFields.filledCount(a) > 0).length}명',
                 style: const TextStyle(
                   fontSize: 10,
                   color: AppColors.textGray,
@@ -458,24 +537,22 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
             ],
           ),
           const SizedBox(height: 4),
-          SizedBox(
-            height: 30,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final f in ExtraFields.all) ...[
-                    _extraChip(f),
-                    const SizedBox(width: 5),
-                  ],
-                  _miniChip('전체', () {
-                    setState(() => _extraKeys.addAll(ExtraFields.all.map((e) => e.key)));
-                  }),
-                  const SizedBox(width: 5),
-                  _miniChip('해제', () => setState(_extraKeys.clear)),
-                ],
-              ),
-            ),
+          // (버그 수정) 종전에는 **가로 스크롤**이라 8개 중 4개만 보이고
+          //  나머지는 스크롤해야 나왔다 → 요구 "추가항목 모두 노출".
+          //  Wrap 으로 바꿔 **한눈에 전부** 보이게 한다.
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final f in ExtraFields.all) _extraChip(f),
+              _miniChip('전체', () {
+                setState(() {
+                  _extraKeys.addAll(ExtraFields.all.map((e) => e.key));
+                });
+              }),
+              _miniChip('해제', () => setState(_extraKeys.clear)),
+            ],
           ),
         ],
       ),

@@ -49,6 +49,21 @@ TsakTableDoc extraColumns(
       for (final f in picked) f.valueOf(a),
     ]);
   }
+  // ⚠️ 옵션의 cols(선택·순서)가 그대로 남아 있으면 [viewColumns] 가 **원래
+  //  열 인덱스만** 골라내므로 방금 붙인 추가항목 열이 통째로 사라진다.
+  //  (증상: "추가항목 4개 선택" 인데 미리보기에 열이 안 보인다)
+  //  기존 선택 순서를 유지한 채 새 열 인덱스를 **뒤에 덧붙여** 넘긴다.
+  final o = doc.options;
+  final List<int>? newCols;
+  if (o == null || o.cols == null) {
+    newCols = null; // 옵션 없음 → 전체 열 그대로
+  } else {
+    final base = o.cols!.where((i) => i >= 0 && i < doc.columns.length);
+    newCols = <int>[
+      ...base,
+      for (var k = doc.columns.length; k < cols.length; k++) k,
+    ];
+  }
   return TsakTableDoc(
     title: doc.title,
     subtitle: doc.subtitle,
@@ -60,7 +75,7 @@ TsakTableDoc extraColumns(
     summary: doc.summary,
     footerLeft: doc.footerLeft,
     landscape: doc.landscape,
-    options: doc.options,
+    options: o?.copyWith(cols: newCols),
     reportBlocks: doc.reportBlocks,
     template: doc.template,
   );
