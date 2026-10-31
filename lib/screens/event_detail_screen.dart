@@ -14,6 +14,7 @@ import '../services/event_finance_picks.dart';
 import '../services/donation_doc.dart';
 import '../services/attendee_roles.dart';
 import '../services/extra_fields.dart';
+import '../services/extra_output.dart';
 import '../services/event_settlement.dart';
 import '../services/file_pick.dart';
 import '../services/file_save.dart';
@@ -1754,6 +1755,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   Icons.summarize,
                   '추가입력 취합',
                   _openExtraSummary,
+                ),
+                const SizedBox(width: 6),
+                // (요구 2026-10-31) 추가항목별 인원 확인 — **출력 옵션**.
+                _rosterButton(
+                  Icons.bar_chart,
+                  '항목별 인원',
+                  _outputExtraHeadcount,
                 ),
                 const SizedBox(width: 6),
                 _rosterButton(Icons.sms, '문자', _sendSms),
@@ -5692,6 +5700,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     TsakTableDoc Function() build, {
     required String title,
     required String subtitle,
+    /// 추가입력 항목 선택 정보 — 주면 미리보기에서 항목을 켜고 끌 수 있다.
+    TsakExtraPick? extra,
   }) async {
     TableOutputOptions? opts;
     // (버그 수정) 결산이 "PDF 출력해도 계속 계산서처럼 나온다"의 **진짜 원인**.
@@ -5729,7 +5739,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       onPick: (f) => _doExport(doc(), f),
       onOpen: (f) => _doExport(doc(), f, open: true),
       onPrint: () => _doPrint(doc()),
-      onPreview: () => showTsakOutputPreview(context, doc: doc()),
+      // (요구 2026-10-31) "출력 미리보기시에도 추가항목 선택할 수 있도록"
+      //  extra 를 넘기면 미리보기 창에 항목 칩이 나타나고,
+      //  칩을 누르면 그 항목 열이 **즉시** 붙어 다시 그려진다.
+      onPreview: () => showTsakOutputPreview(
+        context,
+        doc: doc(),
+        extra: extra,
+      ),
       onOptions: () async {
         final base = build();
         final out = await showTsakTableOptions(
@@ -6083,6 +6100,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       _attendeeDoc,
       title: '${widget.title} · 참가자 명단',
       subtitle: '${_attendees.length}명 · 옵션·미리보기·인쇄',
+      extra: TsakExtraPick(source: _attendees),
+    );
+  }
+
+  /// **추가항목별 인원 확인** 출력 — 별도 출력 옵션.
+  ///
+  /// (요구 2026-10-31) "그리고 추가항목별로 인원 확인 할 수 있는 출력 옵션도 추가해줘"
+  ///  · 이동·숙박·도착 → 선택지별 인원수
+  ///  · 출발장소·소요시간·동행자·주소 → 값별 인원 + 명단
+  ///  · 운영진 전달사항 → 작성 인원 + 내용
+  void _outputExtraHeadcount() {
+    if (_attendees.isEmpty) {
+      _snack('참가자가 없습니다');
+      return;
+    }
+    _runOutputDoc(
+      () => extraHeadcountDoc(
+        title: widget.title,
+        year: widget.year,
+        attendees: _attendees,
+      ),
+      title: '${widget.title} · 추가입력 인원 현황',
+      subtitle: '${_attendees.length}명 · 항목별 인원·명단',
     );
   }
 

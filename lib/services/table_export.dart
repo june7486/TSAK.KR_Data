@@ -116,6 +116,24 @@ class TsakTableDoc {
   /// 옵션이 정한 용지 방향(없으면 문서 기본값).
   bool get effectiveLandscape => options?.landscape ?? landscape;
 
+  /// 열을 **두 단으로 쌓을 때의 열 인덱스 목록** — 없으면 null(종전 그대로).
+  ///
+  /// ## 요구 (원문 2026-10-31)
+  /// > "항목이 많을 경우에는 가로줄을 하나 더 추가해서 두줄방지 되도록
+  /// >  할 수 있는 옵션도 추가해줘"
+  ///
+  /// [TableOutputOptions.rowBands] 가 2 이상일 때만 값을 준다. 단 나누기는
+  /// [splitColumnBands] 가 하고, 이 인덱스는 **출력 열 기준**([viewColumns])
+  /// 이므로 열 선택·순서 변경과도 자동으로 맞는다.
+  List<List<int>>? get effectiveBands {
+    final o = options;
+    if (o == null || o.effectiveRowBands < 2) return null;
+    final cols = viewColumns;
+    final split = splitColumnBands(cols, anchors: o.bandAnchors);
+    if (!split.isSplit) return null;
+    return <List<int>>[split.first, split.second];
+  }
+
   DocMeta get meta => DocMeta(
     title: title,
     subtitle: subtitle,
@@ -393,10 +411,13 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
     return;
   }
   final emblem = await _emblemDataUri();
+  // 옵션(열 선택·순서)이 반영된 **실제 출력 열/행**을 써야 두 단 인덱스
+  // ([effectiveBands])와 어긋나지 않는다. 종전에는 doc.columns(원본)를 써서
+  // 열을 숨긴 문서에서 인쇄물에 숨긴 열이 되살아났다.
   final html = buildMujiDoc(
     meta: doc.meta,
-    columns: doc.columns,
-    rows: doc.rows
+    columns: doc.viewColumns,
+    rows: doc.viewRows
         .map(
           (r) => r
               .asMap()
@@ -414,9 +435,10 @@ Future<void> printTsakTable(TsakTableDoc doc) async {
         .toList(),
     summary: doc.summary.join(' · '),
     footerLeft: doc.footerLeft,
-    landscape: doc.landscape,
+    landscape: doc.effectiveLandscape,
     emblemDataUri: emblem,
     noWrapCols: doc.effectiveNoWrapCols,
+    bands: doc.effectiveBands,
   );
   await openPrintWindow(html, doc.title);
 }
@@ -452,6 +474,7 @@ Future<Uint8List> _buildPdf(TsakTableDoc doc) {
     scale: doc.options?.scale ?? 1.0,
     rowSpaceMul: doc.options?.rowSpaceMul ?? 1.0,
     noWrapCols: doc.effectiveNoWrapCols,
+    bands: doc.effectiveBands,
   );
 }
 

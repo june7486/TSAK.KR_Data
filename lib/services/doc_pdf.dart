@@ -351,6 +351,16 @@ class DocPdf {
   /// [scale] 글씨 크기 배율(작게 0.86 · 보통 1.0 · 크게 1.18).
   /// [rowSpaceMul] 행 간격(밀도) 배율(좁게 0.72 · 보통 1.0 · 넓게 1.35).
   /// [noWrapCols] 두줄 방지 열 인덱스 — 해당 열은 줄바꿈하지 않는다(글씨 자동 축소).
+  /// [bands] 열을 **위/아래 두 단으로 쌓을 때** 각 단의 열 인덱스 목록.
+  ///
+  /// ## 요구 (원문 2026-10-31)
+  /// > "항목이 많을 경우에는 가로줄을 하나 더 추가해서 두줄방지 되도록
+  /// >  할 수 있는 옵션도 추가해줘"
+  ///
+  /// 열이 10개를 넘으면 A4 폭에서 열당 30pt 남짓만 남아, 접지 않으면 글씨가
+  /// 2pt 로 줄어 읽을 수 없다. [bands] 를 주면 표를 두 단으로 쌓아 **열당 폭을
+  /// 두 배**로 늘리고, 단과 단 사이에 **가로 구분선을 하나 더** 긋는다.
+  /// null/1개면 종전과 완전히 동일하게 그린다(다른 문서 영향 0).
   static Future<Uint8List> build({
     required DocMeta meta,
     List<String> columns = const [],
@@ -361,6 +371,7 @@ class DocPdf {
     double scale = 1.0,
     double rowSpaceMul = 1.0,
     Set<int> noWrapCols = const {},
+    List<List<int>>? bands,
   }) async {
     await _ensureFonts();
     // 한자가 문서에 있을 때만 4.9MB 폴백 폰트를 읽는다(없으면 종전과 동일).
@@ -498,6 +509,30 @@ class DocPdf {
     final margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30);
     final availBody = fmt.height - margin.vertical;
 
+    // ── 두 단(가로 띠) 분할 정의 ─────────────────────────────────────────
+    //  bands 가 없으면 bandSplits 는 비어 있고, 아래 렌더링은 종전과 **완전히
+    //  동일**하게 동작한다(다른 문서 영향 0).
+    final bandSplits = <List<int>>[];
+    if (bands != null && bands.length > 1) {
+      var ok2 = true;
+      for (final b in bands) {
+        if (b.isEmpty) {
+          ok2 = false;
+          break;
+        }
+      }
+      if (ok2) bandSplits.addAll(bands);
+    }
+    // 단별 열 폭 — 각 단이 **페이지 전폭**을 쓰므로 열당 폭이 약 2배가 된다.
+    Map<int, pw.TableColumnWidth> bandWidthsOf(List<int> b) => _contentCols(
+      [for (final i in b) i < columns.length ? columns[i] : ''],
+      [
+        for (final r in rows)
+          [for (final i in b) i < r.length ? r[i] : const DocCell('')],
+      ],
+      availableWidth: fmt.width - 36 * 2 - 8,
+    );
+
     // ── 페이지 장식(레터헤드·푸터) — 높이를 **실제로 재어** 본문 가용 높이에서
     //  뺀다. 추정값을 쓰면 첫 페이지에서 행이 한 줄 넘쳐 다음 페이지로 밀리고,
     //  그 페이지에 머리행이 없어 '구분표 없는 페이지'가 생긴다(실제 발생).
@@ -583,103 +618,126 @@ class DocPdf {
     ];
 
     /// 머리행 — 모든 페이지 상단에 반복 출력된다.
-    pw.Widget headRow() => pw.Table(
-      border: pw.TableBorder(
-        horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
-        bottom: const pw.BorderSide(color: _border, width: 0.8),
-      ),
-      columnWidths: widths,
-      children: [
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: _head),
-          children: columns
-              .map(
-                (c) => pw.Padding(
-                  padding: pw.EdgeInsets.fromLTRB(
-                    4,
-                    headV.toDouble(),
-                    4,
-                    headV.toDouble(),
-                  ),
-                  child: pw.Text(
-                    sanitize(c),
-                    style: pw.TextStyle(
-                      font: bold,
-                      fontSize: cellPt,
-                      color: _strong,
-                      // 머리행은 한 줄 고정 — 두 줄로 접히면 페이지마다 높이가
-                      // 달라져 행 배치가 어긋난다.
-                    ),
-                    maxLines: 1,
-                  ),
-                ),
-              )
-              .toList(),
+    ///
+    /// [pick] 을 주면 그 열 인덱스만 골라 **한 단**만 그린다(두 단 모드).
+    /// [isLower] 가 true 면 단과 단 사이의 **가로 구분선을 굵게** 그어
+    /// "가로줄을 하나 더" 보이게 한다.
+    pw.Widget headRow({List<int>? pick, bool isLower = false}) {
+      final idx = pick ?? List<int>.generate(columns.length, (i) => i);
+      // 두 단 모드 — 아래 단 머리행 위에 **굵은 가로 구분선**을 하나 더 긋는다.
+      const sep = pw.BorderSide(color: _strong, width: 1.2);
+      return pw.Table(
+        border: pw.TableBorder(
+          horizontalInside: const pw.BorderSide(color: _line, width: 0.6),
+          top: isLower ? sep : pw.BorderSide.none,
+          bottom: const pw.BorderSide(color: _border, width: 0.8),
         ),
-      ],
-    );
+        columnWidths: pick == null ? widths : bandWidthsOf(idx),
+        children: [
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: _head),
+            children: idx
+                .map(
+                  (i) => pw.Padding(
+                    padding: pw.EdgeInsets.fromLTRB(
+                      4,
+                      headV.toDouble(),
+                      4,
+                      headV.toDouble(),
+                    ),
+                    child: pw.Text(
+                      sanitize(i < columns.length ? columns[i] : ''),
+                      style: pw.TextStyle(
+                        font: bold,
+                        fontSize: cellPt,
+                        color: _strong,
+                        // 머리행은 한 줄 고정 — 두 줄로 접히면 페이지마다 높이가
+                        // 달라져 행 배치가 어긋난다.
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      );
+    }
 
     /// 본문 행 하나.
-    pw.Widget bodyRow(int i) => pw.Table(
-      border: const pw.TableBorder(
-        horizontalInside: pw.BorderSide(color: _line, width: 0.6),
-        bottom: pw.BorderSide(color: _border, width: 0.8),
-      ),
-      columnWidths: widths,
-      children: [
-        pw.TableRow(
-          children: rows[i]
-              .asMap()
-              .entries
-              .map(
-                (e) => pw.Container(
-                  padding: pw.EdgeInsets.fromLTRB(
-                    4,
-                    padV.toDouble(),
-                    4,
-                    padV.toDouble(),
-                  ),
-                  decoration: e.value.accent != null
-                      ? pw.BoxDecoration(
-                          border: pw.Border(
-                            left: pw.BorderSide(
-                              color: _hex(e.value.accent!),
-                              width: 2.4,
-                            ),
-                          ),
-                        )
-                      : null,
-                  child: pw.Column(
-                    crossAxisAlignment: _cross(e.value.align),
-                    children: [
-                      pw.Text(
-                        sanitize(e.value.text),
-                        style: e.value.bold ? baseBold : base,
-                        textAlign: _align(e.value.align),
-                        // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
-                        softWrap: !noWrapCols.contains(e.key),
-                        maxLines: noWrapCols.contains(e.key) ? 1 : null,
-                      ),
-                      if (e.value.sub != null && e.value.sub!.trim().isNotEmpty)
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.only(top: 1.5),
-                          child: pw.Text(
-                            sanitize(e.value.sub!),
-                            style: pw.TextStyle(
-                              font: reg,
-                              fontSize: (7.5 * scale * 10).roundToDouble() / 10,
-                              color: _gray,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
+    ///
+    /// [pick] 이 있으면 그 열만 골라 **한 단**으로 그린다(두 단 모드).
+    pw.Widget bodyRow(int i, {List<int>? pick}) {
+      final row = rows[i];
+      final idx =
+          pick ?? List<int>.generate(columns.length, (j) => j);
+      return pw.Table(
+        border: const pw.TableBorder(
+          horizontalInside: pw.BorderSide(color: _line, width: 0.6),
+          bottom: pw.BorderSide(color: _border, width: 0.8),
         ),
-      ],
-    );
+        columnWidths: pick == null ? widths : bandWidthsOf(idx),
+        children: [
+          pw.TableRow(
+            children: [
+              for (var bi = 0; bi < idx.length; bi++)
+                () {
+                  // 원본 열 인덱스 — 두줄방지 판정은 **원본 기준**이어야 한다
+                  // (단 안에서의 위치 e.key 로 판정하면 엉뚱한 열이 걸린다).
+                  final key = idx[bi];
+                  final cell = key < row.length
+                      ? row[key]
+                      : const DocCell('');
+                  return pw.Container(
+                    padding: pw.EdgeInsets.fromLTRB(
+                      4,
+                      padV.toDouble(),
+                      4,
+                      padV.toDouble(),
+                    ),
+                    decoration: cell.accent != null
+                        ? pw.BoxDecoration(
+                            border: pw.Border(
+                              left: pw.BorderSide(
+                                color: _hex(cell.accent!),
+                                width: 2.4,
+                              ),
+                            ),
+                          )
+                        : null,
+                    child: pw.Column(
+                      crossAxisAlignment: _cross(cell.align),
+                      children: [
+                        pw.Text(
+                          sanitize(cell.text),
+                          style: cell.bold ? baseBold : base,
+                          textAlign: _align(cell.align),
+                          // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
+                          softWrap: !noWrapCols.contains(key),
+                          maxLines: noWrapCols.contains(key) ? 1 : null,
+                        ),
+                        if (cell.sub != null && cell.sub!.trim().isNotEmpty)
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.only(top: 1.5),
+                            child: pw.Text(
+                              sanitize(cell.sub!),
+                              style: pw.TextStyle(
+                                font: reg,
+                                fontSize:
+                                    (7.5 * scale * 10).roundToDouble() / 10,
+                                color: _gray,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }(),
+            ],
+          ),
+        ],
+      );
+    }
 
     // ── 모든 높이를 **실제로 잰다**(레이아웃만 하고 그리지 않는다).
     //  · headerH/footerH: 레터헤드·푸터가 잡아먹는 높이
@@ -703,15 +761,26 @@ class DocPdf {
 
     final headerH = measure(pageHeader(_FakeCtx()));
     final footerH = measure(pageFooter(_FakeCtx()));
-    final headH = columns.isEmpty ? 0.0 : measure(headRow());
+    // 두 단 모드: 단마다 머리행이 하나씩 있으므로 머리 높이는 **단 수 × 단일 머리**.
+    final singleHeadH = columns.isEmpty ? 0.0 : measure(headRow());
+    final headH = bandSplits.isEmpty
+        ? singleHeadH
+        : singleHeadH * bandSplits.length;
     final firstH = measure(
       pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: firstHead,
       ),
     );
+    // 행 높이 — 두 단이면 각 단의 높이를 **합산**한다(위 단 + 가로줄 + 아래 단).
     final rowHeights = <double>[
-      for (var i = 0; i < rows.length; i++) measure(bodyRow(i)),
+      for (var i = 0; i < rows.length; i++)
+        bandSplits.isEmpty
+            ? measure(bodyRow(i))
+            : bandSplits.fold<double>(
+                0,
+                (s, b) => s + measure(bodyRow(i, pick: b)),
+              ),
     ];
 
     /// 1페이지 본문 가용 높이 = 전체 − 레터헤드 − 푸터 − 1페이지 머리 − (반복)머리행
@@ -793,9 +862,26 @@ class DocPdf {
             // 1페이지에만 제목·메타·PART 라벨(계속 페이지는 곧바로 머리행).
             if (pi == 0) ...firstHead,
             // ★ 머리행(구분표) — 모든 페이지 상단에 반복된다.
-            if (columns.isNotEmpty && idxs.isNotEmpty) headRow(),
-            // 이 페이지에 담기는 본문 행.
-            for (final i in idxs) bodyRow(i),
+            //  두 단 모드에서는 **단마다** 머리행을 하나씩 두고, 두 번째 단의
+            //  머리행 위에 굵은 가로 구분선을 그어 "가로줄이 하나 더" 생긴다.
+            if (columns.isNotEmpty && idxs.isNotEmpty) ...[
+              if (bandSplits.isEmpty)
+                headRow()
+              else
+                for (var bi = 0; bi < bandSplits.length; bi++) ...[
+                  if (bi > 0) pw.SizedBox(height: 7),
+                  headRow(pick: bandSplits[bi], isLower: bi > 0),
+                ],
+            ],
+            // 이 페이지에 담기는 본문 행 — 단이 있으면 단별로 쌓는다.
+            if (bandSplits.isEmpty) ...[
+              for (final i in idxs) bodyRow(i),
+            ] else ...[
+              for (var bi = 0; bi < bandSplits.length; bi++) ...[
+                if (bi > 0) pw.SizedBox(height: 7),
+                for (final i in idxs) bodyRow(i, pick: bandSplits[bi]),
+              ],
+            ],
             if (last) ?sumWidget(),
           ],
         ),
@@ -1594,6 +1680,7 @@ class DocPdf {
     double scale = 1.0,
     double rowSpaceMul = 1.0,
     Set<int> noWrapCols = const {},
+    List<List<int>>? bands,
   }) {
     final docRows = rows.asMap().entries.map((e) {
       final ac = kMujiAccents[e.key % kMujiAccents.length];
@@ -1615,6 +1702,7 @@ class DocPdf {
       scale: scale,
       rowSpaceMul: rowSpaceMul,
       noWrapCols: noWrapCols,
+      bands: bands,
     );
   }
 

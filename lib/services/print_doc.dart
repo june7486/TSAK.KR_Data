@@ -226,6 +226,7 @@ String buildMujiDoc({
   bool landscape = false,
   String? emblemDataUri,
   Set<int> noWrapCols = const {},
+  List<List<int>>? bands,
 }) {
   final now = meta.createdAt.isNotEmpty ? meta.createdAt : _stamp();
   final head = StringBuffer();
@@ -278,15 +279,36 @@ String buildMujiDoc({
   // 머리행 반복 (요구: "명부 출력시 페이지가 넘어갈 경우 상단에 구분표 반복").
   //  th 를 <thead> 로 감싸야 브라우저 인쇄에서 **페이지마다 머리행이 반복**된다.
   //  기존에는 <tr><th> 만 있어 2페이지부터 구분표가 사라졌다.
-  final thead = columns.isEmpty
+  //
+  //  (요구 2026-10-31) "항목이 많을 경우 가로줄을 하나 더 추가해서 두줄방지"
+  //  → [bands] 가 있으면 표를 **단별로 따로** 만들어 세로로 쌓는다. 단마다
+  //    머리행이 반복되고, 단 사이에 굵은 가로 구분선(`.bandsep`)이 하나 더 생긴다.
+  //    각 단은 전폭을 쓰므로 열당 폭이 약 2배가 되어 접히지 않는다.
+  final useBands = bands != null &&
+      bands.length > 1 &&
+      bands.every((b) => b.isNotEmpty);
+  String oneTable(List<int>? pick, {bool lower = false}) {
+    final idx = pick ?? List<int>.generate(columns.length, (i) => i);
+    final th = '<thead><tr>'
+        '${idx.map((i) => '<th>${_esc(i < columns.length ? columns[i] : '')}</th>').join()}'
+        '</tr></thead>';
+    final tb = '<tbody>'
+        '${rows.map((r) => '<tr>${idx.map((i) {
+          final cell = i < r.length ? r[i] : const DocCell('');
+          return cell.toTd(nowrap: noWrapCols.contains(i));
+        }).join()}</tr>').join()}'
+        '</tbody>';
+    return '<table${lower ? ' class="lowband"' : ''}>$th$tb</table>';
+  }
+
+  final bandsL = bands;
+  final table = (columns.isEmpty && rows.isEmpty)
       ? ''
-      : '<thead><tr>${columns.map((c) => '<th>${_esc(c)}</th>').join()}'
-            '</tr></thead>';
-  final tbody =
-      '<tbody>${rows.map((r) => '<tr>${r.asMap().entries.map((c) => c.value.toTd(nowrap: noWrapCols.contains(c.key))).join()}</tr>').join()}</tbody>';
-  final table = columns.isEmpty && rows.isEmpty
-      ? ''
-      : '<table>$thead$tbody</table>';
+      : (useBands && bandsL != null)
+      ? '${oneTable(bandsL[0])}'
+            '<div class="bandsep"></div>'
+            '${oneTable(bandsL[1], lower: true)}'
+      : oneTable(null);
 
   final sumHtml = summary.trim().isEmpty
       ? ''
@@ -330,6 +352,9 @@ String buildMujiDoc({
  .part .prule{flex:1;height:1px;background:#D8D3CA}
  .part .pcount{font-size:11px;color:#8C877E;white-space:nowrap}
  table{width:100%;border-collapse:collapse;margin-top:10px}
+ /* 두 단(가로줄 추가) — 단과 단 사이 굵은 구분선. */
+ .bandsep{height:0;border-top:1.6px solid #4A4A48;margin:10px 0 0}
+ table.lowband{margin-top:0}
  th{font-weight:700;color:#5A564E;text-align:left;font-size:11.5px;letter-spacing:.3px;
    background:#F4F1EA;border-bottom:1px solid #C9C2B6;padding:8px 10px}
  td{border-bottom:1px solid #EDEAE3;padding:9px 10px;vertical-align:top}

@@ -63,6 +63,8 @@ class TableOutputOptions {
     this.rowSpace = TsakRowSpace.normal,
     this.landscape,
     this.noWrap = const <String>{},
+    this.rowBands = 1,
+    this.bandAnchors = const <String>{},
   });
 
   /// 출력할 열(0-based) 순서 — null 이면 원본 전체 순서.
@@ -83,6 +85,33 @@ class TableOutputOptions {
   /// 지정된 열은 줄바꿈하지 않고(한 줄 유지), 넘치면 글씨가 자동 축소된다.
   final Set<String> noWrap;
 
+  /// 표를 **가로 띠(밴드)로 나누는 수** — 1 = 종전 그대로, 2 = 표를 위/아래
+  /// 두 단으로 쌓아 한 줄에 놓는 열 수를 절반으로 줄인다.
+  ///
+  /// ## 요구 (원문 2026-10-31)
+  /// > "항목이 많을 경우에는 가로줄을 하나 더 추가해서 두줄방지 되도록
+  /// >  할 수 있는 옵션도 추가해줘"
+  ///
+  /// ## 왜 [noWrap] 만으로는 부족한가
+  /// [noWrap] 은 "그 열을 접지 마라"는 **명령**일 뿐이다. 열이 12개면 A4 가로
+  /// 폭에서 한 열에 30pt 남짓만 배정되므로, 접지 않으면 글씨가 2~3pt 로
+  /// 줄어들어 **읽을 수 없다**. 진짜 해법은 **열을 두 단으로 쌓아** 열당 폭을
+  /// 두 배로 늘리는 것이다. 띠와 띠 사이에 **가로 구분선이 하나 더** 생긴다
+  /// (그래서 "가로줄을 하나 더 추가").
+  ///
+  /// 같은 행 번호가 두 단에 나뉘어 놓이므로, 각 단의 첫 열(연번 등)은
+  /// 렌더링 시 자동으로 **반복 출력**된다([bandAnchors] 미지정 시).
+  final int rowBands;
+
+  /// 새 띠를 **시작하는 열 헤더 이름** 집합 — 비어 있으면 [rowBands] 에 맞춰
+  /// 열 개수의 중간에서 자동 분할한다.
+  ///
+  /// 예: `{'소속'}` → '소속' 부터 아래 단이 시작된다(위 단: 앞쪽 열들).
+  final Set<String> bandAnchors;
+
+  /// 실제로 쓸 띠 수(2 이상은 2로 고정 — A4 에서 3단은 글씨가 너무 작아진다).
+  int get effectiveRowBands => rowBands >= 2 ? 2 : 1;
+
   double get scale => fontSize.scale;
   double get rowSpaceMul => rowSpace.mul;
 
@@ -92,12 +121,16 @@ class TableOutputOptions {
     TsakRowSpace? rowSpace,
     bool? landscape,
     Set<String>? noWrap,
+    int? rowBands,
+    Set<String>? bandAnchors,
   }) => TableOutputOptions(
     cols: cols ?? this.cols,
     fontSize: fontSize ?? this.fontSize,
     rowSpace: rowSpace ?? this.rowSpace,
     landscape: landscape ?? this.landscape,
     noWrap: noWrap ?? this.noWrap,
+    rowBands: rowBands ?? this.rowBands,
+    bandAnchors: bandAnchors ?? this.bandAnchors,
   );
 
   /// 부제/배지 표기 — 예: "글씨 보통 · 간격 넓게 · 가로 · 두줄방지 3".
@@ -105,6 +138,7 @@ class TableOutputOptions {
     final parts = <String>['글씨 ${fontSize.label}', '간격 ${rowSpace.label}'];
     if (landscape != null) parts.add(landscape! ? '가로' : '세로');
     if (noWrap.isNotEmpty) parts.add('두줄방지 ${noWrap.length}');
+    if (effectiveRowBands > 1) parts.add('두 단');
     return parts.join(' · ');
   }
 }
@@ -137,4 +171,55 @@ TableDocView applyTableOptions({
     for (final r in rows) [for (final i in keep) i < r.length ? r[i] : ''],
   ];
   return TableDocView(columns: outCols, rows: outRows);
+}
+
+/// 표를 **두 단(위/아래 띠)** 으로 쪼갠 결과.
+///
+/// [first] = 위 단 열 인덱스, [second] = 아래 단 열 인덱스(둘 다 대상 열 안에서의
+/// 0-based 위치). [second] 가 비면 분할하지 않는다.
+class TableBandSplit {
+  const TableBandSplit({required this.first, required this.second});
+  final List<int> first;
+  final List<int> second;
+
+  bool get isSplit => second.isNotEmpty;
+}
+
+/// 열 목록을 두 단으로 나눈다 — [TableOutputOptions.rowBands] 구현부.
+///
+/// 분할 기준:
+///  1. [anchors] 중 실제 열 이름과 일치하는 것이 있으면 **그 열부터** 아래 단.
+///  2. 없으면 열 개수의 **중간**(올림)에서 자른다.
+///  3. 한쪽이 비면(열 1개 등) 분할하지 않는다.
+///
+/// 첫 열(연번·번호 등)은 아래 단에도 **자동 반복**되도록 [repeatFirst] 로
+/// [second] 앞에 끼워 넣는다(보고 표에서 행 식별이 사라지지 않게).
+TableBandSplit splitColumnBands(
+  List<String> columns, {
+  Set<String> anchors = const <String>{},
+  bool repeatFirst = true,
+}) {
+  final n = columns.length;
+  if (n < 3) return TableBandSplit(first: List.generate(n, (i) => i), second: const []);
+  var cut = (n / 2).ceil();
+  if (anchors.isNotEmpty) {
+    for (var i = 1; i < n; i++) {
+      if (anchors.contains(columns[i])) {
+        cut = i;
+        break;
+      }
+    }
+  }
+  if (cut <= 0 || cut >= n) cut = (n / 2).ceil();
+  final first = <int>[for (var i = 0; i < cut; i++) i];
+  final second = <int>[];
+  // 첫 열은 아래 단에서도 반복(연번이 사라지면 어느 행인지 알 수 없다).
+  if (repeatFirst && cut > 1) second.add(0);
+  for (var i = cut; i < n; i++) {
+    second.add(i);
+  }
+  if (second.length <= 1) {
+    return TableBandSplit(first: List.generate(n, (i) => i), second: const []);
+  }
+  return TableBandSplit(first: first, second: second);
 }
