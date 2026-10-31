@@ -539,8 +539,19 @@ class Member {
 
   /// 인가정보 카드 항목의 **값** — 라벨과 짝을 맞춘다.
   ///  · 범/은하 : `범#415`, `은하#43`
-  ///  · 서포터즈: `일반#010…`(인가번호가 아니라 계정 전화번호임을 명시)
-  String get numberRowValue => cardNumberLabel;
+  ///  · 서포터즈: 전화번호(없으면 빈 값) — **'서포터즈 번호 : 서포터즈'** 처럼
+  ///    라벨과 값이 같은 말이 되어 정보가 0 이 되던 버그 수정.
+  ///    (요구: 서포터즈는 인가번호가 없으므로 실제 연락처를 보여준다)
+  String get numberRowValue {
+    if (isRegular) {
+      final ph = phone.trim();
+      if (ph.isNotEmpty) return ph;
+      final tel = this.tel.trim();
+      if (tel.isNotEmpty) return tel;
+      return '';
+    }
+    return cardNumberLabel;
+  }
 
   /// 인가정보 카드 제목 — '범스카우트 인가 정보' / '은하스카우트 인가 정보'
   /// / **'서포터즈 정보'**.

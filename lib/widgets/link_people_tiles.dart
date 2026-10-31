@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import 'confirm.dart';
 import 'link_profile_sheet.dart';
+import 'mentee_add_sheet.dart';
 
 /// 인가자 개인화면(인가정보 카드)의 **[멘티 · 멘토 · 페런츠] 3개 항목** 타일.
 ///
@@ -196,6 +197,68 @@ class LinkPeopleTiles extends StatelessWidget {
     );
   }
 
+  /// 멘티 **추가** — 직접입력 + 인가정보 연동(멘토 체계와 동일).
+  ///
+  /// (요구) "멘티 등록도 직접입력 가능 및 기존 인가자 정보와 연계시키고
+  ///  연동 되도록 할 것 (멘토체계와 동일)"
+  ///  멘토·페런츠는 인적사항(link_profiles)으로 등록하지만, 멘티는 **반드시
+  ///  범 인가자**이므로 인가번호를 받아 회원 카드에 직접 연결한다.
+  Future<void> _addMentee(BuildContext context) async {
+    final code = await showMenteeAddSheet(
+      context,
+      member: member,
+      existing: member.mentees,
+    );
+    if (code == null || code.isEmpty || !context.mounted) return;
+    await _saveMentees(context, <String>[...member.mentees, code]);
+  }
+
+  /// 멘티 목록 저장 — 나(멘토)의 mentees 갱신.
+  Future<void> _saveMentees(
+    BuildContext context,
+    List<String> next,
+  ) async {
+    final state = context.read<AppState>();
+    // 중복·자기참조 제거.
+    final self = _digits(member.number);
+    final seen = <String>{};
+    final cleaned = <String>[];
+    for (final c in next) {
+      final d = _digits(c);
+      if (d.isEmpty) continue;
+      final norm = c.trim().toUpperCase().startsWith('G') ? 'G$d' : d;
+      if (norm == self && !c.trim().toUpperCase().startsWith('G')) continue;
+      if (seen.add(norm)) cleaned.add(norm);
+    }
+    final updated = member.copyWith(mentees: cleaned);
+    await state.save(updated);
+    if (!context.mounted) return;
+    onChanged?.call();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('멘티를 등록했습니다')),
+    );
+  }
+
+  /// 멘티 **해제** — 연결만 끊는다(회원 카드는 그대로).
+  Future<void> _removeMentee(BuildContext context, _Ref r) async {
+    final label = r.name.isEmpty ? '범#${r.code}' : r.name;
+    final ok = await confirmDialog(
+      context,
+      title: '멘티 해제',
+      message:
+          '$label 을(를) 내 멘티 목록에서 해제할까요?\n\n'
+          '인가자 카드와 정보는 그대로 남습니다.',
+      confirmLabel: '해제',
+      danger: true,
+    );
+    if (!ok || !context.mounted) return;
+    final next = <String>[
+      for (final c in member.mentees)
+        if (_digits(c) != _digits(r.code)) c,
+    ];
+    await _saveMentees(context, next);
+  }
+
   /// 멘토·페런츠 **인적사항 등록/수정** — 카드(인가자) 자동등록이 아니다(요구).
   Future<void> _addProfile(
     BuildContext context,
@@ -237,7 +300,11 @@ class LinkPeopleTiles extends StatelessWidget {
           accent: AppColors.purple,
           refs: _mentees(state),
           empty: '본인이 배출한(만든) 범 대원 없음 (복수 등록 가능)',
-          addLabel: null,
+          addLabel: '멘티 추가',
+          onAdd: canEdit ? () => _addMentee(context) : null,
+          onRemove: canEdit
+              ? (r) => _removeMentee(context, r)
+              : null,
         ),
         const SizedBox(height: 8),
         _section(
@@ -276,6 +343,8 @@ class LinkPeopleTiles extends StatelessWidget {
     required String empty,
     String? addLabel,
     VoidCallback? onAdd,
+    /// 행별 **해제** 버튼(멘티 전용 — 연결만 끊는다).
+    void Function(_Ref)? onRemove,
   }) {
     final kindLabel = title.split(' ').first;
     return Column(
@@ -349,7 +418,14 @@ class LinkPeopleTiles extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final r in refs) _row(context, r, kindLabel, accent),
+                for (final r in refs)
+                  _row(
+                    context,
+                    r,
+                    kindLabel,
+                    accent,
+                    onRemove: onRemove,
+                  ),
               ],
             ),
           ),
@@ -357,7 +433,13 @@ class LinkPeopleTiles extends StatelessWidget {
     );
   }
 
-  Widget _row(BuildContext context, _Ref r, String kindLabel, Color accent) {
+  Widget _row(
+    BuildContext context,
+    _Ref r,
+    String kindLabel,
+    Color accent, {
+    void Function(_Ref)? onRemove,
+  }) {
     final hasCard = r.target != null;
     final isLinkKind = r.kind == 'mentor' || r.kind == 'parent';
     // 멘토·페런츠는 '인적사항 등록' 상태를 별도로 표시한다.
@@ -474,6 +556,20 @@ class LinkPeopleTiles extends StatelessWidget {
               ),
             ),
           ),
+          // 멘티 해제 — 연결만 끊는다(카드·정보는 유지).
+          if (onRemove != null)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+              tooltip: '멘티 해제',
+              icon: const Icon(
+                Icons.link_off,
+                size: 16,
+                color: AppColors.textGray,
+              ),
+              onPressed: () => onRemove(r),
+            ),
         ],
       ),
     );

@@ -37,7 +37,8 @@ class _LinkMemberPickerDialog extends StatefulWidget {
   });
 
   final NasApi nas;
-  final String kind; // 'mentor' | 'parent'
+  /// 'mentor' | 'parent' | 'mentee'
+  final String kind;
   final String hint;
 
   @override
@@ -52,10 +53,17 @@ class _LinkMemberPickerDialogState extends State<_LinkMemberPickerDialog> {
   bool _loading = false;
   String? _error;
 
-  Color get _accent =>
-      widget.kind == 'parent' ? AppColors.taegeukBlue : AppColors.purple;
+  Color get _accent => switch (widget.kind) {
+    'parent' => AppColors.taegeukBlue,
+    'mentee' => AppColors.scoutGreen,
+    _ => AppColors.purple,
+  };
 
-  String get _kindLabel => widget.kind == 'parent' ? '페런츠(범을 배출한 부모님)' : '멘토';
+  String get _kindLabel => switch (widget.kind) {
+    'parent' => '페런츠(범을 배출한 부모님)',
+    'mentee' => '멘티(내가 배출한 범 대원)',
+    _ => '멘토',
+  };
 
   @override
   void initState() {
