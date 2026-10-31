@@ -658,8 +658,7 @@ class DocPdf {
             children: [
               for (var bi = 0; bi < idx.length; bi++)
                 () {
-                  // 원본 열 인덱스 — 두줄방지 판정은 **원본 기준**이어야 한다
-                  // (단 안에서의 위치 e.key 로 판정하면 엉뚱한 열이 걸린다).
+                  // 원본 열 인덱스 — 두줄방지 판정은 **원본 기준**이어야 한다.
                   final key = idx[bi];
                   final cell = key < row.length
                       ? row[key]
