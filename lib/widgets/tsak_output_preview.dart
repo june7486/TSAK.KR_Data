@@ -359,6 +359,29 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
     return pdfToJpg(pdf, dpi: 110, quality: 82);
   }
 
+  /// 스위치 '2줄 방지'가 **실제로** 무엇을 하는지 화면에 알려 준다.
+  ///
+  /// ## 🐞 혼란의 원인 (2026-11-02, build #565)
+  /// 참가자 명부는 기본 옵션에 `noWrap: {'인가번호','연락처'}` 가 이미 들어
+  /// 있다. 즉 **스위치가 OFF 여도 그 두 열은 두줄방지**다. 사용자 입장에서는
+  /// "스위치를 안 켰는데 잘리고, 켜도 똑같아 보인다" → "기능이 안 된다"로 보였다.
+  ///  → 스위치 아래에 지금 무엇이 두줄방지인지 **글자로** 표시한다.
+  String get _noWrapHint {
+    final d = _doc;
+    final base = d.effectiveNoWrapCols.length;
+    if (_noWrap) {
+      return _cellLines != null && _cellLines! > 1
+          ? '스위치 ON — 셀 줄 수(${_cellLines!}줄)가 우선'
+          : '스위치 ON — 모든 열 한 줄 고정(넘치면 글씨 축소)';
+    }
+    if (base == 0) return '스위치 OFF — 두 줄로 접힘';
+    final names = <String>[
+      for (var i = 0; i < d.viewColumns.length; i++)
+        if (d.effectiveNoWrapCols.contains(i)) d.viewColumns[i],
+    ];
+    return '스위치 OFF — 문서 기본 두줄방지 ${base}열: ${names.join('·')}';
+  }
+
   void _snack(String m) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -569,7 +592,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                             child: _switchCell(
                               '2줄 방지',
                               _noWrap,
-                              (v) => setState(() => _noWrap = v),
+                              (v) => _bump(() => _noWrap = v),
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -577,10 +600,27 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                             child: _switchCell(
                               '가로 모드',
                               _landscape,
-                              (v) => setState(() => _landscape = v),
+                              (v) => _bump(() => _landscape = v),
                             ),
                           ),
                         ],
+                      ),
+                      // 스위치가 **지금 무엇을 하는지** 글자로 알려 준다.
+                      //  (참가자 명부는 OFF 여도 인가번호·연락처가 두줄방지라
+                      //   "켜도 똑같다"는 혼란이 있었다)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 2, top: 3),
+                        child: Text(
+                          _noWrapHint,
+                          style: TextStyle(
+                            fontSize: 10,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                            color: _noWrap
+                                ? AppColors.purple
+                                : AppColors.textGray,
+                          ),
+                        ),
                       ),
                       // ── 이름 줄 — 이름 한 칸의 세로 높이를 2·3줄분으로 ──
                       //   (요구) "좌측 이름 하나당 세로줄 2줄 3줄"

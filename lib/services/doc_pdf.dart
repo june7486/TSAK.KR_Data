@@ -518,6 +518,12 @@ class DocPdf {
     final margin = const pw.EdgeInsets.fromLTRB(36, 40, 36, 30);
     final availBody = fmt.height - margin.vertical;
 
+    // 두줄방지 열의 **글씨 자동 축소**에 쓸 실제 배정 폭·패딩.
+    //  (pdf 패키지는 softWrap:false 에서 넘치는 글자를 **자르기**만 하므로,
+    //   미리 글씨를 줄여 넣어야 잘리지 않는다.)
+    final bands = _bandsOf(widths, n: columns.length);
+    final double nowrapPadH = 4.0 * 2;
+
     // ── 페이지 장식(레터헤드·푸터) — 높이를 **실제로 재어** 본문 가용 높이에서
     //  뺀다. 추정값을 쓰면 첫 페이지에서 행이 한 줄 넘쳐 다음 페이지로 밀리고,
     //  그 페이지에 머리행이 없어 '구분표 없는 페이지'가 생긴다(실제 발생).
@@ -624,17 +630,40 @@ class DocPdf {
                       4,
                       headV.toDouble(),
                     ),
-                    child: pw.Text(
-                      sanitize(i < columns.length ? columns[i] : ''),
-                      style: pw.TextStyle(
-                        font: bold,
-                        fontSize: cellPt,
-                        color: _strong,
-                        // 머리행은 한 줄 고정 — 두 줄로 접히면 페이지마다 높이가
-                        // 달라져 행 배치가 어긋난다.
-                      ),
-                      maxLines: 1,
-                    ),
+                    child: () {
+                      // 머리행은 **한 줄 고정** — 두 줄로 접히면 페이지마다
+                      // 높이가 달라져 행 배치가 어긋난다.
+                      //
+                      // ## 🐞 버그 수정 (2026-11-02, build #565)
+                      // 종전에는 `maxLines: 1` 만 주고 글씨를 줄이지 않아,
+                      // 열이 좁으면 머리글자가 **그대로 잘렸다**.
+                      // 실측(17열): `인가번호`→`인가번`, `이동 방법`→`이동`,
+                      // `도착 예정 시간`→`도착예정`. 사용자 스크린샷의 증상과 일치.
+                      //  → 본문과 **같은 축소 규칙**을 머리행에도 적용한다.
+                      final label = sanitize(
+                        i < columns.length ? columns[i] : '',
+                      );
+                      final cw = _bandsOf(
+                        widths,
+                        n: columns.length,
+                      )[i];
+                      final pt = _fitFontSize(
+                        pt: cellPt,
+                        units: _textUnits(label),
+                        colWidth: cw ?? 0.0,
+                        padH: nowrapPadH,
+                      );
+                      return pw.Text(
+                        label,
+                        style: pw.TextStyle(
+                          font: bold,
+                          fontSize: pt,
+                          color: _strong,
+                        ),
+                        softWrap: false,
+                        maxLines: 1,
+                      );
+                    }(),
                   ),
                 )
                 .toList(),
@@ -684,16 +713,41 @@ class DocPdf {
                     child: pw.Column(
                       crossAxisAlignment: _cross(cell.align),
                       children: [
-                        pw.Text(
-                          sanitize(cell.text),
-                          style: cell.bold ? baseBold : base,
-                          textAlign: _align(cell.align),
-                          // (요구) 두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소).
-                          softWrap: !noWrapCols.contains(key),
-                          maxLines: noWrapCols.contains(key)
-                              ? 1
-                              : (maxCellLines == null ? null : cellLines),
-                        ),
+                        () {
+                          // ── 2줄방지 열: 글씨를 **실제로** 줄여 한 줄에 넣는다 ──
+                          //  (pdf 의 softWrap:false 는 넘치면 자르기만 한다)
+                          final bool nw = noWrapCols.contains(key);
+                          final baseStyle = cell.bold ? baseBold : base;
+                          if (!nw) {
+                            return pw.Text(
+                              sanitize(cell.text),
+                              style: baseStyle,
+                              textAlign: _align(cell.align),
+                              maxLines: maxCellLines == null ? null : cellLines,
+                            );
+                          }
+                          final txt = sanitize(cell.text);
+                          final cw = bands[key] ?? 0.0;
+                          final pt = _fitFontSize(
+                            pt: cellPt,
+                            units: _textUnits(txt),
+                            colWidth: cw,
+                            padH: nowrapPadH,
+                          );
+                          return pw.Text(
+                            txt,
+                            style: _fb(
+                              pw.TextStyle(
+                                font: cell.bold ? bold : reg,
+                                fontSize: pt,
+                                color: _ink,
+                              ),
+                            ),
+                            textAlign: _align(cell.align),
+                            softWrap: false,
+                            maxLines: 1,
+                          );
+                        }(),
                         if (cell.sub != null && cell.sub!.trim().isNotEmpty)
                           pw.Padding(
                             padding: const pw.EdgeInsets.only(top: 1.5),
@@ -971,6 +1025,63 @@ class DocPdf {
       }
     }
     return u;
+  }
+
+  /// 한 줄에 **들어가게** 글씨를 줄인 폰트 크기를 구한다(두줄방지 열 전용).
+  ///
+  /// ## 🐞 버그 수정 (2026-11-02, build #565)
+  /// 보고: **"2줄방지 기능이 제대로 작동되지 않고 있음"**
+  ///
+  /// ## 원인
+  ///  `reportlab` 이 아니라 `pdf` 패키지의 `Text` 는
+  ///  `softWrap:false` + `maxLines:1` 이면 넘치는 단어를 **자르지 않고
+  ///  클립(clip)** 한다. 그런데 이 파일은 오랫동안 주석에
+  ///  *"두줄 방지 열 — 줄바꿈 금지(넘치면 자동 축소)"* 라고 적어 두고
+  ///  **자동 축소 코드를 한 번도 쓰지 않았다.**
+  ///  → 실제 동작은 "자동 축소"가 아니라 **"그냥 잘라 버림"** 이었다.
+  ///  실측(17열 명부, 가로): `010-9367-3344` → `010-9367-3`,
+  ///  `인가번호` → `인가번`, `이동 방법` → `이동`. 사용자 스크린샷의
+  ///  연락처·메일 잘림과 **정확히 일치**한다.
+  ///
+  /// ## 해결
+  ///  글자폭을 실제로 재어(한글 1.0 · 공백 0.32 · 그 외 0.56 unit) 셀 안쪽 폭에
+  ///  맞는 배율을 구하고, 그 배율만큼 **폰트 크기를 줄인다**. 아무리 좁아도
+  ///  [minPt] 밑으로는 내리지 않는다(그 이하는 읽을 수 없으므로, 차라리
+  ///  그 열에 폭을 더 준다 — [_contentCols] 의 필요폭 계산과 짝을 이룬다).
+  ///
+  /// [pt]       기본 글씨 크기
+  /// [units]    문자열의 글자폭(폰트 1pt 기준)
+  /// [colWidth] 이 열에 실제로 배정된 폭(pt)
+  /// [padH]     좌우 패딩 합(pt)
+  static double _fitFontSize({
+    required double pt,
+    required double units,
+    required double colWidth,
+    required double padH,
+    double minPt = 4.2,
+  }) {
+    // 셀 안쪽에서 실제로 글씨가 쓸 수 있는 폭.
+    final inner = colWidth - padH - 1.5; // 1.5 = 렌더 오차 여유
+    if (units <= 0) return pt;
+    if (inner <= 0) return minPt;
+    final needed = units * pt; // 지금 크기로 필요한 폭
+    if (needed <= inner) return pt; // 이미 들어간다
+    final fitted = pt * (inner / needed);
+    return fitted < minPt ? minPt : fitted;
+  }
+
+  /// 열 인덱스별 **실제 배정 폭(pt)** — [_contentCols] 가 FlexColumnWidth 로
+  /// 넘긴 band 값을 그대로 돌려준다. 두줄방지 열의 글씨 축소에 쓴다.
+  static Map<int, double> _bandsOf(
+    Map<int, pw.TableColumnWidth> widths, {
+    required int n,
+  }) {
+    final out = <int, double>{};
+    for (var i = 0; i < n; i++) {
+      final w = widths[i];
+      if (w is pw.FlexColumnWidth) out[i] = w.flex;
+    }
+    return out;
   }
 
   static pw.TextAlign _align(String a) {
