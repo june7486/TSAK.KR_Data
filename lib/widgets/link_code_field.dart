@@ -21,6 +21,15 @@ import 'link_member_picker.dart';
 ///    페런츠: 인가번호 · 이름 · 전화번호 · 소속연맹 · 소속단위대
 ///            (요구: "페런츠 인가사항 입력란을 멘토랑 동일한 폼으로 구성")
 ///
+/// ## 2026-10-31 7차 요구 (반영 완료)
+///  · **인가일 · ATAS 인가번호 입력란 삭제** — 화면에서 감춘다.
+///    저장은 계속 하되(기존 값 보존), 새 입력은 받지 않는다.
+///  · **번호를 조회하면 현재 활동정보 자동 조회** — 멘토/페런츠가 범 인가자일 때
+///    인가번호를 입력하는 순간 회원(명단)에서 찾아 이름·전화·소속·직위·활동·훈련을
+///    자동으로 채운다. 이름으로도 찾을 수 있다(동명이인은 자동 채우지 않음).
+///  · **자동생성계정 안내 명확화** — 멘토/페런츠 계정은 **전화번호로 자동 생성**됨을
+///    폼 안에서 분명히 알린다(아이디=전화번호, 비밀번호=뒤 4자리+`!@@`).
+///
 /// ## 동작
 ///  · 인가번호를 추가하면 **인적사항 입력 다이얼로그**가 뜬다(이름·전화 필수).
 ///  · 등록된 인적사항은 칩 라벨에 "이름 #번호" 로 표시된다.
@@ -348,6 +357,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     var isScouter =
         (prof['isScouter'] == true) ||
         '${prof['scoutNo'] ?? ''}'.trim().isNotEmpty ||
+        // 요구(2026-10-31): 인가일·ATAS 는 더 이상 입력받지 않는다.
+        //  다만 **기존 저장분에 값이 있으면** 인가자로 판정해 스위치를 켠다
+        //  (예전 데이터를 편집할 때 스위치가 꺼져 정보가 숨는 것을 막는다).
         '${prof['inductedAt'] ?? ''}'.trim().isNotEmpty ||
         '${prof['atasNo'] ?? ''}'.trim().isNotEmpty;
     final scoutNoCtrl = TextEditingController(text: '${prof['scoutNo'] ?? ''}');
@@ -485,7 +497,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       ),
                       icon: const Icon(Icons.manage_search, size: 16),
                       label: const Text(
-                        '범스카우트 인가정보 연동 (선택)',
+                        '범스카우트 인가정보 연동 (번호·이름으로 검색)',
                         style: TextStyle(fontSize: 11.5),
                       ),
                     ),
@@ -534,7 +546,7 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                       ),
                     ),
                     subtitle: const Text(
-                      '인가자이면 인가번호·인가일·ATAS번호를 입력하세요 (비인가면 끄세요)',
+                      '인가자이면 인가번호를 입력하세요 (비인가면 끄세요)',
                       style: TextStyle(fontSize: 10.5, height: 1.3),
                     ),
                   ),
@@ -543,28 +555,40 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     TextField(
                       controller: scoutNoCtrl,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '인가번호 (본인 · 멘토/페런츠)',
-                        hintText: '예: 2186',
+                      // 요구(2026-10-31): "인가번호를 조회하면 현재 활동중인 정보가
+                      //  조회되도록" — 번호를 입력하는 순간 기존 인가자 정보를 찾아
+                      //  아래 [② 현재 활동정보]를 **자동으로 채운다**.
+                      onChanged: (v) => _autoFillFromNumber(
+                        v,
+                        nameCtrl: nameCtrl,
+                        phoneCtrl: phoneCtrl,
+                        leagueCtrl: leagueCtrl,
+                        unitCtrl: unitCtrl,
+                        positionCtrl: positionCtrl,
+                        activityCtrl: activityCtrl,
+                        trainingCtrl: trainingCtrl,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: isMentor
+                            ? '인가번호 (멘토 본인)'
+                            : '인가번호 (페런츠 본인)',
+                        hintText: '예: 2186 — 입력하면 활동정보가 자동 조회됩니다',
                         isDense: true,
+                        helperText: '번호 또는 이름으로 조회 → 현재 활동정보 자동 입력',
+                        helperMaxLines: 2,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: inductedCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '인가일',
-                        hintText: '예: 2025.12.19.',
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: atasCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'ATAS 인가번호',
-                        hintText: '예: ATAS-0000',
-                        isDense: true,
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '번호를 입력하면 기존 인가자의 현재 활동정보가 자동으로 채워집니다.\n'
+                        '동명이인은 아래 [범스카우트 인가정보 연동]에서 이름으로 확인하세요.',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          height: 1.35,
+                          color: AppColors.textGray,
+                        ),
                       ),
                     ),
                   ],
@@ -659,9 +683,13 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '전화번호로 아이디·비밀번호 자동 생성',
-                        style: TextStyle(
+                      // 요구(2026-10-31): "자동생성계정 → 멘토, 페런츠 추가시 전화번호
+                      //  입력시 멘토 및 페런츠의 계정은 전화번호로 자동 생성됨"
+                      Text(
+                        isMentor
+                            ? '자동 생성 계정 (멘토 · 전화번호 기반)'
+                            : '자동 생성 계정 (페런츠 · 전화번호 기반)',
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                           color: AppColors.scoutGreen,
@@ -675,6 +703,16 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                           fontSize: 12,
                           height: 1.4,
                           color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '위 전화번호로 ${isMentor ? '멘토' : '페런츠'} 계정이 자동 생성됩니다. '
+                        '따로 아이디를 만들 필요가 없습니다.',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          height: 1.35,
+                          color: AppColors.textGray,
                         ),
                       ),
                     ],
@@ -782,6 +820,93 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     }
   }
 
+  /// 인가번호 입력 시 **자동 조회** — 현재 활동정보를 즉시 채운다.
+  ///
+  /// ## 요구 (원문 2026-10-31)
+  /// > "멘토가 범스카우트일 경우 / 범스카우트 인가자일 경우 이름 또는 번호를
+  /// >  조회하면 현재 활동중인 정보가 조회되도록 하는 시스템을 넣음"
+  ///
+  /// ## 왜 onChanged 인가
+  ///  [범스카우트 인가정보 연동] 버튼은 **검색창을 한 번 더 거쳐야** 한다.
+  ///  번호만 알고 있는 대장에게는 그 왕복이 번거롭고, 오타 확인도 늦다.
+  ///  그래서 번호를 다 입력하는 순간 **자동으로** 회원을 찾아 채운다.
+  ///
+  /// ## 조회 순서
+  ///  ① 범(tsak) 번호 → ② 은하 번호 → ③ 이름 **정확 일치**(동명이인은 채우지 않음:
+  ///    잘못된 사람의 정보로 덮어쓰는 것이 빈 칸보다 위험하다)
+  ///
+  /// ## 덮어쓰기 규칙 (중요)
+  ///  · **이름·전화·소속**은 찾았을 때만 채운다(빈 칸 유지 방지).
+  ///  · **이미 값이 있는 칸은 건드리지 않는다** — 사용자가 고쳐 쓴 내용을
+  ///    자동 조회가 지워버리면 안 된다.
+  Future<void> _autoFillFromNumber(
+    String raw, {
+    required TextEditingController nameCtrl,
+    required TextEditingController phoneCtrl,
+    required TextEditingController leagueCtrl,
+    required TextEditingController unitCtrl,
+    required TextEditingController positionCtrl,
+    required TextEditingController activityCtrl,
+    required TextEditingController trainingCtrl,
+  }) async {
+    final code = _clean(raw);
+    if (code.isEmpty) return;
+    final m = _findMemberByCodeOrName(code);
+    if (m == null) return;
+
+    // 이미 값이 있는 칸은 보존한다(사용자 입력 우선).
+    void fillIfEmpty(TextEditingController c, String v) {
+      if (v.trim().isEmpty) return;
+      if (c.text.trim().isNotEmpty) return;
+      c.text = v.trim();
+    }
+
+    final lg = m.regLeague.trim().isNotEmpty ? m.regLeague : m.league;
+    final un = m.regUnit.trim().isNotEmpty ? m.regUnit : m.unit;
+    setState(() {
+      fillIfEmpty(nameCtrl, m.name);
+      fillIfEmpty(phoneCtrl, m.phone);
+      fillIfEmpty(leagueCtrl, lg);
+      fillIfEmpty(unitCtrl, un);
+      fillIfEmpty(positionCtrl, m.position);
+      fillIfEmpty(activityCtrl, m.activity);
+      fillIfEmpty(trainingCtrl, m.trainingStatus);
+    });
+    _snack(
+      '인가자 정보를 찾았습니다 — ${m.name} ${m.displayNumber}'
+      '${lg.trim().isEmpty ? '' : ' · $lg'}',
+    );
+  }
+
+  /// 번호 또는 **이름 정확 일치**로 회원을 찾는다.
+  ///
+  /// 동명이인이면 **찾지 않는다**(null) — 엉뚱한 사람의 정보를 채우는 것보다
+  /// 사용자가 [범스카우트 인가정보 연동]에서 직접 고르는 편이 안전하다.
+  Member? _findMemberByCodeOrName(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final state = context.read<AppState>();
+
+    // ① 숫자 → 범(tsak) 우선, ② 없으면 은하.
+    final digits = _clean(s);
+    if (digits.isNotEmpty && RegExp(r'^[0-9]+$').hasMatch(digits)) {
+      final tsak = state.byNumber(digits);
+      if (tsak != null) return tsak;
+      for (final m in state.allMembers) {
+        if (m.corps == 'eunha' && _clean(m.number) == digits) return m;
+      }
+      return null;
+    }
+
+    // ③ 이름 정확 일치(공백 제거 후 비교). 동명이인은 제외.
+    final key = s.replaceAll(RegExp(r'\s+'), '');
+    final hits = <Member>[
+      for (final m in state.allMembers)
+        if (m.name.replaceAll(RegExp(r'\s+'), '') == key) m,
+    ];
+    return hits.length == 1 ? hits.first : null;
+  }
+
   /// '범스카우트 인가정보 연동' (요구) — 기존 인가자를 검색해 인적사항을 채운다.
   ///   · 멘토: 번호칸은 **멘티(본인)번호**이므로 건드리지 않고, 이름·전화·소속만 채운다.
   ///   · 페런츠: 번호칸이 **페런츠 인가번호**이므로 번호까지 채운다.
@@ -839,8 +964,15 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
       if (scoutNoCtrl != null && scoutNo.isNotEmpty) {
         scoutNoCtrl.text = scoutNo;
       }
-      if (inductedCtrl != null && date.isNotEmpty) inductedCtrl.text = date;
-      if (atasCtrl != null && atas.isNotEmpty) atasCtrl.text = atas;
+      // 요구(2026-10-31): 인가일·ATAS 입력란은 **화면에서 삭제**했다.
+      //  다만 기존에 저장된 값이 있으므로 **읽어온 값을 조용히 보존**한다
+      //  (컨트롤러를 지우면 저장 시 빈 값으로 덮어써 데이터가 사라진다).
+      if (inductedCtrl != null && inductedCtrl.text.trim().isEmpty) {
+        if (date.isNotEmpty) inductedCtrl.text = date;
+      }
+      if (atasCtrl != null && atasCtrl.text.trim().isEmpty) {
+        if (atas.isNotEmpty) atasCtrl.text = atas;
+      }
       // ── ② 현재 활동정보 ──
       if (positionCtrl != null && position.isNotEmpty) {
         positionCtrl.text = position;
