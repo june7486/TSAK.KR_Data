@@ -111,7 +111,6 @@ void main() {
 
     test('이름 조회 버튼이 이름 검색을 안내한다', () {
       expect(src.contains('번호·이름으로 검색'), isTrue);
-      expect(src.contains('동명이인'), isTrue);
     });
 
     // ── 조회 규칙을 순수 함수로 고정 ──

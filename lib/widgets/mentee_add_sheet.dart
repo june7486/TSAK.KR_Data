@@ -25,6 +25,7 @@ import '../models/member.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
 import 'link_member_picker.dart';
+import 'tsak_name_lookup.dart';
 
 /// 멘티 추가 시트를 연다.
 ///
@@ -170,6 +171,8 @@ class _MenteeAddDialogState extends State<_MenteeAddDialog> {
         _digits(code) == selfNo &&
         code.startsWith('G') == selfIsEunha;
     final dup = code.isNotEmpty && widget.existing.any((e) => normCode(e) == code);
+    // [요구 ①] 인가자 명부를 이름으로 조회해 고르는 기능은 마스터·관리자 전용.
+    final canLookup = tsakIsAdminViewer(context.read<AppState>());
 
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
@@ -238,7 +241,7 @@ class _MenteeAddDialogState extends State<_MenteeAddDialog> {
                     width: 118,
                     child: TextField(
                       controller: _code,
-                      autofocus: true,
+                      autofocus: !canLookup,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         isDense: true,
@@ -263,6 +266,27 @@ class _MenteeAddDialogState extends State<_MenteeAddDialog> {
                   ),
                 ],
               ),
+              // [요구 ①] 마스터·관리자 — 이름으로 조회해 **이름을 선택**하면
+              //  그 인가자의 현재 활동정보가 아래 미리보기에 그대로 뜬다.
+              if (canLookup) ...[
+                const SizedBox(height: 8),
+                TsakMemberLookupField(
+                  controller: _code,
+                  label: '인가자 이름·번호 조회',
+                  hint: '예: 143 또는 김범수',
+                  helper: '이름을 선택하면 현재 활동정보가 함께 확인됩니다',
+                  autofocus: true,
+                  onPicked: (m) {
+                    setState(() {
+                      _code.text = m.corps == 'eunha'
+                          ? 'G${_digits(m.number)}'
+                          : _digits(m.number);
+                      _name.text = m.name.trim();
+                      _error = null;
+                    });
+                  },
+                ),
+              ],
               const SizedBox(height: 6),
               _preview(code: code, found: found, isSelf: isSelf, dup: dup),
               const SizedBox(height: 10),

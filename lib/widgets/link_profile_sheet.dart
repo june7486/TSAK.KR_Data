@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/member.dart';
+import '../services/app_state.dart';
 import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
+import 'tsak_name_lookup.dart';
 
 /// 멘토 · 페런츠 **인적사항 입력/수정 시트**.
 ///
@@ -29,6 +32,10 @@ Future<bool> showLinkProfileSheet(
 }) async {
   final nas = context.read<NasApi>();
   final isMentor = kind == 'mentor';
+  // [요구 ①] 전체 인가자 명부를 이름으로 조회해 고르는 기능은 **마스터·관리자
+  // 전용**이다. 개인 로그인에 열어 주면 인가자 개인정보를 아무나 훑을 수 있다.
+  final state = context.read<AppState>();
+  final canLookup = tsakIsAdminViewer(state);
 
   final codeCtrl = TextEditingController(
     text: code.isNotEmpty ? code : (isMentor ? selfNumber : ''),
@@ -54,6 +61,9 @@ Future<bool> showLinkProfileSheet(
   final scoutNoCtrl = TextEditingController(
     text: '${profile['scoutNo'] ?? ''}',
   );
+  // 인가일 · ATAS 인가번호 (요구 ② 로 화면에서 감췄다) —
+  //  저장 키는 살려 둔다. 기존에 적힌 값이 저장 한 번에 지워지면 안 된다.
+  //  (값이 비어 있으면 저장 시 빈 문자열로 무해하게 넘어간다.)
   final inductedCtrl = TextEditingController(
     text: '${profile['inductedAt'] ?? ''}',
   );
@@ -79,6 +89,30 @@ Future<bool> showLinkProfileSheet(
         final last4 = digits.length >= 4
             ? digits.substring(digits.length - 4)
             : '';
+        // [요구 ①] 마스터·관리자가 인가자를 고르면 **현재 활동정보 자동 입력**.
+        //  빈 칸만 채운다 — 이미 손으로 적은 값(예: 페런츠 직위)을 덮지 않는다.
+        void fillIfEmpty(TextEditingController c, String v) {
+          final t = v.trim();
+          if (t.isEmpty) return;
+          if (c.text.trim().isNotEmpty) return;
+          c.text = t;
+        }
+
+        void fillFromMember(Member m) {
+          final lg = m.regLeague.trim().isNotEmpty ? m.regLeague : m.league;
+          final un = m.regUnit.trim().isNotEmpty ? m.regUnit : m.unit;
+          fillIfEmpty(nameCtrl, m.name);
+          fillIfEmpty(phoneCtrl, m.phone);
+          fillIfEmpty(leagueCtrl, lg);
+          fillIfEmpty(unitCtrl, un);
+          fillIfEmpty(positionCtrl, m.position);
+          fillIfEmpty(activityCtrl, m.activity);
+          fillIfEmpty(trainingCtrl, m.trainingStatus);
+          // 인가일·ATAS 는 화면에서 감췄지만, 조회해 온 값이 있으면 살려 둔다.
+          fillIfEmpty(inductedCtrl, m.date);
+          fillIfEmpty(atasCtrl, m.atasNo);
+        }
+
         // 섹션 헤더 (요구: '① 범스카우트 인가시 / ② 현재 활동정보' 구분).
         Widget secHdr(String text, IconData icon, Color color) => Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 2),
@@ -166,41 +200,42 @@ Future<bool> showLinkProfileSheet(
                   value: isScouter,
                   activeThumbColor: AppColors.purple,
                   onChanged: (v) => setDlg(() => isScouter = v),
+                  // [요구 ③] 스위치 문구를 '멘토(페런츠)가 범인가인 경우' 로 바꿨다.
                   title: const Text(
-                    '범스카우트 인가자',
+                    '멘토(페런츠)가 범인가인 경우',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   ),
                   subtitle: const Text(
-                    '인가자이면 인가번호·인가일·ATAS번호를 입력하세요 (비인가면 끄세요)',
+                    '인가자이면 인가번호를 입력하세요 (비인가면 끄세요)',
                     style: TextStyle(fontSize: 10.5, height: 1.3),
                   ),
                 ),
                 if (isScouter) ...[
                   const SizedBox(height: 6),
-                  TextField(
-                    controller: scoutNoCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '인가번호 (본인 · 멘토/페런츠)',
-                      hintText: '예: 2186',
+                  if (canLookup)
+                    // 마스터·관리자 — 이름/번호로 조회해 **이름을 선택**하고,
+                    //  고른 인가자의 현재 활동정보를 자동으로 채운다.
+                    TsakMemberLookupField(
+                      controller: scoutNoCtrl,
+                      label: isMentor
+                          ? '인가번호 (멘토 본인 · 이름/번호 조회)'
+                          : '인가번호 (페런츠 본인 · 이름/번호 조회)',
+                      hint: '예: 2186 또는 김범수',
+                      helper: '이름을 선택하면 현재 활동정보가 자동 입력됩니다',
+                      onPicked: (m) => setDlg(() => fillFromMember(m)),
+                    )
+                  else
+                    // 개인 로그인 — 개인정보 노출 위험이 있어 기존처럼 직접 입력.
+                    TextField(
+                      controller: scoutNoCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: isMentor
+                            ? '인가번호 (멘토 본인)'
+                            : '인가번호 (페런츠 본인)',
+                        hintText: '예: 2186',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: inductedCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '인가일',
-                      hintText: '예: 2025.12.19.',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: atasCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'ATAS 인가번호',
-                      hintText: '예: ATAS-0000',
-                    ),
-                  ),
                 ],
                 const SizedBox(height: 14),
                 // ───────── ② 현재 활동정보 ─────────
@@ -251,6 +286,18 @@ Future<bool> showLinkProfileSheet(
                     hintText: '중급 / 상급 / 커미셔너과정 / 부교수 / 교수',
                   ),
                 ),
+                if (!canLookup) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    '개인 로그인에서는 인가자 명부를 이름으로 조회할 수 없습니다.\n'
+                    '인가번호와 활동정보를 직접 입력해 주세요.',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      height: 1.35,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 // 아이디/비번 미리보기 (전화번호 → 아이디, 뒤 4자리 → 비번)
                 Container(
@@ -265,9 +312,9 @@ Future<bool> showLinkProfileSheet(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '자동 생성 계정 (전화번호 기반)',
-                        style: TextStyle(
+                      Text(
+                        '자동 생성 계정 (${isMentor ? '멘토' : '페런츠'} · 전화번호 기반)',
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                           color: AppColors.taegeukBlue,
@@ -281,6 +328,16 @@ Future<bool> showLinkProfileSheet(
                       Text(
                         '비밀번호: ${last4.isEmpty ? '(뒤 4자리)' : '$last4!@@'}',
                         style: const TextStyle(fontSize: 11.5),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '위 전화번호로 ${isMentor ? '멘토' : '페런츠'} 계정이 자동 생성됩니다.\n'
+                        '따로 아이디를 만들 필요가 없습니다.',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          height: 1.35,
+                          color: AppColors.textGray,
+                        ),
                       ),
                     ],
                   ),

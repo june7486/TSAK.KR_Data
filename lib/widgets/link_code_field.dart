@@ -8,6 +8,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import 'confirm.dart';
 import 'link_member_picker.dart';
+import 'tsak_name_lookup.dart';
 
 /// 멘토·페런츠 인적사항 입력 필드.
 ///
@@ -378,6 +379,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
     final trainingCtrl = TextEditingController(
       text: '${prof['trainingStatus'] ?? ''}',
     );
+    // [요구 ①] 인가자 명부를 **이름으로 조회해 고르는** 기능은 마스터·관리자
+    //  전용이다. 개인 로그인에 열어 주면 인가자 개인정보를 아무나 훑을 수 있다.
+    final canLookup = tsakIsAdminViewer(context.read<AppState>());
 
     final saved = await showDialog<bool>(
       context: context,
@@ -538,8 +542,9 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     value: isScouter,
                     activeThumbColor: _accent,
                     onChanged: (v) => setDlg(() => isScouter = v),
+                    // [요구 ③] 스위치 문구를 '멘토(페런츠)가 범인가인 경우' 로 바꿨다.
                     title: const Text(
-                      '범스카우트 인가자',
+                      '멘토(페런츠)가 범인가인 경우',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -552,38 +557,66 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                   ),
                   if (isScouter) ...[
                     const SizedBox(height: 6),
-                    TextField(
-                      controller: scoutNoCtrl,
-                      keyboardType: TextInputType.number,
-                      // 요구(2026-10-31): "인가번호를 조회하면 현재 활동중인 정보가
-                      //  조회되도록" — 번호를 입력하는 순간 기존 인가자 정보를 찾아
-                      //  아래 [② 현재 활동정보]를 **자동으로 채운다**.
-                      onChanged: (v) => _autoFillFromNumber(
-                        v,
-                        nameCtrl: nameCtrl,
-                        phoneCtrl: phoneCtrl,
-                        leagueCtrl: leagueCtrl,
-                        unitCtrl: unitCtrl,
-                        positionCtrl: positionCtrl,
-                        activityCtrl: activityCtrl,
-                        trainingCtrl: trainingCtrl,
+                    if (canLookup)
+                      // 마스터·관리자 — 이름/번호로 조회해 **이름을 선택**하고,
+                      //  고른 인가자의 현재 활동정보를 자동으로 채운다.
+                      TsakMemberLookupField(
+                        controller: scoutNoCtrl,
+                        label: isMentor
+                            ? '인가번호 (멘토 본인 · 이름/번호 조회)'
+                            : '인가번호 (페런츠 본인 · 이름/번호 조회)',
+                        hint: '예: 2186 또는 김범수',
+                        helper: '이름을 선택하면 현재 활동정보가 자동 입력됩니다',
+                        onPicked: (m) => setDlg(
+                          () => _fillFromMember(
+                            m,
+                            nameCtrl: nameCtrl,
+                            phoneCtrl: phoneCtrl,
+                            leagueCtrl: leagueCtrl,
+                            unitCtrl: unitCtrl,
+                            positionCtrl: positionCtrl,
+                            activityCtrl: activityCtrl,
+                            trainingCtrl: trainingCtrl,
+                            inductedCtrl: inductedCtrl,
+                            atasCtrl: atasCtrl,
+                          ),
+                        ),
+                      )
+                    else
+                      TextField(
+                        controller: scoutNoCtrl,
+                        keyboardType: TextInputType.number,
+                        // 요구(2026-10-31): "인가번호를 조회하면 현재 활동중인 정보가
+                        //  조회되도록" — 번호를 입력하는 순간 기존 인가자 정보를 찾아
+                        //  아래 [② 현재 활동정보]를 **자동으로 채운다**.
+                        onChanged: (v) => _autoFillFromNumber(
+                          v,
+                          nameCtrl: nameCtrl,
+                          phoneCtrl: phoneCtrl,
+                          leagueCtrl: leagueCtrl,
+                          unitCtrl: unitCtrl,
+                          positionCtrl: positionCtrl,
+                          activityCtrl: activityCtrl,
+                          trainingCtrl: trainingCtrl,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: isMentor
+                              ? '인가번호 (멘토 본인)'
+                              : '인가번호 (페런츠 본인)',
+                          hintText: '예: 2186 — 입력하면 활동정보가 자동 조회됩니다',
+                          isDense: true,
+                          helperText: '번호 또는 이름으로 조회 → 현재 활동정보 자동 입력',
+                          helperMaxLines: 2,
+                        ),
                       ),
-                      decoration: InputDecoration(
-                        labelText: isMentor
-                            ? '인가번호 (멘토 본인)'
-                            : '인가번호 (페런츠 본인)',
-                        hintText: '예: 2186 — 입력하면 활동정보가 자동 조회됩니다',
-                        isDense: true,
-                        helperText: '번호 또는 이름으로 조회 → 현재 활동정보 자동 입력',
-                        helperMaxLines: 2,
-                      ),
-                    ),
                     const SizedBox(height: 4),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '번호를 입력하면 기존 인가자의 현재 활동정보가 자동으로 채워집니다.\n'
-                        '동명이인은 아래 [범스카우트 인가정보 연동]에서 이름으로 확인하세요.',
+                        canLookup
+                            ? '이름을 선택하면 해당 인가자의 현재 활동정보가 자동으로 채워집니다.'
+                            : '인가번호와 활동정보를 직접 입력해 주세요.\n'
+                                  '(인가자 명부 이름 조회는 마스터·관리자만 가능합니다)',
                         style: TextStyle(
                           fontSize: 10.5,
                           height: 1.35,
@@ -839,6 +872,45 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
   ///  · **이름·전화·소속**은 찾았을 때만 채운다(빈 칸 유지 방지).
   ///  · **이미 값이 있는 칸은 건드리지 않는다** — 사용자가 고쳐 쓴 내용을
   ///    자동 조회가 지워버리면 안 된다.
+  ///
+  /// ## 요구 ① (2026-11-01) — 마스터·관리자: 이름 조회 후 **선택**해서 채움
+  void _fillFromMember(
+    Member m, {
+    required TextEditingController nameCtrl,
+    required TextEditingController phoneCtrl,
+    required TextEditingController leagueCtrl,
+    required TextEditingController unitCtrl,
+    required TextEditingController positionCtrl,
+    required TextEditingController activityCtrl,
+    required TextEditingController trainingCtrl,
+    required TextEditingController inductedCtrl,
+    required TextEditingController atasCtrl,
+  }) {
+    void fillIfEmpty(TextEditingController c, String v) {
+      final t = v.trim();
+      if (t.isEmpty) return;
+      if (c.text.trim().isNotEmpty) return;
+      c.text = t;
+    }
+
+    final lg = m.regLeague.trim().isNotEmpty ? m.regLeague : m.league;
+    final un = m.regUnit.trim().isNotEmpty ? m.regUnit : m.unit;
+    fillIfEmpty(nameCtrl, m.name);
+    fillIfEmpty(phoneCtrl, m.phone);
+    fillIfEmpty(leagueCtrl, lg);
+    fillIfEmpty(unitCtrl, un);
+    fillIfEmpty(positionCtrl, m.position);
+    fillIfEmpty(activityCtrl, m.activity);
+    fillIfEmpty(trainingCtrl, m.trainingStatus);
+    // 인가일·ATAS 는 화면에서 감췄지만, 조회해 온 값이 있으면 살려 둔다.
+    fillIfEmpty(inductedCtrl, m.date);
+    fillIfEmpty(atasCtrl, m.atasNo);
+    _snack(
+      '인가자 정보를 채웠습니다 — ${m.name} ${m.displayNumber}'
+      '${lg.trim().isEmpty ? '' : ' · $lg'}',
+    );
+  }
+
   Future<void> _autoFillFromNumber(
     String raw, {
     required TextEditingController nameCtrl,
