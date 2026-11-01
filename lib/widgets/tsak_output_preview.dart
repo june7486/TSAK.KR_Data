@@ -158,6 +158,46 @@ class TsakOutputPreviewDebug {
 /// **PDF · 이미지(JPG) · 인쇄**로 내보낸다. 아이폰 등은 저장 옵션 창
 /// ([askSaveOption])을 거쳐 사진앱에 저장된다.
 ///
+/// 미리보기 카드 안에 그릴 **종이 사각형**의 크기를 구한다(A4 실제 비율).
+///
+/// ## 🐞 왜 필요한가 (2026-11-02, build #567)
+/// 보고: **"가로모드 선택시 세로모드가 됨"**
+///
+/// PDF 는 정상이었다(`landscape:true` → 841.9 × 595.3pt 실측). 문제는 미리보기
+/// 카드가 **방향과 무관한 고정 세로 박스(흰 배경)** 였다는 것. 흰 종이가 흰 카드
+/// 안에 들어가 종이 경계가 사라지고, **카드의 둥근 세로 테두리가 곧 종이**처럼
+/// 읽혔다 → "가로를 골랐는데 세로가 됐다".
+///
+/// → 카드 배경을 회색 책상으로, 종이는 **A4 실제 비율**로 그린다.
+///   가로 297:210 = 1.414, 세로 210:297 = 0.707. 방향을 고르면 종이가 실제로 눕는다.
+///
+/// [boxW]/[boxH] 는 카드 안쪽 여유 공간, [landscape] 는 현재 방향.
+/// 반환값은 카드 안에 **꼭 맞게** 들어가는 (폭, 높이).
+(double, double) paperSize(
+  double boxW,
+  double boxH, {
+  required bool landscape,
+}) {
+  // A4 실제 비율 — 가로는 가로가 길고, 세로는 세로가 길다.
+  final ratio = landscape ? 297 / 210 : 210 / 297;
+  var w = boxW;
+  var h = w / ratio;
+  if (h > boxH) {
+    h = boxH;
+    w = h * ratio;
+  }
+  return (w, h);
+}
+
+/// 미리보기 카드의 높이를 구한다 — 가로 모드면 **낮게** 잡는다.
+///
+/// (버그 수정 #567) 종이가 낮아지는데 카드가 그대로 높으면 위아래 회색 여백만
+/// 커져 "여전히 세로"로 보였다.
+double previewCardHeight(double screenHeight, {required bool landscape}) {
+  final base = (screenHeight * 0.34).clamp(180.0, 420.0);
+  return landscape ? (base * 0.78).clamp(150.0, 330.0) : base;
+}
+
 /// [extra] 를 주면 **추가입력 항목 선택 칩**이 나타나고, 고른 항목이 열로
 /// 덧붙은 결과를 실시간으로 보여준다(원문은 그대로 두고 매번 새로 조립).
 Future<void> showTsakOutputPreview(
@@ -241,7 +281,13 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   /// (요구 2026-10-31 정정) "두단 세단으로 표시하라는 것은 **이름별로 칸을 더
   ///  늘리라는 의미**임. 상하 두 단을 넣으라는 것이 아님"
   /// → 표를 쪼개지 않고 행 높이만 늘린다.
-  int _rowLines = 1;
+  ///
+  /// ## 🗑️ 화면에서 제거 (2026-11-02, build #567)
+  /// 보고: **"이름줄: 항목 삭제"**
+  ///  미리보기 옵션의 `이름줄 1줄/2줄/3줄` 칩을 없앴다. 쓸모가 낮고 오히려
+  ///  옵션 영역만 길게 만들었다. [DocPdf] 의 `rowLines` 자체는 남겨 두므로
+  ///  (다른 화면이 쓸 수 있다) 값은 **항상 1**(기본)로 고정된다.
+  final int _rowLines = 1;
 
   /// 셀 한 칸이 가질 수 있는 최대 줄 수 — null 이면 제한 없음.
   /// (요구 2026-10-31 2차) “항목이 너무 길어지면 이름하나당 2줄 이상”
@@ -379,7 +425,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
       for (var i = 0; i < d.viewColumns.length; i++)
         if (d.effectiveNoWrapCols.contains(i)) d.viewColumns[i],
     ];
-    return '스위치 OFF — 문서 기본 두줄방지 ${base}열: ${names.join('·')}';
+    return '스위치 OFF — 문서 기본 두줄방지 $base열: ${names.join('·')}';
   }
 
   void _snack(String m) {
@@ -465,9 +511,8 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
     }
 
     final h = MediaQuery.of(context).size.height;
-    // 미리보기 높이 — 화면이 작으면 줄이고, 크면 넉넉히. 나머지 옵션 영역은
-    //  스크롤되므로(=아래 Column 이 Expanded+ScrollView) 잘리지 않는다.
-    final previewHeight = (h * 0.34).clamp(180.0, 420.0);
+    // 미리보기 카드 높이 — 가로 모드면 낮게(종이가 낮으므로).
+    final previewHeight = previewCardHeight(h, landscape: _landscape);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(12),
@@ -518,11 +563,30 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
               ),
               const SizedBox(height: 6),
               // ── 미리보기 화면(첫 페이지) ──
+              //
+              // ## 🐞 버그 수정 (2026-11-02, build #567)
+              // 보고: **"가로모드 선택시 세로모드가 됨"**
+              //
+              // ## 원인 — 종이가 아니라 **카드**가 세로였다
+              //  PDF 는 처음부터 정상이었다. 실측(`landscape:true` →
+              //  pymupdf 페이지 841.9 × 595.3pt = **가로**)로 확인했다.
+              //  문제는 이 미리보기 카드가 **방향과 무관한 고정 박스**
+              //  (`height: previewHeight`, 흰 배경)였다는 점이다.
+              //   · 흰 종이가 **흰 카드** 안에 들어가니 종이 경계가 보이지 않고,
+              //   · 카드 테두리(둥근 사각형)만 '종이'로 읽혔다.
+              //   → 사용자는 **카드의 세로 비율**을 종이 방향으로 인식해
+              //     "가로를 골랐는데 세로가 됐다"고 느꼈다.
+              //
+              // ## 해결
+              //  ① 카드 배경을 **회색 책상**으로 바꿔 종이 경계를 보이게 한다.
+              //  ② 종이 박스를 **A4 실제 비율**(가로 297:210 · 세로 210:297)로
+              //     직접 계산해 그린다 → 방향을 고르면 종이가 **눈에 보이게**
+              //     눕는다(가로 = 넓고 낮음, 세로 = 좁고 높음).
               Container(
                 width: double.infinity,
                 height: previewHeight,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: const Color(0xFFE7E3DA),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: const Color(0xFFD8D3CA)),
                 ),
@@ -554,25 +618,51 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                         ),
                       );
                     }
-                    // (버그 수정) 표가 열을 많이 먹어 이미지 원본 폭이 커지면
-                    //  BoxFit.contain 만으로는 **카드 밖으로 잘려** 보였다.
-                    //  FittedBox 로 한 번 더 감싸 카드 안에 **반드시** 들어오게 한다.
+                    // (버그 수정 #567) 종이를 **A4 실제 비율**로 그려 방향이
+                    //  눈에 보이게 한다. 종전에는 BoxFit.contain 으로 이미지만
+                    //  카드 안에 맞춰, 카드(세로 박스)의 테두리가 곧 '종이'처럼
+                    //  읽혀 가로/세로 구분이 사라졌다.
                     return LayoutBuilder(
-                      builder: (_, box) => SizedBox(
-                        width: box.maxWidth,
-                        height: box.maxHeight,
-                        child: InteractiveViewer(
-                          maxScale: 6,
-                          boundaryMargin: const EdgeInsets.all(24),
-                          child: FittedBox(
-                            fit: BoxFit.contain,
-                            child: Image.memory(
-                              snap.data!,
-                              gaplessPlayback: true,
+                      builder: (_, box) {
+                        // A4 실제 비율로 종이를 그린다 — 방향이 눈에 보인다.
+                        final size = paperSize(
+                          box.maxWidth - 16,
+                          box.maxHeight - 16,
+                          landscape: _landscape,
+                        );
+                        final paperW = size.$1;
+                        final paperH = size.$2;
+                        return Center(
+                          child: Container(
+                            width: paperW,
+                            height: paperH,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              // 종이가 '떠 있는' 느낌 — 책상색 위 그림자.
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x33000000),
+                                  blurRadius: 7,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InteractiveViewer(
+                              maxScale: 6,
+                              boundaryMargin: const EdgeInsets.all(24),
+                              child: Image.memory(
+                                snap.data!,
+                                gaplessPlayback: true,
+                                width: paperW,
+                                height: paperH,
+                                fit: BoxFit.fill,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     );
                   },
                 ),
@@ -621,19 +711,6 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                                 : AppColors.textGray,
                           ),
                         ),
-                      ),
-                      // ── 이름 줄 — 이름 한 칸의 세로 높이를 2·3줄분으로 ──
-                      //   (요구) "좌측 이름 하나당 세로줄 2줄 3줄"
-                      _linesCell(
-                        label: '이름줄',
-                        value: _rowLines,
-                        options: const <int>[1, 2, 3],
-                        names: const <int, String>{
-                          1: '1줄',
-                          2: '2줄',
-                          3: '3줄',
-                        },
-                        onPick: (v) => setState(() => _rowLines = v),
                       ),
                       // ── 셀 줄 수 — 항목이 길 때 이름하나당 2줄 이상 허용 ──
                       _linesCell(
