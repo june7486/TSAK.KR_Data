@@ -31,6 +31,121 @@ class TsakExtraPick {
   final Set<String> initial;
 }
 
+/// 미리보기가 보여줄 **최종 문서**를 계산한다 — 옵션·추가항목·열선택을 모두 반영.
+///
+/// ## 🐞 버그 수정 (2026-11-02, build #563)
+/// 보고: **"미리보기 출력시, 항목선택 사항이 실시간으로 반영되고 있지 않음"**
+/// (추가항목 8/8 전부 켜져 있고 '입력자 5명' 인데 미리보기 표에는 추가항목 열이
+///  하나도 없었다.)
+///
+/// 원인이 셋이었고 셋 다 여기서 고친다.
+///
+/// **① 열 선택이 추가항목 열을 잘라먹었다.**
+///   종전에는 `extraColumns()` 로 추가항목 열을 **붙인 뒤에** `pickedCols` 로
+///   열을 걸렀다. 그런데 `pickedCols` 는 *원본* 열 인덱스만 담으므로
+///   추가항목 열(인덱스 >= 원본 열 수)은 조건에 걸리지 않아 전부 탈락했다.
+///   → 붙이자마자 사라져 "반영이 안 되는" 것처럼 보였다.
+///   (원본 옵션에 `cols` 가 있는 화면, 또는 출력항목 칩을 한 번이라도 누른 경우
+///    100% 재현. 참가자 명부 기본값은 `cols` 가 없어 우연히 정상으로 보였다.)
+///   → **먼저 원본 열을 고르고, 그 다음에 추가항목 열을 붙인다.**
+///
+/// **② `copyWith(cols: null)` 로는 `cols` 를 지울 수 없었다.**
+///   `copyWith` 가 `cols ?? this.cols` 라서 null 을 주면 기존값이 그대로 살아남고,
+///   살아남은 `cols` 가 `viewColumns` 에서 추가항목 열을 다시 잘라냈다.
+///   → `clearCols` 플래그로 **명시적으로** 지운다.
+///
+/// **③** 미리보기 재생성 서명(`_key`)에 **행사 총 인원**이 빠져 있었다.
+///   칩 개수('8 / 8')는 그대로인데 '입력자 5명 → 6명' 처럼 데이터만 바뀌면
+///   서명이 같아 미리보기가 갱신되지 않았다. → 서명에 인원을 포함한다.
+///
+/// [pickedCols] 가 null 이면 '전체 열' 선택 상태다.
+TsakTableDoc resolveOutputPreviewDoc({
+  required TsakTableDoc doc,
+  TsakExtraPick? extra,
+  required Set<String> extraKeys,
+  required Set<int>? pickedCols,
+}) {
+  // ── 1단계: **원본** 열에 대해서만 열 선택을 적용한다.
+  var base = doc;
+  final p = pickedCols;
+  if (p != null) {
+    final total = doc.columns.length;
+    final keep = <int>[
+      for (var i = 0; i < total; i++)
+        if (p.contains(i)) i,
+    ];
+    // 아무것도 안 남으면 '전체'로 되돌린다(빈 표가 되는 것을 막는다).
+    if (keep.isNotEmpty && keep.length < total) {
+      base = TsakTableDoc(
+        title: doc.title,
+        subtitle: doc.subtitle,
+        description: doc.description,
+        author: doc.author,
+        extra: doc.extra,
+        columns: <String>[for (final i in keep) doc.columns[i]],
+        rows: <List<String>>[
+          for (final r in doc.rows)
+            <String>[for (final i in keep) i < r.length ? r[i] : ''],
+        ],
+        summary: doc.summary,
+        footerLeft: doc.footerLeft,
+        landscape: doc.landscape,
+        // ⚠️ 여기서 cols 를 **확실히 지운다**. 남겨 두면 아래에서 붙인
+        //    추가항목 열이 viewColumns 단계에서 다시 잘려 나간다.
+        options: doc.options?.copyWith(cols: null, clearCols: true),
+        reportBlocks: doc.reportBlocks,
+        template: doc.template,
+      );
+    }
+  }
+
+  // ── 2단계: 추가항목 열을 **맨 뒤에** 붙인다(이제 잘릴 일이 없다).
+  final ex = extra;
+  if (ex == null || extraKeys.isEmpty) return base;
+  final withExtra = extraColumns(base, source: ex.source, keys: extraKeys);
+
+  // ── 3단계: 옵션의 cols 를 원본 열 기준으로 다시 매핑한다.
+  //   `extraColumns` 가 이미 새 인덱스를 덧붙여 주지만, 위 1단계에서 열이
+  //   줄었을 수 있으므로 **현재 열 순서**를 그대로 확정해 준다.
+  //   (viewColumns 가 여기서 또 필터링하면 ①의 버그가 재발한다.)
+  final mapped = <int>[for (var i = 0; i < withExtra.columns.length; i++) i];
+  final o = withExtra.options;
+  return TsakTableDoc(
+    title: withExtra.title,
+    subtitle: withExtra.subtitle,
+    description: withExtra.description,
+    author: withExtra.author,
+    extra: withExtra.extra,
+    columns: withExtra.columns,
+    rows: withExtra.rows,
+    summary: withExtra.summary,
+    footerLeft: withExtra.footerLeft,
+    landscape: withExtra.landscape,
+    options: o?.copyWith(cols: mapped),
+    reportBlocks: withExtra.reportBlocks,
+    template: withExtra.template,
+  );
+}
+
+/// 테스트에서 미리보기 위젯 없이 **같은 계산**을 돌리기 위한 얇은 훅.
+///
+/// 화면(위젯)을 띄우지 않고도 "칩을 켜면 표에 열이 붙는가"를 검증할 수 있다.
+class TsakOutputPreviewDebug {
+  const TsakOutputPreviewDebug._();
+
+  static TsakTableDoc resolveDoc({
+    required TsakTableDoc doc,
+    TsakExtraPick? extra,
+    required Set<String> extraKeys,
+    Set<int>? pickedCols,
+  }) => resolveOutputPreviewDoc(
+    doc: doc,
+    extra: extra,
+    extraKeys: extraKeys,
+    pickedCols: pickedCols,
+  );
+}
+
 /// 모든 출력 화면 공용 **실시간 출력 미리보기** 창.
 ///
 /// ## 요구
@@ -104,7 +219,8 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   }
 
   void _toggleCol(int i) {
-    setState(() {
+    // 열 선택은 **표 자체**를 바꾸므로 미리보기를 즉시 다시 만든다.
+    _bump(() {
       final p = <int>{...?_pickedCols};
       // null(전체) 상태에서 하나를 끄면 나머지를 전부 채워 넣는다.
       if (_pickedCols == null) {
@@ -180,9 +296,13 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   String get _key {
     final picked = <int>[...?_pickedCols]..sort();
     final extras = <String>[..._extraKeys]..sort();
+    // ③ 행사 총 인원까지 서명에 넣는다.
+    //   칩 개수('8 / 8')는 그대로인데 '입력자 5명 → 6명' 처럼 데이터만 바뀌면
+    //   서명이 같아 미리보기가 갱신되지 않았다(보고된 "실시간 반영 안 됨").
+    final srcCount = widget.extra?.source.length ?? 0;
     return '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
         '${_fontScale.toStringAsFixed(2)}|$_rowLines|${_cellLines ?? 0}|'
-        '$picked|${extras.join(',')}';
+        '$srcCount|$picked|${extras.join(',')}';
   }
 
   String get _base => widget.doc.baseName(); // 예: TSAK_출력_게시판 출력
@@ -191,51 +311,14 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   ///
   /// 매번 새로 조립하므로 원본 [TsakTableDoc] 은 절대 변하지 않는다
   /// (항목을 껐다 켜도 열이 중복되지 않는다).
-  TsakTableDoc get _doc {
-    final ex = widget.extra;
-    var d = (ex == null || _extraKeys.isEmpty)
-        ? widget.doc
-        : extraColumns(widget.doc, source: ex.source, keys: _extraKeys);
-    // (요구 2026-10-31 6차) 미리보기에서 고른 열을 반영.
-    //  순서는 원본 그대로 두고 **켜진 것만** 남긴다(옵션 시트의 순서 이동과
-    //  충돌하지 않게). 전부 켜져 있으면 옵션을 건드리지 않는다.
-    final p = _pickedCols;
-    if (p != null) {
-      final all = d.columns.length;
-      final allOn = p.length >= all;
-      if (!allOn) {
-        final keep = <int>[
-          for (var i = 0; i < all; i++)
-            if (p.contains(i)) i,
-        ];
-        if (keep.isNotEmpty) {
-          final cols = <String>[for (final i in keep) d.columns[i]];
-          final rows = <List<String>>[
-            for (final r in d.rows)
-              <String>[for (final i in keep) i < r.length ? r[i] : ''],
-          ];
-          // 추가항목 열(인덱스 >= 원본 열 수)은 extraColumns 가 붙인 것이므로
-          //  keep 에 자동 포함된다(사용자가 끄지 않는 한).
-          d = TsakTableDoc(
-            title: d.title,
-            subtitle: d.subtitle,
-            description: d.description,
-            author: d.author,
-            extra: d.extra,
-            columns: cols,
-            rows: rows,
-            summary: d.summary,
-            footerLeft: d.footerLeft,
-            landscape: d.landscape,
-            options: d.options?.copyWith(cols: null),
-            reportBlocks: d.reportBlocks,
-            template: d.template,
-          );
-        }
-      }
-    }
-    return d;
-  }
+  ///
+  /// 실제 계산은 [resolveOutputPreviewDoc] 에 있다(화면 없이 테스트 가능하게 분리).
+  TsakTableDoc get _doc => resolveOutputPreviewDoc(
+    doc: widget.doc,
+    extra: widget.extra,
+    extraKeys: _extraKeys,
+    pickedCols: _pickedCols,
+  );
 
   /// 현재 옵션으로 PDF를 만든다.
   Future<Uint8List> _buildPdf() {
@@ -331,6 +414,23 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 칩·슬라이더를 건드리면 **바로** 다시 그리도록 예약한다.
+  ///
+  /// ## 🐞 버그 수정 (2026-11-02, build #563)
+  /// 종전에는 `build()` 안에서만 `_key` 를 비교했다. 그런데 미리보기 카드의
+  /// `FutureBuilder` 가 **완료된 Future 를 계속 물고 있으면** 그 서브트리는
+  /// 다시 빌드되지 않아(값이 같으므로) 새 PDF 가 반영되지 않는 경우가 있었다.
+  /// 또 `setState` 로 상태만 바꾸고 `_previewFuture` 를 갱신하지 않으면
+  /// 화면에는 **이전 그림**이 그대로 남는다(보고된 "실시간 반영 안 됨").
+  /// → 상태를 바꾸는 모든 지점에서 **명시적으로** 미리보기를 다시 만든다.
+  void _bump([VoidCallback? change]) {
+    setState(() {
+      change?.call();
+      _previewKey = _key;
+      _previewFuture = _makePreview();
+    });
   }
 
   @override
@@ -648,7 +748,8 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
               for (var i = 0; i < _baseCols.length; i++)
                 _colChip(i, _baseCols[i]),
               _miniChip('전체', () {
-                setState(() => _pickedCols = null);
+                // '전체' = 모든 원본 열 켜기 → 표가 바뀌므로 즉시 반영.
+                _bump(() => _pickedCols = null);
               }),
             ],
           ),
@@ -749,11 +850,12 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
             children: [
               for (final f in ExtraFields.all) _extraChip(f),
               _miniChip('전체', () {
-                setState(() {
+                // 추가항목 '전체' — 열이 늘어나므로 즉시 반영.
+                _bump(() {
                   _extraKeys.addAll(ExtraFields.all.map((e) => e.key));
                 });
               }),
-              _miniChip('해제', () => setState(_extraKeys.clear)),
+              _miniChip('해제', () => _bump(_extraKeys.clear)),
             ],
           ),
         ],
@@ -765,7 +867,7 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
     final on = _extraKeys.contains(f.key);
     final c = ExtraFields.colorOf(f.group);
     return InkWell(
-      onTap: () => setState(() {
+      onTap: () => _bump(() {
         if (on) {
           _extraKeys.remove(f.key);
         } else {

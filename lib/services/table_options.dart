@@ -128,6 +128,16 @@ class TableOutputOptions {
   double get scale => fontSize.scale;
   double get rowSpaceMul => rowSpace.mul;
 
+  /// 값을 복사하되 **`cols` 를 null 로 지울 수 있는** 유일한 통로.
+  ///
+  /// ## 🐞 왜 `clearCols` 가 필요한가 (2026-11-02, build #563)
+  /// 종전에는 `cols ?? this.cols` 라서 `copyWith(cols: null)` 을 해도 기존
+  /// `cols` 가 그대로 살아남았다. 그 결과 문서에 열을 덧붙인 뒤
+  /// `copyWith(cols: null)` 로 "열 필터 해제"를 시도해도 필터가 남아,
+  /// **새로 붙인 열이 viewColumns 단계에서 잘려 나갔다**
+  /// (증상: 미리보기에서 추가항목을 켜도 열이 안 보인다).
+  ///
+  /// 하위 호환을 위해 `clearCols` 를 주지 않으면 종전과 똑같이 동작한다.
   TableOutputOptions copyWith({
     List<int>? cols,
     TsakFontSize? fontSize,
@@ -136,8 +146,9 @@ class TableOutputOptions {
     Set<String>? noWrap,
     int? rowLines,
     int? cellLines,
+    bool clearCols = false,
   }) => TableOutputOptions(
-    cols: cols ?? this.cols,
+    cols: clearCols ? cols : (cols ?? this.cols),
     fontSize: fontSize ?? this.fontSize,
     rowSpace: rowSpace ?? this.rowSpace,
     landscape: landscape ?? this.landscape,
