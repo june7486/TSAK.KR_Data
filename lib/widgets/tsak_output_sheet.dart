@@ -62,9 +62,32 @@ Future<void> showTsakOutputSheet(
     ),
     builder: (ctx) {
       // 시트를 먼저 닫은 뒤 동작을 실행한다(진행창·위치창을 가리지 않게).
+      //
+      // ## 🐞 보강 (2026-11-01, build #561) — "미리보기를 눌러도 아무 일이 없다"
+      // 종전 구현은 `pop()` 직후 콜백을 **동기**로 불렀고, 콜백이 던진 예외는
+      // 그대로 삼켜졌다. 그래서 실제 원인(미리보기 위젯의 build 예외)이 화면에
+      // 전혀 드러나지 않고 "버튼이 먹통"처럼 보였다.
+      //  → ① 팝 애니메이션이 끝난 **다음 프레임**에 실행하고
+      //    ② 예외가 나면 **화면에 알린다**(조용한 실패 금지).
       void fire(VoidCallback? cb) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
         Navigator.of(ctx).pop();
-        if (cb != null) cb();
+        if (cb == null) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          try {
+            cb();
+          } catch (e, st) {
+            debugPrint('tsak_output_sheet: 동작 실행 실패 → $e\n$st');
+            messenger
+              ?..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text('실행하지 못했습니다: $e'),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+          }
+        });
       }
 
       return SafeArea(

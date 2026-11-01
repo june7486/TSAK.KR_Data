@@ -160,11 +160,30 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
   bool _busy = false;
 
   /// 옵션 서명 — 값이 바뀔 때만 미리보기를 다시 만든다.
-  String get _key =>
-      '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
-      '${_fontScale.toStringAsFixed(2)}|$_rowLines|${_cellLines ?? 0}|'
-      '${(_pickedCols?.toList() ?? const <int>[])..sort()}'
-      '|${(_extraKeys.toList()..sort()).join(',')}';
+  ///
+  /// ## 🐞 버그 수정 (2026-11-01, build #561) — "미리보기를 누르면 창이 안 뜬다"
+  /// 종전 코드는
+  /// ```dart
+  /// '${(_pickedCols?.toList() ?? const <int>[])..sort()}'
+  /// ```
+  /// 였다. `_pickedCols` 가 **null**(= '전체 열' 상태, 옵션에 cols 가 없는 화면의
+  /// 기본값)이면 `?? const <int>[]` 로 떨어진다. 그런데 `const` 리스트는
+  /// **불변(unmodifiable)** 이라 `..sort()` 가
+  /// `UnsupportedError: Cannot modify an unmodifiable list` 를 던진다.
+  ///
+  /// `_key` 는 `build()` 안에서 `_previewKey` 와 비교되므로 **매 프레임** 호출되고,
+  /// 따라서 위젯은 build 단계에서 즉사 → `showDialog` 가 끝내 화면에 그리지 못해
+  /// "아무 창도 안 나온다"로 보였다. 참가자 명부처럼 `TableOutputOptions.cols`
+  /// 를 지정하지 않는 화면은 **100% 재현**(항상 null).
+  ///
+  /// → 불변 리스트를 건드리지 않고, **새 가변 리스트를 만들어** 정렬한다.
+  String get _key {
+    final picked = <int>[...?_pickedCols]..sort();
+    final extras = <String>[..._extraKeys]..sort();
+    return '$_landscape|$_noWrap|${_lineSpace.toStringAsFixed(2)}|'
+        '${_fontScale.toStringAsFixed(2)}|$_rowLines|${_cellLines ?? 0}|'
+        '$picked|${extras.join(',')}';
+  }
 
   String get _base => widget.doc.baseName(); // 예: TSAK_출력_게시판 출력
 
