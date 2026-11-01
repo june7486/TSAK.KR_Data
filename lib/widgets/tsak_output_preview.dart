@@ -153,10 +153,9 @@ class TsakOutputPreviewDebug {
 ///  창을 띄워서 결과물을 실시간으로 확인 후 출력내보낼 수 있도록 해줘"
 ///
 /// 표 문서([TsakTableDoc])를 받아 MUJI PDF를 만들고, **첫 페이지를 이미지로
-/// 렌더**해 보여준다. `줄간격 · 글자 크기 · 2줄 방지 · 가로 모드 · 행 높이 ·
-/// 셀 줄 수` 를 바꾸면 **즉시 다시 그린다**(라이브). 확정하면
-/// **PDF · 이미지(JPG) · 인쇄**로 내보낸다. 아이폰 등은 저장 옵션 창
-/// ([askSaveOption])을 거쳐 사진앱에 저장된다.
+/// 렌더**해 보여준다. `줄간격 · 글자 크기 · 2줄 방지 · 가로 모드 · 셀 줄 수` 를
+/// 바꾸면 **즉시 다시 그린다**(라이브). 확정하면 **PDF · 이미지(JPG) · 인쇄**로
+/// 내보낸다. 아이폰 등은 저장 옵션 창([askSaveOption])을 거쳐 사진앱에 저장된다.
 ///
 /// 미리보기 카드 안에 그릴 **종이 사각형**의 크기를 구한다(A4 실제 비율).
 ///
@@ -196,6 +195,117 @@ class TsakOutputPreviewDebug {
 double previewCardHeight(double screenHeight, {required bool landscape}) {
   final base = (screenHeight * 0.34).clamp(180.0, 420.0);
   return landscape ? (base * 0.78).clamp(150.0, 330.0) : base;
+}
+
+/// 미리보기 카드 안의 **종이(페이지) 위젯** — 회색 책상 위에 놓인 A4 한 장.
+///
+/// ## 🐞 왜 별도 위젯인가 (2026-11-02, build #569)
+/// 사용자 보고의 **진짜 형태**는 "가로 모드인데 세로처럼 보인다" 였고, 그 원인은
+/// 카드가 방향과 무관한 흰 세로 박스였던 것이다. 수정은 했지만 *화면에서 종이가
+/// 실제로 눕는지* 는 아무도 눈으로 확인하지 못했다(테스트 환경에는 래스터라이저가
+/// 없어 미리보기 카드가 로딩 스피너에서 멈춘다).
+/// → 종이 그리는 부분을 **공개 위젯**으로 떼어 내, 테스트가 실제 픽셀로 렌더해
+///   흰 영역의 가로/세로 비율을 **직접 재어** 확인할 수 있게 했다.
+///
+/// [page] 는 PDF 첫 페이지 이미지(없으면 로딩 자리). [landscape] 는 방향.
+class TsakPreviewPaper extends StatelessWidget {
+  const TsakPreviewPaper({
+    super.key,
+    required this.landscape,
+    this.page,
+    this.loading = false,
+    this.error,
+  });
+
+  /// 현재 방향 — true 면 종이가 눕는다(가로).
+  final bool landscape;
+
+  /// PDF 첫 페이지 이미지 바이트.
+  final Uint8List? page;
+
+  /// 아직 만드는 중인가.
+  final bool loading;
+
+  /// 만들기 실패 사유.
+  final String? error;
+
+  /// 종이 주변 여백(책상이 보이는 폭).
+  static const double inset = 16;
+
+  /// 종이 사각형을 찾기 위한 키 — 테스트가 **실제 배치된 크기**를 잴 때 쓴다.
+  static const Key paperKey = ValueKey<String>('tsak-preview-paper');
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (_, box) {
+        final size = paperSize(
+          box.maxWidth - inset,
+          box.maxHeight - inset,
+          landscape: landscape,
+        );
+        final paperW = size.$1;
+        final paperH = size.$2;
+        return Center(
+          child: Container(
+            key: paperKey,
+            width: paperW,
+            height: paperH,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              // 종이가 '떠 있는' 느낌 — 책상색 위 그림자.
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 7,
+                  offset: Offset(0, 2),
+                ),
+              ],
+              borderRadius: BorderRadius.circular(2),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _body(paperW, paperH),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _body(double w, double h) {
+    if (loading) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.4),
+        ),
+      );
+    }
+    final e = error;
+    if (e != null || page == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            '미리보기를 만들 수 없습니다\n${e ?? ''}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
+        ),
+      );
+    }
+    return InteractiveViewer(
+      maxScale: 6,
+      boundaryMargin: const EdgeInsets.all(24),
+      child: Image.memory(
+        page!,
+        gaplessPlayback: true,
+        width: w,
+        height: h,
+        fit: BoxFit.fill,
+      ),
+    );
+  }
 }
 
 /// [extra] 를 주면 **추가입력 항목 선택 칩**이 나타나고, 고른 항목이 열로
@@ -594,75 +704,12 @@ class _TsakOutputPreviewState extends State<_TsakOutputPreview> {
                 child: FutureBuilder<Uint8List>(
                   future: _previewFuture,
                   builder: (c, snap) {
-                    if (snap.connectionState != ConnectionState.done) {
-                      return const Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2.4),
-                        ),
-                      );
-                    }
-                    if (snap.hasError || snap.data == null) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(
-                            '미리보기를 만들 수 없습니다\n${snap.error ?? ''}',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textGray,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    // (버그 수정 #567) 종이를 **A4 실제 비율**로 그려 방향이
-                    //  눈에 보이게 한다. 종전에는 BoxFit.contain 으로 이미지만
-                    //  카드 안에 맞춰, 카드(세로 박스)의 테두리가 곧 '종이'처럼
-                    //  읽혀 가로/세로 구분이 사라졌다.
-                    return LayoutBuilder(
-                      builder: (_, box) {
-                        // A4 실제 비율로 종이를 그린다 — 방향이 눈에 보인다.
-                        final size = paperSize(
-                          box.maxWidth - 16,
-                          box.maxHeight - 16,
-                          landscape: _landscape,
-                        );
-                        final paperW = size.$1;
-                        final paperH = size.$2;
-                        return Center(
-                          child: Container(
-                            width: paperW,
-                            height: paperH,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              // 종이가 '떠 있는' 느낌 — 책상색 위 그림자.
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x33000000),
-                                  blurRadius: 7,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: InteractiveViewer(
-                              maxScale: 6,
-                              boundaryMargin: const EdgeInsets.all(24),
-                              child: Image.memory(
-                                snap.data!,
-                                gaplessPlayback: true,
-                                width: paperW,
-                                height: paperH,
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                    final done = snap.connectionState == ConnectionState.done;
+                    return TsakPreviewPaper(
+                      landscape: _landscape,
+                      page: done && !snap.hasError ? snap.data : null,
+                      loading: !done,
+                      error: snap.hasError ? '${snap.error}' : null,
                     );
                   },
                 ),
