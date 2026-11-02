@@ -2153,7 +2153,31 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _plainRow(m.numberRowLabel, m.numberRowValue),
           _plainRow('소속 연맹', m.league),
           _plainRow('등록 단위대', m.unit),
-          _plainRow('인가일', m.date),
+          // ── 인가일 ────────────────────────────────────────────────
+          //  🐞 2026-11-02 (build #574) — 보고: "범스카우트 인가일을 인가정보에
+          //  노출해줘".
+          //
+          //  원인: 종전에는 `_plainRow` 를 썼는데, 그 헬퍼는 **빈 값이면 행을
+          //  아예 그리지 않는다**(ATAS 카드는 그래서 `_blankRow` 를 따로 쓴다).
+          //  그래서 인가일이 비어 있는 회원은 '인가일' 항목이 **통째로 사라져**
+          //  아예 없는 항목처럼 보였다.
+          //  실측(운영 DB 2,242명): date 가 빈 회원 **57명**
+          //  (예: 이소라 #893 — 연맹·단위대는 있는데 인가일만 공란).
+          //
+          //  수정: `_blankRow` 로 바꿔 **값이 없어도 자리를 지키고 `—`** 를
+          //  표시한다. 이제 "인가일이 입력되지 않았다"와 "인가일 항목이 없다"가
+          //  구별되고, 나중에 채울 자리도 남는다.
+          //
+          //  ※ 서포터즈(비인가 일반회원)는 범 인가 자체가 없으므로 인가일 행을
+          //    만들지 않는다(있지도 않은 항목에 '미등록'을 띄우면 오해를 준다).
+          //    실측: 서포터즈 13명 전원 date 공란 / 인가자 2,229명 중 44명 공란.
+          //
+          //  ※ 빈 값 표기는 `—` 가 아니라 **`미등록`**. 인가일은 '원래 없는 값'이
+          //    아니라 '있어야 하는데 안 채운 값'이므로, "이 사람은 인가일이
+          //    미등록"임을 바로 읽을 수 있어야 한다. (편집 화면의 '인가일'
+          //    입력란에서 채우면 즉시 이 자리에 표시된다.)
+          if (!m.isRegular)
+            _blankRow('인가일', m.date, placeholder: '미등록'),
         ],
       ),
     );
@@ -2201,13 +2225,24 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  /// 값이 비어 있어도 **자리를 지키는** 행 — ATAS 항목용.
+  /// 값이 비어 있어도 **자리를 지키는** 행 — ATAS·범인가 항목용.
   ///
   /// (요구: "아타스인가정보 중 인가번호만 있다면 나머지는 추후 입력할 수 있도록
   ///        항목만 만들고 비워 놔")
   /// [_plainRow] 는 빈 값을 숨기므로, 항목이 사라져 나중에 입력할 자리가 없어진다.
   /// 이 헬퍼는 비어 있으면 `—` 로 표시해 **항목을 항상 노출**한다.
-  Widget _blankRow(String label, String value, {bool dense = false}) {
+  ///
+  /// ## [placeholder] — 비었을 때의 안내 문구 (2026-11-02 추가)
+  /// ATAS 처럼 '나중에 채울 정보'는 `—` 로 충분하지만, **인가일**처럼 '있어야
+  /// 정상인 값'은 `—` 가 "값이 원래 없다"인지 "아직 안 넣었다"인지 모호하다.
+  /// 그래서 문구를 바꿔 끼울 수 있게 열어 두고, 인가일에는 `미등록` 을 쓴다.
+  /// 기본값 `—` 라 기존 호출부(ATAS)는 동작이 바뀌지 않는다.
+  Widget _blankRow(
+    String label,
+    String value, {
+    bool dense = false,
+    String placeholder = '—',
+  }) {
     final v = value.trim();
     final empty = v.isEmpty;
     return Padding(
@@ -2232,7 +2267,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ),
           Expanded(
             child: Text(
-              empty ? '—' : v,
+              empty ? placeholder : v,
               style: TextStyle(
                 color: empty ? AppColors.textGray : AppColors.textDark,
                 fontSize: 13.5,
