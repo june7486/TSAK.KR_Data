@@ -6,12 +6,42 @@
 ///      "한국잼버리 후원자 명단과 금액 정리" → 한국잼버리 후원자
 ///      "2025 정기총회 참석자 명단"        → 행사 참석자
 ///      "평생회원 명단"                   → 평생회원
+///      "범415"                          → 인가번호 415 (범스카우트)
+///      "은하19호"                        → 인가번호 19 (은하스카우트)
 ///
 /// 서버/외부 API 없이 규칙 기반으로 온디바이스에서 동작한다(오프라인 지원).
-enum AiKind { feePaid, donor, eventAttend, training, lifetime }
+///
+/// ## [2026-11-02 build #579] 자연어 검색을 **기본기능**으로
+///   요구(원문): "자연어 검색을 기본기능으로 하려고 했었는데, 이 부분 업데이트
+///               또는 수정 부탁해요."
+///
+///   ① 인가번호 표기(`범415`·`은하19호`·`G19`)는 **신호어 없이도** 즉시 해석한다.
+///      (`SearchQuery` 로 위임 → `AiKind.credential`)
+///   ② 신호어 기반 해석은 종전의 `length >= 4` 문턱을 없애고, **신호어가 있으면
+///      길이와 무관하게** 동작하게 했다. ("회비" 두 글자도 이제 검색된다.)
+library;
+
+import 'search_query.dart';
+
+enum AiKind {
+  feePaid,
+  donor,
+  eventAttend,
+  training,
+  lifetime,
+
+  /// 인가번호·소속 지목 (예: 범415 / 은하19호 / G19 / 은하 / 영남 12)
+  credential,
+}
 
 class AiQuery {
-  AiQuery({required this.kind, this.year = '', this.keyword = ''});
+  AiQuery({
+    required this.kind,
+    this.year = '',
+    this.keyword = '',
+    this.corps = '',
+    this.number,
+  });
 
   final AiKind kind;
 
@@ -20,6 +50,12 @@ class AiQuery {
 
   /// 행사명/훈련 키워드 등 핵심 키워드
   final String keyword;
+
+  /// [AiKind.credential] 소속 지목 — 'tsak' | 'eunha' | ''
+  final String corps;
+
+  /// [AiKind.credential] 인가번호. null = 소속만 지목.
+  final int? number;
 
   /// AI 검색으로 인식되기 위한 신호 단어
   static const _signals = [
@@ -32,6 +68,8 @@ class AiQuery {
     '참석자',
     '평생회원',
     '납부',
+    '연회비',
+    '회비',
     '정리',
     '알려',
     '보여',
@@ -82,7 +120,31 @@ class AiQuery {
   /// 자연어 검색으로 해석 가능하면 [AiQuery] 반환, 아니면 null
   static AiQuery? tryParse(String raw) {
     final q = raw.trim();
-    if (q.length < 4) return null;
+    if (q.isEmpty) return null;
+
+    // 인가번호 표기(범415 / 은하19호 / G19) — 신호어 없이도 즉시 해석.
+    //  단, 단독 숫자('415')는 표기 해석이 아니라 일반 통합검색에 맡긴다
+    //  (지역대명·전화번호 등과 겹치지 않게 하기 위함). 소속이 함께
+    //  지목됐거나 '호/번/G' 같은 표기 신호가 있을 때만 AI 로 승격한다.
+    final sq = SearchQuery.parse(q);
+    if (sq.hasCorps) {
+      return AiQuery(
+        kind: AiKind.credential,
+        keyword: sq.tokens.join(' '),
+        corps: sq.corps,
+        number: sq.number,
+      );
+    }
+    if (sq.hasNumber && SearchQuery.hasNumberNotation(q)) {
+      return AiQuery(
+        kind: AiKind.credential,
+        keyword: sq.tokens.join(' '),
+        corps: '',
+        number: sq.number,
+      );
+    }
+
+    // 신호어 기반 해석 — 신호어가 있으면 길이 제한 없이 동작한다.
     if (!_signals.any(q.contains)) return null;
 
     final year = RegExp(r'(20\d{2})\s*년').firstMatch(q)?.group(1) ?? '';
@@ -139,6 +201,15 @@ class AiQuery {
         return '${keyword.isEmpty ? '' : '$keyword '}훈련현황';
       case AiKind.lifetime:
         return '평생회원';
+      case AiKind.credential:
+        final c = corps == SearchQuery.corpsEunha
+            ? '은하'
+            : (corps == SearchQuery.corpsTsak ? '범' : '');
+        final n = number;
+        if (c.isEmpty && n == null) return keyword;
+        if (c.isEmpty) return '$n호';
+        if (n == null) return '$c스카우트';
+        return '$c $n호';
     }
   }
 }

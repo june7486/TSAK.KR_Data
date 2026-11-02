@@ -10,6 +10,7 @@ import 'finance_service.dart';
 import 'league_names.dart';
 import 'member_repository.dart';
 import 'nas_api.dart';
+import 'search_query.dart';
 import 'web_nav.dart';
 
 /// 전역 앱 상태 (Provider)
@@ -2341,9 +2342,49 @@ class AppState extends ChangeNotifier {
     return list;
   }
 
-  /// 검색 질의 적용 — 범위 검색(1-100) / 하이픈 무관 전화 / 일반 통합검색 / AI 자연어
+  /// 검색 질의 적용 —
+  ///   ① 인가번호 **표기 해석**(범415 · 은하19호 · G19)
+  ///   ② AI 자연어(복합 의도: "... 명단", "...납부자" 등)
+  ///   ③ 범위 검색(1-100)
+  ///   ④ 하이픈 무관 전화 / 일반 통합검색
+  ///
+  /// ## [2026-11-02 build #579] 표기 해석 계층 추가
+  ///   요구(원문): "검색기능: 범스카우 번호, 예를들면 범415 로 검색해도 검색결과가
+  ///               안나옴, 은하19호 같이 검색해도 은하스카우트가 안 나옴"
+  ///
+  ///   종전 ④ 는 `m.searchText.contains(p)` **부분 문자열** 비교였다.
+  ///   `searchText` 에는 `'415'` 와 `'범'` 이 따로 있어 `'범415'` 라는 연속
+  ///   문자열이 존재하지 않는다 → 구조적으로 절대 매칭될 수 없었다.
+  ///   그래서 문자열 비교 **앞에** 의미 해석([SearchQuery]) 을 둔다.
   List<Member> _applyQuery(List<Member> list, String rawQuery) {
-    // 1) AI 자연어 검색 (복합 의도: "... 명단", "...납부자" 등)
+    // 1) 인가번호 표기 해석 — '범415' / '은하19호' / 'G19' / '은하'
+    //    소속이 지목되면 그 소속의 **해당 번호**만 남긴다.
+    //    (은하 19호 ≠ 범 19호 — 번호만 같고 사람이 다르다.)
+    final sq = SearchQuery.parse(rawQuery);
+    if (sq.isNotation &&
+        (sq.hasCorps || SearchQuery.hasNumberNotation(rawQuery))) {
+      var hit = list
+          .where(
+            (m) =>
+                SearchQuery.corpsMatches(sq.corps, m.corps) &&
+                (sq.number == null || m.numberInt == sq.number),
+          )
+          .toList();
+      // 나머지 키워드(예: '은하 영남')가 있으면 그 안에서 한 번 더 좁힌다.
+      //  좁힌 결과가 0건이면 **정직하게 0건**을 돌려준다(소속 지목은 지켜야 하므로
+      //  '은하 이승' 이 범 '이승준' 으로 새면 안 된다).
+      if (sq.tokens.isNotEmpty) {
+        hit = hit
+            .where((m) => sq.tokens.every((t) => m.searchText.contains(t)))
+            .toList();
+      }
+      // 번호까지 지목됐는데 0건이면 아래 일반 검색으로 흘려보내지 않는다.
+      // (예: 아직 은하 명단을 못 불러온 상태에서 '은하19호' → 0건이 정직하다.
+      //  '415' 같은 맨숫자는 이 분기에 오지 않으므로 영향 없음.)
+      if (sq.number != null || hit.isNotEmpty) return hit;
+    }
+
+    // 2) AI 자연어 검색 (복합 의도: "... 명단", "...납부자" 등)
     final ai = AiQuery.tryParse(rawQuery);
     if (ai != null) {
       return _applyAiQuery(list, ai);
@@ -2428,6 +2469,24 @@ class AppState extends ChangeNotifier {
             (e) => e.toLowerCase().contains(kw) && m.eventAttend[e] == true,
           );
         }).toList();
+      case AiKind.credential:
+        // 인가번호 · 소속 지목 — '범415' / '은하19호' / 'G19' / '은하'
+        //  소속이 지목되면 **그 소속의** 해당 번호만 남긴다.
+        //  (은하 19호와 범 19호는 번호만 같고 사람이 다르다 → 절대 섞지 않는다.)
+        var hit = list
+            .where(
+              (m) =>
+                  SearchQuery.corpsMatches(ai.corps, m.corps) &&
+                  (ai.number == null || m.numberInt == ai.number),
+            )
+            .toList();
+        final kw = ai.keyword.trim();
+        if (kw.isNotEmpty) {
+          hit = hit
+              .where((m) => m.searchText.contains(kw.toLowerCase()))
+              .toList();
+        }
+        return hit;
       case AiKind.donor:
         final fs = finance;
         if (fs == null) return [];
@@ -2483,8 +2542,17 @@ class AppState extends ChangeNotifier {
     return '${isEunha ? 'eunha' : 'tsak'}:$digits';
   }
 
+  /// 검색 질의 설정.
+  ///
+  /// ## [2026-11-02 build #579] 은하 명단 지연 로드
+  ///   `은하19호` 를 쳤는데 은하 명단을 아직 안 불러와 0건이 나오는 일을 막는다.
+  ///   소속 해석 결과가 '은하' 이고 아직 로드 전이면 백그라운드로 채우고,
+  ///   도착하면 [_eunhaChanged] 가 refresh 를 다시 걸어 결과가 스스로 나타난다.
   void setQuery(String q) {
     _query = q;
+    if (SearchQuery.parse(q).corps == SearchQuery.corpsEunha) {
+      ensureEunhaForSearch();
+    }
     refresh();
   }
 

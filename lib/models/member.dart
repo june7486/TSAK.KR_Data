@@ -167,7 +167,8 @@ class Member {
   }
 
   /// 주민번호 뒷자리가 **실제로 채워져 있는지** (마스터에게 알려줄지 판단용).
-  bool get hasResidentBack => residentNo.replaceAll(RegExp(r'[^0-9]'), '').length >= 7;
+  bool get hasResidentBack =>
+      residentNo.replaceAll(RegExp(r'[^0-9]'), '').length >= 7;
 
   /// Scout 회원번호 — 명부의 인가번호에 해당하는 정식 회원번호.
   String scoutNo;
@@ -367,6 +368,31 @@ class Member {
   /// · ATAS 보유자는 `atas`/`아타스` 키워드로도 잡히도록 토큰을 덧붙인다.
   ///   (atasNo 자체는 숫자만 저장되므로 — 예: "358" — 키워드 검색이 불가능했다.
   ///    요구: "검색창에 atas 치면 ATAS 명부 대상자가 나오게 해줘")
+  /// 사람이 실제로 **부르는 표기**를 검색 텍스트에 넣는다.
+  ///
+  /// ## [2026-11-02 build #579] 요구(원문)
+  ///   "검색기능: 범스카우 번호, 예를들면 범415 로 검색해도 검색결과가 안나옴,
+  ///    은하19호 같이 검색해도 은하스카우트가 안 나옴"
+  ///
+  ///   종전 [searchText] 에는 `'415'` 와 `'범스카우트'` 가 따로 있어
+  ///   **`'범415'` 라는 연속 문자열이 없었다** → 부분 문자열 비교로는 절대 못 찾음.
+  ///   근본 해법은 표기 해석 계층(`SearchQuery`)이지만, 그 위에 이것까지 얹으면
+  ///   **일반 통합검색 경로에서도** 그대로 걸린다(이중 안전장치).
+  ///
+  ///   범 415  → `범415 범#415 범 415 415호`
+  ///   은하 19 → `은하19 은하#19 은하 19 19호 G19 g19`
+  String get searchNotation {
+    if (number.trim().isEmpty) return '';
+    final d = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.isEmpty) return '';
+    // 일반회원(서포터즈)은 인가번호가 없다 → 표기 대상 아님.
+    if (isRegular) return '';
+    final p = corpsPrefix; // '범' | '은하'
+    final g = corps == 'eunha' ? ' G$d g$d' : '';
+    return '$p$d $p#$d $p $d $d호$g';
+  }
+
+  /// 통합검색용 텍스트(소문자). 모든 검색 경로의 공통 재료.
   String get searchText {
     final base =
         '$number $name $nameEn $league $unit $regLeague $regUnit $address '
@@ -377,7 +403,9 @@ class Member {
         '${mentees.join(' ')} ${children.join(' ')}';
     // ATAS 를 가진 회원만 'atas 아타스' 토큰을 검색어에 포함한다.
     final atas = hasAtas ? ' atas 아타스' : '';
-    return '$base$atas'.toLowerCase();
+    // [build #579] 사람 표기('범415'·'은하19호')도 통합검색에 포함.
+    final notation = searchNotation.isEmpty ? '' : ' $searchNotation';
+    return '$base$atas$notation'.toLowerCase();
   }
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.
@@ -409,7 +437,18 @@ class Member {
   /// 전화번호에서 숫자만 추출 (하이픈 무관 검색용)
   String get phoneDigits => phone.replaceAll(RegExp(r'[^0-9]'), '');
 
-  int get numberInt => int.tryParse(number) ?? 0;
+  /// 번호의 **숫자부만** 정수로. 은하 `'G19'` 도 19 로 읽는다.
+  ///
+  /// ## [2026-11-02 build #579] `int.tryParse(number)` → 숫자 추출로 교체
+  ///   종전 `int.tryParse('G19')` 는 **null → 0** 이었다. 그래서 은하 회원은
+  ///   번호 비교(`범19` / `은하19호`)와 범위 검색에서 **통째로 빠졌다**.
+  ///   (`범위 검색은 그대로 동작` 테스트에서 범 19 만 잡히고 은하 19 는
+  ///    잡히지 않던 원인.)
+  int get numberInt {
+    final d = number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.isEmpty) return 0;
+    return int.tryParse(d) ?? 0;
+  }
 
   /// 소속(corps) 표기 말머리 — 범스카우트 '범' / 은하스카우트 '은하'.
   String get corpsPrefix => corps == 'eunha' ? '은하' : '범';
@@ -487,7 +526,6 @@ class Member {
 
   /// 동명이인 판별에 쓰는 정규화 이름(공백 제거).
   String get nameKey => name.replaceAll(RegExp(r'\s+'), '').trim();
-
 
   /// 소속 단체 정식 명칭 — 개인창 명칭 전환용(범스카우트 → 은하스카우트).
   String get corpsFullName => corps == 'eunha' ? '은하스카우트' : '범스카우트';

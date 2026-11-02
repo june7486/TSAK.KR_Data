@@ -1385,7 +1385,9 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchCtrl,
               onChanged: (v) => state.setQuery(v),
               decoration: InputDecoration(
-                hintText: '통합검색 (인가번호, 이름, 전화번호, 범위, 연맹, 지역대 등)',
+                // [build #579] 사람이 실제로 부르는 표기를 예시로 노출한다.
+                //  ('범415' · '은하19호' 로 검색된다는 사실을 알려야 쓰인다.)
+                hintText: '통합검색 — 범415 · 은하19호 · 이름 · 전화번호 · 1-100 · 연맹',
                 hintStyle: const TextStyle(
                   fontSize: 11.5,
                   color: AppColors.textGray,
