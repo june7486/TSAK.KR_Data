@@ -274,6 +274,8 @@ void main() {
     });
   });
 
+  mainDeleteIcons(); // ⑨ 삭제 아이콘 검증
+
   group('⑧ 화면이 역방향 동기화를 실제로 호출한다', () {
     late String tiles;
     late String apply;
@@ -307,6 +309,93 @@ void main() {
 
     test('은하는 범 연동 규칙에서 제외한다', () {
       expect(apply.contains("target.corps == 'eunha'"), isTrue);
+    });
+  });
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// 2026-11-02 (build #571) 추가 — **삭제 아이콘** 요구.
+//
+// 보고(원문): "멘티, 멘토, 페런츠 모두 본인 및 관리자/마스터가 해당 이름을
+//  삭제할 수 있도록 오른쪽에 삭제아이콘 추가해줘 그리고 삭제시 꼭 한번더
+//  물어봐줘"
+//
+// 종전에는 `onRemove` 가 **멘티 섹션에만** 배선돼 있어, 멘토·페런츠는
+// 한 번 등록하면 화면에서 되돌릴 수 없었다.
+void mainDeleteIcons() {
+  group('⑨ 세 항목 모두 삭제 아이콘 + 확인 다이얼로그', () {
+    late String tiles;
+    setUpAll(() {
+      tiles = File('lib/widgets/link_people_tiles.dart').readAsStringSync();
+    });
+
+    test('멘티 섹션에 onRemove 가 배선돼 있다', () {
+      final i = tiles.indexOf("title: '멘티 (내가 배출한 범 대원)'");
+      expect(i >= 0, isTrue);
+      final tail = tiles.substring(i, (i + 500).clamp(0, tiles.length));
+      expect(tail.contains('onRemove:'), isTrue);
+      expect(tail.contains('_removeMentee('), isTrue);
+    });
+
+    test('멘토 섹션에도 onRemove 가 배선돼 있다', () {
+      final i = tiles.indexOf("title: '멘토 (범을 배출한 대장)'");
+      expect(i >= 0, isTrue);
+      final tail = tiles.substring(i, (i + 600).clamp(0, tiles.length));
+      expect(tail.contains('onRemove:'), isTrue,
+          reason: '멘토는 삭제 아이콘이 없어 되돌릴 수 없었다');
+      expect(tail.contains("_removeLink(context, r, parent: false)"), isTrue);
+    });
+
+    test('페런츠 섹션에도 onRemove 가 배선돼 있다', () {
+      final i = tiles.indexOf("title: '페런츠 (범을 배출한 부모님)'");
+      expect(i >= 0, isTrue);
+      final tail = tiles.substring(i, (i + 600).clamp(0, tiles.length));
+      expect(tail.contains('onRemove:'), isTrue,
+          reason: '페런츠는 삭제 아이콘이 없어 되돌릴 수 없었다');
+      expect(tail.contains("_removeLink(context, r, parent: true)"), isTrue);
+    });
+
+    test('삭제 전에 반드시 한 번 더 묻는다', () {
+      final i = tiles.indexOf('Future<void> _removeLink(');
+      expect(i >= 0, isTrue);
+      final tail = tiles.substring(i, (i + 1600).clamp(0, tiles.length));
+      expect(tail.contains('confirmDialog('), isTrue, reason: '확인 없이 삭제하면 안 된다');
+      expect(tail.contains('danger: true'), isTrue);
+      expect(tail.contains('confirmLabel:'), isTrue);
+      // 확인 전에는 아무것도 저장하지 않는다.
+      final okIdx = tail.indexOf('if (!ok');
+      final saveIdx = tail.indexOf('state.save(');
+      expect(okIdx >= 0 && saveIdx > okIdx, isTrue,
+          reason: '확인(false)보다 저장이 먼저 일어나면 안 된다');
+    });
+
+    test('멘티 해제도 확인을 거친다', () {
+      final i = tiles.indexOf('Future<void> _removeMentee(');
+      expect(i >= 0, isTrue);
+      final tail = tiles.substring(i, (i + 900).clamp(0, tiles.length));
+      expect(tail.contains('confirmDialog('), isTrue);
+      expect(tail.contains('danger: true'), isTrue);
+    });
+
+    test('삭제 아이콘은 오른쪽(행 끝)이고 종류별 툴팁이 다르다', () {
+      expect(tiles.contains("'페런츠 삭제'"), isTrue);
+      expect(tiles.contains("'멘토 삭제'"), isTrue);
+      expect(tiles.contains("'멘티 해제'"), isTrue);
+      // 멘토·페런츠는 close(삭제), 멘티는 link_off(연결 해제).
+      expect(tiles.contains('isLinkKind ? Icons.close : Icons.link_off'), isTrue);
+    });
+
+    test('삭제가 역방향도 함께 해제한다', () {
+      final i = tiles.indexOf('Future<void> _removeLink(');
+      final tail = tiles.substring(i, (i + 1800).clamp(0, tiles.length));
+      expect(tail.contains('syncReverseLinks('), isTrue,
+          reason: '내 목록만 지우면 상대 카드에 유령 연결이 남는다');
+    });
+
+    test('삭제 권한은 canEdit(본인·관리자·마스터)로 제한된다', () {
+      // 세 섹션 모두 `canEdit ? ... : null` 형태여야 한다.
+      expect(RegExp(r'onRemove: canEdit\s*\n?\s*\?').allMatches(tiles).length, 3,
+          reason: '삭제 버튼이 권한 게이트 없이 노출되면 안 된다');
     });
   });
 }

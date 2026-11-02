@@ -286,9 +286,79 @@ class LinkPeopleTiles extends StatelessWidget {
     if (!ok || !context.mounted) return;
     final next = <String>[
       for (final c in member.mentees)
-        if (_digits(c) != _digits(r.code)) c,
+        if (linkNormCode(c) != linkNormCode(r.code)) c,
     ];
     await _saveMentees(context, next);
+  }
+
+  /// 멘토 · 페런츠 **해제** — 내 목록에서 빼고 **상대 카드의 역방향도** 지운다.
+  ///
+  /// ## 🐞 왜 추가했나 (2026-11-02, build #571)
+  /// 보고(원문): *"멘티, 멘토, 페런츠 모두 본인 및 관리자/마스터가 해당 이름을
+  /// 삭제할 수 있도록 오른쪽에 삭제아이콘 추가해줘 그리고 삭제시 꼭 한번더
+  /// 물어봐줘"*
+  ///
+  /// 종전에는 `onRemove` 가 **멘티 섹션에만** 배선돼 있었다. 그래서 멘토·페런츠는
+  /// 한 번 등록하면 화면에서 되돌릴 방법이 없었다.
+  /// (편집 화면에 숨어 있는 삭제 버튼을 찾아가야 했다.)
+  Future<void> _removeLink(
+    BuildContext context,
+    _Ref r, {
+    required bool parent,
+  }) async {
+    final label = r.name.isEmpty ? '범#${r.code}' : r.name;
+    final who = parent ? '페런츠' : '멘토';
+    final ok = await confirmDialog(
+      context,
+      title: '$who 해제',
+      message:
+          '$label 을(를) 내 $who 목록에서 삭제할까요?\n\n'
+          '· 인가자 카드와 인적사항은 그대로 남습니다.\n'
+          '· 상대 카드에 역으로 연결된 항목도 함께 해제됩니다.',
+      confirmLabel: '삭제',
+      danger: true,
+    );
+    if (!ok || !context.mounted) return;
+    final state = context.read<AppState>();
+    final before = parent ? member.parents : member.mentors;
+    final next = <String>[
+      for (final c in before)
+        if (linkNormCode(c) != linkNormCode(r.code)) c,
+    ];
+    final hasAnyLink =
+        next.isNotEmpty ||
+        (parent ? member.mentors : member.parents).isNotEmpty ||
+        member.mentees.isNotEmpty ||
+        member.children.isNotEmpty;
+    final updated = parent
+        ? member.copyWith(
+            parents: next,
+            linkApprovalStatus: hasAnyLink ? member.linkApprovalStatus : '',
+          )
+        : member.copyWith(
+            mentors: next,
+            linkApprovalStatus: hasAnyLink ? member.linkApprovalStatus : '',
+          );
+    await state.save(updated, linkRequestSource: 'direct');
+    // ★ 역방향 해제 — 상대 카드에서 '나'를 뺀다.
+    final mirrored = await syncReverseLinks(
+      state,
+      self: member,
+      field: parent ? 'parents' : 'mentors',
+      before: before,
+      after: next,
+    );
+    if (!context.mounted) return;
+    onChanged?.call();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          mirrored > 0
+              ? '$who 를 삭제했습니다 (상대 카드 $mirrored건도 함께 해제)'
+              : '$who 를 삭제했습니다',
+        ),
+      ),
+    );
   }
 
   /// 멘토·페런츠 **등록/수정** — 저장 후 **내 카드의 mentors/parents 반영 +
@@ -409,6 +479,10 @@ class LinkPeopleTiles extends StatelessWidget {
           onAdd: canEdit
               ? () => _addProfile(context, 'mentor', selfNumber)
               : null,
+          // (요구 2026-11-02) 멘토도 화면에서 바로 삭제할 수 있어야 한다.
+          onRemove: canEdit
+              ? (r) => _removeLink(context, r, parent: false)
+              : null,
         ),
         const SizedBox(height: 8),
         _section(
@@ -420,6 +494,10 @@ class LinkPeopleTiles extends StatelessWidget {
           empty: '등록된 페런츠(범을 배출한 부모님) 없음',
           addLabel: '페런츠 추가',
           onAdd: canEdit ? () => _addProfile(context, 'parent', '') : null,
+          // (요구 2026-11-02) 페런츠도 화면에서 바로 삭제할 수 있어야 한다.
+          onRemove: canEdit
+              ? (r) => _removeLink(context, r, parent: true)
+              : null,
         ),
       ],
     );
@@ -434,7 +512,8 @@ class LinkPeopleTiles extends StatelessWidget {
     required String empty,
     String? addLabel,
     VoidCallback? onAdd,
-    /// 행별 **해제** 버튼(멘티 전용 — 연결만 끊는다).
+    /// 행별 **삭제(해제)** 버튼 — 멘티·멘토·페런츠 **모두** 해당.
+    ///  (요구 2026-11-02: 본인·관리자·마스터가 화면에서 바로 지울 수 있게)
     void Function(_Ref)? onRemove,
   }) {
     final kindLabel = title.split(' ').first;
@@ -647,15 +726,20 @@ class LinkPeopleTiles extends StatelessWidget {
               ),
             ),
           ),
-          // 멘티 해제 — 연결만 끊는다(카드·정보는 유지).
+          // 삭제(해제) — 연결만 끊는다. 카드·인적사항은 유지된다.
+          //  (요구 2026-11-02) 멘티·멘토·페런츠 **셋 다** 오른쪽에 삭제아이콘을 둔다.
           if (onRemove != null)
             IconButton(
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: '멘티 해제',
-              icon: const Icon(
-                Icons.link_off,
+              tooltip: r.kind == 'parent'
+                  ? '페런츠 삭제'
+                  : (r.kind == 'mentor' ? '멘토 삭제' : '멘티 해제'),
+              icon: Icon(
+                // 멘티는 '연결 해제(link_off)', 멘토·페런츠는 '삭제(close)' —
+                //  사용자가 스크린샷에서 요청한 오른쪽 삭제아이콘.
+                isLinkKind ? Icons.close : Icons.link_off,
                 size: 16,
                 color: AppColors.textGray,
               ),
