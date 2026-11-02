@@ -1385,11 +1385,14 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchCtrl,
               onChanged: (v) => state.setQuery(v),
               decoration: InputDecoration(
-                // [build #579] 사람이 실제로 부르는 표기를 예시로 노출한다.
-                //  ('범415' · '은하19호' 로 검색된다는 사실을 알려야 쓰인다.)
-                hintText: '통합검색 — 범415 · 은하19호 · 이름 · 전화번호 · 1-100 · 연맹',
+                // [요구 2026-11-02] 검색창 안내문 — 사람이 실제로 쓰는 항목만
+                //  짧게 나열한다(길면 좁은 폭에서 잘려 오히려 읽기 어렵다).
+                //  · '1-200' 처럼 인가번호 범위 검색이 된다는 사실도 함께 알린다.
+                hintText: '통합검색: 인가번호, 1-200, 평생회원, 연맹, 단위대명 등',
+                // 좁은 폭(모바일 세로)에서도 한 줄에 들어가도록 살짝 줄였다.
+                //  (요구 스크린샷에서 안내문이 잘려 보이던 문제)
                 hintStyle: const TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 10.5,
                   color: AppColors.textGray,
                   height: 1.2,
                 ),

@@ -21,6 +21,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsak_credential_manager/models/member.dart';
+import 'package:tsak_credential_manager/services/ai_query.dart';
+import 'package:tsak_credential_manager/services/search_query.dart';
 
 void main() {
   final seedFile = File('assets/data/eunha_members_seed.json');
@@ -137,6 +139,36 @@ void main() {
       );
       expect(src.contains('fill_keys = ("league", "unit", "birthday", "date")'),
           isTrue);
+    });
+  });
+
+  group('검색창 안내문 — 요구 문구가 그대로 노출되는가', () {
+    final home = File('lib/screens/home_screen.dart');
+    String code = home.existsSync() ? home.readAsStringSync() : '';
+    String stripComments(String s) => s
+        .split('\n')
+        .where((l) => !l.trimLeft().startsWith('//'))
+        .join('\n');
+
+    test('인가번호·범위·평생회원·연맹·단위대명 안내가 있다', () {
+      if (code.isEmpty) return;
+      final c = stripComments(code);
+      expect(c.contains('통합검색: 인가번호, 1-200, 평생회원, 연맹, 단위대명 등'), isTrue);
+    });
+
+    test('안내문은 한 줄로 유지된다(hintMaxLines: 1)', () {
+      if (code.isEmpty) return;
+      final c = stripComments(code);
+      expect(c.contains('hintMaxLines: 1'), isTrue);
+    });
+
+    test('안내문에 쓰인 검색어가 실제로 동작한다 (평생회원/범위)', () {
+      // '평생회원' → AiKind.lifetime
+      expect(AiQuery.tryParse('평생회원')!.kind, AiKind.lifetime);
+      // '1-200' → 표기 해석 대상이 아니고 범위 정규식에 걸린다
+      expect(SearchQuery.parse('1-200').isNotation, isFalse);
+      expect(RegExp(r'^\s*(\d{1,5})\s*[-~]\s*(\d{1,5})\s*$')
+          .hasMatch('1-200'), isTrue);
     });
   });
 }
