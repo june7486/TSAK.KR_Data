@@ -5,6 +5,8 @@ import '../models/member.dart';
 import '../screens/member_detail_screen.dart';
 import '../screens/member_edit_screen.dart';
 import '../services/app_state.dart';
+import '../services/link_sync.dart';
+import '../services/link_sync_apply.dart';
 import '../theme/app_theme.dart';
 import 'confirm.dart';
 import 'link_profile_sheet.dart';
@@ -213,29 +215,59 @@ class LinkPeopleTiles extends StatelessWidget {
     await _saveMentees(context, <String>[...member.mentees, code]);
   }
 
-  /// 멘티 목록 저장 — 나(멘토)의 mentees 갱신.
+  /// 멘티 목록 저장 — 나(멘토)의 mentees 갱신 **+ 상대 카드의 mentors 역방향 갱신**.
+  ///
+  /// ## 🐞 버그 수정 (2026-11-02, build #571)
+  /// 보고(원문): *"현승용 개인카드에서 현지환을 멘티로 등록했는데도 현지환
+  /// 개인카드에 연동되어 현승용이 멘토로 등록되지 않고 있음"*
+  ///
+  /// 종전에는 `member.copyWith(mentees: ...)` **한 장만** 저장했다. 그래서
+  /// 대장 카드에는 대원이 보이는데 대원 카드에는 대장이 없는 반쪽 상태가 됐다.
+  /// 실측(운영 DB): 현승용 #590 `mentees=['2186']` / 현지환 #2186 `mentors=[]`.
+  ///
+  /// 이제 `syncReverseLinks` 가 `mentees ↔ mentors` / `children ↔ parents`
+  /// 를 **양쪽 모두** 맞춘다. 상대가 카드 없는 비인가자면 조용히 건너뛴다
+  /// (그분들은 `link_profiles` 인적사항으로만 관리된다).
   Future<void> _saveMentees(
     BuildContext context,
-    List<String> next,
-  ) async {
+    List<String> next, {
+    String field = 'mentees',
+  }) async {
     final state = context.read<AppState>();
-    // 중복·자기참조 제거.
+    // 중복·자기참조 제거 (`G` 접두어 보존 — 은하 G75 ≠ 범 75).
     final self = _digits(member.number);
     final seen = <String>{};
     final cleaned = <String>[];
     for (final c in next) {
-      final d = _digits(c);
-      if (d.isEmpty) continue;
-      final norm = c.trim().toUpperCase().startsWith('G') ? 'G$d' : d;
+      final norm = linkNormCode(c);
+      if (norm.isEmpty) continue;
       if (norm == self && !c.trim().toUpperCase().startsWith('G')) continue;
       if (seen.add(norm)) cleaned.add(norm);
     }
-    final updated = member.copyWith(mentees: cleaned);
-    await state.save(updated);
+    final before = field == 'children' ? member.children : member.mentees;
+    final updated = field == 'children'
+        ? member.copyWith(children: cleaned)
+        : member.copyWith(mentees: cleaned);
+    await state.save(updated, linkRequestSource: 'direct');
+    // ★ 역방향(상대 카드) — 이 한 줄이 이번 버그의 핵심 수정이다.
+    final mirrored = await syncReverseLinks(
+      state,
+      self: member,
+      field: field,
+      before: before,
+      after: cleaned,
+    );
     if (!context.mounted) return;
     onChanged?.call();
+    final who = field == 'children' ? '자녀대원' : '멘티';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('멘티를 등록했습니다')),
+      SnackBar(
+        content: Text(
+          mirrored > 0
+              ? '$who 를 등록했습니다 (상대 카드 $mirrored건에 역으로도 연동됨)'
+              : '$who 를 등록했습니다',
+        ),
+      ),
     );
   }
 
@@ -259,14 +291,26 @@ class LinkPeopleTiles extends StatelessWidget {
     await _saveMentees(context, next);
   }
 
-  /// 멘토·페런츠 **인적사항 등록/수정** — 카드(인가자) 자동등록이 아니다(요구).
+  /// 멘토·페런츠 **등록/수정** — 저장 후 **내 카드의 mentors/parents 반영 +
+  /// 상대 카드 역방향 연동**까지 한 번에 처리한다.
+  ///
+  /// ## 🐞 버그 수정 (2026-11-02, build #571)
+  /// 보고(원문):
+  ///  · *"같은 검증을 페런츠에서도 해봐"* — 종전에는 시트를 닫기만 하고
+  ///    `member.mentors` / `member.parents` 에 **아무것도 쓰지 않았다**.
+  ///    그래서 등록해도 목록에 나타나지 않았다.
+  ///  · *"범인가자가 페런츠, 또는 멘토일때는 아이디를 전화번호로 생성하지 않고,
+  ///    범인가자 개인카드에 연동해서 멘토, 페런츠, 멘티 정보를 넣으면 됨"*
+  ///    → 인가자면 그분의 **인가번호**를 내 mentors/parents 에 넣고,
+  ///      반대로 그분 카드의 mentees/children 에 **나**를 넣는다.
   Future<void> _addProfile(
     BuildContext context,
     String kind,
     String code,
   ) async {
+    final state = context.read<AppState>();
     final p = _profileOf(code, kind);
-    final ok = await showLinkProfileSheet(
+    final res = await showLinkProfileSheet(
       context,
       kind: kind,
       code: code,
@@ -280,7 +324,54 @@ class LinkPeopleTiles extends StatelessWidget {
       selfNumber: _digits(member.number),
       codeEditable: kind == 'mentor' ? false : p.isEmpty,
     );
-    if (ok) onChanged?.call();
+    if (!res.saved) return;
+
+    final field = kind == 'mentor' ? 'mentors' : 'parents';
+    final before = kind == 'mentor' ? member.mentors : member.parents;
+    // 인가자 → 그분의 **인가번호**. 비인가 → 시트가 정한 저장코드(기존 규칙).
+    final linkCode = res.isScouter && res.scoutNo.isNotEmpty
+        ? res.scoutNo
+        : res.code;
+    if (linkCode.isEmpty) {
+      onChanged?.call();
+      return;
+    }
+    final enumerated = linkNormList(<String>[...before, linkCode]);
+    // 실제로 목록이 바뀐 경우에만 승인상태를 'pending' 으로 되돌린다.
+    //  (이미 승인된 연결을 건드리지 않고 시트만 열었다 닫은 경우 보호)
+    final changed =
+        enumerated.length != linkNormList(before).length ||
+        !enumerated.every(linkNormList(before).contains);
+    final hasAnyLink =
+        enumerated.isNotEmpty ||
+        (kind == 'mentor' ? member.parents : member.mentors).isNotEmpty;
+    final nextStatus = changed && hasAnyLink
+        ? 'pending'
+        : member.linkApprovalStatus;
+    final updated = kind == 'mentor'
+        ? member.copyWith(mentors: enumerated, linkApprovalStatus: nextStatus)
+        : member.copyWith(parents: enumerated, linkApprovalStatus: nextStatus);
+    await state.save(updated, linkRequestSource: 'direct');
+    // ★ 역방향 — 인가자면 그분 카드에 '나'를 기록한다(멘토→멘티 / 페런츠→자녀).
+    final mirrored = await syncReverseLinks(
+      state,
+      self: member,
+      field: field,
+      before: before,
+      after: enumerated,
+    );
+    if (!context.mounted) return;
+    onChanged?.call();
+    if (res.isScouter && mirrored > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${kind == 'mentor' ? '멘토' : '페런츠'} 범#${res.scoutNo} 카드에 '
+            '역으로도 연동했습니다',
+          ),
+        ),
+      );
+    }
   }
 
   // ------------------------------------------------------------------ 빌드

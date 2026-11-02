@@ -17,10 +17,50 @@ import 'tsak_name_lookup.dart';
 ///     정보 추가 입력 / 비인가자일 경우 멘토 및 페런츠 등록 페이지 노출
 ///     → 아이디: 전화번호 / 비번: 뒤 4자리"
 ///
+/// ## 🐞 전화번호 아이디 생성 규칙 (2026-11-02, build #571)
+/// 보고(원문): *"범인가자가 페런츠, 또는 멘토일때는 아이디를 전화번호로 생성하지
+/// 않고, 범인가자 개인카드에 연동해서 멘토, 페런츠, 멘티 정보를 넣으면 됨.
+/// 현재는 범인가자들의 정보를 넣으면 전화번호로 아이디를 생성하고 있는 것 같음"*
+///
+/// → **인가자(isScouter)** 는 이미 개인카드와 로그인(ID=인가번호)이 있다.
+///   전화번호로 계정을 또 만들면 같은 사람이 두 개의 신원을 갖게 된다.
+///   그래서 `isScouter == true` 이면 ① 전화번호 아이디 블록을 감추고
+///   ② 서버에도 아이디 생성을 요청하지 않으며 ③ 인가번호로 그 사람의 **카드**에
+///   멘토/페런츠 관계를 기록한다.
+///   반대로 **비인가자**는 카드가 없으므로 종전처럼 전화번호 기반 계정을 만든다.
+///
 /// ## 저장 위치
 ///  서버 `/api/link/profiles` — `link_profiles.json` (종류별 복합키 `멘토:<번호>` /
-///  `페런츠:<번호>`). 저장 시 전화번호 기반 아이디·비밀번호가 생성된다.
-Future<bool> showLinkProfileSheet(
+///  `페런츠:<번호>`). 비인가자일 때만 전화번호 기반 아이디·비밀번호가 생성된다.
+
+/// 시트의 결과 — 저장 여부 + **인가자 카드 연동에 필요한 정보**.
+///
+/// 종전에는 `bool` 만 돌려줘서, 호출부가 "이 사람이 범인가자인지"를 알 수 없었다.
+/// 그래서 멘토·페런츠를 인가자 카드에 연결할 방법이 없었다.
+class LinkProfileResult {
+  const LinkProfileResult({
+    this.saved = false,
+    this.isScouter = false,
+    this.scoutNo = '',
+    this.code = '',
+  });
+
+  /// 저장에 성공했는가.
+  final bool saved;
+
+  /// 이 사람이 범스카우트 **인가자**인가.
+  final bool isScouter;
+
+  /// 인가자 본인의 인가번호(비인가면 빈 문자열) — 카드 연동 키.
+  final String scoutNo;
+
+  /// 프로필 저장 키 (멘토=멘티(본인)번호 / 페런츠=인가번호).
+  final String code;
+
+  static const LinkProfileResult cancelled = LinkProfileResult();
+}
+
+Future<LinkProfileResult> showLinkProfileSheet(
   BuildContext context, {
   required String kind, // 'mentor' | 'parent'
   required String code, // 멘토: 멘티(본인)번호 / 페런츠: 페런츠 인가번호
@@ -299,49 +339,90 @@ Future<bool> showLinkProfileSheet(
                   ),
                 ],
                 const SizedBox(height: 12),
-                // 아이디/비번 미리보기 (전화번호 → 아이디, 뒤 4자리 → 비번)
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.taegeukBlue.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.taegeukBlue.withValues(alpha: 0.30),
+                // ── 계정 안내 ──
+                //  · **비인가자** : 전화번호 → 아이디, 뒤 4자리 → 비밀번호 (종전 규칙)
+                //  · **범인가자** : 새 계정을 만들지 않는다. 인가번호로 그 사람의
+                //    개인카드에 멘토/페런츠 관계를 기록한다(요구 2026-11-02).
+                if (isScouter)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.scoutGreen.withValues(alpha: 0.09),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.scoutGreen.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '인가자 카드에 연동 — 별도 아이디를 만들지 않습니다',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.scoutGreen,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${isMentor ? '멘토' : '페런츠'}가 범 인가자이므로 이미 개인카드와 '
+                          '로그인(아이디=인가번호)이 있습니다.\n'
+                          '전화번호로 계정을 또 만들지 않고, '
+                          '인가번호 ${_scoutDigits(scoutNoCtrl.text).isEmpty ? '(인가번호 입력)' : '범#${_scoutDigits(scoutNoCtrl.text)}'} '
+                          '카드의 [${isMentor ? '멘티' : '자녀대원'} 등록정보]에 이 대원이 기록됩니다.',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            height: 1.4,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.taegeukBlue.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.taegeukBlue.withValues(alpha: 0.30),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '자동 생성 계정 (${isMentor ? '멘토' : '페런츠'} · 전화번호 기반)',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.taegeukBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '아이디: ${digits.isEmpty ? '(전화번호 입력)' : digits}',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                        Text(
+                          '비밀번호: ${last4.isEmpty ? '(뒤 4자리)' : '$last4!@@'}',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '위 전화번호로 ${isMentor ? '멘토' : '페런츠'} 계정이 자동 생성됩니다.\n'
+                          '따로 아이디를 만들 필요가 없습니다.',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            height: 1.35,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '자동 생성 계정 (${isMentor ? '멘토' : '페런츠'} · 전화번호 기반)',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.taegeukBlue,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '아이디: ${digits.isEmpty ? '(전화번호 입력)' : digits}',
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
-                      Text(
-                        '비밀번호: ${last4.isEmpty ? '(뒤 4자리)' : '$last4!@@'}',
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '위 전화번호로 ${isMentor ? '멘토' : '페런츠'} 계정이 자동 생성됩니다.\n'
-                        '따로 아이디를 만들 필요가 없습니다.',
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          height: 1.35,
-                          color: AppColors.textGray,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
@@ -361,7 +442,7 @@ Future<bool> showLinkProfileSheet(
     ),
   );
 
-  if (saved != true) return false;
+  if (saved != true) return LinkProfileResult.cancelled;
 
   final nm = nameCtrl.text.trim();
   final ph = phoneCtrl.text.trim();
@@ -371,13 +452,29 @@ Future<bool> showLinkProfileSheet(
         context,
       ).showSnackBar(const SnackBar(content: Text('이름과 전화번호를 정확히 입력하세요')));
     }
-    return false;
+    return LinkProfileResult.cancelled;
+  }
+  // 인가자로 표시했으면 **인가번호가 반드시 있어야** 카드에 연결할 수 있다.
+  final scoutNo = digits(scoutNoCtrl.text);
+  if (isScouter && scoutNo.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('범인가자이면 인가번호를 입력해야 개인카드에 연동됩니다'),
+        ),
+      );
+    }
+    return LinkProfileResult.cancelled;
   }
   var lg = leagueCtrl.text.trim();
   var un = unitCtrl.text.trim();
   if (lg.isEmpty) lg = defaultLeague.trim();
   if (un.isEmpty) un = defaultUnit.trim();
+  // 저장 키 —
+  //  · 페런츠이면서 인가자 → **본인 인가번호**(카드 키와 일치시켜 조회가 되게).
+  //  · 그 외 → 입력한 코드(멘토는 멘티(본인)번호) 또는 이름 해시 임시코드.
   var c = codeCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+  if (isScouter && scoutNo.isNotEmpty) c = scoutNo;
   if (c.isEmpty) {
     // 인가번호가 없으면 이름 해시 기반 임시코드(9000xx)로 저장.
     c = (900000 + (nm.hashCode.abs() % 99999)).toString();
@@ -393,7 +490,7 @@ Future<bool> showLinkProfileSheet(
         'kind': kind,
         // [요구] ① 범스카우트 인가 정보
         'isScouter': isScouter,
-        'scoutNo': scoutNoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''),
+        'scoutNo': scoutNo,
         'inductedAt': inductedCtrl.text.trim(),
         'atasNo': atasCtrl.text.trim(),
         // [요구] ② 현재 활동정보
@@ -404,11 +501,16 @@ Future<bool> showLinkProfileSheet(
     );
     if (context.mounted) {
       if (r['ok'] == true) {
+        // 인가자는 계정을 만들지 않았으므로 아이디를 안내하지 않는다.
+        final lid = '${r['loginId'] ?? ''}'.trim();
+        final label = isMentor ? '멘토' : '페런츠';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${isMentor ? '멘토' : '페런츠'} 인적사항을 저장했습니다 '
-              '(아이디 ${r['loginId'] ?? ''})',
+              isScouter
+                  ? '$label 인적사항을 저장했습니다 — 범#$scoutNo 개인카드에 연동됩니다'
+                  : '$label 인적사항을 저장했습니다'
+                        '${lid.isEmpty ? '' : ' (아이디 $lid)'}',
             ),
           ),
         );
@@ -418,15 +520,25 @@ Future<bool> showLinkProfileSheet(
         ).showSnackBar(SnackBar(content: Text('저장 실패: ${r['error'] ?? ''}')));
       }
     }
-    return r['ok'] == true;
+    if (r['ok'] != true) return LinkProfileResult.cancelled;
+    return LinkProfileResult(
+      saved: true,
+      isScouter: isScouter,
+      scoutNo: scoutNo,
+      code: c,
+    );
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
     }
-    return false;
+    return LinkProfileResult.cancelled;
   }
 }
+
+/// 인가번호 표시용 숫자 추출 — 시트 내부의 지역변수 `digits`(전화번호)와
+/// 이름이 겹치지 않도록 별도 이름을 쓴다.
+String _scoutDigits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
 String digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');

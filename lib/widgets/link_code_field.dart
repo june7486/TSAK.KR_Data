@@ -718,36 +718,66 @@ class _LinkCodeFieldState extends State<LinkCodeField> {
                     children: [
                       // 요구(2026-10-31): "자동생성계정 → 멘토, 페런츠 추가시 전화번호
                       //  입력시 멘토 및 페런츠의 계정은 전화번호로 자동 생성됨"
-                      Text(
-                        isMentor
-                            ? '자동 생성 계정 (멘토 · 전화번호 기반)'
-                            : '자동 생성 계정 (페런츠 · 전화번호 기반)',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.scoutGreen,
+                      //
+                      // 🐞 수정(2026-11-02, build #571): 그 규칙은 **비인가자에게만**
+                      //  적용한다. 보고: "범인가자가 페런츠, 또는 멘토일때는 아이디를
+                      //  전화번호로 생성하지 않고, 범인가자 개인카드에 연동해서
+                      //  멘토, 페런츠, 멘티 정보를 넣으면 됨".
+                      //  → 인가자는 이미 카드와 로그인(아이디=인가번호)이 있으므로
+                      //    전화번호 계정을 또 만들면 같은 사람이 두 신원을 갖는다.
+                      if (isScouter) ...[
+                        const Text(
+                          '인가자 카드에 연동 — 별도 아이디를 만들지 않습니다',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.scoutGreen,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '아이디 : ${pid.isEmpty ? '(전화번호 입력)' : pid}\n'
-                        '비밀번호 : ${ppw.isEmpty ? '(전화번호 입력)' : ppw}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          height: 1.4,
-                          color: AppColors.textDark,
+                        const SizedBox(height: 4),
+                        Text(
+                          '${isMentor ? '멘토' : '페런츠'}가 범 인가자이므로 이미 '
+                          '개인카드와 로그인(아이디=인가번호)이 있습니다.\n'
+                          '전화번호로 계정을 또 만들지 않고, 그 인가자의 '
+                          '[${isMentor ? '멘티' : '자녀대원'} 등록정보]에 이 대원이 기록됩니다.',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            height: 1.4,
+                            color: AppColors.textDark,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '위 전화번호로 ${isMentor ? '멘토' : '페런츠'} 계정이 자동 생성됩니다. '
-                        '따로 아이디를 만들 필요가 없습니다.',
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          height: 1.35,
-                          color: AppColors.textGray,
+                      ] else ...[
+                        Text(
+                          isMentor
+                              ? '자동 생성 계정 (멘토 · 전화번호 기반)'
+                              : '자동 생성 계정 (페런츠 · 전화번호 기반)',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.scoutGreen,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '아이디 : ${pid.isEmpty ? '(전화번호 입력)' : pid}\n'
+                          '비밀번호 : ${ppw.isEmpty ? '(전화번호 입력)' : ppw}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '위 전화번호로 ${isMentor ? '멘토' : '페런츠'} 계정이 자동 생성됩니다. '
+                          '따로 아이디를 만들 필요가 없습니다.',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            height: 1.35,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
