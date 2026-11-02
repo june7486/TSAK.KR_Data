@@ -458,7 +458,10 @@ class _StatsScreenState extends State<StatsScreen> {
     );
     final eunhaYears = <int, int>{};
     for (final m in eunhaList) {
-      final y = _yearOf(m.date);
+      // [수정 2026-11-03] 범스카우트와 **같은 정규화 함수**를 쓴다.
+      //  (종전 `_yearOf` 는 정규식만 봐서 `19980-6-30` 같은 오타에 안전했지만,
+      //   2자리 연도 `03.3.11` 은 못 읽었다 → 양쪽 다 `credYear` 로 통일)
+      final y = m.credYear;
       if (y > 0) eunhaYears[y] = (eunhaYears[y] ?? 0) + 1;
     }
     final sortedEunhaYears = eunhaYears.keys.toList()..sort();
@@ -588,7 +591,16 @@ class _StatsScreenState extends State<StatsScreen> {
               return _feeRow(y, paid, total);
             }),
           const SizedBox(height: 16),
-          if (!eunhaOnly) _sectionTitle('연도별 인가 현황 (2004~2025)'),
+          // ## [수정 2026-11-03] 종전 제목은 '(2004~2025)' 로 범위를 못박았지만
+          //  실제 데이터는 1927년(초대 김용우)~2026년까지 걸쳐 있다.
+          //  범위를 제목에 굳히지 않고, 실제 집계 연도를 부제로 보여준다.
+          if (!eunhaOnly)
+            _sectionTitle(
+              sortedYears.isEmpty
+                  ? '연도별 인가 현황'
+                  : '연도별 인가 현황 '
+                        '(${sortedYears.first}~${sortedYears.last})',
+            ),
           if (!eunhaOnly)
             ...sortedYears.reversed.map((y) {
               final v = years[y]!;

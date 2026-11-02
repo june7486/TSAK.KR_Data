@@ -392,6 +392,45 @@ class Member {
     return '$p$d $p#$d $p $d $d호$g';
   }
 
+  /// **인가 연도** — `date`(인가일)에서 4자리 연도를 정규화해 뽑는다.
+  ///
+  /// ## [요구 2026-11-03] "2000년인가자 → 2000년 인가자" 연도 검색
+  ///   통계 화면에 `19980년` `19710년` 이라는 **없는 연도**가 찍혀 있었다.
+  ///   원인은 데이터 입력 오타였다.
+  ///     #658 김영훈  '19980-6-30'  → 1998
+  ///     #69  이한진  '19710-9-13'  → 1971
+  ///     #875 전명호  '03.3.11'     → 2003 (2자리 연도)
+  ///     #1290/1291   '09-12-28-'   → 2009 (2자리 연도, 뒤 하이픈)
+  ///   값을 지우지 않고 **읽을 때 정규화**한다(원본 보존 — 마스터가 보고
+  ///   고칠 수 있어야 하므로 서버 데이터는 건드리지 않는다).
+  ///
+  ///   규칙
+  ///     ① `19980-6-30` 처럼 연도 자리에 숫자가 더 붙으면 **앞 4자리**를
+  ///        연도로 보고 나머지는 월로 밀어 읽는다.
+  ///     ② `03.3.11` / `09-12-28-` 처럼 2자리 연도는 **30 기준**으로 세기
+  ///        판정(30~99 → 19xx, 00~29 → 20xx). 인가일이 2003/2009 이므로 맞다.
+  ///     ③ 연도를 못 찾으면 0.
+  int get credYear {
+    final raw = date.trim();
+    if (raw.isEmpty) return 0;
+    // ① 4자리 연도(19xx / 20xx)가 앞쪽에 있으면 그 값을 쓴다.
+    final m = RegExp(r'(19|20)\d{2}').firstMatch(raw);
+    if (m != null) {
+      // '19980-...' 처럼 5자리 이상이면 앞 4자리만 취한다(위 ①).
+      return int.parse(m.group(0)!);
+    }
+    // ② 2자리 연도 형식.
+    final m2 = RegExp(r'^(\d{2})\s*[.\-/]').firstMatch(raw);
+    if (m2 != null) {
+      final yy = int.parse(m2.group(1)!);
+      return yy >= 30 ? 1900 + yy : 2000 + yy;
+    }
+    return 0;
+  }
+
+  /// 인가 연도 표기 — `'2003년'`. 연도를 못 읽으면 빈 문자열.
+  String get credYearLabel => credYear > 0 ? '$credYear년' : '';
+
   /// 통합검색용 텍스트(소문자). 모든 검색 경로의 공통 재료.
   String get searchText {
     final base =
@@ -405,7 +444,10 @@ class Member {
     final atas = hasAtas ? ' atas 아타스' : '';
     // [build #579] 사람 표기('범415'·'은하19호')도 통합검색에 포함.
     final notation = searchNotation.isEmpty ? '' : ' $searchNotation';
-    return '$base$atas$notation'.toLowerCase();
+    // [요구 2026-11-03] 연도 검색 — '2000년'·'2000년인가자' 로 찾을 수 있게
+    //  인가 연도를 검색 텍스트에 넣는다. (오타 데이터도 정규화된 연도로 걸린다)
+    final yr = credYear > 0 ? ' $credYear $credYear년' : '';
+    return '$base$atas$notation$yr'.toLowerCase();
   }
 
   /// 다른 회원에게 보여줄 성별 — 관리자·마스터·본인은 실제값, 아니면 비노출 시 ''.

@@ -2487,6 +2487,16 @@ class AppState extends ChangeNotifier {
               .toList();
         }
         return hit;
+      case AiKind.credYear:
+        // ── [요구 2026-11-03] 인가 연도 검색 ──────────────────────────
+        //   "2000년인가자" / "2000년 인가자" / "1927년 인가자"
+        //   → 그 해에 **인가된** 사람만 남긴다.
+        //   `Member.credYear` 가 오타(`19980-6-30`→1998, `19710-9-13`→1971,
+        //   `03.3.11`→2003, `09-12-28-`→2009)를 정규화하므로, 통계 화면의
+        //   연도 라벨과 검색 결과가 **항상 같은 연도**로 맞는다.
+        final y = int.tryParse(ai.year) ?? 0;
+        if (y <= 0) return list;
+        return list.where((m) => m.credYear == y).toList();
       case AiKind.donor:
         final fs = finance;
         if (fs == null) return [];
@@ -3213,8 +3223,16 @@ class AppState extends ChangeNotifier {
   Map<int, int> get yearDistribution {
     final map = <int, int>{};
     for (final m in repo.all()) {
-      final y = int.tryParse(m.date.replaceAll('.', '-').split('-').first);
-      if (y != null && y > 1900) map[y] = (map[y] ?? 0) + 1;
+      // ## [버그 수정 2026-11-03] 통계에 `19980년` `19710년` 이 찍히던 문제
+      //  종전: `int.tryParse(date.replaceAll('.','-').split('-').first)`
+      //    → `'19980-6-30'` 의 첫 조각을 **19980 이라는 연도**로 읽었다.
+      //    → `'19710-9-13'` 은 19710.
+      //  이제 `Member.credYear` 로 읽는다(오타 정규화 + 2자리 연도 처리).
+      //    `19980-6-30` → 1998 / `19710-9-13` → 1971 /
+      //    `03.3.11` → 2003 / `09-12-28-` → 2009
+      //  검색(`credYear` 검색)과 통계가 **같은 함수**를 쓰므로 어긋날 수 없다.
+      final y = m.credYear;
+      if (y > 1900) map[y] = (map[y] ?? 0) + 1;
     }
     return map;
   }

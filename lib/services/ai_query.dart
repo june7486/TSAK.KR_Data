@@ -32,6 +32,13 @@ enum AiKind {
 
   /// 인가번호·소속 지목 (예: 범415 / 은하19호 / G19 / 은하 / 영남 12)
   credential,
+
+  /// **인가 연도 지목** (예: `2000년인가자` / `2000년 인가자` / `2000년`)
+  ///
+  /// ## [요구 2026-11-03] "2000년인가자 -> 2000년 인가자"
+  ///   통합검색에서 **해당 연도에 인가된 사람**을 찾는 기능.
+  ///   연도는 [AiQuery.year] 에 `'2000'` 형태로 담는다.
+  credYear,
 }
 
 class AiQuery {
@@ -80,6 +87,46 @@ class AiQuery {
     '총액',
     '합계',
   ];
+
+  /// 연도 표기가 있지만 **다른 의도**가 함께 있으면 연도검색으로 보지 않는다.
+  /// (예: `2026년 연회비 납부자` → 연회비 검색이어야 한다)
+  static const _otherIntents = [
+    '연회비',
+    '회비',
+    '납부',
+    '후원',
+    '찬조',
+    '기부',
+    '참가',
+    '참석',
+    '행사',
+    '훈련',
+    '과정',
+    '평생회원',
+  ];
+
+  /// **인가 연도 검색어 해석** — `'2000년인가자'` → `'2000'`.
+  ///
+  /// ## [요구 2026-11-03] "2000년인가자 -> 2000년 인가자"
+  ///   · `2000년` `2000년도` `2000년생` `2000년 인가자` `2000년인가자`
+  ///   · 맨숫자 `2000` 도 받는다(단 4자리이고 `19xx`/`20xx` 일 때만 — 전화번호
+  ///     ·인가번호와 섞이지 않게 `SearchQuery` 가 이미 걸러준 뒤 호출된다).
+  ///   · 오타로 굳은 `19980년`·`19710년` 처럼 **5자리**가 와도 앞 4자리만
+  ///     취해 1998·1971 로 되돌린다(통계 화면 라벨과 같은 규칙).
+  ///
+  /// 해석 불가면 `null`.
+  static String? parseCredYear(String raw) {
+    final q = raw.trim();
+    if (q.isEmpty) return null;
+    // ① 연도 + '년' 표기가 가장 확실한 신호.
+    final m = RegExp(r'((?:19|20)\d{2})(?:\d)?\s*년').firstMatch(q);
+    if (m != null) return m.group(1);
+    // ② '년' 없이 연도만: 4자리 (단, 범위검색 '1-200' 류는 제외)
+    if (RegExp(r'\d\s*[-~]\s*\d').hasMatch(q)) return null;
+    final m2 = RegExp(r'(?<!\d)((?:19|20)\d{2})(?!\d)').firstMatch(q);
+    if (m2 != null) return m2.group(1);
+    return null;
+  }
 
   /// 키워드 추출 시 제거할 불용어
   static const _stopwords = [
@@ -144,10 +191,20 @@ class AiQuery {
       );
     }
 
+    // ── [요구 2026-11-03] 인가 연도 검색 ────────────────────────────────
+    //   "2000년인가자" / "2000년 인가자" / "2000년" / "2000년도 인가자"
+    //     → 2000년에 **인가된** 사람만.
+    //   ※ '2026년 연회비 납부자' 처럼 **다른 의도**의 연도 표기와 겹치므로,
+    //      연회비·후원·참석·훈련·평생회원 신호가 함께 있으면 양보한다.
+    final yq = parseCredYear(q);
+    if (yq != null && !_otherIntents.any(q.contains)) {
+      return AiQuery(kind: AiKind.credYear, year: yq);
+    }
+
     // 신호어 기반 해석 — 신호어가 있으면 길이 제한 없이 동작한다.
     if (!_signals.any(q.contains)) return null;
 
-    final year = RegExp(r'(20\d{2})\s*년').firstMatch(q)?.group(1) ?? '';
+    final year = RegExp(r'((?:19|20)\d{2})\s*년').firstMatch(q)?.group(1) ?? '';
 
     // 의도 판정 (우선순위: 후원 > 참석 > 납부 > 훈련 > 평생회원)
     if (q.contains('후원') || q.contains('찬조') || q.contains('기부')) {
@@ -201,6 +258,8 @@ class AiQuery {
         return '${keyword.isEmpty ? '' : '$keyword '}훈련현황';
       case AiKind.lifetime:
         return '평생회원';
+      case AiKind.credYear:
+        return '$year년 인가자';
       case AiKind.credential:
         final c = corps == SearchQuery.corpsEunha
             ? '은하'

@@ -316,7 +316,8 @@ void main() {
       expect(m.contains('searchNotation'), isTrue);
       expect(m.contains(r"'$p$d $p#$d $p $d $d호$g'"), isTrue);
       // 표기가 통합검색 텍스트에 실제로 합쳐지는지
-      expect(m.contains(r"'$base$atas$notation'"), isTrue);
+      //  [2026-11-03] 연도 토큰($yr)이 뒤에 붙으면서 반환식이 확장됐다.
+      expect(m.contains(r'$base$atas$notation'), isTrue);
     });
   });
 
