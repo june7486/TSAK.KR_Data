@@ -2514,6 +2514,12 @@ class AppState extends ChangeNotifier {
     _yearFilter = '';
     _onlyLifetime = false;
     _kindFilter = '';
+    // [2026-11-02 build #577] 소속 필터가 빠져 있었다.
+    //  화면의 '초기화' 칩은 소속 줄에 있는데, 정작 소속(범스카우트/은하스카우트)
+    //  선택은 지워지지 않았다. '은하스카우트'를 골라 143명이 보이는 상태에서
+    //  초기화를 누르면 목록이 그대로여서 "초기화가 안 된다"로 보였다.
+    //  → 누르면 보이는 모든 필터를 실제로 되돌린다.
+    _corpsFilter = '';
     refresh();
   }
 

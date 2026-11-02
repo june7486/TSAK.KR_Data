@@ -2634,6 +2634,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _filterBar(AppState state) {
+    // ── 필터가 하나라도 걸려 있는지 ──────────────────────────────
+    //  (2026-11-02 build #577) '초기화' 칩 노출 조건을 한 곳으로 모은다.
+    //  종전에는 회비 줄 안에만 조건이 있었고, 소속 필터는 조건에서 빠져 있어
+    //  "은하스카우트만 보고 있는데 초기화 버튼이 안 보이는" 상태가 있었다.
+    final hasFilter =
+        state.query.isNotEmpty ||
+        state.leagueFilter.isNotEmpty ||
+        state.yearFilter.isNotEmpty ||
+        state.onlyLifetime ||
+        state.kindFilter.isNotEmpty ||
+        state.corpsFilter.isNotEmpty;
+
     return Container(
       padding: EdgeInsets.zero,
       child: Column(
@@ -2641,48 +2653,75 @@ class _HomeScreenState extends State<HomeScreen> {
           // ── 소속 필터 — 범스카우트/은하스카우트 통합검색 (요구: 은하도 명단검색) ──
           //   · 은하스카우트는 배출 중단된 별도 명단이지만, 모든 관리규칙은
           //     범스카우트와 동일하게 검색·말머리 노출한다.
-          HScrollMenu(
-            height: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                _filterChip(
-                  label: '전체 소속',
-                  selected: state.corpsFilter.isEmpty,
-                  color: AppColors.purple,
-                  onTap: () => state.setCorpsFilter(''),
-                ),
-                const SizedBox(width: 5),
-                _filterChip(
-                  label: '범스카우트 ${state.corpsFilterTsakCount}',
-                  selected: state.corpsFilter == 'tsak',
-                  color: AppColors.scoutGreen,
-                  onTap: () => state.setCorpsFilter(
-                    state.corpsFilter == 'tsak' ? '' : 'tsak',
+          //
+          // ## '초기화' 를 소속 줄 **맨 끝 고정 슬롯**에 두는 이유
+          //  (2026-11-02, build #577 — 보고: "초기화 위치 및 폰트가 어색함")
+          //  종전에는 ActionChip 이 회비 줄 스크롤 안에 있어 위치가 들쭉날쭉했고
+          //  (화면상 회비 칩 중간에 끼어 보임) 스타일도 혼자 달랐다.
+          //  → 소속 줄을 `Row( [스크롤 칩들] [초기화] )` 로 나눠, 초기화를
+          //    **스크롤과 무관한 오른쪽 고정 슬롯**에 둔다.
+          //    · 필터가 하나라도 걸렸을 때만 나타난다(빈 슬롯을 남기지 않음).
+          //    · 모양은 같은 _filterChip 을 쓰고 아이콘만 앞에 붙여 통일한다.
+          Row(
+            children: [
+              Expanded(
+                child: HScrollMenu(
+                  height: 24,
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Row(
+                    children: [
+                      _filterChip(
+                        label: '전체 소속',
+                        selected: state.corpsFilter.isEmpty,
+                        color: AppColors.purple,
+                        onTap: () => state.setCorpsFilter(''),
+                      ),
+                      const SizedBox(width: 5),
+                      _filterChip(
+                        label: '범스카우트 ${state.corpsFilterTsakCount}',
+                        selected: state.corpsFilter == 'tsak',
+                        color: AppColors.scoutGreen,
+                        onTap: () => state.setCorpsFilter(
+                          state.corpsFilter == 'tsak' ? '' : 'tsak',
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      _filterChip(
+                        label: '은하스카우트 ${state.corpsFilterEunhaCount}',
+                        selected: state.corpsFilter == 'eunha',
+                        color: AppColors.taegeukBlue,
+                        onTap: () => state.setCorpsFilter(
+                          state.corpsFilter == 'eunha' ? '' : 'eunha',
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      // ── 아타스(ATAS) — ATAS 인가번호를 보유한 대원만 보기 ──
+                      //  (요구: "atas 버튼도 넣어줘")
+                      //  · 검색창에 'atas'/'아타스' 를 쳐도 같은 결과가 나온다.
+                      _filterChip(
+                        label: '아타스 ${state.atasCount}',
+                        selected: state.kindFilter == 'atas',
+                        color: AppColors.lifetimeGold,
+                        onTap: () => state.setKind(
+                          state.kindFilter == 'atas' ? '' : 'atas',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 5),
-                _filterChip(
-                  label: '은하스카우트 ${state.corpsFilterEunhaCount}',
-                  selected: state.corpsFilter == 'eunha',
-                  color: AppColors.taegeukBlue,
-                  onTap: () => state.setCorpsFilter(
-                    state.corpsFilter == 'eunha' ? '' : 'eunha',
+              ),
+              if (hasFilter)
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, right: 10),
+                  child: _filterResetChip(
+                    onTap: () {
+                      _searchCtrl.clear();
+                      state.clearFilters();
+                    },
                   ),
                 ),
-                const SizedBox(width: 5),
-                // ── 아타스(ATAS) — ATAS 인가번호를 보유한 대원만 보기 ──
-                //  (요구: "atas 버튼도 넣어줘")
-                //  · 검색창에 'atas'/'아타스' 를 쳐도 같은 결과가 나온다.
-                _filterChip(
-                  label: '아타스 ${state.atasCount}',
-                  selected: state.kindFilter == 'atas',
-                  color: AppColors.lifetimeGold,
-                  onTap: () =>
-                      state.setKind(state.kindFilter == 'atas' ? '' : 'atas'),
-                ),
-              ],
-            ),
+            ],
           ),
           const SizedBox(height: 1),
           HScrollMenu(
@@ -2768,19 +2807,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           state.setYear(state.yearFilter == y ? '' : y),
                     ),
                   ),
-                if (state.query.isNotEmpty ||
-                    state.leagueFilter.isNotEmpty ||
-                    state.yearFilter.isNotEmpty ||
-                    state.onlyLifetime ||
-                    state.kindFilter.isNotEmpty)
-                  ActionChip(
-                    avatar: const Icon(Icons.refresh, size: 16),
-                    label: const Text('초기화'),
-                    onPressed: () {
-                      _searchCtrl.clear();
-                      state.clearFilters();
-                    },
-                  ),
+                // ── '초기화' 는 여기(회비 줄)에 두지 않는다 ──────────────
+                //  (2026-11-02, build #577 — 보고: "초기화 위치 및 폰트가 어색함")
+                //  종전에는 ActionChip 이 회비 칩 목록 **끝**에 붙어 있어,
+                //   ① 화면상으로는 회비 칩들 **중간**에 끼어 보였고
+                //   ② ActionChip 기본 스타일(아바타 아이콘 + Material 기본 폰트)이
+                //      직접 만든 _filterChip(10.5px·w600·둥근 테두리)과 달라
+                //      글자 크기·모양이 혼자 튀었다.
+                //  → 소속 줄 **맨 앞 고정 슬롯**(스크롤과 무관)으로 옮기고
+                //    같은 _filterChip 모양으로 그린다. 아래 참고.
               ],
             ),
           ),
@@ -2839,6 +2874,47 @@ class _HomeScreenState extends State<HomeScreen> {
             fontWeight: FontWeight.w600,
             fontSize: 10.5,
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 필터 초기화 칩 — **_filterChip 과 완전히 같은 모양/폰트**로 그린다.
+  ///
+  /// ## 왜 별도 위젯인가 (2026-11-02, build #577)
+  ///  보고: "초기화 위치 및 폰트가 어색함"
+  ///  종전에는 `ActionChip` 을 썼는데,
+  ///   ① Material 기본 스타일(14px 라벨 + 기본 패딩 + 아바타 아이콘)이라
+  ///      `_filterChip`(10.5px·w600·radius 14)과 **글자 크기·높이가 달랐고**,
+  ///   ② 회비 칩 목록 끝에 붙어 있어 스크롤 중간에 끼어 보였다.
+  ///  → 모양은 `_filterChip` 을 그대로 따르고(아이콘만 12px 로 앞에),
+  ///    위치는 소속 줄의 **스크롤 밖 고정 슬롯**으로 옮겼다.
+  ///    색은 '되돌리기'라는 성격에 맞춰 태극 홍을 옅게 쓴다.
+  Widget _filterResetChip({required VoidCallback onTap}) {
+    const c = AppColors.taegeukRed;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.refresh, size: 12, color: c),
+            const SizedBox(width: 3),
+            const Text(
+              '초기화',
+              style: TextStyle(
+                color: c,
+                fontWeight: FontWeight.w600,
+                fontSize: 10.5,
+              ),
+            ),
+          ],
         ),
       ),
     );
