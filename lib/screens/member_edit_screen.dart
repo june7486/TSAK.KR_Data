@@ -542,12 +542,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 icon: Icons.confirmation_number_outlined,
                 numeric: true,
               ),
-              _field(
-                '주민등록번호',
-                _residentNo,
-                hint: '주민등록번호 앞자리 — 민감정보 (노출은 마스터 설정)',
-                icon: Icons.credit_card,
-              ),
+              _residentNoField(),
               _field(
                 '생일',
                 _birthday,
@@ -2280,6 +2275,86 @@ class _MemberEditScreenState extends State<MemberEditScreen>
           Expanded(child: Divider(color: color.withValues(alpha: 0.25))),
         ],
       ),
+    );
+  }
+
+  /// 주민등록번호 입력란 — **뒷자리 원본은 마스터만**.
+  ///
+  /// ## 요구 (2026-11-02, build #574)
+  ///  "주민등록정보는 뒷번호가 입력시 마킹처리가 안되고 있음
+  ///   (예시: 990328-1******) / 노출되는(개인카드에도) 정보에는 뒷번호를
+  ///   마킹처리하고 오로지 마스터만 뒷번호를 확인할 수 있도록 함"
+  ///
+  /// ## 정책
+  ///  · 마스터: 원본 그대로 보이고 편집 가능.
+  ///  · 그 외(관리자·본인·타인): **마킹본(990328-1******)** 만 보이고 편집 불가.
+  ///    - 편집을 막는 이유: 마킹본을 그대로 저장하면 원본 뒷자리가 지워진다.
+  ///    - 값을 처음 넣는 신규 등록은 예외 없이 마스터만 가능(마킹본이 비어 있음).
+  ///      관리자·본인이 뒷자리를 새로 넣는 경로는 열지 않는다(마스터에게 요청).
+  Widget _residentNoField() {
+    final isMaster = context.watch<AppState>().isMaster;
+    final m = _existing;
+    final masked = m?.residentNoMasked ?? '';
+    final hasBack = m?.hasResidentBack ?? false;
+
+    if (isMaster) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _field(
+            '주민등록번호',
+            _residentNo,
+            hint: '예: 990328-1234567 — 뒷자리 원본은 마스터만 볼 수 있습니다',
+            icon: Icons.credit_card,
+          ),
+          if (hasBack)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 2),
+              child: Text(
+                '표시용 마킹: $masked (다른 사람에게는 이 형태로만 보입니다)',
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+              ),
+            ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: TextFormField(
+            // 마킹본을 그대로 보여주되 편집은 막는다(원본 덮어쓰기 방지).
+            initialValue: masked,
+            readOnly: true,
+            enabled: false,
+            decoration: const InputDecoration(
+              labelText: '주민등록번호',
+              hintText: '뒷자리는 마스터만 확인할 수 있습니다',
+              prefixIcon: Icon(Icons.credit_card, size: 20),
+              suffixIcon: Icon(
+                Icons.lock_outline,
+                size: 18,
+                color: AppColors.textGray,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
+          child: Text(
+            masked.isEmpty
+                ? '주민등록번호는 마스터만 입력·확인할 수 있습니다.'
+                : '뒷자리는 마킹되어 표시됩니다. 수정이 필요하면 마스터에게 요청하세요.',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textGray,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -331,7 +331,22 @@ const List<String> kDefaultFieldKeys = [
 ];
 
 /// 값 추출기 — key → Member 값
-String exportValueOf(Member m, String key) {
+///
+/// ## 주민등록번호 — 뒷자리 마킹 (2026-11-02, build #574)
+///  요구: "노출되는(개인카드에도) 정보에는 뒷번호를 마킹처리하고 오로지
+///        마스터만 뒷번호를 확인할 수 있도록 함"
+///
+///  엑셀·PDF·워드·TXT·PPT **모든 출력물**이 이 함수를 거치므로, 여기서
+///  [Member.residentNoMasked] 를 돌려주면 전 경로가 한 번에 마킹된다.
+///
+///  · [revealResidentNo] 를 **명시적으로 `true` 로 넘긴 경우에만** 원본을 준다.
+///    기본값이 `false` 인 이유: 새 호출부가 생겨도 실수로 원본이 새지 않게.
+///  · 현재 앱에서 `true` 를 쓰는 곳은 없다 → 모든 출력물은 마킹본.
+String exportValueOf(
+  Member m,
+  String key, {
+  bool revealResidentNo = false,
+}) {
   switch (key) {
     case 'number':
       return m.number;
@@ -364,7 +379,8 @@ String exportValueOf(Member m, String key) {
     case 'zipCode':
       return m.zipCode;
     case 'residentNo':
-      return m.residentNo;
+      // 요구: 노출되는 정보에는 뒷번호를 마킹 — 출력물 전 경로 공통.
+      return revealResidentNo ? m.residentNo : m.residentNoMasked;
     case 'bio':
       return m.bio;
     case 'birthday':

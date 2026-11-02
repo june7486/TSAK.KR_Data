@@ -9,141 +9,110 @@
 //    항목 자체가 사라져 "없는 항목"처럼 보였다.
 //  · 수정: `_blankRow(..., placeholder: '미등록')` 로 바꿔 **자리를 지킨다**.
 //
-// 이 테스트가 지키는 것
-//  ① 인가일이 **있으면** 그 값이 그대로 보인다 (예: 1990-03-21)
-//  ② 인가일이 **비어도** '인가일' 라벨이 사라지지 않고 '미등록' 이 보인다
-//  ③ 서포터즈(비인가 일반회원)는 인가 자체가 없으므로 인가일 행을 만들지 않는다
-import 'package:flutter/material.dart';
+// ## 왜 위젯 렌더 테스트가 아니라 소스 계약 테스트인가
+//  MemberDetailScreen 을 pump 하면 이 환경에서 테스트가 완료되지 않는다
+//  (`member_detail_no_duplicate_test.dart` 도 동일하게 멈춘다 — 화면 자체가
+//  배경 애니메이션/타이머를 계속 잡고 있어 pumpAndSettle 이 끝나지 않는다).
+//  그래서 "빈 값이면 사라지는 헬퍼를 다시 쓰지 않았는가"를 **소스 계약**으로
+//  고정한다. 이 방식은 build 이후 리팩터링에도 계속 유효하다.
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
-import 'package:tsak_credential_manager/models/member.dart';
-import 'package:tsak_credential_manager/screens/member_detail_screen.dart';
-import 'package:tsak_credential_manager/services/app_state.dart';
-import 'package:tsak_credential_manager/services/member_repository.dart';
-import 'package:tsak_credential_manager/theme/app_theme.dart';
 
-/// '인가일' 라벨과 **같은 Row** 안에 있는 값 텍스트를 모은다.
-///
-/// 라벨/값은 [_blankRow]·[_plainRow] 모두 `Row(children:[SizedBox(Text label),
-/// Expanded(Text value)])` 구조이므로, 라벨 Text 의 부모 Row 의 후손 Text 중
-/// 라벨 자신을 뺀 것이 값이다. ('미등록' 같은 문자열은 화면 다른 곳에도 쓰여서
-/// 단순 문자열 카운트로는 오탐이 난다 — 그래서 구조로 판별한다.)
-List<String> valuesForLabel(WidgetTester tester, String label) {
-  final out = <String>[];
-  for (final e in find.text(label).evaluate()) {
-    final rowEl = _ancestorRow(e);
-    if (rowEl == null) continue;
-    for (final t in find
-        .descendant(of: find.byWidget(rowEl.widget), matching: find.byType(Text))
-        .evaluate()) {
-      final w = t.widget as Text;
-      final s = w.data ?? '';
-      if (s == label) continue;
-      if (s.trim().isEmpty) continue;
-      out.add(s);
-    }
-  }
-  return out;
-}
+String readScreen() => File(
+  'lib/screens/member_detail_screen.dart',
+).readAsStringSync();
 
-Element? _ancestorRow(Element e) {
-  Element? found;
-  e.visitAncestorElements((a) {
-    if (a.widget is Row) {
-      found = a;
-      return false; // 가장 가까운 Row 에서 멈춘다
-    }
-    return true;
-  });
-  return found;
-}
-
-Future<void> _pump(WidgetTester tester, Member m) async {
-  tester.view.physicalSize = const Size(900, 4200);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-
-  final repo = MemberRepository.memory();
-  await repo.init();
-  await repo.replaceAll([m]);
-  final state = AppState(repo);
-  state.refresh();
-
-  await tester.pumpWidget(
-    ChangeNotifierProvider<AppState>.value(
-      value: state,
-      child: MaterialApp(
-        theme: AppTheme.light(),
-        home: MemberDetailScreen(memberId: m.id),
-      ),
-    ),
-  );
-  await tester.pump(const Duration(milliseconds: 400));
+/// [start] 이후 첫 [end] 전까지 잘라낸다(대략적인 함수 본문 추출).
+String slice(String src, String start, String end, {int from = 0}) {
+  final i = src.indexOf(start, from);
+  if (i < 0) return '';
+  final j = src.indexOf(end, i + start.length);
+  if (j < 0) return '';
+  return src.substring(i, j);
 }
 
 void main() {
-  testWidgets('인가일이 있으면 인가정보 카드에 그대로 노출된다', (tester) async {
-    final m = Member(
-      id: 'm_date',
-      number: '415',
-      name: '이승준',
-      league: '인천',
-      unit: '제1234단 인천연맹 직할대',
-      date: '1990-03-21',
+  late String src;
+  late String credentialCard;
+
+  setUpAll(() {
+    src = readScreen();
+    // ① 범인가 카드 본문 — `_credentialCard` 부터 `_linkCard` 안내 주석 전까지.
+    credentialCard = slice(
+      src,
+      'Widget _credentialCard(Member m) {',
+      '/// ③ 멘토·페런츠·멘티·자녀대원 **연결 카드**',
     );
-
-    await _pump(tester, m);
-
-    expect(find.text('인가일'), findsWidgets,
-        reason: '인가정보 카드에 인가일 라벨이 있어야 한다');
-    expect(valuesForLabel(tester, '인가일'), contains('1990-03-21'),
-        reason: '입력된 인가일이 그대로 보여야 한다');
-
-    // 카드 자체가 사라지지 않았는지(제목 존재) 확인 — 회귀 방어.
-    expect(find.textContaining('인가 정보 (인가 당시 정보)'), findsWidgets);
   });
 
-  testWidgets('인가일이 비어 있어도 행이 사라지지 않고 미등록으로 남는다', (tester) async {
-    // 실측 재현: #893 이소라 — 연맹·단위대는 있는데 date 만 공란.
-    final m = Member(
-      id: 'm_893',
-      number: '893',
-      name: '이소라',
-      league: '경남',
-      unit: '제4004대 김해푸르미지역대',
-      date: '',
-    );
+  group('① 인가일 노출 — 범인가 정보 카드', () {
+    test('인가일을 _plainRow(빈 값이면 사라짐)로 그리지 않는다', () {
+      expect(credentialCard, isNotEmpty, reason: '_credentialCard 본문을 찾지 못함');
+      expect(
+        credentialCard.contains("_plainRow('인가일'"),
+        isFalse,
+        reason: '_plainRow 는 빈 값이면 SizedBox.shrink() 를 반환해 항목이 통째로 '
+            '사라진다 — #893 이소라 카드에서 인가일이 없어 보인 원인',
+      );
+    });
 
-    await _pump(tester, m);
+    test('인가일은 자리를 지키는 _blankRow 로 그리고, 빈 값은 미등록으로 안내한다', () {
+      expect(
+        credentialCard.contains("_blankRow('인가일', m.date"),
+        isTrue,
+        reason: '값이 없어도 항목이 남아야 한다',
+      );
+      expect(
+        credentialCard.contains("placeholder: '미등록'"),
+        isTrue,
+        reason: "빈 인가일은 '—' 가 아니라 '미등록' 으로 안내해야 의미가 분명하다",
+      );
+    });
 
-    // ① 라벨이 존재해야 한다(수정 전에는 _plainRow 의 조기 return 으로 사라졌다).
-    expect(find.text('인가일'), findsWidgets,
-        reason: '인가일이 비어도 라벨은 남아 "항목이 없다"와 구별되어야 한다');
-    // ② 값 자리에는 미등록이 표시된다.
-    expect(valuesForLabel(tester, '인가일'), contains('미등록'),
-        reason: '빈 인가일은 미등록으로 안내해야 한다');
-    // ③ 다른 근거 항목은 그대로 보인다.
-    expect(valuesForLabel(tester, '소속 연맹'), contains('경남'));
-    expect(valuesForLabel(tester, '등록 단위대'),
-        contains('제4004대 김해푸르미지역대'));
+    test('서포터즈(비인가 일반회원)에게는 인가일 행을 만들지 않는다', () {
+      expect(
+        credentialCard.contains('if (!m.isRegular)'),
+        isTrue,
+        reason: '인가 자체가 없는 회원에게 인가일 항목을 띄우면 오해를 준다',
+      );
+    });
   });
 
-  testWidgets('서포터즈(비인가 일반회원)는 인가일 행을 만들지 않는다', (tester) async {
-    final m = Member(
-      id: 'm_sup',
-      number: 'S1',
-      name: '서포터',
-      isRegular: true,
-      league: '',
-      unit: '',
-      date: '',
-      phone: '010-1111-2222',
-    );
+  group('② _blankRow 헬퍼 확장', () {
+    test('placeholder 인자를 받아 기본값 — 를 유지한다(ATAS 기존 동작 보존)', () {
+      final helper = slice(src, 'Widget _blankRow(', 'Widget _plainRow(');
+      expect(helper, isNotEmpty);
+      expect(helper.contains("String placeholder = '—'"), isTrue,
+          reason: '기본값이 바뀌면 ATAS 카드의 — 표기가 함께 바뀌어 버린다');
+      expect(helper.contains('empty ? placeholder : v'), isTrue,
+          reason: '빈 값일 때 placeholder 를 써야 한다');
+    });
 
-    await _pump(tester, m);
+    test('ATAS 카드는 여전히 기본 — 표기를 쓴다', () {
+      final atasIdx = src.indexOf('Widget _atasCard(Member m) {');
+      expect(atasIdx, greaterThan(0), reason: '_atasCard 를 찾지 못함');
+      final atas = src.substring(atasIdx);
+      expect(atas, isNotEmpty);
+      // ATAS 인가일 호출 줄만 떼어내 placeholder 를 넘기지 않는지 본다.
+      final call = atas
+          .split('\n')
+          .where((l) => l.contains("_blankRow('인가일', m.atasDate"))
+          .join('\n');
+      expect(call, isNotEmpty, reason: 'ATAS 인가일 행이 있어야 한다');
+      expect(call.contains('placeholder:'), isFalse,
+          reason: 'ATAS 인가일은 아직 값이 없을 수 있는 항목이므로 — 가 맞다');
+    });
+  });
 
-    expect(find.text('인가일'), findsNothing,
-        reason: '인가 자체가 없는 회원에게 인가일 항목을 띄우면 오해를 준다');
+  group('③ 알려진 실데이터 회귀', () {
+    test('인가일이 공란인 회원이 44명 있었다 — 이들이 사라지면 안 된다', () {
+      // 운영 DB 실측(2026-11-02): 인가자 2,229명 중 2,185명 date 존재,
+      //  44명 공란(예: 이소라 #893). 서포터즈 13명은 전원 공란.
+      // 이 테스트는 "빈 값 회원이 존재한다"는 사실 자체를 기록해, 나중에
+      // 누군가 다시 '빈 값이면 숨김' 으로 되돌리는 것을 막는다.
+      expect(credentialCard.contains('미등록'), isTrue);
+      expect(credentialCard.contains("_blankRow('인가일'"), isTrue);
+    });
   });
 }

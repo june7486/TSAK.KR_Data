@@ -28,6 +28,7 @@ import '../widgets/scroll_down_hint.dart';
 import 'finance_transaction_edit_screen.dart';
 import 'export_screen.dart';
 import 'member_edit_screen.dart';
+import 'privacy_usage_edit_screen.dart';
 import 'member_drafts_screen.dart';
 import 'qr_screen.dart';
 
@@ -2840,9 +2841,26 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
     // (라벨, 키, 값) — 항목별 노출관리 대상.
     //  ※ 소속연맹/단위대/인가일은 위의 [현재활동]/[범인가 정보] 카드에서 다룬다.
+    //
+    //  ## 주민등록번호 — 뒷자리 마킹 (2026-11-02, build #574)
+    //  요구: "주민등록정보는 뒷번호가 입력시 마킹처리가 안되고 있음
+    //        (예시: 990328-1******) / 노출되는(개인카드에도) 정보에는 뒷번호를
+    //        마킹처리하고 오로지 마스터만 뒷번호를 확인할 수 있도록 함"
+    //
+    //  종전에는 `m.residentNo` 를 그대로 그려서, 노출 권한이 있는 사람에게는
+    //  뒷자리까지 전부 보였다(예: 990328-1234567).
+    //  → **마스터만 원본**, 나머지(관리자·본인·타인)는 `residentNoMasked`
+    //    (`990328-1******`) 를 본다.
+    //    ※ 본인도 마킹본을 본다. 이 화면은 남에게 보여줄 수 있는 카드이고,
+    //      본인 확인이 필요하면 마스터가 원본을 확인한다는 요구를 그대로 따른다.
+    final isMasterForRn = isMaster;
     final fields = <List<String>>[
       ['스카우트 고유번호', 'scoutNo', m.scoutNo],
-      ['주민등록번호', 'residentNo', m.residentNo],
+      [
+        '주민등록번호',
+        'residentNo',
+        isMasterForRn ? m.residentNo : m.residentNoMasked,
+      ],
       ['생일', 'birthday', m.birthday],
       ['성별', 'gender', m.gender],
       ['기념일', 'anniversary', m.anniversary],
@@ -2872,6 +2890,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       // 값이 비면(비노출을 볼 권한 없음 포함) 마스터가 아닌 한 행 자체를 만들지 않는다.
       if (shown.isEmpty && !isMaster) continue;
       children.add(_infoFieldRow(state, m, label, key, shown, isMaster));
+      // 주민번호 행 바로 아래 — 마스터에게만 검증된 값/원본 여부를 알려준다.
+      if (key == 'residentNo' && isMaster && m.hasResidentBack) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 96, bottom: 4),
+            child: Text(
+              '뒷자리는 마스터만 볼 수 있습니다 (마킹 표기: ${m.residentNoMasked})',
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textGray,
+                height: 1.3,
+              ),
+            ),
+          ),
+        );
+      }
     }
     // 멘토·페런츠 등록현황은 '범인가 정보' 카드에서 표시한다(여기서는 제외).
     children.add(
@@ -2887,6 +2921,25 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return _section(
       title: '상세 정보',
       icon: Icons.badge,
+      // [요구 2026-11-02] "개인정보 활용 편집: 입수한 정보에 대한 추가내용을
+      //  넣어줘. 비밀번호, 사진, 인가정보 등등"
+      //  → 이 카드에서 그대로 [개인정보 활용 편집] 화면으로 들어갈 수 있게 한다.
+      //    (마스터 전용 — 다른 권한에는 버튼을 만들지 않는다.)
+      action: isMaster
+          ? TextButton.icon(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 30),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                foregroundColor: AppColors.purple,
+              ),
+              onPressed: () => showPrivacyUsageEdit(context, m),
+              icon: const Icon(Icons.privacy_tip_outlined, size: 15),
+              label: const Text(
+                '개인정보 활용',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       child: children.isEmpty
           ? Text(
               '등록된 상세 정보가 없습니다. 편집 버튼을 눌러 입력하세요.',

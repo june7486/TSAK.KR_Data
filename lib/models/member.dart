@@ -130,7 +130,44 @@ class Member {
   String email;
 
   /// 주민등록번호(앞자리) — 민감정보. 마스터가 항목별 노출 여부를 결정한다.
+  ///
+  /// ## 표시 규칙 (2026-11-02, build #574)
+  ///  요구: "주민등록정보는 뒷번호가 입력시 마킹처리가 안되고 있음
+  ///        (예시: 990328-1******) / 노출되는(개인카드에도) 정보에는 뒷번호를
+  ///        마킹처리하고 오로지 마스터만 뒷번호를 확인할 수 있도록 함"
+  ///
+  ///  원본 값은 **그대로 보관**한다(저장·내보내기·마스터 열람에 필요).
+  ///  화면에 그릴 때는 [residentNoMasked] 를 쓴다.
   String residentNo;
+
+  /// 뒷자리(하이픈 뒤)를 `*` 로 가린 표기 — **화면 표시 기본값**.
+  ///
+  ///  · `990328-1234567` → `990328-1******`
+  ///  · 하이픈이 없어도 13자리면 6자리 + `-` + 성별1 + `*` 로 정규화한다.
+  ///  · 이미 `*` 로 가려진 값은 그대로 둔다(두 번 마킹해도 모양이 같다).
+  ///  · 7자리 미만처럼 판단이 어려운 값은 **전부 가린다**(안전 우선).
+  ///
+  ///  마스터만 [residentNo] 원본을 볼 수 있게 하는 판단은 **화면 쪽 책임**이다
+  ///  ([isMaster] 는 서버 권한이라 모델이 알 수 없다).
+  String get residentNoMasked {
+    final raw = residentNo.trim();
+    if (raw.isEmpty) return '';
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    // 이미 마킹된 값은 그대로 신뢰한다.
+    if (raw.contains('*')) return raw;
+    if (digits.length >= 7) {
+      final front = digits.substring(0, 6);
+      final backFirst = digits.substring(6, 7); // 성별(1~4, 5~8 등)
+      return '$front-$backFirst${'*' * 6}';
+    }
+    // 6자리 이하(앞자리만 입력된 경우): 그대로 두되 뒤가 없다는 걸 표시.
+    if (digits.length == 6) return '$digits-******';
+    // 그 외(비정상 길이) — 전부 마킹.
+    return '*' * (raw.length.clamp(4, 14));
+  }
+
+  /// 주민번호 뒷자리가 **실제로 채워져 있는지** (마스터에게 알려줄지 판단용).
+  bool get hasResidentBack => residentNo.replaceAll(RegExp(r'[^0-9]'), '').length >= 7;
 
   /// Scout 회원번호 — 명부의 인가번호에 해당하는 정식 회원번호.
   String scoutNo;
