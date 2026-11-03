@@ -84,6 +84,24 @@ class LinkPeopleTiles extends StatelessWidget {
     return null;
   }
 
+  /// 코드 → 회원 카드. **인가번호 우선, 없으면 계정 아이디·전화번호로** 찾는다.
+  ///
+  /// [요구 2026-11-04] 멘토 자동가입 계정(`reg_<전화번호>`)은 **인가번호가 없다.**
+  /// 그래서 `state.byNumber()`(number 필드만 조회)로는 절대 찾지 못했고,
+  /// 데이터는 연동됐는데도 멘토 이름이 **빈칸**으로 보여 "연동 안 됨"으로
+  /// 오해하게 만들었다. (실사고: 양다솜 #1346 카드의 멘토 선영진)
+  Member? _byCodeOrPhone(AppState state, String code) {
+    final d = _digits(code);
+    if (d.isEmpty) return null;
+    final byNo = state.byNumber(d);
+    if (byNo != null) return byNo;
+    for (final m in state.allMembers) {
+      if (_digits(m.loginId) == d) return m;
+      if (_digits(m.phone) == d) return m;
+    }
+    return null;
+  }
+
   /// 소속정보 = **현재활동 등록정보**(없으면 인가 당시로 폴백).
   String _activity(Member? m) {
     if (m == null) return '';
@@ -101,7 +119,7 @@ class LinkPeopleTiles extends StatelessWidget {
     for (final c in member.mentees) {
       final d = _digits(c);
       if (d.isEmpty || d == self) continue; // 자기참조 제외
-      final m = state.byNumber(d);
+      final m = _byCodeOrPhone(state, d);
       out.add(
         _Ref(
           code: d,
@@ -126,7 +144,7 @@ class LinkPeopleTiles extends StatelessWidget {
       final pInfo = _profileInfo(p);
       Member? target;
       // 멘토 저장코드(=멘티=본인 번호)가 본인이면 카드로 연결하지 않는다.
-      if (d != self) target = state.byNumber(d);
+      if (d != self) target = _byCodeOrPhone(state, d);
       if (target == null && pName.isNotEmpty) {
         target = _byPhone(state, '${p['phone'] ?? ''}');
       }
