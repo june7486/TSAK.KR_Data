@@ -54,16 +54,57 @@ class LinkPeopleTiles extends StatelessWidget {
   static String _digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
   // ------------------------------------------------------------------ 조회
+  /// 코드 → 인적사항 프로필.
+  ///
+  /// ## [요구 2026-11-04] **키 체계가 바뀌었다**
+  /// 서버가 표준 저장키를 `person:<대표번호>` 로 전환했다. 그런데 이 함수가
+  /// `'멘토:<번호>'` / 무접두어만 찾고 있어서, 서버가 정상적으로 준 데이터를
+  /// 화면이 **하나도 못 찾았다.** 그 결과
+  ///   · 멘토 이름이 안 보이고 (`범#01046236587` 처럼 코드만 노출)
+  ///   · 시트를 열면 이름·전화번호가 **빈칸**
+  ///   · 저장할 때마다 새 임시코드가 생겨 이름이 계속 사라짐
+  /// 이 되었다. 이제 세 가지를 모두 본다:
+  ///   ① `person:<대표번호>`  ② `<종류>:<번호>`  ③ 무접두어 `<번호>`
+  /// 또한 프로필이 담고 있는 **전화번호·로그인ID·scoutNo** 로도 같은 사람을
+  /// 찾는다(멘토 관계 값이 전화번호로 저장되는 새 표준 때문).
   Map<String, dynamic> _profileOf(String code, String kind) {
     final d = _digits(code);
+    if (d.isEmpty) return {};
     final prefix = kind == 'parent' ? '페런츠' : '멘토';
-    for (final k in ['$prefix:$d', d]) {
+    final keys = <String>[
+      'person:$d',
+      '$prefix:$d',
+      d,
+    ];
+    for (final k in keys) {
       final v = profiles[k];
-      if (v is Map && v.isNotEmpty) {
-        final vk = '${v['kind'] ?? ''}'.trim();
-        // 구(무접두어) 키 폴백 시 종류가 다르면 오염 방지를 위해 건너뛴다.
-        if (vk.isEmpty || vk == kind) return v.cast<String, dynamic>();
+      if (v is! Map || v.isEmpty) continue;
+      final vk = '${v['kind'] ?? ''}'.trim();
+      // 구(무접두어) 키 폴백 시 종류가 다르면 오염 방지를 위해 건너뛴다.
+      if (vk.isEmpty || vk == kind) return v.cast<String, dynamic>();
+      // kinds 목록에 이 역할이 들어 있으면 정상 매칭(겸임자).
+      final ks = v['kinds'];
+      if (ks is List && ks.map((e) => '$e').contains(kind)) {
+        return v.cast<String, dynamic>();
       }
+    }
+    // 키가 안 맞으면 **사람 기준**으로 훑는다 — 전화·로그인ID·scoutNo.
+    for (final entry in profiles.entries) {
+      final v = entry.value;
+      if (v is! Map || v.isEmpty) continue;
+      final vk = '${v['kind'] ?? ''}'.trim();
+      final ks = v['kinds'];
+      final kindOk = vk.isEmpty ||
+          vk == kind ||
+          (ks is List && ks.map((e) => '$e').contains(kind));
+      if (!kindOk) continue;
+      final codes = <String>{
+        _digits('${v['phone'] ?? ''}'),
+        _digits('${v['loginId'] ?? ''}'),
+        _digits('${v['scoutNo'] ?? ''}'),
+        _digits('${v['personKey'] ?? ''}'),
+      };
+      if (codes.contains(d)) return v.cast<String, dynamic>();
     }
     return {};
   }
@@ -436,11 +477,35 @@ class LinkPeopleTiles extends StatelessWidget {
 
     final field = kind == 'mentor' ? 'mentors' : 'parents';
     final before = kind == 'mentor' ? member.mentors : member.parents;
-    // 인가자 → 그분의 **인가번호**. 비인가 → 시트가 정한 저장코드(기존 규칙).
-    final linkCode = res.isScouter && res.scoutNo.isNotEmpty
-        ? res.scoutNo
-        : res.code;
+    // [요구 2026-11-04] **내 관계 값은 '상대 인물'을 가리킨다.**
+    //  종전에는 시트가 돌려준 저장코드(`res.code` = 내 번호!)를 그대로
+    //  mentors 에 넣어 **자기참조를 매번 새로 만들었다.** 그래서 저장할
+    //  때마다 승인요청이 되살아나고 이름이 사라졌다.
+    //  이제 상대를 실제로 해석해 그 사람의 코드를 넣는다.
+    //    ① 인가자(시트에서 인가정보 입력) → 그분의 인가번호
+    //    ② 카드가 있으면 → 그 카드의 인가번호(또는 전화번호)
+    //    ③ 카드도 없고 인가자도 아니면 인적사항의 전화번호(= 그분 계정 ID)
+    var linkCode = '';
+    if (res.isScouter && res.scoutNo.isNotEmpty) {
+      linkCode = res.scoutNo;
+    }
     if (linkCode.isEmpty) {
+      final byCode = _byCodeOrPhone(state, code);
+      if (byCode != null) {
+        linkCode = _digits(byCode.number).isNotEmpty
+            ? _digits(byCode.number)
+            : _digits(byCode.phone);
+      }
+    }
+    if (linkCode.isEmpty) {
+      final saved = _profileOf(code, kind);
+      linkCode = _digits('${saved['phone'] ?? ''}');
+      if (linkCode.isEmpty) linkCode = _digits('${saved['scoutNo'] ?? ''}');
+    }
+    // ④ 끝까지 못 찾으면 종전 규칙(시트 저장코드)으로 폴백.
+    if (linkCode.isEmpty) linkCode = res.code;
+    // 그래도 **나 자신**과 같으면 넣지 않는다(자기참조 원천 차단).
+    if (linkCode.isEmpty || _isSamePerson(state, linkCode)) {
       onChanged?.call();
       return;
     }
