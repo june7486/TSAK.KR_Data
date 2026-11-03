@@ -360,7 +360,8 @@ String exportValueOf(
       return m.number;
     case 'scoutNo':
       // [요구 2026-11-03] 회원번호 — 관리자·마스터만 원본, 나머지는 뒷 2자리 마킹.
-      return m.scoutNoDisplay(canSeeAll: revealScoutNo);
+      //  복수 등록분은 `16187 · 22541` 처럼 한 칸에 모아 내보낸다.
+      return m.scoutNosDisplay(canSeeAll: revealScoutNo);
     case 'name':
       return m.name;
     case 'nameEn':

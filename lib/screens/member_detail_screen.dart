@@ -2864,7 +2864,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       [
         '스카우트회원번호',
         'scoutNo',
-        m.scoutNoDisplay(canSeeAll: admin),
+        // [요구 2026-11-03] 복수 회원번호를 모두 노출 (`16187 · 22541`).
+        //  권한(admin)에 따라 각 값이 원본/마킹으로 갈린다.
+        m.scoutNosDisplay(canSeeAll: admin),
       ],
       [
         '주민등록번호',

@@ -1098,7 +1098,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   /// 회원번호 표기 — 관리자·마스터는 원본, 그 외는 뒷 2자리 마킹.
   ///  값이 없으면 `—`(빈칸과 "번호 없음"을 구분해 보여준다).
   String _scoutNoText(Member m, bool full) {
-    final s = m.scoutNoDisplay(canSeeAll: full);
+    // [요구 2026-11-03] 복수 회원번호를 한 칸에 모두 보여준다 (`16187 · 22541`).
+    final s = m.scoutNosDisplay(canSeeAll: full);
     return s.isEmpty ? '—' : s;
   }
 

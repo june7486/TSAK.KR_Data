@@ -161,6 +161,19 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   List<String> _mentors = [];
   List<String> _parents = [];
 
+  /// **추가 회원번호** 입력 컨트롤러 (대표 scoutNo 외 나머지).
+  ///
+  /// ## [요구 2026-11-03] "스카우트 고유번호는 복수로 등록되어 있는 사람도
+  ///   있음 / 스카우트 고유번호를 추가로 등록할 수 있도록 할 것"
+  ///
+  ///  · 대표(첫 번째)는 `_scoutNo` 컨트롤러가 담당한다.
+  ///  · 여기에는 2번째부터 담는다. 저장 시 `scoutNos = [대표, ...추가]`.
+  final List<TextEditingController> _extraScoutNos = [];
+
+  /// 주민등록번호 **표시용** 컨트롤러 (권한 없는 사용자 = 마킹본).
+  ///  원본 [_residentNo] 는 그대로 보존하고, 화면에는 마킹본만 올린다.
+  final TextEditingController _residentNoView = TextEditingController();
+
   /// (요구) 멘티대원 / 자녀대원 인가번호 목록 — "일반회원 멘티항목 추가".
   ///  · 인가자(배출자) 카드에서 본인이 배출한 대원을 직접 등록/수정한다.
   List<String> _mentees = [];
@@ -222,6 +235,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _email = TextEditingController(text: m?.email ?? widget.prefillEmail);
     _residentNo = TextEditingController(text: m?.residentNo ?? '');
     _scoutNo = TextEditingController(text: m?.scoutNo ?? '');
+    // [요구 2026-11-03] 복수 회원번호 — 대표 외 나머지를 각각의 칸으로 복원.
+    for (final extra in (m?.allScoutNos ?? const <String>[]).skip(1)) {
+      _extraScoutNos.add(TextEditingController(text: extra));
+    }
     _date = TextEditingController(text: m?.date ?? '');
     _atas = TextEditingController(text: m?.atasNo ?? '');
     _atasLeague = TextEditingController(text: m?.atasLeague ?? '');
@@ -344,6 +361,11 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     ]) {
       c.dispose();
     }
+    // [요구 2026-11-03] 추가 회원번호 칸 + 주민번호 표시용 컨트롤러 정리.
+    for (final c in _extraScoutNos) {
+      c.dispose();
+    }
+    _residentNoView.dispose();
     super.dispose();
   }
 
@@ -535,13 +557,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 icon: Icons.call,
                 keyboard: TextInputType.phone,
               ),
-              _field(
-                '스카우트 고유번호',
-                _scoutNo,
-                hint: '인가번호와 다른 별도 고유번호 (예: 16187) — 없으면 비워두세요',
-                icon: Icons.confirmation_number_outlined,
-                numeric: true,
-              ),
+              // [요구 2026-11-03] 스카우트 고유번호 — **입력·수정 가능**하고
+              //  복수 등록(추가)도 가능해야 한다.
+              _scoutNoSection(),
               _residentNoField(),
               _field(
                 '생일',
@@ -1416,6 +1434,14 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     _email.text = s('email');
     _residentNo.text = s('residentNo');
     _scoutNo.text = s('scoutNo');
+    // [요구 2026-11-03] 추가 회원번호 칸도 초기화한다.
+    for (final c in _extraScoutNos) {
+      c.dispose();
+    }
+    _extraScoutNos.clear();
+    for (final extra in (_existing?.allScoutNos ?? const <String>[]).skip(1)) {
+      _extraScoutNos.add(TextEditingController(text: extra));
+    }
     _date.text = s('date');
     _atas.text = s('atas');
     _activity.text = s('activity');
@@ -1635,6 +1661,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         _email.text.trim() != m.email ||
         _residentNo.text.trim() != m.residentNo ||
         _scoutNo.text.trim() != m.scoutNo ||
+        // [요구 2026-11-03] 추가 회원번호 변경도 저장 대상.
+        _scoutNosToSave().join(',') != m.allScoutNos.join(',') ||
         _date.text.trim() != m.date ||
         _atas.text.trim() != m.atasNo ||
         _activity.text.trim() != m.activity ||
@@ -2278,45 +2306,162 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     );
   }
 
-  /// 주민등록번호 입력란 — **뒷자리 원본은 마스터만**.
+  /// **스카우트 고유번호 섹션** — 대표 1건 + 추가 N건.
+  ///
+  /// ## [요구 2026-11-03]
+  ///   "스카우트고유번호, 주민등록번호는 입력 및 수정가능하도록 할 것
+  ///    스카우트 고유번호는 복수로 등록되어 있는 사람도 있음
+  ///    스카우트 고유번호를 추가로 등록할 수 있도록 할 것"
+  ///
+  ///  · 첫 칸 = **대표** 회원번호(`scoutNo`) — 검색·명부·출력의 기준값.
+  ///  · `+ 추가` 를 누르면 칸이 하나 늘어난다(제한 없음).
+  ///  · 각 추가 칸에는 삭제(휴지통) 버튼이 있다. 대표 칸은 비우기만 가능.
+  ///  · 저장 시 `scoutNos = [대표, ...추가]` — 빈 칸은 자동 제외.
+  Widget _scoutNoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _field(
+          '스카우트 고유번호 (대표)',
+          _scoutNo,
+          hint: '인가번호와 다른 별도 고유번호 (예: 16187) — 없으면 비워두세요',
+          icon: Icons.confirmation_number_outlined,
+          numeric: true,
+        ),
+        // 추가 회원번호 칸들
+        for (var i = 0; i < _extraScoutNos.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _field(
+                    '스카우트 고유번호 ${i + 2}',
+                    _extraScoutNos[i],
+                    hint: '추가 회원번호 (예: 22541)',
+                    icon: Icons.confirmation_number_outlined,
+                    numeric: true,
+                  ),
+                ),
+                // 삭제 — 실수로 늘린 칸을 되돌린다.
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 2),
+                  child: IconButton(
+                    tooltip: '이 회원번호 칸 삭제',
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    color: AppColors.taegeukRed,
+                    onPressed: () {
+                      setState(() {
+                        final c = _extraScoutNos.removeAt(i);
+                        c.dispose();
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () {
+              setState(() => _extraScoutNos.add(TextEditingController()));
+            },
+            icon: const Icon(Icons.add_circle_outline, size: 18),
+            label: const Text(
+              '회원번호 추가 등록',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
+          child: Text(
+            '한 사람이 회원번호를 여러 개 가질 수 있습니다. '
+            '첫 칸이 대표 번호로 검색·명부에 쓰입니다.',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textGray,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// **주민등록번호 저장값** — 마킹본이 원본을 덮어쓰지 않게 보호한다.
+  ///
+  /// ## [요구 2026-11-03] 입력·수정 가능 + 마킹 유지
+  ///  종전에는 마스터만 편집할 수 있어 이 문제가 없었다.
+  ///  이제 누구나 편집하므로 **마킹본(`990328-1******`)이 그대로 저장되면
+  ///  뒷자리 원본이 `******` 로 지워지는** 사고가 난다. 그래서:
+  ///
+  ///   ① 입력값에 `*` 가 없으면 → 그대로 저장(새로 입력·수정한 값).
+  ///   ② 입력값에 `*` 가 있으면 → **기존 원본을 유지**한다.
+  ///      (사용자가 마킹된 칸을 건드리지 않은 경우가 대부분)
+  ///   ③ 기존 값이 없으면 → 새로 입력한 값(마킹 포함) 그대로.
+  String _residentNoToSave() {
+    final typed = _residentNo.text.trim();
+    final before = _existing?.residentNo.trim() ?? '';
+    // ① 마킹이 없으면 사용자가 실제로 입력/수정한 값이다.
+    if (!typed.contains('*')) return typed;
+    // ③ 기존 값이 없으면 입력값을 그대로 쓴다(신규 입력).
+    if (before.isEmpty) return typed;
+    // ② 마킹본을 그대로 저장하면 원본이 지워진다 → 원본 유지.
+    return before;
+  }
+
+  /// **회원번호 저장 목록** — 대표 + 추가 칸.
+  ///
+  /// ## [요구 2026-11-03] 복수 등록
+  ///  · 빈 칸·중복은 버린다(순서 유지).
+  ///  · 대표([_scoutNo])가 비어 있으면 첫 추가값을 대표로 승격한다.
+  List<String> _scoutNosToSave() {
+    final out = <String>[];
+    void add(String v) {
+      final t = v.trim();
+      if (t.isEmpty) return;
+      if (!out.contains(t)) out.add(t);
+    }
+
+    add(_scoutNo.text);
+    for (final c in _extraScoutNos) {
+      add(c.text);
+    }
+    return out;
+  }
+
+  /// 주민등록번호 입력란.
   ///
   /// ## 요구 (2026-11-02, build #574)
   ///  "주민등록정보는 뒷번호가 입력시 마킹처리가 안되고 있음
   ///   (예시: 990328-1******) / 노출되는(개인카드에도) 정보에는 뒷번호를
   ///   마킹처리하고 오로지 마스터만 뒷번호를 확인할 수 있도록 함"
   ///
-  /// ## 정책
-  ///  · 마스터: 원본 그대로 보이고 편집 가능.
-  ///  · 그 외(관리자·본인·타인): **마킹본(990328-1******)** 만 보이고 편집 불가.
-  ///    - 편집을 막는 이유: 마킹본을 그대로 저장하면 원본 뒷자리가 지워진다.
-  ///    - 값을 처음 넣는 신규 등록은 예외 없이 마스터만 가능(마킹본이 비어 있음).
-  ///      관리자·본인이 뒷자리를 새로 넣는 경로는 열지 않는다(마스터에게 요청).
+  /// ## 요구 (2026-11-03, build #586) — **입력·수정 가능하게**
+  ///  "스카우트고유번호, 주민등록번호는 입력 및 수정가능하도록 할 것"
+  ///   → 종전에는 마스터가 아니면 `enabled: false` 로 **아예 입력 불가**였다.
+  ///     이제 누구나 입력·수정할 수 있다.
+  ///
+  /// ## 표시 정책 (마킹은 그대로 유지)
+  ///  · 관리자·마스터: 원본을 그대로 보여주고 편집.
+  ///  · 그 외(본인·일반회원): **마킹본(990328-1\*\*\*\*\*\*)** 을 보여주고,
+  ///    뒷자리를 새로 입력할 수는 있지만 기존 뒷자리는 볼 수 없다.
+  ///    - 마킹된 칸을 **건드리지 않으면** 기존 원본을 그대로 보존한다.
+  ///      (마킹본을 그대로 저장해 뒷자리가 지워지는 사고를 막는다)
+  ///    - 뒷자리를 새로 입력하면 그 값으로 교체된다.
   Widget _residentNoField() {
-    final isMaster = context.watch<AppState>().isMaster;
+    final st = context.watch<AppState>();
+    final canSeeAll = st.isApp;
     final m = _existing;
     final masked = m?.residentNoMasked ?? '';
     final hasBack = m?.hasResidentBack ?? false;
 
-    if (isMaster) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _field(
-            '주민등록번호',
-            _residentNo,
-            hint: '예: 990328-1234567 — 뒷자리 원본은 마스터만 볼 수 있습니다',
-            icon: Icons.credit_card,
-          ),
-          if (hasBack)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 2),
-              child: Text(
-                '표시용 마킹: $masked (다른 사람에게는 이 형태로만 보입니다)',
-                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
-              ),
-            ),
-        ],
-      );
+    // 권한이 없으면 **마킹본**을 칸에 채운다(원본은 화면에 올리지 않는다).
+    if (!canSeeAll) {
+      _residentNoView.text = masked;
     }
 
     return Column(
@@ -2325,28 +2470,32 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: TextFormField(
-            // 마킹본을 그대로 보여주되 편집은 막는다(원본 덮어쓰기 방지).
-            initialValue: masked,
-            readOnly: true,
-            enabled: false,
+            controller: canSeeAll ? _residentNo : _residentNoView,
+            keyboardType: TextInputType.text,
+            onChanged: canSeeAll
+                ? null
+                : (v) {
+                    // 마킹 상태에서 사용자가 고친 값이 그대로 저장되도록 반영.
+                    _residentNo.text = v;
+                  },
             decoration: const InputDecoration(
               labelText: '주민등록번호',
-              hintText: '뒷자리는 마스터만 확인할 수 있습니다',
+              hintText: '예: 990328-1234567',
               prefixIcon: Icon(Icons.credit_card, size: 20),
-              suffixIcon: Icon(
-                Icons.lock_outline,
-                size: 18,
-                color: AppColors.textGray,
-              ),
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 4),
           child: Text(
-            masked.isEmpty
-                ? '주민등록번호는 마스터만 입력·확인할 수 있습니다.'
-                : '뒷자리는 마킹되어 표시됩니다. 수정이 필요하면 마스터에게 요청하세요.',
+            canSeeAll
+                ? (hasBack
+                      ? '표시용 마킹: $masked (다른 사람에게는 이 형태로만 보입니다)'
+                      : '주민등록번호를 입력할 수 있습니다.')
+                : (masked.isEmpty
+                      ? '주민등록번호를 입력할 수 있습니다. 뒷자리는 입력 후 마킹되어 보입니다.'
+                      : '뒷자리는 마킹되어 표시됩니다. '
+                            '그대로 두면 기존 값이 유지되고, 새로 입력하면 교체됩니다.'),
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textGray,
@@ -2728,8 +2877,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       phone: _phone.text.trim(),
       tel: _tel.text.trim(),
       email: _email.text.trim(),
-      residentNo: _residentNo.text.trim(),
+      residentNo: _residentNoToSave(),
       scoutNo: _scoutNo.text.trim(),
+      // [요구 2026-11-03] 복수 회원번호 — 대표 + 추가 칸(빈 칸·중복 제외).
+      scoutNoList: _scoutNosToSave(),
       bio: _bio.text.trim(),
       date: _date.text.trim(),
       atasNo: _atas.text.trim(),

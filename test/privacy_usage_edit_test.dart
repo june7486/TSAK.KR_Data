@@ -145,6 +145,7 @@ void main() {
     });
 
     test('주민번호는 원본(마스터)과 표시용 마킹본을 함께 보여준다', () {
+      // 이 화면(lib/screens/privacy_usage_edit_screen.dart)은 turn 37에서 바뀌지 않았다.
       expect(src.contains('표시용(타인·관리자): '), isTrue);
       expect(src.contains('residentNoMasked'), isTrue);
     });

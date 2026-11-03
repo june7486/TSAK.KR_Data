@@ -148,8 +148,9 @@ void main() {
       expect(n >= 3, isTrue);
     });
 
-    test('명부가 scoutNoDisplay 로 권한 분기를 한다', () {
-      expect(rosterAdmin.contains('scoutNoDisplay'), isTrue);
+    test('명부가 scoutNosDisplay 로 권한 분기를 한다', () {
+      // [turn 37] 복수 회원번호 지원으로 단수 scoutNoDisplay → 복수 scoutNosDisplay 로 바뀌었다.
+      expect(rosterAdmin.contains('scoutNosDisplay'), isTrue);
       expect(rosterAdmin.contains('state.isApp'), isTrue);
     });
 
@@ -160,7 +161,8 @@ void main() {
     });
 
     test('상세 화면도 권한별 마킹을 쓴다', () {
-      expect(detail.contains('scoutNoDisplay'), isTrue);
+      // [turn 37] 복수 회원번호 지원 → scoutNosDisplay.
+      expect(detail.contains('scoutNosDisplay'), isTrue);
     });
 
     test('로그인/잠금 시 원본 노출 플래그를 갱신한다', () {

@@ -100,14 +100,16 @@ void main() {
 
     test('편집화면 — 주민번호 필드가 마스터 분기를 가진 헬퍼로 교체됐다', () {
       expect(edit.contains('Widget _residentNoField()'), isTrue);
-      expect(edit.contains('if (isMaster)'), isTrue);
+      expect(edit.contains('final canSeeAll = st.isApp'), isTrue);
       expect(
         edit.contains('final masked = m?.residentNoMasked'),
         isTrue,
         reason: '비마스터는 마킹본만 본다',
       );
-      // 비마스터 입력란은 읽기 전용 — 마킹본을 저장해 원본을 지우는 사고 방지.
-      expect(edit.contains('readOnly: true'), isTrue);
+      // [turn 37] "입력 및 수정가능하도록" 요구로 읽기 전용을 해제했다.
+      // 대신 마킹본이 원본을 덮어쓰지 않도록 _residentNoToSave() 가 방어한다.
+      expect(edit.contains('readOnly: true'), isFalse);
+      expect(edit.contains('_residentNoToSave()'), isTrue);
     });
 
     test('상세화면은 주민번호 원본을 직접 그리지 않는다', () {

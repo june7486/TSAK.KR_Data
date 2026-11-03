@@ -49,6 +49,7 @@ class Member {
     this.privacyAgreed = false,
     this.privacyAgreedAt = '',
     List<String>? mentors,
+    List<String>? scoutNoList,
     List<String>? parents,
     List<String>? mentees,
     List<String>? children,
@@ -74,6 +75,7 @@ class Member {
     this.genderVisible = true,
     this.updatedAt,
   }) : mentors = mentors ?? <String>[],
+       scoutNos = scoutNoList ?? <String>[],
        parents = parents ?? <String>[],
        mentees = mentees ?? <String>[],
        children = children ?? <String>[],
@@ -183,21 +185,56 @@ class Member {
   ///   화면에서는 [scoutNoDisplay] 를 쓰면 권한 판단이 한 곳으로 모인다.
   String scoutNo;
 
-  /// 회원번호 뒷 **2자리만** `*` 로 가린 표기.
+  /// 회원번호 **추가 등록분** — 한 사람이 여러 개를 가질 수 있다.
   ///
-  /// `123456` → `1234**` · `12345` → `123**` · `1234` → `12**`
-  ///  · 2자리 이하거나 비어 있으면 **전부 가린다**(안전 우선).
-  ///  · 이미 `*` 가 섞인 값은 그대로 신뢰한다(두 번 마킹 방지).
-  ///  · 하이픈·공백 같은 구분자는 보존해 읽기 쉽게 둔다.
+  /// ## [요구 2026-11-03] "스카우트 고유번호는 복수로 등록되어 있는 사람도 있음
+  ///   / 스카우트 고유번호를 추가로 등록할 수 있도록 할 것"
   ///
-  /// 요구: "회원에게는 뒷번호 2자리에 * 표 처리해서 노출해줘"
-  String get scoutNoMasked {
-    final raw = scoutNo.trim();
-    if (raw.isEmpty) return '';
-    if (raw.contains('*')) return raw;
+  ///  · [scoutNo] = **대표(첫 번째)** 회원번호. 기존 데이터·검색·출력과의
+  ///    하위 호환이라 그대로 둔다.
+  ///  · [scoutNos] = 전체 목록(대표 포함). 서버에는 `scoutNos` 배열로 저장한다.
+  ///  · `scoutNos` 가 비어 있고 `scoutNo` 만 있으면 [allScoutNos] 가
+  ///    `[scoutNo]` 를 돌려준다 → 구 데이터도 그대로 동작.
+  List<String> scoutNos;
 
-    // 뒤에서부터 2개의 **숫자**만 가린다(구분자는 세지 않는다).
-    final chars = raw.split('');
+  /// 대표 포함 **전체** 회원번호(공백·중복 제거, 순서 유지).
+  List<String> get allScoutNos {
+    final out = <String>[];
+    void add(String v) {
+      final s = v.trim();
+      if (s.isEmpty) return;
+      if (!out.contains(s)) out.add(s);
+    }
+
+    for (final v in scoutNos) {
+      add(v);
+    }
+    add(scoutNo);
+    return out;
+  }
+
+  /// 대표 포함 전체 회원번호를 **권한에 따라 마킹**해 돌려준다.
+  ///  · [canSeeAll] true(관리자·마스터) → 원본
+  ///  · false(본인·일반회원) → 각각 뒷 2자리 `**`
+  List<String> allScoutNosDisplay({required bool canSeeAll}) {
+    return allScoutNos
+        .map((v) => _maskScoutNo(v, reveal: canSeeAll))
+        .toList();
+  }
+
+  /// 회원번호 마킹의 **단일 구현** — 뒷 2개의 숫자만 `*` 로 바꾼다.
+  ///
+  ///  · [reveal] true → 원본 그대로
+  ///  · 구분자(-, 공백)는 세지 않는다: `123-456` → `123-4**`
+  ///  · 이미 `*` 가 있으면 그대로 신뢰(이중 마킹 방지)
+  ///  · 숫자가 2개 미만이면 전부 가린다(안전 우선)
+  static String _maskScoutNo(String raw, {required bool reveal}) {
+    final s = raw.trim();
+    if (s.isEmpty) return '';
+    if (reveal) return s;
+    if (s.contains('*')) return s;
+
+    final chars = s.split('');
     var masked = 0;
     for (var i = chars.length - 1; i >= 0 && masked < 2; i--) {
       if (RegExp(r'\d').hasMatch(chars[i])) {
@@ -205,10 +242,19 @@ class Member {
         masked++;
       }
     }
-    // 숫자가 2개 미만이면 안전하게 전부 가린다.
-    if (masked < 2) return '*' * raw.length;
+    if (masked < 2) return '*' * s.length;
     return chars.join();
   }
+
+  /// [scoutNo] 한 건을 마킹한 표기 (뒷 2자리 `*`).
+  ///
+  /// `123456` → `1234**` · `12345` → `123**` · `1234` → `12**`
+  ///  · 2자리 이하거나 비어 있으면 **전부 가린다**(안전 우선).
+  ///  · 이미 `*` 가 섞인 값은 그대로 신뢰한다(두 번 마킹 방지).
+  ///  · 하이픈·공백 같은 구분자는 보존해 읽기 쉽게 둔다.
+  ///
+  /// 요구: "회원에게는 뒷번호 2자리에 * 표 처리해서 노출해줘"
+  String get scoutNoMasked => _maskScoutNo(scoutNo, reveal: false);
 
   /// 권한에 따른 회원번호 표기.
   ///
@@ -217,6 +263,13 @@ class Member {
   String scoutNoDisplay({required bool canSeeAll}) {
     if (scoutNo.trim().isEmpty) return '';
     return canSeeAll ? scoutNo.trim() : scoutNoMasked;
+  }
+
+  /// 복수 회원번호를 한 칸에 넣을 때의 표기 — `16187 · 22541`
+  ///
+  /// [canSeeAll] 에 따라 각 값이 마킹된다. 없으면 빈 문자열.
+  String scoutNosDisplay({required bool canSeeAll, String sep = ' · '}) {
+    return allScoutNosDisplay(canSeeAll: canSeeAll).join(sep);
   }
 
   /// 비고 / 한줄소개 (명단 비고 열 등)
@@ -482,6 +535,8 @@ class Member {
     final base =
         '$number $name $nameEn $league $unit $regLeague $regUnit $address '
         '$zipCode $phone $tel $email $residentNo $scoutNo $bio $atasNo '
+        // [요구 2026-11-03] 복수 회원번호도 검색에 걸리게 한다.
+        '${allScoutNos.join(' ')} '
         '$activity $position $memo $birthday $anniversary $trainingStatus '
         '$awards $specialtyCourses $purchases $gender '
         '${mentors.join(' ')} ${parents.join(' ')} '
@@ -787,6 +842,8 @@ class Member {
     'email': email,
     'residentNo': residentNo,
     'scoutNo': scoutNo,
+    // [요구 2026-11-03] 복수 회원번호 — 대표(scoutNo)를 포함한 전체 목록.
+    'scoutNos': allScoutNos,
     'bio': bio,
     'date': date,
     'atasNo': atasNo,
@@ -878,6 +935,9 @@ class Member {
       email: '${map['email'] ?? ''}',
       residentNo: '${map['residentNo'] ?? ''}',
       scoutNo: '${map['scoutNo'] ?? ''}',
+      // [요구 2026-11-03] 복수 회원번호 — 서버가 배열로 주면 그대로 읽고,
+      //  구 데이터(scoutNo 문자열만)면 [allScoutNos] 가 대표값으로 채운다.
+      scoutNoList: castStrList(map['scoutNos']),
       bio: '${map['bio'] ?? ''}',
       date: '${map['date'] ?? ''}',
       atasNo: '${map['atasNo'] ?? ''}',
@@ -976,6 +1036,7 @@ class Member {
     String? email,
     String? residentNo,
     String? scoutNo,
+    List<String>? scoutNoList,
     String? bio,
     String? date,
     String? atasNo,
@@ -1043,6 +1104,7 @@ class Member {
       email: email ?? this.email,
       residentNo: residentNo ?? this.residentNo,
       scoutNo: scoutNo ?? this.scoutNo,
+      scoutNoList: scoutNoList ?? List<String>.from(this.scoutNos),
       bio: bio ?? this.bio,
       date: date ?? this.date,
       atasNo: atasNo ?? this.atasNo,

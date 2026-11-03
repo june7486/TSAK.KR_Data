@@ -890,7 +890,8 @@ class _RosterScreenState extends State<RosterScreen> {
     final key = _first(a, const ['number', 'numberLabel']);
     final m = state.byNumber(key);
     if (m == null) return '—';
-    final s = m.scoutNoDisplay(canSeeAll: full);
+    // [요구 2026-11-03] 복수 회원번호를 모두 표시.
+    final s = m.scoutNosDisplay(canSeeAll: full);
     return s.isEmpty ? '—' : s;
   }
 
