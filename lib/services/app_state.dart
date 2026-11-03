@@ -2795,6 +2795,78 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// **행사 참가자 → 회원 카드** 통합 조회 (소속 불문).
+  ///
+  /// ## [요구 2026-11-04]
+  ///  "행사 참가자 명단에서 범스카우트인가자 및 은하스카우트들은 이름 옆에
+  ///   범, 은하 단추와 번호를 꼭 같이 기입해줘"
+  ///
+  /// ## 왜 필요한가
+  ///  서버가 참가자마다 `corps`·`numberLabel` 을 내려주지만, 예전에 저장된
+  ///  참가 행이나 마이그레이션 전 데이터에는 그 필드가 **비어 있을 수 있다**.
+  ///  그때 화면은 소속을 알 수 없어 '일반' 배지로 떨어지고 번호도 사라진다.
+  ///  → 로컬 명부(범·은하)를 한 번 더 확인해 **소속·번호를 복원**한다.
+  ///
+  /// ## 순서
+  ///  ① 범 명단(`repo`) → ② 은하 캐시(`_eunhaMembers`) → ③ 없으면 `null`.
+  ///  숫자가 겹칠 수 있으므로(범 43 ↔ 은하 43) 호출부가 [corpsHint] 로
+  ///  소속을 알려주면 그 명단만 본다.
+  Member? memberForAttendee(String ident, {String corpsHint = ''}) {
+    final raw = ident.trim();
+    if (raw.isEmpty) return null;
+    final hint = corpsHint.trim().toLowerCase();
+    final isEunhaHint =
+        hint == 'eunha' || _hasEunhaPrefix(raw);
+    if (isEunhaHint) return _eunhaByNumber(raw);
+    final hit = repo.byNumber(raw);
+    if (hit != null) return hit;
+    // 소속 힌트가 없을 때만 은하까지 확인한다(번호 충돌 방지).
+    if (hint.isEmpty) return _eunhaByNumber(raw);
+    return null;
+  }
+
+  /// 참가자에게 붙일 **말머리(범/은하/일반)** — 서버 값 우선, 없으면 명부로 복원.
+  String corpsMarkForAttendee(Map<String, dynamic> a) {
+    final serverCorps = '${a['corps'] ?? ''}'.trim().toLowerCase();
+    if (serverCorps == 'eunha') return '은하';
+    if (serverCorps == 'tsak') return '범';
+    // 서버가 비워 보냈다 → 저장된 신원이 '비인가' 인지 먼저 본다.
+    if (a['licensed'] == false ||
+        '${a['identityKey'] ?? ''}'.startsWith('reg:')) {
+      return '일반';
+    }
+    // 명부에서 찾아 복원.
+    final m = memberForAttendee(
+      '${a['number'] ?? a['phone'] ?? ''}',
+      corpsHint: serverCorps,
+    );
+    if (m == null) return serverCorps.isEmpty ? '일반' : '';
+    if (m.isRegular) return '일반';
+    return m.corps == 'eunha' ? '은하' : '범';
+  }
+
+  /// 참가자에게 붙일 **번호 라벨** — 서버 `numberLabel` 우선, 없으면 복원.
+  ///
+  ///  · 인가자: `범#415` / `은하#43`
+  ///  · 비인가: `일반#01074451179`
+  String numberLabelForAttendee(Map<String, dynamic> a) {
+    final given = '${a['numberLabel'] ?? ''}'.trim();
+    if (given.isNotEmpty) return given;
+    final ident = '${a['number'] ?? a['phone'] ?? ''}';
+    final mark = corpsMarkForAttendee(a);
+    if (mark == '일반') {
+      final d = ident.replaceAll(RegExp(r'[^0-9]'), '');
+      return d.isEmpty ? '' : '일반#$d';
+    }
+    if (mark.isEmpty) return '';
+    final m = memberForAttendee(ident, corpsHint: '${a['corps'] ?? ''}');
+    final num = (m?.number.trim().isNotEmpty ?? false)
+        ? m!.number
+        : ident.replaceAll(RegExp(r'[^0-9]'), '');
+    if (num.replaceAll(RegExp(r'[^0-9]'), '').isEmpty) return '';
+    return Member.numLabelOf(num, mark == '은하' ? 'eunha' : 'tsak');
+  }
+
   Member? _eunhaByNumber(String number) {
     final n = number.replaceAll(RegExp(r'[^0-9]'), '');
     if (n.isEmpty) return null;

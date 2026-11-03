@@ -1977,17 +1977,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     //   ⚠️ 기존엔 linkable(개인카드 열기 가능)로 판정해, 비인가자에게 인가번호
     //      '일반#…' 라벨이 세팅되면 linkable=true 가 되어 '범'으로 잘못 표시됐다.
     final corpsRaw = '${a['corps'] ?? ''}'.trim();
-    final isRegularRow = corpsRaw.isEmpty;
-    final corpLabel = corpsRaw == 'eunha'
-        ? '은하'
-        : (corpsRaw == 'tsak' ? '범' : '일반');
+    // [요구 2026-11-04] "범스카우트인가자 및 은하스카우트들은 이름 옆에
+    //   범, 은하 단추와 번호를 꼭 같이 기입해줘"
+    //  서버가 corps 를 비워 보낸 옛 참가 행에서도 배지가 '일반' 으로
+    //  떨어지지 않도록 **로컬 명부로 소속을 복원**한다(AppState 단일 구현).
+    final st0 = context.read<AppState>();
+    //  서버 값이 tsak/eunha 면 그대로 신뢰하고, **비어 있을 때만** 명부로 복원한다.
+    final mark = (corpsRaw == 'tsak' || corpsRaw == 'eunha')
+        ? (corpsRaw == 'eunha' ? '은하' : '범')
+        : st0.corpsMarkForAttendee(a);
+    final isRegularRow = mark == '일반';
+    final corpLabel = mark;
     final corpColor = isRegularRow
         ? AppColors.textGray
-        : (corpsRaw == 'eunha' ? AppColors.taegeukBlue : AppColors.taegeukRed);
+        : (mark == '은하' ? AppColors.taegeukBlue : AppColors.taegeukRed);
     // (요구) 역할 코드 — 비버(B)/컵(C)/스카우트(S)/벤쳐(V)/로버(R)/리더(L)/일반/기타
     final roleCode = '${a['roleCode'] ?? ''}'.trim();
     // (요구) 인가번호 우선 노출 — 서버가 준 numberLabel(범#415/은하#43).
-    final numLabel = '${a['numberLabel'] ?? ''}'.trim();
+    // [요구 2026-11-04] 서버가 라벨을 비워 보낸 옛 참가 행은 이름 옆 번호가
+    //   사라진다 → AppState 가 명부로 복원한 라벨을 쓴다.
+    final numLabel = st0.numberLabelForAttendee(a);
     // (요구 #15) STAFF 여부 — 인가번호 옆 STAFF 단추.
     final isStaff = _staff.any(
       (s) =>
@@ -2039,14 +2048,57 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 }
               }),
             ),
-            title: Text(
-              '${a['name'] ?? ''}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-              ),
+            title: Row(
+              children: [
+                // [요구 2026-11-04] 일괄 선택 모드에서도 범/은하 단추 + 번호를
+                //   이름 옆에 함께 보여준다(선택 중에도 누가 누구인지 확인).
+                if (corpLabel.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: corpColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: corpColor.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    child: Text(
+                      corpLabel,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: corpColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                ],
+                Flexible(
+                  child: Text(
+                    '${a['name'] ?? ''}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (numLabel.isNotEmpty) ...[
+                  const SizedBox(width: 5),
+                  Text(
+                    numLabel,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: corpColor,
+                    ),
+                  ),
+                ],
+              ],
             ),
             subtitle: Text(
               [
@@ -2069,13 +2121,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           leading: _attendeeLeading(a, ident, visited, isStaff),
           title: Row(
             children: [
-              // 소속 구분 뱃지(범/은하/일반)
+              // 소속 구분 뱃지(범/은하/일반) — **이름 바로 앞**에 고정.
+              //  [요구 2026-11-04] "이름 옆에 범, 은하 단추와 번호를 꼭 같이"
+              //   → 배지·이름·번호가 한 덩어리로 읽히도록 간격을 좁게 유지한다.
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: corpColor.withValues(alpha: 0.10),
+                  color: corpColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: corpColor.withValues(alpha: 0.45)),
+                  border: Border.all(color: corpColor.withValues(alpha: 0.55)),
                 ),
                 child: Text(
                   corpLabel,
@@ -2086,7 +2140,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               // [요구] 이름이 길면 흐르는 글자(마퀴)로 표시 — 폭을 확정(Expanded)
               //   해야 MarqueeText 가 넘침을 감지해 애니메이션을 시작한다.
               Expanded(
@@ -2126,23 +2180,27 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   ),
                 ),
               ),
-              // (요구) 인가번호 우선 노출
+              // (요구) 인가번호 — 이름 바로 옆에 **색 있는 알약**으로 붙인다.
+              //  [요구 2026-11-04] "이름 옆에 범, 은하 단추와 번호를 꼭 같이"
+              //   종전엔 회색 11pt 텍스트라 이름·배지와 따로 떨어져 보였다.
               if (numLabel.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                Text(
-                  numLabel,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textGray,
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
                   ),
-                ),
-              ] else if (ident.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                Text(
-                  Member.numLabelOf(ident, '${a['corps'] ?? 'tsak'}'),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textGray,
+                  decoration: BoxDecoration(
+                    color: corpColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    numLabel,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: corpColor,
+                    ),
                   ),
                 ),
               ],
