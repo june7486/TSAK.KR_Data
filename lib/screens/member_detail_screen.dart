@@ -2855,7 +2855,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     //      본인 확인이 필요하면 마스터가 원본을 확인한다는 요구를 그대로 따른다.
     final isMasterForRn = isMaster;
     final fields = <List<String>>[
-      ['스카우트 고유번호', 'scoutNo', m.scoutNo],
+      // ## [요구 2026-11-03] 회원번호(스카우트회원번호) 노출 규칙
+      //  "관리자 및 마스터는 모든 번호를 확인할 수 있도록 하고,
+      //   회원에게는 뒷번호 2자리에 * 표 처리해서 노출해줘"
+      //  · 관리자·마스터(admin == true) → 원본 전체
+      //  · 본인·일반회원            → 뒷 2자리 `**` (예: 123456 → 1234**)
+      //  값이 비면 권한 규칙(disp)에 맡겨 행 자체가 사라진다.
+      [
+        '스카우트회원번호',
+        'scoutNo',
+        m.scoutNoDisplay(canSeeAll: admin),
+      ],
       [
         '주민등록번호',
         'residentNo',

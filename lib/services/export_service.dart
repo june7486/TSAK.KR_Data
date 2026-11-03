@@ -342,16 +342,25 @@ const List<String> kDefaultFieldKeys = [
 ///  · [revealResidentNo] 를 **명시적으로 `true` 로 넘긴 경우에만** 원본을 준다.
 ///    기본값이 `false` 인 이유: 새 호출부가 생겨도 실수로 원본이 새지 않게.
 ///  · 현재 앱에서 `true` 를 쓰는 곳은 없다 → 모든 출력물은 마킹본.
+///
+/// ## 회원번호(스카우트회원번호) — 권한별 노출 (2026-11-03)
+///  요구: "관리자 및 마스터는 모든 번호를 확인할 수 있도록 하고,
+///        회원에게는 뒷번호 2자리에 * 표 처리해서 노출해줘"
+///
+///  · [revealScoutNo] 가 `true`(관리자·마스터 세션)면 원본.
+///  · 기본값 `false` → [Member.scoutNoMasked] (뒷 2자리 `**`).
 String exportValueOf(
   Member m,
   String key, {
   bool revealResidentNo = false,
+  bool revealScoutNo = false,
 }) {
   switch (key) {
     case 'number':
       return m.number;
     case 'scoutNo':
-      return m.scoutNo;
+      // [요구 2026-11-03] 회원번호 — 관리자·마스터만 원본, 나머지는 뒷 2자리 마킹.
+      return m.scoutNoDisplay(canSeeAll: revealScoutNo);
     case 'name':
       return m.name;
     case 'nameEn':
@@ -503,8 +512,22 @@ class ExportService {
       )
       .toList();
 
-  static List<String> rowFor(Member m, List<String> keys) =>
-      keys.map((k) => exportValueOf(m, k)).toList();
+  /// **회원번호 원본 노출 여부** — 관리자·마스터 세션이면 `true`.
+  ///
+  /// ## [요구 2026-11-03] "관리자 및 마스터는 모든 번호를 확인할 수 있도록"
+  ///
+  /// 출력물(엑셀·PDF·워드·TXT·PPT)은 `AppState` 를 모르는 **정적 경로**로도
+  /// 만들어진다. 그래서 매 행마다 세션을 물어보는 대신, 화면이 출력을 시작할
+  /// 때 이 값을 한 번 심는다([AppState] 가 로그인/권한 변경 시 갱신).
+  ///
+  /// 기본값 `false` — **안전 우선**. 새 호출부가 생겨도 원본이 새지 않는다.
+  ///  · `true`  → 원본 (관리자·마스터)
+  ///  · `false` → [Member.scoutNoMasked] (뒷 2자리 `**`)
+  static bool revealScoutNo = false;
+
+  static List<String> rowFor(Member m, List<String> keys) => keys
+      .map((k) => exportValueOf(m, k, revealScoutNo: revealScoutNo))
+      .toList();
 
   /// 연번(표 맨 앞 순번) 열 헤더 라벨.
   static const String kIndexHeader = '연번';

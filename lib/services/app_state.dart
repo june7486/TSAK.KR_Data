@@ -6,6 +6,7 @@ import '../models/member.dart';
 import 'ai_query.dart';
 import 'app_config.dart';
 import 'donation_kinds.dart';
+import 'export_service.dart';
 import 'finance_service.dart';
 import 'league_names.dart';
 import 'member_repository.dart';
@@ -783,6 +784,9 @@ class AppState extends ChangeNotifier {
     }
       _unlocked = true;
       _tier = finalTier;
+      // [요구 2026-11-03] 회원번호 원본 노출 범위 — 관리자·마스터만.
+      //  출력물(엑셀·PDF 등)은 정적 경로로도 생성되므로 로그인 시점에 심어 둔다.
+      ExportService.revealScoutNo = isApp;
       // 영구 마스터는 본인 인가번호를 유지(내 QR·내 정보 기능 유지)
       //  · 관리자 계정(통합 로그인 포함)은 계정명을 who 로 두어 계정별 권한 적용.
       _who = (tier == 'personal' || tier == 'guest')
@@ -854,6 +858,8 @@ class AppState extends ChangeNotifier {
   Future<void> lock() async {
     _unlocked = false;
     _tier = '';
+    // 잠그면 회원번호 원본 노출도 즉시 닫는다(안전 우선).
+    ExportService.revealScoutNo = false;
     _who = '';
     _corps = 'tsak';
     _sessionStart = null;

@@ -171,7 +171,53 @@ class Member {
       residentNo.replaceAll(RegExp(r'[^0-9]'), '').length >= 7;
 
   /// Scout 회원번호 — 명부의 인가번호에 해당하는 정식 회원번호.
+  ///
+  /// ## [요구 2026-11-03] 회원번호 노출 규칙
+  ///   "회원명부에 스카우트회원번호 적는 칸을 넣고, 관리자 및 마스터는
+  ///    모든 번호를 확인할 수 있도록 하고, 회원에게는 뒷번호 2자리에
+  ///    * 표 처리해서 노출해줘"
+  ///
+  ///   · 관리자·마스터 → [scoutNoRaw] (원본 전체)
+  ///   · 그 외(본인·일반회원) → [scoutNoMasked] (뒷 2자리만 `**`)
+  ///
+  ///   화면에서는 [scoutNoDisplay] 를 쓰면 권한 판단이 한 곳으로 모인다.
   String scoutNo;
+
+  /// 회원번호 뒷 **2자리만** `*` 로 가린 표기.
+  ///
+  /// `123456` → `1234**` · `12345` → `123**` · `1234` → `12**`
+  ///  · 2자리 이하거나 비어 있으면 **전부 가린다**(안전 우선).
+  ///  · 이미 `*` 가 섞인 값은 그대로 신뢰한다(두 번 마킹 방지).
+  ///  · 하이픈·공백 같은 구분자는 보존해 읽기 쉽게 둔다.
+  ///
+  /// 요구: "회원에게는 뒷번호 2자리에 * 표 처리해서 노출해줘"
+  String get scoutNoMasked {
+    final raw = scoutNo.trim();
+    if (raw.isEmpty) return '';
+    if (raw.contains('*')) return raw;
+
+    // 뒤에서부터 2개의 **숫자**만 가린다(구분자는 세지 않는다).
+    final chars = raw.split('');
+    var masked = 0;
+    for (var i = chars.length - 1; i >= 0 && masked < 2; i--) {
+      if (RegExp(r'\d').hasMatch(chars[i])) {
+        chars[i] = '*';
+        masked++;
+      }
+    }
+    // 숫자가 2개 미만이면 안전하게 전부 가린다.
+    if (masked < 2) return '*' * raw.length;
+    return chars.join();
+  }
+
+  /// 권한에 따른 회원번호 표기.
+  ///
+  /// [canSeeAll] 이 true(관리자·마스터)면 원본, 아니면 [scoutNoMasked].
+  /// 값이 비어 있으면 두 경우 모두 빈 문자열.
+  String scoutNoDisplay({required bool canSeeAll}) {
+    if (scoutNo.trim().isEmpty) return '';
+    return canSeeAll ? scoutNo.trim() : scoutNoMasked;
+  }
 
   /// 비고 / 한줄소개 (명단 비고 열 등)
   String bio;

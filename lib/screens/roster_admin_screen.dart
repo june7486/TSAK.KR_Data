@@ -1062,7 +1062,22 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   Widget _credentialTable(AppState state) {
     final list = _credentialMembers(state);
     // (요구) 항목 순서: ① 체크박스(#) ② 범인가번호 ③ 아타스인가번호 ④ 이름 ⑤ 연락처 ⑥ 소속
-    final headers = ['#', '범인가번호', '아타스인가번호', '이름', '연락처', '소속'];
+    //
+    // [요구 2026-11-03] "회원명부에 스카우트회원번호 적는 칸을 넣고,
+    //   관리자 및 마스터는 모든 번호를 확인할 수 있도록 하고,
+    //   회원에게는 뒷번호 2자리에 * 표 처리해서 노출해줘"
+    //  → 인가번호 바로 뒤에 **회원번호** 칸을 넣는다.
+    //    관리자·마스터(full) → 원본 / 그 외 → 뒷 2자리 마킹.
+    final full = state.isApp;
+    final headers = [
+      '#',
+      '범인가번호',
+      '아타스인가번호',
+      '이름',
+      '회원번호',
+      '연락처',
+      '소속',
+    ];
     final rows = <List<Widget>>[];
     for (var i = 0; i < list.length; i++) {
       final m = list[i];
@@ -1071,11 +1086,20 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _t(m.number, bold: true),
         _t(m.atasNo),
         _nameCell(m),
+        // 회원번호 — 권한에 따라 원본/마킹. 값이 없으면 '—'.
+        _t(_scoutNoText(m, full)),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);
     }
     return _tableWrap('범스카우트 인가자 명부', headers, rows);
+  }
+
+  /// 회원번호 표기 — 관리자·마스터는 원본, 그 외는 뒷 2자리 마킹.
+  ///  값이 없으면 `—`(빈칸과 "번호 없음"을 구분해 보여준다).
+  String _scoutNoText(Member m, bool full) {
+    final s = m.scoutNoDisplay(canSeeAll: full);
+    return s.isEmpty ? '—' : s;
   }
 
   // ---- 6. 아타스(ATAS) 명부 — 범·은하 통합, ATAS 인가번호 보유자 ----
@@ -1088,8 +1112,9 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
     int aKey(Member m) =>
         int.tryParse(m.atasNo.replaceAll(RegExp(r'[^0-9]'), '')) ?? 1 << 30;
     list.sort((a, b) => aKey(a).compareTo(aKey(b)));
-    final headers = ['#', '아타스인가번호', '구분', '인가번호', '이름', '연락처', '소속'];
+    final headers = ['#', '아타스인가번호', '구분', '인가번호', '이름', '회원번호', '연락처', '소속'];
     final rows = <List<Widget>>[];
+    final full = state.isApp;
     for (var i = 0; i < list.length; i++) {
       final m = list[i];
       rows.add([
@@ -1099,6 +1124,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _t(m.corpsMarkLabel),
         _t(m.numberLabel),
         _nameCell(m),
+        // [요구 2026-11-03] 회원번호 — 관리자·마스터 원본 / 그 외 마킹
+        _t(_scoutNoText(m, full)),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);
@@ -1110,8 +1137,9 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
   Widget _eunhaRosterTable(AppState state) {
     final list = [...state.eunhaMembers];
     list.sort((a, b) => a.numberInt.compareTo(b.numberInt));
-    final headers = ['#', '은하인가번호', '아타스인가번호', '이름', '연락처', '소속'];
+    final headers = ['#', '은하인가번호', '아타스인가번호', '이름', '회원번호', '연락처', '소속'];
     final rows = <List<Widget>>[];
+    final full = state.isApp;
     for (var i = 0; i < list.length; i++) {
       final m = list[i];
       rows.add([
@@ -1119,6 +1147,8 @@ class _RosterAdminScreenState extends State<RosterAdminScreen>
         _t(m.numberLabel, bold: true),
         _t(m.atasNo),
         _nameCell(m),
+        // [요구 2026-11-03] 회원번호 — 관리자·마스터 원본 / 그 외 마킹
+        _t(_scoutNoText(m, full)),
         _t(m.phone.trim().isNotEmpty ? m.phone : m.tel),
         _t(_org(m.league, m.unit)),
       ]);

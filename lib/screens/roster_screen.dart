@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/member.dart';
+import '../services/app_state.dart';
 import '../services/file_save.dart';
 import '../services/extra_fields.dart';
 import '../services/output_formats.dart';
@@ -56,6 +59,17 @@ class _RosterScreenState extends State<RosterScreen> {
   bool _showYearFee = false; // 행사년도 연회비 납부 여부
   bool _showApply = false; // 참가신청 입력항목 (전체 1컬럼 — 호환용)
 
+  /// [요구 2026-11-03] 스카우트회원번호 컬럼.
+  ///
+  /// > "회원명부에 스카우트회원번호 적는 칸을 넣고, 관리자 및 마스터는
+  /// >  모든 번호를 확인할 수 있도록 하고, 회원에게는 뒷번호 2자리에
+  /// >  * 표 처리해서 노출해줘 / 필요시(행사참가신청과 같은) 회원번호를
+  /// >  전송할 수 있음"
+  ///
+  /// 행사 참가자 명부는 **연맹·기관에 제출**되는 문서라 기본값을 켜 둔다.
+  /// (마킹 여부는 화면 권한에 따라 자동 — 관리자·마스터 원본 / 그 외 마킹)
+  bool _showScoutNo = true;
+
   /// [요구 2026-10-30] 추가입력사항을 **항목별 개별 컬럼**으로 노출.
   ///
   /// > "추가입력사항도 매우 중요한 정보야 … 출력시 구분해서 보여져야 해"
@@ -95,7 +109,10 @@ class _RosterScreenState extends State<RosterScreen> {
   ///   · options = 글씨 크기·줄 간격·용지 방향·열 선택/순서(공용).
   ///   옵션(선택/순서·글씨·줄간격·용지)은 `TsakTableDoc` 이 PDF·JPG·문서에 반영한다.
   TsakTableDoc _doc() {
+    final state = context.read<AppState>();
+    final full = state.isApp;
     final cols = <String>['#', '접속', '인가번호', '이름'];
+    if (_showScoutNo) cols.add('회원번호');
     if (_showUnit) cols.add('소속(활동)');
     if (_showGender) cols.add('성별');
     cols.add('연락처');
@@ -116,6 +133,7 @@ class _RosterScreenState extends State<RosterScreen> {
         _num(a),
         '${a['name'] ?? ''}',
       ];
+      if (_showScoutNo) r.add(_scoutNoOf(a, state, full));
       if (_showUnit) r.add(_first(a, const ['unitText', 'unit']));
       if (_showGender) r.add(_first(a, const ['genderText', 'gender']));
       r.add(_first(a, const ['phoneText', 'phone']));
@@ -451,6 +469,7 @@ class _RosterScreenState extends State<RosterScreen> {
       if (_showUnit) '소속',
       if (_showGender) '성별',
       if (_showEmail) '메일',
+      if (_showScoutNo) '회원번호',
       if (_showRoles) '항목',
       if (_showEventFee) '참가비',
       if (_showLifetime) '평생회원',
@@ -542,6 +561,10 @@ class _RosterScreenState extends State<RosterScreen> {
                 _optTile('메일', _showEmail, (v) {
                   setD(() => _showEmail = v);
                   setState(() => _showEmail = v);
+                }),
+                _optTile('스카우트회원번호', _showScoutNo, (v) {
+                  setD(() => _showScoutNo = v);
+                  setState(() => _showScoutNo = v);
                 }),
                 _optTile('항목(역할)', _showRoles, (v) {
                   setD(() => _showRoles = v);
@@ -668,11 +691,15 @@ class _RosterScreenState extends State<RosterScreen> {
       );
     }
     // 항상: # · 접속 · 인가번호 · 이름 · 연락처 + 선택 컬럼
+    final state = context.watch<AppState>();
+    final full = state.isApp;
     final columns = <DataColumn>[
       const DataColumn(label: Text('#')),
       const DataColumn(label: Text('접속')),
       const DataColumn(label: Text('인가번호')),
       const DataColumn(label: Text('이름')),
+      // [요구 2026-11-03] 회원번호 — 관리자·마스터 원본 / 회원은 뒷 2자리 마킹
+      if (_showScoutNo) const DataColumn(label: Text('회원번호')),
       // [요구] 소속은 '현재 활동하는 곳(활동등록대)'을 먼저 노출한다.
       if (_showUnit) const DataColumn(label: Text('소속(활동)')),
       if (_showGender) const DataColumn(label: Text('성별')),
@@ -738,6 +765,17 @@ class _RosterScreenState extends State<RosterScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
+                  // [요구 2026-11-03] 회원번호 (권한별 마킹)
+                  if (_showScoutNo)
+                    DataCell(
+                      Text(
+                        _scoutNoOf(widget.attendees[i], state, full),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ),
                   // [요구] 활동등록대(unitText) 우선 — 인가시 소속은 폴백.
                   if (_showUnit)
                     DataCell(
@@ -825,6 +863,35 @@ class _RosterScreenState extends State<RosterScreen> {
   String _num(Map<String, dynamic> a) {
     // [요구] 서버가 준 표시용 인가번호(범#415/은하#43/일반#010…)를 우선한다.
     return _first(a, const ['numberLabel', 'number']);
+  }
+
+  /// 회원번호(스카우트회원번호) 셀 값 — 권한에 따라 원본/마킹.
+  ///
+  /// ## [요구 2026-11-03]
+  ///  "필요시(행사참가신청과 같은) 회원번호를 전송할 수 있음"
+  ///
+  /// 참가신청 데이터(attendee 맵)에는 회원번호가 없을 수 있다.
+  ///   ① 맵에 `scoutNo` 가 실려 있으면 그것을 쓴다(서버가 주입한 경우).
+  ///   ② 없으면 **인가번호로 회원을 찾아** `AppState` 의 회원번호를 쓴다.
+  ///      (참가신청은 번호만 저장하므로 이 경로가 일반적이다)
+  ///   ③ 그래도 없으면 `—`.
+  ///
+  /// 마킹은 [Member.scoutNoDisplay] 가 담당한다 —
+  /// 관리자·마스터는 원본, 회원·비관리자는 뒷 2자리 `**`.
+  String _scoutNoOf(Map<String, dynamic> a, AppState state, bool full) {
+    final direct = '${a['scoutNo'] ?? ''}'.trim();
+    if (direct.isNotEmpty) {
+      // 맵에 직접 들어온 값은 Member 를 거치지 않으므로 같은 규칙을 적용한다.
+      final probe = Member(id: _num(a), number: _num(a), name: '')
+        ..scoutNo = direct;
+      return probe.scoutNoDisplay(canSeeAll: full);
+    }
+    // 인가번호로 회원 조회 (없으면 빈 문자열).
+    final key = _first(a, const ['number', 'numberLabel']);
+    final m = state.byNumber(key);
+    if (m == null) return '—';
+    final s = m.scoutNoDisplay(canSeeAll: full);
+    return s.isEmpty ? '—' : s;
   }
 
   Widget _ynCell(bool v) {
