@@ -43,6 +43,7 @@ class LinkProfileResult {
     this.isScouter = false,
     this.scoutNo = '',
     this.code = '',
+    this.phone = '',
   });
 
   /// 저장에 성공했는가.
@@ -56,6 +57,15 @@ class LinkProfileResult {
 
   /// 프로필 저장 키 (멘토=멘티(본인)번호 / 페런츠=인가번호).
   final String code;
+
+  /// 이 사람의 **전화번호**(숫자만).
+  ///
+  /// [요구 2026-11-04] 비인가 멘토·페런츠의 계정 아이디가 곧 전화번호이고,
+  /// 새 표준에서 내 관계값(mentors/parents)에 넣어야 하는 값도 **그 사람의
+  /// 전화번호**다. 종전에는 이 값을 돌려주지 않아 호출부가 `code`(= 멘티인
+  /// 내 번호)를 관계값으로 쓰려다 자기참조로 판정돼 **저장이 통째로
+  /// 무시**됐다. 이제 시트가 직접 알려준다.
+  final String phone;
 
   static const LinkProfileResult cancelled = LinkProfileResult();
 }
@@ -526,6 +536,7 @@ Future<LinkProfileResult> showLinkProfileSheet(
       isScouter: isScouter,
       scoutNo: scoutNo,
       code: c,
+      phone: ph,
     );
   } catch (e) {
     if (context.mounted) {

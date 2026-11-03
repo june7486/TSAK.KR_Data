@@ -315,7 +315,9 @@ void main() {
     test('멘토·페런츠 저장도 역방향을 부른다', () {
       final i = tiles.indexOf('Future<void> _addProfile(');
       expect(i >= 0, isTrue);
-      final tail = tiles.substring(i, (i + 3000).clamp(0, tiles.length));
+      // 창을 넉넉히(6000자) 잡는다. turn 51 에 관계값 해석 로직이 본문 앞부분에
+      // 추가되어 3000자 창이 `syncReverseLinks(` 호출을 놓쳤다(동작은 정상).
+      final tail = tiles.substring(i, (i + 6000).clamp(0, tiles.length));
       expect(tail.contains('syncReverseLinks('), isTrue);
       expect(tail.contains('res.isScouter'), isTrue);
     });

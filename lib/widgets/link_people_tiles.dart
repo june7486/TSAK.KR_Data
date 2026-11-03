@@ -489,20 +489,26 @@ class LinkPeopleTiles extends StatelessWidget {
     if (res.isScouter && res.scoutNo.isNotEmpty) {
       linkCode = res.scoutNo;
     }
+    // ★ ② 비인가 멘토·페런츠 → **그 사람의 전화번호**(= 계정 아이디).
+    //   (`code` 는 멘토 추가 시 '내 번호'라 절대 쓰면 안 된다.)
     if (linkCode.isEmpty) {
-      final byCode = _byCodeOrPhone(state, code);
-      if (byCode != null) {
-        linkCode = _digits(byCode.number).isNotEmpty
-            ? _digits(byCode.number)
-            : _digits(byCode.phone);
-      }
+      linkCode = _digits(res.phone);
     }
     if (linkCode.isEmpty) {
       final saved = _profileOf(code, kind);
       linkCode = _digits('${saved['phone'] ?? ''}');
       if (linkCode.isEmpty) linkCode = _digits('${saved['scoutNo'] ?? ''}');
     }
-    // ④ 끝까지 못 찾으면 종전 규칙(시트 저장코드)으로 폴백.
+    if (linkCode.isEmpty) {
+      // 기존 행(코드가 곧 그 사람)에서 등록한 경우에만 카드 조회로 보완한다.
+      final byCode = _byCodeOrPhone(state, code);
+      if (byCode != null && !_isSamePerson(state, _digits(byCode.number))) {
+        linkCode = _digits(byCode.number).isNotEmpty
+            ? _digits(byCode.number)
+            : _digits(byCode.phone);
+      }
+    }
+    // ⑤ 끝까지 못 찾으면 종전 규칙(시트 저장코드)으로 폴백.
     if (linkCode.isEmpty) linkCode = res.code;
     // 그래도 **나 자신**과 같으면 넣지 않는다(자기참조 원천 차단).
     if (linkCode.isEmpty || _isSamePerson(state, linkCode)) {
