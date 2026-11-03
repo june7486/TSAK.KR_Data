@@ -100,7 +100,9 @@ void main() {
 
     test('편집화면 — 주민번호 필드가 마스터 분기를 가진 헬퍼로 교체됐다', () {
       expect(edit.contains('Widget _residentNoField()'), isTrue);
-      expect(edit.contains('final canSeeAll = st.isApp'), isTrue);
+      // [요구 2026-11-04] "주민등록번호는 관리자에게도 마킹처리해줘,
+      //   마스터에게만 노출됨" → isApp(관리자 포함) 에서 isMaster 로 조였다.
+      expect(edit.contains('final canSeeAll = st.isMaster'), isTrue);
       expect(
         edit.contains('final masked = m?.residentNoMasked'),
         isTrue,

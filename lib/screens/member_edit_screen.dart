@@ -1659,7 +1659,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
         _phone.text.trim() != m.phone ||
         _tel.text.trim() != m.tel ||
         _email.text.trim() != m.email ||
-        _residentNo.text.trim() != m.residentNo ||
+        // [요구 2026-11-04] 주민번호는 마스터만 원본을 본다.
+        //  칸에 마킹본이 들어 있는 비마스터가 아무것도 안 고쳤는데
+        //  '수정됨'으로 잡히지 않도록, 저장 로직(_residentNoToSave)과 같은 값을 쓴다.
+        _residentNoToSave() != m.residentNo ||
         _scoutNo.text.trim() != m.scoutNo ||
         // [요구 2026-11-03] 추가 회원번호 변경도 저장 대상.
         _scoutNosToSave().join(',') != m.allScoutNos.join(',') ||
@@ -2402,6 +2405,14 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   ///   ② 입력값에 `*` 가 있으면 → **기존 원본을 유지**한다.
   ///      (사용자가 마킹된 칸을 건드리지 않은 경우가 대부분)
   ///   ③ 기존 값이 없으면 → 새로 입력한 값(마킹 포함) 그대로.
+  ///  ## [요구 2026-11-04] "주민등록번호는 관리자에게도 마킹처리해줘, 마스터에게만 노출됨"
+  ///
+  ///   · **마스터**: 칸에 원본이 그대로 들어 있으므로 [typed] 가 곧 최종값이다.
+  ///   · **비마스터(관리자 포함)**: 칸에는 마킹본이 들어 있다.
+  ///     - 손대지 않으면 `*` 가 남아 있으므로 → **기존 원본 유지**(②).
+  ///       (마킹본을 저장해 뒷자리가 지워지는 사고를 막는다)
+  ///     - 새로 입력하면 `*` 가 없으므로 → 그 값을 저장(①). 권한상 뒷자리를
+  ///       볼 수는 없어도 **입력·수정 자체는 허용**한다는 요구를 따른다.
   String _residentNoToSave() {
     final typed = _residentNo.text.trim();
     final before = _existing?.residentNo.trim() ?? '';
@@ -2454,7 +2465,10 @@ class _MemberEditScreenState extends State<MemberEditScreen>
   ///    - 뒷자리를 새로 입력하면 그 값으로 교체된다.
   Widget _residentNoField() {
     final st = context.watch<AppState>();
-    final canSeeAll = st.isApp;
+    // ## [요구 2026-11-04] "주민등록번호는 관리자에게도 마킹처리해줘, 마스터에게만 노출됨"
+    //  회원번호(scoutNo)는 관리자·마스터 공개지만, 주민등록번호는 **마스터 전용**이다.
+    //  → 종전에는 관리자까지 포함하는 판정(isApp) 이라 요구보다 넓었다.
+    final canSeeAll = st.isMaster;
     final m = _existing;
     final masked = m?.residentNoMasked ?? '';
     final hasBack = m?.hasResidentBack ?? false;
@@ -2490,12 +2504,12 @@ class _MemberEditScreenState extends State<MemberEditScreen>
           child: Text(
             canSeeAll
                 ? (hasBack
-                      ? '표시용 마킹: $masked (다른 사람에게는 이 형태로만 보입니다)'
+                      ? '마스터 열람: $masked (원본은 마스터만 봅니다)'
                       : '주민등록번호를 입력할 수 있습니다.')
                 : (masked.isEmpty
                       ? '주민등록번호를 입력할 수 있습니다. 뒷자리는 입력 후 마킹되어 보입니다.'
-                      : '뒷자리는 마킹되어 표시됩니다. '
-                            '그대로 두면 기존 값이 유지되고, 새로 입력하면 교체됩니다.'),
+                      : '뒷자리는 마스터만 볼 수 있습니다(관리자·회원은 마킹본). '
+                            '이 칸을 그대로 두면 기존 값이 유지되고, 새로 입력하면 교체됩니다.'),
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textGray,
