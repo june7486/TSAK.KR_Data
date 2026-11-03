@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async' show unawaited;
 
 import '../models/member.dart';
+import '../models/link_person.dart';
 import 'ai_query.dart';
 import 'app_config.dart';
 import 'donation_kinds.dart';
@@ -957,6 +958,9 @@ class AppState extends ChangeNotifier {
     refresh();
     notifyListeners();
     selfOnlyRefresh();
+    // [요구 2026-11-04] 멘토·페런츠 필터가 카드 없는 사람까지 보여주려면
+    //  `link_profiles` 가 필요하다. 로그인 직후 한 번 받아 둔다(실패는 무시).
+    if (isApp) unawaited(loadLinkProfiles());
     return true;
   }
 
@@ -2262,6 +2266,166 @@ class AppState extends ChangeNotifier {
 
   List<Member> get members => _members;
 
+  /// 멘토·페런츠 **인적사항 카드** (NAS `db/link_profiles.json`).
+  ///
+  /// ## [요구 2026-11-04] 멘토 필터에서 인원이 누락됨
+  ///  보고(원문): *"멘토 버튼을 클릭하면 멘토로 등록된 네임카드가 나와야 하는데,
+  ///   현재 일부 인원 이름이 누락되고 있음. 박인규, 민병인 등.."*
+  ///
+  /// ## 원인
+  ///  종전 `kindFilter == 'mentor'` 는 **회원카드의 `mentees` 가 비어있지 않은
+  ///  사람**만 골랐다. 그런데 운영 데이터 실측 결과:
+  ///   · `mentees` 를 가진 회원은 **4명뿐** — 게다가 그중 3명은 `mentees` 코드가
+  ///     **자기 번호**다(`이승준 415 → mentees [415]`). 즉 반쪽 상태.
+  ///   · 박인규·민병인은 **일반회원(number 없음)** 이라 회원카드에 `mentees` 를
+  ///     가질 수 없고, 멘토 신원은 `link_profiles` 에만 있다(`멘토:417` 등).
+  ///  → 회원카드만 보면 **멘토로 등록된 사람이 화면에서 사라진다.**
+  ///
+  /// ## 해결
+  ///  멘토 목록 = ① 회원카드에 `mentees` 가 있는 사람 **∪**
+  ///              ② `link_profiles` 에 `kind=mentor` 로 등록된 프로필.
+  ///  이름·소속·전화가 프로필에서 오므로 **이름 누락이 사라진다**.
+  Map<String, dynamic> _linkProfiles = {};
+  Map<String, dynamic> get linkProfiles => _linkProfiles;
+
+  /// 멘토·페런츠 프로필을 새로 읽어 온다(로그인·새로고침 후 호출).
+  Future<void> loadLinkProfiles() async {
+    try {
+      final p = await nas.linkProfiles();
+      _linkProfiles = p;
+      notifyListeners();
+    } catch (_) {
+      // 네트워크 실패는 조용히 넘긴다 — 목록은 회원카드 기준으로 계속 동작.
+    }
+  }
+
+  /// `link_profiles` 에서 멘토(kind=mentor)로 등록된 사람 — [LinkPerson] 목록.
+  ///
+  ///  코드(`멘토:417` → `417`)는 **[linkNormCode] 규칙**으로 정규화한다.
+  ///  같은 사람이 `멘토:415` · `멘토:417` 처럼 **두 키로 갈라져** 있어도
+  ///  이름·전화가 같으면 **한 명으로 합친다**(중복 카드 방지).
+  List<LinkPerson> get mentorProfiles => _profilesOfKind('mentor');
+
+  /// `link_profiles` 에서 페런츠(kind=parent)로 등록된 사람.
+  List<LinkPerson> get parentProfiles => _profilesOfKind('parent');
+
+  List<LinkPerson> _profilesOfKind(String kind) {
+    final out = <LinkPerson>[];
+    final seenName = <String>{};
+    for (final e in _linkProfiles.entries) {
+      final v = e.value;
+      if (v is! Map) continue;
+      final k = '${v['kind'] ?? ''}'.trim();
+      if (k != kind) continue;
+      final name = '${v['name'] ?? ''}'.trim();
+      if (name.isEmpty) continue;
+      final phone = '${v['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+      // 이름+전화가 같으면 같은 사람 → 한 번만.
+      final dedupe = '$name|$phone';
+      if (!seenName.add(dedupe)) continue;
+      out.add(
+        LinkPerson(
+          code: '${v['number'] ?? ''}'.trim(),
+          name: name,
+          phone: '${v['phone'] ?? ''}'.trim(),
+          league: '${v['league'] ?? ''}'.trim(),
+          unit: '${v['unit'] ?? ''}'.trim(),
+          position: '${v['position'] ?? ''}'.trim(),
+          kind: kind,
+        ),
+      );
+    }
+    out.sort((a, b) => a.name.compareTo(b.name));
+    return out;
+  }
+
+  /// 멘토 필터 결과 — 회원카드 ∪ link_profiles.
+  ///
+  ///  [base] 는 검색·연맹 등 **다른 필터가 이미 적용된 목록**이다.
+  ///  반환은 `Member` 대신 [LinkPerson] 로 통일한다(번호 없는 일반회원 멘토도
+  ///  표현해야 하므로).
+  List<LinkPerson> mentorsFrom(List<Member> base) {
+    final out = <LinkPerson>[];
+    final seen = <String>{};
+    for (final m in base) {
+      if (m.mentees.isEmpty) continue;
+      final key = '${m.name}|${m.phone.replaceAll(RegExp(r'[^0-9]'), '')}';
+      if (!seen.add(key)) continue;
+      out.add(
+        LinkPerson(
+          code: m.number,
+          name: m.name,
+          phone: m.phone,
+          league: m.regLeague.trim().isNotEmpty ? m.regLeague : m.league,
+          unit: m.regUnit.trim().isNotEmpty ? m.regUnit : m.unit,
+          position: m.position,
+          kind: 'mentor',
+        ),
+      );
+    }
+    for (final p in mentorProfiles) {
+      final key = '${p.name}|${p.phone.replaceAll(RegExp(r'[^0-9]'), '')}';
+      if (!seen.add(key)) continue;
+      out.add(p);
+    }
+    out.sort((a, b) => a.name.compareTo(b.name));
+    return out;
+  }
+
+  /// 페런츠 필터 결과 — 회원카드 ∪ link_profiles.
+  List<LinkPerson> parentsFrom(List<Member> base) {
+    final out = <LinkPerson>[];
+    final seen = <String>{};
+    for (final m in base) {
+      if (m.parents.isEmpty) continue;
+      final key = '${m.name}|${m.phone.replaceAll(RegExp(r'[^0-9]'), '')}';
+      if (!seen.add(key)) continue;
+      out.add(
+        LinkPerson(
+          code: m.number,
+          name: m.name,
+          phone: m.phone,
+          league: m.regLeague.trim().isNotEmpty ? m.regLeague : m.league,
+          unit: m.regUnit.trim().isNotEmpty ? m.regUnit : m.unit,
+          position: m.position,
+          kind: 'parent',
+        ),
+      );
+    }
+    for (final p in parentProfiles) {
+      final key = '${p.name}|${p.phone.replaceAll(RegExp(r'[^0-9]'), '')}';
+      if (!seen.add(key)) continue;
+      out.add(p);
+    }
+    out.sort((a, b) => a.name.compareTo(b.name));
+    return out;
+  }
+
+  /// 구분 필터가 **카드 없는 사람**(멘토·페런츠 프로필)을 포함하는가.
+  bool get kindIncludesLinkProfiles =>
+      _kindFilter == 'mentor' || _kindFilter == 'parent';
+
+  /// 숫자만 남긴 문자열 — 전화번호·번호 비교의 단일 규칙.
+  static String _digitsOf(String raw) => raw.replaceAll(RegExp(r'[^0-9]'), '');
+
+  /// `link_profiles` 에서 [kind] 로 등록된 사람들의 **전화번호(숫자만)** 집합.
+  ///
+  ///  번호(`number`)가 아니라 **전화번호**를 키로 쓴다:
+  ///   · 박인규·민병인처럼 `number` 가 빈 일반회원이 흔하다.
+  ///   · 같은 사람이 `멘토:415`·`멘토:417` 로 갈라져 있어도 전화는 같다.
+  ///  실측: `멘토:415`(010-6440-7181) · `멘토:417`(01064407181) — 숫자만 보면 동일.
+  Set<String> _profilePhones(String kind) {
+    final out = <String>{};
+    for (final v in _linkProfiles.values) {
+      if (v is! Map) continue;
+      if ('${v['kind'] ?? ''}'.trim() != kind) continue;
+      final d = _digitsOf('${v['phone'] ?? ''}');
+      if (d.isNotEmpty) out.add(d);
+    }
+    return out;
+  }
+
+
   /// 필터와 무관한 전체 회원 목록(통계 산출용).
   List<Member> get allMembers => repo.all();
 
@@ -2327,15 +2491,48 @@ class AppState extends ChangeNotifier {
         list = list.where((m) => m.isRegular).toList();
         break;
       case 'mentor':
-        // 멘토 = 멘티대원을 둔(지도하는) 회원.
-        list = list.where((m) => m.mentees.isNotEmpty).toList();
+        // 멘토 = 멘티대원을 둔(지도하는) 회원 **∪** link_profiles 에 멘토로 등록된 사람.
+        //
+        // ## [요구 2026-11-04] "멘토 버튼을 클릭하면 멘토로 등록된 네임카드가
+        //   나와야 하는데, 현재 일부 인원 이름이 누락되고 있음. 박인규, 민병인 등.."
+        //
+        // ## 원인 (운영 DB 실측)
+        //  · `mentees` 를 가진 회원은 **4명뿐**이고 그중 3명은 `mentees` 코드가
+        //    **자기 번호**다(반쪽 연결). 즉 회원카드만으로는 멘토를 못 찾는다.
+        //  · 박인규(01064407181)·민병인(01082907590)은 **일반회원**이라
+        //    회원카드에 `mentees` 가 없고, 멘토 신원은 `link_profiles`
+        //    (`멘토:415`·`멘토:417`)에만 있다.
+        //  → 종전 필터는 이들을 **화면에서 지웠다**.
+        //
+        // ## 해결
+        //  `link_profiles` 의 멘토 **전화번호**와 일치하는 회원도 포함한다.
+        //  전화번호는 두 저장소를 잇는 유일하게 믿을 수 있는 키다
+        //  (번호 없는 일반회원도 이름·소속까지 정확히 나온다).
+        final mentorPhones = _profilePhones('mentor');
+        list = list
+            .where(
+              (m) =>
+                  m.mentees.isNotEmpty ||
+                  mentorPhones.contains(_digitsOf(m.phone)) ||
+                  mentorPhones.contains(_digitsOf(m.accessPhone)),
+            )
+            .toList();
         break;
       case 'mentee':
         // 멘티 = 멘토를 가진(지도받는) 회원.
         list = list.where((m) => m.mentors.isNotEmpty).toList();
         break;
       case 'parent':
-        list = list.where((m) => m.parents.isNotEmpty).toList();
+        // 페런츠 = 자녀대원을 둔 회원 ∪ link_profiles 에 페런츠로 등록된 사람.
+        final parentPhones = _profilePhones('parent');
+        list = list
+            .where(
+              (m) =>
+                  m.parents.isNotEmpty ||
+                  parentPhones.contains(_digitsOf(m.phone)) ||
+                  parentPhones.contains(_digitsOf(m.accessPhone)),
+            )
+            .toList();
         break;
       case 'atas':
         // 아타스 = ATAS 인가번호를 보유한 대원.
@@ -2590,6 +2787,11 @@ class AppState extends ChangeNotifier {
   void setKind(String k) {
     _kindFilter = k;
     refresh();
+    // [요구 2026-11-04] 멘토·페런츠 필터는 `link_profiles` 가 있어야
+    //  카드 없는 사람(박인규·민병인 등)까지 나온다. 누를 때 최신본을 받는다.
+    if ((k == 'mentor' || k == 'parent') && _linkProfiles.isEmpty && isApp) {
+      unawaited(loadLinkProfiles());
+    }
   }
 
   void clearFilters() {
