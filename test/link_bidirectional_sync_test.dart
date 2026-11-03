@@ -257,9 +257,28 @@ void main() {
       server = File('/home/user/nas_proxy/proxy_server.py').readAsStringSync();
     });
 
+    /// 모듈 레벨 함수 1개 본문만(다음 top-level `def ` 직전까지).
+    /// 주석·docstring 을 걷어내 **실행 코드**만 검사한다.
+    String _reconcileBody(String s) {
+      final start = s.indexOf('def _link_reconcile_apply(');
+      if (start < 0) return '';
+      final rest = s.substring(start + 4);
+      final mt = RegExp(r'\ndef (?! )').firstMatch(rest);
+      var body = mt == null ? rest : rest.substring(0, mt.start);
+      body = body.replaceAll(RegExp(r'"""[\s\S]*?"""'), '');
+      return body
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('#'))
+          .join('\n');
+    }
+
     test('대원이 대장·부모를 등록하는 방향(기존)', () {
-      expect(server.contains('to_add.setdefault((c, "children"), set())'), isTrue);
-      expect(server.contains('to_add.setdefault((c, "mentees"), set())'), isTrue);
+      // [요구 2026-11-04] 인가자 한정 조건(`c in cred_no`)을 없애고 사람 기준
+      // 으로 판정하도록 바꿨다. 그래서 키가 tno(int 인덱스) 로 달라졌지만
+      // **규칙 자체(자녀→부모 / 멘티→멘토)** 는 그대로다.
+      final body = _reconcileBody(server);
+      expect(body.contains('to_add.setdefault((ti, "children"), set())'), isTrue);
+      expect(body.contains('to_add.setdefault((ti, "mentees"), set())'), isTrue);
     });
 
     test('대장·부모가 대원·자녀를 등록하는 방향(2026-11-02 추가)', () {

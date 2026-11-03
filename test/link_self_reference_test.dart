@@ -83,8 +83,15 @@ void main() {
 
     test('멘티/자녀대원 자기참조는 reconcile 이 정리한다', () {
       final i = src.indexOf('def _link_reconcile_apply(');
-      final body = src.substring(i, i + 7000);
-      expect(body.contains('for field in ("mentees", "children")'), isTrue);
+      final body = src.substring(i, i + 8000);
+      // [요구 2026-11-04] 정리 범위를 mentees/children → **네 관계 필드 전부**로
+      // 넓혔다. mentors/parents 에 남은 자기참조 때문에 승인요청이 계속
+      // 되살아났기 때문이다(차동엽 #1051 사고).
+      expect(
+          body.contains(
+              'for field in ("mentors", "parents", "mentees", "children")'),
+          isTrue,
+          reason: 'mentors/parents 를 빼면 승인요청이 반복된다');
       expect(body.contains('changed_selfclean'), isTrue);
     });
   });

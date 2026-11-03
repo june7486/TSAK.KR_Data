@@ -102,6 +102,24 @@ class LinkPeopleTiles extends StatelessWidget {
     return null;
   }
 
+  /// 이 코드가 **나 자신**을 가리키는가 — 번호 문자열이 아니라 사람으로 판단.
+  ///
+  /// [요구 2026-11-04] 종전에는 `d == self`(문자열 비교)라서, 전화번호로
+  /// 저장된 자기참조(양다솜 mentors=['1346'] 사고)를 걸러내지 못했다.
+  /// 이제 상대를 해석해 **같은 카드/같은 전화번호**면 자기 자신으로 본다.
+  bool _isSamePerson(AppState state, String code) {
+    final d = _digits(code);
+    if (d.isEmpty) return false;
+    if (d == _digits(member.number)) return true;
+    final mine = _digits(member.phone);
+    if (mine.isNotEmpty && d == mine) return true;
+    final t = _byCodeOrPhone(state, d);
+    if (t == null) return false;
+    if (t.id == member.id) return true;
+    final tp = _digits(t.phone);
+    return tp.isNotEmpty && mine.isNotEmpty && tp == mine;
+  }
+
   /// 소속정보 = **현재활동 등록정보**(없으면 인가 당시로 폴백).
   String _activity(Member? m) {
     if (m == null) return '';
@@ -133,7 +151,6 @@ class LinkPeopleTiles extends StatelessWidget {
   }
 
   List<_Ref> _links(AppState state, {required bool parent}) {
-    final self = _digits(member.number);
     final codes = parent ? member.parents : member.mentors;
     final out = <_Ref>[];
     for (final c in codes) {
@@ -143,18 +160,21 @@ class LinkPeopleTiles extends StatelessWidget {
       final pName = '${p['name'] ?? ''}'.trim();
       final pInfo = _profileInfo(p);
       Member? target;
-      // 멘토 저장코드(=멘티=본인 번호)가 본인이면 카드로 연결하지 않는다.
-      if (d != self) target = _byCodeOrPhone(state, d);
+      // [요구 2026-11-04] 저장값은 이제 **상대 인물의 표준코드**다
+      //   (인가자=인가번호 / 일반회원·비인가=전화번호).
+      //   인가번호 우선, 없으면 loginId·전화번호로 찾는다.
+      target = _byCodeOrPhone(state, d);
       if (target == null && pName.isNotEmpty) {
         target = _byPhone(state, '${p['phone'] ?? ''}');
       }
+      final isSelf = _isSamePerson(state, d);
       out.add(
         _Ref(
           code: d,
           name: pName.isNotEmpty ? pName : (target?.name ?? '').trim(),
           info: pInfo.isNotEmpty ? pInfo : _activity(target),
           target: target,
-          isSelf: d == self,
+          isSelf: isSelf,
           hasProfile: pName.isNotEmpty,
           kind: parent ? 'parent' : 'mentor',
         ),

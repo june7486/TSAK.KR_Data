@@ -142,6 +142,13 @@ String linkPeerField(String selfField) {
 ///
 /// 상대가 아직 카드가 없으면(비인가 멘토 등) 결과에 그대로 담긴다 —
 /// 호출부가 `byNumber` 로 찾아 없으면 조용히 건너뛴다.
+///
+/// ## [요구 2026-11-04] 구조 변경 — **저장값은 '상대 인물의 코드'**
+///  종전 규칙은 "멘토 링크의 저장값 = 멘티(본인) 번호" 였다. 그래서
+///  `c == self` 가 **항상 참**이 되어 역방향 생성이 통째로 건너뛰어졌고,
+///  멘티 카드에 자기 번호가 mentors 로 박히는 자기참조가 만들어졌다.
+///  이제 저장값은 **상대방을 가리키는 코드**이므로 `c == self` 는
+///  진짜 자기참조일 때만 참이 된다(정상 동작).
 List<LinkSyncEdit> planReverseLinks({
   required String selfNumber,
   required String field,
@@ -158,14 +165,14 @@ List<LinkSyncEdit> planReverseLinks({
   final out = <LinkSyncEdit>[];
   for (final c in a) {
     if (bs.contains(c)) continue;
-    if (c == self) continue;
+    if (c == self) continue;   // 진짜 자기 자신만 제외
     out.add(
       LinkSyncEdit(memberNumber: c, field: peer, code: self, add: true),
     );
   }
   for (final c in b) {
     if (as.contains(c)) continue;
-    if (c == self) continue;
+    if (c == self) continue;   // 진짜 자기 자신만 제외
     out.add(
       LinkSyncEdit(memberNumber: c, field: peer, code: self, add: false),
     );
