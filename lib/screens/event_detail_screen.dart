@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../widgets/event_custom_board.dart';
 import '../widgets/marquee_text.dart';
@@ -39,6 +41,7 @@ import '../widgets/tsak_output_preview.dart';
 import '../widgets/tsak_output_sheet.dart';
 import '../widgets/tsak_table_options.dart';
 import '../widgets/extra_fields_summary.dart';
+import '../widgets/tsak_name_lookup.dart';
 import 'roster_screen.dart';
 import 'event_finance_tab.dart';
 import 'event_review_screen.dart';
@@ -5412,6 +5415,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     String cardHint = '인가번호를 넣으면 그분 개인카드에 자동 반영됩니다';
     String cardName = '';
 
+    // ── [요구 2026-11-04] 후원자/납부자 **명부 전체 검색**을 위한 인적사항 ──
+    //  멘토·페런츠 인적사항(link_profiles)은 회원 카드가 없는 분들도 담고
+    //  있어서, 참가비·후원 납부자를 이름/전화/연맹/단위대로 찾으려면 필요하다.
+    //  관리자·마스터는 전체를, 개인 로그인은 본인 연결분만 서버가 내려준다.
+    final state0 = context.read<AppState>();
+    var payerProfiles = <String, dynamic>{};
+    if (kind != 'expense') {
+      payerProfiles = state0.linkProfiles;
+      // 아직 비어 있으면(로그인 직후 등) 한 번 받아 온다 — 실패해도 무해.
+      if (payerProfiles.isEmpty) {
+        unawaited(state0.loadLinkProfiles());
+      }
+    }
+
     // (요구) 모바일에서 키보드가 떠도 입력칸이 잘리지 않도록 전용 시트 사용.
     final ok = await showTsakFormSheet(
       context: context,
@@ -5489,14 +5506,49 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TsakField(
-              label: kind == 'expense' ? '지출처 / 사용내역' : '후원자 / 납부자',
-              required: true,
-              child: TextField(
+            // ── 후원자/납부자 — **명부 전체에서 검색해 고른다** ──
+            //  [요구 2026-11-04] "납부자검색항목을 좀더 폭넓게 해주세요.
+            //  인가자번호, 서포터즈이름, 멘토, 멘티, 페런츠 등 명부에 있는
+            //  사람들의 전화번호, 이름, 연맹, 단위대 등등 중에서 선택할 수
+            //  있도록 해줘." / "후원자, 참가비 등에도 동일하게"
+            //
+            //  회원 카드 + 멘토·페런츠 인적사항(link_profiles)을 **한 목록**으로
+            //  합쳐 이름·인가번호·전화번호·연맹·단위대·직위로 찾는다.
+            //  고르면 ① 이름을 채우고 ② 인가번호를 채운 뒤 ③ 카드 연동
+            //  조회(linkCard)까지 자동 실행해 개인카드 반영 안내가 뜨게 한다.
+            if (kind == 'expense')
+              TsakField(
+                label: '지출처 / 사용내역',
+                required: true,
+                child: TextField(
+                  controller: nameC,
+                  decoration: const InputDecoration(isDense: true),
+                ),
+              )
+            else
+              TsakPayerLookupField(
                 controller: nameC,
-                decoration: const InputDecoration(isDense: true),
+                profiles: payerProfiles,
+                onPicked: (nm, numText, ph) {
+                  setD(() {
+                    if (nm.isNotEmpty) nameC.text = nm;
+                    if (numText.isNotEmpty) {
+                      numC.text = numText;
+                      cardOk = true;
+                      cardName = nm;
+                      cardHint = ph.isNotEmpty
+                          ? '$nm (${numText.replaceAll('G', '')}) 개인카드에 반영됩니다'
+                          : '$nm ($numText) 개인카드에 반영됩니다';
+                    } else if (nm.isNotEmpty && ph.isNotEmpty) {
+                      // 카드·인가번호가 없는 분(비인가 멘토·페런츠) — 이름/전화만.
+                      numC.text = '';
+                      cardOk = false;
+                      cardName = nm;
+                      cardHint = '$nm (전화 $ph) — 인가번호가 없어 개인카드 연동은 없습니다';
+                    }
+                  });
+                },
               ),
-            ),
             // ── 인가번호 → 개인카드 자동 연결 (요구) ──
             Focus(
               onFocusChange: (has) {
