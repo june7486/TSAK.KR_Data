@@ -721,8 +721,22 @@ class LinkPeopleTiles extends StatelessWidget {
   }) {
     final hasCard = r.target != null;
     final isLinkKind = r.kind == 'mentor' || r.kind == 'parent';
-    // 멘토·페런츠는 '인적사항 등록' 상태를 별도로 표시한다.
-    final needsProfile = isLinkKind && !r.hasProfile;
+    // ## 🐞 버그 수정 (2026-11-04, turn 50)
+    //  보고(원문): *"김종선 카드에서 멘티를 등록하면 박도현카드에서 김종선 이름은
+    //   보이는데, 김종선 이름을 클릭하면 개인정보 창으로 넘어가지 않고,
+    //   이름, 전화번호 입력하라는 창이 나옴"*
+    //
+    //  종전 `needsProfile = isLinkKind && !r.hasProfile` 은 `hasProfile` 이
+    //  **이름 유무**만 보는 값이라, 인적사항(link_profiles) 없이 **회원 카드만**
+    //  있는 분(예: 일반회원 #900001 김종선)에게도 true 가 됐다. 그래서 이름을
+    //  눌러도 `_tapName`(→ MemberDetailScreen) 이 아니라 인적사항 시트가 열렸다.
+    //
+    //  수정: **회원 카드가 있으면 카드가 이긴다.** 인적사항 시트는 카드도 없고
+    //  인적사항도 없는 분에게만 자동으로 열리고, 그 외에는 행 오른쪽의
+    //  '인적사항' 버튼(=_rowProfileBtn)으로 언제든 열 수 있게 분리했다.
+    final needsProfile = isLinkKind && !r.hasProfile && r.target == null;
+    // 인적사항 시트를 열 수 있는 조건(자동 오픈 여부와 무관).
+    final canProfile = isLinkKind;
     return Padding(
       padding: const EdgeInsets.only(left: 20, top: 3, bottom: 3),
       child: Row(
@@ -818,6 +832,20 @@ class LinkPeopleTiles extends StatelessWidget {
                           ),
                         ),
                       )
+                    // (turn 50 수정) 카드가 있는데 인적사항만 비어 있는 경우 —
+                    //  이름 탭은 개인페이지로 가고, 인적사항은 오른쪽 배지 버튼.
+                    else if (isLinkKind && !r.hasProfile)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 1),
+                        child: Text(
+                          '인적사항 미등록 — 오른쪽 배지 아이콘으로 작성',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppColors.tigerGold,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
                     else if (!hasCard && !isLinkKind)
                       const Padding(
                         padding: EdgeInsets.only(top: 1),
@@ -835,6 +863,25 @@ class LinkPeopleTiles extends StatelessWidget {
               ),
             ),
           ),
+          // 인적사항(멘토·페런츠) — 카드가 있어도 **언제든** 열 수 있게 별도 버튼.
+          //  (turn 50 수정) 종전에는 이름 탭이 곧 인적사항 시트였고, 그 때문에
+          //  회원 카드가 있는 분의 개인페이지로 들어갈 길이 막혔다. 이제 분리한다.
+          if (canProfile && canEdit && !needsProfile)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+              tooltip: '${r.kind == 'parent' ? '페런츠' : '멘토'} 인적사항 '
+                  '${r.hasProfile ? '수정' : '등록'}',
+              icon: Icon(
+                Icons.badge_outlined,
+                size: 15,
+                color: r.hasProfile
+                    ? AppColors.taegeukBlue
+                    : AppColors.tigerGold,
+              ),
+              onPressed: () => _addProfile(context, r.kind!, r.code),
+            ),
           // 삭제(해제) — 연결만 끊는다. 카드·인적사항은 유지된다.
           //  (요구 2026-11-02) 멘티·멘토·페런츠 **셋 다** 오른쪽에 삭제아이콘을 둔다.
           if (onRemove != null)
