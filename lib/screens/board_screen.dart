@@ -18,6 +18,7 @@ import '../widgets/personal_quick_actions.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_output_sheet.dart';
 import '../widgets/tsak_output_preview.dart';
+import 'memorial_screen.dart';
 
 /// 게시판 (#12).
 /// - 관리자 이상 알림 대상, 댓글/좋아요, 비밀번호 보호.
@@ -132,6 +133,19 @@ class _BoardScreenState extends State<BoardScreen> {
         title: const Text('게시판'),
         actions: [
           const AppHomeEmblem(size: 22),
+          // ── 추모관 진입점 ─────────────────────────────────────────────
+          //  [요구 2026-11-04] "게시판에 故 범2호 노경하 선배님 추모관련
+          //   페이지를 만들어주고" → 게시판 상단에서 한 번에 들어간다.
+          //  게시판은 회원 전용이지만 추모관은 **로그인 없이도** 열리도록
+          //  서버가 열어 두었으므로, 권한 조건을 걸지 않는다.
+          IconButton(
+            tooltip: '故 노경하 선배님 추모관',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MemorialScreen()),
+            ),
+            icon: const Icon(Icons.local_florist),
+          ),
           IconButton(
             tooltip: '출력 (PDF·엑셀 등)',
             onPressed: _busyBuilding || _visible.isEmpty

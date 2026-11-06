@@ -28,6 +28,7 @@ import 'bulk_screen.dart';
 import 'export_screen.dart';
 import 'event_year_screen.dart';
 import 'board_screen.dart';
+import 'memorial_screen.dart';
 import 'event_detail_screen.dart';
 import 'finance_screen.dart';
 import 'import_screen.dart';
@@ -562,6 +563,13 @@ class _HomeScreenState extends State<HomeScreen> {
               case 'donate':
                 showDonateSheet(context);
                 break;
+              case 'memorial':
+                // 故 노경하 선배님 추모관 — 로그인 없이도 열린다.
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MemorialScreen()),
+                );
+                break;
               case 'inquiry':
                 showInquirySheet(context);
                 break;
@@ -728,6 +736,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.adminInk,
                   ),
                 ),
+              // 故 노경하 선배님 추모관 — 모든 접근 등급(로그인 없이도 열림)
+              const PopupMenuItem(
+                value: 'memorial',
+                child: _MenuItem(
+                  icon: Icons.local_florist,
+                  label: '故 노경하 선배님 추모관',
+                  color: AppColors.purple,
+                ),
+              ),
               // 개발자 후원
               const PopupMenuItem(
                 value: 'donate',
