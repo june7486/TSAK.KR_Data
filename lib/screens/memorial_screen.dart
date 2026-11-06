@@ -786,18 +786,29 @@ class _MemorialScreenState extends State<MemorialScreen> {
   //  (`MemorialData.video`). 앱에 파일명을 적지 않으므로, NAS 에서 영상을
   //  교체해도 앱과 웹이 동시에 새 영상을 가리킨다.
   Widget _videoCard(MemorialData d) {
-    final v = d.video;
-    if (v == null) return const SizedBox.shrink();
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-      child: _MemorialHeroVideoCard(
+    final list = d.videos;
+    if (list.isEmpty) return const SizedBox.shrink();
+
+    // 카드가 여럿이면 9px 간격으로 위에서 아래로 쌓는다.
+    //  순서는 서버 `videos` 배열 순서 그대로 — 화면에서 정렬하지 않는다.
+    //  웹(memorial.html `.vidlist`)과 같은 간격·같은 순서다.
+    final cards = <Widget>[];
+    for (var i = 0; i < list.length; i++) {
+      final v = list[i];
+      if (i > 0) cards.add(const SizedBox(height: 9));
+      cards.add(_MemorialHeroVideoCard(
         url: _api.fileUrl('${v['url'] ?? ''}'),
         posterUrl: _api.fileUrl('${v['posterUrl'] ?? ''}'),
         title: '${v['title'] ?? '추모영상'}',
         subtitle: '${v['subtitle'] ?? ''}',
         durationLabel: '${v['durationLabel'] ?? ''}',
-      ),
+      ));
+    }
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+      child: Column(children: cards),
     );
   }
 

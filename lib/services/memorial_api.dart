@@ -271,6 +271,38 @@ class MemorialData {
     if ('${m['url'] ?? ''}'.isEmpty) return null;
     return m;
   }
+
+  /// 추모영상 **목록** — 서버가 정한 순서 그대로 위에서 아래로 쌓는다.
+  ///
+  /// [요구 2026-11-06 / turn69]
+  ///   "추모관에 이 영상을 노출해줘 /
+  ///    이찬희 총재님 영상 아래에 동일 포멧으로 넣어줘"
+  ///
+  /// ── 단수(video)에서 복수(videos)로 ───────────────────────────────
+  ///  turn66 에서는 영상이 하나뿐이라 `video`(단수)만 읽었다. 이제 둘이라
+  ///  배열로 받는다. **배열 순서 = 노출 순서**이므로 화면에서 정렬하지
+  ///  않는다(서버 순서를 그대로 신뢰한다). 웹(memorial.html)도 같은 배열을
+  ///  같은 순서로 그린다.
+  ///
+  ///  구버전 응답(`video` 단수만 있는 경우)도 계속 동작하도록 폴백을 둔다 —
+  ///  앱 캐시나 서버가 아직 갱신되지 않은 순간에도 카드가 사라지지 않는다.
+  List<Map<String, dynamic>> get videos {
+    final raw = memorial['videos'];
+    final out = <Map<String, dynamic>>[];
+    if (raw is List) {
+      for (final v in raw) {
+        if (v is! Map) continue;
+        final m = v.map((k, val) => MapEntry('$k', val));
+        if ('${m['url'] ?? ''}'.isEmpty) continue;
+        out.add(m);
+      }
+    }
+    if (out.isEmpty) {
+      final one = video;
+      if (one != null) out.add(one);
+    }
+    return out;
+  }
 }
 
 /// 추모관 REST 클라이언트.

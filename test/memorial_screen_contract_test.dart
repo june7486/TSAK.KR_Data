@@ -47,33 +47,47 @@ void main() {
   const htmlPath = '/home/user/web_custom_backup/memorial.html';
 
   group('① 화면 구조 — 요구가 코드에 살아 있는가', () {
-    test('상부 참여 버튼 3종(추모글·사진·자료)이 있다', () {
+    // [변경 2026-11-06 / turn66] 사용자 요청
+    //   "자료 버튼을 삭제하고 첨부한 파일의 디자인으로 통일하고 /
+    //    사진-> 사진+영상 으로 변경"
+    //  → 3종에서 2종으로 줄었다. 옛 계약(3종)은 이제 틀린 기대값이다.
+    test('상부 참여 버튼 2종(추모글·사진+영상)이 있다', () {
       final s = stripComments(read(screenPath));
       expect(s, contains('_ctaBar'));
       expect(s, contains("_cta('✍️', '추모글'"));
-      expect(s, contains("_cta('📷', '사진'"));
-      expect(s, contains("_cta('📎', '자료'"));
+      expect(s, contains("_cta('📷', '사진+영상'"));
+      // '자료' 버튼은 삭제되었다 — 되살아나면 안 된다.
+      expect(s, isNot(contains("_cta('📎', '자료'")));
       // CTA 가 실제로 화면에 배치되어야 한다(정의만 하고 안 쓰면 무의미).
       expect(s, contains('_ctaBar(),'));
     });
 
-    test('통합 타임라인 — 기본 필터가 전체이고 종류 4종을 제공한다', () {
+    // [변경 2026-11-06 / turn66] '사진' → '사진+영상'.
+    //  통계·탭·CTA 세 곳의 낱말을 모두 맞춰야 사용자가 헷갈리지 않는다.
+    test('통합 타임라인 — 기본 필터가 전체이고 종류 3종을 제공한다', () {
       final s = stripComments(read(screenPath));
       expect(s, contains("String _filter = '전체'"));
       expect(
         s,
-        contains("const items = ['전체', '글', '사진', '자료']"),
+        contains("const items = ['전체', '사진+영상', '자료']"),
       );
+      // '전체' 탭의 이름표는 '게시글' — 글·사진·자료를 한 번에 모아 본다.
+      expect(s, contains("f == '전체' ? '게시글' : f"));
       // '전체'일 때 거르지 않고 전부 보여줘야 '한 번에 모아 보기'가 된다.
       expect(s, contains("if (_filter == '전체') return all"));
     });
 
-    test('통계 4종(추모글·사진·자료·공감)이 있다', () {
+    // [변경 2026-11-06 / turn66] 웹과 숫자·라벨을 통일했다.
+    //  웹은 '자료'를 **첨부 파일 수**로 세고 앱은 **문서 달린 글 수**로 세어
+    //  숫자가 어긋났다. 앱 기준으로 맞추고 라벨도 '게시글/사진+영상'으로 통일.
+    test('통계 4종(게시글·사진+영상·자료·공감)이 있다', () {
       final s = stripComments(read(screenPath));
-      expect(s, contains("one('추모글'"));
-      expect(s, contains("one('사진'"));
+      expect(s, contains("one('게시글'"));
+      expect(s, contains("one('사진+영상'"));
       expect(s, contains("one('자료'"));
       expect(s, contains("one('공감'"));
+      // '자료'는 파일 수가 아니라 문서가 달린 글 수다(앱 docPostTotal).
+      expect(s, contains('d.docPostTotal'));
     });
 
     test('영정 사진 + 이름 + 소개 + 연대가 상단에 있다', () {
@@ -402,7 +416,12 @@ void main() {
       expect(s, contains("import 'package:video_player/video_player.dart';"));
       expect(s, contains('_MemorialVideoTile'));
       expect(s, contains('bool _isVideoName(String s)'));
-      expect(s, contains("'.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp'"));
+      // turn66 이후 확장자 목록은 `_kMemVideoExt` 상수로 분리됐다.
+      //  (한 줄 문자열이 아니라 리스트라서 옛 검사식은 항상 실패한다)
+      expect(s, contains('const List<String> _kMemVideoExt'));
+      for (final e in ['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp']) {
+        expect(s, contains("'$e',"), reason: '$e 가 목록에 없습니다');
+      }
       // 영상 판별 후 재생 카드로 분기해야 한다.
       expect(s, contains('if (isVideo && url.isNotEmpty)'));
     });
@@ -445,6 +464,87 @@ void main() {
       final lib = read('/home/user/nas_proxy/nas_lib.py');
       expect(lib, contains('def read_range'));
       expect(lib, contains('"Range": "bytes=%d-%d"'));
+    });
+  });
+
+  group('⑭ 추모영상 복수 — 총재님 영상 아래 동일 포맷으로 쌓는다', () {
+    // [요구 2026-11-06 / turn69]
+    //   "추모관에 이 영상을 노출해줘 /
+    //    이찬희 총재님 영상 아래에 동일 포멧으로 넣어줘"
+    //
+    // ## 왜 서버가 순서를 정하는가
+    //  앱과 웹에 파일명을 각각 적으면 한쪽만 고쳐져 또 어긋난다(turn66 교훈).
+    //  `MEM_MEMORIALS[...]["videos"]` **배열 순서 = 노출 순서**이고,
+    //  화면은 그 순서를 그대로 그린다. 이 계약이 깨지면 두 영상의 순서가
+    //  앱과 웹에서 달라진다.
+
+    test('서버: videos 배열에 두 영상이 순서대로 있다', () {
+      final py = read('/home/user/nas_proxy/proxy_server.py');
+      final i = py.indexOf('"videos": [');
+      expect(i, greaterThan(0), reason: 'videos 배열이 없습니다');
+
+      final block = py.substring(i, (i + 1200).clamp(0, py.length));
+      final iFirst = block.indexOf('이찬희_총재_추모영상.mp4');
+      final iSecond = block.indexOf('노경하_선배님_추모영상_2.mp4');
+      expect(iFirst, greaterThan(0), reason: '총재님 영상이 없습니다');
+      expect(iSecond, greaterThan(0), reason: '노경하 선배 영상이 없습니다');
+      // 총재님 영상이 **먼저** 와야 그 아래에 노경하 영상이 놓인다.
+      expect(iFirst, lessThan(iSecond), reason: '영상 순서가 뒤바뀌었습니다');
+
+      // 재생시간 표기 — 카드 우하단 시간칩
+      expect(block, contains('"3:19"'));
+      expect(block, contains('"4:31"'));
+    });
+
+    test('서버: videos 각 항목에 url·posterUrl 을 붙여 내려준다', () {
+      final py = read('/home/user/nas_proxy/proxy_server.py');
+      expect(py, contains('def _deco_video(vid)'));
+
+      final i = py.indexOf('def _deco_video(vid)');
+      final block = py.substring(i, (i + 900).clamp(0, py.length));
+      expect(block, contains('/memorial-file/'));
+      expect(block, contains('"url"'));
+      expect(block, contains('"posterUrl"'));
+      // 단수(video) 응답도 계속 채워야 구버전 앱이 깨지지 않는다.
+      expect(py, contains('merged["video"] = _deco_video('));
+    });
+
+    test('앱: MemorialData.videos 가 목록을 순서대로 돌려준다', () {
+      final s = stripComments(read('/home/user/flutter_app/lib/services/memorial_api.dart'));
+      expect(s, contains('List<Map<String, dynamic>> get videos'));
+      expect(s, contains("memorial['videos']"));
+      // 서버 순서를 그대로 신뢰한다 — 화면/모델에서 재정렬하지 않는다.
+      expect(s, isNot(contains('videos.sort(')));
+      // 구버전(단수 video) 폴백
+      expect(s, contains('final one = video;'));
+    });
+
+    test('앱: _videoCard 가 카드 여러 장을 세로로 쌓는다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('final list = d.videos;'));
+      expect(s, contains('for (var i = 0; i < list.length; i++)'));
+      expect(s, contains('Column(children: cards)'));
+      // 목록이 비면 영역을 차지하지 않는다.
+      expect(s, contains('if (list.isEmpty) return const SizedBox.shrink();'));
+    });
+
+    test('웹: vidList 컨테이너에 카드를 순서대로 만든다', () {
+      final s = read(htmlPath);
+      expect(s, contains('id="vidList"'));
+      expect(s, contains('function applyMemVideos(m)'));
+      // 구 이름 호출부가 남아 있어도 동작해야 한다.
+      expect(s, contains('function applyMemVideo(m){ applyMemVideos(m); }'));
+      // 서버 배열 순서 그대로 forEach
+      expect(s, contains('arr.forEach((v, idx) =>'));
+      // 영상 0개면 접는다
+      expect(s, contains("list.style.display = arr.length ? '' : 'none';"));
+      // 카드 사이 간격은 앱(9px)과 같아야 '동일 포맷'이 된다.
+      expect(s, contains('gap:9px'));
+    });
+
+    test('웹: 단수 video 응답도 폴백으로 그린다', () {
+      final s = read(htmlPath);
+      expect(s, contains('if(!arr.length && m && m.video && m.video.url) arr = [m.video];'));
     });
   });
 
