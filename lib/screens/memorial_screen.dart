@@ -99,6 +99,9 @@ class _MemPhotoItem {
   final String name;
   final String number;
 
+  /// 영상인가 — 칸에 ▶ 배지를 붙이고, 누르면 재생기를 띄운다.
+  bool get isVideo => MemorialPost.isVideoUrl(url);
+
   /// 화면에 쓸 이름 — `이승준 (415)` / 번호 없으면 `이승준`.
   String get label {
     final n = name.trim().isEmpty ? '익명' : name.trim();
@@ -205,8 +208,14 @@ class _MemorialScreenState extends State<MemorialScreen> {
 
   List<MemorialPost> get _visible {
     final all = _data?.posts ?? const <MemorialPost>[];
+    // [요구 2026-11-04] "사진, 추모글 이렇게 구분하지 말고 게시글로 통합"
+    //  → '전체'는 종류와 상관없이 **모든 게시글**이다.
     if (_filter == '전체') return all;
-    return all.where((p) => p.kind == _filter).toList();
+    // '사진+영상'은 글 단위가 아니라 앨범(_photoAlbum)으로 그리므로 여기서는
+    // 쓰이지 않지만, 안전하게 미디어 보유 글을 돌려준다.
+    if (_filter == '사진+영상') return all.where((p) => p.hasMedia).toList();
+    if (_filter == '자료') return all.where((p) => p.hasOtherFile).toList();
+    return all;
   }
 
   /// 사진 탭에 뿌릴 **낱장 사진** 목록.
@@ -390,6 +399,8 @@ class _MemorialScreenState extends State<MemorialScreen> {
               hidden: old.hidden,
               kind: old.kind,
               photos: old.photos,
+              media: old.media,
+              hasOtherFile: old.hasOtherFile,
               attachments: old.attachments,
               likeCount: r.count,
               comments: old.comments,
@@ -558,7 +569,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
               //   보여 주는 것이 아니라 첨부된 사진만 보여 주면 돼"
               //  글 카드 대신 사진 낱장만 격자로 깐다. 사진을 누르면 크게
               //  보이고, 아래 이름표를 누르면 그 글로 이동한다.
-              if (_filter == '사진')
+              if (_filter == '사진+영상')
                 _photoAlbum()
               else if (_visible.isEmpty)
                 Padding(
@@ -764,9 +775,9 @@ class _MemorialScreenState extends State<MemorialScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          one('추모글', d.countOf('글')),
-          one('사진', d.photoTotal),
-          one('자료', d.countOf('자료')),
+          one('게시글', d.posts.where((p) => !p.hidden).length),
+          one('사진+영상', d.mediaTotal),
+          one('자료', d.docPostTotal),
           one('공감', d.likeTotal),
         ],
       ),
@@ -775,7 +786,12 @@ class _MemorialScreenState extends State<MemorialScreen> {
 
   // ── 종류 필터 ───────────────────────────────────────────────────────
   Widget _tabs() {
-    const items = ['전체', '글', '사진', '자료'];
+    // [요구 2026-11-04] "사진 폴더 이름을 사진+영상 으로 변경하고 사진과
+    //  영상 자료는 그 폴더에서 통합해서 보여 줘"
+    //  · '전체' = 게시글 (사진·글 구분 없이 전부)
+    //  · '사진+영상' = 첨부된 사진과 영상을 한 폴더에서
+    //  · '자료' = PDF·문서 등 미디어가 아닌 첨부
+    const items = ['전체', '사진+영상', '자료'];
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -785,7 +801,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
           return Padding(
             padding: const EdgeInsets.only(right: 7),
             child: ChoiceChip(
-              label: Text(f == '글' ? '추모글' : f),
+              label: Text(f == '전체' ? '게시글' : f),
               selected: on,
               onSelected: (_) => setState(() => _filter = f),
               labelStyle: TextStyle(
@@ -884,7 +900,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8, left: 2),
             child: Text(
-              '사진 ${items.length}장',
+              '사진+영상 ${items.length}개',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
@@ -898,9 +914,47 @@ class _MemorialScreenState extends State<MemorialScreen> {
     );
   }
 
-  /// 앨범 한 칸 — 사진 1장 + 그 아래 올린 사람.
+  /// 앨범 한 칸 — 사진 또는 영상 1건 + 그 아래 올린 사람.
+  ///
+  /// [요구 2026-11-04] "사진과 영상 자료는 그 폴더에서 통합해서 보여 줘"
+  ///  · 사진  : 정사각 썸네일, 누르면 크게 보기
+  ///  · 영상  : 같은 크기의 칸에 ▶ 배지를 얹고, 누르면 앱 안에서 재생
+  ///  (영상 썸네일을 만들려면 서버에서 프레임을 추출해야 하므로, 지금은
+  ///   어두운 카드 + ▶ 로 "영상"임을 즉시 알 수 있게 한다.)
   Widget _photoCell(_MemPhotoItem it) {
     final url = _api.fileUrl(it.url);
+    if (it.isVideo) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () => _viewVideo(url, it.url),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF3D1B63), Color(0xFF5B2C8D)],
+                  ),
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.play_circle_fill,
+                    size: 34,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          _whoLabel(it),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -940,22 +994,26 @@ class _MemorialScreenState extends State<MemorialScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        // 올린 사람 이름 — `이승준 (415)` / 비인가자는 `홍길동`.
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 1),
-          child: Text(
-            it.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
-          ),
-        ),
+        _whoLabel(it),
       ],
+    );
+  }
+
+  /// 앨범 칸 아래 이름표 — `이승준 (415)` / 비인가자는 `홍길동`.
+  Widget _whoLabel(_MemPhotoItem it) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 1),
+      child: Text(
+        it.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textDark,
+        ),
+      ),
     );
   }
 
@@ -1033,7 +1091,9 @@ class _MemorialScreenState extends State<MemorialScreen> {
                   ],
                 ),
               ),
-              _kindBadge(p.kind),
+              // [요구 2026-11-04] "사진, 추모글 이렇게 구분하지 말고
+              //  게시글로 통합해 주고" → 종류 배지를 없앤다.
+              //  사진이든 글이든 모두 '게시글'로 본다.
               if (canManage)
                 IconButton(
                   visualDensity: VisualDensity.compact,
@@ -1133,25 +1193,6 @@ class _MemorialScreenState extends State<MemorialScreen> {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _kindBadge(String kind) {
-    final (bg, fg) = switch (kind) {
-      '사진' => (const Color(0xFFE8F1FB), const Color(0xFF1B4F9C)),
-      '자료' => (const Color(0xFFF3EDE1), const Color(0xFF8A6B27)),
-      _ => (const Color(0xFFEDE8F7), AppColors.purple),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(
-        kind,
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: fg),
       ),
     );
   }
@@ -1438,6 +1479,26 @@ class _MemorialScreenState extends State<MemorialScreen> {
 
   /// 파일명/URL 이 영상인가. 서버의 `VIDEO_EXT` 와 같은 목록을 쓴다.
   bool _isVideoName(String s) => _memIsVideo(s);
+
+  /// 앨범에서 영상을 눌렀을 때 — 앱 안에서 바로 재생한다.
+  ///
+  /// [요구 2026-11-04] "사진과 영상 자료는 그 폴더에서 통합해서 보여 줘"
+  ///  폴더에서 영상을 눌렀는데 새 탭/다운로드로 튕기면 통합의 의미가 없다.
+  ///  서버가 Range(206)를 지원하므로 재생기에 URL 만 넘기면 된다.
+  void _viewVideo(String url, String rawName) {
+    final name = rawName.split('/').last;
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(8),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: _MemorialVideoTile(url: url, name: name),
+        ),
+      ),
+    );
+  }
 
   void _viewImage(String url) {
     showDialog<void>(

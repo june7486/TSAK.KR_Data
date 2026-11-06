@@ -52,6 +52,8 @@ class MemorialPost {
     required this.hidden,
     required this.kind,
     required this.photos,
+    required this.media,
+    required this.hasOtherFile,
     required this.attachments,
     required this.likeCount,
     required this.comments,
@@ -65,11 +67,26 @@ class MemorialPost {
   final String updated;
   final bool hidden;
 
-  /// '글' | '사진' | '자료' — 첫 화면 필터에 쓴다.
+  /// 서버가 계산한 종류 — '글' | '사진' | '자료'.
+  ///
+  /// [변경 2026-11-04] 이제 **게시글 카드에는 표시하지 않는다**.
+  ///  ("사진, 추모글 이렇게 구분하지 말고 게시글로 통합해 주고")
+  ///  다만 '자료' 폴더(= 문서가 섞인 글) 를 가려내는 데는 계속 쓴다.
   final String kind;
 
-  /// 사진 URL 목록(서버 상대경로 `/memorial-file/...`).
+  /// **이미지** URL 목록(영상 제외). 카드 안의 사진 띠에 쓴다.
   final List<String> photos;
+
+  /// **사진 + 영상** 전체 URL 목록 — `사진+영상` 폴더가 쓴다.
+  ///
+  /// [요구 2026-11-04] "사진 폴더 이름을 사진+영상 으로 변경하고 사진과
+  ///  영상 자료는 그 폴더에서 통합해서 보여 줘"
+  ///  종전에는 영상을 앨범에서 일부러 제외했다(자료 영역에서 재생). 이제
+  ///  한 폴더에서 사진과 영상을 함께 보여준다.
+  final List<String> media;
+
+  /// 미디어가 아닌 첨부(PDF·문서 등)가 있는가 — '자료' 폴더 판정용.
+  final bool hasOtherFile;
 
   /// 자료 목록 — `{name, url, size}`.
   final List<Map<String, dynamic>> attachments;
@@ -85,14 +102,13 @@ class MemorialPost {
     //  `media` 가 있으면 그것을 사진 목록으로 쓰고, 없으면(구버전 서버)
     //  `photos` 로 폴백한다. 이렇게 하면 '자료 올리기'로 들어온 사진도
     //  사진 탭에 나타나고, 이미 잘못 저장된 글도 함께 바로잡힌다.
-    final rawPhotos =
+    final rawMedia =
         ((m['media'] as List?) ?? (m['photos'] as List?) ?? const [])
             .map((e) => '$e')
             .where((e) => e.isNotEmpty)
             .toList();
-    // 영상은 사진 탭에 넣지 않는다 — 재생 카드(자료 영역)에서 보여준다.
-    // (서버 media 는 영상도 포함하므로 여기서 걸러 낸다)
-    final photoOnly = rawPhotos.where((u) => !_isVideoUrl(u)).toList();
+    // 카드 안의 작은 사진 띠는 이미지 전용, 폴더는 사진+영상 전체.
+    final photoOnly = rawMedia.where((u) => !isVideoUrl(u)).toList();
 
     return MemorialPost(
       id: '${m['id'] ?? ''}',
@@ -105,6 +121,8 @@ class MemorialPost {
       // 서버가 계산한 kind 를 그대로 믿는다(첨부 실물 기준).
       kind: '${m['kind'] ?? '글'}',
       photos: photoOnly,
+      media: rawMedia,
+      hasOtherFile: m['hasOtherFile'] == true,
       attachments: (m['attachments'] as List? ?? const [])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
@@ -118,7 +136,7 @@ class MemorialPost {
   }
 
   /// 확장자로 영상 여부 판정 — 서버 VIDEO_EXT 와 동일 목록.
-  static bool _isVideoUrl(String u) {
+  static bool isVideoUrl(String u) {
     final t = u.toLowerCase().split('?').first;
     const exts = ['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp'];
     return exts.any(t.endsWith);
@@ -126,6 +144,12 @@ class MemorialPost {
 
   bool get hasPhoto => photos.isNotEmpty;
   bool get hasFile => attachments.isNotEmpty;
+
+  /// 이 글의 영상 URL 만 추린 목록.
+  List<String> get videos => media.where(isVideoUrl).toList();
+
+  /// '사진+영상' 폴더에 넣을 글인가(사진이나 영상이 하나라도 있는가).
+  bool get hasMedia => media.isNotEmpty;
 }
 
 /// 추모관 댓글 한 건.
@@ -173,6 +197,14 @@ class MemorialData {
   int countOf(String kind) =>
       posts.where((p) => !p.hidden && p.kind == kind).length;
 
+  /// '자료' 폴더에 들어갈 글 수 — 미디어가 아닌 첨부(PDF·문서)가 있는 글.
+  ///
+  /// [요구 2026-11-04] 게시글로 통합하면서 필터가 「전체 / 사진+영상 / 자료」
+  ///  3개로 줄었다. '자료'는 "문서가 딸린 글"이라는 뜻이므로 kind 문자열이
+  ///  아니라 `hasOtherFile` 로 센다(사진만 있는 글은 여기 안 들어간다).
+  int get docPostTotal =>
+      posts.where((p) => !p.hidden && p.hasOtherFile).length;
+
   /// 사진 **장수** (글 수가 아니다).
   ///
   /// [요구 2026-11-04] "사진 폴더를 클릭하면 … 첨부된 사진만 보여 주면 돼"
@@ -181,6 +213,13 @@ class MemorialData {
   ///  사용자는 사진이 사라졌다고 오해한다.
   int get photoTotal =>
       posts.where((p) => !p.hidden).fold<int>(0, (a, p) => a + p.photos.length);
+
+  /// `사진+영상` 폴더 항목 수 — 사진과 영상을 **모두** 센다.
+  ///
+  /// [요구 2026-11-04] "사진과 영상 자료는 그 폴더에서 통합해서 보여 줘"
+  ///  photoTotal(이미지 장수)과 다르다. 영상도 한 칸을 차지하므로 함께 센다.
+  int get mediaTotal =>
+      posts.where((p) => !p.hidden).fold<int>(0, (a, p) => a + p.media.length);
 
   int get likeTotal =>
       posts.fold<int>(0, (a, p) => a + (p.hidden ? 0 : p.likeCount));
