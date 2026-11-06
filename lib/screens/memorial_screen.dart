@@ -68,6 +68,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
   /// 이 기기의 공감 식별키 — 브라우저/기기당 1회만 공감되게 한다.
   String _likeKey = '';
 
+  /// 후원계좌 3종 + 예금주 (서버에서 받아온다 — 하드코딩 금지).
+  List<Map<String, String>> _accounts = const [];
+  String _holder = '';
+
   bool _busy = false;
 
   @override
@@ -109,6 +113,13 @@ class _MemorialScreenState extends State<MemorialScreen> {
           ..clear()
           ..addAll(mine);
         _loading = false;
+      });
+      // 계좌는 부가 정보 — 본문 표시를 막지 않도록 따로 받아 뒤늦게 채운다.
+      final acc = await _api.loadAccounts();
+      if (!mounted) return;
+      setState(() {
+        _accounts = acc.accounts;
+        _holder = acc.holder;
       });
     } catch (e) {
       if (!mounted) return;
@@ -437,6 +448,11 @@ class _MemorialScreenState extends State<MemorialScreen> {
                 )
               else
                 ..._visible.map(_postCard),
+              // ── 후원계좌 3종 (하단) ──────────────────────────────────
+              //  [요구 2026-11-04] "추모페이지에 후원계좌 3종 하단에 넣어줘"
+              //  · 서버가 준 계좌만 그린다(하드코딩 없음 → 중앙회 설정 변경 시
+              //    웹/앱 동시 반영). 계좌가 없으면 섹션 자체를 숨긴다.
+              if (_accounts.isNotEmpty) _donationSection(),
             ],
           ),
           if (_busy)

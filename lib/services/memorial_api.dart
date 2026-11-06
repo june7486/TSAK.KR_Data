@@ -233,6 +233,39 @@ class MemorialApi {
   }
 
   // ── 읽기 ────────────────────────────────────────────────────────────
+  /// 후원계좌 3종 — `/api/memorial/accounts` (공개).
+  ///
+  /// [요구 2026-11-04] "추모페이지에 후원계좌 3종 하단에 넣어줘"
+  ///  · 계좌를 앱에 하드코딩하지 않는다. 중앙회가 설정에서 계좌를 바꾸면
+  ///    웹 추모 페이지와 앱이 **동시에** 따라간다.
+  ///  · 이 엔드포인트는 로그인 없이 열린다(페이지 자체가 공개이므로).
+  ///  · 실패해도 추모글은 보여야 하므로 호출부에서 빈 목록으로 처리한다.
+  Future<({String holder, List<Map<String, String>> accounts})>
+  loadAccounts() async {
+    try {
+      final uri = Uri.parse('${api.baseUrl}/api/memorial/accounts');
+      final r = await http
+          .get(uri, headers: api.authHeaderMap)
+          .timeout(const Duration(seconds: 30));
+      final j = _decode(r);
+      final rows = (j['accounts'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (e) => {
+              'label': '${e['label'] ?? ''}',
+              'bank': '${e['bank'] ?? ''}',
+              'account': '${e['account'] ?? ''}',
+            },
+          )
+          .where((m) => (m['account'] ?? '').isNotEmpty)
+          .toList();
+      return (holder: '${j['holder'] ?? ''}', accounts: rows);
+    } catch (_) {
+      // 부가 정보 — 실패는 조용히 무시한다.
+      return (holder: '', accounts: const <Map<String, String>>[]);
+    }
+  }
+
   Future<MemorialData> load({String id = defaultMemorialId}) async {
     final uri = Uri.parse('${api.baseUrl}/api/memorial/get?id=$id');
     final r = await http
