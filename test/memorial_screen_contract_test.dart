@@ -395,4 +395,74 @@ void main() {
       expect(py, isNot(contains('최대 25MB')));
     });
   });
+
+  group('⑫ 영상 재생 — 올린 영상을 앱·웹에서 바로 본다', () {
+    test('앱: 영상이면 링크가 아니라 재생 카드로 보여준다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains("import 'package:video_player/video_player.dart';"));
+      expect(s, contains('_MemorialVideoTile'));
+      expect(s, contains('bool _isVideoName(String s)'));
+      expect(s, contains("'.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp'"));
+      // 영상 판별 후 재생 카드로 분기해야 한다.
+      expect(s, contains('if (isVideo && url.isNotEmpty)'));
+    });
+
+    test('앱: 재생기를 반드시 정리한다(배터리·트래픽)', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('VideoPlayerController.networkUrl'));
+      expect(s, contains('_c?.dispose();'));
+      expect(s, contains('VideoProgressIndicator'));
+      // 되감기 허용 — Range 서빙의 전제
+      expect(s, contains('allowScrubbing: true'));
+    });
+
+    test('웹: <video> 로 인라인 재생하고 metadata 만 미리 받는다', () {
+      final s = read(htmlPath);
+      expect(s, contains('<video controls preload="metadata" playsinline'));
+      expect(s, contains('isVideoName(name)'));
+      // 영상 판별 목록이 서버(VIDEO_EXT)와 같아야 한다.
+      expect(s, contains('mp4|mov|webm|m4v|avi|mkv|3gp'));
+    });
+
+    test('서버: 추모관 파일이 Range(206)를 지원한다', () {
+      final py = read('/home/user/nas_proxy/proxy_server.py');
+      // 파일 서빙이 Range 지원 경로로 교체되어야 한다.
+      final i = py.indexOf('if p.startswith("/memorial-file/")');
+      expect(i, greaterThan(0));
+      final block = py.substring(i, (i + 2200).clamp(0, py.length));
+      expect(block, contains('_serve_nas_file'));
+      expect(block, contains('allow_range=True'));
+      // 전체를 통째로 읽어 보내는 옛 방식이 남아 있으면 안 된다.
+      expect(block, isNot(contains('self.wfile.write(raw)')));
+    });
+
+    test('서버: Range 서빙은 구간만 읽는다(전체 읽기 금지)', () {
+      final py = read('/home/user/nas_proxy/proxy_server.py');
+      expect(py, contains('def _pump_bytes'));
+      expect(py, contains('def read_range'));
+      expect(py, contains('def iter_bytes'));
+      // NAS 백엔드도 구간 읽기를 지원해야 한다.
+      final lib = read('/home/user/nas_proxy/nas_lib.py');
+      expect(lib, contains('def read_range'));
+      expect(lib, contains('"Range": "bytes=%d-%d"'));
+    });
+  });
+
+  group('⑬ QR 코드 — 식장·게시판에 붙일 수 있는가', () {
+    test('인쇄용 QR 안내 페이지가 있다', () {
+      final s = read('/home/user/web_custom_backup/memorial_qr.html');
+      expect(s, contains('data:image/png;base64,'));
+      expect(s, contains('故 노경하 선배님 추모관'));
+      expect(s, contains('한국범스카우트중앙회'));
+      expect(s, contains('window.print()'));
+      // 인쇄 시 버튼이 종이에 찍히면 안 된다.
+      expect(s, contains('@media print'));
+    });
+
+    test('추모 페이지에서 QR 안내문으로 갈 수 있다', () {
+      final s = read(htmlPath);
+      expect(s, contains('href="/memorial_qr.html"'));
+      expect(s, contains('QR 안내문'));
+    });
+  });
 }

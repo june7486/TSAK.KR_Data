@@ -30,6 +30,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../services/app_state.dart';
 import '../services/file_pick.dart';
@@ -1070,13 +1071,27 @@ class _MemorialScreenState extends State<MemorialScreen> {
   Widget _fileRow(Map<String, dynamic> a) {
     final name = '${a['name'] ?? '자료'}';
     final url = _api.fileUrl('${a['url'] ?? ''}');
+    final isVideo = _isVideoName(name) || _isVideoName('${a['url'] ?? ''}');
+
+    // ── 영상은 "다운로드 링크"가 아니라 **재생 카드**로 보여준다 ─────────
+    //  [turn53] 500MB 상한으로 영상이 실제로 올라오게 되면서, 링크만 던져
+    //  주면 사용자는 내려받아야만 볼 수 있었다. 서버가 Range(206)를 지원
+    //  하므로 앱 안에서 바로 재생·되감기가 된다.
+    if (isVideo && url.isNotEmpty) {
+      return _MemorialVideoTile(url: url, name: name);
+    }
+
     return InkWell(
       onTap: url.isEmpty ? null : () => launchUrl(Uri.parse(url)),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
           children: [
-            const Icon(Icons.attach_file, size: 15, color: AppColors.textGray),
+            Icon(
+              isVideo ? Icons.videocam_outlined : Icons.attach_file,
+              size: 15,
+              color: AppColors.textGray,
+            ),
             const SizedBox(width: 5),
             Expanded(
               child: Text(
@@ -1095,6 +1110,13 @@ class _MemorialScreenState extends State<MemorialScreen> {
     );
   }
 
+  /// 파일명/URL 이 영상인가. 서버의 `VIDEO_EXT` 와 같은 목록을 쓴다.
+  bool _isVideoName(String s) {
+    final t = s.toLowerCase().split('?').first;
+    const exts = ['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp'];
+    return exts.any(t.endsWith);
+  }
+
   void _viewImage(String url) {
     showDialog<void>(
       context: context,
@@ -1111,6 +1133,201 @@ class _MemorialScreenState extends State<MemorialScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  영상 재생 카드 — 올린 영상을 앱 안에서 바로 본다
+// ════════════════════════════════════════════════════════════════════════
+//
+// ## 배경 (turn53)
+//  업로드 상한을 500MB 로 올려 영상이 실제로 올라오게 되자, 목록에서는
+//  "링크를 눌러 내려받기"만 가능했다. 추모 영상을 보려는 어르신들께
+//  다운로드는 너무 높은 문턱이다. 서버에 Range(206) 지원을 넣었으므로
+//  앱에서 바로 재생·되감기가 가능해졌다.
+//
+// ## 메모리
+//  `VideoPlayerController.networkUrl` 은 플랫폼 재생기(ExoPlayer/AVPlayer/
+//  <video>)에 URL 을 넘긴다. 앱이 파일을 통째로 들고 있지 않고, 재생기가
+//  필요한 구간만 Range 로 요청한다. 500MB 영상도 앱 메모리를 먹지 않는다.
+//
+// ## 화면을 떠날 때
+//  dispose 에서 반드시 컨트롤러를 정리한다. 안 하면 재생이 계속되어
+//  배터리와 트래픽을 축낸다.
+class _MemorialVideoTile extends StatefulWidget {
+  const _MemorialVideoTile({required this.url, required this.name});
+
+  final String url;
+  final String name;
+
+  @override
+  State<_MemorialVideoTile> createState() => _MemorialVideoTileState();
+}
+
+class _MemorialVideoTileState extends State<_MemorialVideoTile> {
+  VideoPlayerController? _c;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    try {
+      await c.initialize();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      setState(() => _c = c);
+    } catch (_) {
+      await c.dispose();
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c?.dispose();
+    super.dispose();
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _c;
+
+    // 재생기를 열 수 없을 때(코덱 미지원·회선 문제) — 링크는 남겨 둔다.
+    if (_failed) {
+      return InkWell(
+        onTap: () => launchUrl(Uri.parse(widget.url)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              const Icon(Icons.videocam_off_outlined,
+                  size: 15, color: AppColors.textGray),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  '${widget.name} (재생할 수 없어 새 창에서 엽니다)',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.taegeukBlue,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (c == null) {
+      return Container(
+        height: 84,
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    final v = c.value;
+    final pos = v.position;
+    final dur = v.duration;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: v.aspectRatio == 0 ? 16 / 9 : v.aspectRatio,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                VideoPlayer(c),
+                // 큰 재생/일시정지 버튼 — 작은 화면에서도 누르기 쉽게.
+                Material(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () {
+                      setState(() {
+                        v.isPlaying ? c.pause() : c.play();
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(9),
+                      child: Icon(
+                        v.isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 되감기 — Range 서빙 덕분에 원하는 지점으로 바로 이동한다.
+          VideoProgressIndicator(
+            c,
+            allowScrubbing: true,
+            colors: const VideoProgressColors(
+              playedColor: AppColors.tigerGold,
+              bufferedColor: Colors.white24,
+              backgroundColor: Colors.white10,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
+            child: Row(
+              children: [
+                Text(
+                  '${_fmt(pos)} / ${_fmt(dur)}',
+                  style: const TextStyle(fontSize: 10, color: Colors.white70),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 10, color: Colors.white38),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1229,6 +1446,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
             _upName = f.name;
             _upSent = 0;
             _upTotal = f.bytes.length;
+            // 파일마다 속도 측정을 새로 시작한다.
+            _upStart = null;
+            _upMark = null;
+            _upMarkSent = 0;
+            _upBps = 0;
           });
         }
         final j = await widget.api.upload(
@@ -1241,6 +1463,7 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
             setState(() {
               _upSent = sent;
               _upTotal = total;
+              _upTick(sent, total);
             });
           },
         );
@@ -1275,6 +1498,39 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
     if (bytes <= 0) return '0';
     final m = bytes / (1024 * 1024);
     return m >= 100 ? m.toStringAsFixed(0) : m.toStringAsFixed(1);
+  }
+
+  /// 남은 예상 시간 — 최근 3초 구간의 전송 속도로 계산한다.
+  ///
+  /// 전체 평균을 쓰면 회선이 잠깐 느려졌을 때 남은 시간이 크게 튄다.
+  /// 최근 구간 속도로 계산하면 숫자가 훨씬 덜 흔들린다.
+  DateTime? _upStart;
+  DateTime? _upMark;
+  int _upMarkSent = 0;
+  double _upBps = 0;
+
+  void _upTick(int sent, int total) {
+    final now = DateTime.now();
+    _upStart ??= now;
+    _upMark ??= now;
+    final dt = now.difference(_upMark!).inMilliseconds / 1000.0;
+    if (dt >= 1.0) {
+      final inst = (sent - _upMarkSent) / dt;
+      // 지수 평활 — 급격한 흔들림 완화.
+      _upBps = _upBps == 0 ? inst : (_upBps * 0.6 + inst * 0.4);
+      _upMark = now;
+      _upMarkSent = sent;
+    }
+  }
+
+  String _etaText() {
+    if (_upBps < 1024 || _upTotal <= 0) return '';
+    final remain = (_upTotal - _upSent) / _upBps;
+    if (!remain.isFinite || remain <= 0) return '';
+    if (remain < 60) return '약 ${remain.ceil()}초 남음';
+    final m = (remain / 60).ceil();
+    if (m < 60) return '약 $m분 남음';
+    return '약 ${(m / 60).round()}시간 남음';
   }
 
   Future<void> _save() async {
@@ -1438,15 +1694,31 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        '${_upName.isEmpty ? '업로드' : _upName} · '
-                        '${_mb(_upSent)} / ${_mb(_upTotal)} MB',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textGray,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${_upName.isEmpty ? '업로드' : _upName} · '
+                              '${_mb(_upSent)} / ${_mb(_upTotal)} MB',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textGray,
+                              ),
+                            ),
+                          ),
+                          // 남은 시간 안내 — "멈춘 건가?" 하는 불안을 없앤다.
+                          if (_upTotal > 0 && _upSent < _upTotal)
+                            Text(
+                              _etaText(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.purple,
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
