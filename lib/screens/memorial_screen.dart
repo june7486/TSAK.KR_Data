@@ -38,6 +38,35 @@ import '../services/memorial_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/tsak_app_bar.dart';
 
+// ════════════════════════════════════════════════════════════════════════
+//  파일 종류 판정 — 서버(proxy_server.py)의 IMAGE_EXT / VIDEO_EXT 와 동일
+// ════════════════════════════════════════════════════════════════════════
+//
+// ## 왜 화면 밖(최상위)에 두는가
+//  편집 시트(_MemorialEditorSheetState)와 본문 화면(_MemorialScreenState)
+//  **양쪽에서 같은 규칙**을 써야 한다. 한쪽에만 두면 "업로드할 때는 사진,
+//  목록에서는 자료"처럼 어긋나 사용자가 사진을 잃어버린 것처럼 느낀다.
+//
+// ## 왜 확장자로 판정하는가
+//  서버의 `isImage` 응답만 믿으면, '자료 올리기' 경로로 들어온 사진이
+//  자료로 굳는다([요구 2026-11-04] "사진폴더에 노출시켜줘"). 업로드 응답과
+//  저장된 URL 어느 쪽이든 확장자는 남아 있으므로, 확장자로 한 번 더
+//  확인하는 것이 가장 확실하다.
+const List<String> _kMemImageExt = [
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic',
+];
+const List<String> _kMemVideoExt = [
+  '.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp',
+];
+
+bool _memExtIn(String s, List<String> exts) {
+  final t = s.toLowerCase().split('?').first;
+  return exts.any(t.endsWith);
+}
+
+bool _memIsImage(String s) => _memExtIn(s, _kMemImageExt);
+bool _memIsVideo(String s) => _memExtIn(s, _kMemVideoExt);
+
 class MemorialScreen extends StatefulWidget {
   const MemorialScreen({
     super.key,
@@ -1111,11 +1140,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
   }
 
   /// 파일명/URL 이 영상인가. 서버의 `VIDEO_EXT` 와 같은 목록을 쓴다.
-  bool _isVideoName(String s) {
-    final t = s.toLowerCase().split('?').first;
-    const exts = ['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp'];
-    return exts.any(t.endsWith);
-  }
+  bool _isVideoName(String s) => _memIsVideo(s);
 
   void _viewImage(String url) {
     showDialog<void>(
@@ -1381,6 +1406,10 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
   int _upTotal = 0;
   String _upName = '';
 
+  /// 여러 파일을 한 번에 올릴 때의 진행 위치 (예: 2/5).
+  int _upIndex = 0;
+  int _upCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -1431,9 +1460,34 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
     );
     if (picked.isEmpty || !mounted) return;
 
+    // ── [요구 2026-11-04] "여러 파일을 선택해서 올릴 수 있도록" ──────────
+    //  ① 이미 담긴 개수 + 새로 고른 개수가 서버 상한(20)을 넘으면
+    //     **보내기 전에** 알린다(올리고 나서 거절당하면 헛수고).
+    //  ② 초과분을 조용히 버리지 않고 몇 개가 빠졌는지 명시한다.
+    const int maxMedia = 20;
+    var list = picked.toList();
+    final already = _photos.length + _files.length;
+    if (already + list.length > maxMedia) {
+      final room = maxMedia - already;
+      if (room <= 0) {
+        setState(() => _err = '사진·자료는 한 글에 $maxMedia개까지 담을 수 있습니다');
+        return;
+      }
+      final dropped = list.length - room;
+      list = list.sublist(0, room);
+      setState(() => _err =
+          '$maxMedia개까지만 담을 수 있어 $dropped개는 제외했습니다'
+          ' (이미 $already개 있음)');
+    }
+
     setState(() => _uploading = true);
     try {
-      for (final f in picked) {
+      var idx = 0;
+      for (final f in list) {
+        idx++;
+        // 여러 개를 올릴 때 "몇 번째인지"가 보여야 진행이 체감된다.
+        _upIndex = idx;
+        _upCount = list.length;
         // 서버 상한은 **500MB** 다(사진·문서·영상 포함).
         //  [요구 2026-11-04] "용량 500메가로 늘리고"
         //  서버가 거절할 크기를 먼저 알려 헛수고를 막는다.
@@ -1469,11 +1523,25 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
         );
         final url = '${j['url'] ?? ''}';
         if (url.isEmpty) continue;
-        if (j['isImage'] == true) {
+        // ── [요구 2026-11-04] "첨부파일로 올린 자료도 사진, 영상일 경우
+        //      사진폴더에 노출시켜줘"
+        //
+        //  종전에는 서버의 `isImage` 만 보고 갈랐다. 그래서 '자료 올리기'로
+        //  들어온 사진·영상은 (isImage=false 이므로) 곧장 자료 목록으로
+        //  들어갔고, 저장 시 kind='자료' 가 되어 **사진 폴더에서 사라졌다**.
+        //
+        //  → 올린 파일의 **실물 종류**를 기준으로 가른다.
+        //     · 이미지  → 사진 목록 (사진 탭에 노출)
+        //     · 영상    → 자료 목록 (재생 카드로 표시)
+        //     · 그 외   → 자료 목록
+        //  서버도 읽을 때 같은 규칙으로 다시 판정하므로 이중으로 안전하다.
+        final fname = '${j['name'] ?? f.name}';
+        final isImg = j['isImage'] == true || _memIsImage(fname);
+        if (isImg) {
           _photos.add(url);
         } else {
           _files.add({
-            'name': '${j['name'] ?? f.name}',
+            'name': fname,
             'url': url,
             'size': j['size'] ?? f.bytes.length,
           });
@@ -1699,7 +1767,8 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                           Expanded(
                             child: Text(
                               '${_upName.isEmpty ? '업로드' : _upName} · '
-                              '${_mb(_upSent)} / ${_mb(_upTotal)} MB',
+                              '${_mb(_upSent)} / ${_mb(_upTotal)} MB'
+                              '${_upCount > 1 ? '  ($_upIndex/$_upCount)' : ''}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -1723,12 +1792,14 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                     ],
                   ),
                 ],
-                // 상한 안내 — [요구 2026-11-04] 25MB → 500MB
+                // 상한 안내 — [요구 2026-11-04] 25MB → 500MB, 여러 개 선택
                 const Padding(
                   padding: EdgeInsets.only(top: 6),
                   child: Text(
-                    '사진·문서·영상 1건당 최대 500MB 까지 올릴 수 있습니다.',
-                    style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
+                    '사진·문서·영상 1건당 최대 500MB, 한 글에 20개까지 올릴 수 있습니다.\n'
+                    '위 버튼을 누르면 여러 개를 한 번에 선택할 수 있습니다.',
+                    style: TextStyle(fontSize: 9.5, height: 1.5,
+                        color: AppColors.textGray),
                   ),
                 ),
                 if (_photos.isNotEmpty) ...[

@@ -78,6 +78,21 @@ class MemorialPost {
   final List<MemorialComment> comments;
 
   factory MemorialPost.fromMap(Map<String, dynamic> m) {
+    // ── 사진 목록 정규화 ([요구 2026-11-04]) ────────────────────────────
+    //  "첨부파일로 올린 자료도 사진, 영상일 경우 사진폴더에 노출시켜줘"
+    //
+    //  서버는 `media`(사진 + 첨부 중 이미지)를 따로 내려준다. 앱은
+    //  `media` 가 있으면 그것을 사진 목록으로 쓰고, 없으면(구버전 서버)
+    //  `photos` 로 폴백한다. 이렇게 하면 '자료 올리기'로 들어온 사진도
+    //  사진 탭에 나타나고, 이미 잘못 저장된 글도 함께 바로잡힌다.
+    final rawPhotos = ((m['media'] as List?) ?? (m['photos'] as List?) ?? const [])
+        .map((e) => '$e')
+        .where((e) => e.isNotEmpty)
+        .toList();
+    // 영상은 사진 탭에 넣지 않는다 — 재생 카드(자료 영역)에서 보여준다.
+    // (서버 media 는 영상도 포함하므로 여기서 걸러 낸다)
+    final photoOnly = rawPhotos.where((u) => !_isVideoUrl(u)).toList();
+
     return MemorialPost(
       id: '${m['id'] ?? ''}',
       name: '${m['name'] ?? ''}',
@@ -86,11 +101,9 @@ class MemorialPost {
       created: '${m['created'] ?? ''}',
       updated: '${m['updated'] ?? ''}',
       hidden: m['hidden'] == true,
+      // 서버가 계산한 kind 를 그대로 믿는다(첨부 실물 기준).
       kind: '${m['kind'] ?? '글'}',
-      photos: (m['photos'] as List? ?? const [])
-          .map((e) => '$e')
-          .where((e) => e.isNotEmpty)
-          .toList(),
+      photos: photoOnly,
       attachments: (m['attachments'] as List? ?? const [])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
@@ -101,6 +114,13 @@ class MemorialPost {
           .map((e) => MemorialComment.fromMap(e.cast<String, dynamic>()))
           .toList(),
     );
+  }
+
+  /// 확장자로 영상 여부 판정 — 서버 VIDEO_EXT 와 동일 목록.
+  static bool _isVideoUrl(String u) {
+    final t = u.toLowerCase().split('?').first;
+    const exts = ['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp'];
+    return exts.any(t.endsWith);
   }
 
   bool get hasPhoto => photos.isNotEmpty;

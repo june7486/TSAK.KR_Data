@@ -44,6 +44,17 @@ Future<List<PickedFileData>> platformPickDataFiles({
   if (accept.isNotEmpty) input.accept = accept;
 
   var done = false;
+  // ── [버그 수정 2026-11-04] "여러 파일 선택이 안 된다" ─────────────────
+  //  종전에는 `focus` 리스너가 **800ms 뒤 무조건 빈 결과로 완료**시켰다.
+  //  그런데 파일을 고른 직후 브라우저는 창으로 포커스를 돌려주므로,
+  //  파일을 읽는 중(특히 큰 파일)에 이 타이머가 먼저 발동해
+  //  `complete(const [])` 를 호출했고, 뒤늦게 읽힌 결과는 버려졌다.
+  //  실측 증상: 작은 파일 1개는 되고, 큰 파일을 여러 개 고르면
+  //  아무 일도 일어나지 않음(= 사용자에게는 "여러 개 선택이 안 된다").
+  //
+  //  수정: 파일을 읽기 **시작했으면** 취소가 아니다 → `picked` 플래그로
+  //  보호하고, 타이머도 800ms → 2500ms 로 늘려 넉넉히 기다린다.
+  var picked = false;
 
   void finish(List<PickedFileData> files) {
     if (done) return;
@@ -52,6 +63,7 @@ Future<List<PickedFileData>> platformPickDataFiles({
   }
 
   input.onchange = (web.Event event) {
+    picked = true; // 이 시점 이후로는 '취소'가 아니다.
     final target = event.target as web.HTMLInputElement?;
     final files = target?.files;
     if (files == null || files.length == 0) {
@@ -59,7 +71,12 @@ Future<List<PickedFileData>> platformPickDataFiles({
       return;
     }
     _readAll(files).then((f) => finish(f)).catchError((Object e) {
-      if (!completer.isCompleted) completer.completeError(e);
+      // 읽기 실패는 '빈 선택'이 아니라 **오류로 알린다**.
+      //  조용히 빈 배열을 돌려주면 화면은 아무 반응이 없어 원인을 못 찾는다.
+      if (!done) {
+        done = true;
+        if (!completer.isCompleted) completer.completeError(e);
+      }
     });
   }.toJS;
 
@@ -68,9 +85,10 @@ Future<List<PickedFileData>> platformPickDataFiles({
   }.toJS;
 
   // 포커스 복귀 = 취소로 판단 (file_picker 와 동일한 안전장치).
+  //  단, 파일을 이미 골랐다면(picked) 취소가 아니다.
   final focusListener = (web.Event _) {
-    Future<void>.delayed(const Duration(milliseconds: 800), () {
-      if (!done && !completer.isCompleted) finish(const []);
+    Future<void>.delayed(const Duration(milliseconds: 2500), () {
+      if (!picked && !done && !completer.isCompleted) finish(const []);
     });
   }.toJS;
   web.window.addEventListener('focus', focusListener);
