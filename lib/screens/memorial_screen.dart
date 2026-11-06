@@ -90,12 +90,19 @@ class _MemPhotoItem {
   const _MemPhotoItem({
     required this.postId,
     required this.url,
+    required this.thumb,
     required this.name,
     required this.number,
   });
 
   final String postId;
+
+  /// 원본 주소 — 크게 볼 때만 쓴다.
   final String url;
+
+  /// 격자용 축소본(480px JPEG). 없으면 [url] 과 같다.
+  final String thumb;
+
   final String name;
   final String number;
 
@@ -241,7 +248,13 @@ class _MemorialScreenState extends State<MemorialScreen> {
       for (final u in p.photos) {
         if (u.isEmpty) continue;
         out.add(
-          _MemPhotoItem(postId: p.id, url: u, name: p.name, number: p.number),
+          _MemPhotoItem(
+            postId: p.id,
+            url: u,
+            thumb: p.thumbOf(u),
+            name: p.name,
+            number: p.number,
+          ),
         );
       }
     }
@@ -400,6 +413,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
               kind: old.kind,
               photos: old.photos,
               media: old.media,
+              mediaItems: old.mediaItems,
               hasOtherFile: old.hasOtherFile,
               attachments: old.attachments,
               likeCount: r.count,
@@ -922,13 +936,15 @@ class _MemorialScreenState extends State<MemorialScreen> {
   ///  (영상 썸네일을 만들려면 서버에서 프레임을 추출해야 하므로, 지금은
   ///   어두운 카드 + ▶ 로 "영상"임을 즉시 알 수 있게 한다.)
   Widget _photoCell(_MemPhotoItem it) {
-    final url = _api.fileUrl(it.url);
+    // 격자에는 **축소본**을 쓴다(원본 4~5MB → 25KB). 크게 볼 때만 원본.
+    final url = _api.fileUrl(it.thumb);
+    final full = _api.fileUrl(it.url);
     if (it.isVideo) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           GestureDetector(
-            onTap: () => _viewVideo(url, it.url),
+            onTap: () => _viewVideo(full, it.url),
             child: AspectRatio(
               aspectRatio: 1,
               child: Container(
@@ -959,7 +975,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GestureDetector(
-          onTap: () => _viewImage(url),
+          onTap: () => _viewImage(full),
           child: AspectRatio(
             aspectRatio: 1,
             child: ClipRRect(
@@ -1205,9 +1221,11 @@ class _MemorialScreenState extends State<MemorialScreen> {
         itemCount: p.photos.length,
         separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (_, i) {
-          final url = _api.fileUrl(p.photos[i]);
+          // 목록의 작은 띠에도 축소본을 쓴다(스크롤이 즉시 반응).
+          final url = _api.fileUrl(p.thumbOf(p.photos[i]));
+          final full = _api.fileUrl(p.photos[i]);
           return GestureDetector(
-            onTap: () => _viewImage(url),
+            onTap: () => _viewImage(full),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(9),
               child: Image.network(

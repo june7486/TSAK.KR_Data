@@ -53,6 +53,7 @@ class MemorialPost {
     required this.kind,
     required this.photos,
     required this.media,
+    required this.mediaItems,
     required this.hasOtherFile,
     required this.attachments,
     required this.likeCount,
@@ -84,6 +85,14 @@ class MemorialPost {
   ///  종전에는 영상을 앨범에서 일부러 제외했다(자료 영역에서 재생). 이제
   ///  한 폴더에서 사진과 영상을 함께 보여준다.
   final List<String> media;
+
+  /// 미디어 메타 — `{url, thumb, isVideo}`. 서버가 짝지어 내려준다.
+  ///
+  /// [요구 2026-11-04] "로딩속도를 빠르게 하기 위해 썸네일 작업 및 최적화
+  ///  작업 항상 자동으로"
+  ///  격자에는 `thumb`(480px JPEG, 15~40KB)을, 크게 볼 때만 `url`(원본)을
+  ///  쓴다. `thumb` 이 비어 있으면(문서 등) 원본으로 폴백한다.
+  final List<Map<String, dynamic>> mediaItems;
 
   /// 미디어가 아닌 첨부(PDF·문서 등)가 있는가 — '자료' 폴더 판정용.
   final bool hasOtherFile;
@@ -122,6 +131,10 @@ class MemorialPost {
       kind: '${m['kind'] ?? '글'}',
       photos: photoOnly,
       media: rawMedia,
+      mediaItems: (m['mediaItems'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList(),
       hasOtherFile: m['hasOtherFile'] == true,
       attachments: (m['attachments'] as List? ?? const [])
           .whereType<Map>()
@@ -147,6 +160,18 @@ class MemorialPost {
 
   /// 이 글의 영상 URL 만 추린 목록.
   List<String> get videos => media.where(isVideoUrl).toList();
+
+  /// 격자용 썸네일 주소. 없으면 원본을 그대로 쓴다.
+  String thumbOf(String url) {
+    for (final it in mediaItems) {
+      if ('${it['url'] ?? ''}' == url) {
+        final t = '${it['thumb'] ?? ''}';
+        if (t.isNotEmpty) return t;
+        break;
+      }
+    }
+    return url;
+  }
 
   /// '사진+영상' 폴더에 넣을 글인가(사진이나 영상이 하나라도 있는가).
   bool get hasMedia => media.isNotEmpty;
