@@ -27,6 +27,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -870,6 +871,202 @@ class _MemorialScreenState extends State<MemorialScreen> {
     );
   }
 
+  // ── 후원계좌 3종 (하단) ─────────────────────────────────────────────
+  //
+  // [요구 2026-11-04]  "추모페이지에 후원계좌 3종 하단에 넣어줘
+  //                     문의: 이승준 (010-6322-7558)"
+  //
+  // ## 계좌를 앱에 적어두지 않은 이유
+  //  같은 내용을 웹(memorial.html)과 앱이 각각 들고 있으면, 중앙회가 계좌를
+  //  바꿀 때 한쪽만 고쳐져 서로 다른 번호가 안내된다. 그래서 **서버 설정
+  //  (config.json 의 donations)** 을 유일한 출처로 삼고, 앱은
+  //  `/api/memorial/accounts` 로 받아 그리기만 한다.
+  //
+  // ## 이 구역이 하는 일
+  //  ① 계좌마다 [이름 · 은행 · 계좌번호] 를 한 줄로 보여주고,
+  //  ② 줄을 누르면 계좌번호가 **클립보드에 복사**된다(입금할 때 오타 방지),
+  //  ③ 예금주를 명시하고,
+  //  ④ 마지막에 문의처(이승준 010-6322-7558)를 **눌러서 전화** 로 붙인다.
+  Widget _donationSection() {
+    Widget row(Map<String, String> a) {
+      final label = (a['label'] ?? '').trim();
+      final bank = (a['bank'] ?? '').trim();
+      final no = (a['account'] ?? '').trim();
+      return InkWell(
+        // 계좌번호가 비어 있으면 복사할 것이 없다 → 눌러도 아무 일 없게.
+        onTap: no.isEmpty
+            ? null
+            : () async {
+                await Clipboard.setData(ClipboardData(text: no));
+                _snack('계좌번호를 복사했습니다 : $no');
+              },
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 7),
+          padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.purple.withValues(alpha: 0.20)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (label.isNotEmpty)
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          no,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.purple,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        if (bank.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: AppColors.bg,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              bank,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textGray,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.copy_rounded, size: 15, color: AppColors.textGray),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 20, 12, 6),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.purple.withValues(alpha: 0.28)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('🌼', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '후원 계좌 안내',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      Text(
+                        '선배님을 기리는 자리에 마음을 보태주시는 분들을 위하여',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          height: 1.4,
+                          color: AppColors.textGray.withValues(alpha: 0.95),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ..._accounts.map(row),
+            if (_holder.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Text(
+                  '예금주 : $_holder',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 6),
+            Text(
+              '입금자명에 성함을 남겨주시면 감사히 기록하겠습니다.',
+              style: TextStyle(
+                fontSize: 9.5,
+                height: 1.5,
+                color: AppColors.textGray.withValues(alpha: 0.95),
+              ),
+            ),
+            const Divider(height: 18),
+            // 문의 — [요구] "문의: 이승준 (010-6322-7558)"
+            //  번호를 눌러 바로 전화할 수 있게 tel: 로 연결한다.
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  '문의 : ',
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textGray),
+                ),
+                InkWell(
+                  onTap: () => launchUrl(Uri.parse('tel:01063227558')),
+                  borderRadius: BorderRadius.circular(4),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 1, vertical: 2),
+                    child: Text(
+                      '이승준 010-6322-7558',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.taegeukBlue,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.taegeukBlue,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _fileRow(Map<String, dynamic> a) {
     final name = '${a['name'] ?? '자료'}';
     final url = _api.fileUrl('${a['url'] ?? ''}');
@@ -960,6 +1157,13 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
   bool _uploading = false;
   String? _err;
 
+  /// 업로드 진행률 (진행 중인 파일의 전송 바이트 / 전체 바이트).
+  ///  500MB 영상은 회선에 따라 몇 분이 걸린다. 아무 표시가 없으면 사용자는
+  ///  앱이 멈춘 줄 알고 창을 닫아 버린다 → 반드시 숫자로 보여준다.
+  int _upSent = 0;
+  int _upTotal = 0;
+  String _upName = '';
+
   @override
   void initState() {
     super.initState();
@@ -1000,8 +1204,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
     final picked = await pickDataFiles(
       allowedExtensions: imagesOnly
           ? const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic']
+          // 500MB 상한에 맞춰 **영상(mp4/mov/webm/m4v/avi/mkv/3gp)** 도 받는다.
+          //  [요구 2026-11-04] "용량 500메가로 늘리고" — 추모 영상이 주 목적.
           : const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'pdf', 'doc',
-              'docx', 'hwp', 'hwpx', 'txt', 'ppt', 'pptx', 'xls', 'xlsx'],
+              'docx', 'hwp', 'hwpx', 'txt', 'ppt', 'pptx', 'xls', 'xlsx',
+              'mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv', '3gp'],
       allowMultiple: true,
       dialogTitle: imagesOnly ? '추억 사진 선택' : '자료 선택',
     );
@@ -1010,15 +1217,32 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
     setState(() => _uploading = true);
     try {
       for (final f in picked) {
-        // 25MB 초과는 서버가 거절한다 — 먼저 알려 헛수고를 막는다.
-        if (f.bytes.length > 25 * 1024 * 1024) {
-          setState(() => _err = '${f.name}: 25MB 를 넘어 올릴 수 없습니다');
+        // 서버 상한은 **500MB** 다(사진·문서·영상 포함).
+        //  [요구 2026-11-04] "용량 500메가로 늘리고"
+        //  서버가 거절할 크기를 먼저 알려 헛수고를 막는다.
+        if (f.bytes.length > 500 * 1024 * 1024) {
+          setState(() => _err = '${f.name}: 500MB 를 넘어 올릴 수 없습니다');
           continue;
+        }
+        if (mounted) {
+          setState(() {
+            _upName = f.name;
+            _upSent = 0;
+            _upTotal = f.bytes.length;
+          });
         }
         final j = await widget.api.upload(
           id: widget.memorialId,
           name: f.name,
           bytes: Uint8List.fromList(f.bytes),
+          // 500MB 는 몇 분이 걸린다 — 멈춘 것처럼 보이지 않게 진행률을 그린다.
+          onProgress: (sent, total) {
+            if (!mounted) return;
+            setState(() {
+              _upSent = sent;
+              _upTotal = total;
+            });
+          },
         );
         final url = '${j['url'] ?? ''}';
         if (url.isEmpty) continue;
@@ -1035,8 +1259,22 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
     } catch (e) {
       setState(() => _err = '$e');
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _upSent = 0;
+          _upTotal = 0;
+          _upName = '';
+        });
+      }
     }
+  }
+
+  /// 바이트 → "12.3" 형태의 MB 문자열 (진행률 표시용).
+  String _mb(int bytes) {
+    if (bytes <= 0) return '0';
+    final m = bytes / (1024 * 1024);
+    return m >= 100 ? m.toStringAsFixed(0) : m.toStringAsFixed(1);
   }
 
   Future<void> _save() async {
@@ -1182,6 +1420,44 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                         ),
                       ),
                   ],
+                ),
+                // 500MB 영상은 몇 분 걸린다 — 진행률을 숫자로 보여준다.
+                if (_uploading && _upTotal > 0) ...[
+                  const SizedBox(height: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _upTotal == 0 ? null : _upSent / _upTotal,
+                          minHeight: 6,
+                          backgroundColor: AppColors.bg,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              AppColors.purple),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_upName.isEmpty ? '업로드' : _upName} · '
+                        '${_mb(_upSent)} / ${_mb(_upTotal)} MB',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                // 상한 안내 — [요구 2026-11-04] 25MB → 500MB
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    '사진·문서·영상 1건당 최대 500MB 까지 올릴 수 있습니다.',
+                    style: TextStyle(fontSize: 9.5, color: AppColors.textGray),
+                  ),
                 ),
                 if (_photos.isNotEmpty) ...[
                   const SizedBox(height: 9),

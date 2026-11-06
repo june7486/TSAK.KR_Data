@@ -174,10 +174,32 @@ void main() {
       expect(s, contains("final url = '\${j['url'] ?? ''}'"));
     });
 
-    test('25MB 초과는 서버에 보내기 전에 먼저 알린다', () {
+    test('500MB 초과는 서버에 보내기 전에 먼저 알린다', () {
+      // [요구 2026-11-04] "용량 500메가로 늘리고" — 상한이 25MB → 500MB.
       final s = stripComments(read(screenPath));
-      expect(s, contains('25 * 1024 * 1024'));
-      expect(s, contains('25MB 를 넘어 올릴 수 없습니다'));
+      expect(s, contains('500 * 1024 * 1024'));
+      expect(s, contains('500MB 를 넘어 올릴 수 없습니다'));
+      // 옛 상한이 남아 있으면 안 된다.
+      expect(s, isNot(contains('25 * 1024 * 1024')));
+    });
+
+    test('업로드 상한을 화면에 안내한다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('최대 500MB'));
+    });
+
+    test('대용량은 스트리밍으로 보낸다 (메모리 폭증 방지)', () {
+      // 500MB 를 http.post(body:) 로 한 덩어리 전송하면 OOM 으로 죽는다.
+      final s = stripComments(read(apiPath));
+      expect(s, contains('http.StreamedRequest('));
+      expect(s, contains('onProgress'));
+      expect(s, isNot(contains('.timeout(const Duration(seconds: 180))')));
+    });
+
+    test('업로드 진행률을 보여준다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('onProgress: (sent, total)'));
+      expect(s, contains('LinearProgressIndicator'));
     });
 
     test('본문/사진/자료가 모두 비면 저장을 막는다', () {
@@ -251,7 +273,15 @@ void main() {
     test('업로드는 쿼리로 파일명을 보낸다(멀티파트 아님, 한글 안전)', () {
       final s = read(apiPath);
       expect(s, contains("queryParameters: {'id': id, 'name': name}"));
-      expect(s, contains("'Content-Type': 'application/octet-stream'"));
+      // 스트리밍 전환(2026-11-04) 이후 헤더는 map 리터럴이 아니라
+      //  req.headers[...] 로 직접 꽂는다 — 두 표기를 모두 허용한다.
+      expect(
+        s,
+        anyOf(
+          contains("req.headers['Content-Type'] = 'application/octet-stream'"),
+          contains("'Content-Type': 'application/octet-stream'"),
+        ),
+      );
       expect(
         s,
         contains('멀티파트를 쓰지 않는 이유'),
@@ -301,6 +331,68 @@ void main() {
       final s = read(htmlPath);
       expect(s, contains('class="back-app" href="/" target="_top"'));
       expect(s, contains('앱으로 돌아가기'));
+    });
+  });
+
+  group('⑩ 후원계좌 3종 · 문의처 (2026-11-04 요구)', () {
+    test('계좌를 앱에 하드코딩하지 않고 서버에서 받아온다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('_api.loadAccounts()'));
+      expect(s, contains('_accounts.isNotEmpty'));
+      expect(s, contains('_donationSection(),'));
+      // 화면 소스에 계좌번호가 박혀 있으면 안 된다(설정 변경이 반영되지 않음).
+      expect(s, isNot(contains('1005-202-281140')));
+      expect(s, isNot(contains('1005-102-281143')));
+      expect(s, isNot(contains('1005-003-886274')));
+    });
+
+    test('계좌 줄을 누르면 번호가 복사된다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('Clipboard.setData(ClipboardData(text: no))'));
+      expect(s, contains("import 'package:flutter/services.dart'"));
+    });
+
+    test('예금주를 보여준다', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains("'예금주 : \$_holder'"));
+    });
+
+    test('문의 : 이승준 010-6322-7558 — 눌러서 전화', () {
+      final s = stripComments(read(screenPath));
+      expect(s, contains('이승준 010-6322-7558'));
+      expect(s, contains("launchUrl(Uri.parse('tel:01063227558'))"));
+    });
+
+    test('서버 공개 엔드포인트가 계좌 3종과 예금주만 내보낸다', () {
+      // 비밀번호·관리자 목록이 새어 나가면 안 된다.
+      final py = read('/home/user/nas_proxy/proxy_server.py');
+      expect(py, contains('/api/memorial/accounts'));
+      expect(py, contains('"holder": str(cfg.get("donationHolder")'));
+      // cfg 통째 반환 금지 — 이 엔드포인트 블록만 잘라 확인한다.
+      final i = py.indexOf('if p == "/api/memorial/accounts"');
+      expect(i, greaterThan(0));
+      final block = py.substring(i, (i + 2600).clamp(0, py.length));
+      expect(block, isNot(contains('appPassword')));
+      expect(block, isNot(contains('masterPassword')));
+      expect(block, isNot(contains('personalPasswords')));
+      expect(block, isNot(contains('"admins"')));
+    });
+
+    test('웹 추모 페이지에도 같은 섹션이 있다', () {
+      final s = read(htmlPath);
+      expect(s, contains('id="donateBox"'));
+      expect(s, contains("/api/memorial/accounts"));
+      expect(s, contains('010-6322-7558'));
+      expect(s, contains('copyAcct'));
+    });
+  });
+
+  group('⑪ 업로드 상한 500MB — 서버도 같은 값', () {
+    test('프록시가 500MB 를 허용한다', () {
+      final py = read('/home/user/nas_proxy/proxy_server.py');
+      expect(py, contains('500 * 1024 * 1024'));
+      expect(py, contains('최대 500MB'));
+      expect(py, isNot(contains('최대 25MB')));
     });
   });
 }

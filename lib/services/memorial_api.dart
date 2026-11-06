@@ -433,24 +433,48 @@ class MemorialApi {
   ///
   /// 멀티파트를 쓰지 않는 이유: 헤더 안의 한글 파일명 인코딩이 브라우저·
   /// 플랫폼마다 달라(RFC 2231/5987) 이름이 깨진다. 쿼리로 분리하면 사라진다.
+  ///
+  /// ## [변경 2026-11-04] `http.post(body:)` → **StreamedRequest**
+  ///  사용자가 상한을 25MB → **500MB** 로 올렸다("용량 500메가로 늘리고").
+  ///  `http.post(body: bytes)` 는 본문 전체를 한 덩어리로 만들어 보내므로
+  ///  브라우저에서는 바이트 사본이 한 벌 더 생기고, 모바일에서는 500MB
+  ///  할당이 실패해 앱이 죽는다(OOM). 이미 행사자료 업로드에서 검증된
+  ///  `StreamedRequest` + 256KB 청크 방식으로 바꿔 메모리 사용을 일정하게
+  ///  유지한다. (서버도 256KB씩 디스크 임시파일로 받는다 — 양쪽 다 스트리밍)
+  ///
+  ///  · 타임아웃 180초 → **20분**: 500MB 를 느린 회선(10Mbps)으로 올리면
+  ///    약 7분이 걸린다. 중간에 끊기면 처음부터 다시 올려야 하므로 넉넉히.
   Future<Map<String, dynamic>> upload({
     String id = defaultMemorialId,
     required String name,
     required Uint8List bytes,
+    void Function(int sent, int total)? onProgress,
   }) async {
     final uri = Uri.parse('${api.baseUrl}/api/memorial/upload').replace(
       queryParameters: {'id': id, 'name': name},
     );
-    final r = await http
-        .post(
-          uri,
-          headers: {
-            ...api.authHeaderMap,
-            'Content-Type': 'application/octet-stream',
-          },
-          body: bytes,
-        )
-        .timeout(const Duration(seconds: 180));
+    final req = http.StreamedRequest('POST', uri);
+    req.headers.addAll(api.authHeaderMap);
+    req.headers['Content-Type'] = 'application/octet-stream';
+    req.headers['Content-Length'] = '${bytes.length}';
+
+    const chunk = 262144; // 256KB
+    var sent = 0;
+    Future<void> pump() async {
+      for (var i = 0; i < bytes.length; i += chunk) {
+        final end = (i + chunk < bytes.length) ? i + chunk : bytes.length;
+        req.sink.add(bytes.sublist(i, end));
+        sent = end;
+        onProgress?.call(sent, bytes.length);
+      }
+      await req.sink.close();
+    }
+
+    // pump() 를 기다리지 않고 동시에 흘려보낸다 — sink 버퍼가 소비되는 대로
+    //  전송되므로 대용량에서도 메모리가 부풀지 않는다.
+    pump();
+    final streamed = await req.send().timeout(const Duration(minutes: 20));
+    final r = await http.Response.fromStream(streamed);
     final j = _decode(r);
     if (j['ok'] != true) {
       throw Exception('${j['error'] ?? '업로드하지 못했습니다'}');
