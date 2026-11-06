@@ -576,6 +576,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
             children: [
               _hero(d),
               _ctaBar(),
+              _videoCard(d),
               _stats(d),
               _tabs(),
               // ── 사진 탭은 **앨범**이다 ────────────────────────────────
@@ -708,7 +709,18 @@ class _MemorialScreenState extends State<MemorialScreen> {
     );
   }
 
-  // ── 상부 참여 버튼 3종 ───────────────────────────────────────────────
+  // ── 상부 참여 버튼 2종 ───────────────────────────────────────────────
+  //
+  // [요구 2026-11-06 / turn66]
+  //   "자료 버튼을 삭제하고 첨부한 파일의 디자인으로 통일하고 /
+  //    사진-> 사진+영상 으로 변경"
+  //
+  //  · '자료' CTA 삭제 — 게시글 작성 시 첨부로만 받는다. 탭에는 남겨 둔다
+  //    (이미 올라온 문서를 골라 보는 길은 필요하다).
+  //  · '사진' → '사진+영상' — 바로 아래 탭 이름과 낱말을 맞춘다. 버튼 이름이
+  //    '사진'인데 폴더에는 영상도 들어 있으면 사용자는 영상이 빠진 줄 안다.
+  //  · 2개가 되었으므로 `Expanded` 가 남는 폭을 정확히 반반 나눈다(줄바꿈 없음).
+  //  · 웹(memorial.html `.cta-bar`)도 같은 구성·같은 문구로 맞췄다.
   Widget _ctaBar() {
     return Container(
       color: Colors.white,
@@ -717,9 +729,7 @@ class _MemorialScreenState extends State<MemorialScreen> {
         children: [
           _cta('✍️', '추모글', '기억 남기기', () => _openEditor()),
           const SizedBox(width: 8),
-          _cta('📷', '사진', '추억 올리기', () => _openEditor(photoFirst: true)),
-          const SizedBox(width: 8),
-          _cta('📎', '자료', '기록 보태기', () => _openEditor(fileFirst: true)),
+          _cta('📷', '사진+영상', '추억 올리기', () => _openEditor(photoFirst: true)),
         ],
       ),
     );
@@ -760,6 +770,33 @@ class _MemorialScreenState extends State<MemorialScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ── 대표 추모영상 (이찬희 총재) — 스트리밍 카드 ────────────────────────
+  //
+  // [요구 2026-11-06 / turn65~66]
+  //   "한국스카우트 이찬희 총재 추모영상을 업로드 후 스트리밍 재생해줘"
+  //   "…총재님 영상 스트리밍만 추가해줘"
+  //
+  // ## 자료 버튼을 지운 자리에 영상만 남긴다
+  //  CTA 2개 아래에 카드 하나. 웹(memorial.html `.vidcard`)과 같은 자리·
+  //  같은 모양이다. 어느 추모관에 어떤 영상이 붙는지는 **서버가 정한다**
+  //  (`MemorialData.video`). 앱에 파일명을 적지 않으므로, NAS 에서 영상을
+  //  교체해도 앱과 웹이 동시에 새 영상을 가리킨다.
+  Widget _videoCard(MemorialData d) {
+    final v = d.video;
+    if (v == null) return const SizedBox.shrink();
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+      child: _MemorialHeroVideoCard(
+        url: _api.fileUrl('${v['url'] ?? ''}'),
+        posterUrl: _api.fileUrl('${v['posterUrl'] ?? ''}'),
+        title: '${v['title'] ?? '추모영상'}',
+        subtitle: '${v['subtitle'] ?? ''}',
+        durationLabel: '${v['durationLabel'] ?? ''}',
       ),
     );
   }
@@ -1534,6 +1571,186 @@ class _MemorialScreenState extends State<MemorialScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  대표 추모영상 카드 — 누르면 그 자리에서 스트리밍 재생
+// ════════════════════════════════════════════════════════════════════════
+//
+// ## 왜 카드 + 다이얼로그인가
+//  목록 최상단에서 영상이 곧바로 자동 로드되면, 추모관을 열기만 해도
+//  37MB 영상의 첫 구간을 받기 시작한다. 조용히 추모글을 읽으러 온
+//  분들께도 트래픽이 나간다. → **포스터만 먼저** 보여주고, 누를 때
+//  재생기를 만든다. 재생기는 기존 `_MemorialVideoTile` 을 그대로 쓴다
+//  (Range 스트리밍·일시정지·되감기·dispose 정리까지 이미 검증된 코드).
+//
+// ## 포스터
+//  영상 오프닝 타이틀 카드(0~5초)를 쓴다. 살아 계신 총재님의 얼굴을
+//  추모 화면 첫 이미지로 크게 걸지 않기 위한 선택이다(얼굴은 8초 이후).
+class _MemorialHeroVideoCard extends StatelessWidget {
+  const _MemorialHeroVideoCard({
+    required this.url,
+    required this.posterUrl,
+    required this.title,
+    required this.subtitle,
+    required this.durationLabel,
+  });
+
+  final String url;
+  final String posterUrl;
+  final String title;
+  final String subtitle;
+  final String durationLabel;
+
+  void _open(BuildContext context) {
+    if (url.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(8),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: _MemorialVideoTile(url: url, name: title),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: () => _open(context),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.purple.withValues(alpha: 0.16)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── 썸네일 (16:9) ──────────────────────────────────────
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (posterUrl.isNotEmpty)
+                        Image.network(
+                          posterUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              Container(color: const Color(0xFF0F1724)),
+                        )
+                      else
+                        Container(color: const Color(0xFF0F1724)),
+                      // ▶ 는 **좌측 하단**. 포스터(타이틀 카드)의 글자가
+                      //  화면 가운데 있어서, 가운데 버튼을 얹으면 제목을 가린다.
+                      const Positioned(
+                        left: 10,
+                        bottom: 10,
+                        child: _HeroPlayButton(),
+                      ),
+                      if (durationLabel.isNotEmpty)
+                        Positioned(
+                          right: 8,
+                          bottom: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              durationLabel,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // ── 제목·설명 ──────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
+                          color: AppColors.purple,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 카드 위의 둥근 재생 버튼(장식 — 실제 탭은 카드 전체가 받는다).
+class _HeroPlayButton extends StatelessWidget {
+  const _HeroPlayButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        shape: BoxShape.circle,
+        boxShadow: const [
+          BoxShadow(color: Colors.black45, blurRadius: 20, offset: Offset(0, 6)),
+        ],
+      ),
+      child: const Icon(
+        Icons.play_arrow_rounded,
+        color: AppColors.purpleDark,
+        size: 28,
       ),
     );
   }

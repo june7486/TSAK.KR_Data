@@ -248,6 +248,29 @@ class MemorialData {
 
   int get likeTotal =>
       posts.fold<int>(0, (a, p) => a + (p.hidden ? 0 : p.likeCount));
+
+  /// 대표 추모영상 — 추모관 상단에 **스트리밍 카드**로 한 번만 노출한다.
+  ///
+  /// [요구 2026-11-06 / turn66]
+  ///   "자료 버튼을 삭제하고 첨부한 파일의 디자인으로 통일하고 /
+  ///    총재님 영상 스트리밍만 추가해줘"
+  ///
+  /// ── 왜 화면이 아니라 서버가 정하는가 ─────────────────────────────────
+  ///  파일명을 앱과 웹에 각각 적으면, NAS 에서 영상을 교체했을 때 한쪽만
+  ///  새 파일을 가리키고 다른 쪽은 옛 파일을 계속 찾는다(404). 그래서
+  ///  `proxy_server.py` 의 `MEM_MEMORIALS[...]["video"]` 한 곳에만 적고,
+  ///  `/api/memorial/get` 이 `url`·`posterUrl` 까지 완성해 내려준다.
+  ///  앱과 웹(memorial.html)은 **같은 응답**을 그대로 쓴다.
+  ///
+  /// 반환: `{file, poster, title, subtitle, duration, durationLabel,
+  ///        url, posterUrl}` 또는 영상이 없으면 null.
+  Map<String, dynamic>? get video {
+    final v = memorial['video'];
+    if (v is! Map) return null;
+    final m = v.map((k, val) => MapEntry('$k', val));
+    if ('${m['url'] ?? ''}'.isEmpty) return null;
+    return m;
+  }
 }
 
 /// 추모관 REST 클라이언트.
