@@ -1866,10 +1866,15 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
     if (picked.isEmpty || !mounted) return;
 
     // ── [요구 2026-11-04] "여러 파일을 선택해서 올릴 수 있도록" ──────────
-    //  ① 이미 담긴 개수 + 새로 고른 개수가 서버 상한(20)을 넘으면
+    //  ① 이미 담긴 개수 + 새로 고른 개수가 서버 상한(50)을 넘으면
     //     **보내기 전에** 알린다(올리고 나서 거절당하면 헛수고).
     //  ② 초과분을 조용히 버리지 않고 몇 개가 빠졌는지 명시한다.
-    const int maxMedia = 20;
+    //
+    // ── [요구 2026-11-06] 상한 20 → **50** ────────────────────────────
+    //  요구(원문): "한번에 올릴 수 있는 사진수 제한을 50장으로 늘릴 것"
+    //  ⚠️ proxy_server.py 의 MEM_MAX_MEDIA 와 **반드시 같은 값**.
+    //     서버가 20 인데 앱이 50 이면 21장째부터 400 으로 거절당한다.
+    const int maxMedia = 50;
     var list = picked.toList();
     final already = _photos.length + _files.length;
     if (already + list.length > maxMedia) {
@@ -2212,7 +2217,7 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                 const Padding(
                   padding: EdgeInsets.only(top: 6),
                   child: Text(
-                    '사진·문서·영상 1건당 최대 500MB, 한 글에 20개까지 올릴 수 있습니다.\n'
+                    '사진·문서·영상 1건당 최대 500MB, 한 글에 50개까지 올릴 수 있습니다.\n'
                     '위 버튼을 누르면 여러 개를 한 번에 선택할 수 있습니다.',
                     style: TextStyle(
                       fontSize: 9.5,
