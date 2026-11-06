@@ -106,10 +106,18 @@ Future<List<PickedFileData>> platformPickDataFiles({
 }
 
 Future<List<PickedFileData>> _readAll(web.FileList files) async {
-  final out = <PickedFileData>[];
+  // ── [같은 버그의 예방 조치 2026-11-04] ──────────────────────────────
+  //  `input.files` 는 **live FileList** 다. 읽는 도중 input 이 DOM 에서
+  //  떨어지거나 value 가 비워지면 length 가 0 이 되어, 남은 파일이
+  //  조용히 사라진다(웹에서 "여러 개 골랐는데 1개만 올라간다"의 원인).
+  //  → 시작 전에 **배열로 스냅샷**을 떠서 그 사본으로 읽는다.
+  final list = <web.File>[];
   for (var i = 0; i < files.length; i++) {
     final web.File? f = files.item(i);
-    if (f == null) continue;
+    if (f != null) list.add(f);
+  }
+  final out = <PickedFileData>[];
+  for (final f in list) {
     final bytes = await _readBytes(f);
     out.add(PickedFileData(name: f.name, bytes: bytes));
   }
