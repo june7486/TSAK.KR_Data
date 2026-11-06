@@ -85,10 +85,11 @@ class MemorialPost {
     //  `media` 가 있으면 그것을 사진 목록으로 쓰고, 없으면(구버전 서버)
     //  `photos` 로 폴백한다. 이렇게 하면 '자료 올리기'로 들어온 사진도
     //  사진 탭에 나타나고, 이미 잘못 저장된 글도 함께 바로잡힌다.
-    final rawPhotos = ((m['media'] as List?) ?? (m['photos'] as List?) ?? const [])
-        .map((e) => '$e')
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final rawPhotos =
+        ((m['media'] as List?) ?? (m['photos'] as List?) ?? const [])
+            .map((e) => '$e')
+            .where((e) => e.isNotEmpty)
+            .toList();
     // 영상은 사진 탭에 넣지 않는다 — 재생 카드(자료 영역)에서 보여준다.
     // (서버 media 는 영상도 포함하므로 여기서 걸러 낸다)
     final photoOnly = rawPhotos.where((u) => !_isVideoUrl(u)).toList();
@@ -171,6 +172,15 @@ class MemorialData {
 
   int countOf(String kind) =>
       posts.where((p) => !p.hidden && p.kind == kind).length;
+
+  /// 사진 **장수** (글 수가 아니다).
+  ///
+  /// [요구 2026-11-04] "사진 폴더를 클릭하면 … 첨부된 사진만 보여 주면 돼"
+  ///  사진 탭이 앨범이 되었으므로 통계도 '글 수'가 아니라 '장수'여야
+  ///  숫자와 화면이 일치한다. 글 하나에 10장을 올렸는데 1로 표시되면
+  ///  사용자는 사진이 사라졌다고 오해한다.
+  int get photoTotal =>
+      posts.where((p) => !p.hidden).fold<int>(0, (a, p) => a + p.photos.length);
 
   int get likeTotal =>
       posts.fold<int>(0, (a, p) => a + (p.hidden ? 0 : p.likeCount));
@@ -380,11 +390,7 @@ class MemorialApi {
         .post(
           uri,
           headers: _headers,
-          body: json.encode({
-            'id': id,
-            'postId': postId,
-            'likeKey': likeKey,
-          }),
+          body: json.encode({'id': id, 'postId': postId, 'likeKey': likeKey}),
         )
         .timeout(const Duration(seconds: 60));
     final j = _decode(r);
@@ -470,9 +476,9 @@ class MemorialApi {
     required Uint8List bytes,
     void Function(int sent, int total)? onProgress,
   }) async {
-    final uri = Uri.parse('${api.baseUrl}/api/memorial/upload').replace(
-      queryParameters: {'id': id, 'name': name},
-    );
+    final uri = Uri.parse(
+      '${api.baseUrl}/api/memorial/upload',
+    ).replace(queryParameters: {'id': id, 'name': name});
     final req = http.StreamedRequest('POST', uri);
     req.headers.addAll(api.authHeaderMap);
     req.headers['Content-Type'] = 'application/octet-stream';

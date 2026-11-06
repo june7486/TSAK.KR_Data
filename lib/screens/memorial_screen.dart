@@ -53,10 +53,22 @@ import '../widgets/tsak_app_bar.dart';
 //  저장된 URL 어느 쪽이든 확장자는 남아 있으므로, 확장자로 한 번 더
 //  확인하는 것이 가장 확실하다.
 const List<String> _kMemImageExt = [
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.heic',
 ];
 const List<String> _kMemVideoExt = [
-  '.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv', '.3gp',
+  '.mp4',
+  '.mov',
+  '.webm',
+  '.m4v',
+  '.avi',
+  '.mkv',
+  '.3gp',
 ];
 
 bool _memExtIn(String s, List<String> exts) {
@@ -66,6 +78,35 @@ bool _memExtIn(String s, List<String> exts) {
 
 bool _memIsImage(String s) => _memExtIn(s, _kMemImageExt);
 bool _memIsVideo(String s) => _memExtIn(s, _kMemVideoExt);
+
+/// 사진 앨범 한 칸 — 사진 1장 + **올린 사람**.
+///
+/// [요구 2026-11-04] "사진 밑에 올린 사람 이름을 써주면 돼 / 만약에 범 Scout
+///  인가자의 경우 이름의 괄호 안에 번호를 써주면 돼"
+///
+///  인가번호는 **있을 때만** 괄호로 붙인다. 비인가자(일반 참배객)가 쓴 글은
+///  번호가 비어 있는데, 그때 `홍길동 ()` 처럼 빈 괄호가 나오면 지저분하다.
+class _MemPhotoItem {
+  const _MemPhotoItem({
+    required this.postId,
+    required this.url,
+    required this.name,
+    required this.number,
+  });
+
+  final String postId;
+  final String url;
+  final String name;
+  final String number;
+
+  /// 화면에 쓸 이름 — `이승준 (415)` / 번호 없으면 `이승준`.
+  String get label {
+    final n = name.trim().isEmpty ? '익명' : name.trim();
+    final num = number.trim();
+    if (num.isEmpty) return n;
+    return '$n ($num)';
+  }
+}
 
 class MemorialScreen extends StatefulWidget {
   const MemorialScreen({
@@ -121,7 +162,8 @@ class _MemorialScreenState extends State<MemorialScreen> {
   Future<void> _ensureLikeKey() async {
     final auth = await _api.recallAuthor();
     // 이름/번호 저장소와 같은 SharedPreferences 를 쓰되 키는 별도.
-    _likeKey = 'lk${auth['name']?.hashCode ?? 0}${DateTime.now().millisecondsSinceEpoch}';
+    _likeKey =
+        'lk${auth['name']?.hashCode ?? 0}${DateTime.now().millisecondsSinceEpoch}';
     if (_likeKey.length > 40) _likeKey = _likeKey.substring(0, 40);
   }
 
@@ -165,6 +207,36 @@ class _MemorialScreenState extends State<MemorialScreen> {
     final all = _data?.posts ?? const <MemorialPost>[];
     if (_filter == '전체') return all;
     return all.where((p) => p.kind == _filter).toList();
+  }
+
+  /// 사진 탭에 뿌릴 **낱장 사진** 목록.
+  ///
+  /// [요구 2026-11-04] "사진 폴더를 클릭하면 사진이 포함된 게시글을 보여 주는
+  ///  것이 아니라 첨부된 사진만 보여 주면 돼 / 그리고 사진 밑에 올린 사람
+  ///  이름을 써주면 돼 / 만약에 범 Scout 인가자의 경우 이름의 괄호 안에
+  ///  번호를 써주면 돼"
+  ///
+  /// ## 왜 글 단위가 아니라 사진 단위인가
+  ///  종전 사진 탭은 `kind == '사진'` 인 **글 카드**를 그대로 나열했다.
+  ///  사진을 보려는 사람에게 긴 추모 문구와 댓글창이 먼저 보여서, 정작
+  ///  찾던 사진은 스크롤을 내려야 나왔다. 앨범처럼 **사진만** 늘어놓는다.
+  ///
+  /// ## 순서
+  ///  최신 글이 위로 오도록 `_data.posts` 순서를 그대로 따르고, 한 글 안의
+  ///  사진은 올린 순서를 유지한다(대표 사진이 먼저).
+  List<_MemPhotoItem> get _photoItems {
+    final all = _data?.posts ?? const <MemorialPost>[];
+    final out = <_MemPhotoItem>[];
+    for (final p in all) {
+      if (p.hidden) continue; // 가린 글의 사진은 앨범에도 넣지 않는다
+      for (final u in p.photos) {
+        if (u.isEmpty) continue;
+        out.add(
+          _MemPhotoItem(postId: p.id, url: u, name: p.name, number: p.number),
+        );
+      }
+    }
+    return out;
   }
 
   // ── 작성/수정 시트 ───────────────────────────────────────────────────
@@ -213,7 +285,9 @@ class _MemorialScreenState extends State<MemorialScreen> {
             ),
             ListTile(
               leading: Icon(
-                p.hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                p.hidden
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
               ),
               title: Text(p.hidden ? '다시 보이기' : '가리기'),
               onTap: () => Navigator.pop(context, p.hidden ? 'unhide' : 'hide'),
@@ -225,8 +299,14 @@ class _MemorialScreenState extends State<MemorialScreen> {
                 onTap: () => Navigator.pop(context, 'move'),
               ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: AppColors.taegeukRed),
-              title: const Text('삭제', style: TextStyle(color: AppColors.taegeukRed)),
+              leading: const Icon(
+                Icons.delete_outline,
+                color: AppColors.taegeukRed,
+              ),
+              title: const Text(
+                '삭제',
+                style: TextStyle(color: AppColors.taegeukRed),
+              ),
               onTap: () => Navigator.pop(context, 'delete'),
             ),
             const SizedBox(height: 8),
@@ -252,9 +332,14 @@ class _MemorialScreenState extends State<MemorialScreen> {
           title: const Text('글을 삭제할까요?'),
           content: const Text('삭제한 글은 되돌릴 수 없습니다.\n가리기로 두면 남겨둘 수 있습니다.'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.taegeukRed,
+              ),
               onPressed: () => Navigator.pop(context, true),
               child: const Text('삭제'),
             ),
@@ -360,8 +445,14 @@ class _MemorialScreenState extends State<MemorialScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('남기기')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('남기기'),
+          ),
         ],
       ),
     );
@@ -388,7 +479,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
   }
 
   void _openWeb() {
-    final base = context.read<AppState>().nas.baseUrl.replaceAll(RegExp(r'/+$'), '');
+    final base = context.read<AppState>().nas.baseUrl.replaceAll(
+      RegExp(r'/+$'),
+      '',
+    );
     launchUrl(
       Uri.parse('$base/memorial?id=${widget.memorialId}'),
       mode: LaunchMode.externalApplication,
@@ -459,20 +553,33 @@ class _MemorialScreenState extends State<MemorialScreen> {
               _ctaBar(),
               _stats(d),
               _tabs(),
-              if (_visible.isEmpty)
+              // ── 사진 탭은 **앨범**이다 ────────────────────────────────
+              //  [요구 2026-11-04] "사진 폴더를 클릭하면 사진이 포함된 게시글을
+              //   보여 주는 것이 아니라 첨부된 사진만 보여 주면 돼"
+              //  글 카드 대신 사진 낱장만 격자로 깐다. 사진을 누르면 크게
+              //  보이고, 아래 이름표를 누르면 그 글로 이동한다.
+              if (_filter == '사진')
+                _photoAlbum()
+              else if (_visible.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 44),
                   child: Column(
                     children: [
-                      const Icon(Icons.local_florist_outlined,
-                          size: 36, color: AppColors.textGray),
+                      const Icon(
+                        Icons.local_florist_outlined,
+                        size: 36,
+                        color: AppColors.textGray,
+                      ),
                       const SizedBox(height: 10),
                       Text(
                         _filter == '전체'
                             ? '아직 남겨진 기억이 없습니다.\n첫 마음을 남겨주세요.'
                             : '이 종류의 기록이 아직 없습니다.',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.textGray, height: 1.6),
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          height: 1.6,
+                        ),
                       ),
                     ],
                   ),
@@ -533,8 +640,11 @@ class _MemorialScreenState extends State<MemorialScreen> {
                       alignment: const Alignment(0, -0.15),
                       color: Colors.white.withValues(alpha: 0.08),
                       colorBlendMode: BlendMode.saturation,
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.person, size: 52, color: Colors.white70),
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.person,
+                        size: 52,
+                        color: Colors.white70,
+                      ),
                     ),
             ),
           ),
@@ -617,7 +727,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
               const SizedBox(height: 1),
               Text(
                 sub,
-                style: const TextStyle(fontSize: 9.5, color: AppColors.textGray),
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  color: AppColors.textGray,
+                ),
               ),
             ],
           ),
@@ -629,27 +742,30 @@ class _MemorialScreenState extends State<MemorialScreen> {
   // ── 통계 4종 ────────────────────────────────────────────────────────
   Widget _stats(MemorialData d) {
     Widget one(String label, int v) => Expanded(
-          child: Column(
-            children: [
-              Text(
-                '$v',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.purple,
-                ),
-              ),
-              Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textGray)),
-            ],
+      child: Column(
+        children: [
+          Text(
+            '$v',
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: AppColors.purple,
+            ),
           ),
-        );
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+          ),
+        ],
+      ),
+    );
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           one('추모글', d.countOf('글')),
-          one('사진', d.countOf('사진')),
+          one('사진', d.photoTotal),
           one('자료', d.countOf('자료')),
           one('공감', d.likeTotal),
         ],
@@ -685,6 +801,161 @@ class _MemorialScreenState extends State<MemorialScreen> {
           );
         }).toList(),
       ),
+    );
+  }
+
+  // ── 사진 앨범 (사진 탭) ─────────────────────────────────────────────
+  //
+  // [요구 2026-11-04]
+  //   "사진 폴더를 클릭하면 사진이 포함된 게시글을 보여 주는 것이 아니라
+  //    첨부된 사진만 보여 주면 돼
+  //    그리고 사진 밑에 올린 사람 이름을 써주면 돼
+  //    만약에 범 Scout 인가자의 경우 이름의 괄호 안에 번호를 써주면 돼"
+  //
+  // ## 왜 글 카드를 그대로 쓰면 안 되는가
+  //  사진을 보러 온 사람에게 긴 추모 문구·공감 버튼·댓글창이 먼저 보이면
+  //  정작 사진은 한참 스크롤해야 나온다. 앨범은 **사진이 주인공**이어야 한다.
+  //
+  // ## 배치
+  //  3열 격자. 사진만 늘어놓고, 각 칸 **아래**에 올린 사람을 작게 적는다
+  //  (`이승준 (415)`). 이름표를 누르면 그 사진이 실린 글로 내려간다 —
+  //  사진을 보고 "누가, 어떤 글에" 올렸는지 궁금해지는 흐름을 막지 않는다.
+  //
+  // ## 성능
+  //  `GridView` 를 `shrinkWrap` 으로 ListView 안에 넣으면 사진이 많을 때
+  //  전부 레이아웃해 버린다. 여기서는 한 줄씩 `Row` 로 직접 깔아 **보이는
+  //  만큼만** 만들고, 이미지는 `cacheWidth` 로 디코딩 크기를 줄인다
+  //  (고해상도 원본 20장을 그대로 디코딩하면 메모리가 급증한다).
+  Widget _photoAlbum() {
+    final items = _photoItems;
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 44),
+        child: Column(
+          children: const [
+            Icon(
+              Icons.photo_library_outlined,
+              size: 36,
+              color: AppColors.textGray,
+            ),
+            SizedBox(height: 10),
+            Text(
+              '아직 올려진 사진이 없습니다.\n사진 올리기로 첫 사진을 남겨주세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textGray, height: 1.6),
+            ),
+          ],
+        ),
+      );
+    }
+
+    const int cols = 3;
+    const double gap = 8;
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += cols) {
+      final slice = items.sublist(i, (i + cols).clamp(0, items.length));
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: gap),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var c = 0; c < cols; c++)
+                Expanded(
+                  child: c < slice.length
+                      ? Padding(
+                          padding: EdgeInsets.only(left: c == 0 ? 0 : gap),
+                          child: _photoCell(slice[c]),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 사진이 몇 장인지 한 줄로 알려준다(숫자와 화면이 어긋나지 않게).
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 2),
+            child: Text(
+              '사진 ${items.length}장',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textGray,
+              ),
+            ),
+          ),
+          ...rows,
+        ],
+      ),
+    );
+  }
+
+  /// 앨범 한 칸 — 사진 1장 + 그 아래 올린 사람.
+  Widget _photoCell(_MemPhotoItem it) {
+    final url = _api.fileUrl(it.url);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          onTap: () => _viewImage(url),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                url,
+                fit: BoxFit.cover,
+                // 원본을 화면 크기로 축소해 디코딩한다(메모리 절약).
+                cacheWidth: 480,
+                loadingBuilder: (_, child, prog) => prog == null
+                    ? child
+                    : Container(
+                        color: AppColors.bg,
+                        child: const Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                errorBuilder: (_, __, ___) => Container(
+                  color: AppColors.bg,
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    size: 22,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // 올린 사람 이름 — `이승준 (415)` / 비인가자는 `홍길동`.
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 1),
+          child: Text(
+            it.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -732,7 +1003,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
                         if (p.number.isNotEmpty) ...[
                           const SizedBox(width: 5),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.tigerGold.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(4),
@@ -751,7 +1025,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
                     ),
                     Text(
                       '${p.created}${p.hidden ? ' · 가려짐' : ''}',
-                      style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.textGray,
+                      ),
                     ),
                   ],
                 ),
@@ -761,7 +1038,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   tooltip: '관리',
                   icon: const Icon(Icons.more_vert, size: 18),
                   onPressed: () => _manage(p),
@@ -785,7 +1065,11 @@ class _MemorialScreenState extends State<MemorialScreen> {
             children: [
               TextButton.icon(
                 onPressed: () => _toggleLike(p),
-                icon: const Icon(Icons.favorite, size: 16, color: Color(0xFFD64550)),
+                icon: const Icon(
+                  Icons.favorite,
+                  size: 16,
+                  color: Color(0xFFD64550),
+                ),
                 label: Text(
                   '공감 ${p.likeCount}',
                   style: const TextStyle(fontSize: 11.5, height: 1),
@@ -831,7 +1115,8 @@ class _MemorialScreenState extends State<MemorialScreen> {
                         ),
                         children: [
                           TextSpan(
-                            text: '${c.name.isEmpty ? '익명' : c.name}'
+                            text:
+                                '${c.name.isEmpty ? '익명' : c.name}'
                                 '${c.number.isNotEmpty ? '(${c.number})' : ''}  ',
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
@@ -860,7 +1145,10 @@ class _MemorialScreenState extends State<MemorialScreen> {
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(5),
+      ),
       child: Text(
         kind,
         style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: fg),
@@ -890,8 +1178,11 @@ class _MemorialScreenState extends State<MemorialScreen> {
                   width: 104,
                   height: 104,
                   color: AppColors.bg,
-                  child: const Icon(Icons.broken_image_outlined,
-                      size: 22, color: AppColors.textGray),
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    size: 22,
+                    color: AppColors.textGray,
+                  ),
                 ),
               ),
             ),
@@ -970,7 +1261,9 @@ class _MemorialScreenState extends State<MemorialScreen> {
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1.5),
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.bg,
                               borderRadius: BorderRadius.circular(5),
@@ -991,7 +1284,11 @@ class _MemorialScreenState extends State<MemorialScreen> {
                 ),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.copy_rounded, size: 15, color: AppColors.textGray),
+              const Icon(
+                Icons.copy_rounded,
+                size: 15,
+                color: AppColors.textGray,
+              ),
             ],
           ),
         ),
@@ -1240,8 +1537,11 @@ class _MemorialVideoTileState extends State<_MemorialVideoTile> {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             children: [
-              const Icon(Icons.videocam_off_outlined,
-                  size: 15, color: AppColors.textGray),
+              const Icon(
+                Icons.videocam_off_outlined,
+                size: 15,
+                color: AppColors.textGray,
+              ),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
@@ -1431,9 +1731,13 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
       });
     }
     if (widget.photoFirst) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _pick(imagesOnly: true));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _pick(imagesOnly: true),
+      );
     } else if (widget.fileFirst) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _pick(imagesOnly: false));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _pick(imagesOnly: false),
+      );
     }
   }
 
@@ -1452,9 +1756,31 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
           ? const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic']
           // 500MB 상한에 맞춰 **영상(mp4/mov/webm/m4v/avi/mkv/3gp)** 도 받는다.
           //  [요구 2026-11-04] "용량 500메가로 늘리고" — 추모 영상이 주 목적.
-          : const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'pdf', 'doc',
-              'docx', 'hwp', 'hwpx', 'txt', 'ppt', 'pptx', 'xls', 'xlsx',
-              'mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv', '3gp'],
+          : const [
+              'jpg',
+              'jpeg',
+              'png',
+              'gif',
+              'webp',
+              'heic',
+              'pdf',
+              'doc',
+              'docx',
+              'hwp',
+              'hwpx',
+              'txt',
+              'ppt',
+              'pptx',
+              'xls',
+              'xlsx',
+              'mp4',
+              'mov',
+              'webm',
+              'm4v',
+              'avi',
+              'mkv',
+              '3gp',
+            ],
       allowMultiple: true,
       dialogTitle: imagesOnly ? '추억 사진 선택' : '자료 선택',
     );
@@ -1475,9 +1801,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
       }
       final dropped = list.length - room;
       list = list.sublist(0, room);
-      setState(() => _err =
-          '$maxMedia개까지만 담을 수 있어 $dropped개는 제외했습니다'
-          ' (이미 $already개 있음)');
+      setState(
+        () => _err =
+            '$maxMedia개까지만 담을 수 있어 $dropped개는 제외했습니다'
+            ' (이미 $already개 있음)',
+      );
     }
 
     setState(() => _uploading = true);
@@ -1715,17 +2043,25 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                 Row(
                   children: [
                     OutlinedButton.icon(
-                      onPressed: _uploading ? null : () => _pick(imagesOnly: true),
+                      onPressed: _uploading
+                          ? null
+                          : () => _pick(imagesOnly: true),
                       icon: const Icon(Icons.photo_camera_outlined, size: 17),
                       label: const Text('사진', style: TextStyle(fontSize: 12)),
-                      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ),
                     const SizedBox(width: 7),
                     OutlinedButton.icon(
-                      onPressed: _uploading ? null : () => _pick(imagesOnly: false),
+                      onPressed: _uploading
+                          ? null
+                          : () => _pick(imagesOnly: false),
                       icon: const Icon(Icons.attach_file, size: 17),
                       label: const Text('자료', style: TextStyle(fontSize: 12)),
-                      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ),
                     const SizedBox(width: 9),
                     if (_uploading)
@@ -1758,7 +2094,8 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                           minHeight: 6,
                           backgroundColor: AppColors.bg,
                           valueColor: const AlwaysStoppedAnimation<Color>(
-                              AppColors.purple),
+                            AppColors.purple,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1798,8 +2135,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                   child: Text(
                     '사진·문서·영상 1건당 최대 500MB, 한 글에 20개까지 올릴 수 있습니다.\n'
                     '위 버튼을 누르면 여러 개를 한 번에 선택할 수 있습니다.',
-                    style: TextStyle(fontSize: 9.5, height: 1.5,
-                        color: AppColors.textGray),
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      height: 1.5,
+                      color: AppColors.textGray,
+                    ),
                   ),
                 ),
                 if (_photos.isNotEmpty) ...[
@@ -1838,7 +2178,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                                   color: Colors.black54,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.close, size: 11, color: Colors.white),
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 11,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),
@@ -1852,8 +2196,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                   ...List.generate(_files.length, (i) {
                     return Row(
                       children: [
-                        const Icon(Icons.description_outlined,
-                            size: 14, color: AppColors.textGray),
+                        const Icon(
+                          Icons.description_outlined,
+                          size: 14,
+                          color: AppColors.textGray,
+                        ),
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
@@ -1866,7 +2213,11 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                           onTap: () => setState(() => _files.removeAt(i)),
                           child: const Padding(
                             padding: EdgeInsets.all(4),
-                            child: Icon(Icons.close, size: 13, color: AppColors.textGray),
+                            child: Icon(
+                              Icons.close,
+                              size: 13,
+                              color: AppColors.textGray,
+                            ),
                           ),
                         ),
                       ],
@@ -1877,7 +2228,10 @@ class _MemorialEditorSheetState extends State<_MemorialEditorSheet> {
                   const SizedBox(height: 10),
                   Text(
                     _err!,
-                    style: const TextStyle(fontSize: 11.5, color: AppColors.taegeukRed),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.taegeukRed,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 14),
