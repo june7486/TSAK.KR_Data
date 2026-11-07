@@ -165,6 +165,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
 
+  /// ── [버그 수정 turn70] 행사 화면 로딩이 '영원한 스피너'로 갇히던 문제 ──
+  ///
+  /// 요구: "후원금을 입력하거나 참가비를 입력 할 때 이렇게 로딩이 에러가 나는
+  ///       문제가 생김"
+  ///
+  /// 원인 3가지가 겹쳐 있었다.
+  ///   ① `_load()` 전체에 **마감시간(deadline)** 이 없었다.
+  ///      개별 API 재시도(2회) × `_fetchAll()` 재시도(2회) × 재무 재시도(2회)
+  ///      가 곱해져 **최악 4분 가까이** 스피너가 돌 수 있었다.
+  ///   ② `try/finally` 가 없어서, 중간 `if (!mounted) return;` 로 빠져나가면
+  ///      `_loading` 이 **영구히 true** 로 남았다(스크린샷의 그 상태).
+  ///      뒤이어 시작된 `_load()` 가 성공해도 **먼저 끝난 쪽이 false 로 덮어써**
+  ///      화면이 빈 채로 굳는 경쟁조건(race)도 있었다.
+  ///   ③ 저장 후 `await _load()` 가 **5개 API 를 전부** 다시 읽었다.
+  ///      후원금 한 줄 넣는데 행사정보·기획서·사진·접근이력까지 재조회.
+  ///
+  /// 해결: 진행 토큰으로 '최신 호출만' 상태를 쓸 수 있게 하고,
+  ///      전체 마감시간을 두고, finally 에서 **무조건** 스피너를 내린다.
+  int _loadSeq = 0;
+
+  /// 로딩 전체 마감시간. 이 시간을 넘으면 '부분 성공'으로 화면을 먼저 띄운다.
+  static const Duration _kLoadDeadline = Duration(seconds: 22);
+
   /// 사용자 정의 '메뉴추가' 탭 목록 [{name, note}] (PDF page9 최종 결정).
   List<Map<String, dynamic>> _customTabs = [];
 
@@ -238,7 +261,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///  (요구) "직접 업로드 한 폴더가 보여지지 않는 버그" — PC·NAS 탐색기에서
   ///   직접 만든 폴더/사진은 서버 캐시에 없으므로 사용자가 새로고침할 수 있어야 한다.
   Future<void> _load({bool fresh = false}) async {
-    setState(() => _loading = true);
+    // 최신 호출 판별 토큰 — 먼저 시작된 로딩이 늦게 끝나면서
+    //  최신 상태를 덮어쓰는 경쟁조건을 막는다.
+    final int mySeq = ++_loadSeq;
+    bool isStale() => mySeq != _loadSeq;
+    if (mounted) setState(() => _loading = true);
     try {
       // [요구] 행사 폴더 열기 속도 개선 — 5개 API(행사·기획서·미디어·접근·재무)를
       //   순차(약 5×RTT)로 기다리던 것을 '동시 병렬' 호출로 바꾼다.
@@ -258,14 +285,34 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         _nas.eventAccessMap(widget.year, widget.title),
       ]);
 
-      List<Object> results;
+      // ── [버그 수정 turn70] 재시도 사슬에 **전체 마감시간**을 씌운다 ─────
+      //  종전: 개별 API 가 30~60초씩 물고 늘어지고, 그 위에 여기서 한 번 더
+      //        재시도해서 최악 2분을 넘겼다. 사용자에게는 '멈춘 화면'이었다.
+      //  이제: 1차 시도 + (짧은 백오프 후) 2차 시도까지만, 총 22초 상한.
+      List<Object>? results;
+      Object? firstErr;
       try {
-        results = await _fetchAll();
-      } catch (_) {
-        // 짧게 쉬고 1회 재시도(순간적인 연결 폭주/끊김 흡수).
-        await Future.delayed(const Duration(milliseconds: 700));
-        results = await _fetchAll();
+        results = await _fetchAll().timeout(
+          _kLoadDeadline,
+          onTimeout: () => throw TimeoutException('행사 정보 응답 지연'),
+        );
+      } catch (err) {
+        firstErr = err;
+        // 1회만 재시도. 백오프는 1.2초(모바일 회선 순간 끊김 흡수용).
+        await Future.delayed(const Duration(milliseconds: 1200));
+        if (isStale()) return;
+        try {
+          results = await _fetchAll().timeout(
+            _kLoadDeadline,
+            onTimeout: () => throw TimeoutException('행사 정보 응답 지연(재시도)'),
+          );
+        } catch (err2) {
+          // 두 번 다 실패 → 여기서 포기하고 사용자에게 정직하게 알린다.
+          //  (스피너를 계속 돌리는 것보다 '다시 시도' 버튼이 낫다)
+          throw Exception('$err2 (1차: $firstErr)');
+        }
       }
+      if (isStale()) return;
       final e = results[0] as Map<String, dynamic>;
       final plan = results[1] as List<Map<String, dynamic>>;
       var media = results[2] as List<Map<String, dynamic>>;
@@ -344,10 +391,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             financeError = '재무 자료 열람 권한이 없습니다. 다시 로그인해 주세요.';
           }
         } catch (err) {
-          // 일시 오류는 1회만 더 시도(무한 대기 방지).
+          // ── [버그 수정 turn70] 재무 재시도를 12초로 상한 ──────────────
+          //  종전: 재시도가 30초를 또 기다렸다. 참가비·후원금 화면에서
+          //        저장할 때마다 이 30초가 반복돼 '로딩 에러'로 보였다.
           try {
             await Future.delayed(const Duration(milliseconds: 500));
-            fin = await tryFin();
+            fin = await tryFin().timeout(
+              const Duration(seconds: 12),
+              onTimeout: () => throw TimeoutException('재무 응답 지연'),
+            );
           } catch (err2) {
             financeError = '재무 자료를 불러오지 못했습니다. ($err2)';
           }
@@ -368,13 +420,15 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         final hasFolder = media.any((m) => m['isdir'] == true);
         if (!hasMediaHere && hasFolder) {
           try {
-            final deepList = await _nas.eventFiles(
-              widget.year,
-              widget.title,
-              'media',
-              fresh: fresh,
-              deep: true,
-            );
+            final deepList = await _nas
+                .eventFiles(
+                  widget.year,
+                  widget.title,
+                  'media',
+                  fresh: fresh,
+                  deep: true,
+                )
+                .timeout(const Duration(seconds: 18));
             if (deepList.isNotEmpty) {
               media = deepList;
               mediaDeep = true;
@@ -402,7 +456,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       // [버그 수정] 재무가 '진짜로 비었는지'와 '못 불러왔는지'를 구분해 둔다.
       //  화면은 이 값으로 "0건" 대신 "불러오기 실패 + 다시 시도"를 보여준다.
       _financeError = financeError;
-      if (!mounted) return;
+      // 오래된 호출이면 여기서 중단 — 최신 호출의 결과를 덮어쓰지 않는다.
+      if (isStale() || !mounted) return;
       // (요구 #14) 스텝 여부는 위에서 이미 판정했다(isStaff) — 전체 게시판 노출.
       final fullView = canSeeFinance;
       setState(() {
@@ -471,13 +526,87 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         }
       }
     } catch (err) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('불러오기 실패: $err')));
+      // ── [버그 수정 turn70] 실패해도 **반드시** 스피너를 내린다 ────────────
+      //  종전에는 중간 `if (!mounted) return;` 로 빠져나가면 `_loading` 이
+      //  true 인 채로 남아 스피너가 영원히 돌았다(사용자 스크린샷 그 상태).
+      if (!isStale() && mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('불러오기 실패: $err'),
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(label: '다시 시도', onPressed: () => _load()),
+          ),
+        );
+      }
+    } finally {
+      // 성공·실패·중도반환 **모든 경로**에서 스피너와 전역 오버레이를 정리한다.
+      if (!isStale() && mounted) {
+        if (_loading) setState(() => _loading = false);
+        hideBusy();
+      }
     }
-    if (mounted) hideBusy();
+  }
+
+  /// ── [신규 turn70] **재무만** 다시 읽는다 — 저장 직후 전용 ─────────────
+  ///
+  /// 요구: "후원금을 입력하거나 참가비를 입력 할 때 이렇게 로딩이 에러가 남"
+  ///
+  /// 종전에는 저장 후 `await _load()` 로 **5개 API 를 전부** 다시 읽었다.
+  ///   event/get + event/files(plan) + event/files(media)
+  ///   + event/access + event/finance  (+ 폴더만 있으면 deep media 까지)
+  /// 후원금 **한 줄** 넣는 데 이 전부를 다시 받아야 했고, 그 중 하나만
+  /// 느려도 화면 전체가 스피너로 덮였다.
+  ///
+  /// 이제 저장 직후에는 재무(fees/expenses)만 갱신한다.
+  ///  · 행사정보·기획서·사진·접근이력은 **저장으로 바뀌지 않는다.**
+  ///  · 실패해도 화면을 스피너로 덮지 않고 `_financeError` 배너로만 알린다.
+  ///    (참가자·사진 탭은 그대로 쓸 수 있어야 하므로)
+  Future<void> _loadFinanceOnly() async {
+    if (!mounted) return;
+    final int mySeq = ++_loadSeq;   // 진행 중인 전체 로딩을 무효화
+    bool isStale() => mySeq != _loadSeq;
+
+    Future<Map<String, dynamic>> tryFin() =>
+        _nas.eventFinance(widget.year, widget.title);
+
+    Map<String, dynamic> fin = const {};
+    String? financeError;
+    try {
+      fin = await tryFin().timeout(
+        const Duration(seconds: 12),
+        onTimeout: () => throw TimeoutException('재무 응답 지연'),
+      );
+    } on NasAuthException {
+      final appState = context.read<AppState>();
+      if (!mounted) return;
+      final recovered = await appState.ensureServerSession(needAdmin: true);
+      if (recovered) {
+        try {
+          fin = await tryFin().timeout(const Duration(seconds: 12));
+        } catch (err) {
+          financeError = '재무 자료를 불러오지 못했습니다. ($err)';
+        }
+      } else {
+        financeError = '재무 자료 열람 권한이 없습니다. 다시 로그인해 주세요.';
+      }
+    } catch (err) {
+      // 저장은 이미 성공했다. 화면을 덮지 않고 배너로만 알린다.
+      financeError = '재무 자료를 다시 읽지 못했습니다. ($err)';
+    }
+    if (isStale() || !mounted) return;
+
+    setState(() {
+      if (financeError == null) {
+        _fees = ((fin['fees'] as List?) ?? [])
+            .map((x) => (x as Map).cast<String, dynamic>())
+            .toList();
+        _expenses = ((fin['expenses'] as List?) ?? [])
+            .map((x) => (x as Map).cast<String, dynamic>())
+            .toList();
+      }
+      _financeError = financeError;
+    });
   }
 
   @override
@@ -5813,7 +5942,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         data,
       );
     }
-    await _load();
+    // [버그 수정 turn70] 전체 재조회(5개 API) → 재무만 재조회.
+    //  저장으로 바뀌지 않는 행사정보·기획서·사진·접근이력을 다시 받지 않는다.
+    await _loadFinanceOnly();
   }
 
   /// 재무 행 삭제 — **화면 종류(kind)를 서버 종류로 변환해서** 보낸다.

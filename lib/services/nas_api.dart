@@ -1465,10 +1465,16 @@ class NasApi {
 
   /// 행사 상세
   Future<Map<String, dynamic>> eventGet(String year, String title) async {
+    // ── [버그 수정 turn70] 명시적 타임아웃 ──────────────────────────────
+    //  종전에는 이 호출이 `_robustJson` 기본값(30초)을 쓰고, 내부에서
+    //  한 번 더 재시도해 **최악 60초** 동안 스피너가 돌았다.
+    //  행사 화면 `_load()` 는 이 호출을 포함한 4개를 동시에 기다리므로,
+    //  이 하나만 느려도 화면 전체가 멈춘 것처럼 보였다.
     final j = await _robustJson(
       _uri(
         '/api/event/get?year=${Uri.encodeComponent(year)}&title=${Uri.encodeComponent(title)}',
       ),
+      timeout: const Duration(seconds: 12),
     );
     return (j['event'] as Map?)?.cast<String, dynamic>() ?? {};
   }
@@ -2163,11 +2169,15 @@ class NasApi {
 
   /// 행사 재무(참가비/후원금/지출) 조회
   Future<Map<String, dynamic>> eventFinance(String year, String title) async {
+    // ── [버그 수정 turn70] 명시적 타임아웃 ──────────────────────────────
+    //  참가비·후원금 저장 직후 이 호출이 다시 돌아간다. 종전에는 기본 30초였고
+    //  실패 시 한 번 더 시도해 **최악 60초** 였다.
     return _robustJson(
       _uri(
         '/api/event/finance?year=${Uri.encodeComponent(year)}'
         '&title=${Uri.encodeComponent(title)}',
       ),
+      timeout: const Duration(seconds: 12),
     );
   }
 
@@ -2274,6 +2284,7 @@ class NasApi {
         '/api/event/access?year=${Uri.encodeComponent(year)}'
         '&title=${Uri.encodeComponent(title)}',
       ),
+      timeout: const Duration(seconds: 12),
     );
     return (j['access'] as Map?)?.cast<String, dynamic>() ?? {};
   }
