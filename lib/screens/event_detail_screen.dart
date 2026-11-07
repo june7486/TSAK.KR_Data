@@ -612,6 +612,97 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     });
   }
 
+  /// 참가자만 **가볍게** 다시 읽는다 (전체 `_load()` 대체).
+  ///
+  /// ── [속도 turn73] 왜 필요한가 ──────────────────────────────────────────
+  ///  종전에는 참가자를 저장할 때마다 `_load()` 를 불렀다. 그 함수는
+  ///  **5개 API**(행사·기획서·사진목록·접근기록·재무)를 다시 받고
+  ///  **전체 화면 스피너**를 켰다. 참가자 한 명 추가에 화면 전체가
+  ///  몇 초씩 하얗게 되고, 그 사이 탭 위치·스크롤이 흔들렸다.
+  ///
+  ///  이제는 `/api/event/get` **한 개**만 받아 참가자·스탭·탭 구성만
+  ///  갱신한다. 사진·기획서·재무는 그대로 둔다(바뀌지 않았으므로).
+  ///
+  ///  ## 화면을 덮지 않는 이유
+  ///   저장은 **이미 성공**했다. 재조회가 느리거나 실패해도 사용자가
+  ///   "등록 실패"로 오해하면 안 되므로, `_loading` 은 절대 건드리지 않고
+  ///   실패 시에는 스낵바 한 줄로만 알린다.
+  Future<void> _loadAttendeesOnly() async {
+    if (!mounted) return;
+    final int mySeq = ++_loadSeq;   // 진행 중인 전체 로딩을 무효화
+    bool isStale() => mySeq != _loadSeq;
+    Map<String, dynamic>? e;
+    try {
+      e = await _nas
+          .eventGet(widget.year, widget.title)
+          .timeout(const Duration(seconds: 12));
+    } on NasAuthException {
+      // 세션 등급 불일치 → 승격 후 1회만 재시도.
+      final appState = context.read<AppState>();
+      if (!mounted) return;
+      final recovered = await appState.ensureServerSession(needAdmin: true);
+      if (recovered) {
+        try {
+          e = await _nas
+              .eventGet(widget.year, widget.title)
+              .timeout(const Duration(seconds: 12));
+        } catch (_) {}
+      }
+    } catch (_) {
+      // 아래에서 조용히 무시(저장 자체는 성공했다).
+    }
+    if (isStale() || !mounted) return;
+    if (e == null) {
+      _snack('명단은 저장되었습니다. 화면 갱신만 실패했습니다.');
+      return;
+    }
+    final atts = ((e['attendees'] as List?) ?? [])
+        .map((x) => (x as Map).cast<String, dynamic>())
+        .toList();
+    final staffList = ((e['staff'] as List?) ?? [])
+        .map((x) => (x as Map).cast<String, dynamic>())
+        .toList();
+    // 스탭 여부 재판정(참가자 저장으로 스탭이 바뀔 수 있다).
+    final appState = context.read<AppState>();
+    final myIdent = appState.who.replaceAll(RegExp(r'[^0-9]'), '');
+    bool isStaff = false;
+    if (myIdent.isNotEmpty) {
+      for (final a in staffList) {
+        final id = '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
+            .replaceAll(RegExp(r'[^0-9]'), '');
+        if (id.isNotEmpty && id == myIdent) {
+          isStaff = true;
+          break;
+        }
+      }
+    }
+    final customTabs = ((e['customTabs'] as List?) ?? [])
+        .map((x) => (x as Map).cast<String, dynamic>())
+        .toList();
+    setState(() {
+      _event = e!;
+      _attendees = atts;
+      _staff = staffList;
+      _isStaff = isStaff;
+      _customTabs = customTabs;
+      // 탭 개수는 그대로여야 정상이지만, 사용자정의 탭이 바뀐 경우를 대비해
+      //  전체 로딩과 **같은 규칙**으로 길이를 맞춘다(인덱스는 보존).
+      final bool fullView = widget.canManage || isStaff;
+      final int len =
+          (fullView ? 8 : 3) + (_isMasterView ? 1 : 0) + (fullView ? customTabs.length : 0);
+      final prevIndex = _tab?.index ?? 0;
+      if (_tab == null || _tab!.length != len) {
+        _tab?.dispose();
+        _tab = TabController(
+          length: len,
+          vsync: this,
+          initialIndex: prevIndex.clamp(0, len - 1),
+        );
+      }
+      if (!fullView) _tab!.index = 0;
+    });
+  }
+
   @override
   void dispose() {
     _tab?.dispose();
@@ -3323,7 +3414,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   Future<void> _saveAttendees() async {
     await _nas.eventSetAttendees(widget.year, widget.title, _attendees);
-    await _load();
+    // [속도 turn73] 전체 재조회(5개 API + 전체 스피너) → 참가자만 재조회.
+    await _loadAttendeesOnly();
   }
 
   /// 참가자 명단 저장 + **개인정보카드 연동 결과**까지 받아온다.
@@ -3337,7 +3429,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       widget.title,
       _attendees,
     );
-    await _load();
+    // [속도 turn73] 참가자만 재조회(전체 로딩 스피너 없음).
+    await _loadAttendeesOnly();
     return res;
   }
 
@@ -3592,7 +3685,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ),
         ),
       );
-      await _load();
+      // [속도 turn73] 참가자만 재조회.
+      await _loadAttendeesOnly();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
