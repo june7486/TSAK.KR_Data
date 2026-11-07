@@ -267,6 +267,74 @@ class EventSettlement {
   int get feeTotal =>
       fees.where((e) => e.category == '참가비').fold(0, (s, e) => s + e.amount);
 
+  // ── [버그 수정 turn 79] 결산서 '참가비 N명 납부' 의 N 이 틀리던 문제 ──
+  //
+  // ## 실제 증상 (사용자 스크린샷)
+  //   2026 범2호 노경하선배 추모행사 결산서
+  //     수입 / 참가비  600,000원   **9명 납부**   ← 실제 참가자는 6명
+  //     수입 / 후원금  300,000원   3건
+  //     상세 내역                         9건
+  //   10만원 × 6명 = 60만원이므로 정답은 **6명**이다.
+  //
+  // ## 원인
+  //   `settlement_layout.dart` 의 payers 계산이
+  //       settlement.fees.where((e) => e.amount > 0).length
+  //   였다. `fees` 에는 **참가비·후원금·기타수입이 모두** 들어 있으므로
+  //   참가비 6건 + 후원금 3건 = 9 가 된 것이다.
+  //   (`feeTotal` 은 `category == '참가비'` 만 합산하므로 금액 60만원은
+  //    정확했다. 금액과 인원수가 **서로 다른 기준**으로 계산된 것이 원인)
+  //
+  // ## 수정
+  //   금액과 인원이 **같은 조건**을 쓰도록 아래 getter 를 두고
+  //   `feeTotal` 과 한 쌍으로 쓴다. 후원금이 몇 건이든 인원수에 영향이 없다.
+  //
+  // ## 후원금의 귀속
+  //   후원금은 아래 [cashDonationTotal] 로 **'후원금' 항목**에만 집계되고
+  //   참가비에는 절대 더해지지 않는다(`feeTotal` 은 '참가비'만 본다).
+  //   수입 합계는 `참가비 + 후원금 + 기타수입` 이므로 이중 계상도 없다.
+
+  /// 참가비를 낸 **행 수** (= 결제 건수).
+  int get feePayCount =>
+      fees.where((e) => e.category == '참가비' && e.amount > 0).length;
+
+  /// 참가비를 낸 **사람 수** — 이름/인가번호/행ID 로 중복을 제거한다.
+  ///
+  /// 한 사람이 두 번 납부했거나(분할 납부·가족 대납) 같은 이름이 둘일 때
+  /// 결제 건수를 그대로 '명'으로 표시하면 인원이 부풀려진다.
+  /// 식별자가 전혀 없으면 행 수로 되돌아간다(집계가 0이 되는 것 방지).
+  int get feePayerCount {
+    final ids = <String>{};
+    var noIdent = 0;
+    for (final e in fees) {
+      if (e.category != '참가비' || e.amount <= 0) continue;
+      final key = _payerKey(e);
+      if (key.isEmpty) {
+        noIdent++;
+      } else {
+        ids.add(key);
+      }
+    }
+    final n = ids.length + noIdent;
+    return n == 0 ? feePayCount : n;
+  }
+
+  /// 참가비 납부자의 **1인당 금액**. 참가비가 없으면 0.
+  ///  10만원 × 6명처럼 금액이 일정하면 결산서에 근거를 함께 보여 준다.
+  int get feePerPayer {
+    final n = feePayerCount;
+    if (n <= 0) return 0;
+    final t = feeTotal;
+    return t % n == 0 ? t ~/ n : 0;   // 나누어떨어질 때만 의미가 있다
+  }
+
+  static String _payerKey(EventMoneyRow e) {
+    final no = e.number.replaceAll(RegExp(r'[^0-9]'), '');
+    if (no.isNotEmpty) return 'n:$no';
+    final nm = e.name.trim();
+    if (nm.isNotEmpty) return 'm:$nm';
+    return '';
+  }
+
   /// 후원금 합계 — **현금 수입**. (요구: "후원금만 수입으로 잡을 것")
   int get donationFund => cashDonationTotal;
 

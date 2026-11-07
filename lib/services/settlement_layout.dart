@@ -748,7 +748,25 @@ class SettlementBuilder {
     );
 
     // ── ② 수입 (참가비 + 후원금만 수입) ───────────────────────────────
-    final payers = settlement.fees.where((e) => e.amount > 0).length;
+    //
+    // [버그 수정 turn 79] '참가비 N명 납부' 의 N 이 **9** 로 나오던 문제.
+    //
+    // ## 실제 증상 (사용자 스크린샷)
+    //   참가비 600,000원 / **9명 납부** — 실제 참가자는 6명 (10만원 × 6)
+    //   후원금 300,000원 / 3건
+    //   상세 내역 9건
+    //
+    // ## 원인
+    //   종전: fees.where((e) => e.amount > 0).length
+    //   `fees` 에는 참가비·후원금·기타수입이 **모두** 들어 있어서
+    //   참가비 6 + 후원금 3 = 9 가 됐다. 금액(feeTotal)은 '참가비'만
+    //   합산했기 때문에 **금액과 인원이 다른 기준**으로 계산되어
+    //   "60만원인데 9명" 이라는 모순이 생겼다.
+    //
+    // ## 수정
+    //   인원수도 금액과 **같은 조건**('참가비' 행)으로 센다.
+    //   후원금은 아래 '후원금' 줄에만 집계되고 참가비에 섞이지 않는다.
+    final payers = settlement.feePayerCount;
     final cashDonors = settlement.fees
         .where(
           (e) =>
@@ -756,8 +774,15 @@ class SettlementBuilder {
               e.amount > 0,
         )
         .length;
+    // 금액이 인원으로 나누어떨어지면 근거를 함께 보여 준다(예: 10만원 × 6명).
+    final per = settlement.feePerPayer;
+    final feeNote = payers == 0
+        ? '납부자 없음'
+        : per > 0
+        ? '$payers명 납부 · 1인 ${won(per)}'
+        : '$payers명 납부';
     final incRows = <List<String>>[
-      ['참가비', won(settlement.feeTotal), payers == 0 ? '납부자 없음' : '$payers명 납부'],
+      ['참가비', won(settlement.feeTotal), feeNote],
       [
         '후원금',
         won(settlement.cashDonationTotal),
@@ -784,21 +809,47 @@ class SettlementBuilder {
       ],
     );
 
-    // ── ③ 후원 내역 (현물·서비스, 수입 미포함) ────────────────────────
+    // ── ③ 후원 내역 (후원금 + 현물·서비스) ─────────────────────────────
+    //
+    // [요구 turn 79] "참가비와 후원금은 **구분**해 주고, 후원금은 **후원 항목**에
+    //  넣어서 금액을 집계하도록 할 것"
+    //
+    // ## 종전 문제
+    //   이 블록은 `sponsorRows`(현물·서비스)만 그렸다. 그래서 후원금
+    //   (현금) 300,000원은 위 '수입' 블록에만 나오고 **후원 내역에는
+    //   보이지 않았다**. 후원 전체를 한눈에 볼 수 없었다.
+    //
+    // ## 수정
+    //   이 블록 첫 줄에 **후원금(현금)** 을 넣어 후원 전체를 집계한다.
+    //   · 후원금은 **수입에도 포함**되므로 그 줄에 '수입 포함' 이라고 명시한다.
+    //   · 현물은 종전대로 '수입 미포함'.
+    //   · `수입 합계`는 `feeTotal + cashDonationTotal + otherIncome` 로
+    //     따로 계산되므로 **이중 계상되지 않는다**(이 블록은 표시 전용).
+    //   · '후원 합계' 줄은 현물 기준임을 라벨에 분명히 적는다.
     final donations = DonationSummary(fees.map(DonationRow.fromMap).toList());
+    final cashRows = donations.cashRows;
+    final cashCash = donations.cashTotal;
+
     final spRows = <List<String>>[];
-    if (donations.sponsorRows.isEmpty) {
-      spRows.add(['후원 내역', '없음', '']);
-    } else {
-      for (final e in donations.byKind.entries) {
-        if (e.value.$1 == 0 && e.value.$2 == 0) continue;
-        final cnt = donations.sponsorRows
-            .where((r) => r.kind.label == e.key)
-            .length;
-        spRows.add([e.key, _cashValue(e.value.$1, e.value.$2, won), '$cnt건']);
-      }
+    // ① 후원금(현금) — 수입에 포함되는 유일한 후원 항목.
+    if (cashRows.isNotEmpty || cashCash > 0) {
       spRows.add([
-        '후원 합계',
+        DonationKind.cash.label,
+        won(cashCash),
+        '${cashRows.length}건 · 수입 포함',
+      ]);
+    }
+    // ② 현물·서비스 후원 — 수입 미포함.
+    for (final e in donations.byKind.entries) {
+      if (e.value.$1 == 0 && e.value.$2 == 0) continue;
+      final cnt = donations.sponsorRows
+          .where((r) => r.kind.label == e.key)
+          .length;
+      spRows.add([e.key, _cashValue(e.value.$1, e.value.$2, won), '$cnt건']);
+    }
+    if (donations.sponsorRows.isNotEmpty) {
+      spRows.add([
+        '현물 후원 합계',
         _cashValue(
           donations.sponsorCashTotal,
           donations.sponsorValueTotal,
@@ -807,14 +858,34 @@ class SettlementBuilder {
         '${donations.sponsorCount}건 · 수입 미포함',
       ]);
     }
+    if (spRows.isEmpty) {
+      spRows.add(['후원 내역', '없음', '']);
+    }
+    final hasSponsor = cashRows.isNotEmpty || donations.sponsorRows.isNotEmpty;
     out[SettlementBlock.sponsor] = SettlementBlockData(
       block: SettlementBlock.sponsor,
       rows: spRows,
-      note:
-          '후원 ${donations.sponsorCount}건 · 참고 합계 '
-          '${_cashValue(donations.sponsorCashTotal, donations.sponsorValueTotal, won)}',
-      empty: donations.sponsorRows.isEmpty,
+      // 현물이 없으면 '현물 0건 — 참고 합계 -' 같은 꼬리를 붙이지 않는다.
+      note: hasSponsor
+          ? <String>[
+              '후원금 ${cashRows.length}건(수입 포함)',
+              if (donations.sponsorCount > 0)
+                '현물 ${donations.sponsorCount}건(수입 미포함) — 참고 합계 '
+                    '${_cashValue(donations.sponsorCashTotal, donations.sponsorValueTotal, won)}',
+            ].join(' · ')
+          : '후원 내역이 없습니다',
+      empty: !hasSponsor,
       details: [
+        // 후원금(현금) 먼저 — 참가비와 섞이지 않게 분리해서 보여 준다.
+        for (final r in cashRows)
+          [
+            r.name.isEmpty ? '(후원자 미입력)' : r.name,
+            DonationKind.cash.label,
+            if (r.item.isNotEmpty) r.item,
+            r.displayAmount,
+            if (memo) _memoPart(r.memo),
+          ].where((e) => e.isNotEmpty).join(' · '),
+        // 현물·서비스 후원.
         for (final r in donations.sponsorRows)
           [
             r.name.isEmpty ? '(후원자 미입력)' : r.name,
