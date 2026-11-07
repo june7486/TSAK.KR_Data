@@ -223,6 +223,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///  사진이 `00 사진+동영상` 처럼 한 겹 안쪽 폴더에 있어도 한 번에 보인다.
   bool _mediaDeep = false;
 
+  /// 폴더 이동 중 표시 — 화면 전체가 아니라 **목록 영역에만** 표시한다.
+  bool _mediaBusy = false;
+
   /// (요구) "앱 상단 제목과 나스 폴더명이 다릅니다" — 불일치 시 실제 폴더명.
   ///  {app: 앱 제목, nas: 나스 실제 폴더명} / null 이면 일치.
   Map<String, dynamic>? _folderAlias;
@@ -4283,6 +4286,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final files = visible.where((m) => m['isdir'] != true).toList();
     return Column(
       children: [
+        // ── [turn71] 폴더 이동 중에는 **목록 위에 얇은 진행 막대만** 띄운다.
+        //   화면 전체를 스피너로 덮으면 탭 바만 남고 본문이 사라져
+        //   '앱이 멈췄다'고 느껴진다(사용자 신고 증상).
+        if (_mediaBusy)
+          const LinearProgressIndicator(minHeight: 2.5),
         // ---- 브레드크럼 (하위폴더 탐색) ----
         if (_mediaPath.isNotEmpty)
           Container(
@@ -4292,14 +4300,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               height: 30,
               child: Row(
                 children: [
-                  _crumb(
-                    '사진+동영상',
-                    () => setState(() {
+                  _crumb('사진+동영상', () {
+                    // [turn71] 전체 재조회 없이 미디어만 갱신.
+                    setState(() {
                       _mediaPath = [];
                       _mediaSel.clear();
-                      _load();
-                    }),
-                  ),
+                    });
+                    _loadMediaOnly();
+                  }),
                   for (var i = 0; i < _mediaPath.length; i++) ...[
                     const Icon(
                       Icons.chevron_right,
@@ -4310,11 +4318,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       _mediaPath[i],
                       i == _mediaPath.length - 1
                           ? null
-                          : () => setState(() {
-                              _mediaPath = _mediaPath.sublist(0, i + 1);
-                              _mediaSel.clear();
-                              _load();
-                            }),
+                          : () {
+                              // [turn71] 전체 재조회 없이 미디어만 갱신.
+                              setState(() {
+                                _mediaPath = _mediaPath.sublist(0, i + 1);
+                                _mediaSel.clear();
+                              });
+                              _loadMediaOnly();
+                            },
                     ),
                   ],
                 ],
@@ -4692,13 +4703,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       sub: _mediaSub,
     );
     if (!done) _snack('폴더 생성 실패');
-    await _load();
+    // [turn71] 폴더 생성도 목록만 갱신하면 충분하다.
+    await _loadMediaOnly();
   }
 
   /// 나스에서 **강제로 다시 읽기** — PC·탐색기에서 직접 올린 파일 반영.
+  ///
+  /// [turn71] 종전에는 `_load(fresh: true)` 로 **화면 전체**를 다시 읽어
+  ///  스피너로 덮였다. 사진 목록만 새로 받으면 충분하다.
   Future<void> _refreshMedia() async {
     _snack('나스에서 다시 불러오는 중…');
-    await _load(fresh: true);
+    await _loadMediaOnly(fresh: true);
     if (!mounted) return;
     final n = _mediaHere.where((m) => m['isdir'] != true).length;
     final d = _mediaHere.where((m) => m['isdir'] == true).length;
@@ -4715,7 +4730,84 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     //  단, '자동 진입'은 사용자가 누른 게 아니므로 안내 오버레이를 띄우지
     //  않는다(앱이 저절로 멈춘 것처럼 보이는 것을 막는다).
     if (!auto) _showMediaBusy('사진 폴더를 여는 중입니다');
-    _load();
+    // ── [버그 수정 turn71] 폴더 이동은 '미디어만' 다시 읽는다 ────────────
+    //  요구: "행사 폴더에서 자꾸 로딩이 걸림"
+    //
+    //  종전에는 폴더를 열 때마다 `_load()` 를 통째로 불렀다 →
+    //  event/get + files(plan) + files(media) + access + finance
+    //  5개 API 를 다시 받고 **화면 전체가 스피너로 덮였다**(탭 바만 남고
+    //  본문이 사라짐). 폴더를 들락날락할 때마다 이 비용을 반복했다.
+    //
+    //  폴더 이동으로 바뀌는 것은 `_media` 하나뿐이므로 그것만 갱신한다.
+    _loadMediaOnly();
+  }
+
+  /// ── [신규 turn71] **미디어 목록만** 다시 읽는다 — 폴더 이동 전용 ──────
+  ///
+  /// 화면 전체 스피너(`_loading`)를 **건드리지 않는다.** 탭 바·다른 탭 내용이
+  /// 그대로 살아 있고, 폴더 목록 영역에만 진행 표시가 뜬다.
+  /// [fresh] true 면 서버 파일목록 캐시를 버리고 NAS 에서 다시 읽는다.
+  ///   기본(false)은 캐시 사용 → 폴더 이동이 **즉시** 끝난다.
+  ///   '나스에서 다시 불러오기'만 fresh: true 를 쓴다.
+  Future<void> _loadMediaOnly({bool fresh = false}) async {
+    if (!mounted) return;
+    final int mySeq = ++_loadSeq;
+    bool isStale() => mySeq != _loadSeq;
+    final String sub = _mediaSub;
+    setState(() => _mediaBusy = true);
+    try {
+      var list = await _nas
+          .eventFiles(
+            widget.year,
+            widget.title,
+            'media',
+            sub: sub,
+            fresh: fresh,
+          )
+          .timeout(const Duration(seconds: 20));
+      if (isStale() || !mounted) return;
+
+      // 폴더만 있고 사진이 없으면 재귀 평탄화(기존 _load 와 동일 규칙).
+      var deep = false;
+      final hasMediaHere = list.any((m) {
+        final k = '${m['kind'] ?? ''}';
+        return m['isdir'] != true && (k == 'image' || k == 'video');
+      });
+      final hasFolder = list.any((m) => m['isdir'] == true);
+      if (!hasMediaHere && hasFolder) {
+        try {
+          final deepList = await _nas
+              .eventFiles(
+                widget.year,
+                widget.title,
+                'media',
+                fresh: fresh,
+                deep: true,
+              )
+              .timeout(const Duration(seconds: 18));
+          if (deepList.isNotEmpty) {
+            list = deepList;
+            deep = true;
+          }
+        } catch (_) {}
+      }
+      if (isStale() || !mounted) return;
+
+      _folderAlias = _nas.lastFolderAlias;
+      setState(() {
+        _media = list;
+        _mediaHere = list;
+        _mediaDeep = deep;
+      });
+    } catch (err) {
+      if (isStale() || !mounted) return;
+      _snack('폴더를 열지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      if (!isStale() && mounted) {
+        setState(() => _mediaBusy = false);
+        hideBusy();
+      }
+    }
   }
 
   /// 사진/동영상 목록 로딩 중 공통 오버레이(멈춤 아님 안내).
