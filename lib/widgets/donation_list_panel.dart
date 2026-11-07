@@ -89,6 +89,37 @@ class _DonationListPanelState extends State<DonationListPanel> {
 
   List<DonationRow> get _cash => _donations.where((e) => e.isIncome).toList();
 
+  /// 목록에 그릴 **모든 후원 행** — 후원금(현금) + 현물후원 전부.
+  ///
+  /// ── [버그 수정 turn74] "후원금이 목록에 안 보이던 문제" ────────────────
+  ///  ## 증상 (사용자 스크린숏 + 지적: "후원금 리스트에는 해당행사만 취합할것")
+  ///   요약줄에는  `후원금(수입) 5건 1,400,009원`  이 정상으로 나오는데,
+  ///   그 아래 목록은 **"현물후원 내역이 없습니다"** 였다.
+  ///   사용자 눈에는 "요약은 있는데 목록이 없네 = 어디서 긁어온 거지?"
+  ///   로 보였고, 그래서 "해당 행사만 취합하라"는 지적이 나왔다.
+  ///
+  ///  ## 원인
+  ///   종전 이 getter 는 `isSponsor`(= **현물만**) 로 걸렀고,
+  ///   `build()` 가 `_bodyList(sponsors)` 만 호출했다.
+  ///   → 후원금(현금) 행은 **요약줄에서만 세어지고 목록에는 한 번도
+  ///     그려지지 않았다.** (데이터는 멀쩡했고 화면이 빠뜨린 것)
+  ///
+  ///  ## 수정
+  ///   목록 데이터를 **현금 + 현물 전체**로 넓힌다. 그러면
+  ///   · 후원자별 보기 → 후원금 낸 사람도 카드로 나온다
+  ///   · 내역별 보기  → '후원금(현금)' 묶음이 생긴다
+  ///   · 연도별 보기  → 연도 집계에 현금이 포함된다
+  ///   그리고 **모든 행은 이미 이 행사의 `/api/event/finance` 응답에서만**
+  ///   오므로(서버가 `_ev_id(year,title)` 로 그 행사 문서만 읽는다)
+  ///   다른 행사 자료가 섞일 경로는 없다.
+  List<DonationRow> get _listRows {
+    final y = _yearFilter;
+    if (y == null) return _donations;
+    return _donations.where((e) => _donationYearOf(e) == y).toList();
+  }
+
+  /// **현물후원만** — 요약줄 두 번째 줄(수입 미포함) 전용.
+  ///  ⚠️ 목록에는 쓰지 않는다. 목록은 [_listRows] (현금+현물 전체).
   List<DonationRow> get _sponsors {
     final all = _donations.where((e) => e.isSponsor).toList();
     final y = _yearFilter;
@@ -98,8 +129,9 @@ class _DonationListPanelState extends State<DonationListPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final cash = _cash;
-    final sponsors = _sponsors;
+    final cash = _cash;          // 요약줄용 (후원금만 = 수입)
+    final sponsors = _sponsors;  // 요약줄용 (현물만 = 수입 미포함)
+    final listRows = _listRows;  // 목록용 = 현금 + 현물 전체
 
     // ── [버그 수정 2026-10-26] 목록이 통째로 사라지던 문제 ────────────────
     //
@@ -129,7 +161,7 @@ class _DonationListPanelState extends State<DonationListPanel> {
           padding: EdgeInsets.symmetric(vertical: 28),
           child: Center(
             child: Text(
-              '현물후원 내역이 없습니다',
+              '이 행사에 등록된 후원 내역이 없습니다',
               style: TextStyle(color: AppColors.textGray),
             ),
           ),
@@ -142,12 +174,12 @@ class _DonationListPanelState extends State<DonationListPanel> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 header,
-                if (sponsors.isEmpty)
+                if (listRows.isEmpty)
                   empty
                 else
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: _bodyList(sponsors, scrollable: false),
+                    child: _bodyList(listRows, scrollable: false),
                   ),
               ],
             ),
@@ -159,9 +191,9 @@ class _DonationListPanelState extends State<DonationListPanel> {
           children: [
             header,
             Expanded(
-              child: sponsors.isEmpty
+              child: listRows.isEmpty
                   ? empty
-                  : _bodyList(sponsors),
+                  : _bodyList(listRows),
             ),
           ],
         );
@@ -759,7 +791,11 @@ class _DonationListPanelState extends State<DonationListPanel> {
   // --------------------------------------------------------------- 내역별
   /// 내역(분류)별 목록. [scrollable] 의미는 [_sponsorList] 와 같다.
   Widget _kindList(List<DonationRow> sponsors, {bool scrollable = true}) {
+    // ── [버그 수정 turn74] 후원금(현금) 분류가 빠져 있었다 ──────────────
+    //  이 목록에서 cash 를 빼놓으면 '내역별 보기'에서 후원금이 사라진다.
+    //  (요약줄에만 있고 목록에는 없는 상태 — 사용자가 혼란스러워한 지점)
     final order = <DonationKind>[
+      DonationKind.cash,
       DonationKind.meal,
       DonationKind.goods,
       DonationKind.vehicle,
