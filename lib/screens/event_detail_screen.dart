@@ -5550,7 +5550,108 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   };
 
   /// 재무 로드 실패 안내 — "0건"과 명확히 구분하기 위한 배너.
+  /// 재무 로딩 실패 배너.
+  ///
+  /// ── [버그 수정 turn73] 문구가 '자료가 날아간 것'처럼 읽히던 문제 ────────
+  ///  사용자 화면에는 이렇게 보였다:
+  ///    "재무 자료를 불러오지 못했습니다 … ※ 자료가 삭제된 것이 아닙니다"
+  ///  — 데이터는 **멀쩡히 있고** 세션만 만료된 경우에도 이 문구가 떠서
+  ///  사용자가 깜짝 놀랐다(스크린숏 제보).
+  ///  이제 401/세션 사유를 먼저 판별해 **"로그인이 만료되었습니다"** 로
+  ///  안내하고, 버튼 한 번으로 세션을 갱신한 뒤 다시 읽는다.
+  /// '로그인 갱신' 버튼 — 세션을 다시 발급받고 재무만 다시 읽는다.
+  ///
+  /// 전체 `_load()` 를 부르지 않는 이유: 사용자가 보고 있던 탭·스크롤을
+  ///  유지하기 위해서다. 필요한 것(재무)만 다시 받는다.
+  Future<void> _renewSessionAndReload() async {
+    try {
+      final appState = context.read<AppState>();
+      final ok = await appState.ensureServerSession(needAdmin: true);
+      if (!mounted) return;
+      if (!ok) {
+        _snack('로그인을 갱신하지 못했습니다. 다시 로그인해 주세요.');
+        return;
+      }
+      await _loadFinanceOnly();
+    } catch (e) {
+      if (!mounted) return;
+      _snack('로그인 갱신 실패: $e');
+    }
+  }
+
   Widget _financeErrorBanner(String err) {
+    final low = err.toLowerCase();
+    final bool isAuth = err.contains('401') ||
+        err.contains('로그인') ||
+        err.contains('세션') ||
+        low.contains('unauthorized');
+    if (isAuth) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(10, 10, 10, 2),
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF6E5),
+          border: Border.all(color: const Color(0xFFE0A030)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.lock_clock, size: 18, color: Color(0xFFB57A12)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '로그인이 만료되었습니다',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF8A5A00),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    // ⚠️ 핵심: 자료는 그대로 있다는 사실을 **먼저** 알린다.
+                    '자료는 그대로 있습니다. 아래 버튼을 누르면 '
+                    '로그인을 갱신하고 바로 다시 불러옵니다.',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: AppColors.textGray,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    err,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      height: 1.3,
+                      color: Color(0xFF9A9A9A),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            TextButton(
+              onPressed: _renewSessionAndReload,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF8A5A00),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 34),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                '로그인 갱신',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 10, 10, 2),
       padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
