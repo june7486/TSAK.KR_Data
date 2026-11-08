@@ -639,7 +639,15 @@ class _LockScreenState extends State<LockScreen> {
                           );
                         },
                       ),
-                      // 바로가기: 홈페이지 / 네이버 카페 (클릭 시 새창 열기)
+                      // 바로가기 — 3분할: 홈페이지 / 네이버 카페 / 故 노경하 추모관
+                      //  [요구 2026-11-04] "노경하 추모관 위치를 메인화면 하단을
+                      //   3분할 하여 Homepage/Naver Cafe/노경하추모관 이렇게
+                      //   구분하고 바로가기 링크를 넣어줘"
+                      //
+                      //  추모관은 외부 사이트가 아니라 **같은 웹서버의
+                      //  `memorial.html`** 이다(빌드 시 web_custom_backup 에서 복사).
+                      //  그래서 현재 접속 origin 을 붙여 열어야 하며,
+                      //  네이티브(APK)에는 memorial.html 이 없으므로 NAS 주소를 쓴다.
                       Row(
                         children: [
                           Expanded(
@@ -650,13 +658,22 @@ class _LockScreenState extends State<LockScreen> {
                               color: AppColors.taegeukBlue,
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: _shortcutBtn(
                               icon: Icons.forum_outlined,
                               label: 'Naver Cafe',
                               url: 'https://cafe.naver.com/tigerscoutkr',
                               color: AppColors.scoutGreen,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _shortcutBtn(
+                              icon: Icons.local_florist,
+                              label: '추모관',
+                              url: _memorialUrl,
+                              color: AppColors.purple,
                             ),
                           ),
                         ],
@@ -732,6 +749,22 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   /// 하단 바로가기 버튼 — 클릭 시 새창으로 외부 링크를 연다.
+  /// 故 노경하 선배님 추모관 주소.
+  ///
+  /// 추모관은 외부 도메인이 아니라 **이 앱과 같은 웹서버의 `memorial.html`** 이다.
+  /// (빌드 마지막 단계에서 `web_custom_backup/memorial.html` 을 `build/web` 으로 복사)
+  ///
+  /// · 웹  : 현재 접속 origin + `/memorial.html`  (novita·gabia 어디서 열어도 맞다)
+  /// · 네이티브(APK) : `memorial.html` 이 앱에 없으므로 NAS 공개 주소로 연다.
+  static const String _memorialFallbackUrl =
+      'https://5071-i0wgdg3il1ohzxyvietj8-0e616f0a.sandbox.novita.ai/memorial.html';
+
+  String get _memorialUrl {
+    final origin = webOrigin();
+    if (origin.trim().isEmpty) return _memorialFallbackUrl;
+    return '${origin.replaceAll(RegExp(r'/+$'), '')}/memorial.html';
+  }
+
   Widget _shortcutBtn({
     required IconData icon,
     required String label,
@@ -744,13 +777,18 @@ class _LockScreenState extends State<LockScreen> {
         foregroundColor: Colors.white,
         side: BorderSide(color: Colors.white.withValues(alpha: 0.5)),
         backgroundColor: color.withValues(alpha: 0.28),
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        // 3분할로 좁아졌으므로 좌우 여백을 줄여 글자가 잘리지 않게 한다.
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        minimumSize: const Size(0, 40),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      icon: Icon(icon, size: 16),
+      icon: Icon(icon, size: 15),
       label: Text(
         label,
-        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
       ),
     );
   }

@@ -1145,7 +1145,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          // 개인 접근 하단 바로가기 — 홈페이지 / 네이버 카페 (새창)
+          // 개인 접근 하단 바로가기 — 3분할: 홈페이지 / 네이버 카페 / 故 노경하 추모관
+          //  [요구 2026-11-04] 메인화면 하단을 3분할로 구분해 바로가기 링크를 넣어달라.
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Row(
@@ -1158,7 +1159,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.taegeukBlue,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: _homeShortcutButton(
                     icon: Icons.forum_outlined,
@@ -1167,12 +1168,36 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.scoutGreen,
                   ),
                 ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _homeShortcutButton(
+                    icon: Icons.local_florist,
+                    label: '추모관',
+                    // 추모관 = 같은 웹서버의 memorial.html (웹) / NAS 주소 (네이티브)
+                    url: _memorialShortcutUrl,
+                    color: AppColors.purple,
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// 故 노경하 선배님 추모관 주소 (하단 3분할 바로가기용).
+  ///
+  /// 추모관은 외부 도메인이 아니라 **이 앱과 같은 웹서버의 `memorial.html`** 이다.
+  /// 웹에서는 현재 origin 을 붙여 열고, 네이티브(APK)에는 그 파일이 없으므로
+  /// NAS 공개 주소로 연다.
+  static const String _memorialFallbackUrl =
+      'https://5071-i0wgdg3il1ohzxyvietj8-0e616f0a.sandbox.novita.ai/memorial.html';
+
+  String get _memorialShortcutUrl {
+    final origin = webOrigin();
+    if (origin.trim().isEmpty) return _memorialFallbackUrl;
+    return '${origin.replaceAll(RegExp(r'/+$'), '')}/memorial.html';
   }
 
   /// 홈 화면 하단 바로가기 버튼 (새창으로 외부 링크)
@@ -1187,14 +1212,19 @@ class _HomeScreenState extends State<HomeScreen> {
         foregroundColor: color,
         side: BorderSide(color: color.withValues(alpha: 0.5)),
         backgroundColor: color.withValues(alpha: 0.08),
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        // 3분할로 좁아졌으므로 좌우 여백을 줄인다.
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        minimumSize: const Size(0, 40),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       ),
       onPressed: () => openUrlInNewTab(url),
-      icon: Icon(icon, size: 16),
+      icon: Icon(icon, size: 15),
       label: Text(
         label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
       ),
     );
   }
