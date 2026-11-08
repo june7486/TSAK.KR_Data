@@ -427,47 +427,54 @@ class _MemorialScreenState extends State<MemorialScreen> {
     }
   }
 
+  /// 댓글 남기기 — **이름·인가번호를 요구하지 않는다**.
+  ///
+  /// [구조 변경 2026-11-08 / turn56]
+  ///  지적: *"댓글 등록하려고 하니 글쓴이 정보가 뜸 /
+  ///         댓글은 글쓴이 글에 대한 다른 사람의 피드백임 구조 변경 필요함"*
+  ///
+  ///  ## 종전 구조의 문제
+  ///   글쓰기와 댓글이 같은 '신원 입력'을 요구했다. 댓글 대화상자에
+  ///   이름·인가번호 칸이 나와서, 한 줄 인사를 남기려는 사람에게
+  ///   명부 등록 같은 부담을 지웠다. 심지어 웹은 이름이 없으면
+  ///   **글쓰기 시트를 통째로** 띄웠다.
+  ///
+  ///  ## 새 구조 — '글 = 신원 필요 / 댓글 = 신원 불필요'
+  ///   · 글쓰기 : 종전대로 이름(필수)·인가번호(선택). 추모글의 주인은
+  ///              남겨야 하므로 유지한다.
+  ///   · 댓글   : **본문 한 칸만** 받는다. 이름은 기기에 적어둔 값이 있으면
+  ///              조용히 그대로 쓰고, 없으면 '익명'으로 보낸다.
+  ///              (서버는 name 이 빈 값이어도 받고, 목록은 '익명'으로 그린다)
+  ///  → 댓글 등록이 '탭 → 입력 → 등록' 세 동작으로 끝난다.
   Future<void> _addComment(MemorialPost p) async {
     final auth = await _api.recallAuthor();
     if (!mounted) return;
     final ctrl = TextEditingController();
-    final nm = TextEditingController(text: auth['name'] ?? '');
-    final no = TextEditingController(text: auth['number'] ?? '');
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('댓글 남기기'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: nm,
-                      decoration: const InputDecoration(labelText: '이름'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 96,
-                    child: TextField(
-                      controller: no,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: '인가번호'),
-                    ),
-                  ),
-                ],
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: ctrl,
+              maxLines: 4,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '따뜻한 말 한마디 남겨주세요'),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '댓글은 글에 대한 짧은 인사말입니다.\n'
+              '이름은 따로 묻지 않으며, 비우면 익명으로 남습니다.',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.45,
+                color: AppColors.textGray,
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: ctrl,
-                maxLines: 4,
-                decoration: const InputDecoration(hintText: '따뜻한 말 한마디 남겨주세요'),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -483,15 +490,24 @@ class _MemorialScreenState extends State<MemorialScreen> {
     );
     if (ok != true) return;
     if (ctrl.text.trim().isEmpty) return;
+    // 이름은 기억해 둔 값이 있으면 그대로, 없으면 '익명'.
+    final nmSaved = (auth['name'] ?? '').trim();
+    final nm = nmSaved.isEmpty ? '익명' : nmSaved;
+    // 익명 댓글에는 인가번호를 붙이지 않는다(남의 번호로 오인될 수 있음).
+    final no = nm == '익명' ? '' : (auth['number'] ?? '').trim();
     try {
       await _api.addComment(
         id: widget.memorialId,
         postId: p.id,
-        name: nm.text.trim(),
-        number: no.text.trim(),
+        name: nm,
+        number: no,
         body: ctrl.text.trim(),
       );
-      await _api.rememberAuthor(nm.text.trim(), no.text.trim());
+      // 기억해 둔 이름은 **덮어쓰지 않는다**. 익명으로 남긴 댓글이
+      //  다음 글쓰기의 기본 이름을 '익명'으로 바꿔버리면 안 되기 때문.
+      if (nmSaved.isNotEmpty) {
+        await _api.rememberAuthor(nmSaved, no);
+      }
       await _load();
     } catch (e) {
       _snack('$e');
