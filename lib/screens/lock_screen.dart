@@ -671,7 +671,7 @@ class _LockScreenState extends State<LockScreen> {
                           Expanded(
                             child: _shortcutBtn(
                               icon: Icons.local_florist,
-                              label: '추모관',
+                              label: '노경하 추모관',
                               url: _memorialUrl,
                               color: AppColors.purple,
                             ),
@@ -765,30 +765,48 @@ class _LockScreenState extends State<LockScreen> {
     return '${origin.replaceAll(RegExp(r'/+$'), '')}/memorial.html';
   }
 
+  /// 하단 바로가기 버튼.
+  ///
+  /// [요구 2026-11-04] "추모관 → 노경하 추모관" 으로 이름이 길어졌다.
+  /// 3분할 폭(좁은 휴대폰에서 약 95px)에 '노경하 추모관'(6자) + 아이콘을
+  /// **가로로** 넣으면 반드시 잘린다. 그래서 아이콘을 **위**로 올려
+  /// 세로 2줄로 쌓고, 글자는 한 줄에 다 들어가게 했다.
+  /// (OutlinedButton.icon 은 아이콘이 항상 앞에 오므로 Column 으로 직접 만든다)
   Widget _shortcutBtn({
     required IconData icon,
     required String label,
     required String url,
     required Color color,
   }) {
-    return OutlinedButton.icon(
+    return OutlinedButton(
       onPressed: () => _openExternal(url),
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.white,
         side: BorderSide(color: Colors.white.withValues(alpha: 0.5)),
         backgroundColor: color.withValues(alpha: 0.28),
-        // 3분할로 좁아졌으므로 좌우 여백을 줄여 글자가 잘리지 않게 한다.
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
-        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 3),
+        minimumSize: const Size(0, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      icon: Icon(icon, size: 15),
-      label: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(height: 3),
+          // FittedBox 로 폭에 맞춰 자동 축소 — 아주 좁은 화면에서도 안 잘린다.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

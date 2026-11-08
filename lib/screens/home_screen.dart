@@ -1172,7 +1172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: _homeShortcutButton(
                     icon: Icons.local_florist,
-                    label: '추모관',
+                    label: '노경하 추모관',
                     // 추모관 = 같은 웹서버의 memorial.html (웹) / NAS 주소 (네이티브)
                     url: _memorialShortcutUrl,
                     color: AppColors.purple,
@@ -1201,30 +1201,44 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 홈 화면 하단 바로가기 버튼 (새창으로 외부 링크)
+  ///
+  /// [요구 2026-11-04] "추모관 → 노경하 추모관" 으로 이름이 길어져,
+  /// 3분할 폭에 아이콘+6자를 가로로 넣으면 잘린다.
+  /// lock_screen 과 동일하게 아이콘을 위로 올리고 FittedBox 로 축소한다.
   Widget _homeShortcutButton({
     required IconData icon,
     required String label,
     required String url,
     required Color color,
   }) {
-    return OutlinedButton.icon(
+    return OutlinedButton(
       style: OutlinedButton.styleFrom(
         foregroundColor: color,
         side: BorderSide(color: color.withValues(alpha: 0.5)),
         backgroundColor: color.withValues(alpha: 0.08),
-        // 3분할로 좁아졌으므로 좌우 여백을 줄인다.
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 3),
+        minimumSize: const Size(0, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       ),
       onPressed: () => openUrlInNewTab(url),
-      icon: Icon(icon, size: 15),
-      label: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
