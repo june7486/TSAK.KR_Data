@@ -118,6 +118,37 @@ class AttendeeRoles {
     return null;
   }
 
+  /// 행이 **인가번호를 가진 사람**인가? — 직책과 무관하게 판정한다.
+  ///
+  /// [요구 2026-11-07] "참가자 중 범스카우트 인가자가 리더로 선택할 경우에도
+  ///  인가자 항목에 인원을 넣을 것"
+  ///
+  /// 결산 '인가자' 항목은 **직책과 별개로** 인가번호 보유자 전원을 세야 한다.
+  /// 판정 근거를 넓게 보되, [hasRealLicenseNumber] 의 엄격함은 유지한다
+  /// (이름·전화번호·자유입력은 인가번호가 아니다).
+  ///
+  /// 우선순위:
+  ///   ① 앱이 이미 판정해 둔 신호 — `licensed == true`, `identityType`
+  ///      ('licensed'/'tsak'/'eunha'), `identityKey` 의 `tsak:`/`eunha:` 접두어
+  ///   ② `corps` 가 tsak/eunha
+  ///   ③ `number` 칸이 **진짜 인가번호 모양** ([hasRealLicenseNumber])
+  static bool hasLicenseOnRow(Map<String, dynamic> a) {
+    if (a['licensed'] == true) return true;
+
+    final type = '${a['identityType'] ?? ''}'.trim().toLowerCase();
+    if (type == 'licensed' || type == 'tsak' || type == 'eunha') return true;
+
+    final key = '${a['identityKey'] ?? ''}'.trim().toLowerCase();
+    if (key.startsWith('tsak:') || key.startsWith('eunha:')) return true;
+    // 명시적으로 일반으로 표시된 행은 인가자로 세지 않는다.
+    if (key.startsWith('reg:')) return false;
+
+    final corps = '${a['corps'] ?? ''}'.trim().toLowerCase();
+    if (corps == 'tsak' || corps == 'eunha') return true;
+
+    return hasRealLicenseNumber(a);
+  }
+
   /// 행에 담긴 직책(roles / roleLabel / roleCode)을 정규 라벨로 만든다.
   /// 직책 정보가 전혀 없으면 `null`.
   static String? canonicalOfRow(Map<String, dynamic> a) {

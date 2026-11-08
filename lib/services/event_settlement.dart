@@ -53,9 +53,24 @@ class EventAttendeeBreakdown {
     this.venture = 0,
     this.regular = 0,
     this.etc = 0,
-  });
+    int? headCount,
+    this.leaderLicensed = 0,
+  }) : headCount = headCount ?? (ivga + leader + rover + beaver + scout + cub + venture + regular + etc);
 
-  /// 인가자(범/은하 인가 보유자) — 다른 직책 분류가 없으면 여기로 센다.
+  /// 인가자(범/은하 인가 보유자) — **직책과 무관하게** 인가번호를 가진 사람 전부.
+  ///
+  /// [요구 2026-11-07] "참가자 중 범스카우트 인가자가 리더로 선택할 경우에도
+  ///  인가자 항목에 인원을 넣을 것"
+  ///
+  ///  종전에는 직책이 `리더` 면 그 사람이 인가번호를 갖고 있어도 인가자에
+  ///  들어가지 않았다(직책 우선). 그래서 2026 범2호 추모행사 8명 중
+  ///  인가번호 보유자 6명인데도 화면에는 **인가자 2명**으로 나왔다.
+  ///  이제 인가자 = 인가번호 보유자 전원(리더 4명 포함)이다.
+  ///
+  ///  ⚠️ 합계([total])는 **사람 수**이지 항목 합이 아니다.
+  ///  인가자는 리더·로버 등과 **일부러 겹쳐 세므로**, 항목을 그대로 더하면
+  ///  한 사람이 두 번 잡힌다. 그래서 [licensedTotal]·[leaderLicensed] 로
+  ///  겹침을 드러내고, total 은 `명단 행 수` 로 따로 계산한다.
   final int ivga;
   final int leader;
   final int rover;
@@ -72,8 +87,24 @@ class EventAttendeeBreakdown {
   final int regular;
   final int etc;
 
-  int get total =>
+  /// 명단 **행 수**(사람 수). 인가자는 직책과 겹치므로 항목 합으로 구할 수 없다.
+  final int headCount;
+
+  /// 인가자 중 **리더로도 잡힌** 사람 수 — 화면에 '리더 4명 포함' 근거로 쓴다.
+  final int leaderLicensed;
+
+  /// 인가번호 보유자 총원(= [ivga]). 이름만 다르게 읽기 쉽게 둔다.
+  int get licensedTotal => ivga;
+
+  int get total => headCount;
+
+  /// 항목을 그대로 더한 값 — 겹침 검증용(테스트·디버그 전용, 화면 표시 X).
+  int get rawItemSum =>
       ivga + leader + rover + venture + scout + cub + beaver + regular + etc;
+
+  /// 인가자 줄에 붙일 근거 문구 — '리더 4명 포함' / 없으면 ''.
+  String get ivgaNote =>
+      leaderLicensed <= 0 ? '' : '리더 $leaderLicensed명 포함';
 
   /// 필수 표기 순서(요구 고정). 각 항목을 (라벨, 값) 쌍으로.
   /// 상위 섹션 → 하위 섹션 순(컵·비버는 스카우트 아래).
@@ -101,19 +132,33 @@ class EventAttendeeBreakdown {
 
   /// 참가자 배열 → 직책별 집계.
   ///
-  /// ## [2026-10-29 "컵" 사고] 판정 규칙을 다시 세웠다
+  /// ## [2026-11-07 요구] 인가자 = 인가번호 보유자 **전원**
+  ///
+  /// "참가자 중 범스카우트 인가자가 리더로 선택할 경우에도 인가자 항목에
+  ///  인원을 넣을 것"
+  ///
+  ///  종전에는 ① 직책 우선이라 `roles: ['리더']` 인 사람은 인가번호가 있어도
+  ///  리더에만 잡혔다. 2026 범2호 추모행사 8명 기준:
+  ///    김종환 #135(리더) · 이승준 #415(리더) · 김병혁 #417(리더)
+  ///    양다솜 #1346(리더) → 인가자로 안 세어져 **인가자 2명**으로 표시됐다.
+  ///  정우식 #278 · 송영선 #1064 는 직책이 없어 인가자 2명.
+  ///  실제 인가번호 보유자는 **6명**이다.
+  ///
+  ///  이제 두 가지를 **동시에** 기록한다:
+  ///    · [ivga]          = 인가번호 보유자 전원 (리더여도 포함)
+  ///    · [leader] 등     = 직책별 인원 (종전 그대로)
+  ///    · [headCount]     = 명단 행 수 (합계는 이 값 — 겹침 없음)
+  ///    · [leaderLicensed]= 인가자이면서 리더인 사람 수
+  ///
+  /// ## [2026-10-29 "컵" 사고] 는 그대로 지킨다
   ///
   /// 종전 규칙은 **직책이 표에 없으면 마지막 fallback** 으로 흘러가
   /// `number` 가 비어 있지 않으면 인가자로 셌다. 그래서
   ///   · `roles: ['컵']`(어야영) → 인가자
   ///   · `number: '류호준'`(이름이 인가번호 칸에) → 인가자
   /// 처럼 **갈 곳 없는 행이 전부 인가자로 흡수**됐다.
-  ///
-  /// 새 규칙(우선순위 고정):
-  ///   ① 직책이 있으면 **직책으로만** 센다. 표에 없는 직책은 `기타` 로
-  ///      **표시**한다(조용히 흡수 금지).
-  ///   ② 직책이 없으면 신원으로 판정 — 인가번호(짧은 숫자)가 **진짜로**
-  ///      있을 때만 인가자, 그 외는 일반.
+  /// 그래서 인가번호 판정은 [AttendeeRoles.hasLicenseOnRow] 로 **엄격하게**
+  /// 한다(이름·전화번호·자유입력은 인가번호로 보지 않는다).
   static EventAttendeeBreakdown fromAttendees(List<Map<String, dynamic>> list) {
     var ivga = 0,
         leader = 0,
@@ -123,15 +168,21 @@ class EventAttendeeBreakdown {
         cub = 0,
         beaver = 0,
         regular = 0,
-        etc = 0;
+        etc = 0,
+        leaderLicensed = 0;
 
     for (final a in list) {
-      // ── ① 직책 우선 ────────────────────────────────────────────────
+      // ── ① 인가자 — 직책과 **무관하게** 인가번호 보유자면 센다. ──────
+      final licensed = AttendeeRoles.hasLicenseOnRow(a);
+      if (licensed) ivga++;
+
+      // ── ② 직책별 인원 (종전 그대로) ────────────────────────────────
       final role = AttendeeRoles.canonicalOfRow(a);
       if (role != null) {
         switch (role) {
           case AttendeeRole.leader:
             leader++;
+            if (licensed) leaderLicensed++;
           case AttendeeRole.rover:
             rover++;
           case AttendeeRole.venture:
@@ -150,15 +201,14 @@ class EventAttendeeBreakdown {
         continue;
       }
 
-      // ── ② 직책 없음 → 신원으로 판정 ────────────────────────────────
+      // ── ③ 직책 없음 → 신원으로 판정 ────────────────────────────────
       if (AttendeeRoles.isRegularRow(a)) {
         regular++;
-      } else if (AttendeeRoles.hasRealLicenseNumber(a)) {
-        ivga++;
-      } else {
+      } else if (!licensed) {
         // 인가자도 일반도 아닌 애매한 행 → 일반으로 센다(인가자 부풀림 금지).
         regular++;
       }
+      // licensed == true 면 이미 인가자로 셌다 — 일반으로 또 세지 않는다.
     }
     return EventAttendeeBreakdown(
       ivga: ivga,
@@ -170,6 +220,8 @@ class EventAttendeeBreakdown {
       beaver: beaver,
       regular: regular,
       etc: etc,
+      headCount: list.length,
+      leaderLicensed: leaderLicensed,
     );
   }
 }

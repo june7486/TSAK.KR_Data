@@ -724,9 +724,21 @@ class SettlementBuilder {
     // ── ① 참가자 수 (8종 + 합계, 필수) ────────────────────────────────
     //   3번째 칸은 비워 둔다 — 화면 카드가 그 자리에 인원 비율 막대를 그린다.
     final bd = settlement.attendeeCount;
+    // [요구 2026-11-07] 인가자는 **인가번호 보유자 전원**이라 리더·일반과 겹친다.
+    //  · 인가자 줄에 '리더 4명 포함' 을 붙여 겹침을 숨기지 않는다.
+    //  · 합계는 항목 합이 아니라 **명단 행 수**(bd.total = headCount)다.
     final attRows = <List<String>>[
-      for (final e in bd.ordered) [e.key, '${e.value}명', ''],
-      ['합계', '${bd.total}명', bd.total == 0 ? '명단 없음' : ''],
+      for (final e in bd.ordered)
+        [
+          e.key,
+          '${e.value}명',
+          e.key == '인가자' ? bd.ivgaNote : '',
+        ],
+      [
+        '합계',
+        '${bd.total}명',
+        bd.ivgaNote.isEmpty ? '' : '인가자 중복 없이',
+      ],
     ];
     out[SettlementBlock.attendees] = SettlementBlockData(
       block: SettlementBlock.attendees,

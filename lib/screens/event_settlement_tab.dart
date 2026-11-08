@@ -892,12 +892,11 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
 
   Widget _thirdCell(List<String> r, Color color) {
     final value = r.length > 1 ? r[1] : '';
-    // 'N명' 형태면 막대로 시각화(참가자 수 정리를 한눈에).
-    final m = RegExp(r'^(\d+)명$').firstMatch(value);
-    if (m == null) {
-      // 그 밖의 블록은 비고(3번째 칸) 문자열을 그대로 보여준다.
-      final note = r.length > 2 ? r[2] : '';
-      if (note.isEmpty) return const SizedBox.shrink();
+    // 비고(3번째 칸)가 있으면 **막대보다 우선**한다.
+    //  [요구 2026-11-07] 인가자 줄의 '리더 4명 포함' 처럼 겹침 근거를
+    //  막대에 가려 잃지 않게 하려는 것. (인가자·합계 줄만 해당)
+    final note = r.length > 2 ? r[2] : '';
+    if (note.isNotEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4.5),
         child: Text(
@@ -913,6 +912,9 @@ class _EventSettlementTabState extends State<EventSettlementTab> {
         ),
       );
     }
+    // 'N명' 형태면 막대로 시각화(참가자 수 정리를 한눈에).
+    final m = RegExp(r'^(\d+)명$').firstMatch(value);
+    if (m == null) return const SizedBox.shrink();
     final n = int.tryParse(m.group(1) ?? '') ?? 0;
     if (n <= 0) return const SizedBox.shrink();
     // 최대 30명 기준으로 길이를 잡는다(작은 값도 보이게).
