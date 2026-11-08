@@ -2465,11 +2465,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             children: [
               Text(
                 [
-                  // [요구] 활동등록대(unitText)를 우선 표시 — 없으면 인가시 단위대.
-                  if ('${a['unitText'] ?? ''}'.trim().isNotEmpty)
-                    '${a['unitText']}'
-                  else if ('${a['unit'] ?? ''}'.trim().isNotEmpty)
-                    '${a['unit']}',
+                  // [요구 2026-11-08] 소속은 **현재활동** 기준(연맹 + 단위대).
+                  //   인가시 소속은 현재활동 값이 없을 때만 폴백으로 쓰인다.
+                  if (SettlementLine.currentActivityText(a).isNotEmpty)
+                    SettlementLine.currentActivityText(a),
                   // [요구 개인정보] 전화·성별은 참가자(_fullView=false)에게 비노출.
                   if (_fullView)
                     if ('${a['phoneText'] ?? ''}'.trim().isNotEmpty)
@@ -6371,7 +6370,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           '${a['corps'] ?? 'tsak'}',
           a['isRegular'] == true,
         ),
-        '${a['unitText'] ?? a['unit'] ?? ''}',
+        // [요구 2026-11-08] 소속은 **현재활동** 기준 — 인가시 소속은 폴백.
+        //   "행사 참가자 명단에서 참가자 등록정보는 현재활동 정보로 넣어줘"
+        SettlementLine.currentActivityText(a),
         roles,
         '${a['phoneText'] ?? a['phone'] ?? ''}',
       ]);

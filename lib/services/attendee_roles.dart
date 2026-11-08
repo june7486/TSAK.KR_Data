@@ -280,10 +280,58 @@ class SettlementLine {
       .replaceAll(RegExp(r'\s{2,}'), ' ')
       .trim();
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [요구 2026-11-08] 참가자 등록정보는 **현재활동** 기준으로 보여준다.
+  //
+  //   "행사 참가자 명단에서 참가자 등록정보는 현재활동 정보로 넣어줘
+  //    이승준+김병혁 등은 인가시 정보가 들어가 있음 / 모두 현재 활동정보로 수정"
+  //
+  // 참석자 행에는 등록 시점(인가시) 소속이 `league`/`unit` 으로 박혀 있다.
+  // 서버(`_ev_attendee_view`)는 표시 시점에 회원 명부의 현재활동
+  // (`regLeague`/`regUnit`+`position`)을 조회해 `leagueText`/`unitText` 로
+  // 주입한다. **화면·PDF·엑셀이 모두 이 두 값을 써야** 같은 사람이
+  // 어디서나 같은 소속으로 보인다.
+  //
+  // 읽는 순서(현재활동 → 인가시 폴백):
+  //   ① leagueText / unitText   — 서버가 주입한 현재활동 표시값
+  //   ② regLeague  / regUnit    — 회원 맵을 직접 받은 경우
+  //   ③ league     / unit       — 행 스냅샷(현재활동 값이 아예 없을 때만)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 참석자 행의 **현재활동 소속연맹**. 없으면 인가시 연맹으로 폴백.
+  static String currentLeague(Map<String, dynamic> a) {
+    for (final k in const ['leagueText', 'regLeague', 'league', 'leagueName']) {
+      final v = '${a[k] ?? ''}'.trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  /// 참석자 행의 **현재활동 단위대**(직위 병기 포함). 없으면 인가시 폴백.
+  static String currentUnit(Map<String, dynamic> a) {
+    for (final k in const ['unitText', 'regUnit', 'unit']) {
+      final v = '${a[k] ?? ''}'.trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  /// `현재활동` 소속 한 줄 — `연맹 · 단위대` (중복 제거).
+  static String currentActivityText(Map<String, dynamic> a) {
+    final lg = _clean(currentLeague(a));
+    final un = _clean(currentUnit(a));
+    if (lg.isEmpty && un.isEmpty) return '';
+    if (lg.isEmpty) return un;
+    if (un.isEmpty) return lg;
+    // 단위대 문자열이 이미 연맹을 품고 있으면 연맹을 또 붙이지 않는다.
+    return (un.contains(lg)) ? un : '$lg $un';
+  }
+
   /// 상세 한 줄(가운뎃점 구분).
   ///
-  /// [a] 는 참석자 map. 회원 명부의 값이 있으면 그쪽을 우선한다
-  /// ([tsakNo]/[eunhaNo]/[league]/[unit] 인자).
+  /// [a] 는 참석자 map. [league]/[unit] 인자를 주면 그 값이 **최우선**이고,
+  /// 주지 않으면 **현재활동**(`unitText`/`leagueText` → `reg*` → 스냅샷)
+  /// 규칙으로 스스로 복원한다.
   static String of(
     Map<String, dynamic> a, {
     String tsakNo = '',
@@ -294,6 +342,9 @@ class SettlementLine {
     final name = '${a['name'] ?? ''}'.trim();
     if (name.isEmpty) return '';
 
+    // 인자가 비었으면 **현재활동** 기준으로 복원한다(인가시 스냅샷 아님).
+    final lgArg = league.trim().isNotEmpty ? league : currentLeague(a);
+    final unArg = unit.trim().isNotEmpty ? unit : currentUnit(a);
     // ── ②③ 인가번호 — 범 / 은하를 **따로** 둔다(동시 보유 가능). ────────
     var tNo = tsakNo.trim();
     var eNo = eunhaNo.trim();
@@ -328,10 +379,10 @@ class SettlementLine {
     }
 
     // ── ⑤ 연맹 · 단위대 ───────────────────────────────────────────────
-    final lg = _clean(league);
-    final un0 = _clean(unit).isNotEmpty
-        ? _clean(unit)
-        : _clean('${a['role'] ?? a['unit'] ?? ''}');
+    final lg = _clean(lgArg);
+    final un0 = _clean(unArg).isNotEmpty
+        ? _clean(unArg)
+        : _clean('${a['role'] ?? ''}');
     // 단위대 문자열이 이미 연맹을 포함하면 중복해서 붙이지 않는다.
     //  예) league='인천연맹', unit='인천연맹 별무리지역대' → '인천연맹 별무리지역대'
     String place;

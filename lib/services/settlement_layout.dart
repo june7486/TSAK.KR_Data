@@ -678,16 +678,58 @@ class SettlementBuilder {
     return null;
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [요구 2026-11-08] 상세 내역의 소속은 **현재활동** 기준으로 인쇄한다.
+  //
+  //   "행사 참가자 명단에서 참가자 등록정보는 현재활동 정보로 넣어줘
+  //    이승준+김병혁 등은 인가시 정보가 들어가 있음 / 모두 현재 활동정보로 수정"
+  //
+  // ## 왜 인가시가 찍혔나
+  //  참석자 행(map)에는 **등록 시점의 소속**이 `league`/`unit` 으로 저장돼
+  //  있다. 종전 `_leagueOf`/`_unitOf` 는 이 스냅샷을 **먼저** 읽었다. 그래서
+  //  이승준(415)은 인가시 `제1234단 인천연맹 직할단` 이, 김병혁(417)은
+  //  인가시 `제1234단 인천연맹 직할대` 가 그대로 인쇄됐다.
+  //
+  // ## 고친 규칙 — 읽는 순서
+  //  ① `leagueText` / `unitText` — 서버가 **표시 시점에** 회원 명부의
+  //     `regLeague`/`regUnit`(+`position`)로 주입한 현재활동 값.
+  //  ② `regLeague` / `regUnit` — 서버 없이 회원 맵을 직접 받은 경우.
+  //  ③ 스냅샷 `league`/`unit` — 회원 명부에 현재활동 값이 **아예 없을 때만**
+  //     (예: 김종환 135·송영선 1064 — reg* 가 비어 있음) 인가시로 폴백.
+  //  ④ 회원 명부 `regLeague`→`league` — 위가 다 비었을 때 마지막 보루.
+  // ══════════════════════════════════════════════════════════════════════
   static String _leagueOf(Map<String, dynamic> a) {
-    final direct = '${a['league'] ?? a['leagueName'] ?? ''}'.trim();
-    if (direct.isNotEmpty) return direct;
-    return _memberOf(a)?.league.trim() ?? '';
+    // ① 서버 주입 — 활동등록대 우선 연맹
+    final live = '${a['leagueText'] ?? ''}'.trim();
+    if (live.isNotEmpty) return live;
+    // ② 직접 받은 회원 맵
+    final reg = '${a['regLeague'] ?? ''}'.trim();
+    if (reg.isNotEmpty) return reg;
+    // ③ 행 스냅샷(구버전·명부에 현재활동 값이 없을 때)
+    final snap = '${a['league'] ?? a['leagueName'] ?? ''}'.trim();
+    if (snap.isNotEmpty) return snap;
+    // ④ 회원 명부 폴백
+    final m = _memberOf(a);
+    if (m == null) return '';
+    final mr = m.regLeague.trim();
+    return mr.isNotEmpty ? mr : m.league.trim();
   }
 
   static String _unitOf(Map<String, dynamic> a) {
-    final direct = '${a['unit'] ?? a['unitText'] ?? ''}'.trim();
-    if (direct.isNotEmpty) return direct;
-    return _memberOf(a)?.unit.trim() ?? '';
+    // ① 서버 주입 — 활동등록대(+직위)
+    final live = '${a['unitText'] ?? ''}'.trim();
+    if (live.isNotEmpty) return live;
+    // ② 직접 받은 회원 맵
+    final reg = '${a['regUnit'] ?? ''}'.trim();
+    if (reg.isNotEmpty) return reg;
+    // ③ 행 스냅샷(인가시) — 현재활동 값이 없을 때만
+    final snap = '${a['unit'] ?? ''}'.trim();
+    if (snap.isNotEmpty) return snap;
+    // ④ 회원 명부 폴백
+    final m = _memberOf(a);
+    if (m == null) return '';
+    final mr = m.regUnit.trim();
+    return mr.isNotEmpty ? mr : m.unit.trim();
   }
 
   /// 참석자 한 줄 — **표현 순서 고정**.
@@ -698,6 +740,10 @@ class SettlementBuilder {
   ///  "일반 회원은 범인가자정보가 아니라, 서포터즈 인가자 정보로 표시함
   ///   상세내역에 표현순서: 이름 / 범인가번호 / 은하인가번호 /
   ///   등급(리더,로버,벤처,스카우트,컵,비버,일반,서포터츠 등) / 연맹, 단위대"
+  ///
+  /// ## [요구 2026-11-08] 소속은 **현재활동** 기준
+  ///  [leagueOf]/[unitOf] 는 `_leagueOf`/`_unitOf` 가 현재활동 우선으로
+  ///  해석해 넘긴 값이다(인가시는 폴백).
   static String _attendeeDetailLine(
     Map<String, dynamic> a, {
     String leagueOf = '',
