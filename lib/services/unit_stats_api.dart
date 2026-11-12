@@ -88,6 +88,50 @@ class UnitStatsApi {
       throw UnitStatsException('${j['error'] ?? '저장에 실패했습니다'}');
     }
   }
+
+  /// [turn61] 병합 후보를 한 번에 모두 묶는다.
+  ///
+  /// scope: variants(표기 변형 61곳) | extra(추가 후보) | both
+  /// 위험한 조합(연맹 다름·번호 다름)은 서버가 알아서 건너뛰고
+  /// `skipped` 로 알려준다.
+  Future<MergeAllResult> mergeAll({
+    String scope = 'variants',
+    String basis = 'issue',
+  }) async {
+    final r = await http.post(
+      _uri('/alias', const {}),
+      headers: _authHeaders(),
+      body: jsonEncode(
+          {'action': 'mergeAll', 'scope': scope, 'basis': basis}),
+    );
+    final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    if (j['ok'] != true) {
+      throw UnitStatsException('${j['error'] ?? '일괄 병합에 실패했습니다'}');
+    }
+    return MergeAllResult(
+      mergedGroups: (j['mergedGroups'] as num?)?.toInt() ?? 0,
+      mergedPeople: (j['mergedPeople'] as num?)?.toInt() ?? 0,
+      skipped: (j['skipped'] as num?)?.toInt() ?? 0,
+      stats: j['stats'] is Map
+          ? UnitStatsResult.fromJson(Map<String, dynamic>.from(j['stats']))
+          : null,
+    );
+  }
+}
+
+/// 일괄 병합 결과.
+class MergeAllResult {
+  MergeAllResult({
+    required this.mergedGroups,
+    required this.mergedPeople,
+    required this.skipped,
+    this.stats,
+  });
+
+  final int mergedGroups;
+  final int mergedPeople;
+  final int skipped;
+  final UnitStatsResult? stats;
 }
 
 class UnitStatsException implements Exception {
@@ -237,13 +281,36 @@ class LeagueGroup {
 
 /// 표기 변형 그룹 — "같은 단위대일 수 있음".
 class VariantGroup {
-  VariantGroup({required this.key, required this.name, required this.names});
+  VariantGroup({
+    required this.key,
+    required this.name,
+    required this.names,
+    this.count = 0,
+    this.grade = 'safe',
+  });
 
   final String key;
   final String name;
 
   /// [(원본 표기, 인원)]
   final List<MapEntry<String, int>> names;
+
+  /// 이 단위대로 묶였을 때의 총 인원.
+  final int count;
+
+  /// 병합 위험도 — safe / kindMix / nameMix / check.
+  /// kindMix 는 소년대·연장대가 섞인 경우로 **묶으면 안 된다**.
+  final String grade;
+
+  bool get isRisky => grade == 'kindMix' || grade == 'nameMix';
+  bool get isKindMix => grade == 'kindMix';
+
+  String get gradeLabel => switch (grade) {
+        'kindMix' => '소년대·연장대 혼합 — 묶지 마세요',
+        'nameMix' => '번호·이름이 다름 — 확인 필요',
+        'check' => '확인 필요',
+        _ => '같은 표기로 봄',
+      };
 
   factory VariantGroup.fromJson(Map<String, dynamic> j) {
     final list = <MapEntry<String, int>>[];
@@ -262,6 +329,82 @@ class VariantGroup {
       key: '${j['key'] ?? ''}',
       name: '${j['name'] ?? ''}',
       names: list,
+      count: (j['count'] as num?)?.toInt() ?? 0,
+      grade: '${j['grade'] ?? 'safe'}',
+    );
+  }
+}
+
+/// [turn61] 같은 연맹 안에서 번호·이름이 겹쳐 **추가로 발견된** 병합 후보.
+///  정규화 키가 달라 원래는 따로 잡히던 것들이다.
+class ExtraGroup {
+  ExtraGroup({
+    required this.reason,
+    required this.label,
+    required this.into,
+    required this.intoName,
+    required this.fromKeys,
+    required this.keys,
+    required this.count,
+    required this.memberCount,
+    required this.league,
+    required this.names,
+    this.grade = 'safe',
+  });
+
+  /// safe = 묶어도 확실 / check = 사람이 확인해야 함
+  final String grade;
+
+  bool get needsCheck => grade == 'check';
+
+  String get gradeLabel =>
+      grade == 'check' ? '확인 필요' : '같은 단위대로 봄';
+
+  /// sameName(같은 연맹·같은 이름) 등
+  final String reason;
+  final String label;
+  final String into;
+  final String intoName;
+  final List<String> fromKeys;
+  final List<String> keys;
+  final int count;
+
+  /// 묶이는 단위대(키) 개수.
+  final int memberCount;
+  final String league;
+  final List<MapEntry<String, int>> names;
+
+  String get reasonLabel =>
+      reason == 'sameNum' ? '같은 연맹 · 같은 번호' : '같은 연맹 · 같은 이름';
+
+  /// [turn61] 서버가 확정한 안전 등급을 읽는다(구버전 서버면 safe).
+  static String _gradeOf(Map<String, dynamic> j) =>
+      '${j['grade'] ?? 'safe'}';
+
+  factory ExtraGroup.fromJson(Map<String, dynamic> j) {
+    final list = <MapEntry<String, int>>[];
+    final raw = j['names'];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is List && e.length >= 2) {
+          list.add(MapEntry('${e[0]}', (e[1] as num?)?.toInt() ?? 0));
+        }
+      }
+    }
+    List<String> ss(dynamic v) =>
+        (v as List? ?? const []).map((e) => '$e').toList();
+    return ExtraGroup(
+      reason: '${j['reason'] ?? ''}',
+      label: '${j['label'] ?? ''}',
+      into: '${j['into'] ?? ''}',
+      intoName: '${j['intoName'] ?? ''}',
+      fromKeys: ss(j['from']),
+      keys: ss(j['keys']),
+      count: (j['count'] as num?)?.toInt() ?? 0,
+      memberCount: (j['memberCount'] as num?)?.toInt() ?? 0,
+      league: '${j['league'] ?? ''}',
+      names: list,
+      grade: _gradeOf(j),
     );
   }
 }
@@ -280,12 +423,16 @@ class UnitStatsResult {
     required this.namesIncluded,
     required this.aliasCount,
     required this.leaguesAll,
+    this.extra = const [],
   });
 
   final String basis;
   final List<LeagueGroup> leagues;
   final List<UnitRow> units;
   final List<VariantGroup> groups;
+
+  /// [turn61] 같은 연맹 안에서 번호·이름이 겹쳐 추가 발견된 병합 후보.
+  final List<ExtraGroup> extra;
   final int members;
   final int withUnit;
   final int noUnit;
@@ -308,6 +455,7 @@ class UnitStatsResult {
       leagues: toListOf(j['leagues'], LeagueGroup.fromJson),
       units: toListOf(j['units'], UnitRow.fromJson),
       groups: toListOf(j['groups'], VariantGroup.fromJson),
+      extra: toListOf(j['extra'], ExtraGroup.fromJson),
       members: (t['members'] as num?)?.toInt() ?? 0,
       withUnit: (t['withUnit'] as num?)?.toInt() ?? 0,
       noUnit: (t['noUnit'] as num?)?.toInt() ?? 0,

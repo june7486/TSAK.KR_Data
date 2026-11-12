@@ -82,6 +82,23 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
   // ── 단위대 비교 선택 ────────────────────────────────────────────
   final Set<String> _cmpKeys = {};
 
+  // ── [turn61] 병합 진행 상태 ──────────────────────────────────────
+  /// 서버에 병합을 쓰는 동안 버튼을 잠근다(중복 클릭 방지).
+  bool _busy = false;
+
+  /// 화면 어디서나 쓰는 API — NasApi 를 매번 새로 감싼다(상태가 없다).
+  UnitStatsApi get _api => UnitStatsApi(context.read<NasApi>());
+
+  /// 짧은 안내 — 스낵바.
+  void _snack(String m) {
+    final sc = ScaffoldMessenger.maybeOf(context);
+    if (sc == null) return;
+    sc.showSnackBar(SnackBar(
+      content: Text(m, style: const TextStyle(fontSize: 12)),
+      duration: const Duration(seconds: 3),
+    ));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -978,6 +995,9 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
 
   // ── ⑦ 표기 변형 병합 ────────────────────────────────────────────
   Widget _variantCard(UnitStatsResult d) {
+    //  isRisky 는 kindMix 를 이미 포함한다 — 중복 합산하면 두 배로 보인다.
+    final riskyN = d.groups.where((g) => g.isRisky).length;
+    final kindN = d.groups.where((g) => g.isKindMix).length;
     return Card(
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14),
@@ -988,33 +1008,138 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
         ),
         subtitle: Text(
-          '${d.groups.length}곳 — 이름이 다르게 적힌 것을 확인·병합합니다.',
+          '${d.groups.length}곳 · 추가 후보 ${d.extra.length}곳'
+          '${riskyN > 0 ? ' · 확인필요 $riskyN' : ''}',
           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
         ),
         children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(
-              '아래는 자동으로 한 묶음으로 추정한 것입니다. 실제로 같은 단위대인지 '
-              '확인하신 뒤 체크하고 [같은 단위대로 묶기]를 누르면 이후 통계에 반영됩니다.',
-              style: TextStyle(fontSize: 10.5, height: 1.55, color: Colors.black54),
+          // ── 일괄 묶기 ─────────────────────────────────────────────
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF7F6),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFBEDFDB)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('한 번에 묶기',
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                const Text(
+                  '표기만 살짝 다른 것들을 모두 합칩니다. 연맹이 다르거나 '
+                  '소년대·연장대가 섞인 조합은 서버가 알아서 건너뜁니다.',
+                  style: TextStyle(
+                      fontSize: 10.5, height: 1.55, color: Colors.black54),
+                ),
+                const SizedBox(height: 8),
+                //  ⚠️ [turn61 정직 고지] '표기 변형 61곳'은 **이미 같은 키**로
+                //  묶여 있어 alias 로 저장할 대상이 없다. 버튼을 눌러도
+                //  아무 일도 일어나지 않으므로(no-op) 숨기고 설명만 남긴다.
+                //  실제로 유효한 일괄 병합은 '추가 후보'(키가 갈라진 것)뿐이다.
+                if (riskyN >= 0)
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E6),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFEEDDA8)),
+                    ),
+                    child: Text(
+                      '표기 변형 ${d.groups.length}곳은 이미 한 칸으로 계산되어 있습니다'
+                      '(인원·연도가 합산됨). 따로 묶을 필요가 없습니다.',
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          height: 1.55,
+                          color: Colors.brown.shade700),
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: _busy || d.extra.isEmpty
+                          ? null
+                          : () => _mergeAll('extra',
+                              '추가 후보 ${d.extra.length}곳'),
+                      icon: const Icon(Icons.auto_fix_high, size: 15),
+                      label: Text(
+                          '추가 후보 ${d.extra.length}곳 모두 묶기',
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+          if (riskyN > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 15, color: Color(0xFFD9822B)),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      [
+                        if (kindN > 0)
+                          '소년대·연장대 혼합 $kindN곳 — 같은 번호여도 별개 조직입니다.',
+                        if (riskyN - kindN > 0)
+                          '번호·이름이 다른 조합 ${riskyN - kindN}곳 — 확인이 필요합니다.',
+                        '이 조합들은 [한 번에 묶기]에서 자동으로 제외됩니다.',
+                      ].join(' '),
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          height: 1.5,
+                          color: Colors.orange.shade900),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ...d.groups.take(40).map((g) {
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFAF9FC),
+                color: g.isRisky ? const Color(0xFFFFF6EC) : const Color(0xFFFAF9FC),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE7E3EE)),
+                border: Border.all(
+                    color: g.isRisky
+                        ? const Color(0xFFF0C89A)
+                        : const Color(0xFFE7E3EE)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(g.name,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w800)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(g.name,
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w800)),
+                      ),
+                      if (g.isRisky)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFBEFDF),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(g.gradeLabel,
+                              style: const TextStyle(
+                                  fontSize: 9, color: Color(0xFFB5651D))),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   ...g.names.map((e) => Padding(
                         padding: const EdgeInsets.only(left: 4, top: 2),
@@ -1047,9 +1172,192 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
           if (d.groups.length > 40)
             Text('외 ${d.groups.length - 40}곳은 상단 옵션의 [표기 변형만]으로 확인하세요.',
                 style: const TextStyle(fontSize: 10.5, color: Colors.black54)),
+
+          // ── [turn61] 같은 연맹 · 같은 번호/이름으로 추가 발견된 곳 ──
+          if (d.extra.isNotEmpty) ...[
+            const Divider(height: 22),
+            Row(
+              children: [
+                const Icon(Icons.travel_explore,
+                    size: 15, color: Color(0xFF3B2470)),
+                const SizedBox(width: 5),
+                Text('추가로 발견된 곳 (${d.extra.length})',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '글자가 달라 따로 잡혔지만, 같은 연맹 안에서 번호나 이름이 겹치는 '
+              '단위대입니다. 같은 번호라면 같은 단위대일 가능성이 높습니다.',
+              style: TextStyle(
+                  fontSize: 10.5, height: 1.55, color: Colors.black54),
+            ),
+            const SizedBox(height: 8),
+            ...d.extra.take(30).map((g) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F4FC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFDCD2EE)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEDE6F8),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(g.reasonLabel,
+                              style: const TextStyle(
+                                  fontSize: 9, color: Color(0xFF3B2470))),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(g.label,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                        Text('${g.count}명',
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ...g.names.take(8).map((e) => Padding(
+                          padding: const EdgeInsets.only(left: 4, top: 2),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text('· ${e.key}',
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                              Text('${e.value}명',
+                                  style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: Colors.grey.shade700)),
+                            ],
+                          ),
+                        )),
+                    if (g.names.length > 8)
+                      Text('외 ${g.names.length - 8}개 표기',
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.black45)),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _mergeExtra(g),
+                        icon: const Icon(Icons.call_merge, size: 14),
+                        label: const Text('같은 단위대로 묶기',
+                            style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (d.extra.length > 30)
+              Text('외 ${d.extra.length - 30}곳은 [추가 후보 모두 묶기]로 처리하세요.',
+                  style:
+                      const TextStyle(fontSize: 10.5, color: Colors.black54)),
+          ],
         ],
       ),
     );
+  }
+
+  /// [turn61] 일괄 병합 — 확인 대화상자를 거쳐 서버 mergeAll 호출.
+  Future<void> _mergeAll(String scope, String what) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('한 번에 묶을까요?', style: TextStyle(fontSize: 15)),
+        content: Text(
+          '$what을 모두 같은 단위대로 묶습니다.\n\n'
+          '· 연맹이 다른 조합은 건너뜁니다\n'
+          '· 단위대 번호가 다른 조합도 건너뜁니다\n'
+          '· 소년대·연장대가 섞인 조합도 건너뜁니다\n\n'
+          '나중에 [선택 해제]로 되돌릴 수 있습니다.',
+          style: const TextStyle(fontSize: 12.5, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('묶기')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      final r = await _api.mergeAll(scope: scope, basis: _basis);
+      if (!mounted) return;
+      setState(() {
+        if (r.stats != null) {
+          _data = r.stats;
+          _dataNamed = null;
+        }
+        _busy = false;
+      });
+      _snack('${r.mergedGroups}곳 · ${r.mergedPeople}명을 묶었습니다'
+          '${r.skipped > 0 ? ' (${r.skipped}곳은 위험해 건너뜀)' : ''}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _snack('묶지 못했습니다: $e');
+    }
+  }
+
+  /// [turn61] 추가 후보 1건 묶기.
+  Future<void> _mergeExtra(ExtraGroup g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('같은 단위대로 묶을까요?', style: TextStyle(fontSize: 15)),
+        content: Text(
+          '${g.label}\n\n대표: ${g.intoName}\n'
+          '합계 ${g.count}명으로 합쳐집니다.',
+          style: const TextStyle(fontSize: 12.5, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('묶기')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      await _api.alias(
+        action: 'merge',
+        into: g.into,
+        from: g.fromKeys,
+        basis: _basis,
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await _load(keepNames: _dataNamed != null);
+      _snack('묶었습니다 — ${g.label}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _snack('묶지 못했습니다: $e');
+    }
   }
 
   Future<void> _mergeGroup(VariantGroup g) async {
