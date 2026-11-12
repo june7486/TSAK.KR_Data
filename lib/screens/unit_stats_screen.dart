@@ -129,11 +129,27 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
   //  필터링
   // ══════════════════════════════════════════════════════════════════
 
+  /// 모든 연맹이 선택된 상태(= '전체'와 같음).
+  bool get _allLeaguesSelected {
+    final d = _data;
+    if (d == null) return false;
+    return d.leagues.isNotEmpty && _selLeagues.length >= d.leagues.length;
+  }
+
+  /// '인원 상위 5개' 칩이 지금 그 상태인지.
+  bool _top5Selected(UnitStatsResult d) {
+    final top = d.leagues.take(5).map((e) => e.league).toSet();
+    if (top.isEmpty || _selLeagues.length != top.length) return false;
+    return _selLeagues.containsAll(top);
+  }
+
   List<UnitRow> get _visibleUnits {
     final d = _data;
     if (d == null) return const [];
     var list = d.units;
-    if (_selLeagues.isNotEmpty) {
+    //  연맹을 하나도 안 골랐거나 **전부** 골랐으면 거르지 않는다.
+    //  (전부 골랐을 때 거르면 연맹이 비어 있는 단위대가 사라져 '전체'와 달라진다)
+    if (_selLeagues.isNotEmpty && !_allLeaguesSelected) {
       list = list.where((u) => _selLeagues.contains(u.league)).toList();
     }
     if (_cmpKeys.isNotEmpty) {
@@ -432,7 +448,7 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
         ),
         subtitle: Text(
-          _selLeagues.isEmpty
+          _selLeagues.isEmpty || _allLeaguesSelected
               ? '전체 ${d.leagues.length}개 연맹 · ${_fmt(d.units.length)}개 단위대'
               : '${_selLeagues.length}개 연맹 선택됨',
           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
@@ -443,16 +459,30 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
             child: Wrap(
               spacing: 6,
               children: [
-                ActionChip(
+                //  '전체' = 연맹 **전부 선택**. (예전엔 clear() 였는데 라벨과
+                //  반대 동작이라 '눌러도 반응이 없다'로 보였다)
+                ChoiceChip(
                   label: const Text('전체', style: TextStyle(fontSize: 11.5)),
-                  onPressed: () => setState(() => _selLeagues.clear()),
-                ),
-                ActionChip(
-                  label: const Text('인원 상위 5개', style: TextStyle(fontSize: 11.5)),
-                  onPressed: () => setState(() {
+                  selected: _selLeagues.isEmpty || _allLeaguesSelected,
+                  onSelected: (_) => setState(() {
                     _selLeagues
                       ..clear()
-                      ..addAll(d.leagues.take(5).map((e) => e.league));
+                      ..addAll(d.leagues.map((e) => e.league));
+                  }),
+                ),
+                //  인원 상위 5개 — 이미 그 5개만 골라져 있으면 다시 눌러 해제.
+                ChoiceChip(
+                  label:
+                      const Text('인원 상위 5개', style: TextStyle(fontSize: 11.5)),
+                  selected: _top5Selected(d),
+                  onSelected: (_) => setState(() {
+                    if (_top5Selected(d)) {
+                      _selLeagues.clear();
+                    } else {
+                      _selLeagues
+                        ..clear()
+                        ..addAll(d.leagues.take(5).map((e) => e.league));
+                    }
                   }),
                 ),
               ],
@@ -460,7 +490,7 @@ class _UnitStatsScreenState extends State<UnitStatsScreen> {
           ),
           const SizedBox(height: 6),
           ...d.leagues.map((L) {
-            final on = _selLeagues.contains(L.league);
+            final on = _allLeaguesSelected || _selLeagues.contains(L.league);
             return CheckboxListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
