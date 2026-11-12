@@ -9,6 +9,7 @@ import '../services/nas_api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_home_emblem.dart';
 import '../widgets/tsak_app_bar.dart';
+import 'unit_stats_screen.dart';
 
 /// 통계 대시보드 — 연맹별 인가자/멘토/페런츠/서포터즈 분포, 회비 현황
 ///
@@ -479,6 +480,12 @@ class _StatsScreenState extends State<StatsScreen> {
         padding: const EdgeInsets.all(14),
         children: [
           _summary(state),
+          const SizedBox(height: 12),
+          // ── 단위대별 상세내역 배너 ────────────────────────────────
+          //  [요구 2026-11-11] "이 페이지는 통계 페이지 내에 배너를 하나 만들고
+          //   단위대별 연맹별 상세내역 이렇게 넣어서 그 안에다가 다양한
+          //   옵션들을 선택할 출력할 수 있게 해 주면 좋겠어"
+          _unitStatsBanner(),
           const SizedBox(height: 12),
           // 소속 전환 — 범스카우트 / 은하스카우트(별도 관리)
           _scopeTabs(),
@@ -951,6 +958,84 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   /// 소속 전환 탭 — 범스카우트 / 은하스카우트(별도 관리).
+  /// 단위대별 · 연맹별 상세내역으로 들어가는 배너.
+  ///
+  /// [요구] "통계 페이지 내에 배너를 하나 만들고 단위대별 연맹별 상세내역"
+  ///  · 이 화면(연맹 분포)은 '몇 명인가' 를 보여주고,
+  ///    저 화면은 '어느 단위대가 배출했나' 를 보여준다. 역할이 다르므로
+  ///    배너로 분리해 두고 눌러서 들어가게 한다.
+  Widget _unitStatsBanner() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const UnitStatsScreen()),
+        ),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF3B2470), Color(0xFF4B2E83), Color(0xFF1F6F6B)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.purple.withValues(alpha: 0.22),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(Icons.account_tree_outlined,
+                      color: Colors.white, size: 21),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '단위대별 · 연맹별 상세내역',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        '어느 단위대가 몇 명을 배출·보유했는지, 표기 변형 확인과 명부까지',
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10.5,
+                            height: 1.45),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.chevron_right, color: Colors.white, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _scopeTabs() {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 2),
