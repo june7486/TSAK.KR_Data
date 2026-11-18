@@ -56,6 +56,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   /// 이름 공개/비공개 서버 저장 진행 중 여부(연타 방지).
   bool _nameBusy = false;
 
+  /// [turn63] 평생회원 지정/해제 처리 중 여부(연타 방지).
+  ///  서버 왕복이 있는 조작이라 두 번 눌리면 요청이 두 번 나간다.
+  bool _busyLifetime = false;
+
   /// 멘토·페런츠 인적사항·메달 연동 캐시 (인가번호 → 데이터).
   Map<String, dynamic> _linkProfilesCache = {};
   final Map<String, Future<Map<String, dynamic>>> _medalFuture = {};
@@ -1144,8 +1148,139 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           // (요구) 회원은 스스로 평생회원으로 '지정'할 수 없다 → '요청'만 가능.
           //  · 인가자 창에서도 실행 가능. 관리자·마스터가 승인한다.
           _feeRequestButtons(m, 'lifetime'),
+          // ── [turn63] 관리자·마스터 즉시 해제/지정 ────────────────────
+          //  [요구] "관리자, 마스터 계정으로 로그인 후 평생회원 취소 할 수
+          //         있어야 함"
+          //  종전에는 '등록요청'만 있어서, 이미 평생회원이 된 사람을
+          //  되돌릴 방법이 화면에 **아예 없었다**(서버만 알고 있었다).
+          //  → 마스터·관리자에게만 해제/직접지정 버튼을 노출한다.
+          const SizedBox(height: 10),
+          _lifetimeAdminRow(m),
         ],
       ),
+    );
+  }
+
+  /// [turn63] 평생회원 직접 지정/해제 — 관리자·마스터 전용.
+  ///
+  /// 왜 요청 큐를 거치지 않고 직접 쓰는가:
+  ///  · 해제(취소)는 '요청'이라는 개념이 없다. 회원이 "취소해 주세요"를
+  ///    요청하는 구조가 아니라, 관리자가 판단해 바로 내리는 조치다.
+  ///  · 승인 큐를 거치면 승인 대기 상태에서 오히려 화면이 더 혼란스럽다.
+  ///  · 다만 되돌릴 수 없는 조치이므로 **확인 대화상자**를 반드시 거친다.
+  Widget _lifetimeAdminRow(Member m) {
+    final state = context.watch<AppState>();
+    final canAdmin = state.isApp || state.isMaster;
+    if (!canAdmin) return const SizedBox.shrink();
+
+    Future<void> apply({required bool on}) async {
+      final label = on ? '평생회원으로 지정' : '평생회원 해제';
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(label, style: const TextStyle(fontSize: 15)),
+          content: Text(
+            on
+                ? '${m.name}(${m.number}) 님을 평생회원으로 직접 지정합니다.\n\n'
+                    '· 등록일은 오늘 날짜로 기록됩니다.\n'
+                    '· 연회비는 이후 자동으로 "평생회원" 처리됩니다.'
+                : '${m.name}(${m.number}) 님의 평생회원 자격을 해제합니다.\n\n'
+                    '· 평생회원 배지와 등록일이 지워집니다.\n'
+                    '· 연회비 납부 이력은 그대로 남습니다.\n'
+                    '· 되돌리려면 다시 지정하면 됩니다.',
+            style: const TextStyle(fontSize: 12.5, height: 1.6),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    on ? AppColors.lifetimeGold : const Color(0xFFB3261E),
+              ),
+              onPressed: () => Navigator.pop(c, true),
+              child: Text(on ? '지정' : '해제'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      if (!mounted) return;
+
+      // [turn63] 서버 전용 경로로 저장한다.
+      //  ⚠️ `save(m.copyWith(lifetimeSince: ''))` 는 **동작하지 않는다**.
+      //   서버 회원저장은 '빈 문자열 = 미지정'으로 보고 기존값을 보존하므로,
+      //   해제해도 옛 등록일이 남아 "미등록 (2026-11-15)" 같은 모순이 생긴다.
+      //   (사진·메모 보호용 안전장치의 부작용 — 우회하지 않고 전용 경로를 둔다.)
+      setState(() => _busyLifetime = true);
+      final res = await context.read<AppState>().setLifetime(m, on: on);
+      if (!mounted) return;
+      setState(() => _busyLifetime = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.message),
+          backgroundColor: res.ok ? null : const Color(0xFFB3261E),
+          duration: Duration(seconds: res.ok ? 2 : 4),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          state.isMaster ? '마스터 즉시 조치' : '관리자 즉시 조치',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textGray,
+          ),
+        ),
+        if (m.lifetimeMember)
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFB3261E),
+              side: const BorderSide(color: Color(0xFFE8B4B0)),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: _busyLifetime ? null : () => apply(on: false),
+            icon: _busyLifetime
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.star_border, size: 16),
+            label: const Text(
+              '평생회원 해제',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          )
+        else
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF8A6A00),
+              side: const BorderSide(color: Color(0xFFE0C578)),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: _busyLifetime ? null : () => apply(on: true),
+            icon: _busyLifetime
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.star, size: 16),
+            label: const Text(
+              '평생회원 직접 지정',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+      ],
     );
   }
 

@@ -1681,6 +1681,70 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// [turn63] 평생회원 **직접 지정 / 해제** (관리자·마스터 전용).
+  ///
+  /// ## 왜 `save(m.copyWith(...))` 로 하지 않는가 — 실측으로 확인한 함정
+  ///  서버의 회원저장(`POST /api/member`)은 병합 시
+  ///   `값이 빈 문자열 && 기존값이 비어있지 않음` → **무시(기존값 보존)**
+  ///  규칙을 쓴다. 사진·메모·주소가 빈 값으로 덮여 사라지던 사고를 막는
+  ///  안전장치인데, 그 부작용으로 `lifetimeSince: ''` 도 함께 무시된다.
+  ///  결과: `lifetimeMember` 만 false 가 되고 등록일은 남아
+  ///        "평생회원 미등록 (2026-11-15)" 같은 모순 표시가 된다.
+  ///
+  ///  그래서 해제/지정은 서버가 필드를 명시적으로 지우는 전용 경로를 쓴다.
+  ///  성공 시 서버가 확정한 값을 로컬 캐시에도 반영하고 목록을 새로 받는다.
+  ///
+  /// 반환: (ok, 서버 메시지). 실패 사유를 화면에 그대로 보여주기 위해
+  ///       문자열을 함께 돌려준다(조용한 실패 금지).
+  Future<({bool ok, String message})> setLifetime(
+    Member m, {
+    required bool on,
+  }) async {
+    if (!(isApp || isMaster)) {
+      return (ok: false, message: '관리자·마스터만 변경할 수 있습니다.');
+    }
+    // 은하는 G접두어 보존, 범스카우트는 숫자.
+    //  ⚠️ 인가번호가 **비어 있는 일반회원**이 실제로 있다(실측: 최희락 님,
+    //      id=reg_01046574655_…). 그런 회원은 번호로는 절대 찾을 수 없으므로
+    //      id 를 보낸다. 서버는 id → 번호 → 전화번호 순으로 대조한다.
+    final numStr = m.number.trim();
+    final ident = numStr.isNotEmpty ? numStr : m.id;
+    if (ident.isEmpty) {
+      return (ok: false, message: '인가번호·id 가 없어 변경할 수 없습니다.');
+    }
+    try {
+      final j = await nas.setLifetime(ident: ident, on: on);
+      if (j['ok'] != true) {
+        return (
+          ok: false,
+          message: '${j['error'] ?? '변경에 실패했습니다.'}',
+        );
+      }
+      // 서버가 확정한 값을 로컬 캐시에 즉시 반영(화면 깜빡임 방지).
+      //  saveLocalOnly 는 동기(void) — await 를 붙이면 분석 오류가 난다.
+      repo.saveLocalOnly(
+        m.copyWith(
+          lifetimeMember: j['lifetimeMember'] == true,
+          lifetimeSince: '${j['lifetimeSince'] ?? ''}',
+        ),
+      );
+      // 목록·배지(평생회원 수) 등 파생 화면까지 맞추기 위해 새로 받는다.
+      try {
+        await repo.syncFromNas();
+      } catch (_) {}
+      final n = (j['requestsUpdated'] as num?)?.toInt() ?? 0;
+      return (
+        ok: true,
+        message: on
+            ? '평생회원으로 지정했습니다.'
+            : '평생회원을 해제했습니다.'
+                '${n > 0 ? ' (등록요청 이력 $n건도 해제 처리)' : ''}',
+      );
+    } catch (e) {
+      return (ok: false, message: '변경 실패: $e');
+    }
+  }
+
   // ---------- 일반회원 승인 시스템 ----------
   /// 미승인(승인 대기) 일반회원 목록.
   List<Member> get pendingMembers =>

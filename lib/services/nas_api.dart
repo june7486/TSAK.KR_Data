@@ -574,6 +574,37 @@ class NasApi {
   Future<bool> memberRequestDelete(String id) =>
       memberRequestSet(id: id, action: 'delete');
 
+  /// [turn63] 평생회원 **직접 지정 / 해제** (관리자·마스터 전용).
+  ///
+  /// ## 왜 일반 회원저장(`/api/member`)을 쓰지 않는가
+  ///  서버의 회원저장은 **빈 문자열을 '미지정'으로 보고 무시**한다.
+  ///  (사진·메모가 빈 값으로 덮여 사라지던 사고를 막는 안전장치다.)
+  ///  그 부작용으로 `lifetimeSince: ''` 를 보내도 저장되지 않아,
+  ///  해제 후에도 옛 등록일이 남아 화면이 모순된 값을 보여준다.
+  ///  → 해제는 서버가 필드를 **명시적으로** 지우는 이 전용 경로로 처리한다.
+  ///
+  /// [ident] 인가번호('1957') 또는 은하 G번호('G43'). 서버는 id·전화번호도
+  ///         차례로 대조하므로 회원 id 를 넣어도 된다.
+  /// [on]    true = 지정, false = 해제
+  /// 반환: 서버가 확정한 상태(`lifetimeMember`, `lifetimeSince`, `requestsUpdated`).
+  Future<Map<String, dynamic>> setLifetime({
+    required String ident,
+    required bool on,
+    String date = '',
+  }) async {
+    final body = <String, dynamic>{'ident': ident, 'on': on};
+    if (on && date.isNotEmpty) body['date'] = date;
+    final r = await http
+        .post(
+          _uri('/api/member/lifetime/set'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode(body),
+        )
+        .timeout(const Duration(seconds: 30));
+    final j = json.decode(utf8.decode(r.bodyBytes)) as Map;
+    return j.cast<String, dynamic>();
+  }
+
   // ---- 개인 제안 행사(심사중) ----
   /// 개인프로필에서 새 행사를 제안(관리자·마스터 승인 전 '심사중').
   Future<Map<String, dynamic>> eventPrivateCreate({
