@@ -48,11 +48,24 @@ Future<void> main() async {
 class TsakApp extends StatelessWidget {
   const TsakApp({super.key});
 
+  /// [turn66] 전역 네비게이터 키.
+  ///
+  /// ## 왜 필요한가 (실측 버그)
+  ///  로그인 성공 시 `AppState.login()` 안에서 `notifyListeners()` 가
+  ///  먼저 실행된다. 그러면 AuthGate 가 곧바로 HomeScreen 으로 교체되고
+  ///  **LockScreen 은 위젯 트리에서 사라진다**. 그 뒤 LockScreen 의
+  ///  context 로 다이얼로그를 띄우면 "죽은 context" 가 되어, 닫히는 순간
+  ///  로그인 화면이 다시 그려졌다("확인하면 다시 로그인 창이 열림").
+  ///  → 트리에 살아 있는 전역 Navigator 로 띄우면 이 문제가 사라진다.
+  static final GlobalKey<NavigatorState> navKey =
+      GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: AppConfig.appTitle,
       debugShowCheckedModeBanner: false,
+      navigatorKey: navKey,
       theme: AppTheme.light(),
       // 규칙: 모든 창의 텍스트를 선택·복사할 수 있게 한다(PC 우클릭/드래그).
       //  · SelectionArea 가 트리 전체의 Text 를 선택 가능하게 만든다.

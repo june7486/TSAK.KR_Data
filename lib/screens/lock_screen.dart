@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../main.dart' show TsakApp; // [turn66] 전역 네비게이터(navKey) 사용
 import '../services/app_state.dart';
 import '../services/apk_updater.dart';
 import '../services/build_info.dart';
@@ -167,14 +168,27 @@ class _LockScreenState extends State<LockScreen> {
     if (ok) {
       // [turn65] 같은 IP 다계정 접속 경고 — 로그인에 성공했더라도,
       //  최근 15분 안에 같은 회선에서 서로 다른 3개 이상 계정이 접속했다면
-      //  반드시 한 번 읽고 넘어가게 한다(차단은 하지 않는다).
+      //  한 번은 읽고 넘어가게 한다(차단·불이익 없음, 경고창만).
+      //
+      // [turn66] "확인하면 다시 로그인 창이 열림" 버그 수정
+      //  원인: `state.login()` 안에서 notifyListeners() 가 이미 실행되어
+      //        AuthGate 가 LockScreen → HomeScreen 으로 교체한다.
+      //        즉 이 지점의 `context` 는 곧 트리에서 사라지는 "죽은 context"
+      //        이고, 그 context 로 다이얼로그를 띄우면 닫히는 순간
+      //        로그인 화면이 다시 그려졌다.
+      //  해결: (1) 먼저 HomeScreen 으로 넘긴다.
+      //        (2) 살아 있는 전역 Navigator(TsakApp.navKey) 로 경고창을 띄운다.
       final ipNotice = state.ipNotice;
-      if (ipNotice != null && mounted) {
-        state.clearIpNotice(); // 한 번만 띄운다(뒤로 갔다 와도 반복 금지)
-        await showIpMultiAccountDialog(context, ipNotice);
-        if (!mounted) return;
-      }
       widget.onUnlocked?.call();
+      if (ipNotice != null) {
+        state.clearIpNotice(); // 한 번만 띄운다(뒤로 갔다 와도 반복 금지)
+        final rootCtx = TsakApp.navKey.currentContext;
+        // rootCtx 는 LockScreen 의 State.mounted 와 무관한 별도 context 이므로
+        //  반드시 rootCtx 자체의 mounted 로 검사한다(analyzer 지적 반영).
+        if (rootCtx != null && rootCtx.mounted) {
+          await showIpMultiAccountDialog(rootCtx, ipNotice);
+        }
+      }
     } else {
       setState(() => _error = _hintForTier());
     }

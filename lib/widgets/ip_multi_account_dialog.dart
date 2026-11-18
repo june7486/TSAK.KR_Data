@@ -18,10 +18,11 @@ import '../theme/app_theme.dart';
  *  · **차단이 아니라 통보**다. 가족·학교·사무실은 IP 를 정상적으로 공유하고,
  *    한 지도자가 여러 대원 계정을 확인해야 하는 업무도 있다.
  *    로그인 자체를 막으면 정상 사용자가 먼저 피해를 본다.
- *  · 그래서 "막았다"가 아니라 "기록되고 있다"를 분명히 알린다.
- *    억제 효과는 차단보다 이쪽이 크고, 분쟁도 줄어든다.
- *  · 문구(title/body/policy)는 **서버가 만든다**. 법적 고지를 앱 배포 없이
+ *  · 문구(title/body/policy)는 **서버가 만든다**. 고지를 앱 배포 없이
  *    고칠 수 있어야 하기 때문. 앱은 표시만 한다.
+ *  · **[turn66] 경고창만 띄우고 다른 불이익은 없도록 함** (사용자 지시).
+ *    따라서 위반·처벌·자격정지 같은 위협 표현을 모두 제거했다.
+ *    "이용 제한 없음"을 문구에 명시해, 사용자가 겁먹지 않게 한다.
  */
 Future<void> showIpMultiAccountDialog(
   BuildContext context,
@@ -43,10 +44,10 @@ Future<void> showIpMultiAccountDialog(
     barrierDismissible: false, // 반드시 읽고 닫게 한다(실수로 지나치지 않도록)
     builder: (ctx) {
       return AlertDialog(
-        icon: const Icon(
-          Icons.gpp_maybe_rounded,
-          color: Color(0xFFB3261E),
-          size: 34,
+        icon: Icon(
+          Icons.info_outline_rounded,
+          color: AppColors.purple,
+          size: 32,
         ),
         title: Text(
           title,
@@ -72,9 +73,11 @@ Future<void> showIpMultiAccountDialog(
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFDECEA),
+                    color: AppColors.purple.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFF3C6C1)),
+                    border: Border.all(
+                      color: AppColors.purple.withValues(alpha: 0.18),
+                    ),
                   ),
                   child: Text(
                     body.isNotEmpty
@@ -84,7 +87,7 @@ Future<void> showIpMultiAccountDialog(
                     style: const TextStyle(
                       fontSize: 12.5,
                       height: 1.65,
-                      color: Color(0xFF5F1A14),
+                      color: AppColors.textDark,
                     ),
                   ),
                 ),
@@ -178,7 +181,7 @@ Future<void> showIpMultiAccountDialog(
                 }),
                 const SizedBox(height: 12),
 
-                // ── 3) 법적 고지 ──
+                // ── 3) 기록 보관 안내 (처벌 고지 아님) ──
                 if (policy.isNotEmpty)
                   Container(
                     width: double.infinity,
@@ -194,7 +197,7 @@ Future<void> showIpMultiAccountDialog(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.gavel_rounded,
+                        const Icon(Icons.lock_clock,
                             size: 15, color: Color(0xFF8A6A00)),
                         const SizedBox(width: 7),
                         Expanded(
@@ -213,9 +216,9 @@ Future<void> showIpMultiAccountDialog(
                   ),
                 const SizedBox(height: 10),
                 const Text(
-                  '· 본인 계정만 이용해 주세요.\n'
-                  '· 이 경고는 접속 기록을 근거로 자동 표시되며, 관리자에게도 '
-                  '같은 내용이 통보됩니다.',
+                  '· 이 안내는 경고 표시일 뿐이며, 이용 제한이나 불이익은 없습니다.\n'
+                  '· 접속 기록을 근거로 자동 표시되며, 관리자 화면에도 같은 '
+                  '내용이 참고 기록으로 남습니다.',
                   style: TextStyle(
                     fontSize: 11,
                     height: 1.6,
@@ -236,7 +239,7 @@ Future<void> showIpMultiAccountDialog(
               ),
               onPressed: () => Navigator.pop(ctx),
               child: const Text(
-                '내용을 확인했습니다',
+                '확인했습니다 (앱으로 이동)',
                 style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5),
               ),
             ),
