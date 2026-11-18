@@ -11,6 +11,7 @@ import '../services/web_nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/apk_update_banner.dart';
 import '../widgets/busy_overlay.dart';
+import '../widgets/ip_multi_account_dialog.dart';
 import '../widgets/privacy_consent.dart';
 import 'merch_shop_screen.dart';
 
@@ -164,6 +165,15 @@ class _LockScreenState extends State<LockScreen> {
     _stopLoginBusy();
     setState(() => _busy = false);
     if (ok) {
+      // [turn65] 같은 IP 다계정 접속 경고 — 로그인에 성공했더라도,
+      //  최근 15분 안에 같은 회선에서 서로 다른 3개 이상 계정이 접속했다면
+      //  반드시 한 번 읽고 넘어가게 한다(차단은 하지 않는다).
+      final ipNotice = state.ipNotice;
+      if (ipNotice != null && mounted) {
+        state.clearIpNotice(); // 한 번만 띄운다(뒤로 갔다 와도 반복 금지)
+        await showIpMultiAccountDialog(context, ipNotice);
+        if (!mounted) return;
+      }
       widget.onUnlocked?.call();
     } else {
       setState(() => _error = _hintForTier());

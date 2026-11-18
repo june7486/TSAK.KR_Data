@@ -46,6 +46,17 @@ class NasApi {
   /// 서포터즈는 개인접근 화면은 보되 타인 개인정보는 열람할 수 없다.
   bool lastLoginSupporter = false;
 
+  /// [turn65] 마지막 로그인에서 서버가 보낸 **같은 IP 다계정 접속 경고**.
+  ///
+  /// null 이면 경고 없음. 값이 있으면 아래 키를 담는다(서버가 문구까지 생성):
+  ///  · active(bool), band(String: '1.2.3.0/24'), count(int: 계정 수),
+  ///    windowMin(int), accounts(List<{ident,name,tier,count,last}>),
+  ///    title(String), body(String), policy(String)
+  ///
+  /// 왜 서버가 문구를 만드는가: 경고 문구는 법적 고지(개인정보보호법)를
+  /// 포함하므로 앱 배포 없이 문구를 고칠 수 있어야 한다.
+  Map<String, dynamic>? lastIpNotice;
+
   /// 현재 발급된 **서버 세션의 등급** ('master' | 'app' | 'personal' | 'guest').
   ///  ── [버그 수정 2026-10-26] 앱 등급과 서버 등급이 어긋나던 문제 ──────────
   ///   개인 탭에서 415(영구 마스터)로 로그인하면 앱은 `_tier='master'` 로
@@ -258,6 +269,12 @@ class NasApi {
     final sid = '${j['sid'] ?? ''}';
     lastLoginAdmin = j['admin'] == true;
     lastLoginSupporter = j['supporter'] == true;
+    // [turn65] 같은 IP 다계정 접속 경고 — 로그인 화면이 팝업을 띄울 때 쓴다.
+    //  서버가 문구까지 만들어 주므로 앱과 서버의 표현이 어긋나지 않는다.
+    final ipNoticeJson = j['ipNotice'];
+    lastIpNotice = (ipNoticeJson is Map)
+        ? ipNoticeJson.map((k, v) => MapEntry('$k', v))
+        : null;
     if (j['ok'] == true && sid.isNotEmpty) {
       sessionId = sid;
       // 서버가 알려준 **실제 세션 등급**을 기억한다(개인 로그인은 personal).

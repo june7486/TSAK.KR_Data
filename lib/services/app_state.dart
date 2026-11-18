@@ -68,6 +68,12 @@ class AppState extends ChangeNotifier {
   // ---------- 역할 / 메뉴 접근권한 ----------
   /// 서포터즈(일반회원 로그인) 여부 — 서버 로그인 응답으로 설정.
   bool _isSupporter = false;
+
+  /// [turn65] 같은 IP 다계정 접속 경고(서버 /api/login 응답의 ipNotice).
+  /// 로그인 직후 로그인 화면이 **한 번만** 팝업으로 띄우고 `clearIpNotice()`.
+  Map<String, dynamic>? _ipNotice;
+  Map<String, dynamic>? get ipNotice => _ipNotice;
+  void clearIpNotice() => _ipNotice = null;
   bool get isSupporter => _isSupporter;
 
   /// 실효 역할 키 — master | app | personal | supporter | guest
@@ -688,6 +694,8 @@ class AppState extends ChangeNotifier {
         if (ok && repo.isNasMode && nas.sessionId.isNotEmpty) {
           _grantedAdmin = nas.lastLoginAdmin;
           _isSupporter = nas.lastLoginSupporter;
+          // [turn65] 같은 IP 다계정 접속 경고 — 로그인 화면이 팝업으로 띄운다.
+          _ipNotice = nas.lastIpNotice;
         }
         // (요구) 관리자 로그인 창을 없애고 범스카우트 인가자 ID칸 하나로 통합.
         //  아이디/암호 관리자 계정(예: task/tsak437)은 순수 숫자 인가번호가
