@@ -27,6 +27,7 @@ import 'role_permissions_screen.dart';
 import 'settings_screen.dart';
 import 'storage_screen.dart';
 import '../widgets/busy_overlay.dart';
+import '../widgets/master_password_dialog.dart';
 import 'stats_screen.dart';
 
 /// 마스터 전용 관리창 (#11 / #13b).
@@ -49,6 +50,12 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
   List<Map<String, dynamic>> _notifies = [];
   int _unread = 0;
 
+  /// [turn69] 마스터 비번이 **기본값 그대로**인지 / 언제 바꿨는지.
+  ///  기본값이면 화면에 경고 띠를 띄운다 — 초기 비번은 문서·git 이력에
+  ///  남아 있을 수 있어 그대로 두는 것이 가장 위험하다.
+  bool _masterCustom = true;
+  String _masterChangedAt = '';
+
   @override
   void initState() {
     super.initState();
@@ -67,7 +74,68 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
             .toList();
         _unread = (nt['unread'] as num?)?.toInt() ?? 0;
       });
+      // [turn69] 마스터 비번 상태는 실패해도 화면을 막지 않는다(부가 정보).
+      try {
+        final ms = await _nas.masterState();
+        if (!mounted) return;
+        setState(() {
+          _masterCustom = ms['custom'] == true;
+          _masterChangedAt = (ms['changedAt'] ?? '').toString();
+        });
+      } catch (_) {}
     } catch (_) {}
+  }
+
+  /// [turn69] 마스터 비밀번호 변경 — **새 비번 3회 확인** 후에만 저장.
+  Future<void> _changeMasterPw() async {
+    final done = await showMasterPasswordDialog(context, _nas);
+    if (done == true) {
+      _snack('마스터 비밀번호를 변경했습니다. 다른 기기의 마스터 세션은 정리됩니다.');
+      await _load();
+    }
+  }
+
+  /// 기본 비번을 아직 쓰고 있으면 경고 띠를 보여준다.
+  Widget _masterPwBanner() {
+    if (_masterCustom) {
+      return ListTile(
+        dense: true,
+        leading: const Icon(Icons.verified_user,
+            size: 18, color: AppColors.scoutGreen),
+        title: Text(
+          _masterChangedAt.isEmpty
+              ? '비밀번호 변경됨'
+              : '비밀번호 변경됨 · $_masterChangedAt',
+          style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+        ),
+      );
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      padding: const EdgeInsets.all(9),
+      decoration: BoxDecoration(
+        color: AppColors.taegeukRed.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border:
+            Border.all(color: AppColors.taegeukRed.withValues(alpha: 0.3)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.gpp_maybe, size: 17, color: AppColors.taegeukRed),
+          SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              '아직 초기 비밀번호를 쓰고 있습니다. 지금 바꾸는 것을 권합니다.',
+              style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.4,
+                  color: AppColors.taegeukRed,
+                  fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _run(Future<void> Function() fn, String label) async {
@@ -257,6 +325,19 @@ class _MasterConsoleScreenState extends State<MasterConsoleScreen> {
                   Icons.insights,
                   AppColors.tigerGold,
                   () => _push(const StatsScreen(initialScope: 1)),
+                ),
+              ]),
+              // ── [turn69] 마스터 계정 보안 ─────────────────────────────
+              //  요구: "마스터비번 변경 … 마스터창에 비번 변경 창 추가로 넣음"
+              //  해시로만 보관하므로 **되찾기 불가** → 화면에서 3회 확인.
+              _section('마스터 계정 보안', [
+                _masterPwBanner(),
+                _tile(
+                  '마스터 비밀번호 변경',
+                  Icons.key_rounded,
+                  AppColors.taegeukRed,
+                  _changeMasterPw,
+                  badge: _masterCustom ? null : '기본값',
                 ),
               ]),
               _section('출력 · 로그', [

@@ -285,6 +285,14 @@ class NasApi {
 
   /// QR/세션복원용 세션 발급 (비번 입력 없이 열리는 개인 QR 전용).
   /// master 등급은 마스터 비번 확인값이 없으면 서버가 거부한다.
+  ///
+  /// ## [turn69] 마스터 값이 없거나 낡았을 때 스스로 복구한다
+  ///  종전에는 호출부가 앱에 박힌 상수(`AppConfig.masterPassword`)를 그대로
+  ///  넘겼다. 서버에서 비번을 바꾸면 그 상수가 낡아 **마스터 세션 발급이
+  ///  영구히 401** 이 되고, 백업·복원·서버중지·강제변경·접속기록이 전부 멈췄다.
+  ///  지금은 ①넘어온 값 → ②이 실행에서 인증된 값 순으로 시도하고,
+  ///  둘 다 실패하면 **마지막 수단으로 현재 세션을 재사용**한다(이미 마스터
+  ///  세션을 가진 사용자를 쫓아내지 않기 위함). 값 자체를 새로 만들지는 않는다.
   Future<bool> grantSession(
     String tier, {
     String id = '',
@@ -294,30 +302,48 @@ class NasApi {
     bool log = false,
     String via = '',
   }) async {
-    try {
-      final r = await http
-          .post(
-            _uri('/api/session/grant'),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: json.encode({
-              'tier': tier,
-              'id': id,
-              'corps': corps,
-              if (master != null) 'master': master,
-              if (app != null) 'app': app,
-              if (log) 'log': true,
-              if (via.isNotEmpty) 'via': via,
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
-      final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
-      final sid = '${j['sid'] ?? ''}';
-      if (j['ok'] == true && sid.isNotEmpty) {
-        sessionId = sid;
-        serverTier = '${j['tier'] ?? tier}';
-        return true;
-      }
-    } catch (_) {}
+    Future<bool> attempt(String? masterVal) async {
+      try {
+        final r = await http
+            .post(
+              _uri('/api/session/grant'),
+              headers: {..._authHeaders, 'Content-Type': 'application/json'},
+              body: json.encode({
+                'tier': tier,
+                'id': id,
+                'corps': corps,
+                if (masterVal != null && masterVal.isNotEmpty)
+                  'master': masterVal,
+                if (app != null) 'app': app,
+                if (log) 'log': true,
+                if (via.isNotEmpty) 'via': via,
+              }),
+            )
+            .timeout(const Duration(seconds: 15));
+        final j = json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+        final sid = '${j['sid'] ?? ''}';
+        if (j['ok'] == true && sid.isNotEmpty) {
+          sessionId = sid;
+          serverTier = '${j['tier'] ?? tier}';
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    }
+
+    if (tier != 'master') return attempt(master);
+
+    // ① 호출부가 준 값
+    if (master != null && master.isNotEmpty && await attempt(master)) {
+      return true;
+    }
+    // ② 이 실행에서 서버가 인정한 값 (다르면 한 번 더)
+    final cred = AppConfig.masterCredential;
+    if (cred.isNotEmpty && cred != master && await attempt(cred)) {
+      return true;
+    }
+    // ③ 이미 마스터 세션이면 그대로 인정 — 재발급 실패로 기능이 멈추지 않게.
+    if (serverIsMaster && sessionId.isNotEmpty) return true;
     return false;
   }
 
@@ -325,6 +351,8 @@ class NasApi {
   Future<void> logout() async {
     final old = sessionId;
     sessionId = '';
+    // [turn69] 로그아웃하면 메모리의 마스터 자격증명도 함께 지운다.
+    AppConfig.clearMasterCredential();
     if (old.isEmpty) return;
     try {
       await http
@@ -2830,6 +2858,54 @@ class NasApi {
             'new': newPw,
           }),
         )
+        .timeout(const Duration(seconds: 20));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  // ── [turn69] 마스터 비밀번호 관리 ───────────────────────────────────
+  //  요구: "마스터창에 비번 변경 창 추가로 넣음,
+  //        비번 변경 시 변경된 비번 확인 3번 할 것"
+  //  · 조회와 변경을 나눈다. 조회는 읽기 전용(GET), 변경만 POST.
+  //  · 서버는 비밀번호를 해시로만 보관하므로 **되돌려 받을 수 없다**.
+  //    화면에서 '지금 비번 보기' 기능은 만들 수 없다(있으면 그게 더 위험).
+
+  /// 마스터 비밀번호 상태 — 지금 기본값인지 / 언제 바꿨는지.
+  /// 반환: {ok, custom(bool), changedAt(String)}
+  Future<Map<String, dynamic>> masterState() async {
+    final r = await http
+        .get(_uri('/api/master/state'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 15));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 마스터 비밀번호 변경.
+  /// 화면(UI)에서 새 비밀번호를 **3회 확인**한 뒤에만 이 함수를 부른다.
+  /// 서버는 ①현재 비번 검증 ②새 비번 규칙(8자↑·영문+숫자) ③저장 순으로 처리하고,
+  /// 성공하면 **다른 기기의 마스터 세션을 정리**한다(이 세션은 유지).
+  Future<Map<String, dynamic>> changeMasterPassword(
+    String current,
+    String newPw,
+  ) async {
+    final r = await http
+        .post(
+          _uri('/api/master/password'),
+          headers: {..._authHeaders, 'Content-Type': 'application/json'},
+          body: json.encode({'current': current, 'new': newPw}),
+        )
+        .timeout(const Duration(seconds: 30));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  // ── [turn69] 같은 IP 다계정 접속 현황 (관리자·마스터) ────────────────
+  //  ⚠️ 이 화면은 **참고 기록**이다. 차단·권한제약을 하지 않는다.
+  //     (요구: "3계정/15분, 단 경고만 팝업하고 기능 및 권한 제약은 없음")
+  //  반환: {ok, windowMin, threshold, highCount,
+  //         groups:[{band, accountCount, loginCount, risk, alerted,
+  //                  lastAlert, accounts:[{ident,name,tier,count,last,device}]}]}
+  Future<Map<String, dynamic>> securityIpSeen({String band = ''}) async {
+    final q = band.trim().isEmpty ? '' : '?band=${Uri.encodeQueryComponent(band)}';
+    final r = await http
+        .get(_uri('/api/security/ipseen$q'), headers: _authHeaders)
         .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }

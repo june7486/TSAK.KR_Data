@@ -422,11 +422,19 @@ class _QrLoginDialogState extends State<_QrLoginDialog> {
     final id = idRaw.trim();
     final pw = pwRaw.trim();
     if (pw.isEmpty) return false;
-    if (pw == AppConfig.masterPassword) return true;
+    // ── [turn69] 로컬 상수 비교로 마스터를 통과시키지 않는다 ─────────────
+    //  종전: `if (pw == AppConfig.masterPassword) return true;`
+    //        앱 번들에 박힌 평문과 비교했으므로, 번들을 가진 사람은
+    //        서버와 무관하게 QR 화면의 마스터 판정을 통과할 수 있었다.
+    //        그리고 서버에서 비번을 바꾸면 이 비교가 조용히 어긋났다.
+    //  지금: 서버가 판정한다(아래 master/login). 앱은 정답을 모른다.
     if (state.repo.isNasMode) {
       try {
         final r = await state.nas.login('master', pw);
-        if (r['ok'] == true) return true;
+        if (r['ok'] == true) {
+          AppConfig.setMasterCredential(pw);
+          return true;
+        }
       } catch (_) {}
     }
     if (id.toUpperCase() == 'TSAK') {

@@ -11,8 +11,43 @@ class AppConfig {
   static const String appVersion = '1.0.0';
   static const String appUpdated = '2025.09.24';
 
-  /// 마스터 비밀번호 (불변, 절대 변경 금지)
-  static const String masterPassword = 'Corbuser7!@@';
+  /// ── [turn69] 마스터 비밀번호 — 하드코딩 상수에서 **런타임 보관**으로 전환 ──
+  ///
+  /// ## 왜 바꿨나 (실제 사고)
+  ///  종전에는 `static const String masterPassword = '...'` 로 **앱에 박아** 두고
+  ///  그 값을 그대로 서버에 보냈다(`grantSession(master: ...)`, `setServerPaused` 등).
+  ///  그런데 서버는 이제 비밀번호를 **해시**로 보관하고 사용자가 바꿀 수 있다.
+  ///  → 상수가 낡는 순간 **마스터 전용 기능이 전부 401** 이 된다
+  ///     (백업·복원·서버 중지·회원 강제변경·접속기록 …).
+  ///  게다가 앱 번들에 평문이 남아 있어, 번들을 받은 사람이 마스터가 될 수 있었다.
+  ///
+  /// ## 지금 규칙
+  ///   · 마스터 **인증은 서버가 판정**한다(앱은 정답을 모른다).
+  ///   · 로그인에 성공하면 그 입력값을 `_masterCredential` 에 담아
+  ///     이후 서버 호출에만 재사용한다(메모리, 앱 종료 시 소멸).
+  ///   · `legacyMasterPassword` 는 **서버에 닿지 못하는 오프라인** 상황의
+  ///     최후 폴백일 뿐이며, NAS 모드에서는 먼저 쓰지 않는다.
+  static const String legacyMasterPassword = 'Corbuser7!@@';
+
+  static String _masterCredential = '';
+
+  /// 이 실행에서 실제로 인증된 마스터 비밀번호(없으면 빈 문자열).
+  static String get masterCredential => _masterCredential;
+
+  /// 로그인 성공 시 호출 — 이후 서버 호출에 재사용된다.
+  static void setMasterCredential(String v) {
+    _masterCredential = v;
+  }
+
+  /// 잠금/로그아웃 시 반드시 비운다.
+  static void clearMasterCredential() {
+    _masterCredential = '';
+  }
+
+  /// 서버 호출에 실어 보낼 마스터 값.
+  ///  인증된 값이 있으면 그것을, 없으면 레거시 값(오프라인 폴백)을 쓴다.
+  static String get masterPassword =>
+      _masterCredential.isNotEmpty ? _masterCredential : legacyMasterPassword;
 
   /// 영구 마스터 인가번호 — 이 번호는 '개인 권한'으로 로그인해도 앱이 마스터로
   ///  승격해 주던 예외 목록이다.

@@ -496,13 +496,24 @@ class AppState extends ChangeNotifier {
     // 범스카우트 탭에서 관리자 계정으로 인증된 경우(통합 로그인) 표시.
     bool asAdmin = false;
     if (tier == 'master') {
-      // 마스터는 서버 검증(있으면) 우선, 없으면 로컬 상수
-      ok = value == AppConfig.masterPassword;
-      if (!ok && repo.isNasMode) {
+      // ── [turn69] 서버 판정 우선 (앱은 마스터 비번의 정답을 모른다) ──────
+      //  종전: `ok = value == AppConfig.masterPassword` 로 앱 상수를 먼저 믿었다.
+      //        서버에서 비번을 바꾸면 상수가 낡아 **마스터 기능이 전부 401**.
+      //  지금: NAS 모드면 서버가 판정하고, 성공한 값만 이후 호출에 재사용한다.
+      //        (오프라인일 때만 레거시 상수로 폴백)
+      ok = false;
+      if (repo.isNasMode) {
         try {
           final r = await nas.login('master', value);
           ok = r['ok'] == true;
         } catch (_) {}
+      }
+      if (ok) {
+        AppConfig.setMasterCredential(value);
+      } else if (!repo.isNasMode) {
+        // 서버에 닿을 수 없는 모드에서만 레거시 값 허용.
+        ok = value == AppConfig.legacyMasterPassword;
+        if (ok) AppConfig.setMasterCredential(value);
       }
     } else if (tier == 'app') {
       // 앱 접근: (1) 공용 관리자 ID "TSAK" + 앱 비밀번호, 또는
@@ -610,7 +621,11 @@ class AppState extends ChangeNotifier {
         ok = candidates.any(
           (c) =>
               c == expected ||
-              c == AppConfig.masterPassword ||
+              // [turn69] 마스터 **비번 자체**를 개인 로그인에 쓰는 예외 경로.
+              //  하드코딩 상수가 아니라 '이 실행에서 서버가 인정한 값'하고만
+              //  비교한다(상수가 낡아 마스터가 잠기는 일을 막는다).
+              (AppConfig.masterCredential.isNotEmpty &&
+                  c == AppConfig.masterCredential) ||
               c == '$personalNo${AppConfig.personalSuffix}',
         );
         // 인가번호 존재 확인
@@ -639,7 +654,8 @@ class AppState extends ChangeNotifier {
         //     이미 처리되므로 이 규칙의 영향을 받지 않는다(번호 혼동 방지).
         final idLower = idRaw.toLowerCase();
         final idIsStandard = idLower.startsWith('tiger') && idLower.length > 5;
-        final isMasterPw = value == AppConfig.masterPassword;
+        final isMasterPw = AppConfig.masterCredential.isNotEmpty &&
+            value == AppConfig.masterCredential;
         final isDefaultPw = value == expected; // '{번호}!@@'
         final hasCustomPw = value.trim().isNotEmpty && !isDefaultPw;
         // 표준 ID 가 아니면(= 접두어 없음 또는 비어 있음) 기본 개인비번 로그인 금지.
@@ -867,6 +883,9 @@ class AppState extends ChangeNotifier {
   Future<void> lock() async {
     _unlocked = false;
     _tier = '';
+    // [turn69] 잠그면 메모리에 들고 있던 마스터 자격증명도 지운다.
+    //  (앱이 마스터 비번 정답을 계속 들고 있으면 잠금의 의미가 없다)
+    AppConfig.clearMasterCredential();
     // 잠그면 회원번호 원본 노출도 즉시 닫는다(안전 우선).
     ExportService.revealScoutNo = false;
     _who = '';

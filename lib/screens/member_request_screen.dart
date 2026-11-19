@@ -10,6 +10,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_detail_sheet.dart';
+import '../widgets/ip_seen_panel.dart';
 import '../widgets/member_registration_request_section.dart'
     show MemberRequestLabels;
 import '../widgets/fee_payment_request.dart' show feeTimingLabel;
@@ -327,6 +328,11 @@ class _MemberRequestScreenState extends State<MemberRequestScreen> {
                         child: ListView(
                           padding: const EdgeInsets.only(bottom: 90),
                           children: [
+                            // [turn69] 같은 IP 다계정 접속 현황 — **참고 표**.
+                            //  승인 판단을 돕는 보조 정보이며, 차단·권한제약은
+                            //  하지 않는다(요구: "경고 및 확인만 시켜주려는 목적").
+                            //  기본은 접힌 상태로 두어 승인 업무를 가리지 않는다.
+                            const IpSeenPanel(),
                             if (_queues.isEmpty)
                               _empty()
                             else
