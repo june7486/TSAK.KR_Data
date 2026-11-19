@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+// [turn72] 웹에서 브라우저 기본 메뉴를 끄고 Flutter 자체 툴바를 쓰기 위해 필요.
+import 'package:flutter/services.dart' show BrowserContextMenu;
 import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
@@ -16,6 +19,49 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── [turn72] 웹: 브라우저 기본 메뉴를 끄고 Flutter 툴바를 켠다 ──────────
+  //
+  //  ## 사용자 보고 (실측)
+  //   "copy, cut 등등의 기본 메뉴 자체가 안 뜸"   ← 아이폰(iPhone Safari/PWA)
+  //
+  //  ## Flutter 소스로 확인한 실제 동작 (추측 아님)
+  //   `editable_text.dart` 의 `showToolbar()`:
+  //     // Web is using native dom elements to enable clipboard functionality
+  //     // of the context menu: copy, paste, select, cut. ... we should not
+  //     // show a Flutter toolbar for the editable text elements unless the
+  //     // browser's context menu is explicitly disabled.
+  //     if (_webContextMenuEnabled) { return false; }
+  //
+  //   즉 **웹에서는 Flutter 가 자체 복사/붙여넣기 툴바를 일부러 만들지 않고
+  //   브라우저 기본 메뉴에 위임한다.** 그런데 Flutter 웹(CanvasKit)은 실제
+  //   입력을 **화면 밖에 숨긴 <input>** 으로 처리한다. iOS Safari(특히
+  //   홈화면 앱/PWA 전체화면)는 그 숨은 input 에 선택 메뉴를 붙여주지 않는다.
+  //   → 위임할 곳도 없고 Flutter 툴바도 없으니 **아무 메뉴도 안 뜬다.**
+  //
+  //  ## 해결
+  //   브라우저 기본 메뉴를 끄면 `_webContextMenuEnabled` 가 false 가 되어
+  //   `return false` 분기를 타지 않고, Flutter 가 직접 툴바(잘라내기/복사/
+  //   붙여넣기/모두 선택)를 그린다. iOS 에서는 Cupertino 스타일로 뜬다.
+  //   앱 전체에 적용되므로 후원 입력 폼뿐 아니라 모든 입력란에 동시에 듣는다.
+  //
+  //  ## 부작용 (솔직히)
+  //   · 브라우저 자체 메뉴(페이지 전체 선택, '웹 검색', '번역' 등)는 사라진다.
+  //     이 앱은 업무용 내부 도구라 그 기능을 쓰지 않으므로 손해가 없다.
+  //   · 데스크톱 PC 웹의 우클릭 메뉴도 Flutter 메뉴로 바뀐다(동일 항목 제공).
+  //   · 웹이 아닌 플랫폼(안드로이드 APK)에서는 이 호출이 no-op 이다.
+  //
+  //  ## 안전장치
+  //   이 호출이 실패해도 앱은 반드시 떠야 한다. main() 에서 던진 예외는
+  //   runApp 전에 터져 **흰 화면**이 되므로 try/catch 로 감싼다.
+  //   (실패해도 예전 동작으로 돌아갈 뿐, 앱이 죽지는 않는다.)
+  if (kIsWeb) {
+    try {
+      await BrowserContextMenu.disableContextMenu();
+    } catch (e) {
+      debugPrint('[turn72] BrowserContextMenu 비활성화 실패(무시): $e');
+    }
+  }
 
   // 1) 저장소 초기화 — NAS 연결 시도, 실패하면 로컬 시드로 폴백.
   //  [로딩 가속] 첫 프레임(화면)을 NAS 통신으로 막지 않도록, 초기화를
@@ -57,8 +103,7 @@ class TsakApp extends StatelessWidget {
   ///  context 로 다이얼로그를 띄우면 "죽은 context" 가 되어, 닫히는 순간
   ///  로그인 화면이 다시 그려졌다("확인하면 다시 로그인 창이 열림").
   ///  → 트리에 살아 있는 전역 Navigator 로 띄우면 이 문제가 사라진다.
-  static final GlobalKey<NavigatorState> navKey =
-      GlobalKey<NavigatorState>();
+  static final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +112,27 @@ class TsakApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       navigatorKey: navKey,
       theme: AppTheme.light(),
+      // ── [turn72] 한글 로컬라이제이션 ────────────────────────────────────
+      //  요구: "copy, cut 등등의 기본 메뉴 자체가 안 뜸"
+      //
+      //  원인 1) **[turn72 정정] SelectionArea 는 주범이 아니었다.**
+      //    Flutter 소스를 직접 확인한 결과, 웹에서 툴바가 안 뜨는 1차 원인은
+      //    `_webContextMenuEnabled` 가드(브라우저 기본 메뉴에 위임)였고,
+      //    iOS PWA 의 숨은 <input> 에는 그 기본 메뉴가 붙지 않아 결과적으로
+      //    "아무 메뉴도 안 뜨는" 상태가 됐다. 해결은 main() 위쪽의
+      //    `BrowserContextMenu.disableContextMenu()` 주석 참고.
+      //    SelectionArea 는 보조 요인(제스처 경합)일 뿐이므로 유지한다.
+      //  원인 2) 이 앱에는 **GlobalMaterialLocalizations 가 없었다.**
+      //    Flutter 의 선택 툴바(잘라내기/복사/붙여넣기) 라벨은 Material
+      //    로컬라이제이션에서 온다. 미등록 상태에서는 영어 기본값에 의존한다.
+      //    → 한국어 델리게이트를 등록해 라벨을 '잘라내기/복사/붙여넣기' 로 확정.
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US')],
+      locale: const Locale('ko', 'KR'),
       // 규칙: 모든 창의 텍스트를 선택·복사할 수 있게 한다(PC 우클릭/드래그).
       //  · SelectionArea 가 트리 전체의 Text 를 선택 가능하게 만든다.
       //  · 데스크톱(PC 웹)에서는 마우스 드래그로 스크롤되도록 스크롤 동작을

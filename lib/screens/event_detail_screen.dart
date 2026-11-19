@@ -31,6 +31,7 @@ import '../widgets/app_home_emblem.dart';
 import '../widgets/busy_overlay.dart';
 import '../widgets/tsak_app_bar.dart';
 import '../widgets/tsak_form_sheet.dart';
+import '../widgets/paste_icon_button.dart';
 import '../widgets/address_field.dart';
 import '../widgets/donation_accounts.dart';
 import '../widgets/donation_list_panel.dart';
@@ -93,8 +94,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///   · B: 그래도 권한이 없는 사람에게는 **항목을 회색으로 보여준다.**
   ///        기능이 어디 있는지는 알아야 요청할 수 있다.
   ///  → 두 가지를 합쳐 "보이되, 누를 수 있는 것만 눌린다"로 만든다.
-  bool get _canManageMenu =>
-      widget.canManage || _isStaff || _isMasterView;
+  bool get _canManageMenu => widget.canManage || _isStaff || _isMasterView;
 
   /// (요구) 마스터 전용 항목 노출 여부 — '관리'(관리자 세부권한) 탭은
   ///   마스터에게만 보인다.
@@ -161,6 +161,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final nm = '${a['name'] ?? ''}'.trim();
     return nm.isEmpty ? 'row-${_attendees.indexOf(a)}' : 'nm:$nm';
   }
+
   Map<String, dynamic> _access = {};
   List<Map<String, dynamic>> _fees = [];
   List<Map<String, dynamic>> _expenses = [];
@@ -567,7 +568,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///    (참가자·사진 탭은 그대로 쓸 수 있어야 하므로)
   Future<void> _loadFinanceOnly() async {
     if (!mounted) return;
-    final int mySeq = ++_loadSeq;   // 진행 중인 전체 로딩을 무효화
+    final int mySeq = ++_loadSeq; // 진행 중인 전체 로딩을 무효화
     bool isStale() => mySeq != _loadSeq;
 
     Future<Map<String, dynamic>> tryFin() =>
@@ -629,7 +630,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   ///   실패 시에는 스낵바 한 줄로만 알린다.
   Future<void> _loadAttendeesOnly() async {
     if (!mounted) return;
-    final int mySeq = ++_loadSeq;   // 진행 중인 전체 로딩을 무효화
+    final int mySeq = ++_loadSeq; // 진행 중인 전체 로딩을 무효화
     bool isStale() => mySeq != _loadSeq;
     Map<String, dynamic>? e;
     try {
@@ -668,8 +669,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     bool isStaff = false;
     if (myIdent.isNotEmpty) {
       for (final a in staffList) {
-        final id = '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
-            .replaceAll(RegExp(r'[^0-9]'), '');
+        final id =
+            '${a['number'] ?? a['ident'] ?? a['loginId'] ?? a['phone'] ?? ''}'
+                .replaceAll(RegExp(r'[^0-9]'), '');
         if (id.isNotEmpty && id == myIdent) {
           isStaff = true;
           break;
@@ -689,7 +691,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       //  전체 로딩과 **같은 규칙**으로 길이를 맞춘다(인덱스는 보존).
       final bool fullView = widget.canManage || isStaff;
       final int len =
-          (fullView ? 8 : 3) + (_isMasterView ? 1 : 0) + (fullView ? customTabs.length : 0);
+          (fullView ? 8 : 3) +
+          (_isMasterView ? 1 : 0) +
+          (fullView ? customTabs.length : 0);
       final prevIndex = _tab?.index ?? 0;
       if (_tab == null || _tab!.length != len) {
         _tab?.dispose();
@@ -850,22 +854,29 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               final canRun = _canManageMenu;
               // 회색 처리 + 오른쪽에 사유 배지
               Widget gate(String label, {IconData? icon, Color? color}) => Row(
-                    children: [
-                      if (icon != null) ...[
-                        Icon(icon, size: 15,
-                            color: canRun ? (color ?? AppColors.purple)
-                                          : AppColors.textGray),
-                        const SizedBox(width: 6),
-                      ],
-                      Expanded(child: Text(label)),
-                      if (!canRun)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.lock_outline,
-                              size: 13, color: AppColors.textGray),
-                        ),
-                    ],
-                  );
+                children: [
+                  if (icon != null) ...[
+                    Icon(
+                      icon,
+                      size: 15,
+                      color: canRun
+                          ? (color ?? AppColors.purple)
+                          : AppColors.textGray,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(child: Text(label)),
+                  if (!canRun)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Icon(
+                        Icons.lock_outline,
+                        size: 13,
+                        color: AppColors.textGray,
+                      ),
+                    ),
+                ],
+              );
               return [
                 // ── 공통(모든 인가자) ──────────────────────────────
                 const PopupMenuItem<String>(
@@ -918,22 +929,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 PopupMenuItem(
                   value: 'staff',
                   enabled: isAdmin,
-                  child: gate('행사 스텝(STAFF) 등록',
-                      icon: Icons.badge_outlined),
+                  child: gate('행사 스텝(STAFF) 등록', icon: Icons.badge_outlined),
                 ),
                 PopupMenuItem(
                   value: 'addmenu',
                   enabled: isAdmin,
-                  child: gate('메뉴 추가 (사용자 정의 탭)',
-                      icon: Icons.add_box_outlined),
+                  child: gate('메뉴 추가 (사용자 정의 탭)', icon: Icons.add_box_outlined),
                 ),
                 // 메뉴 관리 — 관리자·스탭도 열 수 있다. 단, 게시판 통째로
                 //  삭제는 마스터만.
                 PopupMenuItem(
                   value: 'managemenu',
                   enabled: isAdmin,
-                  child: gate('메뉴 관리 (추가·변경·삭제)',
-                      icon: Icons.dashboard_customize_outlined),
+                  child: gate(
+                    '메뉴 관리 (추가·변경·삭제)',
+                    icon: Icons.dashboard_customize_outlined,
+                  ),
                 ),
                 // ── 마스터 전용 ────────────────────────────────────
                 //  B 요구에 따라 마스터가 아니어도 **회색으로 보여준다**.
@@ -974,18 +985,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   enabled: isMaster,
                   child: Row(
                     children: [
-                      Icon(Icons.delete_forever_outlined,
-                          size: 15,
-                          color: isMaster
-                              ? AppColors.taegeukRed
-                              : AppColors.textGray),
+                      Icon(
+                        Icons.delete_forever_outlined,
+                        size: 15,
+                        color: isMaster
+                            ? AppColors.taegeukRed
+                            : AppColors.textGray,
+                      ),
                       const SizedBox(width: 6),
                       const Expanded(child: Text('게시판 통째로 삭제')),
                       if (!isMaster)
                         const Padding(
                           padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.lock_outline,
-                              size: 13, color: AppColors.textGray),
+                          child: Icon(
+                            Icons.lock_outline,
+                            size: 13,
+                            color: AppColors.textGray,
+                          ),
                         ),
                     ],
                   ),
@@ -1847,9 +1863,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
               TextButton.icon(
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: payload));
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text('$kind 주소를 복사했습니다')),
-                  );
+                  ScaffoldMessenger.of(
+                    ctx,
+                  ).showSnackBar(SnackBar(content: Text('$kind 주소를 복사했습니다')));
                 },
                 icon: const Icon(Icons.link, size: 16),
                 label: const Text('주소 복사', style: TextStyle(fontSize: 12)),
@@ -2009,18 +2025,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 // [요구 2026-10-30] 추가입력사항 **항목별 취합**.
                 //  "항목별로 취합도 가능해야 해" → 이동·숙박·도착 집계 +
                 //  자유입력 명단 + 전달사항 전문을 한 화면에.
-                _rosterButton(
-                  Icons.summarize,
-                  '추가입력 취합',
-                  _openExtraSummary,
-                ),
+                _rosterButton(Icons.summarize, '추가입력 취합', _openExtraSummary),
                 const SizedBox(width: 6),
                 // (요구 2026-10-31) 추가항목별 인원 확인 — **출력 옵션**.
-                _rosterButton(
-                  Icons.bar_chart,
-                  '항목별 인원',
-                  _outputExtraHeadcount,
-                ),
+                _rosterButton(Icons.bar_chart, '항목별 인원', _outputExtraHeadcount),
                 const SizedBox(width: 6),
                 _rosterButton(Icons.sms, '문자', _sendSms),
                 const SizedBox(width: 6),
@@ -2069,9 +2077,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     });
                     // 하나라도 펼쳐져 있으면 → 전부 접기, 아니면 → 전부 펼치기.
                     if (anyOpen) {
-                      _extraCollapsed.addAll(
-                        _attendees.map(_attendeeKey),
-                      );
+                      _extraCollapsed.addAll(_attendees.map(_attendeeKey));
                       _extraAllCollapsed = true;
                     } else {
                       _extraCollapsed.clear();
@@ -2684,8 +2690,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                                 f.group == ExtraGroup.request
                                                 ? FontWeight.w800
                                                 : FontWeight.w500,
-                                            color:
-                                                f.group == ExtraGroup.request
+                                            color: f.group == ExtraGroup.request
                                                 ? ExtraFields.colorOf(f.group)
                                                 : AppColors.textDark,
                                           ),
@@ -3067,7 +3072,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       if (picked == null || !mounted) return;
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => MemberDetailScreen(memberId: picked.id)),
+        MaterialPageRoute(
+          builder: (_) => MemberDetailScreen(memberId: picked.id),
+        ),
       );
       if (mounted) _load();
       return;
@@ -3101,10 +3108,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final _nRaw = '${a['number'] ?? ''}'.trim();
     final _nDig = _nRaw.replaceAll(RegExp(r'[^0-9]'), '');
     final _nLooksPhone = _nDig.length >= 10 || _nDig.startsWith('01');
-    final _nLooksLicense = _nDig.isNotEmpty &&
+    final _nLooksLicense =
+        _nDig.isNotEmpty &&
         !_nLooksPhone &&
-        (RegExp(r'^(g|G|은하|갤럭시|갤럭시)').hasMatch(_nRaw) ||
-            _nDig.length <= 4);
+        (RegExp(r'^(g|G|은하|갤럭시|갤럭시)').hasMatch(_nRaw) || _nDig.length <= 4);
     final storedLic = a['licensed'];
     final bool isRegular;
     if (_nLooksPhone) {
@@ -3119,12 +3126,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // 비인가자는 "회원 정보가 없다" 가 **정상**이므로 문구를 구분한다.
     final msg = isRegular
         ? '${nm.isEmpty ? '이 참가자' : nm}'
-            '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 일반(비인가) 참가자입니다.\n\n'
-            '일반회원으로 등록할까요?\n'
-            '· 인가번호가 없으므로 범/은하 인가자와는 연결되지 않습니다.'
+              '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 일반(비인가) 참가자입니다.\n\n'
+              '일반회원으로 등록할까요?\n'
+              '· 인가번호가 없으므로 범/은하 인가자와는 연결되지 않습니다.'
         : '${nm.isEmpty ? '이 참가자' : nm}'
-            '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 등록된 회원 정보가 없습니다.\n\n'
-            '인가자로 신규 등록할까요?';
+              '${ph.isNotEmpty ? ' ($ph)' : ''} 님은 등록된 회원 정보가 없습니다.\n\n'
+              '인가자로 신규 등록할까요?';
     final ok = await confirmDialog(
       context,
       title: isRegular ? '일반회원 신규 등록' : '신규 회원 등록',
@@ -3160,8 +3167,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     List<Member> cands,
   ) async {
     // 이미 이 참가자에 대해 선택한 적이 있으면 그 회원으로 바로 연다.
-    final memoKey = '${a['number'] ?? ''}|${a['phone'] ?? ''}|'
-        '${a['name'] ?? ''}'.toLowerCase();
+    final memoKey =
+        '${a['number'] ?? ''}|${a['phone'] ?? ''}|'
+                '${a['name'] ?? ''}'
+            .toLowerCase();
     final memoId = _sameNameChoice[memoKey];
     if (memoId != null) {
       for (final m in cands) {
@@ -3172,8 +3181,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final picked = await showDialog<Member>(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.people_alt_outlined,
-            color: AppColors.hermesOrange, size: 30),
+        icon: const Icon(
+          Icons.people_alt_outlined,
+          color: AppColors.hermesOrange,
+          size: 30,
+        ),
         title: Text('동명이인 ${cands.length}명'),
         content: SizedBox(
           width: double.maxFinite,
@@ -3202,8 +3214,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                             backgroundColor: m.isRegular
                                 ? AppColors.textGray
                                 : (m.corps == 'eunha'
-                                    ? AppColors.taegeukBlue
-                                    : AppColors.purple),
+                                      ? AppColors.taegeukBlue
+                                      : AppColors.purple),
                             child: Text(
                               m.corpsMarkLabel,
                               style: const TextStyle(
@@ -3843,9 +3855,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       'corps': c.isRegular ? '' : c.corps,
                       'corpsLabel': c.corpsMarkLabel,
                       'isRegular': c.isRegular,
-                      'unit': c.regUnit.trim().isNotEmpty
-                          ? c.regUnit
-                          : c.unit,
+                      'unit': c.regUnit.trim().isNotEmpty ? c.regUnit : c.unit,
                       'league': c.regLeague.trim().isNotEmpty
                           ? c.regLeague
                           : c.league,
@@ -3913,8 +3923,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             final corpTag = (mm['isRegular'] == true)
                 ? '일반회원'
                 : (mm['corps'] == 'eunha' ? '은하스카우트' : '범스카우트');
-            lookupHint =
-                '$corpTag · ${mm['name'] ?? ''} ($label) 정보를 불러왔습니다';
+            lookupHint = '$corpTag · ${mm['name'] ?? ''} ($label) 정보를 불러왔습니다';
             // 빈 칸만 채운다(관리자가 고친 값 보존).
             void fill(TextEditingController c, String? v) {
               final t = '${v ?? ''}'.trim();
@@ -4014,10 +4023,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         ),
                       ),
                       const SizedBox(height: 4),
-                      for (final c in ((lookupAmbiguous!['candidates']
-                                  as List?) ??
-                              const [])
-                          .whereType<Map>())
+                      for (final c
+                          in ((lookupAmbiguous!['candidates'] as List?) ??
+                                  const [])
+                              .whereType<Map>())
                         InkWell(
                           onTap: () {
                             final cc = c.cast<String, dynamic>();
@@ -4055,16 +4064,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                     color: c['corps'] == 'eunha'
                                         ? AppColors.taegeukBlue
                                         : (c['isRegular'] == true
-                                            ? AppColors.textGray
-                                            : AppColors.taegeukRed),
+                                              ? AppColors.textGray
+                                              : AppColors.taegeukRed),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
                                     c['corps'] == 'eunha'
                                         ? '은하'
-                                        : (c['isRegular'] == true
-                                            ? '일반'
-                                            : '범'),
+                                        : (c['isRegular'] == true ? '일반' : '범'),
                                     style: const TextStyle(
                                       fontSize: 9,
                                       color: Colors.white,
@@ -4242,8 +4249,10 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final identDigits = looksLikePhone ? '' : identRawDigits;
 
     // ── ① 매칭된 회원 우선 ────────────────────────────────────────────
-    final matchedNumber =
-        '${matched?['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final matchedNumber = '${matched?['number'] ?? ''}'.replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
     final matchedIsRegular = matched?['isRegular'] == true;
     final matchedCorps = '${matched?['corps'] ?? ''}'.trim();
 
@@ -4279,8 +4288,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       // 매칭 없음 + 진짜 인가번호 모양 → 인가자로 저장.
       isLicensed = true;
       identityType = 'licensed';
-      final wantsEunha =
-          RegExp(r'^(g|G|은하|갤럭시)').hasMatch(identNum);
+      final wantsEunha = RegExp(r'^(g|G|은하|갤럭시)').hasMatch(identNum);
       identityKey = wantsEunha ? 'eunha:G$identDigits' : 'tsak:$identDigits';
       rowCorps = wantsEunha ? 'eunha' : 'tsak';
     } else {
@@ -4382,8 +4390,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         // ── [turn71] 폴더 이동 중에는 **목록 위에 얇은 진행 막대만** 띄운다.
         //   화면 전체를 스피너로 덮으면 탭 바만 남고 본문이 사라져
         //   '앱이 멈췄다'고 느껴진다(사용자 신고 증상).
-        if (_mediaBusy)
-          const LinearProgressIndicator(minHeight: 2.5),
+        if (_mediaBusy) const LinearProgressIndicator(minHeight: 2.5),
         // ---- 브레드크럼 (하위폴더 탐색) ----
         if (_mediaPath.isNotEmpty)
           Container(
@@ -4575,9 +4582,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         // ── 폴더명 불일치 안내 ───────────────────────────────────────────
         //  (요구) "결정적 단서를 찾았습니다. 앱 상단 제목과 나스 폴더명이
         //  다릅니다." — 서버가 실제 나스 폴더명을 알려주면 그대로 노출한다.
-        if (_folderAlias != null &&
-            _mediaPath.isEmpty &&
-            widget.canManage)
+        if (_folderAlias != null && _mediaPath.isEmpty && widget.canManage)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.fromLTRB(10, 2, 10, 6),
@@ -5026,9 +5031,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     // [중요] 하위폴더까지 펼친 보기(평탄화)에서는 각 파일이 서로 다른
     //  폴더에 있다. 항상 현재 폴더(_mediaSub)를 쓰면 썸네일이 404 로
     //  깨져 '사진이 안 보인다'로 되돌아간다 → 항목별 sub 를 우선 사용.
-    final itemSub = '${m['sub'] ?? ''}'.isNotEmpty
-        ? '${m['sub']}'
-        : _mediaSub;
+    final itemSub = '${m['sub'] ?? ''}'.isNotEmpty ? '${m['sub']}' : _mediaSub;
     // 썸네일 경로가 없으면 Image.network 을 만들지 않는다 —
     //  null URL 로 네트워크 요청이 나가는 것을 막는다.
     final thumbUrl = isMedia
@@ -5077,7 +5080,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               ((m['video'] as num?)?.toInt() ?? 0) >
                           0
                       ? '사진 ${(m['photo'] as num?)?.toInt() ?? 0} · '
-                          '영상 ${(m['video'] as num?)?.toInt() ?? 0}'
+                            '영상 ${(m['video'] as num?)?.toInt() ?? 0}'
                       : '$cnt개',
                   style: const TextStyle(
                     fontSize: 10,
@@ -5460,16 +5463,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         .where((m) => m['isdir'] != true)
         .where((m) => !_isSampleHint('${m['name'] ?? ''}'))
         .where((m) {
-      final k = '${m['kind'] ?? 'image'}';
-      return k == 'image' || k == 'video';
-    }).toList();
+          final k = '${m['kind'] ?? 'image'}';
+          return k == 'image' || k == 'video';
+        })
+        .toList();
     // 현재 타일이 가리키는 파일이 뷰어 목록에서 몇 번째인지.
     //  (평탄화 보기에서는 같은 이름이 서로 다른 폴더에 있을 수 있어
     //   이름 + sub 를 함께 비교한다)
     final name = '${tile['name']}';
     final tileSub = '${tile['sub'] ?? ''}';
-    var at = items.indexWhere((m) =>
-        '${m['name']}' == name && '${m['sub'] ?? ''}' == tileSub);
+    var at = items.indexWhere(
+      (m) => '${m['name']}' == name && '${m['sub'] ?? ''}' == tileSub,
+    );
     if (at < 0) at = items.indexWhere((m) => '${m['name']}' == name);
     if (at < 0) at = 0;
     Navigator.push(
@@ -5580,7 +5585,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   Widget _financeErrorBanner(String err) {
     final low = err.toLowerCase();
-    final bool isAuth = err.contains('401') ||
+    final bool isAuth =
+        err.contains('401') ||
         err.contains('로그인') ||
         err.contains('세션') ||
         low.contains('unauthorized');
@@ -5656,19 +5662,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
       decoration: BoxDecoration(
         color: AppColors.taegeukRed.withValues(alpha: 0.07),
-        border: Border.all(
-          color: AppColors.taegeukRed.withValues(alpha: 0.45),
-        ),
+        border: Border.all(color: AppColors.taegeukRed.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 18,
-            color: AppColors.taegeukRed,
-          ),
+          Icon(Icons.error_outline, size: 18, color: AppColors.taegeukRed),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -6032,9 +6032,17 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 required: isSponsor,
                 child: TextField(
                   controller: itemC,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
                     hintText: '예: 김밥 100줄 / 생수 10박스 / 버스 1대',
+                    suffixIcon: PasteIconButton(
+                      controller: itemC,
+                      onDone: () => setD(() {}),
+                    ),
+                    suffixIconConstraints: const BoxConstraints(
+                      minWidth: 38,
+                      minHeight: 30,
+                    ),
                   ),
                 ),
               ),
@@ -6053,9 +6061,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           isDense: true,
                           suffixText: '원',
+                          // [turn72] 롱프레스 메뉴가 안 떠서 앱이 직접 붙여넣는다.
+                          suffixIcon: PasteIconButton(
+                            controller: amtC,
+                            digitsOnly: true,
+                            onDone: () => setD(() {}),
+                          ),
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 30,
+                          ),
                         ),
                       ),
                     ),
@@ -6071,9 +6089,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           isDense: true,
                           suffixText: '원 상당',
+                          suffixIcon: PasteIconButton(
+                            controller: valueC,
+                            digitsOnly: true,
+                            onDone: () => setD(() {}),
+                          ),
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 30,
+                          ),
                         ),
                       ),
                     ),
@@ -6088,9 +6115,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                   controller: amtC,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
                     suffixText: '원',
+                    suffixIcon: PasteIconButton(
+                      controller: amtC,
+                      digitsOnly: true,
+                      onDone: () => setD(() {}),
+                    ),
+                    suffixIconConstraints: const BoxConstraints(
+                      minWidth: 38,
+                      minHeight: 30,
+                    ),
                   ),
                 ),
               ),
@@ -6413,15 +6449,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
   TsakTableDoc _settlementDoc(
     SettlementLayout layout,
     Map<SettlementBlock, SettlementBlockData> data,
-  ) =>
-      SettlementDoc.build(
-        year: widget.year,
-        title: widget.title,
-        layout: layout,
-        data: data,
-        settlement: _settlementOf(),
-        won: _won,
-      );
+  ) => SettlementDoc.build(
+    year: widget.year,
+    title: widget.title,
+    layout: layout,
+    data: data,
+    settlement: _settlementOf(),
+    won: _won,
+  );
 
   /// 결산 집계(문서·요약 공용).
   EventSettlement _settlementOf() => EventSettlement(
@@ -6445,6 +6480,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     TsakTableDoc Function() build, {
     required String title,
     required String subtitle,
+
     /// 추가입력 항목 선택 정보 — 주면 미리보기에서 항목을 켜고 끌 수 있다.
     TsakExtraPick? extra,
   }) async {
@@ -6487,11 +6523,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       // (요구 2026-10-31) "출력 미리보기시에도 추가항목 선택할 수 있도록"
       //  extra 를 넘기면 미리보기 창에 항목 칩이 나타나고,
       //  칩을 누르면 그 항목 열이 **즉시** 붙어 다시 그려진다.
-      onPreview: () => showTsakOutputPreview(
-        context,
-        doc: doc(),
-        extra: extra,
-      ),
+      onPreview: () => showTsakOutputPreview(context, doc: doc(), extra: extra),
       onOptions: () async {
         final base = build();
         final out = await showTsakTableOptions(
@@ -6773,9 +6805,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     final s = context.read<AppState>();
     final raw = number.trim();
     final low = raw.toLowerCase();
-    final wantEunha = low.startsWith('g') ||
-        raw.startsWith('은하') ||
-        raw.startsWith('갤럭시');
+    final wantEunha =
+        low.startsWith('g') || raw.startsWith('은하') || raw.startsWith('갤럭시');
     final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
 
     Member? pick;
@@ -6799,15 +6830,19 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         pick = hits.first;
       } else if (hits.length > 1) {
         // 동명이인 — 잘못 열면 남의 후원내역을 보여주게 된다. 열지 않는다.
-        _snack('동명이인 ${hits.length}명입니다. 이름으로는 열 수 없습니다'
-            ' (인가번호를 확인하세요)');
+        _snack(
+          '동명이인 ${hits.length}명입니다. 이름으로는 열 수 없습니다'
+          ' (인가번호를 확인하세요)',
+        );
         return;
       }
     }
     if (pick == null) {
-      _snack(name.trim().isEmpty
-          ? '회원을 찾을 수 없습니다'
-          : '${name.trim()} 님의 회원 등록정보가 없습니다');
+      _snack(
+        name.trim().isEmpty
+            ? '회원을 찾을 수 없습니다'
+            : '${name.trim()} 님의 회원 등록정보가 없습니다',
+      );
       return;
     }
     await Navigator.push(
@@ -7124,11 +7159,13 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       members: context
           .read<AppState>()
           .allMembers
-          .map((m) => <String, dynamic>{
-            'number': m.number,
-            'name': m.name,
-            'phone': m.phone,
-          })
+          .map(
+            (m) => <String, dynamic>{
+              'number': m.number,
+              'name': m.name,
+              'phone': m.phone,
+            },
+          )
           .toList(),
     );
   }
@@ -7379,11 +7416,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     if (!mounted) return;
 
     String visLabel(String v) => switch (v) {
-          'all' => '전체 노출',
-          'staff' => '스탭 이상',
-          'admin' => '관리자·마스터',
-          _ => '—',
-        };
+      'all' => '전체 노출',
+      'staff' => '스탭 이상',
+      'admin' => '관리자·마스터',
+      _ => '—',
+    };
 
     // ── 권한 구분 (요구: "관리자/마스터 권한으로 구분해서 정리해줘") ──
     //  [요구 2026-10-26] "B + A 조합"
@@ -7406,8 +7443,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.dashboard_customize_outlined,
-                          size: 20, color: AppColors.purple),
+                      Icon(
+                        Icons.dashboard_customize_outlined,
+                        size: 20,
+                        color: AppColors.purple,
+                      ),
                       SizedBox(width: 8),
                       Text('메뉴 관리', style: TextStyle(fontSize: 16)),
                     ],
@@ -7418,12 +7458,12 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     isMaster
                         ? '마스터 권한 · 추가 / 변경 / 삭제 / 게시판 통째로 삭제'
                         : (isAdmin
-                            ? (_isStaff && !widget.canManage
-                                ? '스탭 권한 · 추가 / 변경 / 삭제 가능 '
-                                    '(게시판 통째로 삭제는 마스터만)'
-                                : '관리자 권한 · 추가 / 변경 / 삭제 가능 '
-                                    '(게시판 통째로 삭제는 마스터만)')
-                            : '권한 없음 · 항목은 보이지만 실행할 수 없습니다'),
+                              ? (_isStaff && !widget.canManage
+                                    ? '스탭 권한 · 추가 / 변경 / 삭제 가능 '
+                                          '(게시판 통째로 삭제는 마스터만)'
+                                    : '관리자 권한 · 추가 / 변경 / 삭제 가능 '
+                                          '(게시판 통째로 삭제는 마스터만)')
+                              : '권한 없음 · 항목은 보이지만 실행할 수 없습니다'),
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -7443,7 +7483,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                           '추가된 메뉴가 없습니다.\n아래 [메뉴 추가]로 첫 게시판을 만드세요.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              fontSize: 13, color: AppColors.textGray),
+                            fontSize: 13,
+                            color: AppColors.textGray,
+                          ),
                         ),
                       )
                     : Column(
@@ -7455,12 +7497,14 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               margin: const EdgeInsets.only(bottom: 6),
                               color: const Color(0xFFFBF9F4),
                               child: Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(10, 6, 4, 6),
+                                padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.forum_outlined,
-                                        size: 16, color: AppColors.purple),
+                                    const Icon(
+                                      Icons.forum_outlined,
+                                      size: 16,
+                                      color: AppColors.purple,
+                                    ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Column(
@@ -7492,77 +7536,88 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                       tooltip: isAdmin
                                           ? '노출권한 변경'
                                           : '노출권한 변경 (권한 없음)',
-                                      enabled: isAdmin &&
+                                      enabled:
+                                          isAdmin &&
                                           !(idOf['${tabs[i]['name'] ?? ''}']
                                                   ?.isEmpty ??
                                               true),
-                                        onSelected: (v) async {
-                                          final nm =
-                                              '${tabs[i]['name'] ?? ''}';
-                                          final bid = idOf[nm] ?? '';
-                                          if (bid.isEmpty) {
-                                            _snack('게시판을 찾지 못했습니다 '
-                                                '(아직 개설 전일 수 있습니다)');
+                                      onSelected: (v) async {
+                                        final nm = '${tabs[i]['name'] ?? ''}';
+                                        final bid = idOf[nm] ?? '';
+                                        if (bid.isEmpty) {
+                                          _snack(
+                                            '게시판을 찾지 못했습니다 '
+                                            '(아직 개설 전일 수 있습니다)',
+                                          );
+                                          return;
+                                        }
+                                        try {
+                                          final r = await _nas
+                                              .customBoardVisibility(
+                                                year: widget.year,
+                                                title: widget.title,
+                                                id: bid,
+                                                visibility: v,
+                                              );
+                                          if (r['ok'] != true) {
+                                            _snack(
+                                              '변경하지 못했습니다 '
+                                              '(${r['error'] ?? '권한'})',
+                                            );
                                             return;
                                           }
-                                          try {
-                                            final r = await _nas
-                                                .customBoardVisibility(
-                                              year: widget.year,
-                                              title: widget.title,
-                                              id: bid,
-                                              visibility: v,
-                                            );
-                                            if (r['ok'] != true) {
-                                              _snack('변경하지 못했습니다 '
-                                                  '(${r['error'] ?? '권한'})');
-                                              return;
-                                            }
-                                            visOf[nm] = v;
-                                            _snack('노출권한 → ${visLabel(v)}');
-                                            changed = true;
-                                            if (ctx.mounted) setD(() {});
-                                          } catch (e) {
-                                            _snack('변경하지 못했습니다: $e');
-                                          }
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(
-                                              value: 'all',
-                                              child: Text('전체 노출')),
-                                          PopupMenuItem(
-                                              value: 'staff',
-                                              child: Text('스탭 이상')),
-                                          PopupMenuItem(
-                                              value: 'admin',
-                                              child: Text('관리자·마스터')),
-                                        ],
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 8),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.visibility_outlined,
-                                                  size: 15,
-                                                  color: isAdmin
-                                                      ? AppColors.purple
-                                                      : AppColors.textGray),
-                                              const SizedBox(width: 3),
-                                              Text(
-                                                '노출',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: isAdmin
-                                                      ? AppColors.purple
-                                                      : AppColors.textGray,
-                                                ),
+                                          visOf[nm] = v;
+                                          _snack('노출권한 → ${visLabel(v)}');
+                                          changed = true;
+                                          if (ctx.mounted) setD(() {});
+                                        } catch (e) {
+                                          _snack('변경하지 못했습니다: $e');
+                                        }
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(
+                                          value: 'all',
+                                          child: Text('전체 노출'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'staff',
+                                          child: Text('스탭 이상'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'admin',
+                                          child: Text('관리자·마스터'),
+                                        ),
+                                      ],
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 8,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.visibility_outlined,
+                                              size: 15,
+                                              color: isAdmin
+                                                  ? AppColors.purple
+                                                  : AppColors.textGray,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              '노출',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: isAdmin
+                                                    ? AppColors.purple
+                                                    : AppColors.textGray,
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ],
                                         ),
                                       ),
+                                    ),
                                     // ── 한 줄에 아이콘 5개를 늘어놓으면
                                     //  모바일 좁은 화면에서 넘친다(overflow).
                                     //  권한별 동작을 **하나의 ⋮ 메뉴**로 묶어
@@ -7578,14 +7633,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                           case 'up':
                                           case 'down':
                                             final next = [
-                                              ...tabs.map((e) => {
-                                                    'name': '${e['name'] ?? ''}',
-                                                    'note': '${e['note'] ?? ''}',
-                                                  })
+                                              ...tabs.map(
+                                                (e) => {
+                                                  'name': '${e['name'] ?? ''}',
+                                                  'note': '${e['note'] ?? ''}',
+                                                },
+                                              ),
                                             ];
                                             final t = next.removeAt(i);
                                             next.insert(
-                                                v == 'up' ? i - 1 : i + 1, t);
+                                              v == 'up' ? i - 1 : i + 1,
+                                              t,
+                                            );
                                             await _saveCustomTabs(next);
                                             changed = true;
                                             break;
@@ -7614,8 +7673,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         ),
                                         PopupMenuItem(
                                           value: 'down',
-                                          enabled: isAdmin &&
-                                              i < tabs.length - 1,
+                                          enabled:
+                                              isAdmin && i < tabs.length - 1,
                                           child: const Text('아래로 이동'),
                                         ),
                                         PopupMenuItem(
@@ -7627,8 +7686,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         PopupMenuItem(
                                           value: 'remove',
                                           enabled: isAdmin,
-                                          child: const Text(
-                                              '메뉴 삭제 (탭에서 빼기)'),
+                                          child: const Text('메뉴 삭제 (탭에서 빼기)'),
                                         ),
                                         // 게시판 통째로 삭제는 마스터만 —
                                         //  글·첨부목록이 전부 소멸한다.
@@ -7638,23 +7696,24 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                           child: Row(
                                             children: [
                                               Icon(
-                                                  Icons
-                                                      .delete_forever_outlined,
-                                                  size: 15,
-                                                  color: isMaster
-                                                      ? AppColors.taegeukRed
-                                                      : AppColors.textGray),
+                                                Icons.delete_forever_outlined,
+                                                size: 15,
+                                                color: isMaster
+                                                    ? AppColors.taegeukRed
+                                                    : AppColors.textGray,
+                                              ),
                                               const SizedBox(width: 6),
                                               const Text('게시판 통째로 삭제'),
                                               if (!isMaster)
                                                 const Padding(
-                                                  padding:
-                                                      EdgeInsets.only(left: 6),
+                                                  padding: EdgeInsets.only(
+                                                    left: 6,
+                                                  ),
                                                   child: Icon(
-                                                      Icons.lock_outline,
-                                                      size: 13,
-                                                      color:
-                                                          AppColors.textGray),
+                                                    Icons.lock_outline,
+                                                    size: 13,
+                                                    color: AppColors.textGray,
+                                                  ),
                                                 ),
                                             ],
                                           ),
@@ -7729,7 +7788,9 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.taegeukRed),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.taegeukRed,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -7774,15 +7835,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.forum_outlined,
-                      size: 18, color: AppColors.purple),
+                  leading: const Icon(
+                    Icons.forum_outlined,
+                    size: 18,
+                    color: AppColors.purple,
+                  ),
                   title: Text(
                     '${t['name'] ?? ''}',
                     style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w700),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  trailing: const Icon(Icons.delete_forever_outlined,
-                      size: 18, color: AppColors.taegeukRed),
+                  trailing: const Icon(
+                    Icons.delete_forever_outlined,
+                    size: 18,
+                    color: AppColors.taegeukRed,
+                  ),
                   onTap: () => Navigator.pop(ctx, '${t['name'] ?? ''}'),
                 ),
             ],

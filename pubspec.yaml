@@ -10,6 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # [turn72] 한글 로컬라이제이션 — 없으면 복사/붙여넣기 툴바의 라벨이
+  #  영어(Cut/Copy/Paste)로 뜨고, 일부 환경에서는 툴바 자체가 만들어지지 않는다.
+  flutter_localizations:
+    sdk: flutter
+
   cupertino_icons: ^1.0.8
 
   # 상태 관리
@@ -52,7 +57,7 @@ dependencies:
   video_player: ^2.10.0
 
   # 유틸
-  intl: ^0.19.0
+  intl: ^0.20.2
   http: ^1.2.0
   # APK 원격 업데이트 — 다운로드 무결성(SHA-256) 검증
   crypto: ^3.0.6
