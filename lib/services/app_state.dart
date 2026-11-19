@@ -485,9 +485,24 @@ class AppState extends ChangeNotifier {
   }) async {
     bool ok;
     // 로그인 소속(범스카우트/은하스카우트) — 별도 관리.
-    //  · 명시 corps 우선. 단, ID 가 '은하N' 형식이면 항상 은하스카우트.
-    //    (요구: id='은하43' → 은하 43호 방재호. 범 43호 전종찬과 명확히 구분)
-    final idSaysEunha = id.contains('은하');
+    //  · 명시 corps 우선. 단, ID 가 은하 표기면 항상 은하스카우트.
+    //    (요구: id='은하43' → 은하 43호. 범 43호와 명확히 구분)
+    //
+    // ── [turn70] 'G3' 형식도 은하로 인식한다 (중대 버그 수정) ────────────
+    //  실제 사고: 범스카우트 탭에 `G3` + `3!@@` 를 넣으면 **범 3호(서인식)** 로
+    //   로그인됐다. `id.contains('은하')` 만 보았기 때문에 'G3' 는 범으로
+    //   판정됐고, 앱이 로컬에서 `3!@@` 를 통과시킨 뒤(서버 검증 생략)
+    //   화면은 범 3호 정보를 열었다. 은하 3호(김동환)가 아니라 남의 계정이다.
+    //
+    //  은하 표기 정본은 **G + 번호** 이므로(요구: "G는 Galaxy(은하)의 약자"),
+    //  앞자리 G/g 도 은하 신호로 본다. 단 'galaxy' 같은 단어형도 포함한다.
+    final idLow = id.trim().toLowerCase();
+    final idSaysEunha = id.contains('은하') ||
+        id.contains('갤럭시') ||
+        idLow.startsWith('eunha') ||
+        idLow.startsWith('galaxy') ||
+        // 'G3' / 'g3' / 'G-3' — 앞이 G 이고 뒤가 숫자뿐인 경우만(관리자 ID 보호)
+        RegExp(r'^g[-_ ]?\d+$').hasMatch(idLow);
     _corps = (corps == 'eunha' || idSaysEunha) ? 'eunha' : 'tsak';
     // 개인 접근에서 입력된 인가번호 (ID 필드)
     String personalNo = '';
@@ -658,19 +673,56 @@ class AppState extends ChangeNotifier {
             value == AppConfig.masterCredential;
         final isDefaultPw = value == expected; // '{번호}!@@'
         final hasCustomPw = value.trim().isNotEmpty && !isDefaultPw;
-        // 표준 ID 가 아니면(= 접두어 없음 또는 비어 있음) 기본 개인비번 로그인 금지.
-        if (!isMasterPw && isDefaultPw && !idIsStandard) {
+        // ── [turn70] 구(舊) ID '415' 형식은 **비밀번호와 무관하게 영구 차단** ──
+        //  사용자 지시: "id:415 는 앞으로 이런 아이디로는 로그인 되지 않도록
+        //               영원히 변경"
+        //  종전 조건은 `!isMasterPw && isDefaultPw && !idIsStandard` 였다.
+        //  그래서 ①마스터 비번 ②커스텀 비번 으로는 접두어 없는 ID 가 통과했다.
+        //  비밀번호 종류를 보지 않고 **ID 형태만으로** 막는다.
+        //  · 인가번호와 같은 숫자만으로 된 ID('415', '0415') → 거부
+        //  · 전화번호(자리수가 다름)는 이 판정에 걸리지 않는다 → 그대로 허용
+        final bareId = personalNo.trim();
+        final isBareNumberId = bareId.isNotEmpty &&
+            RegExp(r'^\d+$').hasMatch(idRaw) &&
+            int.tryParse(idRaw) == int.tryParse(bareId);
+        if (!idIsStandard && isBareNumberId) {
+          ok = false;
+        } else if (!isMasterPw && isDefaultPw && !idIsStandard) {
           ok = false;
         }
-        // 서버 폴백 허용 조건 — 표준 ID 이거나 마스터 비번일 때만.
-        final allowServerVerify = isMasterPw || idIsStandard || hasCustomPw;
-        if (!ok && repo.isNasMode && personalNo.isNotEmpty && allowServerVerify) {
+        // 서버 폴백 허용 조건 — [turn70] NAS 모드에서는 **항상 서버에 묻는다**.
+        //  종전에는 `isMasterPw || idIsStandard || hasCustomPw` 일 때만 물었다.
+        //  그래서 `G3` + 기본비번처럼 세 조건에 모두 걸리지 않는 입력은
+        //  **서버 검증을 아예 건너뛰고** 로컬 통과값을 그대로 썼다.
+        //  → 은하 3호를 넣었는데 범 3호로 로그인되는 사고의 직접 원인.
+        //  이제 로컬은 '아이디 해석'만 하고, 통과 판정은 서버가 한다.
+        if (repo.isNasMode && personalNo.isNotEmpty) {
+          // ── [turn70] NAS 모드에서는 **서버 판정이 유일한 기준** ─────────
+          //  ## 실제 구멍 (사용자 지적: "id:415 는 앞으로 절대 로그인 안 되게")
+          //   종전에는 로컬이 `{번호}!@@` 를 정답으로 인정하면 `ok=true` 가 되고,
+          //   서버 검증은 `!ok` 일 때만 돌았다. 게다가 세션 발급
+          //   (`grantSession('personal', id: ...)`)에 **비밀번호를 보내지 않아**
+          //   서버는 "그 번호가 있나" 만 확인하고 통과시켰다.
+          //   → 운영진이 개인비번을 바꿔도, 기본값만 넣으면 앱으로는 들어왔다.
+          //     (= 비밀번호 변경이 앱 경로에서는 무효)
+          //
+          //  ## 지금 규칙
+          //   로컬 계산값은 **버린다**. 서버가 ok 를 줄 때만 로그인 성공.
+          //   NAS 에 닿지 못하면 로그인도 성립하지 않는다(안전 우선).
+          ok = false;
           // 서버로 보내는 ID 는 **사용자가 입력한 그대로**만 시도한다.
           //  ⚠️ 종전에는 'tiger$personalNo' 를 자동으로 덧붙여 시도했는데,
           //     그것이 구(舊) 체계 로그인을 되살리는 원인이었다. 절대 되살리지 말 것.
           //  · 표준 ID('tiger416')가 그대로 서버에 도착하면 서버가 접두어를
           //    정규화해 회원을 찾는다.
+          // 서버로 보내는 ID — **사용자가 입력한 그대로**를 우선 보낸다.
+          //  ⚠️ 종전에는 `if (idIsStandard) idRaw` 로 'tigerN' 일 때만 넣었다.
+          //     그래서 `G3`(은하)·전화번호처럼 표준형이 아닌 ID 는 **보낼 값이
+          //     없어 서버 검증을 건너뛰었고**, 로컬 통과값이 그대로 쓰였다.
+          //     → 은하 3호를 넣었는데 범 3호로 로그인되던 직접 원인(turn70).
+          //  이제는 입력값이 있으면 항상 보낸다. 통과 여부는 서버가 정한다.
           final idTries = <String>{
+            if (idRaw.isNotEmpty) idRaw,
             if (idIsStandard) idRaw,
           };
           outer:
@@ -681,7 +733,9 @@ class AppState extends ChangeNotifier {
                   'personal',
                   c,
                   id: tryId,
-                  corps: 'tsak',
+                  // [turn70] 'tsak' 하드코딩 금지 — 은하 로그인인데 범으로 보내면
+                  //  서버가 범 명단에서 찾아 **남의 계정**을 인정해 버린다.
+                  corps: _corps,
                 );
                 if (r['ok'] == true) {
                   ok = true;
@@ -699,7 +753,7 @@ class AppState extends ChangeNotifier {
                 'personal',
                 value,
                 id: idRaw,
-                corps: 'tsak',
+                corps: _corps,
               );
               if (r['ok'] == true) ok = true;
             } catch (_) {}
