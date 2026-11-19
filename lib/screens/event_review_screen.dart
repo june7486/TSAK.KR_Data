@@ -269,7 +269,8 @@ class _EventReviewScreenState extends State<EventReviewScreen> {
                 Row(
                   children: [
                     if (draft) ...[
-                      _chip('임시저장', AppColors.tigerGold),
+                      // [turn71] _chip 은 색을 글자에 쓴다 → 읽히는 금색.
+                      _chip('임시저장', AppColors.goldInk),
                       const SizedBox(width: 5),
                     ],
                     if (locked) ...[

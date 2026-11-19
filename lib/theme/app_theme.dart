@@ -41,6 +41,44 @@ class AppColors {
   /// 옅은 배경 틴트(뱃지·칩 배경).
   static const hermesTint = Color(0xFFFDEDE3);
 
+  /// ── [turn71] 가독성: 안내 배너·보조 버튼용 웜톤 (요구 2026-11-19) ──────
+  ///  "글자 가독성 좀 높여줘"
+  ///
+  ///  ## 실측 (수정 전)
+  ///   '접속 비밀번호 관리' 카드의 초기화 요청 배너가
+  ///   **금색 글자(#F2B705) on 금색 12% 배경(#F7EFDD)** 이었다.
+  ///     · 대비 1.59:1  ← WCAG 본문 기준 4.5:1 의 1/3
+  ///     · 옆의 설명문은 lifetimeGold(#B8860B) 로 2.84:1 → 여전히 미달
+  ///   즉 '글자가 안 보인다'는 느낌은 착시가 아니라 측정값이었다.
+  ///
+  ///  ## 조치
+  ///   warmOrange/warmInk 두 단계로 나눈다(hermes 와 같은 원칙).
+  ///     · warmOrange #C74A0A — 아이콘·테두리·면(fill).
+  ///       흰 글자를 얹으면 4.76:1 (AA 통과). 채도가 살아 있어 눈에 띈다.
+  ///     · warmInk    #A84307 — 작은 본문 글자.
+  ///       hermesTint(#FDEDE3) 위에서 5.30:1, 흰 배경 위 6.05:1.
+  ///   기존 hermesInk(#BF4E0B)는 hermesTint 위에서 4.27:1 로
+  ///   11~12pt 본문에는 살짝 모자라서, 더 어두운 값을 따로 둔다.
+  static const warmOrange = Color(0xFFC74A0A);
+  static const warmInk = Color(0xFFA84307);
+
+  /// warm 계열의 아주 옅은 배경(흰색에 가까워 글자 대비를 해치지 않는다).
+  static const warmTint = Color(0xFFFDEDE3);
+
+  /// ── [turn71] '읽히는 금색' — 상태 배지·보류·임시저장 글자용 ────────────
+  ///  tigerGold(#F2B705) 는 **면(fill)·큰 아이콘 전용**으로 못박는다.
+  ///  글자로 쓰면 흰 배경 1.82:1, 금색 14% 틴트 위 1.67:1 로
+  ///  9~12pt 에서는 배경에 먹혀 사라진다(실측).
+  ///
+  ///  대신 색상환은 그대로 두고 명도만 낮춘 dark olive-gold 를 쓴다.
+  ///  금색 정체성(따뜻한 노랑)을 유지하면서:
+  ///    흰 배경 5.54:1 / 금색 8% 틴트 5.27:1 / 14% 5.08:1 / 20% 4.91:1
+  ///  → 어떤 틴트 위에서도 WCAG 본문 기준 4.5:1 을 넘긴다.
+  ///
+  ///  lifetimeGold(#B8860B) 도 3.25:1 로 미달이라 글자용으로는 쓰지 않는다
+  ///  (기존 코드 호환을 위해 상수는 남겨 둔다).
+  static const goldInk = Color(0xFF8A6100);
+
   static const scoutGreen = Color(0xFF2E7D32);
   static const bg = Color(0xFFF6F4FB);
   static const card = Colors.white;

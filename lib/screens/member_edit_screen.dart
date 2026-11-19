@@ -22,6 +22,7 @@ import '../widgets/member_avatar.dart';
 import '../widgets/link_code_field.dart';
 import '../widgets/mentee_register_section.dart';
 import '../widgets/privacy_consent.dart';
+import '../widgets/password_reset_request_bar.dart';
 import '../widgets/fee_payment_request.dart';
 import '../widgets/unsaved_guard.dart';
 import 'member_drafts_screen.dart';
@@ -103,6 +104,7 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       _anniversary;
   String _photoPath = '';
   String _trainingStatus = '';
+
   /// ATAS 인가번호 입력란의 포커스 — 상세화면 '직접 입력' 에서 이 칸으로
   /// 바로 이동시키기 위해 필요하다(요구: "ATAS인가정보는 비워두고 직접 입력할
   /// 수 있도록 할것"). 폼이 길어 스크롤하지 않으면 ATAS 칸이 화면 밖에 있다.
@@ -932,57 +934,9 @@ class _MemberEditScreenState extends State<MemberEditScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.tigerGold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: AppColors.tigerGold.withValues(alpha: 0.5),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.help_outline,
-                          size: 15,
-                          color: AppColors.lifetimeGold,
-                        ),
-                        SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '비밀번호를 분실한 경우 관리자·마스터에게 초기화를 요청하세요.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.lifetimeGold,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.tigerGold,
-                        ),
-                        onPressed: _requestPasswordReset,
-                        icon: const Icon(Icons.send, size: 16),
-                        label: const Text('비밀번호 초기화 요청'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // [turn71] 가독성 — 예전엔 금색 글자 on 금색 배경(1.59:1)이었다.
+              //  공용 위젯으로 옮겨 edit/detail 두 화면이 같은 색을 쓰게 한다.
+              PasswordResetRequestBar(onRequest: _requestPasswordReset),
             ],
           ],
         ),
@@ -1190,7 +1144,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       builder: (ctx) => AlertDialog(
         icon: const Icon(
           Icons.lock_reset,
-          color: AppColors.tigerGold,
+          // [turn71] 금색(#F2B705)은 흰 배경 대비 1.82:1 — 아이콘이 흐릿했다.
+          color: AppColors.warmOrange,
           size: 32,
         ),
         title: const Text('비밀번호 초기화 요청'),
@@ -1254,7 +1209,11 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     );
     if (!mounted) return;
     // 초기화·변경 후에는 '현재 비밀번호' 표시를 새 값으로 갱신한다.
-    if (err == null) setState(() { _pwFutureKey = ''; _pwFuture = null; });
+    if (err == null)
+      setState(() {
+        _pwFutureKey = '';
+        _pwFuture = null;
+      });
     _snack(err == null ? '비밀번호를 초기화했습니다 ($target)' : '실패: $err');
   }
 
@@ -1294,7 +1253,11 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     }
     final err = await context.read<AppState>().setMemberPassword(m, value: nw);
     if (!mounted) return;
-    if (err == null) setState(() { _pwFutureKey = ''; _pwFuture = null; });
+    if (err == null)
+      setState(() {
+        _pwFutureKey = '';
+        _pwFuture = null;
+      });
     _snack(err == null ? '비밀번호를 변경했습니다' : '실패: $err');
   }
 
@@ -1736,7 +1699,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
     final status = _existing?.linkApprovalStatus ?? '';
     final (label, color, icon) = switch (status) {
       'approved' => ('승인됨', AppColors.scoutGreen, Icons.verified),
-      'held' => ('보류', AppColors.tigerGold, Icons.pause_circle_filled),
+      // [turn71] 이 색이 배지 글자·아이콘에 그대로 쓰인다 → 읽히는 금색.
+      'held' => ('보류', AppColors.goldInk, Icons.pause_circle_filled),
       _ => ('미승인', AppColors.taegeukRed, Icons.gpp_maybe),
     };
     return Padding(
@@ -2805,7 +2769,8 @@ class _MemberEditScreenState extends State<MemberEditScreen>
       if (_registerAsRegular && newPhone.length >= 7) {
         for (final c in state.repo.allUnscoped()) {
           if (!c.isRegular) continue;
-          if (c.id.startsWith('guest_') || c.id.startsWith('reg_') ||
+          if (c.id.startsWith('guest_') ||
+              c.id.startsWith('reg_') ||
               c.isRegular) {
             if (c.phoneDigits == newPhone) {
               reuse = c;

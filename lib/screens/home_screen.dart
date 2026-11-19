@@ -266,7 +266,9 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(
           Icons.how_to_reg,
-          color: AppColors.tigerGold,
+          // [turn71] 금색(#F2B705)은 흰 배경에서 1.82:1 이라 아이콘이
+          //  흐릿했다. 같은 색상 계열의 진한 웜톤(4.3:1)으로 올린다.
+          color: AppColors.warmOrange,
           size: 40,
         ),
         title: const Text(
@@ -1232,10 +1234,7 @@ class _HomeScreenState extends State<HomeScreen> {
               label,
               maxLines: 1,
               softWrap: false,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -3392,7 +3391,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(
           Icons.warning_amber_rounded,
-          color: AppColors.tigerGold,
+          color: AppColors.warmOrange,
           size: 34,
         ),
         title: const Text('개인 비밀번호 변경', textAlign: TextAlign.center),
@@ -3501,7 +3500,16 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('닫기'),
           ),
           FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.tigerGold),
+            // [turn71] 금색 바탕 + 흰 글자는 1.82:1 로 읽히지 않았다.
+            //  warmOrange(#C74A0A) 는 흰 글자와 4.76:1 — AA 통과.
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.warmOrange,
+              foregroundColor: Colors.white,
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             onPressed: () {
               Navigator.pop(ctx);
               _requestPasswordReset();
@@ -3522,7 +3530,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(
           Icons.lock_reset,
-          color: AppColors.tigerGold,
+          color: AppColors.warmOrange,
           size: 32,
         ),
         title: const Text('비밀번호 초기화 요청'),
@@ -3740,7 +3748,7 @@ class _PersonalEditSheet extends StatelessWidget {
             const SizedBox(height: 8),
             _tile(
               icon: Icons.help_outline,
-              color: AppColors.tigerGold,
+              color: AppColors.warmOrange,
               title: '비밀번호 분실 안내',
               subtitle: '분실 시 관리자에게 문의하세요',
               onTap: onLost,

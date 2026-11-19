@@ -20,6 +20,7 @@ import '../widgets/member_access_log.dart';
 import '../widgets/link_people_tiles.dart';
 import '../widgets/mentee_register_section.dart';
 import '../widgets/member_registration_request_section.dart';
+import '../widgets/password_reset_request_bar.dart';
 import '../widgets/fee_payment_request.dart';
 import '../widgets/merch_activity_section.dart';
 import '../widgets/personal_survey_section.dart';
@@ -81,11 +82,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Future<void> _loadEventExtras(Member m) async {
     if (_extraLoading) return;
     final nas = context.read<NasApi>();
-    final names = m.eventAttend.entries
-        .where((e) => e.value == true)
-        .map((e) => e.key)
-        .toList()
-      ..sort((a, b) => b.compareTo(a));
+    final names =
+        m.eventAttend.entries
+            .where((e) => e.value == true)
+            .map((e) => e.key)
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
     if (names.isEmpty) return;
     final todo = <({String year, String name})>[];
     for (final full in names.take(12)) {
@@ -1124,7 +1126,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 Icon(
                   m.lifetimeMember ? Icons.star : Icons.star_border,
-                  color: m.lifetimeMember ? Colors.white : Colors.grey.shade600,
+                  // [turn71] 금색 그라데이션 위 **흰 글자(1.82~2.30:1)** 라
+                  //  '평생회원' 이 거의 보이지 않았다. 금색 위에는
+                  //  어두운 잉크가 정답(textDark: 7.3~9.3:1).
+                  color: m.lifetimeMember
+                      ? AppColors.textDark
+                      : Colors.grey.shade600,
                   size: 18,
                 ),
                 const SizedBox(width: 6),
@@ -1136,9 +1143,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       : '평생회원 미등록',
                   style: TextStyle(
                     color: m.lifetimeMember
-                        ? Colors.white
+                        ? AppColors.textDark
                         : Colors.grey.shade700,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
@@ -1182,12 +1189,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           content: Text(
             on
                 ? '${m.name}(${m.number}) 님을 평생회원으로 직접 지정합니다.\n\n'
-                    '· 등록일은 오늘 날짜로 기록됩니다.\n'
-                    '· 연회비는 이후 자동으로 "평생회원" 처리됩니다.'
+                      '· 등록일은 오늘 날짜로 기록됩니다.\n'
+                      '· 연회비는 이후 자동으로 "평생회원" 처리됩니다.'
                 : '${m.name}(${m.number}) 님의 평생회원 자격을 해제합니다.\n\n'
-                    '· 평생회원 배지와 등록일이 지워집니다.\n'
-                    '· 연회비 납부 이력은 그대로 남습니다.\n'
-                    '· 되돌리려면 다시 지정하면 됩니다.',
+                      '· 평생회원 배지와 등록일이 지워집니다.\n'
+                      '· 연회비 납부 이력은 그대로 남습니다.\n'
+                      '· 되돌리려면 다시 지정하면 됩니다.',
             style: const TextStyle(fontSize: 12.5, height: 1.6),
           ),
           actions: [
@@ -1197,8 +1204,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor:
-                    on ? AppColors.lifetimeGold : const Color(0xFFB3261E),
+                backgroundColor: on
+                    ? AppColors.lifetimeGold
+                    : const Color(0xFFB3261E),
               ),
               onPressed: () => Navigator.pop(c, true),
               child: Text(on ? '지정' : '해제'),
@@ -1497,7 +1505,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     const Icon(
                       Icons.hourglass_top,
                       size: 15,
-                      color: AppColors.tigerGold,
+                      // [turn71] 금색 → 읽히는 금색(흰 배경 5.5:1)
+                      color: AppColors.goldInk,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -1526,7 +1535,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.lifetimeGold,
+                          // [turn71] lifetimeGold 3.25:1 → goldInk 5.1:1
+                          color: AppColors.goldInk,
                         ),
                       ),
                     ),
@@ -1996,7 +2006,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (st != 'pending' && st != 'held') return const SizedBox.shrink();
     final state = context.watch<AppState>();
     final isPending = st == 'pending';
-    final color = isPending ? AppColors.tigerGold : AppColors.taegeukRed;
+    // [turn71] 이 색이 제목·아이콘·테두리에 모두 쓰이므로 글자 대비를 만족해야 한다.
+    //  tigerGold 는 1.82:1 로 '미승인 회원' 글자가 사라졌다 → goldInk(5.5:1).
+    final color = isPending ? AppColors.goldInk : AppColors.taegeukRed;
     final label = isPending ? '미승인 회원 (승인 요청됨)' : '보류된 회원';
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
@@ -2312,8 +2324,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           //    아니라 '있어야 하는데 안 채운 값'이므로, "이 사람은 인가일이
           //    미등록"임을 바로 읽을 수 있어야 한다. (편집 화면의 '인가일'
           //    입력란에서 채우면 즉시 이 자리에 표시된다.)
-          if (!m.isRegular)
-            _blankRow('인가일', m.date, placeholder: '미등록'),
+          if (!m.isRegular) _blankRow('인가일', m.date, placeholder: '미등록'),
         ],
       ),
     );
@@ -2445,7 +2456,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final grouped = <ExtraGroup, List<MapEntry<ExtraField, String>>>{};
     for (final e in hit) {
       for (final f in ExtraFields.filled(e.rows)) {
-        grouped.putIfAbsent(f.group, () => []).add(MapEntry(f, f.valueOf(e.rows)));
+        grouped
+            .putIfAbsent(f.group, () => [])
+            .add(MapEntry(f, f.valueOf(e.rows)));
       }
     }
     final order = <ExtraGroup>[
@@ -2509,7 +2522,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         for (final a in hit) {
           final ano = '${a['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
           final aph = '${a['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
-          final match = (myNo.isNotEmpty && ano == myNo) ||
+          final match =
+              (myNo.isNotEmpty && ano == myNo) ||
               (myPh.length >= 7 && aph == myPh);
           if (!match) continue;
           if (ExtraFields.filledCount(a) == 0) continue;
@@ -2576,7 +2590,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 fontWeight: f.group == ExtraGroup.request
                     ? FontWeight.w700
                     : FontWeight.w500,
-                color: f.group == ExtraGroup.request ? accent : AppColors.textDark,
+                color: f.group == ExtraGroup.request
+                    ? accent
+                    : AppColors.textDark,
               ),
             ),
           ),
@@ -2584,7 +2600,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ),
     );
   }
-
 
   ///
   /// (요구: "범스카우트인가정보페이지와 아타스인가정보를 분리할 것"
@@ -2694,7 +2709,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final hasNote = m.hasLinkFixNote;
     // 관련자(본인·관리자·마스터)가 아니고 메모도 없으면 노출하지 않는다.
     if (!isAdmin && !isSelf && !hasNote) return const SizedBox.shrink();
-    const color = AppColors.tigerGold;
+    // [turn71] 제목 글자에 그대로 쓰이므로 가독성 있는 금색을 쓴다.
+    const color = AppColors.goldInk;
     return Container(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(11),
@@ -2860,7 +2876,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   /// 멘토·페런츠 연결 '승인대기중' 안내 — 관리자·마스터 승인 전 상태 설명(요구).
   Widget _linkPendingNotice(Member m) {
-    const color = AppColors.tigerGold;
+    // [turn71] '승인대기중' 제목 대비 확보.
+    const color = AppColors.goldInk;
     final src = m.linkRequestSource == 'merch' ? '수품신청시' : '직접입력';
     final at = m.linkRequestedAt;
     return Container(
@@ -3491,49 +3508,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   /// 본인 — 분실 시 관리자·마스터에게 초기화 요청 (요구).
+  ///
+  /// [turn71] 예전에는 이 화면과 `member_edit_screen` 에 **같은 배너가
+  ///  복사**되어 있었고, 둘 다 금색 글자 on 금색 배경(1.59:1)이라
+  ///  읽히지 않았다. 이제 공용 위젯 한 곳에서 색을 관리한다.
   Widget _selfResetRequestBar(Member m) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.tigerGold.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.tigerGold.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.help_outline, size: 15, color: AppColors.lifetimeGold),
-              SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '비밀번호를 분실한 경우 관리자·마스터에게 초기화를 요청하세요.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.lifetimeGold,
-                    height: 1.35,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.tigerGold,
-              ),
-              onPressed: () => _requestReset(m),
-              icon: const Icon(Icons.send, size: 16),
-              label: const Text('비밀번호 초기화 요청'),
-            ),
-          ),
-        ],
-      ),
-    );
+    return PasswordResetRequestBar(onRequest: () => _requestReset(m));
   }
 
   /// 본인 비밀번호 변경 다이얼로그.
@@ -3651,7 +3631,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(
           Icons.lock_reset,
-          color: AppColors.tigerGold,
+          // [turn71] 흰 배경 위 금색은 1.82:1 — 아이콘이 흐릿했다.
+          color: AppColors.warmOrange,
           size: 32,
         ),
         title: const Text('비밀번호 초기화 요청'),
@@ -4038,7 +4019,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w900,
-                            color: AppColors.tigerGold,
+                            // [turn71] 9.5pt 는 대비가 더 필요하다.
+                            color: AppColors.goldInk,
                           ),
                         ),
                       ),

@@ -969,9 +969,9 @@ class _StatsScreenState extends State<StatsScreen> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const UnitStatsScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const UnitStatsScreen())),
         child: Ink(
           decoration: BoxDecoration(
             gradient: const LinearGradient(
@@ -999,8 +999,11 @@ class _StatsScreenState extends State<StatsScreen> {
                     color: Colors.white.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(11),
                   ),
-                  child: const Icon(Icons.account_tree_outlined,
-                      color: Colors.white, size: 21),
+                  child: const Icon(
+                    Icons.account_tree_outlined,
+                    color: Colors.white,
+                    size: 21,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -1019,9 +1022,10 @@ class _StatsScreenState extends State<StatsScreen> {
                       Text(
                         '어느 단위대가 몇 명을 배출·보유했는지, 표기 변형 확인과 명부까지',
                         style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10.5,
-                            height: 1.45),
+                          color: Colors.white70,
+                          fontSize: 10.5,
+                          height: 1.45,
+                        ),
                       ),
                     ],
                   ),
@@ -1379,7 +1383,8 @@ class _StatsScreenState extends State<StatsScreen> {
                   state.linkPendingCount,
                   AppColors.taegeukRed,
                 ),
-                _statusChip('보류', state.linkHeldCount, AppColors.tigerGold),
+                // [turn71] _statusChip 은 색을 **글자**에 쓴다 → goldInk.
+                _statusChip('보류', state.linkHeldCount, AppColors.goldInk),
                 _statusChip('미설정', state.linkUnsetCount, AppColors.textGray),
               ],
             ),
