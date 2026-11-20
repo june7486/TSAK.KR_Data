@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>TSAK 의견서 v4.1</title>
+<style>
+@page { size: A4; margin: 16mm 14mm 15mm 14mm;
+  @bottom-center { content: counter(page) " / " counter(pages);
+                   font-size: 8.4pt; color:#808080; } }
+@page :first { margin: 0; @bottom-center { content: none; } }
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; }
+body { font-family: 'Noto Sans CJK KR','Noto Sans KR',sans-serif;
+       font-size: 9.3pt; line-height: 1.60; color:#1c1c1e;
+       orphans:3; widows:3; }
+
+/* ---------- 표지 ---------- */
+.cover { height: 291mm; padding: 32mm 24mm 22mm 24mm;
+         display:flex; flex-direction:column; }
+.cover .kicker { font-size:8.6pt; letter-spacing:3pt; color:#9a7b3c;
+                 font-weight:700; margin-bottom:10mm; }
+.cover h1 { font-size:27pt; line-height:1.26; margin:0 0 3mm 0;
+            letter-spacing:-.8pt; font-weight:700; }
+.cover h1 .l2 { display:block; font-size:17pt; color:#3a3a3c;
+                letter-spacing:-.4pt; margin-top:4mm; font-weight:600;}
+.cover .rule { height:2.5px; background:#1c1c1e; width:38mm; margin:9mm 0 9mm 0;}
+.cover .sub { font-size:10.4pt; color:#3c3c3e; line-height:1.8; }
+.cover .warn { margin-top:11mm; padding:5.5mm 6mm; background:#fdf7ea;
+               border-left:3.5px solid #c8a05a; font-size:9pt;
+               color:#5b4520; line-height:1.75; }
+.cover .meta { margin-top:auto; font-size:8.4pt; color:#6b6b70;
+               line-height:1.95; border-top:1px solid #dcdcdf; padding-top:5mm;}
+.cover .meta b { color:#1c1c1e; font-weight:600; }
+
+/* ---------- 본문 ---------- */
+.wrap { padding: 0 0 0 0; }
+h2 { font-size:13pt; margin:9.5mm 0 3.2mm 0; padding-bottom:2.1mm;
+     border-bottom:1.5px solid #1c1c1e; page-break-after:avoid;
+     letter-spacing:-.25pt; font-weight:700; }
+h2.first { margin-top:0; }
+.pageend { page-break-after: always; height:0; }
+.newpage { page-break-before: always; }
+h3 { font-size:10.2pt; margin:5.2mm 0 1.8mm 0; page-break-after:avoid;
+     font-weight:700; color:#111; }
+.ln { margin:0; }
+.blank { height:2.6mm; }
+.hr { height:1px; background:#e3e3e6; margin:4.5mm 0; }
+pre { font-family:'NanumGothicCoding','DejaVu Sans Mono',monospace;
+      font-size:7.7pt; line-height:1.48; background:#f8f8fa;
+      border:1px solid #e8e8ec; border-left:3px solid #b8b8c4;
+      padding:2.8mm 3.2mm; margin:2.2mm 0 3mm 0; white-space:pre;
+      page-break-inside:avoid; overflow:hidden; }
+.q { border-left:3px solid #c9c9d2; padding:1.5mm 0 1.5mm 4mm;
+     margin:2mm 0 3mm 0; color:#3a3a3e; }
+.lead { font-size:9.7pt; color:#2c2c2e; background:#f7f7f9;
+        padding:4.2mm 5mm; border-left:3.5px solid #1c1c1e;
+        margin:0 0 5mm 0; line-height:1.74; }
+.t-fact{color:#1f6b38;font-weight:700}
+.t-assume{color:#8a5a10;font-weight:700}
+.t-propose{color:#1d4a91;font-weight:700}
+.t-unver{color:#96231f;font-weight:700}
+.t-retract{color:#573080;font-weight:700}
+.t-correct{color:#a8321f;font-weight:700}
+.t-self{color:#8c1d1d;font-weight:700;background:#fdf0ee;padding:0 1.5mm}
+</style></head><body>
+
+<div class="cover">
+  <div class="kicker">TSAK.KR &nbsp;·&nbsp; INFRASTRUCTURE REVIEW</div>
+  <h1>가비아 이전 의견서 v4.1
+      <span class="l2">허브 설계자 회신 수용 및 자기 정정 보고</span></h1>
+  <div class="rule"></div>
+  <div class="sub">
+    정정 1건 — &ldquo;이 NAS 에서는 원자적 교체가 불가능하다&rdquo; 를 철회합니다<br>
+    자기위반 1건 고백 · 신규 확인 결함 3건 · 유지 결론 4건<br>
+    시험 13건 판정표 (PASS / FAIL / NOT_TESTED) 수록
+  </div>
+  <div class="warn">
+    이 문서는 운영 변경 승인 요청이 아닙니다.<br>
+    <b>safe_to_set_hub_live = false 유지에 동의합니다.</b><br>
+    운영 코드 · 데이터 변경 0건. 소유자 결정 없이 아무것도 바꾸지 않았습니다.
+  </div>
+  <div class="meta">
+    작성일 &nbsp;<b>2026-11-20</b><br>
+    대상 커밋 &nbsp;<b>gabia_deploy 053d6ef</b> &nbsp;(worktree clean, dirty 0)<br>
+    프록시 &nbsp;<b>proxy_server.py</b> sha256 498dca0d&hellip;2a2e19<br>
+    시험 파일 &nbsp;<b>tests/iso_*.py</b> 5건 — SHA-256 전부 기재<br>
+    실행 환경 &nbsp;Python 3.13.14 · OpenSSL 3.5.6 · cwd /tmp (운영과 분리)<br>
+    수신 &nbsp;허브 설계자
+  </div>
+</div>
+<div class="pageend"></div>
+
+<div class="wrap">
+<h2 class="h2 first">TSAK.KR 가비아 이전 — 의견서 v4.1 (정정 보충) — 허브 설계자 회신(2026-11-20) 수용 및 자기 정정 보고</h2>
+<div class="blank"></div>
+<p class="ln">이 문서는 운영 변경 승인 요청이 아닙니다.</p>
+<p class="ln">귀 회신의 &quot;이 회신은 운영 변경 승인이 아닙니다&quot; 를 그대로 유지하며,</p>
+<p class="ln">safe_to_set_hub_live = false 에 동의합니다.</p>
+<div class="blank"></div>
+<p class="ln">표기 규칙</p>
+<pre>  [확인]     소스·실측으로 확인한 사실 (재현 절차 첨부)
+  [가정]     확인하지 못한 전제. 확인 방법을 함께 적었습니다.
+  [제안]     수정 설계. 아직 운영 코드에 반영하지 않았습니다.</pre>
+<p class="ln" style="margin-left:4.1pt"><span class="t-unver">[미검증</span>]   실측하지 못했거나 표본이 부족해 결론을 유보합니다.</p>
+<pre>  [철회]     제 주장 중 근거가 부족해 스스로 물리는 항목
+  [정정]     제가 실험으로 뒤집은 결론. v4 본문과 함께 읽지 마십시오.</pre>
+<p class="ln" style="margin-left:4.1pt"><span class="t-self">[자기위반</span>] 제가 귀 지시를 어긴 사실의 고백</p>
+<div class="blank"></div>
+<p class="ln">위 7개 표기는 본문에서 그대로 씁니다.</p>
+<p class="ln" style="margin-left:4.1pt"><span class="t-fact">[확인</span>] 은 재현 절차를 붙였고, <span class="t-unver">[미검증</span>] 은 결론을 내지 않았습니다.</p>
+<p class="ln" style="margin-left:4.1pt"><span class="t-correct">[정정</span>] 이 붙은 문장은 v4 의 해당 문장을 <b>폐기</b>한다는 뜻입니다.</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">0. 요약 — 이번 회신에서 물리는 것</h2>
+<div class="blank"></div>
+<p class="ln">이번 회신의 성과는 새 주장을 늘린 것이 아니라</p>
+<p class="ln"><b>제 결론 하나를 실험으로 뒤집은 것</b>입니다.</p>
+<p class="ln">부끄럽지만 그게 사실이고, 그래서 먼저 적습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-correct">[정정</span> 1] &quot;이 NAS 에서는 원자적 교체가 불가능하다&quot;  → <b>틀렸습니다.</b></p>
+<p class="ln" style="margin-left:22.5pt">v4 항목 5-2 의 결론을 철회합니다. 귀 지적이 정확했습니다.</p>
+<p class="ln" style="margin-left:22.5pt">SYNO.FileStation.Move 라는 API 가 이 NAS 에 <b>존재하지 않아</b></p>
+<p class="ln" style="margin-left:22.5pt">error 102 가 났고, 저는 그것을 &quot;덮어쓰기 거부&quot;로 오독했습니다.</p>
+<p class="ln" style="margin-left:22.5pt">CopyMove v3 로는 기존 파일 교체가 <b>됩니다.</b></p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-self">[자기위반</span> 1] 격리 조건 위반 — 운영 BASE 안에서 시험했습니다.</p>
+<p class="ln" style="margin-left:22.5pt">`{BASE}/_tk_test_v41`, `{BASE}/_tsak_atomic_probe` 두 폴더를</p>
+<p class="ln" style="margin-left:22.5pt">운영 데이터 폴더 안에 만들었습니다. 삭제 완료했고,</p>
+<p class="ln" style="margin-left:22.5pt">아래 §4 에 사실대로 적었습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-fact">[확인</span> 신규 1] 저장 실패의 <b>거짓 성공</b>을 코드에서 확정했습니다.</p>
+<p class="ln" style="margin-left:22.5pt">`_BackendClient.write()` 가 실패해도 `{&quot;ok&quot;: True}` 를 반환하고,</p>
+<p class="ln" style="margin-left:22.5pt">`_save_json()` 이 그 반환값을 <b>버립니다.</b> 사용자는 &quot;저장 완료&quot;를</p>
+<p class="ln" style="margin-left:22.5pt">보지만 NAS 에는 없을 수 있습니다. 귀 Priority #1 과 일치합니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-fact">[확인</span> 신규 2] 백그라운드 쓰기 병합에 <b>최신 내용 유실</b> 버그가 있습니다.</p>
+<p class="ln" style="margin-left:22.5pt">`_bwrite_bg` 의 `prev[1] = content_bytes` 가 IndexError 로 죽고</p>
+<p class="ln" style="margin-left:22.5pt">`except: pass` 에 삼켜집니다. 현재 실행 모드(nas)에서는</p>
+<p class="ln" style="margin-left:22.5pt">도달하지 않지만 gdrive 모드로 바꾸면 즉시 발현합니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-fact">[확인</span> 신규 3] 로컬 스토어 축출 위험을 정량화했습니다.</p>
+<p class="ln" style="margin-left:22.5pt">3,009.4 MB / 상한 3,072 MB, 여유 <b>62.6 MB</b>.</p>
+<p class="ln" style="margin-left:22.5pt">그중 <b>1,703.5 MB(56.6%)가 회원명단 백업 파일</b>이고</p>
+<p class="ln" style="margin-left:22.5pt">백업 보존 정책이 <b>없습니다</b>(NAS backups/ 413개 무제한).</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-fact">[유지</span>] v4 의 다음 결론은 그대로 유지합니다.</p>
+<p class="ln" style="margin-left:22.5pt">· grantedAdmin 주입 경로 없음</p>
+<p class="ln" style="margin-left:22.5pt">· /readyz 부재</p>
+<p class="ln" style="margin-left:22.5pt">· TLS 상대 신원 미검증</p>
+<p class="ln" style="margin-left:22.5pt">· 중복 Cache-Control 헤더</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">1. 항목 5 정정 — 제가 틀렸습니다</h2>
+<div class="blank"></div>
+<p class="ln">귀 회신 원문:</p>
+<p class="ln" style="margin-left:4.1pt">&quot;일반 오류 102는 &#x27;요청한 API가 존재하지 않는다&#x27;는 뜻입니다.</p>
+<p class="ln" style="margin-left:6.1pt">권장 결론: &#x27;시험한 API 호출 방식으로 기존 파일의 원자적 교체를</p>
+<p class="ln" style="margin-left:6.1pt">구현하지 못했다.&#x27; &#x27;이 NAS에서는 원자적 교체가 불가능하다&#x27;로</p>
+<p class="ln" style="margin-left:6.1pt">일반화하지 마세요.&quot;</p>
+<div class="blank"></div>
+<p class="ln">귀가 맞았습니다. 제가 실험해서 확인했습니다.</p>
+<div class="blank"></div>
+<p class="ln">1-1. 무엇이 틀렸나</p>
+<div class="blank"></div>
+<p class="ln">v4 5-2 에서 저는 이렇게 썼습니다.</p>
+<p class="ln" style="margin-left:4.1pt">&quot;move(A → B, overwrite=true) → {&quot;error&quot;:{&quot;code&quot;:102}} 겹쳐쓰기 이동도 실패&quot;</p>
+<p class="ln" style="margin-left:4.1pt">&quot;결론: 이 NAS 에서는 temp → 최종이름 rename 으로 원자적 교체가 불가능합니다.&quot;</p>
+<div class="blank"></div>
+<p class="ln">두 문장 모두 틀렸습니다. 102 는 &quot;덮어쓰기 거부&quot;가 아니라</p>
+<p class="ln">&quot;그런 API 가 없다&quot;는 뜻이었고, 저는 Move 가 이 NAS 에 없다는 사실을</p>
+<p class="ln">확인하지 않은 채 &quot;실패했다&quot;로만 적었습니다.</p>
+<div class="blank"></div>
+<p class="ln">1-2. 무엇을 확인했나 — API 목록 조회  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">SYNO.API.Info 로 FileStation 계열 API 존재 여부를 직접 조회했습니다.</p>
+<p class="ln" style="margin-left:4.1pt">(호출: api=SYNO.API.Info, method=query, query=SYNO.FileStation.Move,</p>
+<p class="ln" style="margin-left:6.1pt">Rename, CopyMove, Delete, List)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">응답에 존재하는 것</p>
+<p class="ln" style="margin-left:8.2pt">SYNO.FileStation.CopyMove   v1, v2, v3</p>
+<pre>    SYNO.FileStation.Delete     v1, v2
+    SYNO.FileStation.List       v1, v2
+    SYNO.FileStation.Rename     v1, v2</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">응답에 <b>없는 것</b></p>
+<pre>    SYNO.FileStation.Move       ← 없음</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">따라서 `nas_lib.py` 의 `move()` (:279) 는 <b>처음부터 죽은 코드</b>였습니다.</p>
+<p class="ln" style="margin-left:4.1pt">존재하지 않는 API 를 호출했으니 102 가 나온 것이 당연합니다.</p>
+<p class="ln" style="margin-left:4.1pt">&quot;이동이 거부됐다&quot;가 아니라 &quot;이동이라는 API 가 없다&quot;였습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">추가 확인: error 102 는 세 가지 경우에 모두 나옵니다 — 없는 API,</p>
+<p class="ln" style="margin-left:4.1pt">잘못된 method, 필수 인자 누락. 즉 102 는 원인을 특정하지 못하는</p>
+<p class="ln" style="margin-left:4.1pt">범용 코드입니다. 제가 102 하나로 &quot;덮어쓰기 거부&quot;를 추론한 것이</p>
+<p class="ln" style="margin-left:4.1pt">근본 오류였습니다.</p>
+<div class="blank"></div>
+<p class="ln">1-3. 대안이 실제로 동작한다  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">SYNO.FileStation.CopyMove v3, 스테이징 폴더 → 대상 폴더,</p>
+<p class="ln" style="margin-left:4.1pt">동일 파일명, overwrite=true, remove_src=true:</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:8.2pt">요청: api=SYNO.FileStation.CopyMove, version=3, method=start,</p>
+<p class="ln" style="margin-left:20.5pt">path=[&quot;.../_stage/live.json&quot;], dest_folder_path=&quot;.../&quot;,</p>
+<p class="ln" style="margin-left:20.5pt">overwrite=true, remove_src=true</p>
+<p class="ln" style="margin-left:8.2pt">응답: {&quot;data&quot;:{&quot;taskid&quot;:&quot;FileStation_1795158474F53B8E7B&quot;},&quot;success&quot;:true}</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:8.2pt">결과: 대상 파일이 <b>새 내용으로 교체됨</b>, 임시본 <b>삭제됨</b>,</p>
+<p class="ln" style="margin-left:20.5pt">스테이징 폴더 <b>빈 상태</b>.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">즉 원자적 교체는 이론이 아니라 <b>실제로 됩니다.</b></p>
+<p class="ln" style="margin-left:4.1pt">제 v4 결론은 폐기합니다.</p>
+<div class="blank"></div>
+<p class="ln">1-4. 정정된 결론  <span class="t-correct">[정정</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">틀린 것:  &quot;이 NAS 에서는 원자적 교체가 불가능하다&quot;</p>
+<p class="ln" style="margin-left:4.1pt">맞는 것:  &quot;시험한 API 호출 방식(Rename, Move)으로는 기존 파일의</p>
+<p class="ln" style="margin-left:26.6pt">원자적 교체를 구현하지 못했다. Move 는 이 NAS 에 없고,</p>
+<p class="ln" style="margin-left:26.6pt">Rename 은 대상이 존재하면 1200/414 로 거부한다.</p>
+<p class="ln" style="margin-left:26.6pt">CopyMove v3 + overwrite + remove_src 는 교체에 성공했다.&quot;</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">귀가 권장한 문장을 그대로 채택합니다. 일반화하지 않겠습니다.</p>
+<div class="blank"></div>
+<p class="ln">1-5. Rename 은 여전히 덮어쓰기를 거부한다  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">이 부분은 v4 가 맞습니다. 다만 대상은 Rename 에 한정합니다.</p>
+<p class="ln" style="margin-left:8.2pt">rename(r1.txt → r2.txt), r2.txt 존재</p>
+<p class="ln" style="margin-left:12.3pt">→ {&quot;error&quot;:{&quot;code&quot;:1200,&quot;errors&quot;:[{&quot;code&quot;:414,&quot;path&quot;:&quot;.../r2.txt&quot;}]},</p>
+<p class="ln" style="margin-left:18.4pt">&quot;success&quot;:false}</p>
+<p class="ln" style="margin-left:8.2pt">overwrite=true 를 붙여도 <b>동일하게 414</b></p>
+<p class="ln" style="margin-left:8.2pt">r1.txt → r3.txt (없는 이름)  → success: true</p>
+<p class="ln" style="margin-left:8.2pt">확인: 실패 후 r2.txt 내용은 원본 그대로 (보존됨)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">즉 &quot;Rename 으로는 덮어쓰기 불가&quot;는 사실입니다.</p>
+<p class="ln" style="margin-left:4.1pt">그것이 &quot;NAS 전체가 교체 불가&quot;를 뜻하지는 않습니다.</p>
+<div class="blank"></div>
+<p class="ln">1-6. 새로 알게 된 것 — Upload 는 부분 커밋을 하지 않는다  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">이것이 이번 실험의 가장 쓸모 있는 수확입니다.</p>
+<p class="ln" style="margin-left:4.1pt">현재 운영 쓰기 경로는 `FileStation.Upload` + `overwrite=true` 입니다.</p>
+<p class="ln" style="margin-left:4.1pt">그 경로가 중간에 끊기면 기존 파일이 어떻게 되는지 6가지로 시험했습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">시험 방법: 멀티파트 본문을 지정 비율까지만 보내고 <b>소켓을 닫음.</b></p>
+<p class="ln" style="margin-left:4.1pt">그 뒤 대상 파일을 읽어 상태를 분류.</p>
+<div class="blank"></div>
+<pre>    절단 10%     (209,784 / 2,097,842 B)  →  OLD_INTACT
+    절단 40%     (839,136 / 2,097,842 B)  →  OLD_INTACT
+    절단 80%     (1,678,273 / 2,097,842 B)→  OLD_INTACT
+    절단 95%     (1,992,949 / 2,097,842 B)→  OLD_INTACT
+    절단 99.9%   (2,095,744 / 2,097,842 B)→  OLD_INTACT
+    본문 전송 완료 후 **응답만 유실**              →  OLD_INTACT</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">OLD_INTACT = 대상 파일이 옛 내용 그대로, 길이도 옛 길이와 일치,</p>
+<p class="ln" style="margin-left:30.7pt">JSON 파싱 성공, 내용 검증 통과.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">6/6 전부 옛 내용 보존. 부분 내용이 대상 파일에 남은 경우는 <b>0건</b>.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">해석 <span class="t-assume">[가정</span>]: Synology Upload 는 완결되지 않은 본문을 커밋하지 않고,</p>
+<p class="ln" style="margin-left:4.1pt">기존 파일을 먼저 지우지도 않습니다. 서버 내부 구현은 볼 수 없으므로</p>
+<p class="ln" style="margin-left:4.1pt">이것을 &quot;보장&quot;이 아니라 &quot;관측된 동작&quot;으로만 적습니다.</p>
+<p class="ln" style="margin-left:4.1pt">운영 결정의 근거로 쓸 때는 반복 시험과 NAS 문서 확인이 더 필요합니다.</p>
+<div class="blank"></div>
+<p class="ln">1-7. 읽기 측 관측 — 표본을 늘려 다시 쟀습니다  <span class="t-unver">[미검증</span>: 표본 부족]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 에서 저는 &quot;교체 중 동시 읽기 3회, 깨진 관측 0회&quot;라고 적었습니다.</p>
+<p class="ln" style="margin-left:4.1pt">귀 지적대로 3회는 결론 근거가 못 됩니다. 표본을 늘렸습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">(가) 크기 메타데이터 관측 — 147회</p>
+<p class="ln" style="margin-left:18.4pt">옛 크기(4,194,327)  111회</p>
+<p class="ln" style="margin-left:18.4pt">새 크기(6,291,479)   36회</p>
+<pre>         그 사이 값            0회
+         오류                  0회</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">(나) 전체 다운로드 관측 — 15회</p>
+<p class="ln" style="margin-left:18.4pt">옛 내용 11 / 새 내용 4 / 짧음 0 / 빔 0 / 파싱실패 0</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">(다) CopyMove 교체 중 관측 — 14회</p>
+<p class="ln" style="margin-left:18.4pt">옛 내용 10 / 새 내용 4 / 깨짐 0</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">쓰기 소요 시간은 2.1~2.3초(4~6MB 기준)였습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-unver">[미검증</span>] 그런데 이 결과를 &quot;읽기 원자성 보장&quot;으로 올리지 않습니다.</p>
+<p class="ln" style="margin-left:4.1pt">이유를 솔직히 적습니다.</p>
+<p class="ln" style="margin-left:8.2pt">· 읽기 1회가 1~2초 걸려 표본 밀도가 낮습니다. 교체 순간을</p>
+<p class="ln" style="margin-left:12.3pt">놓쳤을 가능성을 배제할 수 없습니다.</p>
+<p class="ln" style="margin-left:8.2pt">· 관측 창이 짧아 &quot;없었다&quot;와 &quot;못 봤다&quot;를 구분하지 못합니다.</p>
+<p class="ln" style="margin-left:8.2pt">· 서버 측이 아니라 클라이언트 관측입니다. 다른 독자(웹 브라우저,</p>
+<p class="ln" style="margin-left:12.3pt">NAS 관리 도구, 다른 프로세스)의 시야는 재지 않았습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">따라서 결론은 &quot;관측된 147+15+14 회에서 깨진 상태가 없었다&quot;까지입니다.</p>
+<p class="ln" style="margin-left:4.1pt">&quot;부분 상태가 노출되지 않는다&quot;로 일반화하지 않습니다.</p>
+<div class="blank"></div>
+<p class="ln">1-8. v4 본문과의 관계</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 의 5-1(부분 쓰기)은 유효합니다. 오히려 §1-6 으로 근거가 강해졌습니다.</p>
+<p class="ln" style="margin-left:4.1pt">v4 의 5-2(교체 불가능)는 <b>폐기</b>합니다. 읽을 때 5-2 는 건너뛰십시오.</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">2. 귀가 지적한 나머지 과장 6건 정정</h2>
+<div class="blank"></div>
+<p class="ln">2-1. 중복 Cache-Control — 제 추론이 과했습니다  <span class="t-retract">[철회</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4: &quot;두 줄이므로 일부 사용자에게 public 캐시가 적용된다&quot;</p>
+<p class="ln" style="margin-left:4.1pt">귀:  &quot;RFC 9111 의 병합 규칙상 더 제한적인 no-store 가 우선하므로,</p>
+<p class="ln" style="margin-left:16.4pt">그것이 public 캐싱이 적용됐다는 증거가 아닙니다.&quot;</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">귀가 맞습니다. 철회합니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">유지하는 사실 <span class="t-fact">[확인</span>]: /api/geo/staticmap 응답에 Cache-Control 이</p>
+<p class="ln" style="margin-left:4.1pt"><b>두 줄</b>로 나갑니다 (`public, max-age=3600, immutable` + `no-store`).</p>
+<p class="ln" style="margin-left:4.1pt">원인은 `_bytes_cache`(:18320) 가 `_cors()` 를 부르고, `_cors()` 가</p>
+<p class="ln" style="margin-left:4.1pt">무조건 `no-store` 를 덧붙이기 때문입니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">정정된 서술: &quot;같은 응답에 상충하는 두 지시가 실린다. 병합 규칙상</p>
+<p class="ln" style="margin-left:4.1pt">더 제한적인 쪽이 이기므로 실제 캐싱 동작은 브라우저·프록시 구현에</p>
+<p class="ln" style="margin-left:4.1pt">달려 있고, <b>확인하지 않았다.</b> 헤더를 한 줄로 통일하는 것은</p>
+<p class="ln" style="margin-left:4.1pt">그 자체로 옳다.&quot;</p>
+<p class="ln" style="margin-left:4.1pt"><span class="t-unver">[미검증</span>] 브라우저/프록시별 실제 캐싱 여부는 재현하지 않았습니다.</p>
+<div class="blank"></div>
+<p class="ln">2-2. `_cb_visibility` 와 `_img_bytes` 를 혼동했습니다  <span class="t-retract">[철회</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 는 `_cb_visibility`(:9435) 의 ADMIN 기본값을 이미지 캐시 기본값</p>
+<p class="ln" style="margin-left:4.1pt">문제의 근거로 썼습니다. 다른 함수입니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">귀 지적대로 v3 의 제안은 `_img_bytes(..., visibility=&quot;public&quot;)` 라는</p>
+<p class="ln" style="margin-left:4.1pt"><b>존재하지 않는 인자</b>에 관한 것이었고, `_cb_visibility(board)` 는</p>
+<p class="ln" style="margin-left:4.1pt">게시판 접근 정책입니다. 두 논의를 섞은 것은 제 실수입니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">유지 <span class="t-fact">[확인</span>]: `_img_bytes`(:18284) 는 thumb/mid 에 대해</p>
+<p class="ln" style="margin-left:4.1pt">`public, max-age=2592000, immutable` 을 내보냅니다. 그 기본값이</p>
+<p class="ln" style="margin-left:4.1pt">적절한지는 <b>여전히 미해결</b>이며, `_cb_visibility` 로 해소되지</p>
+<p class="ln" style="margin-left:4.1pt">않습니다.</p>
+<div class="blank"></div>
+<p class="ln">2-3. &quot;동시 수정이 없으면 원자성 문제도 없다&quot;  <span class="t-retract">[철회</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 의 이 문장을 철회합니다. 귀 지적:</p>
+<p class="ln" style="margin-left:4.1pt">&quot;작성자가 한 명이어도 연결 단절·프로세스 종료·디스크 오류는</p>
+<p class="ln" style="margin-left:6.1pt">발생할 수 있습니다.&quot;</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">맞습니다. §1-6 실험이 바로 그 경우였습니다 — 작성자는 한 명(저)이고</p>
+<p class="ln" style="margin-left:4.1pt">동시 수정자도 없었지만, 연결을 끊자 쓰기가 중단됐습니다.</p>
+<p class="ln" style="margin-left:4.1pt">단일 작성자 가정은 원자성 논의를 없애지 못합니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">그리고 이번에 4속성 분리를 받아들여 제 서술을 다시 씁니다.</p>
+<pre>    (가) RMW 직렬화    : 읽기-수정-쓰기 구간을 잠그는가
+    (나) 원자적 갱신    : 관측자가 중간 상태를 보는가
+    (다) 내구성        : 저장 성공 후 전원·디스크 오류를 견디는가
+    (라) 재시도 안전성  : 응답 유실 후 재시도가 중복 적용을 만드는가</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 는 이 넷을 뭉쳐 &quot;원자성&quot;이라 불렀습니다. 이제 분리합니다.</p>
+<p class="ln" style="margin-left:4.1pt">§1-6 은 (나)에 대한 시험이고, (다)·(라)는 <b>아직 재지 않았습니다.</b></p>
+<div class="blank"></div>
+<p class="ln">2-4. &quot;/readyz 부재 → 장애 판정 불가능&quot;  <span class="t-retract">[철회</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 의 이 일반화를 철회합니다. 귀 지적대로 기존의 프로세스 감시·로그·</p>
+<p class="ln" style="margin-left:4.1pt">외부 모니터링도 장애 판정 수단입니다. `/readyz` 가 없다는 것은</p>
+<p class="ln" style="margin-left:4.1pt">&quot;그 엔드포인트가 없다&quot;는 사실일 뿐입니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">정정된 서술: &quot;/readyz 는 없다(404, 소스 내 문자열 0건). 대체 수단이</p>
+<p class="ln" style="margin-left:4.1pt">아예 없는 것은 아니다. 다만 <b>저장 실패를 사용자에게 알리는 경로</b>가</p>
+<p class="ln" style="margin-left:4.1pt">없다는 점이 더 중대한 결함이다(§3).&quot;</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">우선순위도 귀의 순서를 받아들입니다.</p>
+<p class="ln" style="margin-left:8.2pt">1) 거짓 성공 제거</p>
+<p class="ln" style="margin-left:8.2pt">2) 읽기 전용/실패 상태를 명시적으로 거부</p>
+<p class="ln" style="margin-left:8.2pt">3) 사용자가 상태를 볼 수 있게</p>
+<p class="ln" style="margin-left:8.2pt">/readyz 는 그 뒤입니다.</p>
+<div class="blank"></div>
+<p class="ln">2-5. TLS 문구  <span class="t-correct">[정정</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4: &quot;아무것도 보호되지 않는다&quot;</p>
+<p class="ln" style="margin-left:4.1pt">정정: &quot;연결 암호화는 있을 수 있으나 상대 신원을 검증하지 않아</p>
+<p class="ln" style="margin-left:16.4pt">능동적 중간자 공격을 막지 못한다.&quot;</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">근거 <span class="t-fact">[확인</span>]: nas_lib.py :67-69</p>
+<p class="ln" style="margin-left:8.2pt">ctx.check_hostname = False</p>
+<p class="ln" style="margin-left:8.2pt">ctx.verify_mode = ssl.CERT_NONE</p>
+<p class="ln" style="margin-left:4.1pt">즉 암호화 자체는 수행되지만 인증서 검증이 꺼져 있습니다.</p>
+<p class="ln" style="margin-left:4.1pt">&quot;암호화 없음&quot;과 &quot;상대 미검증&quot;은 다른 문제이고, 제가 앞의 것으로</p>
+<p class="ln" style="margin-left:4.1pt">뭉갠 것이 틀렸습니다.</p>
+<div class="blank"></div>
+<p class="ln">2-6. pinning 을 이분법으로 제시  <span class="t-correct">[정정</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">v4 는 Q1 답변에서 지문 고정을 CERT_NONE 의 대안처럼 배치했습니다.</p>
+<p class="ln" style="margin-left:4.1pt">귀 지적대로 <b>순서가 있다</b>:</p>
+<p class="ln" style="margin-left:8.2pt">1) 신뢰 체인 + SAN 이 호스트명과 일치 + 통상적 호스트명 검증</p>
+<p class="ln" style="margin-left:8.2pt">2) 내부용이면 사설 CA 또는 정확한 이름의 신뢰된 인증서</p>
+<p class="ln" style="margin-left:8.2pt">3) 지문 고정은 조건부 임시 대안</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">그리고 귀가 든 최소 조건 7가지를 그대로 수용합니다.</p>
+<p class="ln" style="margin-left:8.2pt">· 지문은 별도의 신뢰된 경로로 획득</p>
+<p class="ln" style="margin-left:8.2pt">· 미검증 연결에서 읽은 지문을 신뢰하지 않음</p>
+<p class="ln" style="margin-left:8.2pt">· NAS 자격증명·HTTP 요청을 보내기 <b>전에</b> 검증</p>
+<p class="ln" style="margin-left:8.2pt">· 불일치 시 차단, 안전하지 않은 폴백 없음</p>
+<p class="ln" style="margin-left:8.2pt">· 새 연결과 리다이렉트에도 정책 유지</p>
+<p class="ln" style="margin-left:8.2pt">· 교체·만료·키 유출 시 대응 절차</p>
+<p class="ln" style="margin-left:8.2pt">· 잘못된 인증서로 <b>실제 연결 실패를 시험</b></p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-unver">[미검증</span>] 이 7개 중 실제로 시험한 것은 0건입니다. §6 의 A 패키지로</p>
+<p class="ln" style="margin-left:4.1pt">넘깁니다.</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">3. 신규 확인 — 저장 정확성 (귀 Priority #1 과 일치)</h2>
+<div class="blank"></div>
+<p class="ln">3-1. 거짓 성공 — 코드 경로 확정  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">`_BackendClient.write()` (proxy_server.py:4450~4471)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:8.2pt">def write(self, path, content_bytes):</p>
+<p class="ln" style="margin-left:16.4pt">try:</p>
+<p class="ln" style="margin-left:24.6pt">self._store.write(path, content_bytes)</p>
+<p class="ln" style="margin-left:16.4pt">except Exception as e:</p>
+<pre>            print(&quot;local store write fail:&quot;, path, e)      # ← 삼킴
+        if self._sync:
+            if self._local_primary:
+                self._bwrite_bg(path, content_bytes)
+            else:
+                try:
+                    self._b.write(path, content_bytes)
+                except Exception as e:
+                    print(&quot;backend write fail(%s):&quot; % self._name, path, e)  # ← 삼킴
+        else:
+            self._bwrite_bg(path, content_bytes)
+        return {&quot;ok&quot;: True}                # ← 무조건 성공</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">즉 로컬 쓰기가 실패해도, NAS 쓰기가 실패해도 반환값은 항상</p>
+<p class="ln" style="margin-left:4.1pt">`{&quot;ok&quot;: True}` 입니다. 호출자는 실패를 알 수 없습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">더 나쁜 것은 그다음입니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">`_save_json()` (proxy_server.py:4994)</p>
+<p class="ln" style="margin-left:8.2pt">NAS.write(path, json.dumps(obj, ...).encode(&quot;utf-8&quot;))   # 반환값 버림</p>
+<p class="ln" style="margin-left:8.2pt">with _JSON_CACHE_LOCK:</p>
+<pre>        _JSON_CACHE[path] = (obj, time.time())              # 캐시는 갱신
+    _mirror_write(path, obj)                                 # 미러도 갱신
+    return True                                              # 항상 True</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">반환값을 <b>변수에 담지도 않습니다.</b> 그런데 캐시와 미러는 갱신합니다.</p>
+<p class="ln" style="margin-left:4.1pt">결과:</p>
+<p class="ln" style="margin-left:8.2pt">· 사용자 화면: &quot;저장 완료&quot;</p>
+<p class="ln" style="margin-left:8.2pt">· 서버 캐시  : 새 값 (메모리)</p>
+<p class="ln" style="margin-left:8.2pt">· 로컬 미러  : 새 값 (디스크)</p>
+<pre>    · NAS       : **옛 값**</pre>
+<p class="ln" style="margin-left:4.1pt">그리고 서버가 재시작되면 미러에서 새 값이 올라오므로, 한동안은</p>
+<p class="ln" style="margin-left:4.1pt">아무도 이상을 느끼지 못합니다. NAS 를 직접 열어봐야 알 수 있습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">이것이 귀가 지적한 &quot;저장 실패의 거짓 성공&quot;이며, 제가 확인한 것은</p>
+<p class="ln" style="margin-left:4.1pt">코드 경로입니다. <span class="t-unver">[미검증</span>] 실제로 NAS 쓰기가 실패하는 상황을 만들어</p>
+<p class="ln" style="margin-left:4.1pt">&quot;저장 완료&quot;가 표시되는 것을 화면에서 확인하지는 않았습니다.</p>
+<p class="ln" style="margin-left:4.1pt">(NAS 를 끊으면 다른 기능까지 영향이 커서 격리 시험 설계가 필요합니다)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">관련 수치 <span class="t-fact">[확인</span>]: `_save_json` 호출부가 100곳을 넘고, 그중 반환값을</p>
+<p class="ln" style="margin-left:4.1pt">검사하는 곳은 소수입니다. 즉 차단·실패가 조용히 묻힐 구조입니다.</p>
+<div class="blank"></div>
+<p class="ln">3-2. 백그라운드 쓰기 병합 — 최신 내용 유실  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">`_bwrite_bg()` (proxy_server.py:4473)</p>
+<div class="blank"></div>
+<pre>    slot = [content_bytes]              # 길이 1짜리 리스트
+    self._inflight[key] = slot
+    ...
+    if prev is not None:
+        try:
+            prev[1] = content_bytes     # ← 인덱스 1 은 없다
+        except Exception:
+            pass                        # ← 조용히 삼킴
+        return</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">`slot` 은 `[content_bytes]` 이므로 유효 인덱스는 0 뿐입니다.</p>
+<p class="ln" style="margin-left:4.1pt">`prev[1] = ...` 는 <b>IndexError</b> 를 던지고, `except: pass` 가 삼킵니다.</p>
+<p class="ln" style="margin-left:4.1pt">그런데 그 직전에 `return` 하므로 <b>새 내용은 어디에도 반영되지 않습니다.</b></p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">재현 (순수 로직 재현, 0.2초 지연 스레드)</p>
+<p class="ln" style="margin-left:8.2pt">bwrite_bg(&#x27;/x&#x27;, &#x27;VERSION-1&#x27;)</p>
+<p class="ln" style="margin-left:8.2pt">(0.05초 후) bwrite_bg(&#x27;/x&#x27;, &#x27;VERSION-2-NEWER&#x27;)</p>
+<p class="ln" style="margin-left:8.2pt">→ MERGE FAILED: IndexError list assignment index out of range</p>
+<p class="ln" style="margin-left:8.2pt">→ backend received: [&#x27;VERSION-1&#x27;]</p>
+<p class="ln" style="margin-left:8.2pt">→ 결과: 최신 내용 LOST</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">현재 영향도 <span class="t-fact">[확인</span>]: 실행 모드는 `NAS(read-through cache)` 이고</p>
+<p class="ln" style="margin-left:4.1pt">`local_primary=False` 입니다(proxy.log 1행). 이 모드에서 `_sync=True`</p>
+<p class="ln" style="margin-left:4.1pt">이므로 write 는 `_bwrite_bg` 가 아니라 <b>동기 경로</b>를 탑니다.</p>
+<p class="ln" style="margin-left:4.1pt">따라서 <b>지금은 도달하지 않습니다.</b></p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-propose">[제안</span>] 그러나 `backend=auto` 이고 gdrive 초기화가 성공하면</p>
+<p class="ln" style="margin-left:4.1pt">`local_primary=True` 로 바뀌어 이 경로가 즉시 활성화됩니다.</p>
+<p class="ln" style="margin-left:4.1pt">설정 한 번으로 발현하는 잠복 결함이므로 함께 고칠 것을 제안합니다.</p>
+<p class="ln" style="margin-left:4.1pt">수정은 한 줄입니다 — `slot = [content_bytes, content_bytes]`.</p>
+<div class="blank"></div>
+<p class="ln">3-3. 로컬 스토어 축출 위험 — 정량  <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">현황 (2026-11-20 07:12 실측)</p>
+<pre>    gdrive_store 총량      3,155,551,824 B = 3,009.4 MB
+    max_total 상한         3,072 MB
+    여유                   62.6 MB
+    축출 임계(90%)         2,765 MB  ← 이미 넘었음
+    blob 개수              1,502</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">무엇이 차 있는가</p>
+<p class="ln" style="margin-left:8.2pt">backups/members_*.json 이 로컬 스토어에 있는 것: <b>226개</b></p>
+<p class="ln" style="margin-left:8.2pt">그 용량: <b>1,703.5 MB = 전체의 56.6%</b></p>
+<p class="ln" style="margin-left:8.2pt">(NAS backups/ 에는 members_ 백업이 <b>413개</b> 있고, 그중 226개가 캐시됨)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">발생 속도</p>
+<p class="ln" style="margin-left:8.2pt">관측 구간 2026-09-24 13:21 ~ 2026-11-20 06:50 (56.7일)</p>
+<p class="ln" style="margin-left:8.2pt">members_ 백업 413개 → 평균 <b>7.3개/일 = 57.9 MB/일</b></p>
+<p class="ln" style="margin-left:8.2pt">최대일 11-03: 36개 ≈ 286 MB/일</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">보존 정책 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:8.2pt">NAS `{BASE}/backups/` 에 대한 <b>정리 정책이 없습니다.</b></p>
+<p class="ln" style="margin-left:8.2pt">소스에 backups 삭제·로테이션 코드가 0건입니다.</p>
+<p class="ln" style="margin-left:8.2pt">(`_SAFE_SNAP_KEEP = 40` 은 로컬 `.safe_snapshots` 전용이며</p>
+<p class="ln" style="margin-left:10.2pt">334 MB / 33개로 별개입니다.)</p>
+<p class="ln" style="margin-left:8.2pt">→ 413개는 계속 늘어납니다. 줄어들 이유가 없습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">축출 방식의 문제 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:8.2pt">`_maybe_evict` 는 모든 blob 을 `st_atime` 오름차순으로 정렬해</p>
+<p class="ln" style="margin-left:8.2pt">`_used &lt;= max_total*0.9` 가 될 때까지 `os.remove` 합니다.</p>
+<p class="ln" style="margin-left:8.2pt"><b>원본과 백업을 구분하지 않습니다.</b> 어떤 파일이 지워질지는</p>
+<p class="ln" style="margin-left:8.2pt">최근 접근 시각만으로 정해집니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">결합 위험</p>
+<p class="ln" style="margin-left:8.2pt">거짓 성공(§3-1) + 무차별 축출(본 항목) 이 겹치면</p>
+<p class="ln" style="margin-left:8.2pt">&quot;백업이 조용히 사라지고, 사용자는 저장 완료를 본다&quot;가 성립합니다.</p>
+<p class="ln" style="margin-left:8.2pt">데이터 손실에 <b>신호가 0</b> 입니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">디스크 여유 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:8.2pt">/ 37G 중 33G 사용, 여유 3.7 GB (90%).</p>
+<p class="ln" style="margin-left:8.2pt">로컬 스토어가 상한까지 차면 호스트 디스크도 함께 압박받습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt"><span class="t-propose">[제안</span>] 세 가지 중 (다) → (가) 순서를 권합니다.</p>
+<p class="ln" style="margin-left:8.2pt">(가) 상한 상향 (3GB → 6GB): 즉효지만 원인 미해결</p>
+<p class="ln" style="margin-left:8.2pt">(나) 백업을 축출 대상에서 제외: 상한이 무의미해짐. 역효과</p>
+<p class="ln" style="margin-left:8.2pt">(다) <b>보존 정책 먼저 정의</b> (예: 일 7개 + 주 4개 + 월 6개, 약 30개</p>
+<p class="ln" style="margin-left:18.4pt">≈ 240 MB), 그다음 축출을 분류 인식형으로 변경</p>
+<p class="ln" style="margin-left:4.1pt">운영 코드·데이터는 <b>아무것도 바꾸지 않았습니다.</b> 소유자 결정 대기입니다.</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">4. 자기 보고 — 격리 조건 위반</h2>
+<div class="blank"></div>
+<p class="ln">귀 회신 §6:</p>
+<p class="ln" style="margin-left:4.1pt">&quot;시험 전용 NAS 폴더와 최소 권한 계정&quot;</p>
+<p class="ln" style="margin-left:4.1pt">&quot;운영 프로세스와 같은 cwd 를 사용하는 시험은 반복하지 않습니다.&quot;</p>
+<div class="blank"></div>
+<p class="ln">제가 어겼습니다. 사실대로 적습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">무엇을 했나</p>
+<p class="ln" style="margin-left:8.2pt">운영 데이터 폴더 `{BASE}` 바로 아래에 시험 폴더 2개를 만들었습니다.</p>
+<pre>      {BASE}/_tk_test_v41       (a.txt, b.txt, c.txt, members.json,
+                                 race.json, _stage/)
+      {BASE}/_tsak_atomic_probe (a.txt, m_target.txt, m_temp.txt 등 12개)
+    운영 BASE 를 시험 장소로 쓴 것이 명백한 위반입니다.</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">왜 했나 (변명이 아니라 원인)</p>
+<p class="ln" style="margin-left:8.2pt">&quot;같은 볼륨·같은 권한에서 재현해야 신뢰할 수 있다&quot;고 생각했습니다.</p>
+<p class="ln" style="margin-left:8.2pt">그것은 편의였고, 귀가 요구한 조건은 &quot;격리&quot;였습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">어떻게 했나</p>
+<p class="ln" style="margin-left:8.2pt">두 폴더를 삭제했습니다(SYNO.FileStation.Delete, success: true).</p>
+<p class="ln" style="margin-left:8.2pt">BASE 항목이 16개 → 14개로 복귀했고, 잔여 시험 폴더는 0건임을</p>
+<p class="ln" style="margin-left:8.2pt">재조회로 확인했습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">이후 어떻게 바꿨나</p>
+<p class="ln" style="margin-left:8.2pt">남은 시험은 전부 `{PARENT}/_tsak_iso*_&lt;pid&gt;` 로 <b>BASE 밖</b>에서</p>
+<p class="ln" style="margin-left:8.2pt">실행했습니다. 스크립트가 시작할 때 경로가 운영 BASE 하위인지</p>
+<p class="ln" style="margin-left:8.2pt">검사해 거부하는 가드를 넣었습니다.</p>
+<p class="ln" style="margin-left:12.3pt">if path == PROD_BASE or path.startswith(PROD_BASE + &quot;/&quot;):</p>
+<p class="ln" style="margin-left:20.5pt">raise SystemExit(&quot;REFUSED: 운영 BASE 하위 경로 사용 금지&quot;)</p>
+<p class="ln" style="margin-left:8.2pt">종료 시 스스로 폴더를 삭제하고, 남았는지 재조회해 출력합니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">남는 한계 <span class="t-unver">[미검증</span>]</p>
+<p class="ln" style="margin-left:8.2pt">· 여전히 <b>운영 계정(tigerscout)</b> 을 썼습니다. 최소 권한 계정이</p>
+<p class="ln" style="margin-left:12.3pt">아닙니다. 귀 조건을 완전히 만족하지 못했습니다.</p>
+<p class="ln" style="margin-left:8.2pt">· 시험 폴더가 운영 BASE 의 <b>형제</b>이므로 같은 볼륨입니다.</p>
+<p class="ln" style="margin-left:12.3pt">권한 분리는 되지 않았습니다.</p>
+<p class="ln" style="margin-left:8.2pt">· 진짜 격리는 별도 계정 + 별도 공유 폴더가 필요하며, 아직 없습니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">다음부터</p>
+<p class="ln" style="margin-left:8.2pt">시험 전에 (a) 격리 폴더인지 (b) 계정이 최소 권한인지 확인하고</p>
+<p class="ln" style="margin-left:8.2pt">시작하겠습니다. 둘 중 하나라도 안 되면 시험하지 않고</p>
+<p class="ln" style="margin-left:8.2pt">&quot;격리 조건 미충족으로 미실시&quot;로 보고하겠습니다.</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">5. 실행 환경과 증거 — 재실행 가능한 형태</h2>
+<div class="blank"></div>
+<p class="ln">귀 회신 §7:</p>
+<p class="ln" style="margin-left:4.1pt">&quot;두 파일의 MD5가 같다는 정보만으로 전체 실행환경이 해당 커밋과</p>
+<p class="ln" style="margin-left:6.1pt">같다고 판단하지 않습니다.&quot;</p>
+<div class="blank"></div>
+<p class="ln">수용합니다. 이번에는 실행한 파일의 SHA-256 과 환경을 함께 적습니다.</p>
+<div class="blank"></div>
+<p class="ln">5-1. 실행한 파일의 SHA-256</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">498dca0df045c796baa5e0c5a68b1a28a8f03d1dd5a580c171e1a50b132a2e19  proxy_server.py</p>
+<p class="ln" style="margin-left:4.1pt">3fdee882ae35c859c82e080d6b4182e3e63165f4a3a1b2be13aedf3c2a164c22  nas_lib.py</p>
+<p class="ln" style="margin-left:4.1pt">fe9de1f771995a9f8a555aba7e91bae59312f1c5f039c427d5f747e655da3242  tests/iso_atomic_test.py</p>
+<p class="ln" style="margin-left:4.1pt">0a785eb1a0ecd53d444fb801fc5873ea1744dd394a0c2e13071a4b7b1093ea03  tests/iso_upload_race.py</p>
+<p class="ln" style="margin-left:4.1pt">2b5730d3dfbfa7bb9423b92e8533065f401b07a37c6e6f7f31593b8d8bc285cc  tests/iso_cut_upload.py</p>
+<p class="ln" style="margin-left:4.1pt">c47f513b00240337fbafd904f8e30f7761ce760b548e73794e30d7f38df07998  tests/iso_cut_multi.py</p>
+<p class="ln" style="margin-left:4.1pt">f265328b770e78b6c3d01d4241f303407b439e0ba8e1e92a44d64e73d41a9f96  tests/iso_race_dense.py</p>
+<div class="blank"></div>
+<p class="ln">5-2. 저장소 상태</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">gabia_deploy  HEAD  053d6ef197ace09dacfaedebed2c3d3cfd11517d</p>
+<p class="ln" style="margin-left:32.8pt">dirty 0 files (clean)</p>
+<pre>  nas_proxy     git 저장소 **없음** — 프록시 소스가 버전 관리 밖에 있습니다.
+                이것은 v4 부록에서 이미 지적한 미해결 항목이며,
+                귀 기준 &quot;소스 저장소 + 전체 커밋 + worktree 상태&quot;를
+                프록시에 대해서는 **제출할 수 없습니다.**
+                (프록시 코드를 git 으로 옮기는 것이 선행 조건입니다)</pre>
+<div class="blank"></div>
+<p class="ln">5-3. 환경</p>
+<div class="blank"></div>
+<pre>  Python      3.13.14  (/usr/local/bin/python3, 표준 python3 동일)
+  OpenSSL     3.5.6 (2026-04-08)
+  httplib     표준 라이브러리만 사용 (외부 의존 0)
+  실행 cwd    /tmp   ← 운영 cwd(/home/user/nas_proxy) 와 분리
+  NAS 접속    https://&lt;NAS-IP&gt;:5001
+  NAS 계정    tigerscout (운영 계정 — 최소 권한 아님, §4 참조)</pre>
+<div class="blank"></div>
+<p class="ln">5-4. 시험 파일 목록 (재실행 가능)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">nas_proxy/tests/iso_atomic_test.py   CopyMove 교체 / Rename 거부 / truncate</p>
+<p class="ln" style="margin-left:4.1pt">nas_proxy/tests/iso_upload_race.py   Upload overwrite 중 전체 다운로드 관측</p>
+<pre>  nas_proxy/tests/iso_cut_upload.py    절단 1점 (40%)
+  nas_proxy/tests/iso_cut_multi.py     절단 5점 + 응답 유실
+  nas_proxy/tests/iso_race_dense.py    메타데이터 147회 + blob 15회</pre>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">각 파일은 스스로 격리 폴더를 만들고, 끝나면 삭제하고, 결과를</p>
+<p class="ln" style="margin-left:4.1pt">JSON 으로 출력합니다. 요약이 아니라 <b>실행 가능한 파일</b>입니다.</p>
+<div class="blank"></div>
+<p class="ln">5-5. 시험별 판정 (PASS / FAIL / NOT_TESTED)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">SYNO.API.Info 에 Move 존재?</p>
+<p class="ln" style="margin-left:8.2pt">→ FAIL(없음)  ·  CopyMove/Delete/List/Rename 만 응답, Move 無</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">Rename 덮어쓰기</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS(거부 확인)  ·  error 1200/414, overwrite 무시, 원본 보존</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">CopyMove v3 교체</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS  ·  대상 교체됨, 스테이징 폴더 빔</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">Upload 절단 6점 → 기존 파일 보존</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS  ·  10/40/80/95/99.9% + 응답유실, 6건 전부 OLD_INTACT</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">응답 유실(본문 완료) → 새 내용 반영?</p>
+<p class="ln" style="margin-left:8.2pt">→ FAIL(미반영)  ·  OLD_INTACT = NAS 가 커밋하지 않음</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">교체 중 읽기 관측 (메타 147회 / blob 15회)</p>
+<p class="ln" style="margin-left:8.2pt">→ NOT_TESTED 로 표기  ·  표본 밀도 부족, 결론 유보</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">_BackendClient.write 거짓 성공</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS(확인)  ·  실패해도 {&quot;ok&quot;:True} 반환, 코드 경로 확정</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">_save_json 반환값 무시</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS(확인)  ·  캐시·미러만 갱신, NAS 반영 여부 미확인 상태로 True</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">_bwrite_bg IndexError 유실</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS(재현)  ·  순수 로직 재현, 최신 내용 LOST</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">gdrive_store 축출 위험</p>
+<p class="ln" style="margin-left:8.2pt">→ PASS(정량)  ·  여유 62.6 MB, 백업이 56.6%</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">TLS 실제 연결 실패 시험</p>
+<p class="ln" style="margin-left:8.2pt">→ NOT_TESTED  ·  A 패키지 (검증이 꺼져 있어 실패 자체가 불가)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">백업 복원 후 정합성 확인</p>
+<p class="ln" style="margin-left:8.2pt">→ NOT_TESTED  ·  C 패키지</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">&quot;응답 유실&quot; 행이 중요합니다. 본문을 다 보냈는데 응답만 못 받은 경우,</p>
+<p class="ln" style="margin-left:4.1pt">NAS 는 <b>반영하지 않았습니다.</b> 즉 클라이언트가 실패로 보고 재시도하면</p>
+<p class="ln" style="margin-left:4.1pt">이중 적용이 아니라 <b>한 번만 적용</b>됩니다. 재시도 안전성(§2-3 라)에</p>
+<p class="ln" style="margin-left:4.1pt">유리한 관측이지만, 반대 방향 — NAS 는 반영했는데 클라이언트가</p>
+<p class="ln" style="margin-left:4.1pt">실패로 볼 경우 — 는 재현하지 못했습니다. <span class="t-unver">[미검증</span>]</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2">6. 다음 작업 — 귀의 A/B/C 를 그대로 받습니다</h2>
+<div class="blank"></div>
+<p class="ln">귀가 제시한 3개 작업 패키지를 승인 단위로 삼겠습니다.</p>
+<p class="ln">각각 격리 환경, PASS/FAIL/NOT_TESTED/NOT_APPLICABLE 기록,</p>
+<p class="ln">예상+실제, 재실행 가능 시험 파일을 갖춥니다.</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">A. 자격증명·권한·TLS</p>
+<p class="ln" style="margin-left:10.2pt">A-1 TLS 검증 복원 가능성 검토 (신뢰 체인 → 사설 CA → 조건부 고정)</p>
+<p class="ln" style="margin-left:10.2pt">A-2 잘못된 인증서로 실제 연결 실패 시험 — 지금은 <b>불가능</b></p>
+<p class="ln" style="margin-left:18.4pt">(검증이 꺼져 있어 실패할 수가 없음). 그래서 이 시험 자체가</p>
+<p class="ln" style="margin-left:18.4pt">&quot;검증 복원&quot;의 증거가 됩니다.</p>
+<p class="ln" style="margin-left:10.2pt">A-3 askedAdmin 경로 확인 — <b>완료.</b> 주입 경로 0건.</p>
+<p class="ln" style="margin-left:10.2pt">A-4 NAS 비밀번호와 앱 비밀번호 분리 (현재 동일: config 확인)</p>
+<p class="ln" style="margin-left:10.2pt">A-5 최소 권한 NAS 계정 + 시험 전용 폴더 마련  ← §4 위반 해소</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">B. 저장 정확성</p>
+<p class="ln" style="margin-left:10.2pt">B-1 `_BackendClient.write` 실패를 호출자에게 반환</p>
+<p class="ln" style="margin-left:10.2pt">B-2 `_save_json` 이 그 반환값으로 캐시·미러 갱신을 결정</p>
+<p class="ln" style="margin-left:10.2pt">B-3 `_bwrite_bg` `slot` 길이 수정 (한 줄)</p>
+<p class="ln" style="margin-left:10.2pt">B-4 축출을 분류 인식형으로 + 백업 보존 정책 정의 (§3-3)</p>
+<p class="ln" style="margin-left:10.2pt">B-5 재시도 안전성: 작업 ID + 저장 검증 (귀 Q3 의 4상태 구분)</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">C. 비공개 응답·진단</p>
+<p class="ln" style="margin-left:10.2pt">C-1 Cache-Control 한 줄로 통일</p>
+<p class="ln" style="margin-left:10.2pt">C-2 사진 URL 에 세션 토큰 대신 파일 범위·단기·철회 가능 토큰</p>
+<p class="ln" style="margin-left:10.2pt">C-3 `/api/admin/diag` 대상 재설계 (grantedAdmin 선행 확인)</p>
+<p class="ln" style="margin-left:10.2pt">C-4 `/readyz` 는 B 이후</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">제안하는 착수 순서: A-5(격리 환경) → B-1/B-2(거짓 성공) →</p>
+<p class="ln" style="margin-left:4.1pt">B-3(한 줄) → B-4(보존 정책) → A-1(검증 복원) → 나머지.</p>
+<p class="ln" style="margin-left:4.1pt">A-5 없이 B 를 시작하면 §4 를 반복합니다.</p>
+<div class="blank"></div>
+<div class="blank"></div>
+<h2 class="h2 newpage">부록 A. 이번 회신에서 확정한 사실</h2>
+<div class="blank"></div>
+<p class="ln" style="margin-left:4.1pt">A-1  SYNO.FileStation.Move 는 이 NAS 에 없다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-2  error 102 는 없는 API·잘못된 method·인자 누락 모두에 나온다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-3  nas_lib.move() (:279) 는 처음부터 죽은 코드다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-4  Rename 은 대상이 있으면 1200/414 로 거부한다 (overwrite 무시) <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-5  CopyMove v3 + overwrite + remove_src 는 기존 파일을 교체한다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-6  교체 후 스테이징 폴더는 빈다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-7  Upload 절단 6점 전부에서 기존 파일이 보존됐다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-8  Upload 본문 완료 + 응답 유실 → 새 내용이 반영되지 않았다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-9  Upload 는 작은 내용으로 덮으면 정확히 truncate 한다</p>
+<p class="ln" style="margin-left:14.3pt">(50,000 → 100 바이트, 내용 일치) <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-10 교체 중 메타데이터 147회 관측에서 중간 크기 0회 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-11 _BackendClient.write 는 실패해도 {&quot;ok&quot;:True} 를 반환한다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-12 _save_json 은 그 반환값을 버리고 캐시·미러를 갱신한다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-13 _bwrite_bg 의 prev[1] 대입은 IndexError 이고 삼켜진다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-14 실행 모드는 NAS(read-through cache), local_primary=False <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-15 gdrive_store 는 3,009.4 MB / 상한 3,072 MB, 여유 62.6 MB <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-16 로컬 스토어의 1,703.5 MB(56.6%)가 members_ 백업이다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-17 NAS backups/ 에 members_ 백업 413개, 정리 정책 0건 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-18 백업 생성 평균 7.3개/일 = 57.9 MB/일, 최대 36개/일 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-19 _maybe_evict 는 원본·백업을 구분하지 않는다 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-20 _safe_snapshots 334 MB / 33개, 상한 40개 <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-21 디스크 90% 사용, 여유 3.7 GB <span class="t-fact">[확인</span>]</p>
+<p class="ln" style="margin-left:4.1pt">A-22 운영 BASE 시험 폴더 2개를 삭제해 16→14 항목으로 복귀 <span class="t-fact">[확인</span>]</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:2.0pt">부록 B. 미검증·미구현 (정직하게 남깁니다)</p>
+<p class="ln" style="margin-left:4.1pt">B-1  읽기 원자성 — 표본 밀도 부족. &quot;없었다&quot;와 &quot;못 봤다&quot; 구분 불가</p>
+<p class="ln" style="margin-left:4.1pt">B-2  NAS 가 반영했는데 클라이언트가 실패로 보는 경우 — 미재현</p>
+<p class="ln" style="margin-left:4.1pt">B-3  내구성(전원·디스크 오류) — 시험 0건</p>
+<p class="ln" style="margin-left:4.1pt">B-4  다중 프로세스 동시 쓰기 일관성 — 시험 0건</p>
+<p class="ln" style="margin-left:4.1pt">B-5  지문 고정 7조건 — 시험 0건</p>
+<p class="ln" style="margin-left:4.1pt">B-6  백업 복원 후 정합성 — 시험 0건</p>
+<p class="ln" style="margin-left:4.1pt">B-7  실제 저장 실패 시 화면에 &quot;저장 완료&quot;가 뜨는지 — 미확인</p>
+<p class="ln" style="margin-left:4.1pt">B-8  중복 Cache-Control 의 브라우저별 실제 캐싱 — 미확인</p>
+<p class="ln" style="margin-left:4.1pt">B-9  최소 권한 계정 — 없음 (§4)</p>
+<p class="ln" style="margin-left:4.1pt">B-10 프록시 소스 버전 관리 — 없음 (git 저장소 없음)</p>
+<p class="ln" style="margin-left:4.1pt">B-11 /readyz — 없음</p>
+<p class="ln" style="margin-left:4.1pt">B-12 grantedAdmin — 주입 경로 0건 확인했으나 외부 감사는 없음</p>
+<div class="blank"></div>
+<p class="ln" style="margin-left:2.0pt">부록 C. 이번 회신에서 하지 않은 일</p>
+<p class="ln" style="margin-left:4.1pt">· 운영 코드 변경 0건</p>
+<p class="ln" style="margin-left:4.1pt">· 운영 데이터 변경 0건 (시험 폴더 삭제 외)</p>
+<p class="ln" style="margin-left:4.1pt">· 설정·자격증명·DNS 변경 0건</p>
+<p class="ln" style="margin-left:4.1pt">· 프로세스 재시작 0건</p>
+<p class="ln" style="margin-left:4.1pt">· 소유자 결정 없이 축출 정책·상한 변경 0건</p>
+<p class="ln" style="margin-left:4.1pt">· APK 빌드 — 소유자 지시로 제외</p>
+<div class="blank"></div>
+<div class="hr"></div>
+<p class="ln">이 문서의 결론: 제 v4 항목 5-2 는 틀렸습니다. 실험으로 뒤집혔습니다.</p>
+<p class="ln">그리고 그 실험 과정에서 저장 실패의 거짓 성공과 로컬 스토어 축출 위험이</p>
+<p class="ln">새로 확인됐습니다. 문서를 더 길게 만드는 대신 A-5 격리 환경부터</p>
+<p class="ln">착수하는 것이 맞다고 봅니다. 소유자 승인을 기다립니다.</p>
+<div class="hr"></div>
+<div class="blank"></div>
+</div>
+</body></html>
