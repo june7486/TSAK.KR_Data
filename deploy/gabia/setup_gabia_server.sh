@@ -99,6 +99,55 @@ ok "프록시 파일 존재"
 ok "web 파일 $(find "$STATIC" -type f | wc -l)개"
 echo "  python3: $(python3 -V 2>&1)"
 
+# ── 0-a) 파이썬 의존성 (★이전 시 조용한 기능 실패를 막는다) ──────────────
+#  ## 왜 검사하는가
+#   requirements.txt 가 오랫동안 "표준 라이브러리만 사용" 이라고 **거짓**으로
+#   적혀 있었다. 실제로는 proxy_server.py 가 openpyxl 을 세 곳에서 import 한다.
+#   (엑셀 명단 업로드 파싱 / 견본 생성 / 재무 엑셀 내보내기)
+#
+#   openpyxl 이 없으면 서버는 **정상 기동**한다. 그러나 엑셀 기능만 조용히 죽는다.
+#   기동 실패가 아니라 기능 실패라 배포 직후에는 아무도 모른다.
+#   사용자가 명단 업로드를 처음 시도하는 순간에야 드러난다 — 최악의 타이밍이다.
+#   그래서 세팅 단계에서 **미리** 확인하고, 없으면 어떻게 설치할지 알려준다.
+step "▶ 0-a) 파이썬 의존성 확인"
+MISSING_MODS=""
+for m in openpyxl; do
+  if python3 -c "import $m" 2>/dev/null; then
+    ok "$m 설치됨 ($(python3 -c "import $m;print(getattr($m,'__version__','?'))" 2>/dev/null))"
+  else
+    MISSING_MODS="$MISSING_MODS $m"
+  fi
+done
+if [ -n "$MISSING_MODS" ]; then
+  err "다음 파이썬 모듈이 없습니다:$MISSING_MODS"
+  echo "      이대로 두면 앱은 뜨지만 **엑셀 업로드/내보내기가 조용히 실패**합니다."
+  echo "      설치하세요:"
+  echo "        sudo apt install -y python3-openpyxl        # Debian/Ubuntu"
+  echo "        # 또는: $SUDO pip3 install -r $APIDIR/requirements.txt"
+  if [ "$DRY" = "1" ]; then
+    warn "        --dry-run 이므로 중단하지 않습니다 (실제 세팅에서는 중단)"
+  else
+    exit 1
+  fi
+else
+  ok "필수 모듈 전부 있음"
+fi
+
+#  선택 모듈 — 없어도 동작하지만 있으면 더 좋다 (압축률)
+python3 -c "import brotli" 2>/dev/null && ok "brotli 있음 (압축률 향상)" \
+  || echo "  (선택) brotli 없음 — gzip 으로 동작합니다"
+
+# ── 0-c) NAS TLS 정책 안내 ─────────────────────────────────────────────
+#  ## 이전 후 이 구간이 공인 인터넷을 지난다
+#   NAS 는 자체서명 인증서(CN=synology)를 쓴다. 종전에는 검증을 통째로 껐다
+#   (CERT_NONE). 이전하면 서버→NAS 트래픽이 인터넷을 지나므로, 검증이 꺼진
+#   상태에서는 중간자가 인증서만 바꿔치기하면 비밀번호·자료가 노출된다.
+#   지금은 인증서 **지문 고정(pinning)** 으로 바뀌었다 (기본값).
+echo "  NAS TLS 정책: ${TSAK_NAS_TLS_MODE:-pin} (기본 pin = 인증서 지문 고정)"
+if [ "${TSAK_NAS_TLS_MODE:-pin}" = "off" ]; then
+  warn "TSAK_NAS_TLS_MODE=off — 운영에서는 권장하지 않습니다"
+fi
+
 # ── 상태 디렉터리 (코드와 분리) ────────────────────────────────────────
 step "▶ 0-b) 영속 상태 디렉터리"
 mkdir -p "$STATE" || { err "상태 디렉터리 생성 실패: $STATE"; exit 1; }
@@ -138,6 +187,14 @@ Environment=TSAK_PORT=$PORT
 #  이 줄이 없으면 세션·업로드 이미지·캐시가 releases/<stamp>/api 안에
 #  갇혀서, 릴리스를 바꾸는 순간(또는 롤백하는 순간) 전부 사라진다.
 Environment=TSAK_STATE_DIR=$STATE
+# ── NAS TLS 정책 ────────────────────────────────────────────────────
+#  종전 코드는 검증을 통째로 껐다(CERT_NONE). 이전하면 서버→NAS 가 공인
+#  인터넷을 지나므로 그 상태는 중간자 공격에 무방비다.
+#  기본값 pin = NAS 인증서 **지문 고정**. 자체서명이어도 바꿔치기는 차단된다.
+#  NAS 에 공인인증서를 설치했다면 strict 로 바꾸면 체인검증까지 한다.
+Environment=TSAK_NAS_TLS_MODE=${TSAK_NAS_TLS_MODE:-pin}
+# NAS 인증서를 갱신해 지문이 바뀌면 여기에 새 지문을 넣는다(비우면 코드 상수 사용)
+#Environment=TSAK_NAS_CERT_SHA256=
 # 로컬 DB 모드를 쓰려면 아래 주석을 해제 (DB JSON 을 가비아 디스크에서 처리)
 #Environment=TSAK_LOCAL_DB=1
 #Environment=TSAK_LOCAL_DB_DIR=$STATE/local_db_store

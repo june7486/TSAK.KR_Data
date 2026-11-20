@@ -72,6 +72,7 @@ boot() {  # $1 = 릴리스 이름
   # 시험 중 NAS 쓰기를 예외로 차단 (읽기는 그대로)
   PYTHONPATH=/home/user/deploy/tests \
   TSAK_TEST_NAS_READONLY=1 \
+  TSAK_TEST_ALLOW_BUILD=1 \
   TSAK_APP_ROOT="$ROOT/current/api" \
   TSAK_STATIC_DIR="$ROOT/current/web" \
   TSAK_STATE_DIR="$ROOT/shared/state" \

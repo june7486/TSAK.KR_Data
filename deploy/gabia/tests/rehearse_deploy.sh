@@ -129,6 +129,7 @@ case "$act" in
     cp -f "$R/shared/config.json" config.json 2>/dev/null || true
     PYTHONPATH=/home/user/deploy/tests \
     TSAK_TEST_NAS_READONLY=1 \
+    TSAK_TEST_ALLOW_BUILD=1 \
     TSAK_APP_ROOT="$R/current/api" \
     TSAK_STATIC_DIR="$R/current/web" \
     TSAK_STATE_DIR="$R/shared/state" \

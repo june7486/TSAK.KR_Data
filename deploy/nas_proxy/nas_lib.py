@@ -8,10 +8,125 @@
 (실측: 병렬 3회 = 718ms → 완전 직렬). 이제 연결 풀(기본 8개)로 **병렬 수행**
 하여 동일 작업이 약 1회 왕복(≈230ms)으로 끝난다.
 """
-import os, urllib.request, urllib.parse, ssl, json, time, threading
+import os, urllib.request, urllib.parse, ssl, json, time, threading, hashlib
+
+#  ─────────────────────────────────────────────────────────────────────────
+#  [가비아 이전 2026-11-20] ★ TLS 검증을 "끄지 않고" 고정(pinning)한다 ★
+#
+#  ## 왜 껐었나
+#   NAS 는 자체서명 인증서(CN=synology, Synology Inc. CA)를 쓴다.
+#   기본 컨텍스트로는 검증에 실패하므로 `CERT_NONE` 으로 **검증을 통째로 껐다.**
+#   그런데 가비아로 이전하면 서버↔NAS 구간이 **공인 인터넷을 지난다.**
+#   검증이 꺼진 상태에서는 중간자가 인증서만 바꿔치기하면 비밀번호와 자료가
+#   그대로 노출된다. "같은 방 안의 위험"이 "인터넷에 노출된 위험"이 되는 순간이다.
+#
+#  ## 왜 그냥 켜면 안 되나
+#   `verify_mode = CERT_REQUIRED` 로 바꾸면 Synology 사설 CA 를 신뢰하지 않으므로
+#   **모든 NAS 호출이 즉시 실패**한다. 앱이 통째로 죽는다.
+#
+#  ## 그래서: 인증서 지문 고정 (TOFU)
+#   자체서명서명이어도 **우리가 아는 그 인증서인지**는 검증할 수 있다.
+#   현재 인증서의 SHA-256 지문을 박아 두고, 접속할 때마다 대조한다.
+#     · 지문 일치  → 통과 (자체서명이어도 안전: 다른 인증서로 바꿔치기 불가)
+#     · 지문 불일치 → 즉시 실패 (중간자 또는 NAS 인증서 교체)
+#
+#   실측 지문 (2026-11-20, 39.123.241.4:5001):
+#     6B:3A:01:8E:77:F9:9B:24:D5:D4:82:73:32:86:96:4A:
+#     F2:EA:69:2B:00:15:0E:90:EC:DF:84:31:6A:C7:E5:2B
+#   유효기간: 2026-05-01 ~ 2027-05-02
+#
+#  ## ⚠️ NAS 인증서를 갱신하면 지문이 바뀐다 → 그때는 이 값을 교체해야 한다.
+#     교체 방법:  TSAK_NAS_CERT_SHA256=<새지문> 환경변수로 임시 통과시킨 뒤
+#                 아래 상수에 반영. (환경변수만으로도 동작하므로 긴급 우회 가능)
+#     DSM 이 자체서명을 다시 만들면 지문이 달라진다. 로그에 무엇이 기대값인지
+#     찍히므로 원인 파악이 어렵지 않다.
+#  ─────────────────────────────────────────────────────────────────────────
+NAS_CERT_SHA256 = (
+    "6b3a018e77f99b24d5d48273328"
+    "6964af2ea692b00150e90ecdf84316ac7e52b"
+)
+
+#  검증 정책:  "pin"    = 지문 고정 (권장, 기본)
+#              "strict" = 공인 CA 체인 검증 (NAS 에 공인인증서를 설치했을 때)
+#              "off"    = 검증 안 함 (개발/응급 전용 — 절대 운영 기본값으로 두지 말 것)
+TLS_MODE = (os.environ.get("TSAK_NAS_TLS_MODE") or "pin").strip().lower()
+
+
+class _CertPinError(ssl.SSLError):
+    """NAS 인증서 지문이 기대값과 다를 때 발생. 원인을 사람이 읽을 수 있게 남긴다."""
+
+
+def build_tls_context():
+    """NAS 접속용 SSL 컨텍스트를 만든다 (정책에 따라 세 갈래).
+
+    반환: (ctx, applied_mode)
+    """
+    expect = (os.environ.get("TSAK_NAS_CERT_SHA256") or NAS_CERT_SHA256)
+    expect = expect.replace(":", "").replace(" ", "").strip().lower()
+    mode = TLS_MODE
+
+    if mode == "off":
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        print("[tls] ⚠️ NAS TLS 검증 꺼짐(off) — 운영에서 쓰지 마세요")
+        return ctx, "off"
+
+    if mode == "strict":
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        print("[tls] NAS TLS = strict (공인 CA 체인 검증)")
+        return ctx, "strict"
+
+    # 기본: 지문 고정. 자체서명을 허용하되 **그 인증서만** 허용한다.
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False          # CN=synology 는 IP와 불일치 → 이름검사 생략
+    ctx.verify_mode = ssl.CERT_NONE     # 체인검증 생략 (자체서명) ...
+
+    # ... 대신 **핸드셰이크 직후 지문을 직접 대조**한다.
+    #  파이썬은 SSLContext 에 post-handshake 훅을 주지 않으므로,
+    #  `wrap_socket` 을 감싸 지문을 검사한다.
+    _orig_wrap = ctx.wrap_socket
+
+    def _wrap_pinned(sock, *a, **kw):
+        ssock = _orig_wrap(sock, *a, **kw)
+        try:
+            der = ssock.getpeercert(binary_form=True) or b""
+            got = hashlib.sha256(der).hexdigest()
+        except Exception as e:
+            try: ssock.close()
+            except Exception: pass
+            raise _CertPinError("NAS 인증서를 읽지 못했습니다: %s" % e)
+        if not got:
+            try: ssock.close()
+            except Exception: pass
+            raise _CertPinError("NAS 가 인증서를 제시하지 않았습니다")
+        if expect and got != expect:
+            try: ssock.close()
+            except Exception: pass
+            raise _CertPinError(
+                "NAS 인증서 지문 불일치 — 중간자 또는 NAS 인증서 교체 의심\n"
+                "  기대: %s\n  실제: %s\n"
+                "  · NAS 인증서를 정상 갱신했다면 nas_lib.py 의 NAS_CERT_SHA256 을 갱신하세요.\n"
+                "  · TSAK_NAS_CERT_SHA256=<지문> 으로 임시 통과도 가능합니다." % (expect, got))
+        return ssock
+
+    try:
+        ctx.wrap_socket = _wrap_pinned      # type: ignore[assignment]
+    except Exception as e:
+        print("[tls] ⚠️ 지문 고정 훅 설치 실패 — strict 로 대체 시도:", e)
+        ctx2 = ssl.create_default_context()
+        ctx2.check_hostname = True
+        ctx2.verify_mode = ssl.CERT_REQUIRED
+        return ctx2, "strict"
+    print("[tls] NAS TLS = pin (지문 고정 %s…)" % (expect[:16] or "(미설정)"))
+    return ctx, "pin"
+
 
 # ---- 전역 keep-alive 연결 풀 (호스트별 N개) ----
 _CONN_TTL = 100.0          # 초. 이 시간 넘게 미사용이면 연결 폐기
+
 
 
 class _ConnPool:
@@ -64,9 +179,7 @@ class NasClient:
         self.base = base.rstrip('/')
         self.user = user
         self.pw = pw
-        self.ctx = ssl.create_default_context()
-        self.ctx.check_hostname = False
-        self.ctx.verify_mode = ssl.CERT_NONE
+        self.ctx, self.tls_mode = build_tls_context()
         self.cookie = None
         self._host = self.base.split("//", 1)[-1]
 

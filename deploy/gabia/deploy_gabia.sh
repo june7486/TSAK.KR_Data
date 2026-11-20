@@ -513,6 +513,81 @@ if [ "$SMOKE_FAIL" = "1" ]; then
 fi
 ok "스모크 테스트 전부 통과"
 
+# ── 10) 조용한 실패 감시 (TLS 고정 · 의존성) ─────────────────────────────
+#  ## 왜 HTTP 200 만으로는 부족한가
+#   앱이 뜨고 /api/health 가 200 이어도, 아래 두 가지는 **조용히** 깨질 수 있다.
+#     ① NAS TLS 지문이 어긋나면 NAS 를 쓰는 기능(사진·JSON·업로드)만 실패
+#     ② openpyxl 이 없으면 엑셀 기능만 실패
+#   둘 다 "기동 실패"가 아니라 "기능 실패"라 배포 직후엔 티가 안 난다.
+#   사용자가 처음 그 기능을 쓸 때 터진다 — 가장 나쁜 타이밍이다.
+#   그래서 배포할 때마다 서버에서 **직접 확인**한다.
+step "▶ 10) 조용한 실패 감시"
+
+# ② 의존성: 임포트가 되는지
+DEPS=$(R "cd \$HOME/$GABIA_REMOTE/current/api 2>/dev/null || cd \$HOME/$GABIA_REMOTE/current/api
+   python3 - <<'PYEOF' 2>/dev/null
+import sys
+miss=[]
+for m in ('openpyxl',):
+    try: __import__(m)
+    except Exception: miss.append(m)
+print('MISSING=' + ','.join(miss))
+print('PYVER=' + sys.version.split()[0])
+PYEOF" 2>/dev/null)
+MISSING=$(echo "$DEPS" | sed -n 's/^MISSING=//p')
+if [ -n "$MISSING" ]; then
+  err "서버에 파이썬 모듈이 없습니다: $MISSING"
+  echo "      → 앱은 뜨지만 엑셀 업로드/내보내기가 **조용히 실패**합니다."
+  echo "      → 설치: sudo apt install -y python3-openpyxl"
+  DEP_FAIL=1
+else
+  ok "필수 모듈 확인 ($(echo "$DEPS" | sed -n 's/^PYVER=//p'))"
+  DEP_FAIL=0
+fi
+
+# ① NAS TLS: 고정 모드로 NAS 에 실제로 붙어보기
+TLSPROBE=$(R "cd \$HOME/$GABIA_REMOTE/current/api
+   python3 - <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    import nas_lib
+    c = json.load(open('config.json'))
+    n = c.get('nas') or {}
+    cli = nas_lib.NasClient(n.get('base',''), n.get('user',''), n.get('pw',''))
+    mode = getattr(cli, 'tls_mode', '?')
+    r = cli.list(n.get('base_path',''))
+    n_ok = 1 if (r or {}).get('ok') else 0
+    print('MODE=%s OK=%s' % (mode, n_ok))
+except Exception as e:
+    print('MODE=err OK=0 ERR=%s' % str(e).split(chr(10))[0][:160])
+PYEOF" 2>/dev/null)
+TMODE=$(echo "$TLSPROBE" | sed -n 's/^MODE=\([^ ]*\).*/\1/p')
+TOK=$(echo "$TLSPROBE" | sed -n 's/.*OK=\([0-9]*\).*/\1/p')
+TERR=$(echo "$TLSPROBE" | sed -n 's/.*ERR=//p')
+if [ "$TOK" = "1" ]; then
+  ok "NAS 접속 정상 (TLS=$TMODE)"
+  [ "$TMODE" = "off" ] && warn "TLS 검증이 꺼져 있습니다 — 이전 후에는 권장하지 않습니다"
+else
+  err "NAS 접속 실패 (TLS=$TMODE) ${TERR:+— $TERR}"
+  echo "      → NAS 를 쓰는 모든 기능이 실패합니다. 아래를 확인하세요:"
+  echo "        · NAS 인증서를 갱신했다면 지문이 바뀐 것입니다 (TSAK_NAS_CERT_SHA256)"
+  echo "        · NAS 방화벽에서 이 서버 IP 를 허용했는지"
+  DEP_FAIL=1
+fi
+
+if [ "${DEP_FAIL:-0}" = "1" ]; then
+  err "조용한 실패가 확인되었습니다 — 자동 롤백합니다"
+  R "set -e
+     R=\$HOME/$GABIA_REMOTE
+     prev=\$(ls -1dt \$R/releases/*/ | sed -n 2p)
+     if [ -n \"\$prev\" ]; then
+       ln -sfn \"\${prev%/}\" \$R/current.tmp && mv -T \$R/current.tmp \$R/current
+       sudo systemctl restart $GABIA_SERVICE 2>/dev/null || true
+       echo '  이전 릴리스로 되돌림'
+     fi" 2>&1 | sed 's/^/  /'
+  die "배포 실패(조용한 실패 감시) — 롤백 완료"
+fi
+
 echo
 echo "✅ 배포 완료: $STAMP"
 echo "   로컬 스냅샷: $SNAP_ROOT/${SNAP:-(dry-run)}"

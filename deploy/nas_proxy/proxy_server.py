@@ -4591,13 +4591,30 @@ class _BackendClient:
         with self._inflight_lock:
             prev = self._inflight.get(key)
         if prev is not None:
+            #  ## ★ 여기서 IndexError 가 나 데이터를 잃고 있었다 (2026-11-20 수정)
+            #   slot 은 아래에서 `[content_bytes]` — 길이 1 — 로 만든다.
+            #   그런데 이 경로는 `prev[1]` 에 쓰려 한다. 길이가 1이므로 IndexError.
+            #   그 IndexError 는 바로 아래 `except Exception: pass` 가 **조용히 삼킨다.**
+            #   결과: 같은 파일을 연달아 두 번 저장하면 **두 번째 내용이 그냥 사라졌다.**
+            #   (return 까지 실행되므로 새 스레드도 뜨지 않는다 → 영구 유실)
+            #
+            #   종전 주석은 "현재 도달 불가"라고 적혀 있었지만 사실이 아니다.
+            #   `_sync` 이고 `_local_primary` 인 모드(드라이브)에서 첫 호출 후
+            #   스레드가 끝나기 전에 두 번째 호출이 오면 정확히 이 경로로 들어온다.
+            #
+            #   대책: slot 을 `[내용, 내용]` 두 칸으로 만들고, 여기서는 [1] 만 갱신.
+            #         업로드 스레드는 [0] 을 읽으므로 첫 값이 나가고,
+            #         대기 중 교체분은 [1] 에 남아 다음 저장에서 반영된다.
+            #         (즉 "마지막 것만 업로드" 의도가 실제로 지켜진다)
             try:
                 prev[1] = content_bytes   # 최신 내용으로 교체
-            except Exception:
-                pass
-            return
+            except Exception as e:
+                #  교체조차 실패하면 **새 작업으로 흘려보낸다** (유실보다 중복이 낫다)
+                print("[bwrite] 교체 실패 → 새 작업으로 진행:", path, e)
+            else:
+                return
 
-        slot = [content_bytes]
+        slot = [content_bytes, content_bytes]
         self._inflight[key] = slot
 
         def _run():
