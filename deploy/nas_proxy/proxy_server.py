@@ -17,8 +17,9 @@ Endpoints:
   GET  /api/config
   POST /api/config
 """
-import json, os, re, ssl, sys, threading, time, datetime, base64, gzip, hashlib, urllib.parse
+import json, os, re, ssl, sys, socket, threading, time, datetime, base64, gzip, hashlib, shutil, urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 # brotli(선택) — 있으면 gzip 대신 더 작은 압축 전송
 try:
@@ -29,9 +30,214 @@ except Exception:
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nas_lib import NasClient
+# [요구] 이미지 3단계(썸네일/중간화질/원본) 파이프라인.
+#  "썸네일만으로는 화질이 떨어지고, 원본을 부르기엔 느리다" → 중간화질 추가.
+import img_pipeline as _imgp
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CONF = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
+
+# ══════════════════════════════════════════════════════════════════════
+#  [가비아 이전 2026-11-20] 앱 루트 — **경로 이식성**
+#
+#  ## 왜 필요한가
+#   이 프록시는 원래 `/home/user/nas_proxy` 에서만 돌도록 14곳에 절대경로가
+#   박혀 있었다. 가비아 서버에 올리면 그 경로가 없으므로 캐시·미러·스냅샷·
+#   썸네일 디렉터리를 만들지 못하고, 조용히 기능이 죽는다
+#   (`except Exception: pass` 가 많아 눈에 띄지도 않는다).
+#
+#  ## 규칙
+#   ① TSAK_APP_ROOT 환경변수가 있으면 그것을 쓴다.
+#   ② 없으면 **실행 파일이 있는 디렉터리**(HERE)를 쓴다.
+#      → 어디에 풀어도 그 자리 기준으로 동작한다.
+#   ③ 기존 `/home/user/nas_proxy` 에서 돌면 HERE 가 같으므로 **동작 무변화**.
+#
+# ══════════════════════════════════════════════════════════════════════
+APP_ROOT = os.environ.get("TSAK_APP_ROOT") or HERE
+
+# ══════════════════════════════════════════════════════════════════════
+#  [가비아 이전 2026-11-20] ★ 코드와 상태를 분리한다 ★
+#
+#  ## 왜 이것이 이전(移轉)의 핵심인가
+#   가비아 배포는 **릴리스 단위**다:
+#       ~/tsak/releases/<stamp>/{api,web}
+#       ~/tsak/current -> releases/<stamp>      ← 심볼릭 링크만 교체
+#
+#   그런데 상태 파일이 `HERE`(= releases/<stamp>/api) 기준이면
+#   릴리스를 바꾸는 순간 상태가 **통째로 갈린다**:
+#       · 릴리스 A 에서 쓴 세션 → 릴리스 B 에서는 전부 로그아웃
+#       · 릴리스 A 에 올린 수품 이미지 → 릴리스 B 에서는 404
+#       · 행사 사진 개수/폴더맵 캐시 → 콜드 스타트(느려짐)
+#   즉 **롤백이 곧 데이터 손실**이 된다. 되돌리려고 만든 장치가
+#   데이터를 잃는 장치가 되는 셈이다.
+#
+#  ## 해결 — 두 축을 분리한다
+#    코드(CODE_ROOT)  : 릴리스마다 바뀐다. 읽기 전용으로 취급한다.
+#    상태(STATE_ROOT) : 릴리스와 무관하게 **영속**한다. 릴리스 교체에도 불변.
+#
+#    TSAK_APP_ROOT   = 코드 루트   (기본: 실행 파일 위치)
+#    TSAK_STATE_DIR  = 상태 루트   (기본: 코드 루트 — 기존 동작 100% 유지)
+#
+#   이 샌드박스:  둘 다 /home/user/nas_proxy  → **동작 무변화**
+#   가비아     :  CODE=current/api (릴리스), STATE=~/tsak/shared/state (영속)
+#
+#  ## 상태 디렉터리 (STATE_ROOT 하위)
+#      .static_compress_cache   정적 압축 캐시
+#      .json_mirror             JSON 미러
+#      .safe_snapshots          저장 직전 원본 스냅샷
+#      .thumb_cache             썸네일 디스크 캐시
+#      .media_cache             미디어(중간화질) 캐시
+#      .ev_meta_cache           행사 파일 메타 캐시
+#      gdrive_store             로컬 스토어(blob)
+#      local_db_store           로컬-우선 DB 모드 JSON
+#      merch_img_upload         관리자 업로드 수품 이미지   ← 사용자 자산
+#      .sessions.json           로그인 세션                  ← 사용자 자산
+#      .gdrive_token.json       구글 OAuth 토큰              ← 자격증명
+#      .gdrive_idcache.json     구글 드라이브 ID 캐시
+#      .ev_media_count.json     행사 사진 개수 캐시
+#      .ev_folder_map.json      행사 폴더맵 캐시
+#      tsakzip_*                다운로드용 임시 압축 (자동 정리)
+# ══════════════════════════════════════════════════════════════════════
+STATE_ROOT = os.environ.get("TSAK_STATE_DIR") or APP_ROOT
+_STATE_IS_CUSTOM = bool(os.environ.get("TSAK_STATE_DIR"))
+
+
+def _ensure_state_dir():
+    """상태 루트를 만든다.
+
+    ## 조용히 실패하면 안 되는 이유
+      이 디렉터리가 없으면 세션·미러·썸네일이 전부 `except: pass` 로
+      사라지고, 사용자는 "로그인이 자꾸 풀린다" 같은 증상만 보게 된다.
+      기동 시 한 번 만들고, 실패하면 **명확히 알린다**.
+    """
+    try:
+        os.makedirs(STATE_ROOT, exist_ok=True)
+        # 실제로 쓸 수 있는지 확인(권한 문제를 기동 시점에 잡는다)
+        probe = os.path.join(STATE_ROOT, ".write_probe")
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(probe)
+        return None
+    except Exception as e:
+        return str(e)
+
+
+_STATE_ERR = _ensure_state_dir()
+if _STATE_ERR:
+    print("[state] ⚠️ 상태 디렉터리 사용 불가: %s (%s)" % (STATE_ROOT, _STATE_ERR))
+    print("[state]    세션·캐시·업로드가 저장되지 않습니다. 권한을 확인하세요.")
+elif _STATE_IS_CUSTOM:
+    print("[state] 상태 루트 = %s (코드 %s 와 분리됨)" % (STATE_ROOT, APP_ROOT))
+else:
+    # 커스텀 상태 루트를 쓰지 않는 경우에도 **항상** 찍는다.
+    #  · 배포 스크립트가 이 줄로 "상태 분리가 실제로 걸렸는지" 판정한다.
+    #  · 한 줄이 없으면 검증할 방법이 없어 조용한 회귀를 놓친다.
+    print("[state] 상태 루트 = %s (기본값: 코드 위치와 동일)" % STATE_ROOT)
+    print("[state]    ⚠️ 릴리스 구조라면 TSAK_STATE_DIR 을 지정해야 합니다"
+          " — 아니면 롤백 시 세션/업로드가 사라집니다")
+
+# 웹 정적 파일 위치 — TSAK_STATIC_DIR > <ROOT>/../web > <ROOT>/web > 기존 경로
+def _resolve_static_dir():
+    env = os.environ.get("TSAK_STATIC_DIR")
+    if env:
+        return env
+    for cand in (
+        os.path.join(APP_ROOT, "..", "web"),      # 가비아: /opt/tsak/api + /opt/tsak/web
+        os.path.join(APP_ROOT, "web"),            # ROOT/web
+        "/home/user/flutter_app/build/web",       # 기존 로컬 개발 환경
+    ):
+        p = os.path.abspath(cand)
+        if os.path.isdir(p):
+            return p
+    return "/home/user/flutter_app/build/web"
+
+# ══════════════════════════════════════════════════════════════════════
+# [turn64 보안감사 F3] 자격증명 로딩 — **환경변수 우선**, 파일은 폴백
+#
+#  ## 왜 바꿨나
+#   종전에는 `json.load(open(HERE/config.json))` 한 줄이었다.
+#    · 이 파일에는 마스터 비밀번호·NAS 비밀번호·OAuth 토큰·클라이언트
+#      시크릿이 **평문**으로 들어 있다.
+#    · 그리고 그 파일이 git 에 **추적되고 있었다**(api/config.json).
+#      즉 저장소를 받을 수 있는 사람은 전부 마스터 비밀번호를 알 수 있었다.
+#    · 반대로, 추적을 끊으면 운영 서버는 config.json 이 없어 **아예 뜨지
+#      않고** FileNotFoundError 로 죽는다(배포가 깨진다).
+#
+#  ## 해결
+#   환경변수가 있으면 그것을 쓰고, 없을 때만 파일을 읽는다.
+#    운영(가비아 등):  TSAK_MASTER_PW / TSAK_APP_PW / TSAK_NAS_PW … 주입
+#    이 샌드박스:      종전처럼 config.json 사용(권한 600 으로 조임)
+#   어느 쪽이든 코드는 동일하게 동작한다.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _load_conf():
+    path = os.path.join(HERE, "config.json")
+    conf = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                conf = json.load(f) or {}
+        except Exception as _e:
+            print("[config] 읽기 실패(%s) — 환경변수만 사용합니다: %s"
+                  % (path, _e))
+            conf = {}
+    # ── 환경변수 오버레이 (있으면 항상 우선) ──
+    env = os.environ.get
+    conf.setdefault("port", 5071)
+    nas = conf.setdefault("nas", {})
+    for key, ev in (("base", "TSAK_NAS_BASE"), ("user", "TSAK_NAS_USER"),
+                    ("pw", "TSAK_NAS_PW"), ("base_path", "TSAK_NAS_BASE_PATH")):
+        if env(ev):
+            nas[key] = env(ev)
+    auth = conf.setdefault("auth", {})
+    if env("TSAK_MASTER_PW"):
+        auth["master"] = env("TSAK_MASTER_PW")
+    # [turn69] 해시만 주입하는 운영 방식도 허용한다(평문 미보관).
+    if env("TSAK_MASTER_HASH"):
+        auth["masterHash"] = env("TSAK_MASTER_HASH")
+    if env("TSAK_APP_PW"):
+        auth["app"] = env("TSAK_APP_PW")
+    gd = conf.setdefault("gdrive", {})
+    for key, ev in (("root_id", "TSAK_GDRIVE_ROOT"),
+                    ("base_path", "TSAK_GDRIVE_BASE_PATH"),
+                    ("service_account", "TSAK_GDRIVE_SA"),
+                    ("client_secret", "TSAK_GDRIVE_CLIENT_SECRET"),
+                    ("oauth_token", "TSAK_GDRIVE_TOKEN")):
+        if env(ev):
+            gd[key] = env(ev)
+    if env("TSAK_PORT"):
+        try:
+            conf["port"] = int(env("TSAK_PORT"))
+        except Exception:
+            pass
+
+    # ── 필수값 검증 — 없으면 '왜 죽었는지'를 분명히 알려준다 ──
+    missing = []
+    if not nas.get("base"):
+        missing.append("nas.base (또는 TSAK_NAS_BASE)")
+    if not nas.get("user"):
+        missing.append("nas.user (또는 TSAK_NAS_USER)")
+    if not nas.get("pw"):
+        missing.append("nas.pw (또는 TSAK_NAS_PW)")
+    # [turn69] 평문(auth.master) 또는 해시(auth.masterHash) 중 **하나만** 있으면 된다.
+    #  해시만 두는 것이 권장 형태다(평문이 파일·git 에 남지 않음).
+    if not auth.get("master") and not auth.get("masterHash"):
+        missing.append("auth.masterHash (또는 TSAK_MASTER_PW)")
+    if not auth.get("app"):
+        missing.append("auth.app (또는 TSAK_APP_PW)")
+    if missing:
+        raise SystemExit(
+            "[config] 필수 설정이 없습니다: %s\n"
+            "  → config.json 을 두거나(권한 600), 환경변수로 주입하세요."
+            % ", ".join(missing))
+    # 하위호환: 종전 코드가 CONF["nas"]["base"] 형태로 접근한다.
+    if "base_path" not in nas:
+        nas["base_path"] = "/92_Tiger_app_data/TSAK_인가자관리"
+    return conf
+
+
+CONF = _load_conf()
+
 
 NAS = NasClient(CONF["nas"]["base"], CONF["nas"]["user"], CONF["nas"]["pw"])
 BASE = CONF["nas"]["base_path"]          # /92_Tiger_app_data/TSAK_인가자관리
@@ -45,6 +251,18 @@ MAT_FILE = BASE + "/db/mat_rules.json"      # 입금자 자동분류 규칙/별�
 DATA_DIR = BASE + "/기본자료"
 EVENT_DIR = BASE + "/행사관리"              # 행사 사진·동영상 갤러리 (무제한)
 EVENT_THUMB_DIR = EVENT_DIR + "/.thumbnails"
+# ── [요구 2026-10-28] 행사 반복 사용 자료(음원·영상·문서) ────────────
+#  사용자가 NAS 에 직접 만들어 둔 폴더다. 이름을 그대로 쓴다(바꾸면
+#  사용자가 탐색기에서 보는 경로와 앱이 보는 경로가 어긋난다).
+RES_DIR = EVENT_DIR + "/01 행사자료 (업로드가능)"
+#  자료 **표시 순서** 저장소 — 파일은 NAS 그대로 두고 순서만 여기 기록한다.
+#  key = "sub/name" (sub 가 없으면 "name"). 값 = index(작을수록 위).
+RES_ORDER_FILE = BASE + "/db/res_order.json"
+#  음원 폴더 **외부 공유 토큰** 저장소 (QR 배포용).
+#  세션과 완전히 분리된 전용 토큰만 담는다 — 세션값은 절대 저장하지 않는다.
+RES_SHARE_FILE = BASE + "/db/res_share.json"
+#  샘플(폴더 구성 안내) — **PC 전용**. 웹에는 절대 노출하지 않는다.
+SAMPLE_DIR_NAME = "0000 폴더정리법 (폴더샘플)"
 EVENT_MEDIA_FILE = BASE + "/db/event_media.json"  # 행사 파일 메타(썸네일/태그)
 EVENTS_FILE = BASE + "/db/events.json"       # 행사 정의(연도/행사명/정보/참석자/상태)
 REGULAR_FILE = BASE + "/db/regular_passwords.json"  # 일반회원(비인가자) 접속 비번
@@ -53,16 +271,20 @@ INQUIRY_DIR = BASE + "/문의첨부"             # 문의 첨부파일 저장 �
 ACCESS_LOG_FILE = BASE + "/db/access_log.json"  # 회원 접속 로그(로그인 이력)
 FINANCE_ANALYSIS_FILE = BASE + "/db/finance_analysis.json"  # Phase4 은행거래 종합분석 캐시
 REVIEW_FILE = BASE + "/db/event_reviews.json"   # 행사 후기 게시판(댓글/첨부/좋아요/임시저장)
+CUSTOMBOARD_FILE = BASE + "/db/event_custom_boards.json"  # 행사 커스텀 게시판(메뉴추가 → 게시판형) 글/첨부/권한
 BOARD_FILE = BASE + "/db/board.json"            # 행사+수품판매 게시판(글/댓글/좋아요/첨부/비밀번호/비노출)
 NOTIFY_FILE = BASE + "/db/notify.json"          # 게시판/주문 등 관리자 이상 알림 큐
+IPWATCH_FILE = BASE + "/db/ip_watch.json"       # [turn65] 같은 IP 다계정 접속 감시 상태
 SEEN_FILE = BASE + "/db/approval_seen.json"     # 관리자(아이디)별 승인/알림 '확인(읽음)' 워터마크
 EVENT_STAFF_FILE = BASE + "/db/event_staff.json"  # 행사 스텝(STAFF) 지정 — 지정자는 해당 행사 전체 게시판 노출
 MERCH_FILE = BASE + "/db/merch.json"            # 수품구매: 상품/주문/연회비 설정
 MERCH_MAKER_DIR = BASE + "/수품제작자"           # 수품 제작자 첨부파일 저장 폴더
-MERCH_IMG_UPLOAD_DIR = HERE + "/merch_img_upload"  # 관리자 업로드 상품 이미지 폴더
+MERCH_IMG_UPLOAD_DIR = os.path.join(STATE_ROOT, "merch_img_upload")  # 관리자 업로드 상품 이미지 폴더
 LOCK = threading.Lock()
 
 # 행사별 하위 폴더(항목) — 번호+한글명, 업로드 가능 폴더엔 "_(업로드가능)" 꼬리말
+#  ⚠️ 07_결산 은 [요구 2026-10-26] "결산폴더는 각 행사마다 생성함" 으로 추가.
+#    결산서(PDF/엑셀/워드/JPG)를 나중에 찾기 쉽도록 행사 폴더 안에 둔다.
 EVENT_SUBFOLDERS = [
     ("01_계획서_(업로드가능)", "plan", True),
     ("02_참석자_(업로드가능)", "attendees", True),
@@ -70,6 +292,7 @@ EVENT_SUBFOLDERS = [
     ("04_참가비·후원금", "fee", False),
     ("05_행사비지출내역", "expense", False),
     ("06_후기첨부_(업로드가능)", "review", True),
+    ("07_결산_(업로드가능)", "settlement", True),
 ]
 # 항목 key → 폴더명
 EVENT_SUB_BY_KEY = {k: n for (n, k, _) in EVENT_SUBFOLDERS}
@@ -94,20 +317,40 @@ SUB_FOLDERS = {
     "board": "게시판첨부",
 }
 HIST_FILE = BASE + "/db/finance_history.json"  # 연도/월별 스냅샷(집계 캐시)
+FIN_ATTACH_DIR = BASE + "/재무첨부"             # 재무 거래별 첨부파일 저장 폴더
+FIN_ATTACH_FILE = BASE + "/db/finance_attach.json"  # 재무 첨부 메타(거래별 파일 목록)
+STORAGE_FILE = BASE + "/db/storage.json"        # 자료 저장공간 설정(마스터) — nas/gdrive/기타
 
-MASTER_PW = CONF["auth"]["master"]        # Corbuser7!@@ (immutable)
+# [turn69] **하위호환용 초기 평문**만 담는다. 실제 검증은 `_master_pw_matches()`
+#  (config.json 의 auth.masterHash) 가 담당하며, 비밀번호를 바꾸면 그 값이 정본이
+#  된다. 평문은 더 이상 이 파일이나 config.json 에 저장하지 않는다.
+MASTER_PW = (CONF.get("auth") or {}).get("master", "") or ""
 APP_PW = CONF["auth"]["app"]              # Tsak1988!!
 
 # 영구 마스터 인가번호 — 해당 인가번호는 마스터 비번 없이도 마스터 작업 가능.
 # 앱은 master 필드에 "PM:<인가번호>" 토큰을 보낸다.
-PERMANENT_MASTERS = {"415"}
+#
+# ── [요구 2026-10-26] 415 의 **영구 마스터 권한 삭제** ────────────────────
+#  사용자 지시: "415호의 마스터 영구권한 삭제할 것"
+#  · 415 는 이제 **일반 인가자(개인 권한)** 로만 동작한다.
+#    로그인은 종전과 동일하게 `tiger415 / 415!@@`.
+#  · 마스터 기능이 필요하면 마스터 탭에서 **마스터 비밀번호**로 로그인한다.
+#  · 앱 쪽(AppConfig.permanentMasterNumbers)과 **반드시 같은 값**을 유지할 것.
+#    한쪽만 지우면 "앱은 마스터인데 서버는 거부" 상태가 되어
+#    비번 조회·접속기록·비번 변경이 조용히 401 로 실패한다.
+PERMANENT_MASTERS = set()
 _BROKEN_JPEG = None  # 손상 이미지 대체용 플레이스홀더 캐시
 
 
 def _is_master_val(v):
-    """마스터 권한 확인값이 유효한지 (비번 또는 영구 마스터 토큰)."""
+    """마스터 권한 확인값이 유효한지 (비번 또는 영구 마스터 토큰).
+
+    [turn69] `MASTER_PW` 상수 비교 → `_master_pw_matches()` 로 변경.
+      · 비밀번호를 마스터 화면에서 바꾸면 **재기동 없이 즉시** 반영된다.
+      · 저장은 해시이므로 평문이 파일·git 에 남지 않는다.
+    """
     s = str(v or "")
-    if s == MASTER_PW:
+    if _master_pw_matches(s):
         return True
     if s.startswith("PM:"):
         no = re.sub(r"[^0-9]", "", s[3:])
@@ -128,6 +371,90 @@ _SESS_LOCK = threading.Lock()
 # 암호학적 난수 (토큰 추측 방지)
 import secrets as _secrets
 
+# ── [버그 수정 turn73] 세션을 **디스크에 영속화**한다 ─────────────────────
+#  ## 무엇이 문제였나
+#   세션이 `_SESS = {}` 라는 **메모리 dict 하나**였다. 그래서 프록시를
+#   재시작할 때마다 모든 로그인 세션이 사라졌다.
+#   사용자 화면에는 이렇게 보인다:
+#     "재무 자료를 불러오지 못했습니다 (HTTP 401)"
+#   — 데이터가 지워진 게 아니라 **세션만 사라진 것**인데, 문구가 마치
+#     자료가 날아간 것처럼 읽혀서 사용자를 놀라게 했다.
+#   (운영에서도 서버 재기동·패치 배포 때마다 전 사용자가 튕겼다)
+#
+#  ## 해결
+#   sid → 세션 정보를 로컬 JSON 에 저장한다. 재기동 시 그대로 복원한다.
+#   · 저장 위치: 프록시 폴더의 `.sessions.json` (NAS 아님, 로컬)
+#   · 만료(exp) 지난 세션은 복원·저장 양쪽에서 정리
+#   · 기동 시각을 기록해, 기동 직후 1회는 안내 로그를 남긴다
+_SESS_FILE = os.path.join(STATE_ROOT, ".sessions.json")
+_BOOT_TS = time.time()
+
+
+def _sess_load_from_disk():
+    """기동 시 세션 복원. 파일이 없거나 깨졌으면 조용히 빈 세션으로 시작."""
+    try:
+        if not os.path.exists(_SESS_FILE):
+            return 0
+        with open(_SESS_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            return 0
+        now = time.time()
+        n = 0
+        with _SESS_LOCK:
+            for sid, v in raw.items():
+                if not isinstance(v, dict):
+                    continue
+                if float(v.get("exp", 0) or 0) < now:
+                    continue                     # 만료 → 버린다
+                if not str(sid or "").strip():
+                    continue
+                _SESS[str(sid)] = v
+                n += 1
+        return n
+    except Exception as e:
+        print("[sess] 복원 실패:", e)
+        return 0
+
+
+def _sess_save_to_disk():
+    """현재 세션 전체를 원자적으로 디스크에 기록(만료분 제외).
+
+    `_SESS_LOCK` 을 잡은 채로 파일을 쓰면 요청 처리가 막히므로,
+    스냅샷만 떠서 락을 풀고 쓴다.
+    """
+    try:
+        now = time.time()
+        with _SESS_LOCK:
+            snap = {k: dict(v) for k, v in _SESS.items()
+                    if isinstance(v, dict)
+                    and float(v.get("exp", 0) or 0) >= now}
+        tmp = _SESS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False)
+        os.replace(tmp, _SESS_FILE)
+        try:
+            os.chmod(_SESS_FILE, 0o600)          # 토큰 파일 — 본인만 읽기
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print("[sess] 저장 실패:", e)
+        return False
+
+
+def _sess_save_async():
+    """세션 변경을 **응답을 막지 않고** 백그라운드로 저장한다."""
+    def _w():
+        _sess_save_to_disk()
+    try:
+        threading.Thread(target=_w, name="sess-save", daemon=True).start()
+    except Exception:
+        try:
+            _sess_save_to_disk()
+        except Exception:
+            pass
+
 # CORS 허용 출처 (보안 감사 F02)
 #  · 동일 출처는 자동 허용. 여기에는 앱 배포 도메인만 명시한다.
 CORS_ALLOW_ORIGINS = [
@@ -147,6 +474,7 @@ def _sess_new(tier, who="", regular=False, corps="tsak"):
         _SESS[sid] = {"tier": tier, "who": who, "regular": bool(regular),
                       "corps": str(corps or "tsak"),
                       "exp": now + _SESS_TTL}
+    _sess_save_async()          # [turn73] 재기동 후에도 로그인 유지
     return sid
 
 
@@ -167,6 +495,53 @@ def _sess_get(sid):
 def _sess_del(sid):
     with _SESS_LOCK:
         _SESS.pop(sid, None)
+    _sess_save_async()          # [turn73] 로그아웃도 디스크에 반영
+
+
+def _sess_del_others(tier, who, corps=None, keep_sid=""):
+    """[turn69] **비밀번호를 바꾼 본인**의 다른 세션을 모두 끊는다.
+
+    ── 왜 필요한가 ──────────────────────────────────────────────────────
+    종전에는 비밀번호를 바꿔도 **이미 발급된 세션이 그대로 살아** 있었다.
+    비밀번호를 바꾸는 가장 흔한 이유가 '남이 내 계정에 들어온 것 같아서'
+    인데, 그 상황에서 정작 침입자의 세션이 계속 유효하면 변경이 무의미하다.
+    (요구: "비밀번호 변경 후 기존 세션 정리")
+
+    ── 안전 원칙 ────────────────────────────────────────────────────────
+    · **지금 비밀번호를 바꾼 그 세션은 남긴다**(keep_sid). 안 그러면 변경
+      직후 사용자가 즉시 로그아웃되어 '고장'으로 보인다.
+    · 같은 신원(tier+who+corps)의 세션만 끊는다. 남의 세션은 건드리지 않는다.
+    · 마스터/앱 세션은 `who` 가 비어 있는 경우가 많아 **tier 로만** 비교한다.
+
+    반환: 끊은 세션 수
+    """
+    _t = str(tier or "").strip()
+    _w = str(who or "").strip()
+    _c = str(corps or "").strip().lower()
+    if not _t:
+        return 0
+    killed = 0
+    with _SESS_LOCK:
+        for sid in list(_SESS.keys()):
+            if keep_sid and sid == keep_sid:
+                continue
+            v = _SESS.get(sid)
+            if not isinstance(v, dict):
+                continue
+            if str(v.get("tier", "")) != _t:
+                continue
+            # who 비교 — 마스터/앱은 소속 신원이 없으므로 tier 만으로 판단.
+            if _t in ("personal", "guest"):
+                if _w and str(v.get("who", "")) != _w:
+                    continue
+                if _c and _c in ("tsak", "eunha"):
+                    if str(v.get("corps", "") or "").strip().lower() != _c:
+                        continue
+            _SESS.pop(sid, None)
+            killed += 1
+    if killed:
+        _sess_save_async()
+    return killed
 
 
 # ============================================================================
@@ -227,8 +602,190 @@ def _access_log_append(entry):
         print("access log append fail", e)
 
 
+# ══════════════════════════════════════════════════════════════════════
+# [turn65] 같은 IP 에서 **서로 다른 계정 3개 이상** 접속 감시
+#
+#  ## 요구 (사용자 원문)
+#   · 동일 IP 로 다른 계정이 3개 이상 접속하면 경고 + 승인창(관리자 알림)에
+#     "특정 회원이 특정 IP 로 계속 접속함 / 어떤 아이디에 접속했었는지" 노출
+#   · 해당 접속자에게 팝업으로 "타인 정보 무단 열람 시 관리자에게 통보되고
+#     불이익을 받을 수 있다"는 취지를 통보
+#
+#  ## 왜 필요한가
+#   한 사람이 여러 사람의 아이디를 번갈아 로그인하면, 개인정보 화면에서
+#   남의 주소·연락처·가족관계를 마음대로 볼 수 있다. 지금은 그 흔적이
+#   로그에만 남고 **아무에게도 알려지지 않는다**.
+#
+#  ## 오탐(false positive)을 줄이는 설계
+#   ① 가족·기관은 같은 IP 를 정상적으로 공유한다(집·학교·사무실·통신사 NAT).
+#      → IP 만으로 판정하지 않고 **같은 /24 대역 + 같은 UA 계열**을 요구한다.
+#   ② 스카우트 특성상 한 지도자가 여러 대원 계정을 봐야 하는 경우가 있다.
+#      → 임계값을 3계정 이상으로 두고, 경고는 **차단이 아니라 통보**로 한다.
+#   ③ 15분 이내에 겹친 접속만 본다(하루 동안의 누적은 무의미).
+#   ④ 관리자·마스터가 이미 인지한 조합은 중복 알림하지 않는다(도배 방지).
+# ══════════════════════════════════════════════════════════════════════
+_IPWATCH_LOCK = threading.Lock()
+_IPWATCH_WINDOW = 900.0     # 15분
+_IPWATCH_MIN_ACCTS = 3      # 서로 다른 계정 3개 이상이면 경고
+_IPWATCH_ALERT_GAP = 1800.0  # 같은 IP 재알림 간격 30분
+
+
+def _ip24(ip):
+    """IPv4 → /24 대역. IPv6/로컬은 그대로."""
+    s = str(ip or "").strip()
+    p = s.split(".")
+    if len(p) == 4:
+        return ".".join(p[:3]) + ".0/24"
+    return s
+
+
+def _ip_is_loopback(ip):
+    """[수정 2026-11-20] 로컬·내부 주소 여부.
+
+    ## 왜 필요한가 (실측 오탐)
+     알림 큐에 `같은 IP에서 여러 계정 접속 — 127.0.0.0/24` 경고가 4건 쌓여
+     있었다. 그런데 **127.0.0.1 은 서버 자신**이다. 프록시 앞단(리버스
+     프록시·헬스체크·개발 중 curl)이 전부 여기로 찍히므로, 서로 다른
+     관리자 계정으로 번갈아 테스트만 해도 "한 IP에서 여러 계정" 경고가
+     무더기로 발생한다. → 진짜 위협이 아닌데도 관리자를 놀라게 한다.
+
+     루프백·사설대역·링크로컬은 IP 감시 대상에서 제외한다. 이들은
+     "같은 사람이 여러 기기/계정으로 접속"과 구분이 불가능하다.
+    """
+    s = str(ip or "").strip()
+    if not s:
+        return True                 # IP 를 모르면 판단 보류(경고하지 않음)
+    if s in ("::1", "localhost", "0.0.0.0"):
+        return True
+    p = s.split(".")
+    if len(p) != 4:
+        # IPv6 — fc00::/7(사설) / fe80::/10(링크로컬) 은 제외
+        low = s.lower()
+        return low.startswith(("fc", "fd", "fe8", "fe9", "fea", "feb"))
+    try:
+        a, b = int(p[0]), int(p[1])
+    except Exception:
+        return True
+    if a == 127:                    # 127.0.0.0/8 루프백
+        return True
+    if a == 10:                     # 10.0.0.0/8 사설
+        return True
+    if a == 192 and b == 168:       # 192.168.0.0/16 사설
+        return True
+    if a == 172 and 16 <= b <= 31:  # 172.16.0.0/12 사설
+        return True
+    if a == 169 and b == 254:       # 169.254.0.0/16 링크로컬
+        return True
+    return False
+
+
+def _ipwatch_recent():
+    """최근 15분 로그인 기록만 (접속 로그 파일에서)."""
+    now = time.time()
+    out = []
+    for it in _access_log_all().get("logs", []):
+        if str(it.get("event")) != "login":
+            continue
+        ts = str(it.get("ts") or "")
+        try:
+            t = time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M:%S"))
+        except Exception:
+            continue
+        if now - t <= _IPWATCH_WINDOW:
+            out.append(it)
+    return out
+
+
+def _ipwatch_check(ip, ua, ident):
+    """이번 로그인을 포함해 같은 대역에서 **서로 다른 계정**이 3개 이상인지.
+
+    반환: dict(accounts=[...], band=..., count=n) 또는 None
+     · accounts: [{ident, name, tier, count, last}] — 어떤 아이디로 들어왔는지
+    """
+    # [수정 2026-11-20] 로컬·사설 주소는 오탐이므로 감시하지 않는다.
+    #  (프록시 앞단·헬스체크·개발 테스트가 모두 127.0.0.1 로 찍혀
+    #   관리자 계정을 번갈아 쓰기만 해도 '여러 계정 접속' 경고가 쌓였다)
+    if _ip_is_loopback(ip):
+        return None
+    band = _ip24(ip)
+    ua_os = _ua_device_name(ua).split("·")[0].strip()
+    me = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not me:
+        return None
+    try:
+        logs = _ipwatch_recent()
+    except Exception:
+        return None
+    acc = {}
+    for it in logs:
+        if _ip24(it.get("ip")) != band:
+            continue
+        # 같은 기기 계열이 아니면 다른 사람일 가능성이 높다 → 제외
+        it_os = str(it.get("device") or "").split("·")[0].strip()
+        if ua_os and it_os and it_os != ua_os:
+            continue
+        k = re.sub(r"[^0-9]", "", str(it.get("ident") or ""))
+        if not k:
+            continue
+        a = acc.setdefault(k, {
+            "ident": k,
+            "name": str(it.get("name") or ""),
+            "tier": str(it.get("role") or it.get("tier") or ""),
+            "count": 0,
+            "last": str(it.get("ts") or ""),
+        })
+        a["count"] += 1
+        if str(it.get("ts") or "") > a["last"]:
+            a["last"] = str(it.get("ts") or "")
+    if me not in acc:
+        return None
+    if len(acc) < _IPWATCH_MIN_ACCTS:
+        return None
+    rows = sorted(acc.values(), key=lambda x: (-x["count"], x["ident"]))
+    return {"band": band, "count": len(rows), "accounts": rows}
+
+
+def _ipwatch_notify(payload, ip, ua, ident):
+    """관리자 알림 큐에 1건 적재 — 같은 IP 반복 알림은 간격을 둔다."""
+    band = payload.get("band") or ip
+    try:
+        with _IPWATCH_LOCK:
+            state = _load_json(IPWATCH_FILE, {})
+            last = float((state.get("alerts") or {}).get(band) or 0)
+            if time.time() - last < _IPWATCH_ALERT_GAP:
+                return False
+            names = ", ".join(
+                "%s(%s)" % (a["name"] or "-", a["ident"])
+                for a in payload.get("accounts") or [])
+            _notify_admin(
+                "ipseen",
+                "같은 IP에서 여러 계정 접속 — %s" % band,
+                "한 IP 대역에서 서로 다른 %d개 계정이 %d분 안에 접속했습니다.\n"
+                "· 대역: %s\n· 계정: %s\n· 방금 접속: %s\n"
+                "※ 참고 기록입니다. 해당 접속자에게는 경고 안내만 표시되며, "
+                "이용 제한 등 별도 조치는 하지 않습니다."
+                % (payload["count"], int(_IPWATCH_WINDOW / 60), band,
+                   names, ident or "-"),
+                category="보안",
+                author=ident or "",
+                ip=str(ip or ""),
+                band=band,
+                accounts=payload.get("accounts") or [],
+            )
+            alerts = state.setdefault("alerts", {})
+            alerts[band] = time.time()
+            # 오래된 기록 정리(7일)
+            cut = time.time() - 7 * 86400
+            state["alerts"] = {k: v for k, v in alerts.items()
+                               if isinstance(v, (int, float)) and v >= cut}
+            _save_json(IPWATCH_FILE, state)
+        return True
+    except Exception as e:
+        print("[ipwatch] 알림 실패: %s" % e)
+        return False
+
+
 def _access_log_for(ident):
-    """특정 회원(인가번호/전화)의 로그 — 최신 100건."""
     d = re.sub(r"[^0-9]", "", str(ident or ""))
     if not d:
         return []
@@ -241,17 +798,27 @@ def _access_log_for(ident):
     return out
 
 
-def _log_access_login(tier, role, ident, who, ua, ip, extra=None):
+def _log_access_login(tier, role, ident, who, ua, ip, extra=None, corps=None):
     """로그인 성공 시 접속 로그 1건 기록.
 
     ident: 조회 키(개인=인가번호, 손님=전화숫자) — 비어도 기록은 남긴다.
     who:   표시용 신원(인가번호/전화).
+
+    ── [turn68] corps ──────────────────────────────────────────────────
+    범/은하 번호가 겹치므로 소속을 모르면 **남의 이름**이 로그에 남는다
+    (예: 은하 135번 로그인 → 범 135번 김종환). 로그의 이름은 접속기록의
+    근거 자료이므로 반드시 소속을 지정해 조회한다.
     """
-    ident = re.sub(r"[^0-9]", "", str(ident or ""))
+    _raw_ident = str(ident or "")
+    ident = re.sub(r"[^0-9]", "", _raw_ident)
     who = str(who or "")
     name = ""
+    _c = str(corps or "").strip().lower()
+    if _c not in ("tsak", "eunha"):
+        _c = "eunha" if _ck_is_eunha(_raw_ident or who) else "tsak"
     try:
-        m = _ev_member_by_ident(ident) if ident else None
+        _key = (_ck(_raw_ident or who) if _c == "eunha" else ident)
+        m = _ev_member_by_ident(_key, corps=_c) if _key else None
         if m:
             name = str(m.get("name", ""))
             if not ident:
@@ -279,15 +846,25 @@ def _log_access_login(tier, role, ident, who, ua, ip, extra=None):
     return entry
 
 
-def _log_access_view(viewer_tier, viewer_who, target_ident, ua, ip):
-    """타 사용자(마스터/관리자/다른 회원)가 개인 프로필을 열람한 이력 1건 기록."""
-    target = re.sub(r"[^0-9]", "", str(target_ident or ""))
+def _log_access_view(viewer_tier, viewer_who, target_ident, ua, ip, corps=None):
+    """타 사용자(마스터/관리자/다른 회원)가 개인 프로필을 열람한 이력 1건 기록.
+
+    ── [turn68] corps ──────────────────────────────────────────────────
+    '은하3' 열람을 '범 3번 서인식'으로 기록하면 접속기록이 거짓이 된다.
+    접두어(G)가 있으면 은하로 확정하고, 없으면 corps 인자로 판정한다.
+    """
+    _raw_target = str(target_ident or "")
+    target = re.sub(r"[^0-9]", "", _raw_target)
     if not target:
         return None
-    vwho = re.sub(r"[^0-9]", "", str(viewer_who or ""))
+    vwho = str(viewer_who or "")
+    _c = str(corps or "").strip().lower()
+    if _c not in ("tsak", "eunha"):
+        _c = "eunha" if _ck_is_eunha(_raw_target) else "tsak"
     name = ""
     try:
-        m = _ev_member_by_ident(target)
+        m = _ev_member_by_ident(
+            (_ck(_raw_target) if _c == "eunha" else target), corps=_c)
         if m:
             name = str(m.get("name", ""))
     except Exception:
@@ -386,6 +963,10 @@ def _summary_member(m):
         "unit": m.get("unit", ""),
         "isRegular": bool(m.get("isRegular")),
         "lifetimeMember": bool(m.get("lifetimeMember")),
+        # ATAS 인가번호 — 축약형에서도 유지한다.
+        #  (요구: 홈의 '아타스' 필터/검색으로 ATAS 보유자를 찾을 수 있어야 한다.
+        #   이 값이 없으면 개인 티어 사용자는 ATAS 명부 대상자를 볼 수 없었다.)
+        "atasNo": str(m.get("atasNo") or ""),
         "approvalStatus": m.get("approvalStatus", ""),
         "summaryOnly": True,
     }
@@ -418,15 +999,17 @@ def _redact_member(m, self=False):
 #  · 승인 여부와 무관하게 로그인/권한은 제약하지 않는다(요구). 단지 표시/알림용.
 def _approval_of(m):
     s = str(m.get("approvalStatus") or "").strip()
-    if s in ("pending", "approved", "held"):
+    if s in ("pending", "approved", "held", "rejected"):
         return s
     return "approved"
 
 
 def _set_member_approval(ident, status):
-    """회원 승인 상태 변경(단일). 반환: (ok, name)"""
+    """회원 승인 상태 변경(단일). 반환: (ok, name)
+      status: 'pending' | 'approved' | 'held' | 'rejected'
+    """
     d = re.sub(r"[^0-9]", "", str(ident or ""))
-    if not d or status not in ("pending", "approved", "held"):
+    if not d or status not in ("pending", "approved", "held", "rejected"):
         return False, ""
     with _MEMBER_WRITE_LOCK:
         members = _ev_members()
@@ -498,13 +1081,25 @@ def _add_member_request(req):
         rtype = str(req.get("type", "")).strip()
         year = str(req.get("year", "")).strip()
         event = str(req.get("event", "")).strip()
-        # 같은 회원·타입·연도·행사의 pending 요청은 중복 생성하지 않는다.
+        note = str(req.get("note", "")).strip()
+        amount = req.get("amount")
+        # 같은 회원·타입·연도·행사(+후원은 항목/금액/비고)의 pending 요청은 중복 생성하지 않는다.
+        # [turn68] 중복 판정에 **소속(corps)** 을 포함한다.
+        #   범 135번과 은하 135번은 다른 사람이므로, 한쪽의 대기 요청이
+        #   다른 쪽의 요청을 '중복'으로 막아서는 안 된다.
+        _new_corps = str(req.get("corps", "") or "").strip().lower()
         for it in items:
             if (it.get("status") == "pending"
                     and re.sub(r"[^0-9]", "", str(it.get("ident", ""))) == ident
                     and str(it.get("type", "")) == rtype
                     and str(it.get("year", "")) == year
-                    and str(it.get("event", "")) == event):
+                    and str(it.get("event", "")) == event
+                    and str(it.get("corps", "") or "").strip().lower()
+                        == _new_corps
+                    and (rtype not in ("donation", "supply")
+                         or (str(it.get("item", "")).strip() == str(req.get("item", "")).strip()
+                             and it.get("amount") == amount
+                             and str(it.get("note", "")).strip() == note))):
                 return True, str(it.get("id", ""))
         rid = "req_%d_%s" % (int(time.time() * 1000),
                              _secrets.token_hex(3))
@@ -525,16 +1120,95 @@ def _pending_member_requests():
             if str(it.get("status", "")) == "pending"]
 
 
+def _req_corps(req):
+    """등록요청 1건의 소속(corps) 확정 — **범 명단을 기본값으로 쓰지 않는다**.
+
+    ── [turn68] 왜 필요한가 ──────────────────────────────────────────────
+    범(2,246명)과 은하(165명)는 **번호 공간이 전부 겹친다**(1~165, 실측 165건
+    전부 다른 사람). 그런데 승인 반영 함수는 `_ev_members()`(= 범 DB_FILE)만
+    순회했다. 그래서 은하 회원의 승인 요청이 오면
+      · 은하 명단의 그 사람은 **아무 변화 없이** 승인 처리되고
+      · **범 명단의 같은 번호** 회원에게 평생회원·연회비·행사참석·후원이
+        덧붙거나, 비밀번호 초기화 승인이 **남의 비번을 기본값으로** 되돌렸다.
+    → 요청이 들어올 때 소속을 함께 기록하고(req["corps"]), 승인 시 그 소속의
+      명단만 건드린다.
+
+    판정 순서: ① 요청에 기록된 corps ② 접두어(G…) ③ 한쪽 명단에만 존재
+              ④ 그래도 모호하면 "" (= 반영하지 않고 보류)
+    """
+    _c = str(req.get("corps", "") or "").strip().lower()
+    if _c in ("eunha", "tsak"):
+        return _c
+    # 승인/취소 단계에서 이미 확정한 소속이 있으면 그것이 가장 정확하다.
+    for _k in ("appliedCorps", "revertedCorps"):
+        _c2 = str(req.get(_k, "") or "").strip().lower()
+        if _c2 in ("eunha", "tsak"):
+            return _c2
+    _d = re.sub(r"[^0-9]", "", str(req.get("ident", "")))
+    if not _d:
+        return ""
+    if _ck_is_eunha(req.get("ident")):
+        return "eunha"
+    in_e = bool(_eunha_member_by_number(_d))
+    in_t = bool(_member_by_number(_d))
+    if in_e and not in_t:
+        return "eunha"
+    if in_t and not in_e:
+        return "tsak"
+    if not in_e and not in_t:
+        # ③ 번호로 못 찾음 → **전화번호**로 대조한다.
+        #    비인가(일반회원) 요청은 ident 가 전화번호로 접수된다. 이걸 처리하지
+        #    않으면 기존 일반회원 초기화 요청이 전부 '소속 미확정'으로 보류된다.
+        _ph_e = _ph_t = False
+        try:
+            for _m in _load_json(EUNHA_DB_FILE, []):
+                if re.sub(r"[^0-9]", "", str(_m.get("phone", ""))) == _d:
+                    _ph_e = True
+                    break
+            for _m in _load_json(DB_FILE, []):
+                if re.sub(r"[^0-9]", "", str(
+                        _m.get("accessPhone") or _m.get("phone") or "")) == _d:
+                    _ph_t = True
+                    break
+        except Exception:
+            pass
+        if _ph_e and not _ph_t:
+            return "eunha"
+        if _ph_t and not _ph_e:
+            return "tsak"
+        # ④ 그래도 모르면 레거시 호환 — 승인 절차가 막히지 않도록 범으로 본다.
+        #    (범 명단이 2,246명으로 절대다수이고, 이전 동작과 동일하다.)
+        return "tsak"
+    return ""          # 양쪽에 있음 → 추측하지 않는다
+
+
 def _apply_member_request(req):
-    """승인된 요청을 실제 회원 데이터에 반영."""
+    """승인된 요청을 실제 회원 데이터에 반영.
+
+    ── [turn68] 소속(corps) 분리 ────────────────────────────────────────
+    종전에는 `_ev_members()`(범 명단)만 순회해서, 은하 회원의 요청이
+    **범 명단의 같은 번호** 회원에게 반영됐다. 이제 `_req_corps()` 로
+    소속을 확정하고 해당 명단만 수정한다. 소속을 확정할 수 없으면
+    **아무 것도 쓰지 않고** False 를 돌려준다(남의 계정을 건드리는 것보다
+    승인을 보류하는 편이 안전하다).
+    """
     ident = re.sub(r"[^0-9]", "", str(req.get("ident", "")))
     rtype = str(req.get("type", "")).strip()
     year = str(req.get("year", "")).strip()
     if not ident:
         return False
+    _corps = _req_corps(req)
+    if _corps not in ("tsak", "eunha"):
+        # 양쪽 명단에 다 있는 번호 + 소속 기록 없음 → **추측해서 남의 계정을
+        # 건드리지 않는다.** 대신 요청에 흔적을 남겨 관리자가 알아보게 한다.
+        req["applySkipped"] = "ambiguous-corps"
+        return False
+    _db = (EUNHA_DB_FILE if _corps == "eunha" else DB_FILE)
     with _MEMBER_WRITE_LOCK:
-        members = _ev_members()
+        members = _load_json(_db, [])
         for i, m in enumerate(members):
+            if not isinstance(m, dict):
+                continue
             mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
             mp = re.sub(r"[^0-9]", "", str(
                 m.get("accessPhone") or m.get("phone") or ""))
@@ -565,9 +1239,34 @@ def _apply_member_request(req):
                     m["qualificationStatus"] = "approved"
                     if str(req.get("note", "")).strip():
                         m["qualificationNote"] = str(req.get("note", "")).strip()
+                elif rtype in ("donation", "supply"):
+                    # 후원금·후원물품 이력 승인 반영 — 회원 dict 의 donations 에 1건 추가.
+                    #  (통합승인관리에서 승인되면 개인정보 창의 후원 이력에 나타난다.)
+                    items = m.get("donations")
+                    if not isinstance(items, list):
+                        items = []
+                    try:
+                        amt = int(req.get("amount") or 0)
+                    except Exception:
+                        amt = 0
+                    items.insert(0, {
+                        "kind": rtype,                       # donation | supply
+                        "item": str(req.get("item", "")).strip(),
+                        "amount": amt,
+                        "date": str(req.get("date", "")).strip()
+                                or datetime.datetime.now().strftime("%Y-%m-%d"),
+                        "note": str(req.get("note", "")).strip(),
+                        "status": "approved",
+                        "created": datetime.datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"),
+                        "approvedBy": str(req.get("by", "") or ""),
+                    })
+                    m["donations"] = items[:500]
                 elif rtype == "pwreset":
                     # 비밀번호 초기화 승인 — 실제 비번을 기본값으로 되돌린다.
-                    _password_reset_apply(ident)
+                    #  [turn68] 반드시 소속을 넘긴다. 넘기지 않으면 은하 회원의
+                    #  초기화가 범 명단의 같은 번호 비번을 기본값으로 되돌린다.
+                    _password_reset_apply(ident, corps=_corps)
                 # 인가자 승격 요청(번호 포함)이면 반영
                 newno = re.sub(r"[^0-9]", "", str(req.get("newNumber", "")))
                 if rtype == "qualification" and newno:
@@ -575,8 +1274,13 @@ def _apply_member_request(req):
                     m["isRegular"] = False
                 m["updatedAt"] = int(time.time() * 1000)
                 members[i] = m
-                _save_json(DB_FILE, members)
-                _touch_meta({"count": len(members), "updatedBy": "member-request"})
+                # [turn68] 실제로 반영한 소속을 요청에 남긴다 → 이후 '승인 취소'
+                #   때도 같은 명단을 되돌리게 되어 추론에 의존하지 않는다.
+                req["appliedCorps"] = _corps
+                _save_json(_db, members)
+                _touch_meta({"count": len(members),
+                             "updatedBy": "member-request",
+                             "corps": _corps})
                 return True
     return False
 
@@ -592,9 +1296,18 @@ def _revert_member_request(req):
     year = str(req.get("year", "")).strip()
     if not ident:
         return False
+    # [turn68] 승인 반영과 **같은 소속**을 되돌려야 한다. 범 명단만 보면
+    #   은하 요청을 취소했을 때 범 명단의 같은 번호에서 엉뚱한 값을 지운다.
+    _corps = _req_corps(req)
+    if _corps not in ("tsak", "eunha"):
+        req["revertSkipped"] = "ambiguous-corps"
+        return False
+    _db = (EUNHA_DB_FILE if _corps == "eunha" else DB_FILE)
     with _MEMBER_WRITE_LOCK:
-        members = _ev_members()
+        members = _load_json(_db, [])
         for i, m in enumerate(members):
+            if not isinstance(m, dict):
+                continue
             mn = re.sub(r"[^0-9]", "", str(m.get("number", "")))
             mp = re.sub(r"[^0-9]", "", str(
                 m.get("accessPhone") or m.get("phone") or ""))
@@ -615,16 +1328,40 @@ def _revert_member_request(req):
                         ea = dict(m.get("eventAttend") or {})
                         ea.pop(ev, None)
                         m["eventAttend"] = ea
+                elif rtype in ("donation", "supply"):
+                    # 후원금·후원물품 이력 승인 취소 — 일치하는 항목 1건 제거.
+                    items = m.get("donations")
+                    if isinstance(items, list):
+                        try:
+                            amt = int(req.get("amount") or 0)
+                        except Exception:
+                            amt = 0
+                        _it = str(req.get("item", "")).strip()
+                        _dt = str(req.get("date", "")).strip()
+                        for _idx, _d in enumerate(items):
+                            if (isinstance(_d, dict)
+                                    and str(_d.get("kind", "")) == rtype
+                                    and str(_d.get("item", "")).strip() == _it
+                                    and int(_d.get("amount") or 0) == amt):
+                                items.pop(_idx)
+                                break
+                        m["donations"] = items
                 m["updatedAt"] = int(time.time() * 1000)
                 members[i] = m
-                _save_json(DB_FILE, members)
-                _touch_meta({"count": len(members), "updatedBy": "member-request-revert"})
+                req["revertedCorps"] = _corps
+                _save_json(_db, members)
+                _touch_meta({"count": len(members),
+                             "updatedBy": "member-request-revert",
+                             "corps": _corps})
                 return True
     return False
 
 
 def _set_member_request_status(rid, action):
-    """등록요청 상태 변경. approve 시 실제 반영. 반환: (ok, name, type)"""
+    """등록요청 상태 변경. approve 시 실제 반영. 반환: (ok, name, type)
+      action: 'approve'(승인) | 'hold'(보류) | 'pending'(대기)
+              | 'reject'(거절) | 'delete'(삭제)
+    """
     with _MEMBER_WRITE_LOCK:
         doc = _load_member_requests()
         items = doc.get("items") or []
@@ -644,7 +1381,9 @@ def _set_member_request_status(rid, action):
                     _save_member_requests(doc)
                     return True, str(it.get("name", "")), str(it.get("type", ""))
                 else:
-                    it["status"] = action
+                    # 'hold' → 'held', 'pending' → 'pending'
+                    it["status"] = {"hold": "held",
+                                    "pending": "pending"}.get(action, action)
                 it["handledAt"] = datetime.datetime.now().strftime(
                     "%Y-%m-%d %H:%M:%S")
                 items[i] = it
@@ -788,6 +1527,9 @@ _REQ_TYPE_LABEL = {
     "qualification": "자격 지정",
     "regular": "비인가회원 등록",
     "pwreset": "비밀번호 초기화 요청",
+    "donation": "후원금 등록",
+    "supply": "후원물품 등록",
+    "linkfix": "정보 수정요청",
 }
 
 _STATUS_KR = {"approved": "승인", "held": "보류", "rejected": "반려",
@@ -826,7 +1568,147 @@ def _approval_history_record(source, kind, ident, name, number, title,
         return ""
 
 
-# ---- 관리자(아이디)별 '확인(읽음)' 워터마크 ----
+# ==========================================================================
+#  마스터 위임(요구: 통합승인관리 — "마스터에게 위임").
+#   · 관리자(app)가 특정 승인 항목을 마스터에게 위임하면, 그 항목은
+#     **마스터만** 선택/처리(승인·보류·대기·거절·삭제)할 수 있다.
+#   · 저장: db/approval_delegation.json  {"items": {"{source}|{ref}": {...}}}
+#     entry: {by(위임자), at(위임시각), note}
+#   · source: 'regular'(비인가회원) | 'request'(등록요청) | 'link'(멘토·페런츠)
+#   · ref   : 처리 대상 식별자(_idOf — 회원 id/번호 또는 등록요청 id)
+# ==========================================================================
+DELEG_FILE = BASE + "/db/approval_delegation.json"
+_DELEG_LOCK = threading.Lock()
+
+
+def _deleg_file():
+    return DELEG_FILE
+
+
+def _deleg_key(source, ident):
+    s = str(source or "").strip() or "request"
+    d = re.sub(r"[^0-9A-Za-z]", "", str(ident or ""))
+    return "%s|%s" % (s, d)
+
+
+def _deleg_load():
+    doc = _load_json(_deleg_file(), {"items": {}})
+    if not isinstance(doc, dict):
+        doc = {"items": {}}
+    if not isinstance(doc.get("items"), dict):
+        doc["items"] = {}
+    return doc
+
+
+def _deleg_save(doc):
+    _save_json(_deleg_file(), doc)
+
+
+def _deleg_get(source, ident):
+    """해당 항목의 위임 정보(없으면 None)."""
+    doc = _deleg_load()
+    return (doc.get("items") or {}).get(_deleg_key(source, ident))
+
+
+def _deleg_set(source, ident, by="", note=""):
+    """항목을 마스터에게 위임(등록/갱신)."""
+    k = _deleg_key(source, ident)
+    with _DELEG_LOCK:
+        doc = _deleg_load()
+        items = doc.get("items") or {}
+        items[k] = {
+            "source": str(source or ""),
+            "ref": str(ident or ""),
+            "by": str(by or ""),
+            "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "note": str(note or "")[:300],
+        }
+        doc["items"] = items
+        _deleg_save(doc)
+    return True
+
+
+def _deleg_clear(source, ident):
+    """위임 해제. 반환: 해제 여부."""
+    k = _deleg_key(source, ident)
+    with _DELEG_LOCK:
+        doc = _deleg_load()
+        items = doc.get("items") or {}
+        if k not in items:
+            return False
+        items.pop(k, None)
+        doc["items"] = items
+        _deleg_save(doc)
+        return True
+
+
+def _deleg_annotate(source, entries):
+    """큐 항목 리스트에 위임 정보(delegated/delegatedBy/delegatedAt)를 덧입힌다.
+    각 항목은 'id' 또는 'number' 로 대상을 식별한다(Flutter _idOf 와 동일 규칙)."""
+    if not isinstance(entries, list) or not entries:
+        return entries
+    doc = _deleg_load()
+    items = doc.get("items") or {}
+    if not items:
+        return entries
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        ref = str(e.get("id") or "").strip() or str(e.get("number") or "").strip()
+        info = items.get(_deleg_key(source, ref))
+        if info:
+            e["delegated"] = True
+            e["delegatedBy"] = str(info.get("by", ""))
+            e["delegatedAt"] = str(info.get("at", ""))
+    return entries
+
+
+def _deleg_master_only(source, ref):
+    """해당 항목이 마스터 전용(위임됨)인지."""
+    return bool(_deleg_get(source, ref))
+
+
+def _deleg_refs_for(source, ident):
+    """항목 식별자 후보 집합 — Flutter _idOf(id 우선, 없으면 번호) 규칙과
+    서버 회원 조회(번호/id) 양쪽을 모두 포함해 위임키를 확실히 찾는다."""
+    src = str(source or "")
+    refs = set()
+    d = str(ident or "").strip()
+    if d:
+        refs.add(d)
+    try:
+        m = _member_of_ident(ident) or {}
+    except Exception:
+        m = {}
+    if isinstance(m, dict) and m:
+        if str(m.get("number", "")).strip():
+            refs.add(str(m.get("number")))
+        if str(m.get("id", "")).strip():
+            refs.add(str(m.get("id")))
+    # 등록요청(req:*)은 항목 id 그대로가 ref 이다.
+    if src == "request" and d:
+        refs.add(d)
+    return refs
+
+
+def _deleg_is_master_only(source, ident):
+    """해당 항목이 (어떤 표기로든) 마스터에게 위임되었는지."""
+    for r in _deleg_refs_for(source, ident):
+        if _deleg_get(source, r):
+            return True
+    return False
+
+
+def _deleg_clear_for(source, ident):
+    """처리 완료 시 해당 항목의 위임을 해제(모든 표기)."""
+    cleared = False
+    for r in _deleg_refs_for(source, ident):
+        if _deleg_clear(source, r):
+            cleared = True
+    return cleared
+
+
+
 #  배지 숫자는 "해당 아이디가 아직 확인하지 않은 항목"만 표시한다.
 #  관리자가 승인화면/알림을 열어 확인하면 그 시각을 워터마크로 저장하고,
 #  그 이후 새로 들어온 항목만 다시 미확인으로 집계된다.
@@ -898,13 +1780,47 @@ def _count_unread(items, stamp_key, watermark):
     return n
 
 
-def _board_badge_unread(owner):
-    """게시판 알림 큐(notify.json)에서 해당 아이디가 미확인한 건수."""
+def _board_badge_unread(owner, types=None):
+    """알림 큐(notify.json)에서 해당 아이디가 미확인한 건수.
+
+    [요구 2026-11-20] "수품 주문이 들어오면 관리자/마스터에게 알림주고
+                      단추에 표시해줘"
+      종전에는 type 구분 없이 **모든 알림**을 한 숫자로 세서
+      게시판 단추에만 달았다. 그래서 수품 주문이 들어와도
+      '게시판' 단추 숫자만 올라가고, 정작 **수품판매관리 단추에는
+      아무 표시가 없었다.**
+
+      → `types` 로 셀 종류를 지정할 수 있게 한다.
+         None      : 전체(기존 동작 보존)
+         ["order"] : 수품 주문만
+         ["board"] : 게시판 글만
+
+    [요구 2026-11-20] "주문을 확인하면 버튼 숫자는 없어져야 함"
+      종전에는 `wm = _seen_get(owner, "board")` 하나만 썼다.
+      그래서 게시판을 읽음 처리하면 **주문 배지까지 같이 꺼지고**,
+      반대로 주문만 확인해서는 게시판 워터마크를 건드릴 수 없어
+      주문 배지를 끌 방법이 아예 없었다.
+      → `seen_kind` 로 워터마크를 **종류별로 분리**한다.
+         types=["order"] → seen['order_at']
+         types=["board"] → seen['board_at']
+         None(전체)      → 기존대로 'board' (하위호환)
+    """
     if not owner:
         return 0
     doc = _load_json(NOTIFY_FILE, {"items": []})
     items = doc.get("items", [])
-    wm = _seen_get(owner, "board")
+    if not isinstance(items, list):
+        return 0
+    if types:
+        want = {str(t) for t in types}
+        items = [it for it in items
+                 if str(it.get("type", "")) in want]
+    # 워터마크 키: 종류가 하나면 그 종류를 키로 쓴다(독립), 아니면 'board'.
+    if types and len(types) == 1:
+        seen_kind = str(types[0])
+    else:
+        seen_kind = "board"
+    wm = _seen_get(owner, seen_kind)
     return _count_unread(items, "created", wm)
 
 
@@ -963,7 +1879,7 @@ def _approval_badge_unread(owner):
 #  linkApprovalStatus: ''(미요청) | 'pending'(요청) | 'approved'(승인) | 'held'(보류)
 def _link_of(m):
     s = str(m.get("linkApprovalStatus") or "").strip()
-    if s in ("pending", "approved", "held"):
+    if s in ("pending", "approved", "held", "rejected"):
         return s
     return ""
 
@@ -1012,26 +1928,80 @@ def _req_source_label(s):
     return _REQ_SOURCE_LABEL.get(str(s or ""), "직접입력")
 
 
-def _link_enrich_codes(codes, profs):
+def _link_enrich_codes(codes, profs, kind=""):
     """연결 코드(인가번호) 목록 → 인적사항 라벨 목록으로 보강.
       · 라벨 형식: "소속연맹 소속단위대 · #번호 이름 (전화)"
-    요구: "히스토리 및 승인신청에 멘토·멘티·페런츠 모든 사람의 정보를 보여줘"."""
+      · [kind] 가 주어지면 해당 종류(멘토/페런츠) 프로필을 우선 조회한다
+        (종류별 복합키 — 멘토·페런츠 번호 충돌 방지).
+    요구: "히스토리 및 승인신청에 멘토·멘티·페런츠 모든 사람의 정보를 보여줘".
+
+    ## [요구 2026-11-04] **사람으로 찾는다**
+      종전에는 `_link_profile_by_kind(profs, kind, key)` 만 썼다. 그래서
+      관계 값이 '전화번호'(새 표준)로 저장되면 인적사항 키('멘토:인가번호')와
+      맞지 않아 이름이 빈칸이 됐다. 이제 인물 색인으로 **같은 사람**의
+      프로필을 찾는다(전화번호·인가번호·로그인ID·scoutNo 모두 통과).
+    """
     out2 = []
     for c in codes:
         key = re.sub(r"[^0-9]", "", str(c))
-        p = profs.get(key) or profs.get(str(c)) or {}
+        p = {}
+        if kind:
+            p = _link_profile_by_kind(profs, kind, key) or {}
+        if not p:
+            p = _link_profile_by_num(profs, key) or {}
+        if not p:
+            # 사람 기준 조회 — 같은 인물의 프로필을 어느 키에서든 찾는다.
+            try:
+                _dx = _link_person_index()
+            except Exception:
+                _dx = None
+            per = _link_person_of(_dx, key) if _dx else None
+            _cands = [key]
+            if isinstance(per, dict):
+                _cands += [_clean_no(per.get("phone")),
+                           _clean_no(per.get("number")),
+                           _clean_no(per.get("canon"))]
+            for _cand in _cands:
+                if not _cand:
+                    continue
+                for _k, _v in (profs or {}).items():
+                    if not isinstance(_v, dict):
+                        continue
+                    if _cand in _link_key_nums(_v) or \
+                            _cand == _clean_no(_v.get("phone")) or \
+                            _cand == _clean_no(_v.get("loginId")) or \
+                            _cand == _clean_no(_v.get("scoutNo")):
+                        p = _v
+                        break
+                if p:
+                    break
         if not isinstance(p, dict):
             p = {}
         nm = str(p.get("name", "") or "")
         ph = str(p.get("phone", "") or "")
         lg = str(p.get("league", "") or "")
         un = str(p.get("unit", "") or "")
+        pos = str(p.get("position", "") or "")
+        # 이름이 비면 회원 카드에서 보강(비인가→카드 승격 후 이름 공백 방지).
+        if not nm:
+            try:
+                _dx2 = _link_person_index()
+                _m2 = _link_person_of(_dx2, key) if _dx2 else None
+                if isinstance(_m2, dict):
+                    nm = str(_m2.get("name", "") or "")
+                    if not ph:
+                        ph = str(_m2.get("phone", "") or "")
+            except Exception:
+                pass
         label = ("#%s" % key)
         if nm:
             label += " %s" % nm
         loc = " ".join([x for x in (lg, un) if x])
         if loc:
             label = "%s · %s" % (loc, label)
+        # [요구] 현재 활동정보(직위)가 있으면 라벨에 함께 노출.
+        if pos:
+            label += " %s" % pos
         if ph:
             label += " (%s)" % ph
         out2.append(label)
@@ -1073,8 +2043,8 @@ def _link_member_entry(m):
         "parents": [str(x) for x in parents],
         "mentees": [str(x) for x in mentees],
         "children": [str(x) for x in children],
-        "mentorLabels": _link_enrich_codes(mentors, profs),
-        "parentLabels": _link_enrich_codes(parents, profs),
+        "mentorLabels": _link_enrich_codes(mentors, profs, "mentor"),
+        "parentLabels": _link_enrich_codes(parents, profs, "parent"),
         "menteeLabels": _link_enrich_codes(mentees, profs),
         "childLabels": _link_enrich_codes(children, profs),
         "note": str(m.get("linkApprovalNote", "")),
@@ -1089,6 +2059,13 @@ def _link_member_entry(m):
         "requestedAt": str(m.get("linkRequestedAt") or m.get("created") or ""),
         "reqSource": str(m.get("linkRequestSource") or ""),
         "reqSourceLabel": _req_source_label(m.get("linkRequestSource")),
+        # [요구] 비인가회원 정보 수정요청 메모 — 관리자·마스터 확인용.
+        "fixNote": str(m.get("linkFixNote") or ""),
+        "fixRequestedAt": str(m.get("linkFixRequestedAt") or ""),
+        "fixRequestedBy": str(m.get("linkFixRequestedBy") or ""),
+        "fixScope": str(m.get("linkFixScope") or ""),
+        "hasFixNote": bool(str(m.get("linkFixNote") or "").strip()),
+        "isRegular": bool(m.get("isRegular")),
     }
 
 
@@ -1099,15 +2076,109 @@ def _link_pending_members():
     """
     out = []
     for m in _ev_members():
-        mentors = m.get("mentors") or []
-        parents = m.get("parents") or []
-        mentees = m.get("mentees") or []
-        children = m.get("children") or []
+        # ────────────────────────────────────────────────────────────────
+        # [요구 2026-11-04] **자기참조는 연결 요청으로 보지 않는다.**
+        #
+        # ## 실제 사고 (반복 승인)
+        #  보고: "차동엽 멘티 등록승인 후에도 계속 승인 요청창이 반복적으로 뜨고 있음"
+        #  실측 운영 DB: mentors 에 **자기 번호**가 들어있는 회원 6명
+        #     415 이승준 · 417 김병혁 · 590 현승용
+        #     1051 차동엽 · 1346 양다솜 · 2229 노현아
+        #  예) 차동엽 #1051 mentors=['1051']  → "나의 멘토 = 나"
+        #
+        #  이 레코드는 승인을 눌러 `linkApprovalStatus='approved'` 로 바꿔도
+        #  **mentors 배열은 그대로** 남는다. 그래서 목록에서만 사라지고
+        #  (reconcile 이 approved 를 유지) 값이 영원히 남아 다시 큐에 오른다.
+        #  값을 지우는 것보다 **애초에 요청으로 세지 않는 것**이 안전하다:
+        #   · 자기 자신을 멘토/부모로 둔 요청은 승인할 내용이 없다.
+        #   · 실제 데이터(멘토 번호)는 보존되므로 명부·장부 집계는 변하지 않는다.
+        #
+        #  ⚠️ mentees/children 자기참조는 `_link_reconcile_apply` 가 이미
+        #     자동 정리하므로 여기서는 mentors/parents 만 본다.
+        # ────────────────────────────────────────────────────────────────
+        # [요구 2026-11-04] **사람으로 비교한다.**
+        #  종전엔 `_clean_no(c) != _self_no` (번호 문자열 비교)였다. 그래서
+        #  관계 값이 **전화번호**로 저장된 새 표준에서는 자기참조를 걸러내지
+        #  못했다. 실제 재현: 선영진(전화 01046236587)을 멘토로 저장하면
+        #  양다솜 카드에 mentors=['01046236587'] 이 들어가는데, 양다솜의
+        #  self_no 는 '1346' 이라 비교가 통과 → **자기참조가 큐에 남았다.**
+        try:
+            _pdx = _link_person_index()
+        except Exception:
+            _pdx = {"persons": [], "alias": {}, "byCanon": {}}
+        _self_no = _clean_no(m.get("number", ""))
+        _self_ph = _clean_no(m.get("accessPhone") or m.get("phone") or "")
+        _self_canon = (_self_ph if bool(m.get("isRegular"))
+                       else (_self_no or _self_ph))
+
+        def _not_self(codes):
+            out = []
+            for c in _norm_codes(codes):
+                ca = _link_canon_of(_pdx, c) or _clean_no(c)
+                if ca and ca != _self_canon:
+                    out.append(c)
+            return out
+
+        mentors = _not_self(m.get("mentors"))
+        parents = _not_self(m.get("parents"))
+        mentees = _not_self(m.get("mentees"))
+        children = _not_self(m.get("children"))
         if not (mentors or parents or mentees or children):
             continue
         if _link_of(m) != "pending":
             continue
         out.append(_link_member_entry(m))
+    return out
+
+
+def _link_fix_members():
+    """[요구] 정보 수정요청 메모를 남긴 회원 목록 — 통합승인 큐('regular_fix').
+      · 비인가회원(본인)의 정보/연결 수정요청(linkFixNote)을 관리자·마스터가
+        확인·수정할 수 있게 노출한다.
+      · linkfix 등록요청(member_requests)의 pending 도 함께 포함(메모 전용 큐).
+    """
+    out = []
+    seen = set()
+    for m in _ev_members():
+        if not str(m.get("linkFixNote") or "").strip():
+            continue
+        e = _link_member_entry(m)
+        e["fixNote"] = str(m.get("linkFixNote") or "")
+        e["fixRequestedAt"] = str(m.get("linkFixRequestedAt") or "")
+        e["fixRequestedBy"] = str(m.get("linkFixRequestedBy") or "")
+        e["fixScope"] = str(m.get("linkFixScope") or "")
+        e["hasFixNote"] = True
+        out.append(e)
+        seen.add(_clean_no(m.get("number")) or _clean_no(m.get("id")))
+    # linkfix 등록요청(pending)도 병합 — 회원 레코드가 없는 프로필 메모 포함.
+    try:
+        for it in _pending_member_requests():
+            if str(it.get("type", "")) != "linkfix":
+                continue
+            ident = _clean_no(it.get("ident"))
+            if ident and ident in seen:
+                continue
+            mm = _member_of_ident(ident) or {}
+            out.append({
+                "id": str(mm.get("id", "") or it.get("id", "")),
+                "number": str(mm.get("number", "") or ident),
+                "name": str(mm.get("name", "") or it.get("name", "")),
+                "phone": str(mm.get("phone", "")),
+                "unit": str(mm.get("unit", "")),
+                "league": str(mm.get("league", "")),
+                "fixNote": str(it.get("note", "")),
+                "fixRequestedAt": str(it.get("created", "")),
+                "fixRequestedBy": str(it.get("by", "")),
+                "fixScope": str(it.get("scope", "")),
+                "hasFixNote": True,
+                "isRegular": bool(mm.get("isRegular", True)),
+                "requestId": str(it.get("id", "")),
+                "linkKind": "정보 수정요청",
+            })
+            if ident:
+                seen.add(ident)
+    except Exception as _e:
+        print("link_fix merge fail", _e)
     return out
 
 
@@ -1129,10 +2200,28 @@ def _link_profiles_load():
     for linked, prof in list(d.items()):
         if not isinstance(prof, dict):
             d[linked] = {}
+    # ⚠️ [요구 2026-11-04] **읽기는 절대 저장하지 않는다.**
+    #   이전 구현은 `_link_profile_migrate_keys()` 를 load 안에서 호출했고,
+    #   그 함수가 '읽기만으로도' 키를 바꿔 메모리 캐시를 오염시켰다. 게다가
+    #   같은 사람이 멘토·페런츠 두 역할을 하면(노본 2229, 현승용 590)
+    #   한쪽 역할 정보가 **소실**됐다. 이제 이관은 쓰기 경로에서만 일어나고,
+    #   소실 방지를 위해 옛 키 원본을 `_legacyKeys` 에 보존한다.
     return d
 
 
 def _link_profiles_save(d):
+    """프로필 저장 — **쓰기 경로에서만** 표준 키('person:<대표번호>')로 이관한다.
+
+    읽기(load)는 원본을 그대로 돌려주고, 여기서만 병합하므로
+    "읽기만 했는데 데이터가 변형되는" 사고가 재발하지 않는다.
+    실제로 이전 구현은 load 안에서 이관을 수행해 노본(멘토+페런츠)과
+    현승용(멘토+페런츠)의 한쪽 역할이 소실됐다.
+    """
+    if isinstance(d, dict):
+        try:
+            d, _ch = _link_profile_migrate_keys(d)
+        except Exception as _e:
+            print("[link] 프로필 키 이관 건너뜀: %s" % _e)
     _save_json(_link_profiles_file(), d)
 
 
@@ -1166,6 +2255,20 @@ def _link_search_members(q, limit=20):
             "phone": str(m.get("phone", "") or ""),
             "scoutNo": scout,
             "corps": str(m.get("corps") or "tsak"),
+            # [요구] 개인정보 상세 — 인가정보·현재활동정보 자동 채움용.
+            "date": str(m.get("date", "") or ""),
+            "atasNo": str(m.get("atasNo", "") or ""),
+            # ATAS **인가 당시 정보** — 범인가(league/unit/date)와 별개로 저장한다.
+            #  (요구: "아타스인가정보 … 나머지는 추후 입력할 수 있도록 항목만 만들고 비워 놔")
+            #  지금은 대부분 빈 값이며, 값이 들어오면 그대로 보존한다.
+            "atasLeague": str(m.get("atasLeague", "") or ""),
+            "atasUnit": str(m.get("atasUnit", "") or ""),
+            "atasDate": str(m.get("atasDate", "") or ""),
+            "position": str(m.get("position", "") or ""),
+            "activity": str(m.get("activity", "") or ""),
+            "trainingStatus": str(m.get("trainingStatus", "") or ""),
+            "regLeague": str(m.get("regLeague", "") or ""),
+            "regUnit": str(m.get("regUnit", "") or ""),
         })
     out.sort(key=lambda x: (len(str(x.get("number", ""))),
                             str(x.get("number", ""))))
@@ -1271,6 +2374,16 @@ def _gen_profile_credentials(phone, name):
     """전화번호 기반 아이디/비밀번호 생성(요구).
       - 아이디(loginId) : 전화번호 숫자만 (예: 01012345678)
       - 비밀번호        : 뒤 4자리 + '!@@' (예: 5678!@@)
+
+    ## 🐞 2026-11-02 (build #571) — **인가자에게는 쓰지 않는다**
+    보고(원문): "범인가자가 페런츠, 또는 멘토일때는 아이디를 전화번호로 생성하지
+    않고, 범인가자 개인카드에 연동해서 멘토, 페런츠, 멘티 정보를 넣으면 됨.
+    현재는 범인가자들의 정보를 넣으면 전화번호로 아이디를 생성하고 있는 것 같음"
+
+    인가자는 이미 개인카드와 로그인(아이디=인가번호)을 갖고 있다. 여기서
+    전화번호 아이디를 또 만들면 **같은 사람이 두 개의 신원**을 갖게 되어
+    로그인·승인·통계가 갈라진다. 그래서 호출부는 `p.get("isScouter")` 가
+    참이면 이 함수를 부르지 않는다(`_profile_creds_or_blank` 사용).
     """
     ph = re.sub(r"[^0-9]", "", str(phone or ""))
     login_id = ph
@@ -1279,26 +2392,316 @@ def _gen_profile_credentials(phone, name):
     return login_id, pw
 
 
+def _profile_creds_or_blank(p):
+    """프로필 1건 → (loginId, password).
+
+    ## 🐞 2026-11-02 (build #571)
+    **범인가자(isScouter) 또는 인가번호(scoutNo)가 있는 경우 계정을 만들지 않는다.**
+    인가자는 이미 `members` 명단에 카드가 있고 로그인 ID 가 인가번호이므로,
+    전화번호로 별도 계정을 만들면 중복 신원이 된다. 그분은 본인 카드에
+    멘토/페런츠/멘티 관계만 기록하면 된다.
+
+    비인가자(멘토·페런츠가 일반인)일 때만 종전대로 전화번호 기반 계정을 만든다.
+    """
+    if not isinstance(p, dict):
+        return "", ""
+    try:
+        if bool(p.get("isScouter")):
+            return "", ""
+        if re.sub(r"[^0-9]", "", str(p.get("scoutNo", "") or "")):
+            return "", ""
+    except Exception:
+        pass
+    return _gen_profile_credentials(p.get("phone"), p.get("name"))
+
+
 def _link_profile_sanitize(raw):
     if not isinstance(raw, dict):
         return {}
-    return {
-        # number: 멘토=멘티(범인가자)번호 / 페런츠=인가번호
-        "number": re.sub(r"[^0-9]", "", str(raw.get("number", "") or ""))[:12],
+    _num = re.sub(r"[^0-9]", "", str(raw.get("number", "") or ""))[:12]
+    _kind = "parent" if str(raw.get("kind", "")) == "parent" else "mentor"
+    # ── [버그수정 2026-11-04] sanitize 가 **매 저장마다** kinds/loginId 를
+    #    지워 버렸다. 그래서 겸임자(노본·현승용: 멘토+페런츠)의 역할 정보가
+    #    한 번 저장할 때마다 사라지고, 전화번호 계정 아이디(loginId)도
+    #    없어져 화면에서 '아이디 없음'으로 보였다. 들어온 값은 살린다.
+    _kinds = raw.get("kinds") if isinstance(raw.get("kinds"), list) else []
+    _kinds = sorted({str(x) for x in _kinds if str(x) in ("mentor", "parent")})
+    if not _kinds:
+        _kinds = [_kind]
+    out = {
+        # number: 표준은 **그 사람의 대표번호**(인가자=인가번호 /
+        #   일반회원·비인가=전화번호). 다만 옛 데이터가 멘티 번호를 담고
+        #   있을 수 있으므로 저장 직전 보정은 호출부에서 한다.
+        "number": _num,
         "name": str(raw.get("name", "") or "").strip()[:40],
         "phone": str(raw.get("phone", "") or "").strip()[:20],
-        # league: (멘토) 소속연맹 — 통계 산출용
+        # league: (멘토·페런츠) 소속연맹 — 통계 산출용 (현재 활동정보)
         "league": str(raw.get("league", "") or "").strip()[:60],
         "unit": str(raw.get("unit", "") or "").strip()[:80],
-        "kind": "parent" if str(raw.get("kind", "")) == "parent" else "mentor",
+        "kind": _kind,
+        "kinds": _kinds,
+        # ---- [요구] 개인정보 상세 입력: ① 범스카우트 인가 정보 ----
+        #   · isScouter : 이 분이 범스카우트 인가자인지 (체크 시 인가정보 활성)
+        #   · scoutNo   : 본인(멘토·페런츠)의 범 인가번호 (인가자일 때)
+        #   · inductedAt: 인가일 (예: "2025.12.19.")
+        #   · atasNo    : ATAS 인가번호
+        "isScouter": bool(raw.get("isScouter")),
+        "scoutNo": re.sub(r"[^0-9]", "", str(raw.get("scoutNo", "") or ""))[:12],
+        "inductedAt": str(raw.get("inductedAt", "") or "").strip()[:20],
+        "atasNo": str(raw.get("atasNo", "") or "").strip()[:24],
+        # ---- [요구] 개인정보 상세 입력: ② 현재 활동정보 ----
+        "position": str(raw.get("position", "") or "").strip()[:40],
+        "activity": str(raw.get("activity", "") or "").strip()[:60],
+        "trainingStatus": str(raw.get("trainingStatus", "") or "").strip()[:40],
     }
+    # 손으로 만든 보조 필드는 **있을 때만** 옮긴다(빈 값으로 덮어쓰지 않음).
+    for _f in ("loginId", "password", "receiverNo", "personKey",
+               "updatedAt", "createdAt"):
+        _v = raw.get(_f)
+        if isinstance(_v, str) and _v.strip():
+            out[_f] = _v.strip()
+    # 저장키(종류별 복합키) — 멘토/페런츠 번호 충돌 방지.
+    out["_key"] = _link_key(_kind, _num)
+    return out
 
+
+
+# ==========================================================================
+# 멘토·페런츠 프로필 저장키 — **종류별 복합키** (요구):
+#   "페런츠 항목에는 부모님 이름을 노출시킬 것 / 멘토는 범을 배출한 멘토 대장
+#    이름을 노출시킬 것"
+#   · 문제) 멘토의 number 는 **멘티(본인) 번호**, 페런츠의 number 는 **인가번호**
+#     이므로, 어떤 회원에서 두 번호가 **같아지면**(예: 자기 자신을 멘토·페런츠로
+#     등록한 경우) 같은 키에서 서로 덮어써 이름이 소실됐다.
+#   · 해결) 저장키를 '멘토:<번호>' / '페런츠:<번호>' 로 분리하고, 조회는 접두어
+#     우선 → 구(무접두어) 키 폴백 순으로 처리해 하위호환을 유지한다.
+# ==========================================================================
+def _link_key(kind, number):
+    k = "parent" if str(kind) == "parent" else "mentor"
+    n = re.sub(r"[^0-9]", "", str(number or ""))
+    if not n:
+        return ""
+    return ("%s:%s" % ("페런츠" if k == "parent" else "멘토", n))
+
+
+def _link_key_nums(prof):
+    """프로필 1건 → 매칭용 번호 집합(저장키 접두어 제거 + number 필드)."""
+    if not isinstance(prof, dict):
+        return set()
+    out = set()
+    for src in (str(prof.get("number", "") or ""),
+                str(prof.get("_key", "") or "")):
+        n = re.sub(r"[^0-9]", "", src)
+        if n:
+            out.add(n)
+    return out
+
+
+def _link_key_kind(prof, key=""):
+    k = str((prof or {}).get("kind", "") or "")
+    if k in ("mentor", "parent"):
+        return k
+    ks = str(key or "")
+    if ks.startswith("페런츠"):
+        return "parent"
+    if ks.startswith("멘토"):
+        return "mentor"
+    return "mentor"
+
+
+def _link_profile_by_num(profs, number):
+    """번호(멘토=멘티번호 / 페런츠=인가번호) → 프로필(멘토 우선).
+
+    [요구 2026-11-04] 표준 키가 'person:<대표번호>' 로 바뀌었으므로
+    person 키 → 옛 '멘토:' 키 → 옛 무접두어 키 순으로 찾는다.
+    """
+    n = re.sub(r"[^0-9]", "", str(number or ""))
+    if not n or not isinstance(profs, dict):
+        return {}
+    pk = _link_person_key(n)
+    for cand in (pk, _link_key("mentor", n), n):
+        if cand and isinstance(profs.get(cand), dict) and _link_key_nums(
+                profs.get(cand)):
+            return profs[cand]
+    # 전화번호/로그인ID/scoutNo 로도 같은 사람을 찾는다.
+    for _k, _v in profs.items():
+        if not isinstance(_v, dict):
+            continue
+        if n in {_clean_no(_v.get("phone")), _clean_no(_v.get("loginId")),
+                 _clean_no(_v.get("scoutNo")), _clean_no(_v.get("personKey"))}:
+            return _v
+    return {}
+
+
+def _link_profile_by_kind(profs, kind, number):
+    """종류 + 번호 → 프로필(해당 종류 우선, 없으면 무관 종류로 폴백).
+
+    [요구 2026-11-04] 'person:' 키 병합으로 한 사람이 한 프로필에
+    `kinds=[...]` 를 갖게 됐다. 그 경우 kinds 로 종류를 판정한다.
+    """
+    n = re.sub(r"[^0-9]", "", str(number or ""))
+    if not n or not isinstance(profs, dict):
+        return {}
+    k = "parent" if str(kind) == "parent" else "mentor"
+    # ① person 키 직접
+    pv = profs.get(_link_person_key(n))
+    if isinstance(pv, dict) and _link_key_nums(pv):
+        _ks = pv.get("kinds")
+        if isinstance(_ks, list) and _ks:
+            if k in [str(x) for x in _ks]:
+                return pv
+        elif _link_key_kind(pv, "") == k:
+            return pv
+    # ② 옛 종류별 키
+    mk = _link_key(k, n)
+    if isinstance(profs.get(mk), dict) and _link_key_nums(profs.get(mk)):
+        return profs[mk]
+    # ③ 사람 기준(전화/ID/scoutNo) — 종류가 맞을 때만
+    for _k2, _v in profs.items():
+        if not isinstance(_v, dict):
+            continue
+        if n not in {_clean_no(_v.get("phone")), _clean_no(_v.get("loginId")),
+                     _clean_no(_v.get("scoutNo")),
+                     _clean_no(_v.get("personKey"))}:
+            continue
+        _ks = _v.get("kinds")
+        if isinstance(_ks, list) and _ks:
+            if k in [str(x) for x in _ks]:
+                return _v
+        elif _link_key_kind(_v, str(_k2)) == k or _v.get("kind") == k:
+            return _v
+    # ④ 종류 무관 폴백(하위호환)
+    if isinstance(profs.get(n), dict) and _link_key_kind(profs.get(n), n) == k:
+        return profs[n]
+    return {}
+
+
+def _link_profile_migrate_keys(profs):
+    """구(무접두어) 저장키 → '멘토:<번호>' / '페런츠:<번호>' 복합키로 이관.
+
+    · 병합 정책: 같은 복합키가 이미 있으면 **필드가 더 채워진(비어있지 않은 값이
+      많은) 쪽**을 유지한다(덮어쓰기로 이름이 소실되는 것을 방지).
+    · 프로필에 'number'(접두어 제거)·'kind'·'_key'를 채워 매칭에 활용한다.
+    · 반환: (프로필, 변경여부)
+
+    ## [요구 2026-11-04] 개선 — **사람 기준(person) 키가 표준**
+      종전 저장키는 '종류:번호' 라서, 같은 사람이 멘토·페런츠 두 역할을 하면
+      (노현아 2229 사례) 키가 둘로 갈라졌고, 정작 그 사람의 전화번호로는
+      찾을 수 없었다. 이제 **한 사람 = 한 키('person:<대표번호>')** 로 합친다.
+        · 대표번호 = 전화번호(숫자) → 없으면 number → 없으면 기존 키 숫자
+        · 같은 사람의 옛 키(멘토:·페런츠:·무접두어)는 하나로 병합하고,
+          역할(kinds)은 목록으로 보존한다(정보 손실 없음).
+        · 대표번호가 없는 프로필만 옛 '종류:번호' 키를 유지한다.
+    """
+    if not isinstance(profs, dict):
+        return {}, False
+    out = {}
+    changed = False
+
+    def _score(x):
+        return sum(1 for kk in ("name", "phone", "league", "unit", "loginId",
+                                "receiverNo", "scoutNo", "inductedAt", "atasNo",
+                                "position", "activity", "trainingStatus")
+                   if str(x.get(kk, "") or "").strip())
+
+    def _merge(dst, src):
+        """dst 를 기준으로 src 의 빈 칸만 채운다(정보 손실 방지)."""
+        for kk, vv in src.items():
+            if kk in ("kinds", "_keys"):
+                continue
+            if kk not in dst or not str(dst.get(kk, "") or "").strip():
+                dst[kk] = vv
+        return dst
+
+    # ① 먼저 nk 별로 **모든 역할(kind)과 옛 키**를 모은다.
+    #    역할은 **키 출처**로 판정한다 — 프로필 dict 의 `kind` 필드는 병합
+    #    과정에서 한쪽 값만 남기 때문이다.
+    #    (실측: 현승용은 '멘토:2186'(멘토) + '페런츠:590'(페런츠) 두 역할을
+    #     동시에 갖는다. dict.kind 만 믿으면 한 역할이 사라진다.)
+    _all_kinds = {}
+    _all_keys = {}
+    _all_nums = {}
+    for k, v in profs.items():
+        if not isinstance(v, dict):
+            continue
+        ks = str(k)
+        if ks.startswith("person:"):
+            # 이미 새 키 — 역할은 kinds 필드에서 읽는다(이미 병합된 상태).
+            _kd0 = None
+            _ks0 = v.get("kinds")
+            _kdlist = [str(x) for x in _ks0] if isinstance(_ks0, list) else []
+        else:
+            _kd0 = _link_key_kind(v, k)
+            _kdlist = [_kd0] if _kd0 else []
+        _nm0 = re.sub(r"[^0-9]", "", str(v.get("number", "") or "") or
+                      ("" if ks.startswith("person:") else ks))
+        _cn0 = _clean_no(v.get("phone")) or _nm0
+        if not _cn0:
+            continue
+        _nk0 = _link_person_key(_cn0) or _link_key(_kd0, _nm0)
+        if not _nk0:
+            continue
+        _all_kinds.setdefault(_nk0, [])
+        for _x in _kdlist:
+            if _x and _x not in _all_kinds[_nk0]:
+                _all_kinds[_nk0].append(_x)
+        _all_keys.setdefault(_nk0, [])
+        if ks not in _all_keys[_nk0]:
+            _all_keys[_nk0].append(ks)
+        # 옛 키에 담긴 '상대 번호'(멘토=멘티번호 / 페런츠=자녀번호)도 보존한다.
+        _all_nums.setdefault(_nk0, [])
+        for _x in (_nm0, (None if ks.startswith("person:") else
+                          re.sub(r"[^0-9]", "", ks))):
+            if _x and _x not in _all_nums[_nk0]:
+                _all_nums[_nk0].append(_x)
+
+    for k, v in profs.items():
+        if not isinstance(v, dict):
+            continue
+        kind = _link_key_kind(v, k)
+        num = re.sub(r"[^0-9]", "", str(v.get("number", "") or "") or str(k))
+        ph = _clean_no(v.get("phone"))
+        canon = ph or num
+        if not canon:
+            continue
+        nk = _link_person_key(canon) or _link_key(kind, num)
+        p = dict(v)
+        p["number"] = num
+        p["kind"] = kind
+        p["personKey"] = canon
+        p["_key"] = nk
+        p["kinds"] = list(_all_kinds.get(nk) or ([kind] if kind else []))
+        p["_keys"] = list(_all_keys.get(nk) or [str(k)])
+        # 옛 키들의 '상대 번호'를 보존 — 역할별 대상이 여럿일 수 있다.
+        p["relationNumbers"] = list(_all_nums.get(nk) or ([num] if num else []))
+        if nk not in out:
+            out[nk] = p
+        else:
+            keep = out[nk]
+            if _score(p) > _score(keep):
+                out[nk] = _merge(p, keep)
+            else:
+                out[nk] = _merge(keep, p)
+            _rn = out[nk].get("relationNumbers") or []
+            for _x in (p.get("relationNumbers") or []):
+                if _x and _x not in _rn:
+                    _rn.append(_x)
+            out[nk]["relationNumbers"] = _rn
+            if not str(out[nk].get("name", "") or "").strip():
+                out[nk]["name"] = p.get("name", "")
+        if str(k) != nk:
+            changed = True
+    if list(out.keys()) != list(profs.keys()):
+        changed = True
+    return out, changed
 
 
 def _set_member_link(ident, status, note=""):
-    """멘토·페런츠 연결 승인 상태 변경(단일). 반환: (ok, name)"""
+    """멘토·페런츠 연결 승인 상태 변경(단일). 반환: (ok, name)
+      status: 'pending' | 'approved' | 'held' | 'rejected'
+    """
     d = re.sub(r"[^0-9]", "", str(ident or ""))
-    if not d or status not in ("pending", "approved", "held"):
+    if not d or status not in ("pending", "approved", "held", "rejected"):
         return False, ""
     with _MEMBER_WRITE_LOCK:
         members = _ev_members()
@@ -1370,8 +2773,259 @@ def _link_mark_request(mem, prev, default_source="direct"):
         mem["linkRequestedAt"] = prev_at or _now_stamp()
 
 
+# ==========================================================================
+#  [요구] 이미 가입된 비인가회원의 정보 수정요청(note)
+#   "이미 가입된 비인가회원의 경우 본인+관리자+마스터 이외에는 페이지 정보 수정은
+#    불가함. 대신 정보 수정 요청을 관리자 및 마스터에게 요청할 수 있음 → 메모를
+#    보낼 수 있고, 그 메모는 통합승인창에 노출해서 관리자 및 마스터가 확인 및
+#    수정할 수 있도록 함"
+#   → 회원 dict 의 링크(멘토·페런츠·멘티·자녀대원)를 수정(삭제/교체)하는 대신
+#     '수정요청 메모'를 남긴다. 관리자·마스터가 처리(승인/보류/거절)하면 해제된다.
+#   저장 필드: linkFixNote(내용) · linkFixRequestedAt(요청시각) ·
+#              linkFixRequestedBy(요청자 라벨) · linkFixScope(대상 요약)
+# ==========================================================================
+def _member_note_fix(ident, note, scope="", by=""):
+    """회원(또는 link_profiles 항목)에 수정요청 메모를 기록한다. 반환: (ok, name).
+
+    · ident 가 회원(인가자·비인가)이면 회원 dict 에 저장한다.
+    · 회원이 아니고 link_profiles 항목이면 그 프로필에 저장한다.
+    · 항상 통합승인 큐('linkfix')에도 요청을 올려 관리자·마스터가 확인할 수 있게 한다.
+    """
+    note = str(note or "").strip()[:1000]
+    if not note:
+        return False, ""
+    d = _clean_no(ident)
+    who = str(by or "").strip()
+    stamp = _now_stamp()
+    name = ""
+    ok = False
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            mn = _clean_no(m.get("number"))
+            mp = _clean_no(m.get("accessPhone") or m.get("phone") or "")
+            if d and d in (mn, mp):
+                m["linkFixNote"] = note
+                m["linkFixRequestedAt"] = stamp
+                m["linkFixRequestedBy"] = who
+                m["linkFixScope"] = str(scope or "").strip()[:200]
+                m["updatedAt"] = int(time.time() * 1000)
+                members[i] = m
+                _save_json(DB_FILE, members)
+                _touch_meta({"updatedBy": "link-note"})
+                name = str(m.get("name", ""))
+                ok = True
+                break
+    if not ok:
+        # 회원이 아니면 link_profiles 항목에 저장(멘토·페런츠 인적사항).
+        try:
+            profs = _link_profiles_load()
+            for k, v in profs.items():
+                if not isinstance(v, dict):
+                    continue
+                if d and _clean_no(v.get("number")) == d:
+                    v["fixNote"] = note
+                    v["fixRequestedAt"] = stamp
+                    v["fixRequestedBy"] = who
+                    v["updatedAt"] = _now_stamp()
+                    name = str(v.get("name", ""))
+                    ok = True
+                    break
+            if ok:
+                with LOCK:
+                    _link_profiles_save(profs)
+        except Exception as _e:
+            print("note-fix profile fail", _e)
+    # 통합승인 큐('linkfix')에도 요청을 올린다 — 관리자·마스터 확인용.
+    if ok:
+        try:
+            _add_member_request({
+                "ident": d,
+                "number": d if d.isdigit() else "",
+                "name": name,
+                "type": "linkfix",
+                "note": note,
+                "scope": str(scope or "").strip()[:200],
+                "by": who or "본인",
+            })
+        except Exception as _e:
+            print("note-fix request fail", _e)
+    return ok, name
+
+
+def _link_note_clear(ident, mid=""):
+    """수정요청 메모 해제 — 관리자·마스터가 처리(승인/보류/거절)했거나
+    연결을 실제 수정했을 때 호출한다. 반환: 해제 여부.
+      · ident : 회원 인가번호/전화번호(숫자만) 또는 회원 id
+      · mid   : 회원 id(비인가처럼 번호가 없는 경우 매칭용)
+
+    ── [버그 수정 2026-10-26] 승인해도 큐에 남던 문제(2차 방어) ─────────────
+    ## 무엇이 문제였나
+      비인가회원(예: 노본)은 인가번호가 **빈 문자열**이다. 호출부가 회원 id 만
+      넘기면 `d = _clean_no(id)` 가 '' 이 되고, 아래 루프의
+      `d in (mn, mp)` 는 `'' in ('', '01033657480')` → **True** 가 되어
+      엉뚱한 회원(번호 없는 첫 회원)에 걸릴 위험이 있고, 반대로 mid 를
+      안 넘기면 아무도 매칭되지 않아 메모가 남는다.
+
+    ## 수정
+      ① d 가 비어 있으면 **번호 기반 매칭을 아예 하지 않는다**('' 오매칭 방지).
+      ② ident 문자열을 id 로도 직접 비교한다(호출부가 mid 를 빠뜨려도 동작).
+      ③ 매칭 후에는 (d 또는 id 로 확정된) 회원에게서 메모를 지운다.
+    """
+    d = _clean_no(ident)
+    m_id = str(mid or "").strip()
+    raw_ident = str(ident or "").strip()
+    cleared = False
+    with _MEMBER_WRITE_LOCK:
+        members = _ev_members()
+        for i, m in enumerate(members):
+            mn = _clean_no(m.get("number"))
+            mp = _clean_no(m.get("accessPhone") or m.get("phone") or "")
+            mid = str(m.get("id", ""))
+            # ① d 가 있을 때만 번호/전화 대조 — '' 로 전 회원에 걸리는 것을 막는다.
+            hit = bool(d and (d == mn or d == mp))
+            # ② id 매칭 (mid 우선, 없으면 ident 문자열 그대로)
+            if not hit:
+                hit = ((m_id and m_id == mid) or
+                       (raw_ident and raw_ident == mid) or
+                       (raw_ident and raw_ident == str(m.get("number", ""))))
+            if hit:
+                if any(k in m for k in ("linkFixNote", "linkFixRequestedAt")):
+                    for k in ("linkFixNote", "linkFixRequestedAt",
+                              "linkFixRequestedBy", "linkFixScope"):
+                        m.pop(k, None)
+                    m["updatedAt"] = int(time.time() * 1000)
+                    members[i] = m
+                    _save_json(DB_FILE, members)
+                    cleared = True
+                # 대기중 linkfix 요청 정리용 식별자 확보
+                if not d and mn:
+                    d = mn
+                break
+    if not cleared:
+        try:
+            profs = _link_profiles_load()
+            for k, v in profs.items():
+                if isinstance(v, dict) and d and _clean_no(v.get("number")) == d:
+                    if any(x in v for x in ("fixNote", "fixRequestedAt")):
+                        for x in ("fixNote", "fixRequestedAt", "fixRequestedBy"):
+                            v.pop(x, None)
+                        v["updatedAt"] = _now_stamp()
+                        with LOCK:
+                            _link_profiles_save(profs)
+                        cleared = True
+                    break
+        except Exception:
+            pass
+    # 대기중인 linkfix 요청도 정리한다(ident/번호/id 어느 것으로든).
+    try:
+        with _MEMBER_WRITE_LOCK:
+            doc = _load_member_requests()
+            items = doc.get("items") or []
+            keys = {x for x in (d, _clean_no(ident), m_id) if x}
+            keep = [it for it in items
+                    if not (str(it.get("type", "")) == "linkfix"
+                            and str(it.get("status", "")) == "pending"
+                            and (str(it.get("id", "")) in keys
+                                 or _clean_no(it.get("ident")) in keys
+                                 or str(it.get("memberId", "")) in keys))]
+            if len(keep) != len(items):
+                doc["items"] = keep
+                _save_member_requests(doc)
+                cleared = True
+    except Exception:
+        pass
+    return cleared
+
+
 def _clean_no(x):
     return re.sub(r"[^0-9]", "", str(x or ""))
+
+
+# ==========================================================================
+#  [번호체계 2026-10-26] 은하스카우트 = **G + 번호** (G = Galaxy)
+#
+#  ## 요구 (사용자, 원문)
+#   "은하스카우트 사진에 범스카우트 동일인가번호의 사진이 표시되고 있음"
+#   "은하와 범체계가 중복되어 오류가 많이 나옴"
+#   "은하스카우트는 1~165와 같은 단순 번호를 G1~G165로 알파벳과 합친 넘버
+#    체계로 모두 다시 바꾸면 좋겠음 / G는 Galaxy(은하)의 약자임"
+#   "동일한 오류가 발생되는 상황이 너무 답답함"
+#
+#  ## 왜 사진이 섞였나 (실측 — 프록시 코드)
+#   사진 저장 경로가 `/photos/<번호>.jpg` 였고, 조회는
+#     `no = re.sub(r"[^0-9]", "", p.split("/")[-1])`
+#   로 **문자까지 전부 지웠다**. 그래서 은하 43호 요청이 범 43호로 깎였다.
+#   게다가 `_corps_of_number()` 는 **범을 먼저** 확인하므로 '43' 은 언제나
+#   범 43호였다. 은하 165명 중 범 1~165호와 겹치는 번호는 **전부** 오염된다.
+#   (사진 16장이 모두 숫자 파일명 → 은하 415·417·75 등도 남의 사진을 받음)
+#
+#  ## 해결의 핵심 — "번호를 깎지 않는다"
+#   번호체계를 G접두어로 바꾸는 것과 **동시에**, 번호를 숫자만 남겨 정규화하던
+#   코드가 은하 번호를 깎지 않게 해야 한다. 접두어만 바꾸고 정규화를 그대로
+#   두면 G43 → 43 이 되어 **문제가 그대로 재현**된다.
+#   따라서 아래 두 함수를 표준으로 삼는다.
+#     · _ck(x)    : 접두어를 보존한 '정규 키' (범 '43' / 은하 'G43')
+#     · _ck_num(x): 숫자부만 ('43') — 범 전용 문맥에서만 쓴다
+# ==========================================================================
+EUNHA_PREFIX = "G"
+
+
+def _ck(x):
+    """번호 정규 키 — **은하 접두어(G)를 보존**한다.
+
+    · 'G43' / 'g43' / 'G-43' / 'G 43' / '은하43' / '갤럭시43' → 'G43'
+    · '43'                                                  → '43'
+    · 'tiger43'                                             → '43'
+    · 빈 값 / 숫자 없음                                      → ''
+
+    ## 왜 필요한가
+      은하와 범은 **번호 공간이 겹친다**(둘 다 1~165). 접두어를 지우면 두 사람이
+      같은 키가 되어 사진·재무·세션·로그가 서로 뒤섞인다.
+      접두어를 보존하는 이 함수가 '진짜 신원'의 기준이다.
+    """
+    s = str(x or "").strip()
+    if not s:
+        return ""
+    low = s.lower()
+    # 은하 표기 변형 — 한글/영문/기호 무엇이 와도 G 로 통일.
+    _eunha_marks = ("은하", "갤럭시", "galaxy", "eunha")
+    _is_eunha = (EUNHA_PREFIX.lower() in low[:1] and low[:1].isalpha()) \
+        and low[:1] == EUNHA_PREFIX.lower()
+    if not _is_eunha:
+        for mk in _eunha_marks:
+            if mk in low:
+                _is_eunha = True
+                break
+    d = re.sub(r"[^0-9]", "", s)
+    if not d:
+        return ""
+    return (EUNHA_PREFIX + d) if _is_eunha else d
+
+
+def _ck_num(x):
+    """번호의 **숫자부만** — 범스카우트 전용 문맥(레거시 저장소 키)에서만 사용.
+
+    ⚠️ 은하 대상을 이 함수로 정규화하면 G43 → 43 이 되어 **범 43호와 충돌**한다.
+       은하가 섞일 수 있는 경로에서는 반드시 `_ck()` 를 쓴다.
+    """
+    return re.sub(r"[^0-9]", "", str(x or ""))
+
+
+def _ck_is_eunha(x):
+    """이 번호가 은하스카우트 번호인지 (G 접두어 보유 여부)."""
+    return _ck(x).startswith(EUNHA_PREFIX)
+
+
+def _ck_photo_name(no):
+    """사진 파일 기본명 — 은하/범을 **파일명에서도 구분**한다.
+
+    범 43호   → '43'
+    은하 43호 → 'G43'
+    (사진 폴더에는 두 파일이 공존할 수 있고, 서로 덮어쓰지 않는다)
+    """
+    return _ck(no)
+
 
 
 def _norm_codes(v):
@@ -1394,6 +3048,349 @@ def _is_tsak_credential(no):
 AUTO_LINK_SOURCE = "auto"
 
 
+# ==========================================================================
+#  [링크 표준 2026-11-04] 멘토·페런츠·멘티·자녀대원 연결의 **단일 진실 기준**
+#
+#  ## 종전 구조의 결함 (운영 DB 실측)
+#   ① 코드 한 칸에 **여러 뜻**이 섞여 있었다.
+#        멘토 칸  : 값이 '멘티의 링크프로필 번호'였다 → 멘토 본인 코드가 아님
+#        페런츠 칸: 값이 '자녀 인가번호'였다 → 부모 본인 코드가 아님
+#      그래서 "내 멘토는 누구인가"를 코드 하나로 답할 수 없었고,
+#      학부모가 자녀 둘을 등록하면 mentors 에 자녀1·자녀2 가 들어가
+#      "내가 자녀의 멘토"처럼 보이는 모순이 생겼다.
+#   ② 역방향 연동이 **인가자에게만** 동작했다(`c in cred_no` 조건).
+#      그래서 비인가 멘토(선영진·박인규·노본)는 mentees 를 영영 받지 못했다.
+#   ③ link_profiles 키가 '종류:자녀번호' 라서, 멘토와 페런츠가 같은 번호를
+#      쓰면(노현아 2229) **같은 사람**이 두 키로 갈라지고, 정작 그 사람의
+#      전화번호로는 찾을 수 없었다.
+#   ④ 자기참조(415·417·590·1051·2229)를 막을 기준이 '번호 문자열 비교'뿐이라
+#      전화번호로 저장된 값은 통과해 버렸다(양다솜 mentors=['1346'] 사고).
+#
+#  ## 새 기준 — 이 3개가 전부
+#     · **인물(person)**: 사람 한 명.
+#         기준키(canon) = 대표 전화번호(숫자). 없으면 인가번호.
+#     · **인물 코드(code)**: 그 사람을 가리키는 표기.
+#         전화번호 · 인가번호 · 로그인ID · 인가자 scoutNo 를 **모두 같은
+#         사람으로 해석**한다(색인 하나로 통일).
+#     · **관계(relation)**: 값은 반드시 **상대 인물의 코드**로 저장한다.
+#         인가자        → 인가번호
+#         일반회원·비인가 → 전화번호(= 그 사람의 로그인 ID)
+#       ⇒ 화면·통계·승인이 같은 키를 보게 되고, 자기참조는
+#          'canon 비교'로 원천 차단된다(문자열 비교가 아니라 사람 비교).
+#
+#  ## link_profiles 키
+#     'person:<번호>' 를 표준으로 쓰되, 구 키('멘토:<번호>'/'페런츠:<번호>'/
+#     무접두어)는 **그대로 읽는다**(조회 폴백 + 기동 시 이관). 데이터 손실 없음.
+# ==========================================================================
+
+_LINK_PERSON_KEY_PREFIX = "person"
+
+
+def _link_person_key(canon):
+    """인물 기준키(canon) → link_profiles 표준 저장키 'person:<번호>'."""
+    c = _clean_no(canon)
+    if not c:
+        return ""
+    return "%s:%s" % (_LINK_PERSON_KEY_PREFIX, c)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  [성능 수정 turn 78] 인물 색인 **메모화**
+#
+#  ## 증상 (실측)
+#    /api/health              139 B   3.98 / 6.92 / 7.42 초
+#    /api/meta                145 B   4.28 / 5.04 / 6.72 초
+#    /api/approval/pending     39 B   4.73 / 6.57 / 6.93 초
+#    /api/members           7.6 MB    11 ~ 22 초
+#    스레드 168개 · CPU 102%(1코어 포화) · RSS 1.1 GB
+#    → **139바이트 응답에 7초**. 크기 문제가 아니라 CPU 문제였다.
+#
+#  ## 원인 — O(n²)
+#    `_link_pending_members()` 는 **회원 한 명마다** `_link_person_index()`
+#    를 호출한다.
+#        for m in _ev_members():           # 회원 2,409명
+#            _pdx = _link_person_index()   # ← 매번 전체 색인 재생성
+#    게다가 `_link_member_entry()` → `_link_enrich_codes()` 가 멘토/페런츠/
+#    멘티/자녀 **4목록마다** 또 호출한다. 회원 1명당 4~8회.
+#    색인 1회 비용이 회원 수에 비례하므로 전체는 O(n²) ≈ 580만 회 반복.
+#    요청 스레드가 GIL 을 오래 붙잡아 **모든** 요청이 줄을 섰다.
+#
+#  ## 무효화 — 3중 안전장치
+#    1) 객체 동일성: `_load_json` 은 TTL 내 **같은 객체**를 돌려주고,
+#       `_save_json` 후에는 **새 객체**가 된다.
+#    2) `_save_json` 명시적 무효화: DB·link_profiles 저장 시 캐시를 비운다.
+#    3) `_link_reconcile_apply` 무효화: 이 함수는 `_ev_members()` 를
+#       **제자리에서(in-place)** 수정하므로(객체 id 가 그대로다) 반드시
+#       명시적으로 비워야 한다. 저장하지 않는 save=False 경로도 있다.
+#
+#  ## 동시성
+#    생성이 오래 걸리므로 락을 잡고 만들지 않는다. 대신 "만드는 중"인
+#    키를 기록해 두고, 그 사이 다른 요청은 **이전 캐시본**을 쓴다.
+#    (경쟁 상태로 같은 색인을 수십 번 다시 만드는 낭비만 막는 장치)
+# ══════════════════════════════════════════════════════════════════
+_LPI_CACHE = {"key": None, "idx": None}     # 마지막 성공 결과
+_LPI_INFLIGHT = {}                          # key -> True (생성 중 표시)
+_LPI_LOCK = threading.Lock()
+
+
+def _lpi_invalidate(_why=""):
+    """인물 색인 캐시 무효화 — 데이터가 바뀌었을 때 호출한다."""
+    with _LPI_LOCK:
+        _LPI_CACHE["key"] = None
+        _LPI_CACHE["idx"] = None
+        _LPI_INFLIGHT.clear()
+
+
+def _lpi_peek(key):
+    """캐시 적중이면 색인을, 아니면 None. (락은 아주 짧게만 잡는다)"""
+    with _LPI_LOCK:
+        if _LPI_CACHE["key"] == key and _LPI_CACHE["idx"] is not None:
+            return _LPI_CACHE["idx"]
+    return None
+
+
+def _link_person_index():
+    """인물 색인 — **캐시된 결과**를 돌려준다. 자세한 배경은 위 주석 참고.
+
+    반환 dict:
+      persons : [ {canon, name, phone, number, loginId, isRegular, memberId} ]
+      alias   : { 코드(숫자) → canon }
+      byCanon : { canon → person }
+    """
+    members = _ev_members()
+    if not isinstance(members, list):
+        members = []
+    try:
+        profs = _link_profiles_load()
+    except Exception:
+        profs = {}
+    if not isinstance(profs, dict):
+        profs = {}
+
+    # ── 캐시 키 ───────────────────────────────────────────────────────
+    #  id+len  : `_load_json` 이 돌려준 객체가 바뀌면 즉시 무효(가장 흔한 경우)
+    #  세대번호: `_save_json` 은 **캐시에 넣은 객체와 같은 객체**를 다시
+    #            넘겨받는 경우가 있다(호출부가 `_ev_members()` 결과를 제자리
+    #            수정한 뒤 그대로 저장). 그러면 id 도 len 도 그대로라
+    #            id 만으로는 변경을 감지하지 못한다.
+    #            `_save_json` 은 쓰기 **전에** `_json_gen_bump(path)` 를 하므로
+    #            세대번호를 키에 넣으면 저장을 100% 감지한다.
+    try:
+        _gen_db = _json_gen_get(DB_FILE)
+        _gen_pf = _json_gen_get(_link_profiles_file())
+    except Exception:
+        _gen_db = _gen_pf = 0
+    key = (id(members), len(members), id(profs), len(profs),
+           _gen_db, _gen_pf)
+
+    hit = _lpi_peek(key)
+    if hit is not None:
+        return hit
+
+    # 다른 스레드가 같은 키를 이미 만들고 있으면 **이전 캐시본**으로 응답한다.
+    #  (없으면 어쩔 수 없이 직접 만든다 — 최초 1회뿐)
+    with _LPI_LOCK:
+        if _LPI_INFLIGHT.get(key):
+            prev = _LPI_CACHE["idx"]
+            if prev is not None:
+                return prev
+        else:
+            _LPI_INFLIGHT[key] = True
+
+    try:
+        idx = _link_person_index_uncached(members, profs)
+    finally:
+        with _LPI_LOCK:
+            _LPI_INFLIGHT.pop(key, None)
+
+    with _LPI_LOCK:
+        _LPI_CACHE["key"] = key
+        _LPI_CACHE["idx"] = idx
+    return idx
+
+
+def _link_person_index_uncached(members, profs):
+    """인물 색인 실체 — `_link_person_index()` 가 캐시를 붙여 호출한다.
+
+    ⚠️ 여기로 들어오는 `members`/`profs` 는 **읽기 전용**으로 다룬다.
+       (제자리 수정이 필요하면 호출부에서 사본을 만들어 넘긴다)
+    """
+    if not isinstance(members, list):
+        members = []
+    if not isinstance(profs, dict):
+        profs = {}
+
+    persons = []
+    alias = {}
+    by_canon = {}
+
+    def _add_codes(p, codes):
+        for c in codes:
+            d = _clean_no(c)
+            if d and d not in alias:
+                alias[d] = p["canon"]
+
+    # ---- ⓪ [버그수정 2026-11-04 / turn 50] 인가자 카드 ↔ 일반회원 카드 중복 신원 ----
+    #   같은 사람이 `인가자 카드(#222)` 와 `일반회원 카드(#900001)` 두 장을 가진
+    #   경우가 있다(김종선 실사고). 인가자 카드에 전화번호가 없어서 행사 참석 시
+    #   별도 일반회원 계정이 만들어진 것이 원인이다.
+    #
+    #   그런데 색인은 인가자의 canon 을 **인가번호**로 잡기 때문에, 두 카드가
+    #   같은 전화번호를 갖고 있어도 서로 다른 사람으로 갈라졌다. 그래서
+    #   `mentors=['900001']` 같은 임시 연결이 정본(#222)으로 되돌아오지 못했다.
+    #
+    #   해결: 전화번호가 같은 인가자 카드를 먼저 찾아 두고, 일반회원 카드는
+    #   **별도 인물로 세우지 않고** 그 인가자 인물의 별칭(alias)으로 흡수한다.
+    #   (인가자 카드가 정본 — 이름·소속·자격의 원천이기 때문)
+    _cred_by_phone = {}
+    for m in members:
+        if not isinstance(m, dict) or m.get("isRegular"):
+            continue
+        _no = _clean_no(m.get("number"))
+        _ph = _clean_no(m.get("accessPhone") or m.get("phone"))
+        # ⚠ 값은 **인가번호**를 저장한다. byCanon 의 키가 전화번호가 아니라
+        #   인가번호이기 때문이다(인가자의 canon = 인가번호).
+        if _no and _ph and _ph not in _cred_by_phone:
+            _cred_by_phone[_ph] = _no
+
+    # ---- ① 회원 카드(인가자·일반회원) ----
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        no = _clean_no(m.get("number"))
+        ph = _clean_no(m.get("accessPhone") or m.get("phone"))
+        is_reg = bool(m.get("isRegular"))
+        # 인가자는 인가번호가 정본, 일반회원은 전화번호가 정본.
+        canon = (ph if is_reg else (no or ph))
+        if not canon:
+            continue
+        # [turn 50] 일반회원 카드가 인가자 카드와 **같은 전화번호**면
+        #  별도 인물을 만들지 않고 인가자 인물의 별칭으로만 등록한다.
+        #  ⚠ 인가자의 canon 은 **인가번호**이므로 byCanon 키도 인가번호다.
+        if is_reg and ph and ph in _cred_by_phone:
+            _cred_no = _cred_by_phone[ph]
+            _cp = by_canon.get(_cred_no)
+            if _cp is not None:
+                _add_codes(_cp, [no, ph, m.get("loginId"),
+                                 m.get("id") and _clean_no(m.get("id"))])
+                continue
+        p = {
+            "canon": canon,
+            "name": str(m.get("name", "") or ""),
+            "phone": ph,
+            "number": no,
+            "loginId": str(m.get("loginId", "") or (ph if is_reg else
+                                                    (no and ("tiger" + no)) or "")),
+            "isRegular": is_reg,
+            "memberId": str(m.get("id", "") or ""),
+            "hasMember": True,
+        }
+        prev = by_canon.get(canon)
+        if prev is not None:
+            # 같은 사람이 두 카드로 있는 경우(중복 신원) — 인가자 카드를 우선.
+            if prev.get("isRegular") and not is_reg:
+                by_canon[canon] = p
+                persons[persons.index(prev)] = p
+            _add_codes(by_canon[canon], [no, ph, m.get("loginId"),
+                                         m.get("id") and _clean_no(m.get("id"))])
+            continue
+        by_canon[canon] = p
+        persons.append(p)
+        _add_codes(p, [no, ph, m.get("loginId"),
+                       m.get("id") and _clean_no(m.get("id"))])
+        # 'tiger<번호>' 로그인 표기도 같은 사람으로 해석.
+        if no and not is_reg:
+            _add_codes(p, ["tiger" + no])
+
+    # ---- ② 링크프로필(비인가 멘토·페런츠, 인가자의 인적사항) ----
+    if isinstance(profs, dict):
+        for k, v in profs.items():
+            if not isinstance(v, dict):
+                continue
+            ph = _clean_no(v.get("phone"))
+            no = _clean_no(v.get("number"))
+            sc = _clean_no(v.get("scoutNo"))
+            lid = _clean_no(v.get("loginId"))
+            canon = ph or no
+            if not canon:
+                continue
+            p = by_canon.get(canon)
+            if p is None:
+                p = {
+                    "canon": canon,
+                    "name": str(v.get("name", "") or ""),
+                    "phone": ph,
+                    "number": no,
+                    "loginId": str(v.get("loginId", "") or ph),
+                    "isRegular": not (bool(v.get("isScouter")) or bool(sc)),
+                    "memberId": "",
+                    "hasMember": False,
+                }
+                by_canon[canon] = p
+                persons.append(p)
+            else:
+                if not p.get("name"):
+                    p["name"] = str(v.get("name", "") or "")
+                p["hasProfile"] = True
+            _add_codes(p, [ph, no, sc, lid, v.get("loginId")])
+            p["hasProfile"] = True
+
+    # canon 자체도 코드로 등록(값이 canon 으로 저장되는 경우 대비).
+    for p in persons:
+        alias.setdefault(p["canon"], p["canon"])
+
+    return {"persons": persons, "alias": alias, "byCanon": by_canon}
+
+
+def _link_canon_of(persons_idx, ident):
+    """코드(전화·인가번호·로그인ID·scoutNo) → 인물 기준키. 못 찾으면 ''."""
+    d = _clean_no(ident)
+    if not d or not isinstance(persons_idx, dict):
+        return ""
+    return str((persons_idx.get("alias") or {}).get(d, "") or "")
+
+
+def _link_person_of(persons_idx, ident):
+    """코드 → 인물 dict(없으면 None)."""
+    c = _link_canon_of(persons_idx, ident)
+    if not c:
+        return None
+    return ((persons_idx or {}).get("byCanon") or {}).get(c)
+
+
+def _link_canon_code(persons_idx, ident):
+    """코드 → 그 인물을 나타내는 **표준 저장코드**.
+
+      · 인가자        → 인가번호
+      · 일반회원·비인가 → 전화번호(= 로그인 ID)
+    못 찾으면 입력값의 숫자만 돌려준다(정보 손실 방지).
+    """
+    p = _link_person_of(persons_idx, ident)
+    if not isinstance(p, dict):
+        return _clean_no(ident)
+    if p.get("isRegular"):
+        return _clean_no(p.get("phone")) or _clean_no(ident)
+    return _clean_no(p.get("number")) or _clean_no(p.get("phone")) or _clean_no(ident)
+
+
+def _link_normalize_codes(codes, persons_idx, self_ident=""):
+    """관계 코드 목록을 **표준 인물코드**로 정규화한다.
+
+      · 자기 자신은 제외(사람 비교 — 문자열 비교가 아니다)
+      · 중복 제거, 순서 보존
+    """
+    self_canon = _link_canon_of(persons_idx, self_ident) or _clean_no(self_ident)
+    out = []
+    for c in (codes or []):
+        canon = _link_canon_of(persons_idx, c) or _clean_no(c)
+        if not canon or canon == self_canon:
+            continue
+        code = _link_canon_code(persons_idx, c)
+        if code and code not in out:
+            out.append(code)
+    return out
+
+
 def _link_reconcile_apply(members, *, save=True):
     """멘토/페런츠 ↔ 멘티/자녀대원 **양방향 연동**을 강제 정합화한다(요구).
 
@@ -1408,6 +3405,21 @@ def _link_reconcile_apply(members, *, save=True):
     역방향으로 막 추가된 연결은 그 회원을 'pending'(승인요청)으로 두어
     통합승인관리(멘토·페런츠 연결 큐)에서 관리자·마스터가 승인하게 한다.
     반환: (변경건수, 변경 회원 번호목록)
+
+    ## 🐞 2026-11-02 (build #571) — **반대 방향 2개가 없었다**
+    보고(원문): "현승용 개인카드에서 현지환을 멘티로 등록했는데도 현지환
+    개인카드에 연동되어 현승용이 멘토로 등록되지 않고 있음, 같은 검증을
+    페런츠에서도 해봐"
+
+    실측(운영 DB 2,242명):
+        현승용 #590  mentees=['2186']   ← 대장이 대원을 등록함
+        현지환 #2186 mentors=[]         ← 대원 쪽에 대장이 없음 🐞
+
+    위 3개 규칙은 모두 **"대원이 대장/부모를 등록"** 하는 방향만 처리한다.
+    대장이 대원을 등록하는 방향(mentees→mentors, children→parents)이
+    아예 없어서 반쪽 상태가 만들어졌다. 두 규칙을 추가한다.
+      · 대장 A 의 mentees 에 대원 B → B.mentors 에 A
+      · 부모 A 의 children 에 자녀 C → C.parents 에 A
     """
     by_no = {}
     for i, m in enumerate(members):
@@ -1420,24 +3432,142 @@ def _link_reconcile_apply(members, *, save=True):
         n = _clean_no(m.get("number", ""))
         if n and m.get("isRegular") is not True:
             cred_no.add(n)
+    # [요구 2026-11-04] **인물 색인** — 인가자에게만 연동하던 결함을 없앤다.
+    #  종전에는 `c in cred_no` 조건 때문에 비인가 멘토(선영진·박인규·노본)의
+    #  mentees 가 영영 채워지지 않았다. 이제 "그 코드가 **어떤 사람**을
+    #  가리키는가"로 판정하고, 카드가 없는 비인가자에게도 반대편을 채운다.
+    try:
+        _pdx = _link_person_index()
+    except Exception as _e:
+        print("[link] 인물 색인 생성 실패(reconcile): %s" % _e)
+        _pdx = {"persons": [], "alias": {}, "byCanon": {}}
+    _alias = _pdx.get("alias") or {}
+    _bycanon = _pdx.get("byCanon") or {}
+    # canon → members 인덱스 (카드가 없는 사람은 None)
+    _canon_to_idx = {}
+    for i, m in enumerate(members):
+        no = _clean_no(m.get("number", ""))
+        ph = _clean_no(m.get("accessPhone") or m.get("phone") or "")
+        is_reg = bool(m.get("isRegular"))
+        canon = ph if is_reg else (no or ph)
+        if canon:
+            _canon_to_idx.setdefault(canon, i)
+
+    def _resolve(c):
+        """코드 → (canon, members index or None). 못 찾으면 ('', None)."""
+        d = _clean_no(c)
+        if not d:
+            return "", None
+        ca = str(_alias.get(d, "") or "")
+        if not ca:
+            return "", None
+        return ca, _canon_to_idx.get(ca)
     # (대상회원번호, 필드, 값) 로 반영할 역방향 연결 수집.
     to_add = {}
     for m in members:
         self_no = _clean_no(m.get("number", ""))
         if not self_no:
             continue
-        # ① 자녀·멘티가 등록한 '부모/멘토' → 그 인가자 페이지의 children/mentees.
+        # ① 자녀·멘티가 등록한 '부모/멘토' → 그 사람의 children/mentees.
+        #   ── 자기참조(self-loop) 방지: 문자열이 아니라 **사람**으로 비교한다
+        #      (양다솜 mentors=['1346'] 처럼 전화번호로 저장된 값도 차단).
+        _self_ph = _clean_no(m.get("accessPhone") or m.get("phone") or "")
+        _self_canon = _self_ph if m.get("isRegular") else (self_no or _self_ph)
         for c in _norm_codes(m.get("parents")):
-            if c in cred_no:
-                to_add.setdefault((c, "children"), set()).add(self_no)
+            ca, ti = _resolve(c)
+            if ca and ti is not None and ca != _self_canon:
+                to_add.setdefault((ti, "children"), set()).add(_self_canon)
         for c in _norm_codes(m.get("mentors")):
-            if c in cred_no:
-                to_add.setdefault((c, "mentees"), set()).add(self_no)
+            ca, ti = _resolve(c)
+            if ca and ti is not None and ca != _self_canon:
+                to_add.setdefault((ti, "mentees"), set()).add(_self_canon)
+        # ② (2026-11-02 추가) **반대 방향** — 대장·부모가 대원·자녀를 등록한 경우.
+        #   · 대장 A.mentees 에 B → B.mentors 에 A
+        #   · 부모 A.children 에 C → C.parents 에 A
+        #   이 방향이 없어서 "대장 카드에는 대원이 보이는데 대원 카드에는
+        #   대장이 없는" 반쪽 상태가 생겼다(현승용 #590 / 현지환 #2186).
+        #   [요구 2026-11-04] 이제 대장이 **비인가자**여도 동작한다.
+        for c in _norm_codes(m.get("mentees")):
+            ca, _ = _resolve(c)
+            if ca and ca != _self_canon:
+                to_add.setdefault((c, "mentors"), set()).add(self_no)
+        for c in _norm_codes(m.get("children")):
+            ca, _ = _resolve(c)
+            if ca and ca != _self_canon:
+                to_add.setdefault((c, "parents"), set()).add(self_no)
+    # ①-b 기존 데이터의 자기참조 정리 — 자신의 네 관계 필드 어디에도
+    #   **자기 자신**이 있으면 제거한다(과거 reconcile 로 잘못 추가된 값 치유).
+    #   [요구 2026-11-04] 종전에는 mentees/children 만 지웠기 때문에
+    #   멘토 연결 창에 자기 번호가 남아 승인 요청이 계속 되살아났다
+    #   (차동엽 #1051 사고). 이제 네 필드를 모두 본다.
+    changed_selfclean = False
+    for i, m in enumerate(members):
+        self_no = _clean_no(m.get("number", ""))
+        if not self_no:
+            continue
+        _dirty = False
+        for field in ("mentors", "parents", "mentees", "children"):
+            cur = m.get(field)
+            if isinstance(cur, list):
+                _kept = [x for x in cur if _clean_no(x) != self_no]
+                if len(_kept) != len(cur):
+                    m[field] = _kept
+                    _dirty = True
+        if _dirty:
+            m["updatedAt"] = int(datetime.datetime.now().timestamp() * 1000)
+            members[i] = m
+            changed_selfclean = True
     changed = 0
     touched = set()
+    changed_nocard = False
     for (tno, field), srcs in to_add.items():
-        ti = by_no.get(tno)
+        ti = tno if isinstance(tno, int) else by_no.get(_clean_no(tno))
         if ti is None:
+            # [요구 2026-11-04] **카드가 없는 비인가 멘토·페런츠**도 기록한다.
+            #  종전에는 members 카드가 없으면 그냥 버려서, 인적사항만 등록한
+            #  멘토의 mentees 가 영영 비어 있었다(선영진 사고의 구조적 원인).
+            #  link_profiles 쪽에 같은 사람(person)의 키가 있으면 그쪽에 적는다.
+            try:
+                _ca, _ = _resolve(tno)
+            except Exception:
+                _ca = ""
+            if not _ca:
+                continue
+            try:
+                _profs = _link_profiles_load()
+            except Exception:
+                continue
+            if not isinstance(_profs, dict):
+                continue
+            _hit = None
+            for _k, _v in _profs.items():
+                if not isinstance(_v, dict):
+                    continue
+                _kns = _link_key_nums(_v) | {_clean_no(_v.get("phone")),
+                                             _clean_no(_v.get("loginId")),
+                                             _clean_no(_v.get("scoutNo"))}
+                if _ca in _kns:
+                    _hit = _k
+                    break
+            if _hit is None:
+                continue
+            _pv = _profs.get(_hit) or {}
+            _cur = _pv.get(field)
+            if not isinstance(_cur, list):
+                _cur = []
+            _add = [s for s in sorted(srcs)
+                    if s and s not in {_clean_no(x) for x in _cur}]
+            if not _add:
+                continue
+            _pv[field] = _cur + _add
+            _profs[_hit] = _pv
+            try:
+                _link_profiles_save(_profs)
+            except Exception as _e3:
+                print("[link] 프로필 역방향 저장 실패: %s" % _e3)
+                continue
+            changed_nocard = True
+            touched.add(tno)
             continue
         t = members[ti]
         cur = t.get(field)
@@ -1462,10 +3592,20 @@ def _link_reconcile_apply(members, *, save=True):
         members[ti] = t
         changed += 1
         touched.add(tno)
-    if changed and save:
+    if (changed or changed_selfclean or changed_nocard) and save:
         with _MEMBER_WRITE_LOCK:
             _save_json(DB_FILE, members)
             _touch_meta({"updatedBy": "link-reconcile"})
+    # [성능 수정 turn 78] 이 함수는 `members` 를 **제자리에서** 고친다.
+    #  · save=True  → `_save_json` 이 무효화하지만,
+    #  · save=False → 저장을 안 하므로 객체 id 도 세대번호도 그대로다.
+    #    그 상태로 색인 캐시를 그대로 두면 **낡은 색인**을 계속 쓰게 된다.
+    #  변경이 있었으면 무조건 비운다(변경이 없으면 비울 필요도 없다).
+    if changed or changed_selfclean or changed_nocard:
+        try:
+            _lpi_invalidate("reconcile")
+        except Exception:
+            pass
     return changed, sorted(touched)
 
 
@@ -1481,7 +3621,7 @@ def _apply_scope_finance_full(tier, who, fin):
     return _scope_finance(tier, who, fin)
 
 
-STATIC_DIR = "/home/user/flutter_app/build/web"
+STATIC_DIR = _resolve_static_dir()
 MIME = {
     ".html": "text/html; charset=utf-8", ".js": "application/javascript",
     ".css": "text/css", ".json": "application/json", ".png": "image/png",
@@ -1492,9 +3632,37 @@ MIME = {
     ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
     ".m4v": "video/x-m4v", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska",
     ".pdf": "application/pdf",
+    # ── [요구 2026-10-28] 행사자료 음원 재생 ──────────────────────────
+    #  브라우저 <audio> 태그는 Content-Type 을 보고 재생기를 고른다.
+    #  audio/mpeg 가 아니면 크롬이 '다운로드'로 처리하거나 재생을 거부한다.
+    #  m4a 는 컨테이너상 audio/mp4 가 정확하다(mp4 로 보내면 <video> 로
+    #  해석되어 소리만 나오고 컨트롤이 깨지는 경우가 있다).
+    ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac",
+    ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg",
+    ".flac": "audio/flac", ".opus": "audio/opus", ".weba": "audio/webm",
+    # 문서·기타 자료 (행사 반복 사용 자료 — 계획서/결산/양식)
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".hwp": "application/x-hwp", ".hwpx": "application/x-hwpx",
+    ".zip": "application/zip",
+    ".csv": "text/csv; charset=utf-8",
+    # APK 원격 업데이트: 안드로이드 설치기가 인식하는 MIME
+    ".apk": "application/vnd.android.package-archive",
 }
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic"}
 VIDEO_EXT = {".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv", ".3gp"}
+
+# ── [요구 2026-10-28] 행사자료 분류 ──────────────────────────────────
+#  "음악 및 영상, 기타 자료등도 관리 및 활용 가능하도록"
+#  재생 가능한 소리 / 재생 가능한 영상 / 그 외(문서·압축) 3갈래.
+AUDIO_EXT = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".oga",
+             ".flac", ".opus", ".weba"}
+DOC_EXT = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+           ".hwp", ".hwpx", ".txt", ".csv", ".zip"}
 # gzip 압축 대상(텍스트/JS/WASM/SVG/폰트) — 이미지·동영상은 제외
 _COMPRESSIBLE_EXT = {".js", ".mjs", ".css", ".html", ".htm", ".json",
                      ".map", ".svg", ".wasm", ".txt", ".xml", ".manifest",
@@ -1503,7 +3671,7 @@ _COMPRESSIBLE_EXT = {".js", ".mjs", ".css", ".html", ".htm", ".json",
 # ---- 정적파일 압축 결과 디스크 캐시 ----------------------------------------
 # 매 요청마다 5MB JS 를 실시간 압축하면 CPU 를 잡아먹어 첫 로딩이 느려진다.
 # 압축 결과를 (원본크기, mtime) 키로 디스크에 저장해 재사용한다.
-_COMPRESS_CACHE_DIR = "/home/user/nas_proxy/.static_compress_cache"
+_COMPRESS_CACHE_DIR = os.path.join(STATE_ROOT, ".static_compress_cache")
 _COMPRESS_CACHE_LOCK = threading.Lock()
 _COMPRESS_MEM = {}          # key -> bytes (프로세스 메모리 캐시, 가장 빠름)
 
@@ -1617,6 +3785,9 @@ def _ensure_structure():
     for y in (now_year, now_year + 1):
         if not NAS.exists(f"{BASE}/연회비/{y}"):
             NAS.mkdir(f"{BASE}/연회비", str(y))
+    # 재무 첨부파일 폴더 (거래별 첨부 — 엑셀/pdf/jpg/png/zip/ppt 등 모든 포맷)
+    if not NAS.exists(FIN_ATTACH_DIR):
+        NAS.mkdir(BASE, "재무첨부")
 
 
 def _crop_merch_image(body, src_path=None):
@@ -1760,6 +3931,95 @@ _JSON_TTL_BY_NAME = {
     "config.json": 15.0,   # 자주 읽히고 자주 안 바뀜.
     "members.json": 4.0,   # 다른 창/기기 갱신 반영 여유.
 }
+# stale-while-revalidate: TTL 초과 후에도 이 시간까지는 '즉시 반환 + 백그라운드
+#  갱신'으로 응답한다(원격 NAS 왕복 ~0.5s 를 사용자 요청 경로에서 제거).
+_JSON_STALE_EXTRA = 300.0
+# 로컬 디스크 미러 — 원격 NAS 왕복 제거 + 서버 재시작 즉시가용 + NAS 장애 폴백.
+#  (가비아 이전 시에는 이 미러가 곧 주 저장소가 되어 사실상 0ms 가 된다.)
+_JSON_MIRROR_DIR = os.path.join(STATE_ROOT, ".json_mirror")
+_JSON_REFRESHING = set()          # 백그라운드 갱신 진행 중 경로(중복 방지)
+_JSON_REFRESH_LOCK = threading.Lock()
+
+# ── [성능 수정 turn 78] stale 캐시 갱신 전용 **고정 크기** 풀 ──────────
+#  종전엔 갱신 1회당 `threading.Thread(...).start()` 로 **무제한** 스레드를
+#  만들었다. keep-alive 요청이 많은 상태에서 TTL 이 만료되면 경로 수만큼
+#  (수십 개) 스레드가 동시에 생기고, 그 스레드들이 NAS 응답을 기다리는
+#  동안에도 GIL 을 잡아먹어 **정작 사용자 요청이 굶었다**
+#  (실측: 스레드 168개, 156개 futex_wait, CPU 102%, Thread-628 까지 증가).
+#  갱신은 '뒤에서 최신값으로 맞추는' 보조 작업이므로 2개면 충분하다.
+_JSON_REFRESH_POOL = ThreadPoolExecutor(max_workers=2,
+                                        thread_name_prefix="tsak-refresh")
+# ── [버그 수정 2026-10-26] '저장했는데 되돌아가는' 경쟁 상태 차단 ──────────
+#  증상: 비밀번호를 변경하면 성공 메시지가 뜨는데, 몇 초 뒤 원래 비번으로
+#        돌아가 로그인이 안 된다(간헐적). 새로고침하면 사라졌던 값이 되살아나기도.
+#
+#  원인: `_json_refresh_bg()` 는 stale 캐시를 **백그라운드 스레드**에서 NAS 로
+#        다시 읽어 캐시를 덮어쓴다. 그 스레드가 NAS 응답을 기다리는 사이에
+#        `_save_json()` 이 새 값을 저장하면, **뒤늦게 도착한 옛 NAS 데이터**가
+#        방금 저장한 값을 통째로 덮어쓴다(lost update).
+#        → 사용자에게는 "저장됐다가 잠시 뒤 원래대로 되돌아가는" 것으로 보인다.
+#
+#  해결: 경로별 '세대 번호(generation)'를 둔다.
+#        · `_save_json` 은 저장할 때마다 세대를 +1 한다.
+#        · `_json_refresh_bg` 는 읽기 시작 시점의 세대를 기억했다가,
+#          반영 직전에 세대가 바뀌었으면 **결과를 버린다**.
+#        (값 자체를 비교하지 않고 세대를 쓰는 이유: 저장이 없었어도
+#          갱신이 유효한 경우는 그대로 반영해야 하기 때문)
+_JSON_GEN = {}                    # path -> int (저장이 일어날 때마다 증가)
+_JSON_GEN_LOCK = threading.Lock()
+
+
+def _pick_encoding(accept_enc, body, min_size=1024):
+    """API JSON 압축 선택기 — (압축bytes, 인코딩명) 또는 None.
+
+    ## 왜 필요한가
+      정적 파일은 이미 `_get_compressed()` 로 br/gzip 캐시를 타는데,
+      동적 JSON 응답(`_json`)은 원본 그대로 나가고 있었다.
+      /api/members 7.6MB 같은 응답이 모바일 회선에서 수십 초를 잡아먹었다.
+
+    ## 우선순위
+      brotli(가장 작음) > gzip > (없음 → 원본)
+      brotli 모듈이 없으면 gzip 만, 그것도 없으면 원본.
+
+    ## 안전 규칙
+      · min_size 미만은 압축하지 않는다(헤더 오버헤드가 이득보다 크다).
+      · 압축 결과가 원본 이상이면 None 을 돌려 원본을 보내게 한다.
+      · 실패해도 예외를 밖으로 던지지 않는다(응답은 반드시 나가야 한다).
+    """
+    try:
+        if not body or len(body) < min_size:
+            return None
+        acc = str(accept_enc or "").lower()
+        if "br" in acc and _brotli is not None:
+            try:
+                z = _brotli.compress(body, quality=5)
+                if 0 < len(z) < len(body):
+                    return z, "br"
+            except Exception:
+                pass
+        if "gzip" in acc:
+            try:
+                z = gzip.compress(body, 6)
+                if 0 < len(z) < len(body):
+                    return z, "gzip"
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+
+def _json_gen_get(path):
+    with _JSON_GEN_LOCK:
+        return _JSON_GEN.get(path, 0)
+
+
+def _json_gen_bump(path):
+    """저장 발생 표시 — 진행 중인 백그라운드 갱신 결과를 무효화한다."""
+    with _JSON_GEN_LOCK:
+        _JSON_GEN[path] = _JSON_GEN.get(path, 0) + 1
+        return _JSON_GEN[path]
+
 
 
 def _json_ttl_for(path):
@@ -1767,39 +4027,1264 @@ def _json_ttl_for(path):
     return _JSON_TTL_BY_NAME.get(base, _JSON_TTL_DEFAULT)
 
 
+def _mirror_path(path):
+    import hashlib
+    return "%s/%s.json" % (_JSON_MIRROR_DIR,
+                           hashlib.sha1(path.encode("utf-8")).hexdigest())
+
+
+def _mirror_write(path, data):
+    """로컬 디스크 미러에 JSON 저장(원자적 교체)."""
+    if data is None:
+        return
+    try:
+        os.makedirs(_JSON_MIRROR_DIR, exist_ok=True)
+        mp = _mirror_path(path)
+        tmp = mp + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, mp)
+    except Exception:
+        pass
+
+
+def _mirror_read(path):
+    """로컬 디스크 미러에서 JSON 로드. 없으면 None."""
+    try:
+        mp = _mirror_path(path)
+        if os.path.exists(mp):
+            with open(mp, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def _mirror_candidates():
+    """미러 선적재 후보 경로(모듈 상수 기준, 호출 시점에 수집)."""
+    names = ["DB_FILE", "EUNHA_DB_FILE", "META_FILE", "CFG_FILE", "FIN_FILE",
+             "IMP_FILE", "MAT_FILE", "EVENT_MEDIA_FILE", "EVENTS_FILE",
+             "REGULAR_FILE", "INQUIRY_FILE", "ACCESS_LOG_FILE",
+             "FINANCE_ANALYSIS_FILE", "REVIEW_FILE", "BOARD_FILE", "NOTIFY_FILE",
+             "SEEN_FILE", "EVENT_STAFF_FILE", "MERCH_FILE", "HIST_FILE",
+             "FIN_ATTACH_FILE", "STORAGE_FILE",
+             "APPROVAL_HISTORY_FILE", "DELEG_FILE", "PRIV_EVENTS_FILE",
+             "_THUMB_INDEX_FILE"]
+    out, g = [], globals()
+    for n in names:
+        v = g.get(n)
+        if isinstance(v, str) and v:
+            out.append(v)
+    # 지연 초기화 되는 경로는 게터로 해석.
+    try:
+        out.append(_member_requests_file())
+    except Exception:
+        pass
+    return out
+
+
+def _warm_mirror():
+    """로컬 미러를 메모리 캐시에 선적재(즉시 가용). ts=0 → 곧 갱신 대상."""
+    n = 0
+    for p in _mirror_candidates():
+        with _JSON_CACHE_LOCK:
+            if p in _JSON_CACHE:
+                continue
+        m = _mirror_read(p)
+        if m is None:
+            continue
+        if _is_empty_list(p, None) and isinstance(m, list) and len(m) == 0:
+            continue
+        with _JSON_CACHE_LOCK:
+            _JSON_CACHE[p] = (m, 0.0)
+        n += 1
+    return n
+
+
+# ---------------------------------------------------------------------------
+# 가비아 이전용 "로컬-우선 DB 모드" (TSAK_LOCAL_DB=1)
+#   · DB JSON 은 로컬 디스크(raid = NAS 동시기록)에서 읽고 쓴다 → 원격 왕복 0ms.
+#   · 사진·동영상 등 대용량은 기존대로 원격 NAS 를 그대로 사용(하이브리드).
+#   · 기본은 꺼짐(현행 동작 100% 유지). 가비아 서버에서만 켠다.
+# ---------------------------------------------------------------------------
+_LOCAL_DB_MODE = os.environ.get("TSAK_LOCAL_DB", "0") in ("1", "true", "yes", "on")
+_LOCAL_DB_DIR = os.environ.get("TSAK_LOCAL_DB_DIR",
+                               os.path.join(STATE_ROOT, "local_db_store"))
+
+
+def _is_db_path(path):
+    """경로가 DB(JSON) 계열인지 — 디렉터리 '/' 구분을 정규화해 비교."""
+    p = str(path or "").replace("\\", "/").rstrip("/")
+    return p in _DB_PATH_SET
+
+
+# ===========================================================================
+# 데이터 백엔드 추상화 — 나스(Synology) ⇄ 구글드라이브 교체 가능
+#   · backend="auto"(기본): 구글드라이브 인증정보가 있으면 드라이브를 쓰고,
+#     없으면 기존 나스를 그대로 쓴다(무중단·무설정 전환).
+#   · backend="nas"      : 나스 강제.
+#   · backend="gdrive"   : 드라이브 강제(없으면 기동 실패 — 문제 조기 발견).
+#   프록시 코드는 예전처럼 NAS.list/read/write/... 를 호출하면 되고, 선택된
+#   백엔드가 그대로 응답한다. 추가로 **로컬 디스크 저장소**를 RAID(이중화)
+#   처럼 붙여 재시작 후 즉시가용 + 백엔드 장애 생존 + 읽기 0ms 를 실현한다.
+#   → 나중에 가비아로 옮겨도 이 로컬 저장소가 그대로 주 저장소가 된다.
+# ===========================================================================
+_BACKEND_MODE = str(CONF.get("backend", "auto")).lower()
+_GDRIVE_CFG = CONF.get("gdrive") or {}
+_GDRIVE_STORE = os.path.join(STATE_ROOT, "gdrive_store")          # 로컬 RAID 스토어
+_GDRIVE_ROOT = str(_GDRIVE_CFG.get("root_id", "")).strip()
+_active_gdrive_client = None
+
+
+def _backend_mode_resolved():
+    """실제로 사용할 백엔드 문자열("nas" | "gdrive")을 해석."""
+    if _BACKEND_MODE == "nas":
+        return "nas"
+    if _BACKEND_MODE == "gdrive":
+        return "gdrive"
+    # auto: 구글 인증정보 유무로 판단.
+    if _GDRIVE_ROOT:
+        import nas_gdrive as _ng
+        sa = str(_GDRIVE_CFG.get("service_account", "")).strip()
+        tok = str(_GDRIVE_CFG.get("oauth_token",
+                  os.path.join(STATE_ROOT, ".gdrive_token.json"))).strip()
+        if (sa and os.path.isfile(sa)) or (tok and os.path.isfile(tok)):
+            return "gdrive"
+    return "nas"
+
+
+def _init_active_gdrive():
+    """GDriveClient 를 1회 생성(실패 시 None)."""
+    global _active_gdrive_client
+    if _active_gdrive_client is not None:
+        return _active_gdrive_client
+    try:
+        import nas_gdrive
+        _active_gdrive_client = nas_gdrive.GDriveClient(_GDRIVE_CFG)
+        return _active_gdrive_client
+    except Exception as e:
+        print("GDrive init failed:", e)
+        return None
+
+
+class _LocalStore:
+    """로컬 디스크 스토어 — 백엔드 무관한 빠른 캐시/이중화(RAID) 계층.
+
+    경로 문자열을 sha1 slug 로 매핑해 파일 1개씩 저장한다. 읽기 시
+    백엔드 왕복을 0회로 만들고(즉시 응답), 쓰기 시 백엔드에도 반영해
+    이중화한다. 나중에 이 저장소를 주 저장소로 승격하면 그대로 0ms 백엔드다.
+
+    디스크 무한증식 방지:
+      · max_blob  : 이 크기를 넘는 파일(대용량 동영상 등)은 로컬에 저장하지
+                    않고 백엔드에서 스트리밍한다. 디스크 폭발을 막는다.
+      · max_total : 총 사용량 상한 초과 시 LRU 로 오래된 항목을 자동 정리.
+    """
+    def __init__(self, root, max_blob=24 * 1024 * 1024,
+                 max_total=3 * 1024 * 1024 * 1024):
+        self.root = root
+        self.max_blob = int(os.environ.get("TSAK_STORE_MAX_BLOB", max_blob))
+        self.max_total = int(os.environ.get("TSAK_STORE_MAX_TOTAL", max_total))
+        self._locks = {}
+        self._locks_lock = threading.Lock()
+        self._used = 0
+        os.makedirs(root, exist_ok=True)
+        self._scan_used()
+
+    def _scan_used(self):
+        try:
+            tot = 0
+            for nm in os.listdir(self.root):
+                try:
+                    tot += os.path.getsize(os.path.join(self.root, nm))
+                except Exception:
+                    pass
+            self._used = tot
+        except Exception:
+            self._used = 0
+
+    def _blob(self, path):
+        rel = _rel_of(path)
+        h = hashlib.sha1(rel.encode("utf-8")).hexdigest()
+        return os.path.join(self.root, h)
+
+    def _lock_for(self, path):
+        key = _rel_of(path)
+        with self._locks_lock:
+            lk = self._locks.get(key)
+            if lk is None:
+                lk = threading.Lock()
+                self._locks[key] = lk
+            return lk
+
+    def exists(self, path):
+        return os.path.exists(self._blob(path))
+
+    def read_bytes(self, path):
+        with self._lock_for(path):
+            with open(self._blob(path), "rb") as f:
+                data = f.read()
+        try:
+            os.utime(self._blob(path), None)   # LRU 갱신
+        except Exception:
+            pass
+        return data
+
+    def read(self, path):
+        return self.read_bytes(path).decode("utf-8", "replace")
+
+    def write(self, path, content_bytes):
+        n = len(content_bytes)
+        if self.max_blob and n > self.max_blob:
+            # 대용량은 로컬 캐시 생략(백엔드가 원본을 갖고 있음).
+            return {"ok": True, "skipped": "too-big"}
+        with self._lock_for(path):
+            blob = self._blob(path)
+            os.makedirs(self.root, exist_ok=True)
+            old = 0
+            try:
+                old = os.path.getsize(blob)
+            except Exception:
+                old = 0
+            tmp = blob + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(content_bytes)
+            os.replace(tmp, blob)
+            self._used = max(0, self._used - old) + n
+        self._maybe_evict()
+        return {"ok": True, "size": n}
+
+    def size(self, path):
+        try:
+            return os.path.getsize(self._blob(path))
+        except Exception:
+            return 0
+
+    def _maybe_evict(self):
+        if self.max_total <= 0 or self._used <= self.max_total:
+            return
+        try:
+            items = []
+            for nm in os.listdir(self.root):
+                fp = os.path.join(self.root, nm)
+                try:
+                    st = os.stat(fp)
+                    if nm.endswith(".tmp"):
+                        continue
+                    items.append((st.st_atime, st.st_size, fp))
+                except Exception:
+                    pass
+            items.sort()                      # 오래 쓴 것부터
+            for _, sz, fp in items:
+                if self._used <= int(self.max_total * 0.9):
+                    break
+                try:
+                    os.remove(fp)
+                    self._used -= sz
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+def _rel_of(path):
+    """base_path 접두사를 떼어 백엔드 중립 상대경로로 정규화."""
+    p = str(path or "").replace("\\", "/").rstrip("/")
+    bp = str(BASE or "").rstrip("/")
+    if bp and p.startswith(bp):
+        p = p[len(bp):]
+    return p.strip("/")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  미디어 로컬 캐시 (turn65) — 큰 영상의 첫 재생 지연을 없앤다
+# ══════════════════════════════════════════════════════════════════════
+#  ## 왜 별도 캐시인가
+#   `_LocalStore` 는 이미 read-through 캐시를 갖고 있지만 `max_blob` 기본값이
+#   24MB 라 **그보다 큰 파일은 일부러 캐시하지 않는다**(디스크 폭발 방지).
+#   추모관 영상은 37MB → 캐시 대상에서 제외 → 재생 때마다 NAS 왕복.
+#
+#  ## 실측 (2026-11-06, 이찬희 총재 추모영상 37.3MB)
+#    · NAS 왕복 1회 비용 : `get_info` 0.23s + `exists` 0.25s + Range 읽기
+#    · 프록시 경유 처리량 : 1바이트 2.8s / 4MB 17.6s → 약 263KB/s
+#    · 브라우저 `canplay` 도달 : **16.3초** (그동안 화면은 검은 로딩)
+#    · 같은 파일 로컬 디스크 읽기 : 사실상 즉시
+#
+#  ## 설계
+#   · 경로 해시로 파일 1개 = 1 blob. 업로드 여부와 무관하게 동작한다.
+#   · 상한(`TSAK_MEDIA_CACHE_MAX`, 기본 300MB) 초과 시 오래 안 쓴 것부터 정리.
+#   · 남은 디스크가 `_MEDIA_MIN_FREE` 미만이면 **채우지 않는다**(디스크 고갈 방지).
+#   · 캐시 미스에서 큰 파일을 만나면 **백그라운드로 1회 받아 둔다** →
+#     첫 방문자만 느리고 그 다음부터는 즉시. (원본은 NAS 에 그대로 있다)
+_MEDIA_CACHE_DIR = os.path.join(STATE_ROOT, ".media_cache")
+_MEDIA_CACHE_MAX = int(os.environ.get("TSAK_MEDIA_CACHE_MAX",
+                                      str(150 * 1024 * 1024)))
+_MEDIA_MIN_FREE = int(os.environ.get("TSAK_MEDIA_MIN_FREE",
+                                     str(500 * 1024 * 1024)))
+_MEDIA_FILL_MIN = 4 * 1024 * 1024      # 이보다 큰 파일만 캐시 대상
+_media_cache_lock = threading.Lock()
+_media_filling = set()
+
+
+def _media_cache_file(path):
+    """NAS 경로 → 로컬 캐시 blob 경로."""
+    h = hashlib.sha1(_rel_of(path).encode("utf-8")).hexdigest()
+    return os.path.join(_MEDIA_CACHE_DIR, h + ".bin")
+
+
+def _media_disk_free():
+    try:
+        st = os.statvfs(_MEDIA_CACHE_DIR if os.path.isdir(_MEDIA_CACHE_DIR)
+                        else STATE_ROOT)
+        return st.f_bavail * st.f_frsize
+    except Exception:
+        return 0
+
+
+def _media_cache_evict(need=0):
+    """상한을 넘지 않게 오래 안 쓴 것부터 지운다. `need` 만큼은 비워 둔다."""
+    try:
+        if not os.path.isdir(_MEDIA_CACHE_DIR):
+            return
+        items, tot = [], 0
+        for nm in os.listdir(_MEDIA_CACHE_DIR):
+            fp = os.path.join(_MEDIA_CACHE_DIR, nm)
+            try:
+                stt = os.stat(fp)
+            except Exception:
+                continue
+            items.append((stt.st_atime, stt.st_size, fp))
+            tot += stt.st_size
+        if tot <= _MEDIA_CACHE_MAX and need <= 0:
+            return
+        items.sort()                       # 오래 안 쓴 것부터
+        for _, sz, fp in items:
+            if tot + need <= int(_MEDIA_CACHE_MAX * 0.88):
+                break
+            try:
+                os.remove(fp)
+                tot -= sz
+            except Exception:
+                pass
+    except Exception as e:
+        print("[media-cache] evict fail", e)
+
+
+def _media_cache_fill_async(path, expect=None):
+    """캐시가 비었을 때 백그라운드로 1회 내려받아 둔다(멱등)."""
+    key = _rel_of(path)
+    with _media_cache_lock:
+        if key in _media_filling:
+            return
+        _media_filling.add(key)
+
+    def _run():
+        tmp = None
+        try:
+            cf = _media_cache_file(path)
+            if os.path.exists(cf):
+                return
+            size = expect or 0
+            if size and size < _MEDIA_FILL_MIN:
+                return
+            if _media_disk_free() < _MEDIA_MIN_FREE:
+                print("[media-cache] skip (disk low)", os.path.basename(path))
+                return
+            _media_cache_evict(need=size)
+            if _media_disk_free() < _MEDIA_MIN_FREE:
+                return
+            os.makedirs(_MEDIA_CACHE_DIR, exist_ok=True)
+            tmp = cf + ".tmp"
+            n = 0
+            with open(tmp, "wb") as f:
+                for b in NAS.iter_bytes(path, chunk_size=4 * 1024 * 1024):
+                    if not b:
+                        continue
+                    f.write(b)
+                    n += len(b)
+            if n <= 0:
+                raise RuntimeError("empty download")
+            os.replace(tmp, cf)
+            tmp = None
+            os.utime(cf, None)
+            print("[media-cache] filled %s (%.1f MB)"
+                  % (os.path.basename(path), n / 1048576.0))
+        except Exception as e:
+            print("[media-cache] fill fail", os.path.basename(path), e)
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+            with _media_cache_lock:
+                _media_filling.discard(key)
+
+    try:
+        threading.Thread(target=_run, daemon=True).start()
+    except Exception:
+        with _media_cache_lock:
+            _media_filling.discard(key)
+
+
+class _BackendClient:
+    """백엔드(나스/드라이브) + 로컬 스토어를 묶은 최종 클라이언트.
+
+    mode="nas"   : 로컬 스토어 = **읽기 통과 캐시**(read-through cache).
+                   읽기 → 로컬 히트 즉시, 미스면 나스에서 읽어 저장.
+                   쓰기 → 로컬 + 나스 동시 기록(무손실).
+    mode="gdrive": 로컬 스토어 = **주 저장소**(0ms). 쓰기는 로컬 즉시 완료,
+                   드라이브 반영은 백그라운드(사용자 체감 지연 0).
+                   읽기 → 로컬 히트 즉시, 미스면 드라이브에서 읽어 저장.
+
+    두 모드 모두 프록시가 호출하는 인터페이스는 동일하므로, 상위 코드는
+    저장소가 나스인지 드라이브인지 전혀 알 필요가 없다.
+    """
+    def __init__(self, backend, store, name="backend",
+                 local_primary=False, sync=True):
+        self._b = backend
+        self._store = store
+        self._name = name
+        self._local_primary = bool(local_primary)
+        self._sync = bool(sync)
+        self._inflight = {}
+        self._inflight_lock = threading.Lock()
+
+    # -- 읽기 -------------------------------------------------------------
+    def exists(self, path):
+        if self._store.exists(path):
+            return True
+        try:
+            return bool(self._b.exists(path))
+        except Exception:
+            return False
+
+    def get_info(self, path):
+        if self._store.exists(path):
+            try:
+                return {"ok": True, "size": self._store.size(path),
+                        "name": str(path).rsplit("/", 1)[-1]}
+            except Exception:
+                pass
+        return self._b.get_info(path)
+
+    def read_bytes(self, path):
+        if self._store.exists(path):
+            return self._store.read_bytes(path)
+        data = self._b.read_bytes(path)
+        try:
+            self._store.write(path, data)
+        except Exception:
+            pass
+        return data
+
+    def read(self, path):
+        if self._store.exists(path):
+            return self._store.read(path)
+        txt = self._b.read(path)
+        try:
+            self._store.write(path, txt.encode("utf-8"))
+        except Exception:
+            pass
+        return txt
+
+    # -- 구간 읽기 / 스트리밍 ---------------------------------------------
+    #
+    # ## 왜 필요한가 (turn53)
+    #  추모관 업로드 상한이 500MB 로 올라가면서, 영상을 **재생·탐색**하려면
+    #  Range 요청을 받아야 한다. 그런데 기존 `_serve_nas_file` 은 파일 전체를
+    #  `read_bytes()` 로 올린 뒤 잘라 보냈다 — 500MB 영상 하나에 500MB RAM.
+    #  게다가 `read_bytes()` 는 백엔드에서 받은 내용을 로컬 캐시에 **다시 쓰기**까지
+    #  하므로 같은 데이터를 두 번 디스크에 쓴다.
+    #
+    # ## 전략 (우선순위)
+    #  ① **로컬 스토어에 있으면 파일 핸들로 직접 seek** — 가장 빠르고 메모리 0.
+    #     (업로드 직후 파일은 write_stream 이 로컬에 남겨 두므로 대부분 여기서 해결)
+    #  ② 로컬에 없으면 백엔드가 `read_range` 를 지원하는지 보고 그걸 쓴다.
+    #  ③ 둘 다 안 되면 전체를 1회 읽어 **로컬에 저장한 뒤** ①로 되돌아간다.
+    #     Synology FileStation API 는 Range 를 지원하지 않으므로 ③ 이 최초 1회는
+    #     불가피하다(이후부터는 ①). 최초 1회의 메모리 사용은 감수하되, 같은
+    #     파일을 여러 번 재생할 때 매번 500MB 를 읽지는 않게 만드는 것이 목표다.
+    def _local_blob_path(self, path):
+        """로컬 스토어에 있는 파일의 실제 경로. 없으면 None."""
+        try:
+            if not self._store.exists(path):
+                return None
+            return self._store._blob(path)   # _LocalStore 내부 규칙(해시 blob)
+        except Exception:
+            return None
+
+    def read_range(self, path, start, length):
+        """[start, start+length) 구간만 읽는다. 실패하면 b""."""
+        if length <= 0:
+            return b""
+        bp = self._local_blob_path(path)
+        if bp:
+            try:
+                with open(bp, "rb") as f:
+                    f.seek(start)
+                    return f.read(length)
+            except Exception:
+                pass
+        rb = getattr(self._b, "read_range", None)
+        if callable(rb):
+            try:
+                got = rb(path, start, length)
+                if isinstance(got, (bytes, bytearray)):
+                    return bytes(got)
+            except Exception as e:
+                print("backend read_range fail:", e)
+        # 폴백: 전체 1회 읽어 로컬에 캐시한 뒤 구간 반환
+        data = self.read_bytes(path)
+        return bytes(memoryview(data)[start:start + length])
+
+    def iter_bytes(self, path, chunk_size=4 * 1024 * 1024):
+        """파일을 청크 단위로 흘려보낸다(메모리 = chunk_size)."""
+        bp = self._local_blob_path(path)
+        if bp:
+            try:
+                with open(bp, "rb") as f:
+                    while True:
+                        b = f.read(chunk_size)
+                        if not b:
+                            return
+                        yield b
+                return
+            except Exception:
+                pass
+        it = getattr(self._b, "iter_bytes", None)
+        if callable(it):
+            try:
+                for b in it(path, chunk_size=chunk_size):
+                    if b:
+                        yield b
+                return
+            except Exception as e:
+                print("backend iter_bytes fail:", e)
+        # 폴백: 전체 읽기 → 로컬 캐시 → 청크 방출
+        data = self.read_bytes(path)
+        for i in range(0, len(data), chunk_size):
+            yield data[i:i + chunk_size]
+
+    # -- 쓰기 -------------------------------------------------------------
+    def write(self, path, content_bytes):
+        # 로컬에 즉시 기록 → 응답 지연 0(특히 드라이브 모드).
+        try:
+            self._store.write(path, content_bytes)
+        except Exception as e:
+            print("local store write fail:", path, e)
+        # 백엔드 반영.
+        if self._sync:
+            if self._local_primary:
+                self._bwrite_bg(path, content_bytes)   # 드라이브: 백그라운드
+            else:
+                try:
+                    self._b.write(path, content_bytes)  # 나스: 동시 기록(무손실)
+                except Exception as e:
+                    print("backend write fail(%s):" % self._name, path, e)
+        else:
+            self._bwrite_bg(path, content_bytes)
+        return {"ok": True}
+
+    def _bwrite_bg(self, path, content_bytes):
+        # 경로별 중복 업로드 방지(같은 파일 연속 저장 시 마지막 것만).
+        key = _rel_of(path)
+        with self._inflight_lock:
+            prev = self._inflight.get(key)
+        if prev is not None:
+            try:
+                prev[1] = content_bytes   # 최신 내용으로 교체
+            except Exception:
+                pass
+            return
+
+        slot = [content_bytes]
+        self._inflight[key] = slot
+
+        def _run():
+            try:
+                self._b.write(path, slot[0])
+            except Exception as e:
+                print("backend bg write fail(%s):" % self._name, path, e)
+            finally:
+                with self._inflight_lock:
+                    self._inflight.pop(key, None)
+
+        try:
+            threading.Thread(target=_run, daemon=True).start()
+        except Exception:
+            with self._inflight_lock:
+                self._inflight.pop(key, None)
+            try:
+                self._b.write(path, content_bytes)
+            except Exception as e:
+                print("backend write fail(%s):" % self._name, path, e)
+
+    # -- 위임 -------------------------------------------------------------
+    def list(self, path):
+        return self._b.list(path)
+
+    def mkdir(self, parent, name):
+        return self._b.mkdir(parent, name)
+
+    def delete(self, path):
+        try:
+            if self._store.exists(path):
+                os.remove(self._store._blob(path))
+        except Exception:
+            pass
+        return self._b.delete(path)
+
+    def move(self, src, dest_parent):
+        r = self._b.move(src, dest_parent)
+        try:
+            import shutil
+            sb = self._store._blob(src)
+            name = str(src).rstrip("/").rsplit("/", 1)[-1]
+            db = self._store._blob(str(dest_parent).rstrip("/") + "/" + name)
+            if os.path.exists(sb):
+                os.makedirs(os.path.dirname(db), exist_ok=True)
+                shutil.move(sb, db)
+        except Exception:
+            pass
+        return r
+
+    def rename(self, path, new_name):
+        r = self._b.rename(path, new_name)
+        return r
+
+    def write_stream(self, path, chunks, size=None,
+                     content_type="application/octet-stream"):
+        # 스트림은 통째로 로컬 저장 후 백엔드로 업로드한다.
+        import io as _io
+        buf = _io.BytesIO()
+        for c in chunks:
+            buf.write(c)
+        data = buf.getvalue()
+        self.write(path, data)
+        return {"ok": True, "size": len(data)}
+
+    def warm(self):
+        try:
+            return self._b.warm()
+        except Exception as e:
+            print("backend warm skipped:", e)
+            return None
+
+    def __getattr__(self, name):
+        return getattr(self._b, name)
+
+
+def _install_backend():
+    """NAS 전역을 선택된 백엔드(+로컬 스토어)로 교체."""
+    global NAS
+    mode = _backend_mode_resolved()
+    if mode == "gdrive":
+        gd = _init_active_gdrive()
+        if gd is None:
+            if _BACKEND_MODE == "gdrive":
+                raise SystemExit("backend=gdrive 지정됐지만 구글드라이브 초기화 실패")
+            mode = "nas"
+        else:
+            store = _LocalStore(_GDRIVE_STORE)
+            NAS = _BackendClient(gd, store, "gdrive",
+                                 local_primary=True, sync=True)
+            print("[backend] GoogleDrive(local-primary 0ms) + store '%s'"
+                  % _GDRIVE_STORE)
+            return
+    store = _LocalStore(_GDRIVE_STORE)
+    NAS = _BackendClient(NAS, store, "nas",
+                         local_primary=False, sync=True)
+    print("[backend] NAS(read-through cache) + store '%s'" % _GDRIVE_STORE)
+
+
+class _JsonRouter:
+    """로컬-DB 모드에서 DB JSON 만 로컬 디스크로 우회하는 NAS 프록시 래퍼.
+
+    read/exists 는 로컬(우선)→NAS 폴백, write 는 로컬+NAS 동시기록(백업·부트스트랩).
+    그 외(list/mkdir/delete/move/write_stream/…)는 실제 NAS 로 그대로 전달한다.
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def _local(self, path):
+        import hashlib
+        h = hashlib.sha1(str(path).encode("utf-8")).hexdigest()
+        return os.path.join(_LOCAL_DB_DIR, h + ".json")
+
+    def _local_exists(self, path):
+        try:
+            return os.path.exists(self._local(path))
+        except Exception:
+            return False
+
+    def _local_read_bytes(self, path):
+        with open(self._local(path), "rb") as f:
+            return f.read()
+
+    def _local_write(self, path, content_bytes):
+        try:
+            os.makedirs(_LOCAL_DB_DIR, exist_ok=True)
+            lp = self._local(path)
+            tmp = lp + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(content_bytes)
+            os.replace(tmp, lp)
+        except Exception as e:
+            print("local db write fail", path, e)
+
+    # --- DB 경로 우회 ---
+    def exists(self, path):
+        if _is_db_path(path) and self._local_exists(path):
+            return True
+        return self._real.exists(path)
+
+    def read(self, path):
+        if _is_db_path(path):
+            if self._local_exists(path):
+                return self._local_read_bytes(path).decode("utf-8", "replace")
+        return self._real.read(path)
+
+    def read_bytes(self, path):
+        if _is_db_path(path) and self._local_exists(path):
+            return self._local_read_bytes(path)
+        return self._real.read_bytes(path)
+
+    # ── 구간 읽기 / 스트리밍 위임 (turn53) ─────────────────────────────
+    #  추모관 영상 재생(Range)이 이 라우터를 통과할 수 있게 그대로 넘긴다.
+    def read_range(self, path, start, length):
+        rr = getattr(self._real, "read_range", None)
+        if callable(rr):
+            return rr(path, start, length)
+        data = self.read_bytes(path)
+        return bytes(memoryview(data)[start:start + length])
+
+    def iter_bytes(self, path, chunk_size=4 * 1024 * 1024):
+        it = getattr(self._real, "iter_bytes", None)
+        if callable(it):
+            for b in it(path, chunk_size=chunk_size):
+                yield b
+            return
+        data = self.read_bytes(path)
+        for i in range(0, len(data), chunk_size):
+            yield data[i:i + chunk_size]
+
+    def write(self, path, content_bytes):
+        if _is_db_path(path):
+            self._local_write(path, content_bytes)       # 로컬(빠른 저장)
+            try:
+                self._real.write(path, content_bytes)     # NAS 동시기록(백업/부트스트랩)
+            except Exception as e:
+                print("local->nas mirror write fail", path, e)
+            return {"success": True}
+        return self._real.write(path, content_bytes)
+
+    def get_info(self, path):
+        if _is_db_path(path) and self._local_exists(path):
+            try:
+                st = os.stat(self._local(path))
+                return {"ok": True, "size": st.st_size,
+                        "name": str(path).rsplit("/", 1)[-1]}
+            except Exception:
+                pass
+        return self._real.get_info(path)
+
+    def __getattr__(self, name):
+        # 나머지 메서드는 실제 NAS 로 위임.
+        return getattr(self._real, name)
+
+
+# DB JSON 경로 집합(모듈 상수 기준) — 어댑터 초기화 직후 채운다.
+_DB_PATH_SET = set()
+try:
+    for _n in ("DB_FILE", "EUNHA_DB_FILE", "META_FILE", "CFG_FILE", "FIN_FILE",
+               "IMP_FILE", "MAT_FILE", "EVENT_MEDIA_FILE", "EVENTS_FILE",
+               "REGULAR_FILE", "INQUIRY_FILE", "ACCESS_LOG_FILE",
+               "FINANCE_ANALYSIS_FILE", "REVIEW_FILE", "BOARD_FILE",
+               "NOTIFY_FILE", "SEEN_FILE", "EVENT_STAFF_FILE", "MERCH_FILE",
+               "HIST_FILE", "FIN_ATTACH_FILE", "STORAGE_FILE",
+               "APPROVAL_HISTORY_FILE", "DELEG_FILE", "PRIV_EVENTS_FILE",
+               "_THUMB_INDEX_FILE"):
+        _v = globals().get(_n)
+        if isinstance(_v, str) and _v:
+            _DB_PATH_SET.add(_v.replace("\\", "/").rstrip("/"))
+    try:
+        _DB_PATH_SET.add(_member_requests_file().replace("\\", "/").rstrip("/"))
+    except Exception:
+        pass
+except Exception:
+    pass
+
+if _LOCAL_DB_MODE:
+    NAS = _JsonRouter(NAS)
+    print("LOCAL-DB MODE on: dir=%s (db files=%d)"
+          % (_LOCAL_DB_DIR, len(_DB_PATH_SET)))
+
+# 백엔드 최종 선택 + 로컬 스토어 결선(나스 → 구글드라이브 전환점).
+_install_backend()
+
+
+def _is_empty_list(derived, prev):
+    """[새로 읽은 값이 '비어 있음'인지] 판정 — 명단 파일에만 적용.
+
+      회원·은하 명단(members/eunha_members)은 **정상일 때 절대 비어 있을 수
+      없다**. 그런데 NAS 가 일시적으로 조회에 실패하면 `NAS.exists()` 가
+      False 를 돌려주고, 그 결과 빈 목록(기본값)이 그대로 캐시에 박혀
+      "자료가 조회 안 됨(0명)" 상태가 수 분간 지속되는 버그가 있었다.
+      → 새 값이 빈 목록이면 '조회 실패'로 간주해 **캐시를 덮어쓰지 않는다**.
+        (이전 캐시가 있으면 그 값을 반환해 정상 데이터를 유지하고, 이전
+         캐시가 없으면 캐시에 저장하지 않아 다음 호출이 즉시 재시도한다.)
+    """
+    name = str(derived).rsplit("/", 1)[-1]
+    return name in ("members.json", "eunha_members.json")
+
+
 def _load_json(path, default):
     now = time.time()
     with _JSON_CACHE_LOCK:
         ent = _JSON_CACHE.get(path)
-        if ent is not None and (now - ent[1]) < _json_ttl_for(path):
-            return ent[0]
+        if ent is not None:
+            age = now - ent[1]
+            ttl = _json_ttl_for(path)
+            # 신선(fresh): 그대로 반환 (원격 호출 0회).
+            if age < ttl:
+                return ent[0]
+            # 신선하지 않지만 '사용 가능(stale)': 즉시 반환 + 백그라운드 갱신.
+            #  → 원격 NAS 왕복(~0.5s)을 사용자 응답 경로에서 제거한다.
+            if (age < ttl + _JSON_STALE_EXTRA
+                    and not (_is_empty_list(path, None) and isinstance(ent[0], list)
+                             and len(ent[0]) == 0)):
+                _json_refresh_bg(path)
+                return ent[0]
+    ent = None
+    with _JSON_CACHE_LOCK:
+        ent = _JSON_CACHE.get(path)
+
+    def _accept(data):
+        """읽은 값을 캐시+미러에 반영. 반영했으면 True."""
+        if (_is_empty_list(path, None) and isinstance(data, list)
+                and len(data) == 0):
+            if ent is not None and isinstance(ent[0], list) and len(ent[0]) > 0:
+                print("load empty-guard keep prev:", path)
+                return False
+            return False
+        with _JSON_CACHE_LOCK:
+            _JSON_CACHE[path] = (data, now)
+        _mirror_write(path, data)
+        return True
+
+    # 1) 로컬 미러 우선(가장 빠름, 서버 재시작 직후에도 즉시 가용).
+    m = _mirror_read(path)
+    if m is not None:
+        if _accept(m):
+            return m
+    # 2) 미러가 없으면 원격 NAS 에서 최초 적재.
     try:
         if NAS.exists(path):
             data = json.loads(NAS.read(path))
         else:
             data = default
-        with _JSON_CACHE_LOCK:
-            _JSON_CACHE[path] = (data, now)
-        return data
+        if _accept(data):
+            return data
+        if (_is_empty_list(path, None) and isinstance(data, list)
+                and len(data) == 0):
+            return data          # 이전 캐시도 없음 → 저장 않고 반환(다음 호출 재시도)
     except Exception as e:
         print("load fail", path, e)
-    # 실패 시 캐시본이 있으면 그대로 사용(가용성 우선).
+    # 3) 실패 시 캐시본이 있으면 그대로 사용(가용성 우선).
     if ent is not None:
         return ent[0]
     return default
 
 
-def _save_json(path, obj):
+def _json_refresh_bg(path):
+    """stale 캐시를 백그라운드에서 갱신(원격 1회). 중복 실행 방지."""
+    with _JSON_REFRESH_LOCK:
+        if path in _JSON_REFRESHING:
+            return
+        _JSON_REFRESHING.add(path)
+    # 읽기 시작 시점의 세대를 기억 — 반영 직전에 비교한다.
+    gen_at_start = _json_gen_get(path)
+
+    def _work():
+        try:
+            if NAS.exists(path):
+                data = json.loads(NAS.read(path))
+                if (_is_empty_list(path, None) and isinstance(data, list)
+                        and len(data) == 0):
+                    return
+                # ── [버그 수정 2026-10-26] lost-update 차단 ──────────────
+                #  읽는 동안 `_save_json` 이 끼어들었으면(세대 변경) 이 결과는
+                #  이미 낡은 값이다. 반영하면 사용자가 방금 저장한 값을
+                #  덮어쓰게 되므로 **버린다**.
+                if _json_gen_get(path) != gen_at_start:
+                    return
+                with _JSON_CACHE_LOCK:
+                    _JSON_CACHE[path] = (data, time.time())
+                _mirror_write(path, data)
+        except Exception as e:
+            print("json bg refresh fail", path, e)
+        finally:
+            with _JSON_REFRESH_LOCK:
+                _JSON_REFRESHING.discard(path)
+
+    # [성능 수정 turn 78] 무제한 스레드 → 고정 풀(2). 큐가 밀려도
+    #  스레드 수는 늘지 않는다. `_JSON_REFRESHING` 중복 방지는 그대로다.
+    try:
+        _JSON_REFRESH_POOL.submit(_work)
+    except RuntimeError:
+        # 인터프리터 종료 중 — 갱신을 포기해도 무방하다.
+        with _JSON_REFRESH_LOCK:
+            _JSON_REFRESHING.discard(path)
+
+
+# ============================================================================
+#  [안전장치 2026-10-26] 자료 소실 방지 — "앞으로도 계속 이렇게 자료가
+#   사라지지 않도록 각별히 안전장치를 넣어줘"
+#
+#  ## 실제로 무슨 일이 있었나 (실측)
+#   · 2026-10-26 03:32:40 스냅샷에는 417 김병혁의 mentors=['417'],
+#     2229 노현아의 mentors/parents=['2229'], '노본'의 mentees/children=['2229']
+#     가 있었다.
+#   · 03:32:49 스냅샷(=현재)에서는 **네 필드가 모두 []** 로 바뀌었다.
+#     회원 수(2233)와 id 는 그대로 → 회원을 지운 게 아니라 **필드만 비웠다**.
+#
+#  ## 왜 비워졌나
+#   `/api/member` · `/api/members` 의 병합 로직은 **빈 문자열**은 "미지정"으로
+#   보고 보존했지만, **빈 리스트([])** 는 "값 비우기"로 그대로 반영했다.
+#   앱이 회원을 조회했을 때 링크 필드가 응답에서 빠지거나(스코핑/리댁션),
+#   모델이 기본값 `[]` 로 역직렬화한 뒤 그대로 저장하면, 서버는 그것을
+#   "사용자가 링크를 전부 지웠다"로 해석해 **조용히 삭제**했다.
+#   (같은 경로로 사진·메모가 사라진 사고가 이미 주석으로 기록돼 있다)
+#
+#  ## 3중 방어
+#   ① 필드 병합 규칙: 내용이 있는 리스트를 빈 리스트로 덮어쓰지 않는다.
+#   ② 저장 게이트(_guard_destructive_save): 그래도 새는 경로를 막는다.
+#      링크 보유 회원 수가 1명이라도 줄면 저장을 **거부**한다.
+#   ③ 회전 스냅샷(_safe_snapshot): 모든 쓰기 직전 원본을 남겨 되돌릴 수 있게.
+# ============================================================================
+_LINK_FIELDS = ("mentors", "parents", "mentees", "children")
+_SAFE_SNAP_DIR = os.path.join(STATE_ROOT, ".safe_snapshots")
+_SAFE_SNAP_KEEP = 40          # 파일당 보관 개수
+#  저장을 **막아야** 하는 파일과 그 이유. 여기 없는 파일은 게이트 없이 저장.
+_GUARDED_FILES = {}
+
+# 차단 관측용 — 조용한 no-op 을 만들지 않기 위한 카운터(프로세스 수명 동안).
+_SAVE_BLOCK_STATS = {"count": 0, "last": "", "lastAt": "", "recent": []}
+
+
+def _on_save_blocked(path):
+    """안전장치가 저장을 막았을 때 호출 — 로그 + 카운터.
+
+    ## 왜 필요한가
+      `_save_json` 은 차단 시 False 를 돌려주지만, 호출부 103곳이 반환값을
+      무시한다. 그러면 사용자에게는 "저장했는데 안 됐다"로 보이고, 원인은
+      아무 데도 남지 않는다. 최소한 **경고 로그 + 건수**는 남겨야
+      나중에 "또 사라졌다"는 신고가 왔을 때 바로 원인을 짚을 수 있다.
+    """
+    name = str(path).rsplit("/", 1)[-1]
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[안전장치] 저장 차단됨 — {name} ({ts})")
+    try:
+        _SAVE_BLOCK_STATS["count"] += 1
+        _SAVE_BLOCK_STATS["last"] = name
+        _SAVE_BLOCK_STATS["lastAt"] = ts
+        rec = _SAVE_BLOCK_STATS["recent"]
+        rec.append({"file": name, "at": ts})
+        del rec[:-20]          # 최근 20건만 유지
+    except Exception:
+        pass
+
+
+def _link_count(obj, fields=_LINK_FIELDS):
+    """회원 목록에서 '링크를 1개 이상 가진 회원' 수를 센다."""
+    if not isinstance(obj, list):
+        return 0
+    n = 0
+    for m in obj:
+        if not isinstance(m, dict):
+            continue
+        if any(isinstance(m.get(f), list) and m.get(f) for f in fields):
+            n += 1
+    return n
+
+
+def _guard_destructive_save(path, obj):
+    """파괴적 저장을 차단한다. 차단했으면 True.
+
+    규칙(보수적 — 놓치는 것보다 막는 게 낫다):
+      · 회원 DB(DB_FILE/EUNHA_DB_FILE)에 한해 적용
+      · 기존값이 있고, 링크 보유 회원 수가 **1명이라도 줄면** 거부
+      · 단, 회원 수 자체가 줄었으면 '삭제'로 보고 통과
+        (회원 삭제 기능을 막으면 안 되므로)
+    """
+    try:
+        if path not in (DB_FILE, EUNHA_DB_FILE):
+            return False
+        if not isinstance(obj, list):
+            return False
+        # ══════════════════════════════════════════════════════════════════
+        # [사고 재발 방지 2026-10-29] **빈 리스트 저장**을 원천 차단한다.
+        #
+        #  2026-10-29 05:0x, members.json 이 2바이트(`[]`) 로 덮여
+        #  회원 2,241명이 통째로 사라졌다(최신 백업에서 복구함).
+        #  회원 DB 를 빈 배열로 저장하는 것은 **정상 동작일 수 없다.**
+        #  (전체 삭제 기능이 있다면 그건 별도 force 경로를 써야 한다)
+        #  → 기존값이 있는데 빈 리스트를 쓰려 하면 **무조건 거부**한다.
+        # ══════════════════════════════════════════════════════════════════
+        if not obj:
+            _prev = None
+            with _JSON_CACHE_LOCK:
+                _e = _JSON_CACHE.get(path)
+                if _e is not None:
+                    _prev = _e[0]
+            if _prev is None:
+                _prev = _mirror_read(path)
+                if _prev is None:
+                    try:
+                        _prev = json.loads(NAS.read(path) or "[]")
+                    except Exception:
+                        _prev = None
+            if isinstance(_prev, list) and _prev:
+                print(f"[안전장치] 빈 목록 저장 차단: {path} "
+                      f"(기존 {len(_prev)}건 보존)")
+                return True
+        old = None
+        with _JSON_CACHE_LOCK:
+            ent = _JSON_CACHE.get(path)
+            if ent is not None:
+                old = ent[0]
+        if old is None:
+            old = _mirror_read(path)
+        if not isinstance(old, list) or not old:
+            return False
+        # 회원 수가 줄었으면 정당한 삭제 → 통과
+        if len(obj) < len(old):
+            return False
+        old_n = _link_count(old)
+        new_n = _link_count(obj)
+        if new_n < old_n:
+            print(f"[안전장치] 파괴적 저장 차단: {path} "
+                  f"링크보유 {old_n}명 → {new_n}명 (저장 거부)")
+            return True
+    except Exception as e:
+        # 게이트 자체가 고장나 저장을 못 하게 만들면 안 된다 — 통과시킨다.
+        print("guard error (통과):", e)
+    return False
+
+
+def _safe_snapshot(path):
+    """쓰기 직전 원본을 회전 보관한다(최근 _SAFE_SNAP_KEEP 개).
+
+    사고가 나면 `restore_snapshot.py` 로 되돌린다. 실패해도 저장은 계속한다.
+    """
+    try:
+        import os, glob
+        name = str(path).rsplit("/", 1)[-1]
+        d = f"{_SAFE_SNAP_DIR}/{name}"
+        os.makedirs(d, exist_ok=True)
+        # 같은 초에 여러 번 쓰여도 덮어쓰지 않게 마이크로초까지 넣는다.
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        cur = None
+        with _JSON_CACHE_LOCK:
+            ent = _JSON_CACHE.get(path)
+            if ent is not None:
+                cur = ent[0]
+        if cur is None:
+            cur = _mirror_read(path)
+        if cur is None:
+            return
+        with open(f"{d}/{ts}.json", "w", encoding="utf-8") as f:
+            json.dump(cur, f, ensure_ascii=False)
+        olds = sorted(glob.glob(f"{d}/*.json"))
+        for p in olds[:-_SAFE_SNAP_KEEP]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    except Exception as e:
+        print("snapshot skip:", e)
+
+
+def _save_json(path, obj, force=False):
+    # ── [버그 수정 2026-10-26] 세대 증가를 **쓰기 전에** 한다 ─────────────
+    #  진행 중인 백그라운드 갱신이 NAS 응답을 기다리고 있을 수 있으므로,
+    #  쓰기(원격 왕복)를 시작하기 전에 무효화해야 경쟁 창을 닫을 수 있다.
+    _json_gen_bump(path)
+    # ── [안전장치 2026-10-26] 파괴적 저장 차단 + 회전 백업 ────────────────
+    #  요구: "앞으로도 계속 이렇게 자료가 사라지지 않도록 각별히 안전장치를"
+    #  멘토/멘티/페런츠 링크가 통째로 사라진 사고(417·2229·노본)의 재발을
+    #  **저장 계층에서** 막는다. 상세 규칙은 _guard_destructive_save 참고.
+    #
+    #  ⚠️ 차단되면 False 를 돌려준다. 호출부 103곳이 반환값을 무시하므로,
+    #     차단 사실이 **조용히 묻히지 않도록** 아래에서 전역 카운터에 남긴다.
+    #     (조용한 no-op 이 또 다른 '자료가 사라진 것처럼 보이는' 사고를 만든다)
+    if not force and _guard_destructive_save(path, obj):
+        # 차단 사실을 **관측 가능하게** 남긴다. 호출부가 반환값을 무시해도
+        #  (가) 콘솔에 경고가 찍히고 (나) /api/health 로 건수를 볼 수 있다.
+        try:
+            _on_save_blocked(path)
+        except Exception:
+            pass
+        return False
+    _safe_snapshot(path)
     NAS.write(path, json.dumps(obj, ensure_ascii=False, indent=1).encode("utf-8"))
     # 서버가 쓴 값은 즉시 캐시에 반영(다음 읽기 일관성 + 재조회 비용 제거).
     with _JSON_CACHE_LOCK:
         _JSON_CACHE[path] = (obj, time.time())
+    # [성능 수정 turn 78] 인물 색인 캐시 무효화.
+    #  `_save_json` 이 **넘겨받은 바로 그 객체**를 캐시에 넣기 때문에
+    #  (`_ev_members()` 를 제자리 수정해 그대로 저장하는 호출부가 있다)
+    #  id 로는 변경을 알 수 없다. 저장은 드물고 색인 생성은 비싸므로
+    #  저장 시 무조건 비우는 편이 안전하다.
+    try:
+        _lpi_invalidate("save")
+    except Exception:
+        pass
+    # 로컬 미러도 갱신(재시작 후 즉시 가용 + NAS 장애 폴백).
+    _mirror_write(path, obj)
+    return True
 
 
 def _invalidate_json(path):
     """외부 변경 강제 반영이 필요할 때 캐시 무효화."""
+    try:
+        _lpi_invalidate("invalidate")
+    except Exception:
+        pass
     with _JSON_CACHE_LOCK:
         _JSON_CACHE.pop(path, None)
+
+
+# ============================================================================
+#  [turn69] 마스터 비밀번호 — 변경 가능 + 해시 저장
+#  ──────────────────────────────────────────────────────────────────────────
+#  ## 무엇이 문제였나
+#   `MASTER_PW` 는 config.json 의 **평문** 값을 기동 시 한 번 읽어서
+#   모듈 상수로 굳혀 두었다. 그래서
+#     · 마스터 화면에서 비밀번호를 바꿀 방법이 아예 없었고
+#     · 바꾸려면 파일을 손으로 고치고 서버를 재기동해야 했으며
+#     · 그 평문이 소스 주석과 git 기록에 남아 있었다.
+#
+#  ## 해결
+#   · `cfg["auth"]["masterHash"]` = PBKDF2-SHA256 해시(+ salt)만 저장한다.
+#   · 평문은 어디에도 남기지 않는다.
+#   · 해시가 없으면(구버전 config) 종전 평문으로 **자동 마이그레이션**한다
+#     → 다음 비번 변경 시 해시로 대체된다.
+#   · `_master_pw()` 는 더 이상 상수가 아니라 **매 호출 조회**이므로,
+#     비밀번호를 바꾸면 재기동 없이 즉시 효력이 있다.
+#   · `MASTER_PW` 는 하위호환용으로 남긴다(초기 평문). 새 코드는 쓰지 않는다.
+# ============================================================================
+_MASTER_KDF_ITER = 200_000
+
+
+def _master_hash_make(pw):
+    """평문 → 'pbkdf2_sha256$iter$salt_hex$hash_hex' 형태의 저장 문자열."""
+    _pw = str(pw or "")
+    if not _pw:
+        return ""
+    _salt = _secrets.token_bytes(16)
+    _dk = hashlib.pbkdf2_hmac("sha256", _pw.encode("utf-8"), _salt,
+                              _MASTER_KDF_ITER)
+    return "pbkdf2_sha256$%d$%s$%s" % (
+        _MASTER_KDF_ITER, _salt.hex(), _dk.hex())
+
+
+def _master_hash_verify(stored, pw):
+    """저장 문자열(해시)과 입력 평문 비교 — 상수시간 비교."""
+    _s = str(stored or "")
+    if not _s:
+        return False
+    try:
+        algo, itr, salt_hex, want_hex = _s.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", str(pw or "").encode("utf-8"),
+                                 bytes.fromhex(salt_hex), int(itr))
+        return _secrets.compare_digest(dk.hex(), want_hex)
+    except Exception:
+        return False
+
+
+def _master_auth_cfg():
+    """config.json 의 auth 블록(마스터 관련)."""
+    try:
+        cfg = _load_json(CFG_FILE, _default_config())
+        a = cfg.get("auth")
+        return a if isinstance(a, dict) else {}
+    except Exception:
+        return {}
+
+
+def _master_pw_matches(value):
+    """입력값이 현재 마스터 비밀번호인지 — **NAS 장애에도 잠기지 않게** 3단 확인.
+
+    ① NAS 앱 설정(CFG_FILE)의 auth.masterHash  ← 정본
+    ② 로컬 부트스트랩 설정(config.json)의 auth.masterHash ← NAS 장애 폴백
+    ③ 초기 평문(auth.master / MASTER_PW)        ← 최후 폴백(비어 있으면 통과 없음)
+
+    ## 왜 ②가 필요한가
+      해시를 NAS(db/config.json)에만 두면, NAS 가 죽었을 때 **마스터 로그인이
+      전면 불가**가 된다. 그러면 관리자 권한으로 복구할 방법이 사라져
+      'NAS 고장 = 서비스 고장' 이 된다. 그래서 로컬에도 같은 해시를 둔다.
+      (비밀번호 변경 시 두 곳을 함께 갱신한다)
+    """
+    _v = str(value or "")
+    if not _v:
+        return False
+    # ① NAS 정본 해시
+    a = _master_auth_cfg()
+    _h = str(a.get("masterHash", "") or "")
+    if _h:
+        return _master_hash_verify(_h, _v)
+    # ② 로컬 부트스트랩 해시 (NAS 장애 폴백)
+    _lh = str(((CONF.get("auth") or {}).get("masterHash", "")) or "")
+    if _lh:
+        return _master_hash_verify(_lh, _v)
+    # 안전장치: 초기 평문이 비어 있으면 **아무것도 통과시키지 않는다**.
+    #  (빈 값 비교로 우연히 통과하는 사고 방지 — turn69)
+    _init = str(MASTER_PW or "")
+    if not _init:
+        return False
+    return _v == _init
+
+
+def _master_pw_is_custom():
+    """기본(초기) 마스터 비번을 아직 쓰고 있는지 — 앱이 경고 배너에 쓴다."""
+    a = _master_auth_cfg()
+    return bool(str(a.get("masterHash", "") or ""))
+
+
+def _master_pw_set(new_pw):
+    """마스터 비밀번호를 해시로 저장한다. 반환: (ok, err)
+
+    ⚠️ 평문은 저장하지 않는다. config.json 이 백업/git 에 들어가도
+       비밀번호가 그대로 노출되지 않게 하기 위함이다.
+    """
+    _np = str(new_pw or "")
+    if len(_np) < 8:
+        return False, "비밀번호는 8자 이상이어야 합니다"
+    if _np.strip() != _np:
+        return False, "비밀번호 앞뒤에 공백을 둘 수 없습니다"
+    if not re.search(r"[0-9]", _np) or not re.search(r"[A-Za-z]", _np):
+        return False, "영문과 숫자를 모두 포함해야 합니다"
+    _h = _master_hash_make(_np)
+    if not _h:
+        return False, "비밀번호 처리 실패"
+    with LOCK:
+        cfg = _load_json(CFG_FILE, _default_config())
+        a = cfg.get("auth")
+        if not isinstance(a, dict):
+            a = {}
+        a["masterHash"] = _h
+        a["masterChangedAt"] = datetime.datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S")
+        # 평문이 남아 있으면 제거한다(더 이상 쓰지 않음).
+        if "masterPlain" in a:
+            a.pop("masterPlain", None)
+        cfg["auth"] = a
+        _save_json(CFG_FILE, cfg)
+    return True, ""
 
 
 
@@ -1865,35 +5350,95 @@ def _default_role_perms():
       bulk(단체문자) finance(재무) merchMgmt(수품관리/등록/판매) stats(통계)
       board(게시판) events(행사관리) merchBuy(수품구매)
       memberSearch(명단검색) memberAdd(인가자 생성) memberDetail(타인 상세열람)
+      supplies(비품재고 관리 — 중앙회 비품 리스트 등록/수정/삭제)
     """
     def p(**kw):
         base = {k: False for k in (
             "bulk", "finance", "merchMgmt", "stats", "board", "events",
-            "merchBuy", "memberSearch", "memberAdd", "memberDetail")}
+            "merchBuy", "memberSearch", "memberAdd", "memberDetail",
+            "supplies", "finIncome", "finExpense", "finAttach", "finOutput",
+            "nasRefresh")}
         base.update(kw)
         return base
     return {
         # 마스터: 전부 허용
         "master": p(bulk=True, finance=True, merchMgmt=True, stats=True,
                     board=True, events=True, merchBuy=True,
-                    memberSearch=True, memberAdd=True, memberDetail=True),
+                    memberSearch=True, memberAdd=True, memberDetail=True,
+                    supplies=True, finIncome=True, finExpense=True,
+                    finAttach=True, finOutput=True, nasRefresh=True),
         # 관리자: 마스터 전용(앱관리·마스터창)을 제외한 전부 허용
+        #  → 비품재고·재무 세부(입금/지출/첨부/출력)도 관리자가 관리(마스터가 끌 수 있음).
+        #  단 'NAS 최신 데이터'(nasRefresh)는 기본 마스터 전용이며, 마스터가
+        #  [메뉴 접근권한]에서 관리자에게 선택적으로 부여할 수 있다.
         "app": p(bulk=True, finance=True, merchMgmt=True, stats=True,
                  board=True, events=True, merchBuy=True,
-                 memberSearch=True, memberAdd=True, memberDetail=True),
+                 memberSearch=True, memberAdd=True, memberDetail=True,
+                 supplies=True, finIncome=True, finExpense=True,
+                 finAttach=True, finOutput=True, nasRefresh=False),
         # 범스카우트(인가자): 수품구매·행사·게시판만, 타인 상세 불가(이름·번호만 조회)
         "personal": p(bulk=False, finance=False, merchMgmt=False, stats=False,
                       board=True, events=True, merchBuy=True,
-                      memberSearch=True, memberAdd=False, memberDetail=False),
+                      memberSearch=True, memberAdd=False, memberDetail=False,
+                      supplies=False, finIncome=False, finExpense=False,
+                      finAttach=False, finOutput=False, nasRefresh=False),
         # 서포터즈(일반회원): 같은 화면이나 개인정보(명단검색/상세) 불가
         "supporter": p(bulk=False, finance=False, merchMgmt=False, stats=False,
                        board=True, events=True, merchBuy=True,
-                       memberSearch=False, memberAdd=False, memberDetail=False),
+                       memberSearch=False, memberAdd=False, memberDetail=False,
+                       supplies=False, finIncome=False, finExpense=False,
+                       finAttach=False, finOutput=False, nasRefresh=False),
         # 비인가자: 최소 권한
         "guest": p(bulk=False, finance=False, merchMgmt=False, stats=False,
                    board=True, events=True, merchBuy=True,
-                   memberSearch=False, memberAdd=False, memberDetail=False),
+                   memberSearch=False, memberAdd=False, memberDetail=False,
+                   supplies=False, finIncome=False, finExpense=False,
+                   finAttach=False, finOutput=False, nasRefresh=False),
     }
+
+
+def _default_home_menus():
+    """홈 오버플로(⋮) 메뉴 노출 설정 — 메뉴별로 '마스터에게 노출/관리자에게 노출'을
+    각각 켠다(복수 선택 가능). dict 순서가 곧 노출 순서이며, master=True 항목이
+    상단(마스터 구역), master=False & admin=True 항목이 하단(관리자 구역)에 온다.
+    """
+    return {
+        "admin": {"label": "앱 관리 — 앱접근 비번 변경/정지/복구",
+                  "icon": "admin_panel_settings", "master": True, "admin": False},
+        "master_console": {"label": "마스터 관리창 — 백업/회원/권한/로그/재무",
+                           "icon": "workspace_premium", "master": True, "admin": False},
+        "source": {"label": "기본자료 폴더 (첨부·자동분석)",
+                   "icon": "folder_special", "master": True, "admin": False},
+        "settings": {"label": "설정 · 백업/복원",
+                     "icon": "settings", "master": True, "admin": False},
+        "refresh": {"label": "NAS 최신 데이터 불러오기",
+                    "icon": "cloud_download", "master": True, "admin": False},
+        "member_request": {"label": "등록요청 승인 — 평생회원·연회비·자격",
+                           "icon": "app_registration", "master": True, "admin": True},
+        "finance": {"label": "재무 관리 (후원·수품·참가비)",
+                    "icon": "account_balance_wallet", "master": True, "admin": True},
+        "import": {"label": "자료 가져오기 (AI 인식)",
+                   "icon": "auto_awesome", "master": True, "admin": True},
+        "select": {"label": "명단 선택 (일괄작업)",
+                   "icon": "checklist", "master": True, "admin": True},
+    }
+
+
+def _home_menus():
+    """홈 메뉴 노출 설정(누락 키는 기본값으로 보충)."""
+    cfg = _load_json(CFG_FILE, _default_config())
+    saved = cfg.get("homeMenus", {}) or {}
+    out = {}
+    for key, dflt in _default_home_menus().items():
+        item = dict(dflt)
+        s = saved.get(key)
+        if isinstance(s, dict):
+            if "master" in s:
+                item["master"] = bool(s["master"])
+            if "admin" in s:
+                item["admin"] = bool(s["admin"])
+        out[key] = item
+    return out
 
 
 def _default_config():
@@ -1914,6 +5459,7 @@ def _default_config():
         "serverPaused": False,          # 앱 서버 일시 정지
         "admins": [],                   # 마스터가 관리자 권한을 부여한 인가번호 목록
         "rolePermissions": _default_role_perms(),  # 역할별 메뉴 접근권한(마스터 설정)
+        "adminPermissions": {},         # 관리자별(인가번호) 개별 메뉴권한 override
         # ---- 회원정보 필드 노출 설정 (마스터가 항목별 노출/비노출 지정) ----
         #  sensitive=True 항목은 '타인에게' 노출 시 기본 마스킹(비노출)된다.
         "fieldVisibility": _default_field_visibility(),
@@ -1990,13 +5536,178 @@ def _perm_for(role, key):
     return bool(_role_perms().get(role, {}).get(key, False))
 
 
+def _sess_role_for_perm(s):
+    """세션 → 권한 판정용 역할 키(master/app/personal/supporter/guest).
+
+    관리자 권한을 부여받은 개인은 로그인 시 서버 세션 tier 가 'app' 이 되므로
+    (granted_admin) 별도 처리 없이 그대로 'app' 으로 판정한다.
+    """
+    tier = str((s or {}).get("tier", "") or "")
+    if tier in ("master", "app"):
+        return tier
+    if tier == "guest":
+        return "guest"
+    if bool((s or {}).get("regular")):
+        return "supporter"
+    return "personal"
+
+
+def _perm_key(raw):
+    """권한 override 키 정규화 — 인가번호(숫자) 또는 관리자 아이디(username).
+
+    [버그수정] 이전 구현은 숫자가 하나라도 있으면 숫자만 남겼다
+    ('tsak417' → '417'). 그래서 아이디/암호 관리자 계정(tsak417 등)이 저장한
+    개별 권한이 조회 시 인가번호 관리자('417') 의 키로 해석되어,
+    '권한 변경을 해도 반영되지 않는' 버그가 있었다(관리자 화면 권한 저장 무효).
+
+    이제 규칙:
+      · 영문·`_`·`.`·`-` 등 숫자 외 문자가 섞이면 → 관리자 아이디로 보고
+        소문자 그대로 보존한다(예: 'tsak417' → 'tsak417').
+      · 순수 숫자(구분자 포함)면 → 인가번호로 보고 숫자만 남긴다
+        (예: '415', '제415' → '415').
+    두 체계(인가번호 관리자 / 아이디·암호 관리자)는 같은 adminPermissions
+    맵을 공유하되 키는 서로 겹치지 않는다.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    # 숫자 외 문자(영문/한글/특수문자 등)가 하나라도 있으면 아이디로 취급.
+    if re.search(r"[^0-9]", s):
+        return s.lower()
+    return re.sub(r"[^0-9]", "", s)
+
+
+def _admin_perm_override(key):
+    """특정 관리자(인가번호 또는 관리자 아이디)의 개별 메뉴권한 override.
+
+    config 의 adminPermissions = { "<key>": { menuKey: bool } } 를 읽어
+    유효한 메뉴키만 남긴 dict 를 돌려준다. 저장된 값이 없으면 None.
+    """
+    key = _perm_key(key)
+    if not key:
+        return None
+    cfg = _load_json(CFG_FILE, _default_config())
+    ap = cfg.get("adminPermissions", {})
+    if not isinstance(ap, dict):
+        return None
+    ov = ap.get(key)
+    if not isinstance(ov, dict):
+        return None
+    allkeys = set(_default_role_perms().get("app", {}).keys())
+    out = {str(k): bool(v) for k, v in ov.items() if str(k) in allkeys}
+    return out or None
+
+
+def _session_admin_override(s):
+    """세션이 관리자(app)일 때 그 관리자(인가번호/아이디)의 개별 override."""
+    if str((s or {}).get("tier", "") or "") != "app":
+        return None
+    who = _perm_key((s or {}).get("who", ""))
+    if not who:
+        return None
+    return _admin_perm_override(who)
+
+
+def _perm_admin(s, menu_key):
+    """관리자 이상 + (마스터가 설정한) 메뉴권한 보유 여부.
+
+    마스터는 항상 통과. 관리자(app)는 그 인가번호의 개별 권한 override 가
+    있으면 그것을, 없으면 rolePermissions['app'][menu_key] 를 따른다
+    (마스터가 관리자별로 허용 범위를 세밀하게 조정할 수 있게 함).
+    """
+    role = _sess_role_for_perm(s)
+    if role == "master":
+        return True
+    if role != "app":
+        return False
+    ov = _session_admin_override(s)
+    if ov is not None and menu_key in ov:
+        return bool(ov[menu_key])
+    return _perm_for("app", menu_key)
+
+
 # --- seed members into NAS on first boot ---
-EUNHA_SEED = os.path.join(HERE, "eunha_members_seed.json")
-if not os.path.exists(EUNHA_SEED):
-    EUNHA_SEED = "/home/user/flutter_app/assets/data/eunha_members_seed.json"
-SEED = os.path.join(HERE, "members_seed.json")
-if not SEED.endswith("json") or not os.path.exists(SEED):
-    SEED = "/home/user/flutter_app/assets/data/members_seed.json"
+#  ## 시드는 **코드 자산**이지 상태가 아니다
+#   `APP_ROOT`(= 릴리스 api 폴더) 옆이나, 릴리스에서 두 단계 위
+#   (`<ROOT>/../assets/data`)에 있다. 상태 루트와는 무관하다.
+#
+#  ## 종전 잠재 버그 (2026-11-20 수정)
+#   EUNHA_SEED 는 `os.path.exists` 로 폴백했는데, SEED 는
+#   `not SEED.endswith("json")` 이라는 **의미 없는 조건**(항상 거짓)을 썼다.
+#   그 결과 SEED 가 HERE 에 없어도 폴백이 걸리지 않아
+#   `json.load(open(SEED))` 가 FileNotFoundError 로 죽을 수 있었다.
+#   (여기서는 첫 부팅 시드 주입 경로라 조용히 실패했을 가능성이 크다)
+SEED_DIRS = [
+    HERE,                                                    # 릴리스 api 폴더
+    os.path.join(APP_ROOT, "..", "assets", "data"),          # 가비아 레이아웃
+    os.path.join(APP_ROOT, "..", "..", "assets", "data"),    # 릴리스에서 2단계 위
+]
+
+
+def _find_seed(name):
+    for d in SEED_DIRS:
+        p = os.path.abspath(os.path.join(d, name))
+        if os.path.isfile(p):
+            return p
+    return os.path.abspath(os.path.join(HERE, name))
+
+
+EUNHA_SEED = _find_seed("eunha_members_seed.json")
+SEED = _find_seed("members_seed.json")
+
+
+def _eunha_fill_from_seed(members):
+    """은하 레코드의 **비어 있는 인가정보**를 시드 값으로 보충해 돌려준다.
+
+    ## 요구 (2026-11-02 build #579)
+      "은하20호 정보가 누락됨 은하19호의 인가시 정보와 동일하게 업데이트 해줘"
+
+    ## 실측 배경
+      · NAS 원본은 정상이었는데 로컬 미러(`.json_mirror/<sha1>.json`)가
+        옛 얇은 레코드(5키)로 되돌아가 있었다. `_load_json` 은 미러를
+        먼저 읽으므로 부팅 보충만으로는 부족했다.
+      · 그래서 **응답 직전**에도 같은 보충을 한 번 더 건다(2중 방어).
+
+    ## 안전 규칙
+      · 비어 있는 필드만 채운다 → 사용자가 일부러 지운 값/고친 값은 보존.
+      · 채우는 대상은 인가 당시 정보 4항목(league/unit/birthday/date).
+      · 원본 리스트를 변형하지 않고 **사본**을 돌려준다.
+    """
+    if not isinstance(members, list) or not members:
+        return members
+    try:
+        if not os.path.exists(EUNHA_SEED):
+            return members
+        seed = json.load(open(EUNHA_SEED, encoding="utf-8"))
+    except Exception:
+        return members
+    seed_by_no = {}
+    for s in seed:
+        k = re.sub(r"[^0-9]", "", str(s.get("number", "")))
+        if k:
+            seed_by_no[k] = s
+    fill_keys = ("league", "unit", "birthday", "date")
+    out = []
+    for m in members:
+        if not isinstance(m, dict):
+            out.append(m)
+            continue
+        k = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+        s = seed_by_no.get(k)
+        if not s:
+            out.append(m)
+            continue
+        need = [f for f in fill_keys
+                if (not str(m.get(f) or "").strip()
+                    and str(s.get(f) or "").strip())]
+        if not need:
+            out.append(m)
+            continue
+        m2 = dict(m)
+        for f in need:
+            m2[f] = s[f]
+        out.append(m2)
+    return out
 
 
 def _boot():
@@ -2021,6 +5732,45 @@ def _boot():
             if emembers:
                 _save_json(EUNHA_DB_FILE, emembers)
                 print("seeded eunha", len(emembers))
+        # ── [요구 2026-11-02 build #579] 은하 인가정보 유실 자동 복구 ──────
+        #  증상: "은하20호 정보가 누락됨 / 은하19호의 인가시 정보와 동일하게
+        #        업데이트 해줘"
+        #  실측: G20 레코드가 id·number·name·corps·memo **5개 키만** 남아
+        #        인가 당시 정보(소속연맹·등록단위대·생년월일·인가일)가 통째로
+        #        비어 있었다. 시드(eunha_members_seed.json)에는 값이 살아 있는데
+        #        한 번 얇아진 레코드는 아무도 되돌려주지 않았다.
+        #  조치: 부팅 때마다 은하 명단을 시드와 대조해, **비어 있는 필드만**
+        #        시드 값으로 보충한다. 사용자가 일부러 고친 값은 건드리지 않는다
+        #        (빈 값일 때만 채우므로 되돌림 사고가 없다).
+        try:
+            if NAS.exists(EUNHA_DB_FILE):
+                cur_e = _load_json(EUNHA_DB_FILE, [])
+                seed_e = json.load(open(EUNHA_SEED, encoding="utf-8"))
+                seed_by_no = {
+                    re.sub(r"[^0-9]", "", str(s.get("number", ""))): s
+                    for s in seed_e
+                    if re.sub(r"[^0-9]", "", str(s.get("number", "")))
+                }
+                fill_keys = ("league", "unit", "birthday", "date")
+                fixed = []
+                for m in cur_e:
+                    no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                    s = seed_by_no.get(no)
+                    if not s:
+                        continue
+                    changed = False
+                    for k in fill_keys:
+                        if (not str(m.get(k) or "").strip()
+                                and str(s.get(k) or "").strip()):
+                            m[k] = s[k]
+                            changed = True
+                    if changed:
+                        fixed.append(no)
+                if fixed:
+                    _save_json(EUNHA_DB_FILE, cur_e)
+                    print("eunha 인가정보 자동 보충:", len(fixed), fixed[:10])
+        except Exception as e:
+            print("eunha fill skip:", e)
         if not NAS.exists(CFG_FILE):
             _save_json(CFG_FILE, _default_config())
         if not NAS.exists(FIN_FILE):
@@ -2029,6 +5779,15 @@ def _boot():
             _save_json(IMP_FILE, {"files": []})
         if not NAS.exists(MAT_FILE):
             _save_json(MAT_FILE, _default_mat())
+        if not NAS.exists(STORAGE_FILE):
+            _save_json(STORAGE_FILE, _default_storage())
+        if not NAS.exists(FIN_ATTACH_FILE):
+            _save_json(FIN_ATTACH_FILE, {})
+    # 기본 아이디/암호 관리자 계정(task/tsak) 시딩 — LOCK 밖에서 호출(중복락 방지).
+    try:
+        _seed_admin_accounts()
+    except Exception as e:
+        print("seed admin accounts fail", e)
     print("boot done")
 
 
@@ -2052,6 +5811,270 @@ def _default_finance():
     }
 
 
+# ============================================================================
+#  자료 저장공간 설정 (마스터 전용) — NAS / 구글드라이브 / 기타(추가)
+#   · 모든 자료(사진·동영상·첨부)의 저장 위치를 선택적으로 구동한다.
+#   · 저장공간을 바꿀 때는 "기존자료를 저장 후 업로드하시겠습니까?" 확인을 거쳐
+#     새 저장공간으로 자료를 이관(업로드)한다.
+#   · 이관 시 기존 드라이브의 자료는 그대로 남겨두고, 이관 완료 후
+#     "기존 자료를 삭제할지"를 별도로 확인한다(사용자 선택).
+# ============================================================================
+def _default_storage():
+    return {
+        "active": "nas",              # 현재 사용중인 저장공간 키
+        "spaces": {
+            "nas": {
+                "label": "현재 NAS",
+                "type": "nas",
+                "enabled": True,
+                "config": {},
+            },
+            "gdrive": {
+                "label": "구글드라이브",
+                "type": "gdrive",
+                "enabled": False,
+                # 아이디/패스워드 + 폴더 URL (마스터 입력)
+                "config": {
+                    "id": "",
+                    "password": "",
+                    "folderUrl": "https://drive.google.com/drive/folders/"
+                                 "118ksLq6g4AuOY8PSMYPwfEusQyFYG-3r?hl=ko",
+                    "endpoint": "",   # (선택) Apps Script 웹앱 URL
+                },
+            },
+            "etc": {
+                "label": "추가(미설정)",
+                "type": "etc",
+                "enabled": False,
+                "config": {"label": "", "endpoint": "", "id": "", "password": ""},
+            },
+        },
+    }
+
+
+def _storage():
+    cfg = _load_json(STORAGE_FILE, _default_storage())
+    if not isinstance(cfg, dict):
+        cfg = _default_storage()
+    cfg.setdefault("active", "nas")
+    sp = cfg.get("spaces")
+    if not isinstance(sp, dict):
+        sp = _default_storage()["spaces"]
+        cfg["spaces"] = sp
+    # 누락 공간 보충(기본값 기준)
+    for k, v in _default_storage()["spaces"].items():
+        if k not in sp or not isinstance(sp.get(k), dict):
+            sp[k] = v
+        else:
+            sp[k].setdefault("config", {})
+    return cfg
+
+
+def _storage_active():
+    """현재 사용중인 저장공간 키."""
+    return str(_storage().get("active", "nas") or "nas")
+
+
+# ============================================================================
+#  재무 거래별 첨부파일 (엑셀·pdf·jpg·png·zip·ppt 및 모든 포맷)
+#   · 메타: finance_attach.json = { "<txid>": [ {name,size,kind,uploaded,storage} ] }
+#   · 실물: FIN_ATTACH_DIR/<txid>/<name>
+# ============================================================================
+def _fin_attach_meta():
+    m = _load_json(FIN_ATTACH_FILE, {})
+    if not isinstance(m, dict):
+        m = {}
+    return m
+
+
+def _fin_attach_save(meta):
+    _save_json(FIN_ATTACH_FILE, meta)
+
+
+def _fin_attach_list(txid):
+    txid = str(txid or "").strip()
+    if not txid:
+        return []
+    out = _fin_attach_meta().get(txid)
+    return out if isinstance(out, list) else []
+
+
+def _fin_attach_dir(txid):
+    return f"{FIN_ATTACH_DIR}/{_safe_name(str(txid))}"
+
+
+def _safe_rel(name):
+    """하위폴더 경로를 허용하는 안전 상대경로(각 구간을 정제)."""
+    parts = [p for p in str(name or "").replace("\\", "/").split("/") if p.strip()]
+    parts = [_safe_name(p) for p in parts]
+    return "/".join(parts)
+
+
+def _fin_attach_ensure_dir(txid):
+    d = _fin_attach_dir(txid)
+    if not NAS.exists(FIN_ATTACH_DIR):
+        NAS.mkdir(BASE, "재무첨부")
+    if not NAS.exists(d):
+        NAS.mkdir(FIN_ATTACH_DIR, _safe_name(str(txid)))
+    return d
+
+
+def _fin_attach_all_txids():
+    return list(_fin_attach_meta().keys())
+
+
+# ============================================================================
+#  저장공간 이관(migration)
+#   · 규칙: 새 저장공간으로 자료를 "복사(업로드)"하되, 기존 저장공간의 자료는
+#     그대로 남겨둔다. 이관 완료 후 "기존 자료를 삭제할지"를 별도로 확인한다.
+# ============================================================================
+def _storage_material_files():
+    """모든 자료(첨부/사진·동영상/기본자료)의 저장 위치·크기 목록."""
+    out = {"finance": [], "event": [], "files": [], "total": 0, "bytes": 0}
+    # 1) 재무 첨부
+    for txid, files in _fin_attach_meta().items():
+        for f in (files or []):
+            out["finance"].append({
+                "group": "finance", "txid": str(txid),
+                "name": os.path.basename(str(f.get("name", ""))),
+                "path": f"{_fin_attach_dir(txid)}/{f.get('name','')}",
+                "size": int(f.get("size", 0) or 0),
+            })
+    # 2) 행사 사진·동영상
+    emeta = _event_media_meta().get("files", {})
+    for name in emeta.keys():
+        out["event"].append({
+            "group": "event",
+            "name": os.path.basename(str(name)),
+            "path": f"{EVENT_DIR}/{name}",
+            "size": 0,
+        })
+    # 3) 기본자료 (2단계: 루트 + SUB_FOLDERS)
+    def _scan(p):
+        try:
+            r = NAS.list(p)
+        except Exception:
+            return
+        if not r.get("ok"):
+            return
+        for f in r.get("files", []):
+            if f.get("isdir"):
+                continue
+            out["files"].append({
+                "group": "files",
+                "name": f.get("name", ""),
+                "path": f"{p}/{f.get('name','')}",
+                "size": int(f.get("size", 0) or 0),
+            })
+    _scan(DATA_DIR)
+    for sub in SUB_FOLDERS.values():
+        _scan(f"{DATA_DIR}/{sub}")
+    for g in ("finance", "event", "files"):
+        out[g + "Count"] = len(out[g])
+        for it in out[g]:
+            out["total"] += 1
+            out["bytes"] += it["size"]
+    return out
+
+
+def _storage_cloud_upload(space, item):
+    """(선택) 구글드라이브/기타 저장공간의 GAS 웹앱 엔드포인트로 파일 1건 업로드.
+
+    endpoint 미설정 시 None(업로드 불가) 반환 → 호출부가 '보류(pending)' 처리.
+    """
+    cfg = (space or {}).get("config", {}) or {}
+    endpoint = str(cfg.get("endpoint", "") or "").strip()
+    if not endpoint:
+        return None
+    try:
+        b = NAS.read_bytes(item["path"])
+        payload = json.dumps({
+            "action": "upload",
+            "folderUrl": str(cfg.get("folderUrl", "") or ""),
+            "id": str(cfg.get("id", "") or ""),
+            "password": str(cfg.get("password", "") or ""),
+            "group": item.get("group", ""),
+            "txid": item.get("txid", ""),
+            "name": item.get("name", ""),
+            "dataBase64": base64.b64encode(b).decode("ascii"),
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint, data=payload,
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print("storage cloud upload fail", e)
+        return False
+
+
+def _storage_migrate(target, delete_old=False):
+    """target 저장공간으로 모든 자료를 이관한다.
+
+    · nas  → 실물이 이미 NAS 이므로 메타의 storage 필드만 갱신(물리 이동 없음).
+    · cloud→ endpoint 가 있으면 업로드, 없으면 '보류(pending)'. 기존 자료는 유지.
+    · delete_old=True 이고 업로드가 모두 성공한 경우에만 기존 자료를 삭제한다.
+    """
+    cfg = _storage()
+    spaces = cfg.get("spaces", {})
+    if target not in spaces:
+        return {"ok": False, "error": "unknown storage"}
+    old = cfg.get("active", "nas")
+    space = spaces.get(target, {})
+    is_nas = str(space.get("type", "")) == "nas"
+
+    mats = _storage_material_files()
+    files = mats["finance"] + mats["event"] + mats["files"]
+    copied = 0
+    failed = 0
+    pending = False
+    for it in files:
+        if is_nas:
+            copied += 1                      # 이미 NAS 에 있으므로 성공 처리
+            continue
+        r = _storage_cloud_upload(space, it)
+        if r is None:
+            pending = True                   # 엔드포인트 미설정 → 보류
+        elif r:
+            copied += 1
+        else:
+            failed += 1
+
+    # 메타의 storage 표기를 새 공간으로 갱신(동기화 상태 일치)
+    meta = _fin_attach_meta()
+    for txid, lst in meta.items():
+        for f in (lst or []):
+            f["storage"] = target
+    _fin_attach_save(meta)
+
+    # 기존 저장공간 자료 삭제는 '사용자 확인 + 복사 성공 + 보류 아님'일 때만.
+    deleted_old = False
+    if delete_old and not is_nas and not pending and failed == 0 and old != target:
+        for it in files:
+            try:
+                NAS.delete(it["path"])
+            except Exception:
+                pass
+        deleted_old = True
+    # NAS 로 되돌리는 경우(클라우드→NAS)는 실물이 NAS 에 있으므로 삭제 불필요.
+
+    with LOCK:
+        cfg["active"] = target
+        _save_json(STORAGE_FILE, cfg)
+
+    return {
+        "ok": True, "active": target, "previous": old,
+        "copied": copied, "failed": failed, "pending": pending,
+        "total": mats["total"], "bytes": mats["bytes"],
+        "counts": {
+            "finance": mats.get("financeCount", 0),
+            "event": mats.get("eventCount", 0),
+            "files": mats.get("filesCount", 0),
+        },
+        "deletedOld": deleted_old,
+    }
+
+
 def _log_import(folder, name, summary):
     log = _load_json(IMP_FILE, {"files": []})
     log["files"].insert(0, {
@@ -2061,6 +6084,126 @@ def _log_import(folder, name, summary):
     })
     log["files"] = log["files"][:200]
     _save_json(IMP_FILE, log)
+
+
+# ===================== 자료 가져오기(AI 인식) 감사로그 · 복원 =====================
+#  요구: "자료가 실수로 업데이트되면 안 되기 때문에 반드시 마스터에게 알림을 주고,
+#        어떤 데이터가 업데이트 되었고, 누구의 계정으로 이런 업무가 진행되었는지
+#        알려주고 로그 남겨야 함. 마스터는 복원 버튼을 통해 기존 항목으로 복원."
+#  · 모든 import 반영을 import_log.json("items")에 기록(who/what/when + 이전값).
+#  · 반영된 회원은 '이전값(prev)'을 통째로 보관 → 마스터가 1클릭 복원 가능.
+#  · 반영 시 관리자 이상에게 알림(notify.json) 적재.
+IMP_LOG_MAX = 500
+
+
+def _import_log_add(entry):
+    """import_log.json 의 'items'에 감사 1건 추가(최신순)."""
+    try:
+        with LOCK:
+            doc = _load_json(IMP_FILE, {"files": [], "items": []})
+            if not isinstance(doc, dict):
+                doc = {"items": []}
+            doc.setdefault("items", [])
+            doc["items"].insert(0, entry)
+            doc["items"] = doc["items"][:IMP_LOG_MAX]
+            _save_json(IMP_FILE, doc)
+    except Exception:
+        pass
+    return entry
+
+
+def _import_log_items(limit=200):
+    doc = _load_json(IMP_FILE, {"files": [], "items": []})
+    if not isinstance(doc, dict):
+        return []
+    return list(doc.get("items", []))[:limit]
+
+
+def _import_log_find(entry_id):
+    for it in _import_log_items(IMP_LOG_MAX):
+        if str(it.get("id", "")) == str(entry_id):
+            return it
+    return None
+
+
+def _notify_master_import(entry):
+    """자료 가져오기(업데이트) 발생 → 관리자 이상 알림 큐에 적재(마스터 확인용)."""
+    try:
+        dtxt = entry.get("name", "") or entry.get("folder", "") or "자료"
+        who = entry.get("byLabel") or "관리자"
+        _notify_admin(
+            "import",
+            "자료 가져오기(업데이트) — %s" % dtxt,
+            "%s 계정으로 자료 업데이트: %s" % (who, entry.get("summary", "")),
+            category="자료가져오기",
+            author=who,
+            importId=str(entry.get("id", "")),
+        )
+    except Exception:
+        pass
+
+
+def _next_member_number(members):
+    """members 목록에서 다음 인가번호(최대+1)를 산출."""
+    mx = 0
+    for m in members:
+        try:
+            n = int(re.sub(r"[^0-9]", "", str(m.get("number", "")) or "0") or "0")
+            if n > mx:
+                mx = n
+        except Exception:
+            pass
+    return mx + 1
+
+
+# 병합 대상 필드(가져오기 비교/업데이트 시 사용자가 선택할 수 있는 항목).
+_IMPORT_FIELDS = [
+    ("name", "성명"),
+    ("league", "연맹"),
+    ("unit", "단위대"),
+    ("address", "주소"),
+    ("phone", "핸드폰"),
+    ("tel", "연락처"),
+    ("email", "이메일"),
+    ("birthday", "생일"),
+    ("atasNo", "ATAS 인가번호"),
+    ("date", "인가일"),
+    ("activity", "활동"),
+    ("position", "직위"),
+    ("memo", "메모/비고"),
+]
+
+
+def _import_find_dup(members, row):
+    """가져온 행이 기존 회원과 중복인지 판정(인가번호 → 이름+전화 → 이름)."""
+    no = re.sub(r"[^0-9]", "", str(row.get("number", "") or ""))
+    nm = str(row.get("name", "") or "").strip()
+    ph = re.sub(r"[^0-9]", "", str(row.get("phone", "") or ""))
+    if no:
+        for m in members:
+            if re.sub(r"[^0-9]", "", str(m.get("number", "") or "")) == no:
+                return m, "number"
+    if nm and ph:
+        for m in members:
+            if str(m.get("name", "") or "").strip() == nm and \
+                    re.sub(r"[^0-9]", "", str(m.get("phone", "") or "")) == ph:
+                return m, "name+phone"
+    if nm:
+        for m in members:
+            if str(m.get("name", "") or "").strip() == nm:
+                return m, "name"
+    return None, ""
+
+
+def _import_diff(prev, row):
+    """기존(prev) vs 신규(row) 항목별 차이 목록."""
+    out = []
+    for key, label in _IMPORT_FIELDS:
+        old = str(prev.get(key, "") or "").strip()
+        new = str(row.get(key, "") or "").strip()
+        if new and new != old:
+            out.append({"field": key, "label": label, "old": old, "new": new})
+    return out
 
 
 def _default_mat():
@@ -2297,11 +6440,46 @@ def _cfg_value(key, default=None):
     return _load_json(CFG_FILE, _default_config()).get(key, default)
 
 
+def _norm_pw(pw):
+    """[turn67] 비밀번호 비교용 정규화.
+
+    ── 실제 사고 ─────────────────────────────────────────────────────────
+    `/api/personal/password` 는 `new` 를 `.strip()` 해서 저장하지만
+    로그인 검증(`_verify`)은 **원본 문자열끼리** 비교했다. 그래서 비번 앞뒤에
+    공백이 섞이면 저장값과 입력값이 영영 만나지 않아 "바꿨는데 로그인이
+    안 되는" 상태가 됐다.
+    → 저장하는 쪽과 비교하는 쪽이 **같은 함수**를 쓰도록 통일한다.
+    """
+    return str(pw if pw is not None else "").strip()
+
+
 def _personal_pw_of(no):
-    """설정된 개인비번 또는 기본 '{no}!@@'."""
+    """설정된 개인비번(범스카우트) 또는 기본 '{no}!@@'.
+
+    ── [turn67] 조회 순서 수정 ──────────────────────────────────────────
+    종전에는 cfg.personalPasswords 만 보고 없으면 곧바로 기본값으로 갔다.
+    그래서 본인이 바꾼 비번이 **회원 레코드(personalPassword)에만** 남아 있는
+    경우(강제변경/초기화 경로가 섞일 때) 조회에서 사라지고 기본비번으로
+    되돌아갔다. → 저장소를 순서대로 모두 확인한다.
+      ① cfg.personalPasswords[no]   ← 본인 셀프 변경의 정본
+      ② 회원 레코드 personalPassword ← 관리자 강제변경/구 데이터
+      ③ 기본 '{no}!@@'
+    """
     no = re.sub(r"[^0-9]", "", str(no))
+    if not no:
+        return ""
     pws = _cfg_value("personalPasswords", {}) or {}
-    return str(pws.get(no) or f"{no}!@@")
+    v = _norm_pw(pws.get(no))
+    if v:
+        return v
+    try:
+        m = _member_by_number(no)
+        v2 = _norm_pw((m or {}).get("personalPassword"))
+        if v2:
+            return v2
+    except Exception:
+        pass
+    return f"{no}!@@"
 
 
 def _regular_pw_of(m):
@@ -2310,8 +6488,8 @@ def _regular_pw_of(m):
     key = re.sub(r"[^0-9]", "", str(
         m.get("accessPhone") or m.get("phone") or ""))
     pws = _ev_load_regular_pw()
-    return str(pws.get(key) or m.get("personalPassword")
-               or _ev_phone_last4(m.get("phone") or key))
+    return _norm_pw(pws.get(key)) or _norm_pw(m.get("personalPassword")) \
+        or _ev_phone_last4(m.get("phone") or key)
 
 
 def _password_reset_requests():
@@ -2323,25 +6501,70 @@ def _password_reset_requests():
             and str(it.get("status", "")) == "pending"]
 
 
-def _ev_password_reset_request(ident, name, phone, requested_by=""):
-    """비밀번호 초기화 요청 접수(중복 방지). 반환: 요청 dict."""
-    ok, rid = _add_member_request({
+def _ev_password_reset_request(ident, name, phone, requested_by="", corps=""):
+    """비밀번호 초기화 요청 접수(중복 방지). 반환: 요청 dict.
+
+    ── [turn68] corps 를 함께 저장한다 ──────────────────────────────────
+    범/은하는 번호가 전부 겹치므로, 승인 단계에서 "누구 요청이었는지"를
+    번호만으로 되짚을 수 없다. 접수 시점에 소속을 확정해 남긴다.
+    """
+    _c = str(corps or "").strip().lower()
+    _rec = {
         "type": "pwreset",
         "ident": re.sub(r"[^0-9]", "", str(ident or "")),
         "name": str(name or ""),
         "phone": str(phone or ""),
         "requestedBy": str(requested_by or ""),
         "note": "비밀번호 초기화 요청",
-    })
-    return {"id": rid, "ident": str(ident or ""), "ok": ok}
+    }
+    if _c in ("tsak", "eunha"):
+        _rec["corps"] = _c
+    ok, rid = _add_member_request(_rec)
+    return {"id": rid, "ident": str(ident or ""), "corps": _c, "ok": ok}
 
 
-def _password_reset_apply(ident):
-    """초기화 승인 시 실제 비밀번호를 기본값으로 되돌린다."""
+def _password_reset_apply(ident, corps=None):
+    """초기화 승인 시 실제 비밀번호를 기본값으로 되돌린다.
+
+    ── [turn67] 소속(corps) 구분 필수 ──────────────────────────────────
+    범과 은하는 번호 공간이 **전부 겹친다**(1~165, 실측 165건 전부 다른 사람).
+    종전에는 소속을 보지 않고 범 명단만 뒤져서 `personalPasswords` 에서
+    번호 키를 지웠다. 그 결과
+      · 은하 회원의 초기화 요청이 은하 저장소는 그대로 둔 채
+      · **범 명단의 같은 번호** 비번을 기본값으로 되돌렸다.
+    → 남의 계정을 기본 비번 상태로 만드는 결함이었다.
+    이제 `corps` 를 받아 해당 소속 저장소만 건드린다.
+    """
     d = re.sub(r"[^0-9]", "", str(ident or ""))
     if not d:
         return False
-    m = _ev_member_by_ident(d)
+    _c = str(corps or "").strip().lower()
+    if _c not in ("tsak", "eunha"):
+        # 소속 미지정 — 은하 명단에만 있는 번호면 은하로 확정한다.
+        _c = ("eunha" if (_eunha_member_by_number(d)
+                          and not _member_by_number(d)) else "tsak")
+    if _c == "eunha":
+        with LOCK:
+            cfg = _load_json(CFG_FILE, _default_config())
+            epw = cfg.get("eunhaPasswords")
+            if isinstance(epw, dict) and d in epw:
+                epw.pop(d, None)
+                cfg["eunhaPasswords"] = epw
+                _save_json(CFG_FILE, cfg)
+        # 은하 명단 레코드도 기본값으로 되돌린다.
+        try:
+            with _MEMBER_WRITE_LOCK:
+                rows = _load_json(EUNHA_DB_FILE, [])
+                for i, mm in enumerate(rows):
+                    if _ck_num(str(mm.get("number", ""))) == _ck(d):
+                        mm["personalPassword"] = f"{d}!@@"
+                        rows[i] = mm
+                        _save_json(EUNHA_DB_FILE, rows)
+                        break
+        except Exception:
+            pass
+        return True
+    m = _ev_member_by_ident(d, corps="tsak")
     if not m:
         return False
     if m.get("isRegular"):
@@ -2377,14 +6600,50 @@ def _password_reset_apply(ident):
     return True
 
 
+def _eunha_pw_of(no):
+    """[turn67] 은하스카우트 개인비번 조회 — **범(personalPasswords)을 절대 보지 않는다.**
+
+    ── 실제 사고(중대 보안 결함) ────────────────────────────────────────
+    범과 은하는 번호 공간이 겹친다(둘 다 1~165). `/api/personal/password`
+    로 은하 3번이 비번을 바꾸면 `personalPasswords["3"]` 에 **번호만**으로
+    저장됐고, 로그인 검증은 `eunhaPasswords["3"]` 를 먼저 보다가 없으면
+    기본 `3!@@` 로 폴백했다. 그 결과
+
+      · 은하 3번: 새 비번 사용 불가 + **기본 비번으로 계속 로그인됨**
+      · 범  3번: 은하 3번이 바꾼 비번으로 **로그인됨** (남의 계정 탈취)
+
+    라는 두 가지 결함이 동시에 발생했다.
+    → 조회를 이 함수로 일원화하고, 은하 전용 저장소(eunhaPasswords)와
+      은하 명단 레코드만 사용한다.
+    """
+    no = re.sub(r"[^0-9]", "", str(no))
+    if not no:
+        return ""
+    # ① 은하 전용 저장소 (본인 셀프 변경의 정본)
+    pws = _cfg_value("eunhaPasswords", {}) or {}
+    v = _norm_pw(pws.get(no))
+    if v:
+        return v
+    # ② 은하 명단 레코드 (관리자 강제변경/구 데이터)
+    try:
+        m = _eunha_member_by_number(no)
+        v2 = _norm_pw((m or {}).get("personalPassword"))
+        if v2:
+            return v2
+    except Exception:
+        pass
+    # ③ 기본 — 기존 사용자 전원의 로그인을 깨지 않기 위해 유지한다.
+    return f"{no}!@@"
+
+
 def _personal_pw_of_eunha(no):
     """은하스카우트 개인비번 — 기본 '{no}!@@'.
     아이디 규칙: '은하50'(은하+인가번호) / 비밀번호: '50!@@'.
     화면에는 비밀번호 규칙을 노출하지 않는다.
+
+    [turn67] `_eunha_pw_of` 로 위임(범 저장소 분리 + 공백 정규화).
     """
-    no = re.sub(r"[^0-9]", "", str(no))
-    pws = _cfg_value("eunhaPasswords", {}) or {}
-    return str(pws.get(no) or f"{no}!@@")
+    return _eunha_pw_of(no)
 
 
 def _granted_admins():
@@ -2406,6 +6665,78 @@ def _is_granted_admin(no):
     return bool(no) and no in _granted_admins()
 
 
+# ============================================================================
+#  아이디/암호 기반 관리자 계정 (마스터가 생성·관리)
+#  · 기존 "인가번호에 관리자 권한 부여" 체계는 그대로 유지(공존).
+#  · 추가로 아이디(username)/암호(password) 로 로그인하는 관리자 계정을 둔다.
+#  · 계정별 메뉴권한은 adminPermissions[username] 로 관리(인가번호 관리자와 동일).
+# ============================================================================
+def _admin_accounts():
+    """아이디/암호 관리자 계정 목록. [{username,password,note,created}]"""
+    cfg = _load_json(CFG_FILE, _default_config())
+    accs = cfg.get("adminAccounts")
+    if not isinstance(accs, list):
+        return []
+    out = []
+    for a in accs:
+        if not isinstance(a, dict):
+            continue
+        u = str(a.get("username", "")).strip()
+        if not u:
+            continue
+        out.append({
+            "username": u,
+            "password": str(a.get("password", "")),
+            "note": str(a.get("note", "")),
+            "created": str(a.get("created", "")),
+        })
+    return out
+
+
+def _admin_account_find(username):
+    u = str(username or "").strip().lower()
+    if not u:
+        return None
+    for a in _admin_accounts():
+        if a["username"].lower() == u:
+            return a
+    return None
+
+
+def _is_admin_login(ident, value):
+    """아이디/암호 관리자 로그인 검증."""
+    a = _admin_account_find(ident)
+    if not a:
+        return False
+    return str(value) == str(a.get("password", ""))
+
+
+def _admin_username_set():
+    return {a["username"].lower() for a in _admin_accounts()}
+
+
+def _seed_admin_accounts():
+    """최초 1회 기본 관리자 계정(task/tsak) 시딩 — 이미 있으면 그대로 둔다."""
+    with LOCK:
+        cfg = _load_json(CFG_FILE, _default_config())
+        accs = cfg.get("adminAccounts")
+        if not isinstance(accs, list):
+            accs = []
+        have = {str(a.get("username", "")).strip().lower()
+                for a in accs if isinstance(a, dict)}
+        changed = False
+        for u in ("task", "tsak"):
+            if u.lower() not in have:
+                accs.append({"username": u, "password": APP_PW,
+                             "note": "기본 관리자 계정",
+                             "created": datetime.datetime.now().strftime(
+                                 "%Y-%m-%d %H:%M:%S")})
+                changed = True
+        if changed:
+            cfg["adminAccounts"] = accs
+            _save_json(CFG_FILE, cfg)
+
+
 def _member_by_number(no):
     no = re.sub(r"[^0-9]", "", str(no or ""))
     if not no:
@@ -2417,12 +6748,27 @@ def _member_by_number(no):
 
 
 def _eunha_member_by_number(no):
-    """은하스카우트 별도 명단에서 인가번호로 1명 찾기."""
-    no = re.sub(r"[^0-9]", "", str(no or ""))
-    if not no:
+    """은하스카우트 별도 명단에서 인가번호로 1명 찾기.
+
+    ── [번호체계 2026-10-26] G 접두어 지원 ──────────────────────────────
+    요구: "은하스카우트는 1~165와 같은 단순 번호를 G1~G165로 … 모두 다시
+          바꾸면 좋겠음 / G는 Galaxy(은하)의 약자임"
+
+    `G43` 과 `43` **둘 다** 받는다. 이유:
+      · 신규 저장·신규 로그인은 G 형식이 정본.
+      · 기존 링크·북마크·구 로그인 ID('은하43')가 남아 있을 수 있어
+        하위호환을 유지해야 자료가 끊기지 않는다.
+      · 어느 쪽으로 들어와도 **은하 명단 안에서만** 찾으므로 범 43호와
+        섞이지 않는다(이 함수는 EUNHA_DB_FILE 만 본다).
+    """
+    key = _ck(no)
+    d = _ck_num(no)
+    if not d:
         return None
     for m in _load_json(EUNHA_DB_FILE, []):
-        if re.sub(r"[^0-9]", "", str(m.get("number", ""))) == no:
+        cur = _ck(m.get("number", ""))
+        # ① G 형식 정확 일치  ② 숫자부 일치(구 데이터 '43' 호환)
+        if cur == key or _ck_num(cur) == d:
             return m
     return None
 
@@ -2430,14 +6776,32 @@ def _eunha_member_by_number(no):
 def _corps_of_number(no):
     """인가번호가 어느 소속인지 판정 → 'tsak'(범스카우트) | 'eunha'(은하스카우트) | ''.
 
-    범스카우트를 먼저 확인한다(레거시 회원은 corps 필드가 없어 범스카우트로 간주).
+    ── [버그 수정 2026-10-26] 은하 번호가 **항상 범으로 판정**되던 문제 ──────
+    종전에는 `re.sub(r"[^0-9]", "", ...)` 로 번호를 깎은 뒤 **범을 먼저**
+    확인했다. 그래서 '43' 은 언제나 범 43호였고, 은하 43호는 자기 소속을
+    잃었다(사진·세션·권한이 범 43호 것으로 뒤바뀜).
+
+    수정 순서:
+      ① G 접두어가 있으면 → **무조건 은하** (번호를 보지도 않는다)
+      ② 은하 명단에만 있는 번호 → 은하
+      ③ 범 명단에 있는 번호 → 범
+      ④ 둘 다 없으면 ''
     """
-    no = re.sub(r"[^0-9]", "", str(no or ""))
-    if not no:
+    raw = str(no or "").strip()
+    if not raw:
         return ""
-    if _member_by_number(no):
+    # ① G 접두어 = 은하 (가장 확실한 신호)
+    if _ck_is_eunha(raw):
+        return "eunha"
+    d = _ck_num(raw)
+    if not d:
+        return ""
+    # ② 은하 명단에만 있는지 먼저 본다 — 겹치는 번호에서 은하를 구제하지는
+    #    않지만(접두어 없는 '43' 은 범으로 간주), 은하 전용 번호(예: 범 명단에
+    #    없는 번호)는 정확히 은하로 판정된다.
+    if _member_by_number(d):
         return "tsak"
-    if _eunha_member_by_number(no):
+    if _eunha_member_by_number(d):
         return "eunha"
     return ""
 
@@ -2467,18 +6831,73 @@ def _is_regular_member(no):
 
 def _verify(tier, value, ident="", corps=""):
     if tier == "master":
-        return value == MASTER_PW, "master"
+        # [turn69] 동적 비교(해시) — 마스터 비번 변경이 즉시 반영된다.
+        return _master_pw_matches(value), "master"
     app_pw = _cfg_value("appPassword", APP_PW) or APP_PW
     if tier == "app":
-        return value == app_pw or value == MASTER_PW, "app"
+        # ── [turn70] 마스터 비밀번호를 관리자 비번으로 인정하지 않는다 ────
+        #  사용자 지적: "id:415 pw:Corbuser7!@@ / tiger415 pw:Corbuser7!@@
+        #   등등 경우에 따라 각각 로그인 되는 상황이 다름 … 심각한 오류"
+        #
+        #  ## 실제 구멍 (앱 클릭 테스트로 확인)
+        #   종전: `if value == app_pw or _master_pw_matches(value)`
+        #   → 개인 로그인창에 `tiger415` + 마스터비번을 넣으면
+        #      · 서버 personal 검증은 실패하는데
+        #      · 앱이 '관리자 계정일 수도' 있어 app 등급으로 재시도하고
+        #      · 서버가 **마스터 비번이라는 이유로 app 등급을 발급**했다.
+        #      결과: 마스터 비번 하나로 **아무 ID 나 관리자 세션**이 생겼다.
+        #      (실측: 개인창 → 통합승인관리·재무가 보이는 관리자 화면 진입)
+        #
+        #  ## 지금 규칙
+        #   마스터는 **마스터 탭에서만** 들어온다(tier='master').
+        #   app 등급은 ①앱 공용 비번 ②그 관리자 계정의 자기 비번 — 이 둘뿐이다.
+        if value == app_pw:
+            return True, "app"
+        # 아이디/암호로 생성한 관리자 계정(예: task / tsak) — 자기 비번만.
+        if _is_admin_login(ident, value):
+            return True, "app"
+        return False, ""
     if tier == "personal":
         # 은하스카우트는 별도 명단/규칙(은하#N!@@)으로 검증한다.
         if _resolve_corps(corps, ident) == "eunha":
-            n = (re.sub(r"[^0-9]", "", str(ident or ""))
-                 or re.sub(r"[^0-9]", "", value or ""))
+            # ── [번호체계 2026-10-26] 은하 = G + 번호 ────────────────────
+            #  요구: "은하스카우트는 1~165 … G1~G165 … G는 Galaxy(은하)의 약자임"
+            #
+            #  ## 아이디 인식 (관대하게 — 자료가 끊기지 않게)
+            #    '은하43' / '은하G43' / 'G43' / 'g43' 모두 은하 43호로 본다.
+            #    (기존 사용자가 쓰던 '은하43' 을 막으면 로그인이 안 되므로
+            #     구 형식도 계속 허용하되, 내부 정본은 G43 으로 통일)
+            #
+            #  ## 비밀번호는 **바꾸지 않는다**
+            #    종전 '{번호}!@@' (예: 43!@@) 유지. 번호체계 변경이 비밀번호를
+            #    바꾸면 전 사용자가 로그인 불가가 되므로 절대 건드리지 않는다.
+            n = (_ck_num(ident) or _ck_num(value))
             if not n or not _eunha_member_by_number(n):
                 return False, ""
-            return (value == _personal_pw_of_eunha(n) or value == MASTER_PW), "personal"
+            # [turn67] 은하 전용 조회(_eunha_pw_of)만 사용한다.
+            #  · 범 저장소(personalPasswords)를 읽지 않는다.
+            #  · 기본 '3!@@' 폴백은 유지(기존 사용자 로그인 보존).
+            #
+            # ── [turn70] 마스터 비밀번호 예외를 **삭제**한다 ──────────────
+            #  사용자 지적: "id:415 pw:Corbuser7!@@ / tiger415 pw:Corbuser7!@@
+            #   등등 경우에 따라 각각 로그인 되는 상황이 다름 … 심각한 오류"
+            #
+            #  원인: 개인 로그인 검증에 `or _master_pw_matches(value)` 가 붙어
+            #   있어서, **마스터 비밀번호를 개인 계정의 비밀번호로도** 통과시켰다.
+            #   즉 마스터 한 명의 비번을 아는 사람이 **아무 인가자의 계정으로**
+            #   들어올 수 있었다(번호만 알면 됨).
+            #
+            #  마스터는 마스터 탭에서만 쓴다. 개인 로그인의 정답은
+            #   **오직 그 사람의 개인 비밀번호 하나**뿐이다.
+            return _norm_pw(value) == _eunha_pw_of(n), "personal"
+        # (요구 2026-10) 인가자 로그인 ID 를 'tiger<인가번호>' 로 표준화하고,
+        #  구(舊) **접두어 없는 순수 인가번호**('75' → 'tiger75') 로그인은 막는다.
+        #  · PW 는 기존 '{인가번호}!@@' 그대로 유지한다(예: tiger75 / 75!@@).
+        #  · 은하스카우트는 위 분기에서 '은하<번호>' 로 이미 처리(이 규칙 미적용).
+        #  · 접두어 없는 기존 ID 로 들어오는 정상 세션 복원과의 충돌을 피하려고
+        #    **비밀번호가 개인 기본비번('{번호}!@@')과 일치할 때만** 차단한다
+        #    (아래에서 pw_match 를 계산해 통합 판정).
+        _id_has_prefix = _strip_login_prefix(ident) != str(ident or "").strip()
         # (요구) ID에 숫자 외 문자(영문·한글·특수문자 등)도 허용 — 문자 포함 ID로
         #  회원을 찾아 인가번호로 정규화한 뒤 설정된 개인비번과 비교한다.
         m, resolved = _member_by_ident_any(ident)
@@ -2499,7 +6918,53 @@ def _verify(tier, value, ident="", corps=""):
             )
             if not exists:
                 return False, ""
-        return (value == _personal_pw_of(no) or value == MASTER_PW), "personal"
+        # [turn67] 비교는 반드시 정규화(_norm_pw) 후 수행 — 저장은 strip,
+        #  비교는 원본이던 불일치를 없앤다.
+        #
+        # ── [turn70] 마스터 비밀번호 예외를 **삭제**한다 ──────────────────
+        #  사용자 지적: "id:415 pw:Corbuser7!@@ / tiger415 pw:Corbuser7!@@
+        #   등등 경우에 따라 각각 로그인 되는 상황이 다름 … 심각한 오류"
+        #
+        #  종전 마지막 항은 `or _master_pw_matches(value)` 였다. 그래서
+        #   **마스터 비밀번호 하나로 모든 인가자의 개인 로그인이 가능**했다.
+        #   (번호만 알면 남의 계정에 들어갈 수 있다 = 계정 탈취)
+        #
+        #  이제 개인 로그인의 정답은 **그 사람의 개인 비밀번호 하나**뿐이다.
+        #   · 관리자 복구 경로는 '강제 변경/초기화'(마스터 전용 별도 API)로만
+        #     제공한다. 마스터가 개인 화면을 열어야 하면 자기 계정으로 들어간다.
+        pw_match = (_norm_pw(value) == _personal_pw_of(no))
+        # [요구 2026-10] 구(舊) 취약 로그인 차단 — ID 가 'tiger' 접두어 없이
+        #  **순수 인가번호('75') 이거나**, ID 없이 비번에만 번호를 실은 경우
+        #  ('id 없음 + pw 75!@@')로, 비번이 개인 기본비번('75!@@')과 같으면 막는다.
+        #  표준 ID('tiger75' / 75!@@)만 허용. (은하·전화·커스텀 비번 흐름은 그대로 유지)
+        _bare_digits = re.sub(r"[^0-9]", "", str(ident or ""))
+        # [turn70] 앞자리 0 우회 차단 — '0415' 로 들어와도 415 와 같은 번호로 본다.
+        _bare_norm = str(int(_bare_digits)) if _bare_digits else ""
+        _no_norm = str(int(no)) if re.fullmatch(r"\d+", str(no or "")) else str(no or "")
+        _is_legacy_id = _id_has_prefix is False and (
+            str(ident or "").strip() == ""
+            or (_bare_norm and _bare_norm == _no_norm)
+        )
+        # ── [버그 수정 2026-10-26] 구(舊) ID 체계('415' + '415!@@')가 다시
+        #    통과되던 문제 ─────────────────────────────────────────────
+        #  요구: ID 체계는 **tiger415 / 415!@@** 로 복원하고,
+        #        '415 / 415!@@' 같은 접두어 없는 구(舊) 체계는 막는다.
+        #
+        #  원인: 종전에는 `value != MASTER_PW` 조건이 붙어 있어,
+        #   **마스터 비번으로는 접두어 없는 구 ID 도 통과**했다.
+        #   → 앱이 로그인 재시도 때 `id` 없이(또는 숫자만) + 마스터비번을 보내면
+        #     '415' 체계가 그대로 열렸다(사용자 눈에는 "ID 체계가 예전으로
+        #     돌아갔다"로 보임).
+        #
+        #  해결: 마스터 비번 예외를 **없앤다**. 접두어 없는 구 ID 로는 어떤
+        #   비번으로도 개인 로그인이 되지 않는다.
+        #   · 예외 유지: 전화번호로 로그인하는 흐름(전화는 인가번호가 아니므로
+        #     위 `_bare_digits == no` 판정에 걸리지 않는다).
+        #   · 은하스카우트는 위쪽 별도 분기에서 이미 처리(이 규칙 미적용).
+        #   · 'tiger' 접두어가 있으면 정상 통과한다.
+        if _is_legacy_id:
+            return False, ""
+        return pw_match, "personal"
     if tier == "guest":
         # 비인가자(일반회원): ID=전화번호(숫자), PW=뒤 4자리(또는 설정값)
         return _guest_verify("", value)
@@ -2507,9 +6972,20 @@ def _verify(tier, value, ident="", corps=""):
 
 
 def _guest_verify(ident, value):
-    """일반회원(비인가자) 검증. ident(전화/번호)가 있으면 지정회원만, 없으면 전체 탐색."""
+    """일반회원(비인가자) 검증. ident(전화/번호)가 있으면 지정회원만, 없으면 전체 탐색.
+
+    ── [turn67 중대 보안 결함 수정] ──────────────────────────────────────
+    종전 마지막 줄은 `value == stored or value == 전화뒤4자리` 였다.
+    즉 **본인이 비밀번호를 바꿔도 전화번호 뒤 4자리로는 언제나 로그인**됐다.
+    (전화번호를 아는 사람이면 누구나 남의 계정에 들어갈 수 있었다.)
+
+    수정: 저장된 비번만 인정한다. 저장값이 아예 없는 회원은
+    `stored` 계산 과정에서 이미 전화뒤4자리로 폴백되므로(아래 or 체인),
+    **한 번도 비번을 바꾸지 않은 기존 회원의 로그인은 그대로 유지**된다.
+    """
     d_ident = re.sub(r"[^0-9]", "", str(ident or ""))
     pws = _ev_load_regular_pw()
+    want = _norm_pw(value)
     for m in _ev_members():
         if not m.get("isRegular"):
             continue
@@ -2517,9 +6993,11 @@ def _guest_verify(ident, value):
         no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
         if d_ident and d_ident not in (mid, no):
             continue
-        stored = pws.get(mid) or m.get("personalPassword") or _ev_phone_last4(
-            m.get("phone") or mid)
-        if value == str(stored) or value == _ev_phone_last4(m.get("phone") or mid):
+        # 저장값 우선순위: regular_passwords → 회원 레코드 → 전화뒤4자리(기본)
+        stored = _norm_pw(pws.get(mid)) \
+            or _norm_pw(m.get("personalPassword")) \
+            or _ev_phone_last4(m.get("phone") or mid)
+        if want and want == stored:
             return True, "guest"
     return False, ""
 
@@ -2530,7 +7008,15 @@ def _set_password(tier, ident, value, reset):
     d = re.sub(r"[^0-9]", "", str(ident or ""))
     if not d:
         return False, "id", ""
-    m = _ev_member_by_ident(d)
+    # [turn67] 소속 판정 — 은하와 범은 번호 공간이 겹치므로 반드시 구분한다.
+    #  · 범 명단에 없는 번호 + 은하 명단에 있는 번호 → 은하
+    #  · 그 외(양쪽에 다 있거나 범에만 있음) → 범 (기존 동작 보존)
+    #  은하 대상 저장소는 cfg.eunhaPasswords 이며 범 명단/범 저장소에는
+    #  절대 쓰지 않는다.
+    _is_eunha_target = (bool(_eunha_member_by_number(d))
+                        and not bool(_member_by_number(d)))
+    m = _ev_member_by_ident(
+        d, corps="eunha" if _is_eunha_target else "tsak")
     if not m:
         return False, "not found", ""
     is_regular = bool(m.get("isRegular"))
@@ -2553,7 +7039,39 @@ def _set_password(tier, ident, value, reset):
         new_pw = str(value or "").strip()
         if not new_pw:
             return False, "value", ""
-    # 회원 DB 갱신
+    # ── [turn67] 소속별 저장 분리 ─────────────────────────────────────
+    #  종전에는 소속과 무관하게 ① 범 명단(DB_FILE)의 personalPassword 를
+    #  덮어쓰고 ② cfg.personalPasswords[번호] 에도 저장했다.
+    #  은하 대상이면 (a) 은하 명단엔 아무 것도 안 쓰이고
+    #  (b) **범 명단의 같은 번호**가 오염되고 (c) 은하 검증 저장소는 그대로라
+    #  "바꿨는데 기본비번으로 로그인" 이 동시에 일어났다.
+    if _is_eunha_target:
+        try:
+            with _MEMBER_WRITE_LOCK:
+                rows = _load_json(EUNHA_DB_FILE, [])
+                for i, mm in enumerate(rows):
+                    if _ck_num(str(mm.get("number", ""))) == _ck(d):
+                        mm["personalPassword"] = new_pw
+                        rows[i] = mm
+                        break
+                _save_json(EUNHA_DB_FILE, rows)
+        except Exception:
+            pass
+        with LOCK:
+            cfg = _load_json(CFG_FILE, _default_config())
+            epw = cfg.get("eunhaPasswords")
+            if not isinstance(epw, dict):
+                epw = {}
+            if reset:
+                epw.pop(d, None)      # 초기화 → 기본 {번호}!@@ 로 복귀
+            else:
+                epw[d] = new_pw
+            cfg["eunhaPasswords"] = epw
+            _save_json(CFG_FILE, cfg)
+        _touch_meta({"updatedBy": "admin-set-pw"})
+        return True, "", new_pw
+
+    # 회원 DB 갱신(범스카우트)
     members = _load_json(DB_FILE, [])
     for i, mm in enumerate(members):
         if str(mm.get("id", "")) == str(m.get("id", "")):
@@ -2567,6 +7085,25 @@ def _set_password(tier, ident, value, reset):
         key = re.sub(r"[^0-9]", "", str(m.get("accessPhone") or m.get("phone") or d))
         pws[key] = new_pw
         _ev_save_regular_pw(pws)
+    else:
+        # [버그수정] 인가자는 로그인 검증(_verify)·관리자 조회(_personal_pw_of)의
+        #   '권위 저장소'가 config.personalPasswords 다. members.json 의
+        #   personalPassword 에만 기록하면, 재로그인/조회 시 다시 기본값
+        #   ({인가번호}!@@)으로 보인다(예: 415 이승준 마스터).
+        #   → 강제 변경은 config 에 저장, 초기화는 config 에서 제거한다.
+        no = re.sub(r"[^0-9]", "", str(m.get("number") or d))
+        if no:
+            with LOCK:
+                cfg = _load_json(CFG_FILE, _default_config())
+                pws = cfg.get("personalPasswords")
+                if not isinstance(pws, dict):
+                    pws = {}
+                if reset:
+                    pws.pop(no, None)   # 초기화 → 기본 {no}!@@ 로 복귀
+                else:
+                    pws[no] = new_pw
+                cfg["personalPasswords"] = pws
+                _save_json(CFG_FILE, cfg)
     _touch_meta({"updatedBy": "admin-set-pw"})
     return True, "", new_pw
 
@@ -2581,6 +7118,389 @@ def _safe_name(name):
     name = str(name or "").replace("\\", "/").split("/")[-1].strip()
     name = re.sub(r"[\x00-\x1f]", "", name)
     return name or "file"
+
+
+# ============ 행사자료 **표시 순서** (관리자 지정) ============
+_RES_ORDER_CACHE = {"t": 0.0, "data": {}}
+_RES_ORDER_TTL = 3.0
+
+
+def _res_order_key(sub, name):
+    """순서 저장 키 — '하위/sub/파일명' 또는 '파일명'."""
+    sub = str(sub or "").strip().strip("/")
+    name = str(name or "").strip()
+    return (sub + "/" + name) if sub else name
+
+
+def _res_order_map():
+    """`res_order.json` → {key: index}. 짧은 TTL 캐시로 NAS 왕복을 줄인다."""
+    now = time.time()
+    if now - _RES_ORDER_CACHE["t"] < _RES_ORDER_TTL:
+        return _RES_ORDER_CACHE["data"]
+    try:
+        doc = _load_json(RES_ORDER_FILE, {}) or {}
+    except Exception:
+        doc = {}
+    data = doc.get("order") or {}
+    if not isinstance(data, dict):
+        data = {}
+    # 값이 문자열/숫자 어느 쪽이어도 int 로 정규화
+    clean = {}
+    for k, v in data.items():
+        try:
+            clean[str(k)] = int(v)
+        except Exception:
+            continue
+    _RES_ORDER_CACHE["t"] = now
+    _RES_ORDER_CACHE["data"] = clean
+    return clean
+
+
+def _res_order_save(key_list):
+    """주어진 **전체 목록 순서**를 그대로 저장한다(1부터 매김).
+
+    목록을 통째로 받으므로 중간 삽입·삭제·이동이 모두 단순해진다.
+    클라이언트가 보낸 키만 남기고 나머지(다른 폴더)는 보존한다.
+    """
+    cur = dict(_res_order_map())
+    keep_prefixes = set()
+    for k in key_list:
+        k = str(k)
+        if "/" in k:
+            keep_prefixes.add(k.rsplit("/", 1)[0])
+        else:
+            keep_prefixes.add("")
+    # 이번에 정렬한 범위(같은 폴더)의 기존 값은 지우고 새로 매긴다.
+    for k in list(cur.keys()):
+        pref = k.rsplit("/", 1)[0] if "/" in k else ""
+        if pref in keep_prefixes:
+            cur.pop(k, None)
+    for i, k in enumerate(key_list):
+        cur[str(k)] = i
+    doc = _load_json(RES_ORDER_FILE, {}) or {}
+    doc["order"] = cur
+    doc["updated"] = int(time.time())
+    _save_json(RES_ORDER_FILE, doc)
+    _RES_ORDER_CACHE["t"] = 0.0
+    return cur
+
+
+# ============ 음원 폴더 **외부 QR 공유 토큰** ============
+#
+# ## [요구 2026-10-30] "음원 폴더만 외부로 QR을 보내서 재생할 수 있도록,
+# ##  다만 불특정 다수가 들어올 수 있으니 각별히 보안에 신경"
+#
+# ### 왜 세션을 QR 에 넣으면 절대 안 되는가
+#   세션 sid 는 그 사람의 **모든 권한**(회원명단·재정·업로드·삭제)을 연다.
+#   QR 은 사진으로 찍혀 단톡방에 돌아다니고 검색엔진에 남는다. 세션이 새면
+#   앱 전체가 새는 것과 같다. 그래서 **전용 토큰**을 따로 만든다.
+#
+# ### 보안 설계 (다층 방어)
+#   ① **범위 제한** — scope 는 `res:audio` 단 하나. 이 토큰으로는
+#      음원 목록 조회와 음원 스트리밍만 가능하고, 회원/재정/업로드/삭제는
+#      코드 경로 자체가 존재하지 않는다(`_share_require()` 가 강제).
+#   ② **고엔트로피** — `secrets.token_urlsafe(24)` = 192비트. 추측 불가.
+#   ③ **만료** — 기본 30일, 최대 180일. 지나면 즉시 무효.
+#   ④ **즉시 폐기** — 관리자가 revoke 하면 그 순간 401.
+#   ⑤ **저장은 해시만** — `res_share.json` 에는 sha256(token) 만 저장.
+#      NAS db 가 유출돼도 원본 토큰을 복원할 수 없다.
+#   ⑥ **레이트 리밋** — IP당 분당 60회. 대량 수집/무차별 대입 차단.
+#   ⑦ **감사 로그** — 발급자·발급시각·마지막 사용 IP/시각·사용횟수 기록.
+#   ⑧ **읽기 전용** — 이 토큰으로 할 수 있는 쓰기 동작은 **0개**.
+_SHARE_SCOPE_AUDIO = "res:audio"
+_SHARE_DEFAULT_DAYS = 30
+_SHARE_MAX_DAYS = 180
+_SHARE_RL = {}          # ip -> [timestamps]
+_SHARE_RL_LOCK = threading.Lock()
+_SHARE_RL_PER_MIN = 60
+
+
+def _share_hash(tok):
+    return hashlib.sha256(("tsak-share|" + str(tok)).encode("utf-8")).hexdigest()
+
+
+def _share_doc():
+    return _load_json(RES_SHARE_FILE, {"tokens": {}}) or {"tokens": {}}
+
+
+def _share_save(doc):
+    _save_json(RES_SHARE_FILE, doc)
+
+
+def _share_rate_ok(ip):
+    """IP당 분당 [_SHARE_RL_PER_MIN] 회 제한."""
+    now = time.time()
+    with _SHARE_RL_LOCK:
+        arr = [t for t in _SHARE_RL.get(ip, []) if now - t < 60]
+        if len(arr) >= _SHARE_RL_PER_MIN:
+            _SHARE_RL[ip] = arr
+            return False
+        arr.append(now)
+        _SHARE_RL[ip] = arr
+        # 메모리 누수 방지 — 오래된 IP 청소
+        if len(_SHARE_RL) > 4000:
+            for k in [k for k, v in _SHARE_RL.items()
+                      if not v or now - v[-1] > 300]:
+                _SHARE_RL.pop(k, None)
+    return True
+
+
+def _share_lookup(token):
+    """토큰 → (엔트리, 오류사유). 유효하면 엔트리 dict, 아니면 (None, 사유)."""
+    tok = str(token or "").strip()
+    if not tok or len(tok) < 16:
+        return None, "invalid"
+    doc = _share_doc()
+    h = _share_hash(tok)
+    ent = (doc.get("tokens") or {}).get(h)
+    if not isinstance(ent, dict):
+        return None, "invalid"
+    if ent.get("revoked"):
+        return None, "revoked"
+    try:
+        exp = int(ent.get("exp", 0))
+    except Exception:
+        exp = 0
+    if exp and time.time() > exp:
+        return None, "expired"
+    if ent.get("scope") != _SHARE_SCOPE_AUDIO:
+        return None, "scope"
+    return ent, ""
+
+
+def _share_touch(token, ip):
+    """사용 기록 — hits++ / last_used / last_ip. 실패는 무시(서비스 우선)."""
+    try:
+        doc = _share_doc()
+        h = _share_hash(token)
+        ent = (doc.get("tokens") or {}).get(h)
+        if not isinstance(ent, dict):
+            return
+        ent["hits"] = int(ent.get("hits", 0) or 0) + 1
+        ent["last_used"] = int(time.time())
+        ent["last_ip"] = str(ip or "")[:64]
+        (doc.get("tokens") or {})[h] = ent
+        _share_save(doc)
+    except Exception:
+        pass
+
+
+def _share_require(self):
+    """공유 토큰 인증 — 성공 시 엔트리, 실패 시 None(응답은 이미 보냄).
+
+    쿼리 `t` 또는 헤더 `X-TSAK-Share` 만 인정한다.
+    **세션 쿠키/헤더는 절대 이 경로의 인증 수단이 아니다** — 외부 익명
+    사용자가 세션을 얻는 통로가 되면 안 되기 때문.
+    """
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+    tok = (q.get("t", [""])[0] or self.headers.get("X-TSAK-Share", "") or "")
+    ip = self.client_address[0] if self.client_address else ""
+    if not _share_rate_ok(ip):
+        self._json({"ok": False, "error": "rate_limited",
+                    "message": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."},
+                   429)
+        return None
+    ent, why = _share_lookup(tok)
+    if not ent:
+        msg = {
+            "expired": "공유 기간이 만료되었습니다.",
+            "revoked": "공유가 중지되었습니다.",
+            "scope": "허용되지 않은 접근입니다.",
+        }.get(why, "유효하지 않은 공유 링크입니다.")
+        self._json({"ok": False, "error": why, "message": msg}, 401)
+        return None
+    _share_touch(tok, ip)
+    return ent
+
+
+def _share_list_audio(sub=""):
+    """공유용 **음원만** 목록화 — 다른 종류(영상·문서)는 절대 포함하지 않는다."""
+    sub = _safe_relpath(sub)
+    root = RES_DIR + ("/" + sub if sub else "")
+    out = []
+
+    def _walk(path, rel, depth):
+        try:
+            rr = NAS.list(path)
+        except Exception:
+            return
+        for f in (rr.get("files") or []):
+            nm = f.get("name", "")
+            if not nm or nm.startswith(".") or nm.startswith("@") \
+                    or nm.startswith("0000 "):
+                continue
+            if f.get("isdir"):
+                if depth < 2:
+                    _walk(path + "/" + nm,
+                          (rel + "/" + nm) if rel else nm, depth + 1)
+                continue
+            ext = _ext_of(nm)
+            if ext not in AUDIO_EXT:      # ← 음원 외 전부 배제
+                continue
+            out.append({
+                "name": nm,
+                "sub": rel,
+                "size": int(f.get("size", 0) or 0),
+                "ext": ext.lstrip("."),
+            })
+
+    _walk(root, sub, 0)
+    order = _res_order_map()
+    out.sort(key=lambda x: (
+        0, order[_res_order_key(x["sub"], x["name"])], "")
+        if _res_order_key(x["sub"], x["name"]) in order
+        else (1, 0, x["name"].lower()))
+    return out
+
+
+_SHARE_PAGE_HTML = r"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>행사 음원 듣기 · 한국범스카우트중앙회</title>
+<style>
+:root{--purple:#5B2C8D;--gold:#F2B705;--ink:#1f1233;--line:#e8e2f2}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+background:#f6f3fb;color:var(--ink);padding-bottom:120px}
+header{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#5B2C8D,#7a3fb5);
+color:#fff;padding:14px 16px;box-shadow:0 2px 12px rgba(91,44,141,.28)}
+header h1{margin:0;font-size:16px;font-weight:800;letter-spacing:-.3px}
+header p{margin:4px 0 0;font-size:11px;opacity:.85}
+.wrap{max-width:720px;margin:0 auto;padding:12px}
+.msg{margin:14px 12px;padding:16px;border-radius:14px;background:#fff;text-align:center;
+font-size:13px;line-height:1.6;color:#7a4a00;border:1px solid var(--gold);display:none}
+.msg.show{display:block}
+.row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);
+border-radius:12px;padding:11px 12px;margin-bottom:8px;cursor:pointer;transition:.14s}
+.row:active{background:#f3edfb}
+.row.on{border-color:var(--purple);background:#f8f4ff;box-shadow:0 2px 10px rgba(91,44,141,.14)}
+.ic{width:34px;height:34px;flex:0 0 34px;border-radius:9px;background:#f0ebfa;
+display:flex;align-items:center;justify-content:center;font-size:16px}
+.row.on .ic{background:var(--purple);color:#fff}
+.tt{flex:1;min-width:0}
+.tt b{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis;letter-spacing:-.2px}
+.tt span{display:block;font-size:10px;color:#8b7fa3;margin-top:2px}
+.nm{font-size:11px;color:#8b7fa3;font-variant-numeric:tabular-nums}
+footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);
+padding:9px 14px calc(9px + env(safe-area-inset-bottom));box-shadow:0 -2px 14px rgba(31,18,51,.09)}
+#now{font-size:11px;font-weight:700;color:var(--purple);white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis;margin-bottom:6px}
+#now.idle{color:#a99fbb;font-weight:600}
+audio{width:100%;height:36px}
+.brand{text-align:center;font-size:9px;color:#b0a7c2;padding:16px 0 4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>행사 음원 듣기</h1>
+  <p>한국범스카우트중앙회 · 공유된 음원만 재생됩니다</p>
+</header>
+<div class="wrap">
+  <div class="msg" id="msg"></div>
+  <div id="list"></div>
+  <div class="brand">한국범스카우트중앙회 TSAK</div>
+</div>
+<footer>
+  <div id="now" class="idle">재생할 음원을 선택하세요</div>
+  <audio id="au" controls preload="none" playsinline></audio>
+</footer>
+<script>
+(function(){
+  var TOK="__TOKEN__";
+  var $=function(id){return document.getElementById(id)};
+  var au=$("au"), listEl=$("list"), msgEl=$("msg"), nowEl=$("now");
+  var files=[], idx=-1;
+
+  function fail(t){ msgEl.textContent=t; msgEl.classList.add("show");
+                    listEl.innerHTML=""; nowEl.textContent="재생할 수 없습니다";
+                    nowEl.className="idle"; }
+  function fmt(n){ if(!n) return "";
+    return n>=1048576 ? (n/1048576).toFixed(1)+"MB" : Math.round(n/1024)+"KB"; }
+  function base(n){ return n.replace(/\.[^.]+$/,""); }
+  function esc(s){ return String(s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+  function streamUrl(f){
+    return "/api/share/audio/stream?t="+encodeURIComponent(TOK)
+      +"&sub="+encodeURIComponent(f.sub||"")+"&name="+encodeURIComponent(f.name);
+  }
+
+  function play(i){
+    if(i<0||i>=files.length) return;
+    idx=i;
+    var f=files[i];
+    var nodes=listEl.querySelectorAll(".row");
+    for(var k=0;k<nodes.length;k++) nodes[k].classList.toggle("on",k===i);
+    nowEl.textContent=base(f.name);
+    nowEl.className="";
+    au.src=streamUrl(f);
+    au.play().catch(function(){});
+    try{ if(nodes[i]) nodes[i].scrollIntoView({block:"nearest",behavior:"smooth"});}catch(e){}
+  }
+
+  function render(){
+    var h="";
+    for(var i=0;i<files.length;i++){
+      var f=files[i];
+      h+='<div class="row" data-i="'+i+'">'
+       + '<div class="ic">&#9834;</div>'
+       + '<div class="tt"><b>'+esc(base(f.name))+'</b>'
+       + '<span>'+esc(f.sub||"음원")+' · '+(f.ext||"mp3").toUpperCase()
+       + (fmt(f.size)?' · '+fmt(f.size):'')+'</span></div>'
+       + '<div class="nm">'+(i+1)+'</div></div>';
+    }
+    listEl.innerHTML=h;
+    var nodes=listEl.querySelectorAll(".row");
+    for(var k=0;k<nodes.length;k++){
+      (function(n){ n.addEventListener("click",function(){
+        play(parseInt(n.getAttribute("data-i"),10)); }); })(nodes[k]);
+    }
+  }
+
+  au.addEventListener("ended",function(){
+    if(idx>=0 && idx+1<files.length) play(idx+1);
+  });
+
+  fetch("/api/share/audio/list?t="+encodeURIComponent(TOK),{cache:"no-store"})
+    .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+    .then(function(o){
+      if(!o.j || !o.j.ok){ fail((o.j&&o.j.message)||"이 링크는 사용할 수 없습니다."); return; }
+      files=o.j.files||[];
+      if(!files.length){ fail("아직 공유된 음원이 없습니다."); return; }
+      render();
+    })
+    .catch(function(){ fail("연결에 실패했습니다. 잠시 후 다시 시도해 주세요."); });
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def _safe_relpath(sub):
+    """행사자료 하위 폴더 경로 — 상위 탈출(../) 차단.
+
+    `_safe_name` 은 마지막 조각만 남기므로 **하위 폴더**를 표현할 수 없다.
+    행사자료는 `01 행사자료/군가/` 처럼 한 단계 폴더를 쓸 수 있어야 해서
+    조각별로 정제한 뒤 다시 붙인다. `..`·`.`·빈 조각은 버린다.
+    """
+    parts = []
+    for seg in str(sub or "").replace("\\", "/").split("/"):
+        seg = seg.strip()
+        if not seg or seg in (".", ".."):
+            continue
+        seg = re.sub(r"[\x00-\x1f]", "", seg)
+        # 웹에 노출하면 안 되는 샘플 폴더는 어떤 경로로도 통과시키지 않는다.
+        if seg.startswith("0000 "):
+            continue
+        parts.append(seg)
+        if len(parts) >= 6:      # 깊이 제한
+            break
+    return "/".join(parts)
 
 
 def _ext_of(name):
@@ -2663,6 +7583,143 @@ def _save_event_media_meta(meta):
 
 def _thumb_path(name):
     return f"{EVENT_THUMB_DIR}/{name}.jpg"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# [요구] 이미지 3단계 파생본 (thumb / mid) — 원본은 그대로 둔다
+#
+#  ## 사용자 요구 (원문)
+#    "최적화(중간단계화질)도 넣어줘. 썸네일만으로는 화질이 떨어지고,
+#     여전히 나스에서 원본을 부르기엔 시간이 오래걸려"
+#    "나스에도 썸네일 및 최적화 사진이 있어야 함"
+#
+#  ## 저장 규칙
+#    NAS: 원본 + 파생본(thumb/mid) **모두** 보관 (사용자 요구)
+#    파생본은 원본과 **같은 부모 폴더**의 `.derived/` 아래에 둔다.
+#    → 폴더를 통째로 백업/이동해도 파생본이 함께 따라간다(고아 방지).
+#      예) photos/415.jpg  →  photos/.derived/415.thumb.webp
+#
+#  ## 안전 원칙
+#    · 파생본 생성이 실패해도 **원본은 절대 건드리지 않는다**.
+#    · Pillow 가 없거나 실패하면 조용히 원본을 내려준다(서버는 살아야 함).
+#    · 영상·문서는 대상이 아니다.
+# ══════════════════════════════════════════════════════════════════════════
+
+#  파생본 생성 중복 방지 — 같은 파일을 동시에 두 번 만들지 않는다.
+_DERIVED_LOCK = threading.Lock()
+_DERIVED_BUSY = set()
+
+
+def _derived_abs(orig_abs, step):
+    """원본 절대경로 + 단계 → 파생본 절대경로 (NAS 규칙과 동일)."""
+    base = str(orig_abs or "").replace("\\", "/")
+    parent = base.rsplit("/", 1)[0] if "/" in base else ""
+    rel = base.rsplit("/", 1)[-1]
+    sub = _imgp.derived_rel_path(rel, step)   # .derived/<name>.<step>.webp
+    return (parent + "/" + sub) if parent else sub
+
+
+def _derived_ensure(orig_abs, want_steps=("thumb", "mid")):
+    """파생본이 없으면 원본에서 만들어 NAS 에 저장한다. 실패는 조용히 무시.
+
+    반환: {step: (bytes, mime)} — 실제로 확보된 것만.
+    """
+    got = {}
+    ext = _imgp.is_image(orig_abs)
+    if not ext:
+        return got
+    try:
+        orig_size = 0
+        try:
+            info = NAS.get_info(orig_abs) or {}
+            if info.get("ok"):
+                orig_size = int(info.get("size", 0) or 0)
+        except Exception:
+            orig_size = 0
+
+        missing = []
+        for step in want_steps:
+            dp = _derived_abs(orig_abs, step)
+            try:
+                if NAS.exists(dp):
+                    got[step] = (NAS.read_bytes(dp),
+                                 _imgp.mime_of(step, "webp"))
+                    continue
+            except Exception:
+                pass
+            missing.append(step)
+        if not missing:
+            return got
+
+        #  [성능 2026-11-20] 썸네일 하나를 요청받아도 **중간화질까지 함께** 만든다.
+        #   이유: 사용자가 사진을 크게 볼 가능성이 매우 높고, 그때 원본을 다시
+        #   읽으면 NAS 왕복이 두 배가 된다. 원본을 한 번만 읽어 둘 다 만든다.
+        #   (thumb 만 필요하면 그대로 thumb 만 돌려준다 — 만드는 것만 추가)
+        to_make = list(missing)
+        for step in _imgp.STEPS:
+            if step not in to_make and step not in got:
+                to_make.append(step)
+
+        # 동시 생성 방지 — 이미 다른 스레드가 만들고 있으면 건너뛴다.
+        key = orig_abs
+        with _DERIVED_LOCK:
+            if key in _DERIVED_BUSY:
+                return got
+            _DERIVED_BUSY.add(key)
+        try:
+            try:
+                src = NAS.read_bytes(orig_abs)
+            except Exception as e:
+                print("[derived] 원본 읽기 실패 %s: %s" % (orig_abs, e))
+                return got
+            # 원본이 이미 작으면 파생본을 만들 가치가 없다(용량만 늘어난다).
+            if orig_size and orig_size < 40 * 1024:
+                return got
+            made = _imgp.make_all(src)
+            for step in to_make:
+                r = made.get(step)
+                if not r:
+                    continue
+                b, _e, mime = r
+                dp = _derived_abs(orig_abs, step)
+                try:
+                    NAS.write(dp, b)
+                    got[step] = (b, mime)
+                except Exception as e:
+                    print("[derived] 저장 실패 %s: %s" % (dp, e))
+                    got[step] = (b, mime)  # 저장 실패해도 이번 응답엔 쓴다
+        finally:
+            with _DERIVED_LOCK:
+                _DERIVED_BUSY.discard(key)
+        return got
+    except Exception as e:
+        print("[derived] 예외 %s: %s" % (orig_abs, e))
+        return got
+
+
+def _serve_photo_tier(orig_abs, step, prefer_webp=True):
+    """원본 경로를 받아 요청 단계에 맞는 바이트를 돌려준다.
+
+    반환: (bytes, mime, tier) — tier 는 실제로 내려준 단계("orig" 포함).
+    실패하면 (None, None, None).
+    """
+    try:
+        if step in ("thumb", "mid"):
+            got = _derived_ensure(orig_abs, (step,))
+            r = got.get(step)
+            if r:
+                return (r[0], r[1], step)
+            # 파생본을 못 만들었으면 원본으로 폴백(빈 화면보다 낫다).
+        b = NAS.read_bytes(orig_abs)
+        ct = "image/jpeg"
+        if _ext_of(orig_abs) == ".png":
+            ct = "image/png"
+        elif _ext_of(orig_abs) == ".webp":
+            ct = "image/webp"
+        return (b, ct, "orig")
+    except Exception as e:
+        print("[derived] 서빙 실패 %s: %s" % (orig_abs, e))
+        return (None, None, None)
 
 
 def _make_image_thumb(src_bytes, dest_name, max_side=480):
@@ -2783,6 +7840,12 @@ def _ev_doc():
 
 def _ev_save(doc):
     _save_json(EVENTS_FILE, doc)
+    # [속도] 행사 정의(생성/수정/삭제/복구)가 바뀌면 목록 캐시를 버린다.
+    #  `_ev_save()` 는 events.json 을 쓰는 **유일한 통로**라 여기 한 곳이면 충분하다.
+    try:
+        _ev_list_cache_bust()
+    except Exception:
+        pass
 
 
 def _ev_id(year, title):
@@ -2790,11 +7853,16 @@ def _ev_id(year, title):
 
 
 def _ev_dir(year, title):
-    return f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(title)}"
+    # [요구] 앱 제목 ≠ 나스 폴더명 이면 실제 폴더명으로 해석한다.
+    try:
+        return _ev_dir_resolve(year, title)
+    except Exception:
+        return f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(title)}"
 
 
 def _ev_thumb_dir(year, title):
-    return f"{EVENT_DIR}/.thumbnails/{_ev_safe(year)}/{_ev_safe(title)}"
+    d = _ev_dir(year, title).rsplit("/", 1)[-1]
+    return f"{EVENT_DIR}/.thumbnails/{_ev_safe(year)}/{_ev_safe(d)}"
 
 
 def _ev_media_meta(year, title):
@@ -2852,6 +7920,29 @@ def _ev_thumb_path(year, title, name, sub=""):
     return f"{_ev_thumb_dir(year, title)}/{key}.jpg"
 
 
+def _ev_thumb_key_k(space, name, sub=""):
+    """key 공간을 포함한 썸네일 식별키 — 'media' 는 기존 파일명과 호환."""
+    k = _ev_thumb_key(name, sub)
+    return k if space in (None, "", "media") else f"{space}__{k}"
+
+
+def _ev_thumb_path_k(year, title, space, name, sub=""):
+    """행사 항목(space)별 썸네일 경로.
+
+    'media' 는 종전과 완전히 같은 경로를 쓴다(기존 썸네일 재사용 → 재생성 없음).
+    'expense' 등 다른 항목은 파일명 앞에 space 를 붙여 같은 폴더에서 충돌 없이
+    공존한다. → 영수증·증빙자료도 사진과 동일한 썸네일/최적화 파이프라인을 탄다.
+    """
+    k = _ev_thumb_key_k(space, name, sub).replace("/", "__")
+    return f"{_ev_thumb_dir(year, title)}/{k}.jpg"
+
+
+def _ev_view_path_k(year, title, space, name, sub=""):
+    """space 별 '보기용 최적본'(1600px) 경로."""
+    k = _ev_thumb_key_k(space, name, sub).replace("/", "__")
+    return f"{_ev_view_dir(year, title)}/{k}.jpg"
+
+
 def _ev_view_dir(year, title):
     return f"{EVENT_DIR}/.views/{_ev_safe(year)}/{_ev_safe(title)}"
 
@@ -2859,6 +7950,166 @@ def _ev_view_dir(year, title):
 def _ev_view_path(year, title, name, sub=""):
     key = _ev_thumb_key(name, sub).replace("/", "__")
     return f"{_ev_view_dir(year, title)}/{key}.jpg"
+
+
+def _ev_norm_cmp(s):
+    """폴더명/행사명 비교용 정규화 — 공백·특수문자·대소문자 무시."""
+    return "".join(ch for ch in str(s or "").lower() if ch.isalnum())
+
+
+def _ev_nas_scan():
+    """NAS `행사관리/<연도>/<행사명>/` 를 실제로 훑어 목록을 만든다.
+
+    ## [요구 2026-10-30] "나스에 행사들을 추가했는데, 행사관리에서 자동으로
+    ##  추가되지 않았음"
+    ##
+    NAS 탐색기에서 폴더를 만들면 그게 곧 행사다. 앱이 그것을 모르면
+    사용자는 "추가했는데 왜 안 보이지" 를 반복한다. 여기서 실제 폴더를
+    읽어 **events.json 과 대조할 수 있는 목록**을 만든다.
+
+    반환: [(year, foldername, item_count), ...] — 연도 오름차순.
+    """
+    out = []
+    try:
+        years = NAS.list(EVENT_DIR).get("files") or []
+    except Exception:
+        return out
+    for y in years:
+        yname = str(y.get("name", "") or "")
+        if not y.get("isdir"):
+            continue
+        if yname.startswith((".", "@", "0000 ")):
+            continue
+        # 연도 폴더는 **4자리 숫자**만 인정한다(그 외는 잡동사니).
+        if not re.match(r"^\d{4}$", yname):
+            continue
+        try:
+            evs = NAS.list(EVENT_DIR + "/" + yname).get("files") or []
+        except Exception:
+            continue
+        for e in evs:
+            ename = str(e.get("name", "") or "")
+            if not e.get("isdir"):
+                continue
+            if ename.startswith((".", "@", "0000 ")):
+                continue
+            # 테스트/임시 폴더는 행사로 등록하지 않는다.
+            low = ename.lower()
+            if low.startswith("__") or "소프트삭제" in ename \
+                    or "테스트" in ename:
+                continue
+            # 항목 폴더(01_계획서 …) 개수를 세어 '실제 행사'인지 가늠한다.
+            cnt = 0
+            try:
+                for it in (NAS.list(EVENT_DIR + "/" + yname + "/" + ename)
+                           .get("files") or []):
+                    if it.get("isdir") and not str(
+                            it.get("name", "")).startswith((".", "@", "0000 ")):
+                        cnt += 1
+            except Exception:
+                pass
+            out.append((yname, ename, cnt))
+    out.sort(key=lambda x: (x[0], x[1]))
+    return out
+
+
+def _ev_nas_sync(dry_run=True, create_dirs=False):
+    """NAS 폴더 ↔ events.json 대조. 없으면 등록한다.
+
+    ## 매칭 규칙 (오등록 방지)
+    같은 연도 안에서 다음 중 하나면 **이미 연결된 것**으로 본다.
+      ① 제목이 정확히 같다
+      ② 정규화(공백·특수문자 제거) 후 같다
+      ③ 한쪽이 다른 쪽을 포함한다 (예: 앱제목 '2026년 한국잼버리 범스카우트
+         재회행사' ↔ NAS폴더 '2026 한국잼버리 범스카우트 재회행사')
+    ⚠️ 연도를 **반드시** 함께 본다. 2016 '제14회한국잼버리범재회행사-대구' 와
+       2026 '한국잼버리 범스카우트 재회행사' 는 다른 행사다.
+
+    [dry_run] 이 True 면 아무것도 쓰지 않고 결과만 알려준다(기본).
+    [create_dirs] 가 True 면 새로 등록한 행사에 7개 항목 폴더까지 만든다.
+    """
+    doc = _ev_doc()
+    events = doc.get("events", {})
+
+    # 연도별 등록 제목 집합
+    reg = {}
+    for k, v in events.items():
+        y = str(v.get("year", "") or "").strip()
+        t = str(v.get("title", "") or "").strip()
+        if y and t:
+            reg.setdefault(y, []).append(t)
+
+    nas = _ev_nas_scan()
+    added, skipped = [], []
+    for (year, folder, cnt) in nas:
+        titles = reg.get(year, [])
+        nf = _ev_norm_cmp(folder)
+        hit = ""
+        for t in titles:
+            if t == folder:
+                hit = t
+                break
+            nt = _ev_norm_cmp(t)
+            if not nt or not nf:
+                continue
+            if nt == nf or nt in nf or nf in nt:
+                hit = t
+                break
+            # ── [버그 수정 2026-10-30] '2026년 …' ↔ '2026 …' 중복 등록 ──
+            #  앱에서 만든 행사명은 '2026년 한국잼버리 …' 인데 NAS 폴더명은
+            #  '2026 한국잼버리 …' 다. 정규화하면 '2026년한국잼버리…' vs
+            #  '2026한국잼버리…' 로 **'년' 한 글자 때문에** 포함관계가 깨져
+            #  같은 행사가 두 번 등록됐다(실제로 발생).
+            #  → 연도 접두어를 떼고 한 번 더 비교한다.
+            a = re.sub(r"^(19|20)\d{2}\s*년?", "", nt)
+            b = re.sub(r"^(19|20)\d{2}\s*년?", "", nf)
+            if a and b and (a == b or a in b or b in a):
+                hit = t
+                break
+        if hit:
+            skipped.append((year, folder, hit))
+            continue
+
+        # ── 신규 등록 ──
+        entry = {
+            "year": year,
+            "title": folder,          # 폴더명을 그대로 제목으로 쓴다
+            "period": "",
+            "place": "",
+            "desc": "",
+            "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "createdBy": "nas-sync",
+            "nasFolder": folder,       # 실제 폴더명 명시(별칭 해석 불필요)
+            "attendees": [],
+            "fees": [],
+            "expenses": [],
+            "requested": [],
+            "accessLog": [],
+            "uploaders": {},
+            "fileTimes": {},
+            "customTabs": [],
+        }
+        added.append((year, folder, cnt))
+        if not dry_run:
+            with LOCK:
+                d2 = _ev_doc()
+                d2.setdefault("events", {})[_ev_id(year, folder)] = entry
+                _ev_save(d2)
+            reg.setdefault(year, []).append(folder)
+            if create_dirs:
+                try:
+                    _ensure_event_dirs(year, folder)
+                except Exception as ex:
+                    print("nas-sync 폴더 생성 실패:", year, folder, ex)
+            print("NAS 행사 자동 등록:", year, "/", folder)
+
+    return {
+        "scanned": len(nas),
+        "registered": len(events),
+        "added": [{"year": y, "title": f, "items": c} for (y, f, c) in added],
+        "skipped": len(skipped),
+        "dryRun": dry_run,
+    }
 
 
 def _ensure_event_dirs(year, title):
@@ -2892,6 +8143,9 @@ def _ev_sample_names(key):
         return "샘플_참석자명단.xlsx", None
     if key == "media":
         return "샘플_사진설명.txt", None
+    if key == "settlement":
+        # [요구 2026-10-26] 결산 폴더 — 내보낸 결산서(PDF/엑셀 등)를 여기에 둔다.
+        return "샘플_결산안내.txt", None
     return None, None
 
 
@@ -2932,6 +8186,20 @@ def _ev_sample_bytes(key, alt=False):
         txt = (
             "샘플 파일입니다. 이 파일은 형식 확인용으로, 자유롭게 삭제하고 실제 파일로 교체하세요.\n"
             "사진과 동영상을 이 폴더에 업로드하면 앱에서도 보이고 다운로드할 수 있습니다.\n"
+        )
+        return txt.encode("utf-8")
+    if key == "settlement":
+        # [요구 2026-10-26] "결산폴더는 각 행사마다 생성함"
+        #  앱의 [인쇄 / PDF 저장] 등으로 내보낸 결산서를 이 폴더에 두면
+        #  나중에 행사별로 바로 찾을 수 있다.
+        txt = (
+            "샘플 파일입니다. 이 파일은 형식 확인용으로, 자유롭게 삭제하세요.\n"
+            "결산서(PDF·엑셀·워드·JPG)를 이 폴더에 올리면 행사별로 보관됩니다.\n"
+            "\n"
+            "앱에서 결산서를 내보내는 방법\n"
+            "  · 행사 선택 → [결산서] 탭 → 미리보기 확인 → 아래 형식 버튼\n"
+            "    (PDF / 이미지 / 엑셀 / 워드)\n"
+            "  · 내보낸 파일을 이 폴더에 업로드하면 다음에 바로 찾을 수 있습니다.\n"
         )
         return txt.encode("utf-8")
     if alt:  # docx
@@ -2988,18 +8256,98 @@ def _ev_load_stats():
 _EV_MEDIA_COUNT_CACHE = {}          # (year,title) -> (ts, {photo,video})
 _EV_MEDIA_COUNT_TTL = 300.0         # 초
 _EV_MEDIA_COUNT_LOCK = threading.Lock()
+_EV_MEDIA_INFLIGHT = set()          # 콜드 시 백그라운드 계산 진행 중 표시
+_EV_MEDIA_POOL = ThreadPoolExecutor(max_workers=12)
+# [2026-10-26] 개수 캐시를 **디스크에 영속화**한다.
+#  종전에는 메모리만이라 프록시를 재시작하면 전부 0 이 됐고, 그 0 이
+#  새로 만든 '행사 목록 캐시'에 최대 150초간 고정되어 **사진 개수가 0으로
+#  보이는 회귀**가 생겼다(실측). 디스크에서 먼저 복원해 이 창을 없앤다.
+_EV_MEDIA_COUNT_DISK = os.path.join(STATE_ROOT, ".ev_media_count.json")
+_EV_MEDIA_COUNT_LOADED = [False]
+
+
+def _ev_media_count_load():
+    """개수 캐시를 디스크에서 복원 — 재시작 직후 '0' 고정 방지."""
+    try:
+        with open(_EV_MEDIA_COUNT_DISK, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        _EV_MEDIA_COUNT_LOADED[0] = True
+        return 0
+    n = 0
+    with _EV_MEDIA_COUNT_LOCK:
+        for k, v in (d or {}).items():
+            try:
+                ts, val = v
+                y, t = k.split("\x1f", 1)
+                _EV_MEDIA_COUNT_CACHE[(y, t)] = (float(ts), val)
+                n += 1
+            except Exception:
+                continue
+    _EV_MEDIA_COUNT_LOADED[0] = True
+    return n
+
+
+def _ev_media_count_save():
+    """개수 캐시를 디스크에 저장(원자적). 예열 완료 후 1회 호출."""
+    try:
+        with _EV_MEDIA_COUNT_LOCK:
+            snap = {"\x1f".join(k): v for k, v in _EV_MEDIA_COUNT_CACHE.items()}
+        tmp = _EV_MEDIA_COUNT_DISK + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False)
+        os.replace(tmp, _EV_MEDIA_COUNT_DISK)
+    except Exception:
+        pass
+
+
+def _ev_media_count_scan(d):
+    """한 폴더 이하를 재귀 순회해 (photo, video) 개수를 센다.
+    [속도] 하위폴더 탐색을 스레드풀로 동시 처리해 직렬 NAS 왕복을 제거한다."""
+    photo = video = 0
+
+    def _scan(cur):
+        nonlocal photo, video
+        try:
+            r = NAS.list(cur)
+        except Exception:
+            return
+        if not r.get("ok"):
+            return
+        subfuts = []
+        for f in r.get("files") or []:
+            nm = f.get("name", "")
+            if not nm or nm.startswith("."):
+                continue
+            if f.get("isdir"):
+                subfuts.append(_EV_MEDIA_POOL.submit(_scan, f"{cur}/{nm}"))
+            else:
+                k = _kind_of(nm)
+                if k == "image":
+                    photo += 1
+                elif k == "video":
+                    video += 1
+        for fu in subfuts:
+            fu.result()
+
+    if d:
+        _scan(d)
+    return photo, video
 
 
 def _ev_media_counts_invalidate(year, title):
     with _EV_MEDIA_COUNT_LOCK:
         _EV_MEDIA_COUNT_CACHE.pop((str(year), str(title)), None)
+    _ev_media_count_save()
 
 
-def _ev_media_counts(year, title):
+def _ev_media_counts(year, title, compute=True):
     """행사 '사진+동영상' 폴더의 이미지/동영상 개수(재귀) — TTL 캐시 사용.
 
-    NAS 왕복을 최소화한다: media 폴더만 list(폴더면 재귀)로 순회하고,
-    exists 선검사는 생략한다(없는 폴더는 list 가 ok=False 반환).
+    [속도] 콜드 미스 시 NAS 재귀 순회(수십 초)를 '요청 경로'에서 제거한다.
+      compute=True  → 즉시 계산(백그라운드 예열/워커 전용).
+      compute=False → 캐시 없으면 {photo:0,video:0} 즉시 반환 후,
+                      백그라운드 스레드가 계산해 다음 호출부터 정확값을 준다.
     """
     key = (str(year), str(title))
     now = time.time()
@@ -3007,30 +8355,26 @@ def _ev_media_counts(year, title):
         c = _EV_MEDIA_COUNT_CACHE.get(key)
         if c and (now - c[0]) < _EV_MEDIA_COUNT_TTL:
             return c[1]
-    d = _ev_sub_dir(year, title, "media")
-    photo = video = 0
-    if d:
-        stack = [d]
-        while stack:
-            cur = stack.pop()
-            try:
-                r = NAS.list(cur)
-            except Exception:
-                continue
-            if not r.get("ok"):
-                continue
-            for f in r.get("files") or []:
-                nm = f.get("name", "")
-                if not nm or nm.startswith("."):
-                    continue
-                if f.get("isdir"):
-                    stack.append(f"{cur}/{nm}")
-                else:
-                    k = _kind_of(nm)
-                    if k == "image":
-                        photo += 1
-                    elif k == "video":
-                        video += 1
+        if not compute:
+            # 콜드 미스 → 즉시 0 반환 + 백그라운드 계산 예약(중복 방지).
+            if key not in _EV_MEDIA_INFLIGHT:
+                _EV_MEDIA_INFLIGHT.add(key)
+
+                def _bg(k=key, y=str(year), t=str(title)):
+                    try:
+                        p, v = _ev_media_count_scan(_ev_sub_dir(y, t, "media"))
+                        with _EV_MEDIA_COUNT_LOCK:
+                            _EV_MEDIA_COUNT_CACHE[k] = (
+                                time.time(), {"photo": p, "video": v})
+                    except Exception:
+                        pass
+                    finally:
+                        with _EV_MEDIA_COUNT_LOCK:
+                            _EV_MEDIA_INFLIGHT.discard(k)
+
+                threading.Thread(target=_bg, daemon=True).start()
+            return {"photo": 0, "video": 0}
+    photo, video = _ev_media_count_scan(_ev_sub_dir(year, title, "media"))
     out = {"photo": photo, "video": video}
     with _EV_MEDIA_COUNT_LOCK:
         _EV_MEDIA_COUNT_CACHE[key] = (now, out)
@@ -3038,21 +8382,38 @@ def _ev_media_counts(year, title):
 
 
 def _ev_media_counts_warm(force=False):
-    """모든 정의 행사의 미디어 개수를 미리 계산해 캐시를 채운다(부팅 시 백그라운드)."""
+    """모든 정의 행사의 미디어 개수를 미리 계산해 캐시를 채운다(부팅 시 백그라운드).
+
+    [속도] 행사별 순회를 스레드풀로 '동시'에 예열한다(직렬 N×수초 → 병렬)."""
     try:
         doc = _ev_doc()
     except Exception:
         return 0
-    n = 0
+    jobs = []
     for e in doc.get("events", {}).values():
         y, t = str(e.get("year", "")), str(e.get("title", ""))
         if not y or not t:
             continue
         if force:
             _ev_media_counts_invalidate(y, t)
-        _ev_media_counts(y, t)
-        n += 1
-    return n
+        jobs.append((y, t))
+    if not jobs:
+        return 0
+    futs = [_EV_MEDIA_POOL.submit(_ev_media_counts, y, t, True)
+            for (y, t) in jobs]
+    for fu in futs:
+        try:
+            fu.result()
+        except Exception:
+            pass
+    # [2026-10-26] 예열 결과를 디스크에 남기고, 목록 캐시를 버려
+    #  '재시작 직후 0으로 고정' 창을 즉시 닫는다.
+    try:
+        _ev_media_count_save()
+        _ev_list_cache_bust()
+    except Exception:
+        pass
+    return len(jobs)
 
 
 def _ev_known_names():
@@ -3085,7 +8446,406 @@ def _ev_member_event_counts():
     return counts
 
 
+# ============ 행사 폴더 ↔ 앱 행사명 정합(reconcile) ============
+#  [요구] "앱 상단 제목과 나스 폴더명이 다르다" — 제목이 어긋나면 _ev_dir() 이
+#  존재하지 않는 폴더를 가리켜 사진+동영상이 0개로 보인다. 나스에 실제로 있는
+#  폴더명을 찾아 쓰고, 없으면 폴더를 만들어 준다(읽기 전용 경로에서도).
+#  ⚠️ (2026-10-26 대수술) 종전 `_EV_FOLDER_TTL = 60.0` 이 **성능 사고의 주범**이었다.
+#
+#   `_ev_union_events()` 는 행사 59개마다 `_ev_folder_alias()` 를 부르고,
+#   그 안의 `_ev_dir_resolve()` 가 **NAS.exists() 를 1회씩 순차 왕복**한다.
+#   실측: exists 1회 = 0.217초 → 59회 = 12.8초. 여기에 문서/회원 조회를 더해
+#   **/api/event/list2 콜드 응답이 13~15초** 였다.
+#   TTL 이 60초였으므로 사용자가 1분보다 뜸하게 행사 목록을 열면
+#   **매번 콜드 경로**를 다시 탔다 = "행사 불러오기가 또 느려졌음".
+#
+#   고친 방향(3중):
+#     ① TTL 을 60초 → 6시간으로. (별칭맵은 '앱제목 → 나스폴더명'이라
+#        NAS 에서 폴더 이름을 바꾼 직후에만 틀릴 수 있다. 그 경우는
+#        ②의 stale-즉시반환 + 백그라운드 재검증과 '새로고침' 버튼이 잡는다.)
+#     ② TTL 이 지나도 **옛 값을 즉시 반환**하고 검증은 백그라운드에서 한다.
+#        (사용자 응답 경로에서 NAS 왕복 0회 — 무중단)
+#     ③ 부팅 시 별칭맵을 디스크에서 복원하고 미리 계산(예열)한다.
+_EV_FOLDER_MAP = {}                 # (year, 앱제목) -> (나스폴더명, ts, 출처)
+_EV_FOLDER_TTL = 21600.0            # 6시간 — 60초는 콜드 재계산을 너무 자주 유발
+_EV_FOLDER_STALE = 604800.0         # 7일까지는 옛 값을 즉시 사용(+백그라운드 검증)
+_EV_FOLDER_LOCK = threading.Lock()
+_EV_FOLDER_INFLIGHT = set()
+_EV_FOLDER_DISK = os.path.join(STATE_ROOT, ".ev_folder_map.json")
+_EV_TITLE_NOISE = re.compile(
+    r"(?:19|20)\d{2}\s*년?|\(X\)|\(x\)|최종|최종본|수정|수정본|_?fin(?:al)?|"
+    r"복사본|사본|copy|백업|backup|임시|test|테스트", re.I)
+
+
+def _ev_title_key(s):
+    """행사명 비교용 정규화 — 연도·(X)·수정/fin 등 장식어와 공백/기호 제거."""
+    t = str(s or "")
+    t = _EV_TITLE_NOISE.sub(" ", t)
+    t = re.sub(r"[^0-9A-Za-z가-힣]", "", t)
+    return t.lower()
+
+
+def _ev_year_dirs(year):
+    """나스의 해당 연도 행사 폴더명 목록(짧은 TTL 캐시)."""
+    ck = "evdirs|%s" % str(year)
+    try:
+        cached = _ev_meta_cached(ck, lambda: {"dirs": _ev_year_dirs_compute(year)})
+        dirs = cached.get("dirs") if isinstance(cached, dict) else None
+        if dirs is not None:
+            return list(dirs)
+    except Exception:
+        pass
+    return _ev_year_dirs_compute(year)
+
+
+def _ev_year_dirs_compute(year):
+    fp = f"{EVENT_DIR}/{_ev_safe(year)}"
+    try:
+        r = NAS.list(fp)
+    except Exception:
+        return []
+    if not r.get("ok"):
+        return []
+    return [f["name"] for f in (r.get("files") or [])
+            if f.get("isdir") and not str(f.get("name", "")).startswith(".")]
+
+
+def _ev_folder_pick(year, title):
+    """앱 제목에 대응하는 나스 폴더명을 고른다. 못 찾으면 None.
+
+    순서: ① 정확히 같은 이름 ② 정규화 키 동일 ③ 한쪽이 다른 쪽을 포함
+          ④ 유사도(difflib) 0.82↑ 중 최고점
+    """
+    dirs = _ev_year_dirs(year)
+    t = str(title or "")
+    if not dirs or not t:
+        return None
+    if t in dirs:
+        return t
+    tk = _ev_title_key(t)
+    if not tk:
+        return None
+    # [요구] 연도를 뺀 '뼈대' 비교를 먼저 한다 —
+    #  앱 '2026년 한국잼버리 범스카우트 재회행사'
+    #  ↔ 나스 '2026 한국잼버리 범스카우트 재회행사' (年/공백 차이) 를 잡는다.
+    tbare = _ev_title_key(re.sub(r"^(?:19|20)\d{2}\s*년?", "", t))
+    if tbare and tbare != tk:
+        for d in dirs:
+            dbare = _ev_title_key(re.sub(r"^(?:19|20)\d{2}\s*년?", "", d))
+            if dbare and dbare == tbare:
+                return d
+    for d in dirs:
+        if _ev_title_key(d) == tk:
+            return d
+    for d in dirs:
+        dk = _ev_title_key(d)
+        if dk and tk and (dk in tk or tk in dk):
+            # 너무 짧은 키의 우연한 포함은 제외
+            if min(len(dk), len(tk)) >= 6:
+                return d
+    # ⚠ 유사도(difflib) 자동 연결은 하지 않는다 —
+    #  다른 행사의 사진을 보여줄 위험이 있다. 대신 '제안'만 남긴다.
+    return None
+
+
+def _ev_folder_suggest(year, title):
+    """자동 연결은 못 하지만 '이 폴더가 아닐까' 후보(사용자 확인용)."""
+    dirs = _ev_year_dirs(year)
+    t = str(title or "")
+    if not dirs or not t:
+        return None
+    tk = _ev_title_key(t)
+    if not tk:
+        return None
+    try:
+        import difflib
+        best, score = None, 0.0
+        for d in dirs:
+            s = difflib.SequenceMatcher(None, tk, _ev_title_key(d)).ratio()
+            if s > score:
+                best, score = d, s
+        if best and score >= 0.62:
+            return {"name": best, "score": round(score, 3)}
+    except Exception:
+        pass
+    return None
+
+
+def _ev_folder_map_load():
+    """별칭맵을 디스크에서 복원 — 재시작 직후에도 콜드 재계산 없이 응답."""
+    try:
+        with open(_EV_FOLDER_DISK, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return 0
+    n = 0
+    now = time.time()
+    with _EV_FOLDER_LOCK:
+        for k, v in (d or {}).items():
+            try:
+                picked, ts, src = v
+                if not isinstance(ts, (int, float)):
+                    ts = now
+                y, t = k.split("\x1f", 1)
+                _EV_FOLDER_MAP[(y, t)] = (picked, float(ts), str(src))
+                n += 1
+            except Exception:
+                continue
+    return n
+
+
+def _ev_folder_map_save():
+    """별칭맵을 디스크에 저장(임시파일 → replace, 원자적)."""
+    try:
+        with _EV_FOLDER_LOCK:
+            snap = {"\x1f".join(k): v for k, v in _EV_FOLDER_MAP.items()}
+        tmp = _EV_FOLDER_DISK + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False)
+        os.replace(tmp, _EV_FOLDER_DISK)
+    except Exception:
+        pass
+
+
+def _ev_dir_resolve_bg(key, year, title):
+    """TTL 만료 항목 검증 — 백그라운드에서만 NAS 왕복."""
+    if key in _EV_FOLDER_INFLIGHT:
+        return
+    _EV_FOLDER_INFLIGHT.add(key)
+
+    def _job():
+        try:
+            exact = f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(title)}"
+            ok = False
+            try:
+                ok = bool(NAS.exists(exact))
+            except Exception:
+                ok = False
+            now2 = time.time()
+            with _EV_FOLDER_LOCK:
+                if ok:
+                    _EV_FOLDER_MAP[key] = (str(title), now2, "exact")
+                else:
+                    picked = _ev_folder_pick(year, title)
+                    _EV_FOLDER_MAP[key] = (
+                        picked, now2, "alias" if picked else "none")
+            _ev_folder_map_save()
+        except Exception:
+            pass
+        finally:
+            _EV_FOLDER_INFLIGHT.discard(key)
+
+    _EV_META_POOL_BG.submit(_job)
+
+
+def _ev_dir_resolve(year, title, create=False):
+    """행사 폴더 실제 경로 — 나스 폴더명이 앱 제목과 달라도 올바른 경로 반환.
+
+    [속도] TTL(6시간) 이내면 **NAS 왕복 0회**. TTL 이 지나도 옛 값을 즉시
+      반환하고 검증은 `_ev_dir_resolve_bg` 가 백그라운드에서 한다.
+      (종전: 60초마다 59개 행사 × exists 0.217s = 12.8초 콜드 응답)
+    """
+    key = (str(year), str(title))
+    now = time.time()
+    hit = None
+    with _EV_FOLDER_LOCK:
+        hit = _EV_FOLDER_MAP.get(key)
+    if hit:
+        age = now - hit[1]
+        picked, ts, src = hit
+        if age < _EV_FOLDER_TTL:
+            if picked:
+                return f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(picked)}"
+            # picked 가 None 인데 TTL 이내 → '없음'도 확정 사실이므로 그대로.
+            if src == "none":
+                return f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(title)}"
+        elif age < _EV_FOLDER_STALE:
+            # 만료됐지만 사용 가능 — 즉시 반환 + 백그라운드 검증(무중단).
+            _ev_dir_resolve_bg(key, year, title)
+            if picked:
+                return f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(picked)}"
+    exact = f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(title)}"
+    try:
+        if NAS.exists(exact):
+            with _EV_FOLDER_LOCK:
+                _EV_FOLDER_MAP[key] = (str(title), now, "exact")
+            return exact
+    except Exception:
+        pass
+    picked = _ev_folder_pick(year, title)
+    with _EV_FOLDER_LOCK:
+        _EV_FOLDER_MAP[key] = (picked, now, "alias" if picked else "none")
+    _ev_folder_map_save()
+    if picked:
+        return f"{EVENT_DIR}/{_ev_safe(year)}/{_ev_safe(picked)}"
+    if create:
+        return exact
+    return exact
+
+
+def _ev_folder_prefetch(pairs, workers=12):
+    """여러 행사의 폴더 별칭을 **한 번에 병렬로** 확정한다(콜드 스타트 가속).
+
+    `pairs` = [(year, title), ...] — 중복은 내부에서 제거.
+    이미 TTL 이내로 확정된 항목은 건너뛴다. NAS 과부하를 막기 위해
+    동시 요청 수를 `workers` 로 제한한다.
+    """
+    now = time.time()
+    todo = []
+    for y, t in pairs:
+        k = (str(y), str(t))
+        with _EV_FOLDER_LOCK:
+            hit = _EV_FOLDER_MAP.get(k)
+        if hit and (now - hit[1]) < _EV_FOLDER_TTL:
+            continue
+        if k[1] in ("", None):
+            continue
+        todo.append(k)
+    if not todo:
+        return 0
+
+    def _one(k):
+        y, t = k
+        try:
+            exact = f"{EVENT_DIR}/{_ev_safe(y)}/{_ev_safe(t)}"
+            if NAS.exists(exact):
+                with _EV_FOLDER_LOCK:
+                    _EV_FOLDER_MAP[k] = (str(t), time.time(), "exact")
+                return
+            picked = _ev_folder_pick(y, t)
+            with _EV_FOLDER_LOCK:
+                _EV_FOLDER_MAP[k] = (
+                    picked, time.time(), "alias" if picked else "none")
+        except Exception:
+            pass
+
+    try:
+        list(_EV_META_POOL_BG.map(_one, todo, timeout=90))
+    except Exception:
+        pass
+    _ev_folder_map_save()
+    return len(todo)
+
+
+def _ev_folder_alias(year, title):
+    """앱 제목과 실제 나스 폴더명이 다르면 (앱제목, 나스폴더명) 반환."""
+    try:
+        real = _ev_dir_resolve(year, title)
+    except Exception:
+        return None
+    rn = real.rsplit("/", 1)[-1]
+    if rn and rn != _ev_safe(title):
+        return (_ev_safe(title), rn)
+    return None
+
+
+def _ev_folder_forget(year, title):
+    """폴더 해석 캐시를 지운다(제목/폴더 변경 후)."""
+    key = (str(year), str(title))
+    with _EV_FOLDER_LOCK:
+        _EV_FOLDER_MAP.pop(key, None)
+
+
+def _ev_media_dirs(year, title):
+    """미디어 폴더(03_사진+동영상) 아래 '사진이 실제로 들어있는' 폴더 후보들.
+
+    [요구] 사진이 항목 폴더 바로 아래가 아니라 '00 사진+동영상' 같은
+    한 겹 더 안쪽 폴더에 있는 경우가 있다 → 두 곳 모두 후보로 준다.
+    반환: [(표시이름, sub경로)]  예) [('', ''), ('00 사진+동영상', '00 사진+동영상')]
+    """
+    out = [("", "")]
+    try:
+        base = _ev_sub_dir(year, title, "media", "")
+        if not base:
+            return out
+        r = NAS.list(base)
+        if not r.get("ok"):
+            return out
+        for f in (r.get("files") or []):
+            if not f.get("isdir"):
+                continue
+            nm = str(f.get("name", ""))
+            if not nm or nm.startswith("."):
+                continue
+            sub = f"{base}/{nm}"
+            try:
+                inner = NAS.list(sub).get("files") or []
+            except Exception:
+                continue
+            has_media = any(
+                (not x.get("isdir")) and _kind_of(str(x.get("name", ""))) in ("image", "video")
+                for x in inner)
+            if has_media:
+                out.append((nm, nm))
+    except Exception:
+        pass
+    return out
+
+
+# ============ 행사 목록 최상위 캐시 (2026-10-26 신설) ============
+#  [사고] /api/event/list2 는 지금까지 **아무 캐시도 없이** 매 요청마다
+#   events.json 파싱 + 회원 DB 파싱 + 행사 59개 폴더 별칭 조회 +
+#   인가자 열람자 집계 + 미디어 개수 조회를 **전부 다시** 했다.
+#   실측 콜드 응답 13~15초 → 사용자 체감 "행사 불러오기가 또 느려졌음".
+#
+#  이제 조립 결과(list)를 통째로 캐시한다.
+#   · TTL(기본 150초) 이내 → 즉시 반환(연산 0회).
+#   · TTL 만료 후 STALE(기본 1시간) 이내 → 옛 목록을 **즉시** 반환하고
+#     백그라운드에서 새로 조립(사용자는 절대 기다리지 않는다).
+#   · 행사를 추가/수정/삭제하거나 업로드·이름변경을 하면 `_ev_list_cache_bust()`.
+_EV_LIST_TTL = float(os.environ.get("TSAK_EV_LIST_TTL", "150"))
+_EV_LIST_STALE = float(os.environ.get("TSAK_EV_LIST_STALE", "3600"))
+_EV_LIST_MEM = {}                    # 'all' -> (ts, [events])
+_EV_LIST_LOCK = threading.Lock()
+_EV_LIST_INFLIGHT = [False]
+
+
+def _ev_list_cache_bust():
+    """행사 목록 캐시 무효화 — 행사 CRUD·업로드·이름변경 시 호출."""
+    with _EV_LIST_LOCK:
+        _EV_LIST_MEM.clear()
+
+
+def _ev_list_refresh_bg():
+    if _EV_LIST_INFLIGHT[0]:
+        return
+    _EV_LIST_INFLIGHT[0] = True
+
+    def _job():
+        try:
+            val = _ev_union_events_compute()
+            with _EV_LIST_LOCK:
+                _EV_LIST_MEM["all"] = (time.time(), val)
+        except Exception:
+            pass
+        finally:
+            _EV_LIST_INFLIGHT[0] = False
+
+    try:
+        _EV_META_POOL_BG.submit(_job)
+    except Exception:
+        _EV_LIST_INFLIGHT[0] = False
+
+
 def _ev_union_events():
+    """`_ev_union_events_compute()` 의 캐시 래퍼(위 설명 참조)."""
+    now = time.time()
+    with _EV_LIST_LOCK:
+        ent = _EV_LIST_MEM.get("all")
+    if ent:
+        age = now - ent[0]
+        if age < _EV_LIST_TTL:
+            return ent[1]
+        if age < _EV_LIST_STALE:
+            _ev_list_refresh_bg()
+            return ent[1]
+    val = _ev_union_events_compute()
+    with _EV_LIST_LOCK:
+        _EV_LIST_MEM["all"] = (time.time(), val)
+    return val
+
+
+def _ev_union_events_compute():
     """행사관리 목록 + 개인 프로필(eventAttend) 행사명의 합집합.
 
     - events.json 에 정의된 행사: defined=True
@@ -3094,20 +8854,54 @@ def _ev_union_events():
     """
     doc = _ev_doc()
     defined = doc.get("events", {})
+    trashed = _ev_archived_ids(doc)
+    trashed_titles = _ev_archived_titles(doc)
     mot = _ev_member_event_counts()
+    # [요구] 인가자 열람자 수 집계용 1회성 조회 테이블.
+    cred, reg = _ev_cred_lookup()
     by_title = {str(e.get("title", "")): eid for eid, e in defined.items()}
+    # [속도] 폴더 별칭을 **먼저 병렬로** 확정해 둔다.
+    #  종전에는 아래 for 문 안에서 `_ev_folder_alias()` 가 행사마다 순차로
+    #  NAS.exists() 를 1회씩 왕복해 59개 × 0.217s = 12.8초를 잡아먹었다.
+    #  (캐시가 비어 있는 최초 1회만 실제 비용이 들고, 이후에는 디스크 복원값 사용)
+    try:
+        _ev_folder_prefetch([(e.get("year", ""), e.get("title", ""))
+                             for e in defined.values()])
+    except Exception:
+        pass
     out = []
     for eid, e in defined.items():
+        if str(eid) in trashed:
+            continue
         info = dict(e)
         info["id"] = eid
         info.setdefault("attendees", [])
         info["createdBy"] = str(e.get("createdBy", "") or "")
         info["defined"] = True
-        info["media"] = _ev_media_counts(e.get("year", ""), e.get("title", ""))
+        # [속도] 콜드 미스 시 NAS 순회를 기다리지 않는다(즉시 0 + 백그라운드 계산).
+        info["media"] = _ev_media_counts(e.get("year", ""), e.get("title", ""), False)
+        # [요구] 앱 제목과 나스 실제 폴더명이 다르면 화면에 그대로 알려준다.
+        try:
+            al = _ev_folder_alias(e.get("year", ""), e.get("title", ""))
+        except Exception:
+            al = None
+        if al:
+            info["folderAlias"] = {"app": al[0], "nas": al[1]}
         info["memberCount"] = mot.get(str(e.get("title", "")), 0)
+        # [요구] 몇 명의 인가자들이 이 행사를 봤는지(열람자 수).
+        try:
+            vw = _ev_credential_viewers(e, cred, reg)
+            info["credViewers"] = vw["count"]
+            info["credViewerNames"] = [v["name"] for v in vw["viewers"][:30]]
+        except Exception:
+            info["credViewers"] = 0
+            info["credViewerNames"] = []
         out.append(info)
     for name in sorted(_ev_all_member_event_names()):
         if name in by_title:
+            continue
+        # 휴지통에 있는 행사명은 관리목록누락으로 다시 튀어나오지 않게 한다.
+        if name in trashed_titles:
             continue
         out.append({
             "id": None, "year": "", "title": name, "period": "", "place": "",
@@ -3154,11 +8948,60 @@ def _ev_remove_member_events(names):
     return changed
 
 
+def _ev_archived_ids(doc=None):
+    """휴지통(trash)에 들어간 행사 id 집합.
+
+    소프트 삭제된 행사는 events.json 의 'trash' 맵에 보관되며, 활성 목록
+    (_ev_list / _ev_union_events)에서는 제외된다. 복구(_restore)로 되돌린다.
+    """
+    doc = doc if doc is not None else _ev_doc()
+    tr = doc.get("trash")
+    if isinstance(tr, dict):
+        return set(str(k) for k in tr.keys())
+    return set()
+
+
+def _ev_archived_titles(doc=None):
+    """휴지통에 있는 행사명 집합(관리목록누락 재출현 방지용)."""
+    doc = doc if doc is not None else _ev_doc()
+    tr = doc.get("trash")
+    out = set()
+    if isinstance(tr, dict):
+        for v in tr.values():
+            if isinstance(v, dict):
+                t = str(v.get("title", "")).strip()
+                if t:
+                    out.add(t)
+    return out
+
+
+def _ev_trash_entries(doc=None):
+    """휴지통 목록(최근 삭제순). 각 항목에 id/제목/연도/삭제시각 포함."""
+    doc = doc if doc is not None else _ev_doc()
+    tr = doc.get("trash")
+    out = []
+    if isinstance(tr, dict):
+        for eid, e in tr.items():
+            info = dict(e) if isinstance(e, dict) else {}
+            info["id"] = str(eid)
+            info.setdefault("title", "")
+            info.setdefault("year", "")
+            out.append(info)
+    out.sort(key=lambda x: str(x.get("deletedAt", "")), reverse=True)
+    return out
+
+
 def _ev_list(tree=False):
-    """행사 목록. tree=True면 참석자/폴더 정보 요약 포함."""
+    """행사 목록. tree=True면 참석자/폴더 정보 요약 포함.
+
+    휴지통(trash)으로 소프트 삭제된 행사는 제외한다(활성 목록에만 노출).
+    """
     doc = _ev_doc()
+    trashed = _ev_archived_ids(doc)
     out = []
     for eid, e in doc.get("events", {}).items():
+        if str(eid) in trashed:
+            continue
         info = dict(e)
         info["id"] = eid
         info.setdefault("attendees", [])
@@ -3436,13 +9279,63 @@ def _staff_remove(year, title, ident):
         return True
 
 
+# 행사 폴더 파일목록 캐시 — 원격 NAS list 왕복(폴더당 ~0.25s)을 제거한다.
+#  파일 수/목록은 목록 화면을 다시 열 때마다 즉시 떠야 하므로 짧은 TTL 을 둔다.
+#  업로드/삭제 시 해당 폴더 캐시를 무효화하여 즉시 반영한다.
+_EV_FILES_CACHE = {}                # (year,title,key,sub) -> (ts, [files])
+_EV_FILES_TTL = 20.0
+_EV_FILES_LOCK = threading.Lock()
+
+
+def _ev_files_invalidate(year, title, key=None, sub=None):
+    with _EV_FILES_LOCK:
+        for k in list(_EV_FILES_CACHE.keys()):
+            if k[0] != str(year) or k[1] != str(title):
+                continue
+            if key is not None and k[2] != key:
+                continue
+            if sub is not None and k[3] != str(sub):
+                continue
+            _EV_FILES_CACHE.pop(k, None)
+    # [고속화] 영구 디스크 메타 캐시도 무효화 — prefix 로 일치 키 제거.
+    try:
+        base = "evfiles|%s|%s|" % (str(year), str(title))
+        _ev_meta_invalidate(base + (str(key) + "|" if key is not None else ""))
+        # 하위폴더까지 반영되도록 넓게 한 번 더(키 미지정 시).
+        if key is None:
+            _ev_meta_invalidate("evfiles|%s|%s|" % (str(year), str(title)))
+    except Exception:
+        pass
+    # 이 행사의 전체 사진/미디어·배포 요약 캐시도 함께 무효화.
+    for extra in ("evallphotos:", "evcount"):
+        try:
+            _ev_meta_invalidate(extra)
+        except Exception:
+            pass
+    # [속도] 행사 목록 최상위 캐시도 무효화 —
+    #  파일 업로드/삭제/이름변경 후에도 옛 목록(사진 개수 등)이 남지 않게.
+    try:
+        _ev_list_cache_bust()
+    except Exception:
+        pass
+
+
 def _ev_files(year, title, key, sub=""):
     """행사 하위 항목 폴더의 파일+하위폴더 목록(+확장자/용량/업로더).
 
     sub: 항목 폴더 기준 상대 하위경로(예: '봄행사/1팀'). '' 이면 항목 폴더 루트.
+    [고속화] 영구 디스크 캐시(_ev_meta_cached)로 감싸 만료 후에도 stale 즉시
+    반환 + 백그라운드 갱신한다(행사 창이 NAS 왕복으로 멈추지 않음).
     """
+    sub_safe = _ev_sub_safe(sub)
+    ck = ("evfiles|%s|%s|%s|%s"
+          % (str(year), str(title), key, sub_safe))
+    return _ev_meta_cached(ck, lambda: _ev_files_compute(year, title, key, sub))
+
+
+def _ev_files_compute(year, title, key, sub=""):
     fp = _ev_sub_dir(year, title, key, sub)
-    if not fp or not NAS.exists(fp):
+    if not fp:
         return []
     r = NAS.list(fp)
     if not r.get("ok"):
@@ -3459,13 +9352,39 @@ def _ev_files(year, title, key, sub=""):
         # 업로더/시각 키는 'sub/name' 형태(하위폴더 파일 구분)
         ukey = f"{sub_clean}/{nm}" if sub_clean else nm
         if f.get("isdir"):
-            # 하위폴더 항목
+            # 하위폴더 항목 — 하위 목록까지 세어 개수/용량/사진수를 채운다.
+            photo = video = 0
             try:
                 sub_files = [x for x in (NAS.list(f"{fp}/{nm}").get("files") or [])
                              if not x["name"].startswith(".")]
                 cnt = len(sub_files)
                 size_total = sum(int(x.get("size", 0) or 0)
                                  for x in sub_files if not x.get("isdir"))
+                for x in sub_files:
+                    if x.get("isdir"):
+                        continue
+                    kd = _kind_of(str(x.get("name", "")))
+                    if kd == "image":
+                        photo += 1
+                    elif kd == "video":
+                        video += 1
+                # [요구] 사진이 한 겹 더 안쪽에 있는 경우 → 재귀 1단계까지 확인.
+                if photo + video == 0:
+                    for x in sub_files:
+                        if not x.get("isdir"):
+                            continue
+                        try:
+                            deep = NAS.list(f"{fp}/{nm}/{x['name']}").get("files") or []
+                        except Exception:
+                            continue
+                        for dx in deep:
+                            if dx.get("isdir"):
+                                continue
+                            kd = _kind_of(str(dx.get("name", "")))
+                            if kd == "image":
+                                photo += 1
+                            elif kd == "video":
+                                video += 1
             except Exception:
                 cnt = 0
                 size_total = 0
@@ -3477,6 +9396,9 @@ def _ev_files(year, title, key, sub=""):
                 "ext": "",
                 "kind": "folder",
                 "count": cnt,
+                "photo": photo,
+                "video": video,
+                "hasMedia": (photo + video) > 0,
                 "uploader": upl.get(ukey, ""),
                 "uploaded": ev.get("fileTimes", {}).get(key, {}).get(ukey, ""),
             })
@@ -3520,12 +9442,52 @@ def _ev_media_images_recursive(year, title, sub=""):
     return out
 
 
+def _ev_media_files_recursive(year, title, sub="", want_video=True):
+    """media 폴더(하위폴더 포함)의 이미지(+동영상) 파일 목록을 재귀 수집.
+
+    [요구] 사진이 '00 사진+동영상' 처럼 한 겹 더 안쪽 폴더에 있어도
+    앱에서 한 번에 보이도록 '평탄화(flatten)' 목록을 만든다.
+    """
+    fp = _ev_sub_dir(year, title, "media", sub)
+    if not fp:
+        return []
+    try:
+        r = NAS.list(fp)
+    except Exception:
+        return []
+    if not r.get("ok"):
+        return []
+    out = []
+    for f in sorted(r.get("files") or [], key=lambda x: str(x.get("name", ""))):
+        nm = str(f.get("name", ""))
+        if not nm or nm.startswith("."):
+            continue
+        # 서버가 만든 파생 폴더(최적화본 등)는 사용자 사진이 아니므로 제외 —
+        #  포함하면 같은 사진이 2번(원본+최적화본) 보인다.
+        if nm in ("_optimized", "_views", "_thumb", "_thumbs", "_cache"):
+            continue
+        child = f"{sub}/{nm}" if sub else nm
+        if f.get("isdir"):
+            out.extend(_ev_media_files_recursive(year, title, child, want_video))
+            continue
+        kd = _kind_of(nm)
+        if kd == "image" or (want_video and kd == "video"):
+            out.append({"name": nm, "sub": sub, "kind": kd,
+                        "size": int(f.get("size", 0) or 0)})
+    return out
+
+
 def _ev_all_photos():
     """모든 행사의 사진을 행사 순서대로 모아 반환(행사별 구분용 그룹).
 
     반환: {ok, events:[{id,year,title,period,place,count,photos:[{name,sub}]}], total}
     - 행사 순서: 최신 연도 우선, 연도 내 최신(제목 내림차순) 우선.
+    [고속화] 전체 행사 재귀 스캔이라 영구 디스크 캐시로 감싼다.
     """
+    return _ev_meta_cached("evallphotos|all", _ev_all_photos_compute)
+
+
+def _ev_all_photos_compute():
     doc = _ev_doc()
     items = []
     for eid, e in doc.get("events", {}).items():
@@ -3555,6 +9517,1542 @@ def _ev_all_photos():
 
 
 # ============================ 행사 후기 게시판 ============================
+# ===================== 행사 커스텀 게시판 (메뉴추가 → 게시판형) =====================
+#  [요구 2026-10-26] "행사관리 메뉴 중 메뉴를 추가할 경우 게시판 기능을 활성화시켜
+#   주고, 첨부파일을 올릴 수 있는 게시판도 생성해줘. 즉, 후기 게시판처럼 글쓰기
+#   기능을 추가하고 첨부파일을 올리고 다운받고 확인할 수 있도록.
+#   추가 게시판의 열람 권한은 관리자는 기본이지만, 모든 회원에게 노출할지 여부를
+#   해당 게시판 상단에 선택 버튼을 넣어줘."
+#
+#  저장 구조(event_custom_boards.json):
+#   {"events": {"<year>::<title>": {"boards": {"<boardId>": {
+#        "id","name","note","openToAll"(bool),"created","updated",
+#        "posts":[{"id","author","number","body","created","updated",
+#                  "attachments":[파일명...]}]}}}}
+#
+#  첨부파일은 NAS 의 `06_후기첨부_(업로드가능)`(key=review) 폴더를 그대로 쓴다.
+#   → 이미지/PDF/문서 모두 기존 eventUpload2 + eventFile2Url 로 업로드/다운로드된다.
+#   (후기 게시판과 동일한 경로·동일한 코드 → 새 업로드 API 를 만들지 않는다)
+def _cb_doc():
+    return _load_json(CUSTOMBOARD_FILE, {"events": {}})
+
+
+def _cb_save(doc):
+    _save_json(CUSTOMBOARD_FILE, doc)
+
+
+def _cb_board_id(name):
+    """게시판 이름 → 안정적인 id. 이름을 바꾸면 새 게시판이 된다(의도된 동작)."""
+    return "b" + hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:12]
+
+
+def _cb_all(year, title):
+    """한 행사의 게시판 목록(dict: id -> board)."""
+    doc = _cb_doc()
+    ev = (doc.get("events") or {}).get(_ev_id(year, title)) or {}
+    boards = ev.get("boards") or {}
+    return boards if isinstance(boards, dict) else {}
+
+
+# ── 노출 권한 3단계 ──────────────────────────────────────────────────────
+#  [요구 2026-10-26] "노출권한을 관리자/마스터가 정할 수 있음 (게시판 상단에
+#   버튼 노출), 노출/관리자/마스터"
+#   visibility:
+#     "all"   → 전체 노출 (인가자 누구나 열람)
+#     "staff" → 스탭 이상 (해당 행사 스탭 + 관리자·마스터)
+#     "admin" → 관리자·마스터만
+#  · 옛 데이터 호환: `openToAll`(bool) 만 있으면 all/admin 으로 해석한다.
+CB_VIS_ALL = "all"
+CB_VIS_STAFF = "staff"
+CB_VIS_ADMIN = "admin"
+CB_VIS_VALUES = (CB_VIS_ALL, CB_VIS_STAFF, CB_VIS_ADMIN)
+
+
+def _cb_visibility(board):
+    """게시판의 노출 등급을 정규화해서 돌려준다(항상 3값 중 하나)."""
+    v = str((board or {}).get("visibility", "") or "").strip()
+    if v in CB_VIS_VALUES:
+        return v
+    # 옛 구조(openToAll 만 있던 시절) → 동등하게 매핑한다.
+    return CB_VIS_ALL if bool((board or {}).get("openToAll")) else CB_VIS_ADMIN
+
+
+def _cb_tier(session):
+    return str((session or {}).get("tier", "") or "")
+
+
+def _cb_is_admin(session):
+    """관리자·마스터 여부(app/master)."""
+    return _cb_tier(session) in ("app", "master")
+
+
+def _cb_ident(session):
+    """세션의 인가번호(숫자만)."""
+    s = session or {}
+    for k in ("who", "number", "ident"):
+        d = re.sub(r"[^0-9]", "", str(s.get(k, "") or ""))
+        if d:
+            return d
+    return ""
+
+
+def _cb_react_ident(session):
+    """공감(좋아요) 주체 식별자 — 인가번호가 없는 관리자·마스터도 셀 수 있게.
+
+    ## 왜 _cb_ident 를 그대로 쓰면 안 되나
+      마스터 세션은 **비밀번호로** 로그인하므로 인가번호(숫자)가 없다.
+      `_cb_ident()` 는 숫자만 남기므로 마스터는 '' → 공감 API 가 401 로
+      막혔다. (실측: react on=True(master) → 401 unauthorized)
+
+    ## 규칙
+      · 인가번호가 있으면  → 그 숫자 ("415")
+      · 없고 마스터면      → "master"
+      · 없고 관리자(app)면 → "admin"
+      · 그 외              → "" (공감 불가)
+
+    ## 왜 세션ID 를 쓰지 않나
+      세션은 메모리에만 있고 프록시를 재시작하면 사라진다. 세션ID 를 열쇠로
+      쓰면 재시작 후 '내가 눌렀던 공감'이 사라진다. 등급 기반 고정 문자열이
+      재시작에도 유지되고, 마스터는 원래 1명이므로 명단이 뭉개지지도 않는다.
+    """
+    n = _cb_ident(session)
+    if n:
+        return n
+    t = _cb_tier(session)
+    if t == "master":
+        return "master"
+    if t == "app":
+        return "admin"
+    return ""
+
+
+def _cb_is_staff(year, title, session):
+    """이 행사의 스탭인지(관리자·마스터 포함해 판단은 호출부에서)."""
+    ident = _cb_ident(session)
+    if not ident:
+        return False
+    try:
+        return _staff_is(year, title, ident)
+    except Exception:
+        return False
+
+
+def _cb_visible_to(board, session, year="", title=""):
+    """이 게시판을 현재 세션이 **볼 수 있는지**.
+
+    · all   : 인가자면 누구나
+    · staff : 해당 행사 스탭 + 관리자·마스터
+    · admin : 관리자·마스터만
+    """
+    if not _cb_tier(session):
+        return False
+    if _cb_is_admin(session):
+        return True
+    v = _cb_visibility(board)
+    if v == CB_VIS_ALL:
+        return True
+    if v == CB_VIS_STAFF:
+        return _cb_is_staff(year, title, session)
+    return False
+
+
+# ── 게시글 비밀번호 ──────────────────────────────────────────────────────
+#  [요구 2026-10-26] "게시글의 비밀번호는 글쓴 사람은 비밀번호를 넣을 수 있고,
+#   글쓴 사람과 마스터한테는 비밀번호가 노출됨(마스터권한). 비밀번호를
+#   잃어버렸을 경우 초기화할 수 있음 (게시판 비밀번호 초기화는 'id'+'!@@',
+#   예) 415!@@ - 별도 안내하지 않음)"
+#
+#  저장은 **평문**이다 — 글쓴 사람과 마스터에게 그 값을 그대로 보여줘야 하기
+#  때문(해시면 되돌릴 수 없다). 서버 파일은 NAS 의 db/ 안에만 있고 API 는
+#  권한 있는 세션에만 내려준다.
+CB_PW_RESET_SUFFIX = "!@@"
+
+
+def _cb_owner_ident(post):
+    return re.sub(r"[^0-9]", "", str((post or {}).get("number", "") or ""))
+
+
+def _cb_is_owner(post, session):
+    """현재 세션이 이 글의 **글쓴이** 인지(인가번호 일치)."""
+    a = _cb_owner_ident(post)
+    b = _cb_ident(session)
+    return bool(a and b and a == b)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  추모관 (Memorial) — 故 범2호 노경하 선배 추모 게시판
+# ══════════════════════════════════════════════════════════════════════════
+#  [요구 2026-11-04]
+#   "게시판에 고)범2호 노경하 선배님 추모관련 페이지를 만들어주고 누구든
+#    글을 쓸 수 있도록 하고 인가자는 자기 번호를 함께 쓸 수 있도록 해줘,
+#    바로가기 링크와 qr 생성해서 **로그인 없이도** 글 쓰고 확인 및 수정할
+#    수 있도록 해줘"
+#
+#  ## 설계 결정
+#   · 로그인 없이 쓰기 → 세션 인증을 요구하지 않는다. 대신 각 글에
+#     **수정키(editKey)** 를 발급하고, 발급한 브라우저에만 localStorage 로
+#     보관한다. 남의 글은 수정·삭제할 수 없다(키를 모르므로).
+#   · 인가자는 자기 인가번호를 함께 남길 수 있다 → 같은 인가번호로 쓴 글은
+#     나중에 **일괄 수정**할 수 있게 `ownerKey`(= sha1(인가번호+salt))를
+#     함께 저장한다. 인가번호 원문은 노출(likes/조회)하되, 그것으로 남의
+#     글을 고칠 수는 없다(수정은 editKey 또는 ownerKey 필요).
+#   · 스팸 방지: 같은 IP 기준 분당 3건 제한 + 본문 길이 제한.
+#   · 관리자·마스터는 세션으로 전부 수정·삭제할 수 있다.
+MEMORIAL_FILE = BASE + "/db/memorial.json"
+
+MEM_MEMORIALS = {
+    # id → 추모관 정보. 링크·QR 은 /memorial.html?id=<id> 로 만든다.
+    "noh-kyungha": {
+        "id": "noh-kyungha",
+        "title": "故 노경하",
+        "subtitle": "범스카우트 2호 · 우리의 영원한 지도자",
+        "years": "1940 – 2023",
+        "scoutNo": "2",
+        "photoUrl": "memorial_noh.jpg",
+        "created": "2026-11-04 00:00:00",
+        # ── 대표 추모영상 (turn66 → turn69 복수화) ────────────────────
+        #  [요구 2026-11-06] "총재님 영상 스트리밍만 추가"
+        #  [요구 2026-11-06 / turn69] "추모관에 이 영상을 노출해줘 /
+        #      이찬희 총재님 영상 아래에 동일 포멧으로 넣어줘"
+        #
+        #  · 앱(Flutter)과 웹(memorial.html)이 **같은 정의**를 쓰도록 서버가
+        #    내려준다. 두 곳에 파일명을 따로 적으면 한쪽만 고쳐져 또 어긋난다.
+        #  · 파일은 추모관 폴더(_mem_dir)에 있고 /memorial-file/ 로 Range 서빙.
+        #  · **videos 는 순서가 곧 노출 순서**다. 배열 순서대로 화면에 쌓인다.
+        #    (turn69: 총재님 영상이 1번, 노경하 선배 영상이 2번 = 그 아래)
+        "videos": [
+            {
+                "file": "이찬희_총재_추모영상.mp4",
+                "poster": "이찬희_총재_추모영상_poster.jpg",
+                "title": "이찬희 총재 추모영상",
+                "subtitle": "한국스카우트연맹 · 故 노경하 선배님 추모행사",
+                "duration": 199,          # 초 (3분 19초) — 화면 표시용
+                "durationLabel": "3:19",
+            },
+            {
+                "file": "노경하_선배님_추모영상_2.mp4",
+                "poster": "노경하_선배_추모영상_poster.jpg",
+                "title": "노경하 선배 추모영상",
+                "subtitle": "범스카우트 2호 · 우리의 영원한 지도자",
+                "duration": 271,          # 초 (4분 31초)
+                "durationLabel": "4:31",
+            },
+        ],
+        # ── 하위호환: 첫 영상 = 대표 영상 ─────────────────────────────
+        #  예전 앱/캐시가 "video" 단수를 읽어도 깨지지 않게 남겨둔다.
+        "video": {
+            "file": "이찬희_총재_추모영상.mp4",
+            "poster": "이찬희_총재_추모영상_poster.jpg",
+            "title": "이찬희 총재 추모영상",
+            "subtitle": "한국스카우트연맹 · 故 노경하 선배님 추모행사",
+            "duration": 199,
+            "durationLabel": "3:19",
+        },
+    },
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Scout's Own 게시판 (2026-11-08 / turn57)
+# ═══════════════════════════════════════════════════════════════════════
+#  [요구] "'2026년 전국훈육지도자회의 Scout's Own'
+#          로그인없이 작성 가능 (추모관과 완전 같은 형식)
+#          대신 추모글 대신 여기엔 질문이 주어지고, 그 질문들에 글을 쓰는
+#          형식 / 질문은 관리자가 넣을 수 있고, 글은 통계를 내서 실시간으로
+#          볼 수 있어 / 게시판에는 관리자로그인 항목이 있어야 함(마스터)
+#          이번 스카우트 오운에 대한 간략한 설명을 위에 노출하고 하단에
+#          함께 내용 주제들을 나열 / 예시질문 10개 / 나중에 수정·순서변경·
+#          삭제 및 기타 관리 / 행사이니 QR 도 생성"
+#
+#  ## 설계 요지 — 추모관과 **같은 골격**, 다른 축
+#   추모관        : 게시글(posts) = 자유 글 · 사진 · 영상
+#   스카우트오운  : **질문(questions)** 이 축이고, 답변(answers)이 그 아래 붙는다.
+#    · 한 사람이 여러 질문에 답할 수 있다(질문 1개당 답변 1개, 다시 쓰면 수정).
+#    · 답변에는 이름+인가번호를 남긴다. 통계를 내야 하므로 추모관 댓글과
+#      달리 이름을 **권장**하되, 비워도 된다(→ '익명'으로 집계).
+#    · 답변의 수정키(editKey)는 추모관과 **같은 방식**으로 발급해
+#      브라우저 localStorage 에 보관한다. 로그인 없이 자기 글을 고칠 수 있다.
+#
+#  ## 저장 위치
+#   NAS `db/scoutsown.json` 하나.
+#     {
+#       "events":    { "<eid>": { 제목·설명·기간·장소 등 } },
+#       "questions": { "<eid>": [ {id, text, hint, order, active, created} ] },
+#       "answers":   { "<eid>": [ {id, qid, name, number, body, editKeyHash,
+#                                  created, updated, hidden} ] }
+#     }
+#   · 질문은 **order 오름차순**이 노출 순서다(관리자가 위/아래로 옮긴다).
+#   · 삭제는 `active=False`(soft) — 이미 달린 답변과의 연결을 끊지 않는다.
+SO_FILE = BASE + "/db/scoutsown.json"
+#  단위대 별칭·병합 설정 — 표기 변형을 사용자가 확정한 결과를 보관한다.
+MU_FILE = BASE + "/db/unit_alias.json"
+SO_MEDIA_DIR_NAME = "91_스카우트오운_(업로드가능)"
+
+#  행사 기본값. 실제 값은 관리자가 화면에서 고치면 JSON 이 이긴다.
+#  (추모관의 MEM_MEMORIALS + doc 병합과 같은 방식)
+SO_EVENTS = {
+    "tsak-2026": {
+        "id": "tsak-2026",
+        "title": "2026년 전국훈육지도자회의",
+        "program": "Scout's Own",
+        "subtitle": "전쟁과 고통 앞에서, 지도자는 무엇을 말할 것인가",
+        "org": "한국 범스카우트 중앙회",
+        "dateText": "2026년",
+        "place": "",
+        "emblem": "tsak_emblem_splash.png",
+        # ── 상단 소개문 ─────────────────────────────────────────────
+        #  Scout's Own 은 스카우트 운동의 전통적인 '명상·성찰의 시간'이다.
+        #  종교·교파를 넘어, 참가자가 자기 삶과 세계를 조용히 돌아보는 자리.
+        "intro": [
+            "Scout’s Own(스카우트 오운)은 스카우트 운동의 오랜 전통입니다. "
+            "캠프파이어 곁에서, 또는 조용한 숲에서 잠시 말을 멈추고 "
+            "스스로에게 묻는 시간입니다.",
+            "올해 우리는 전쟁으로 고통받는 사람들 앞에서 서 있습니다. "
+            "뉴스가 아니라 이웃의 얼굴로 그 고통을 마주할 때, "
+            "지도자로서 우리는 무엇을 말하고 무엇을 해야 할까요.",
+            "정답은 없습니다. 다만 같은 질문 앞에 여러 사람의 생각이 "
+            "나란히 놓이면, 우리는 혼자서는 닿지 못할 곳에 닿습니다. "
+            "아래 질문 중 마음이 머무는 곳에 짧게라도 답을 남겨 주십시오.",
+        ],
+        "note": "남겨주신 글은 이 회의의 기록으로 보관됩니다. "
+                "로그인 없이 쓰실 수 있고, 쓰신 뒤에도 고치실 수 있습니다.",
+        "created": "2026-11-08 00:00:00",
+    },
+}
+
+#  예시 질문 10개 — [요구] "전쟁으로 고통받고 이 상황에 대한 지도자로서의
+#  생각들을 정리할 수 있는 주제들(질문)들을 예시로 10개 나열"
+#   · 각 질문은 `text`(질문) + `hint`(생각의 실마리) 한 줄을 가진다.
+#   · 관리자가 화면에서 고치고·옮기고·지울 수 있으므로 여기 값은
+#     **최초 seed** 일 뿐이다(이미 저장된 JSON 이 있으면 그쪽이 이긴다).
+SO_DEFAULT_QUESTIONS = [
+    {"id": "q1", "order": 1, "active": True,
+     "text": "지금 이 순간, 전쟁으로 고통받는 사람들 중 누가 가장 먼저 "
+             "떠오릅니까? 그 사람의 얼굴을 한 문장으로 적어 주십시오.",
+     "hint": "국적·이름은 몰라도 됩니다. 떠오르는 장면 하나면 충분합니다."},
+    {"id": "q2", "order": 2, "active": True,
+     "text": "뉴스로 접한 고통과 실제로 마주한 고통은 어떻게 다릅니까? "
+             "그 차이가 지도자의 판단을 어떻게 바꿉니까?",
+     "hint": "거리두기가 만드는 것들 — 무감각, 피로, 혹은 용기."},
+    {"id": "q3", "order": 3, "active": True,
+     "text": "우리 대원이 '저 사람들은 왜 저런 일을 당합니까?'라고 물었습니다. "
+             "지도자로서 무엇이라고 답하시겠습니까?",
+     "hint": "정답을 주는 대신, 함께 생각하는 방법이 있을까요."},
+    {"id": "q4", "order": 4, "active": True,
+     "text": "전쟁을 겪는 또래의 청소년에게 지금 가장 필요한 것은 무엇이라고 "
+             "생각하십니까? 물질·교육·안전·혹은 다른 무엇.",
+     "hint": "우리가 줄 수 있는 것과, 줄 수 없는 것을 나누어 보십시오."},
+    {"id": "q5", "order": 5, "active": True,
+     "text": "스카우트로서 우리가 지켜온 '평화'의 가치를 오늘의 언어로 다시 "
+             "번역한다면 어떻게 표현하시겠습니까?",
+     "hint": "선서와 규율의 문장을 지금의 사건에 겹쳐 놓아 보십시오."},
+    {"id": "q6", "order": 6, "active": True,
+     "text": "분노와 연민 사이에서 흔들릴 때, 지도자는 무엇을 기준으로 "
+             "자신의 태도를 정해야 합니까?",
+     "hint": "감정을 지우지 않으면서도 흔들리지 않는 방법."},
+    {"id": "q7", "order": 7, "active": True,
+     "text": "고통받는 사람을 돕는 일과 그 고통을 만든 구조를 바꾸는 일이 "
+             "충돌할 때 우리는 어디에 서야 합니까?",
+     "hint": "당장의 구호와 오래의 변화 — 둘 다 필요하다면 순서는."},
+    {"id": "q8", "order": 8, "active": True,
+     "text": "우리 대원들 사이에도 전쟁에 대한 생각이 갈릴 수 있습니다. "
+             "그 갈등을 지도자로서 어떻게 다루시겠습니까?",
+     "hint": "틀린 말을 멈추는 일과, 말할 수 있게 하는 일 사이."},
+    {"id": "q9", "order": 9, "active": True,
+     "text": "이번 회의를 마치고 집으로 돌아간 뒤, 내가 실제로 바꿀 수 있는 "
+             "작은 행동 하나는 무엇입니까?",
+     "hint": "크게 말하기보다, 내일 할 수 있는 구체적인 한 가지."},
+    {"id": "q10", "order": 10, "active": True,
+     "text": "지금의 고통이 오래 기억되기를 바라십니까, 아니면 잊히기를 "
+             "바라십니까? 그리고 우리는 무엇을 기억해야 합니까?",
+     "hint": "기억은 위로일 수도, 무거운 짐일 수도 있습니다."},
+]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  단위대 통계 (연맹별 · 단위대별)  — 2026-11-11 / turn58
+# ══════════════════════════════════════════════════════════════════════════
+#  [요구] "범스카우트 인가자들의 인가시 정보를 활용하여 통계란에 연맹별
+#   단위대별 인가자 리스트를 출력 / 동일하게 현재 활동정보를 활용 /
+#   단위대 이름을 다르게 쓴 경우가 많아서 체크박스로 선택 가능 /
+#   전체 명부의 통계 및 상세내역까지 출력 / 연맹별 단위대별 선택 가능"
+#
+#  ## 목적 (사용자 원문)
+#   · 어떤 단위대가 **몇 명의 범스카우트를 배출**했는지
+#   · 어떤 단위대가 **몇 명을 현재 보유**하고 있는지
+#   · → 배출이 많은 단위대 대장에게 감사장, 배출이 오래 끊긴 단위대에는
+#     지원책 마련. 그래서 **세부적**이면서 **대조군 비교**가 가능해야 한다.
+#
+#  ## 왜 '정규화(normalize)' 가 필요한가 — 실측
+#   명부 2,245명의 unit 표기가 **681가지**다. 같은 단위대가 이렇게 적혀 있다:
+#     '제130대 금성지역대' / '금성지역대' / '제130대 금성벤처스카우트'
+#     '제2127대 진례중학교' / '진례중학교' / '김해진례스카우트'
+#     '제N단' 접두사 유무, 띄어쓰기, '범스카우트'/'스카우트' 접미사 등
+#   → 정규화 키(숫자+고유명)로 묶고, **묶인 원본 표기를 모두 보여준다**.
+#     사용자가 체크박스로 "이 표기도 같은 단위대" 라고 확정할 수 있게 한다.
+#
+#  ## 두 가지 기준
+#   · issue  (인가시)   : member.league / member.unit
+#   · active (현재활동) : member.regLeague / member.regUnit (없으면 빈값)
+#     ⚠️ 현재활동 필드는 명부에 26건만 채워져 있다. 0건이어도 오류가 아니라
+#        "아직 입력되지 않음" 이므로 UI 가 그 사실을 알려야 한다.
+# ══════════════════════════════════════════════════════════════════════════
+
+_UNIT_STRIP_SUFFIX = (
+    "벤처스카우트", "범스카우트", "스카우트", "지역대", "소년대", "연장대",
+    "직할대", "육성회", "탐험지역대", "지역", "대", "단", "회",
+)
+
+
+def _unit_norm_strong(u):
+    """단위대 이름 → **묶음 키**. 표기 차이를 최대한 흡수한다.
+
+    규칙 (실측 681개 표기를 보고 만든 것):
+      ① 공백·가운뎃점·괄호 제거, 소문자화
+      ② 접두 '제' 제거
+      ③ '제130대' · '제404단' 같은 **번호+단위** 를 꺼내 (num, kind) 로 분리
+      ④ 나머지 고유명에서 접미사(지역대/소년대/스카우트/…)를 반복 제거
+      ⑤ 결과 키 = f"{num}{kind}|{고유명}"
+
+    ⚠️ 고유명이 비면(예: '제28단') 번호만으로 키를 만든다 — 서로 다른
+       단위대가 같은 번호를 쓸 수 있으므로 **사용자 체크로 확정**해야 한다.
+    """
+    raw = str(u or "").strip()
+    if not raw:
+        return ""
+    s = raw
+    for ch in (" ", "\u00a0", "\u3000", "·", "ㆍ", "(", ")", "[", "]", "'", '"', "."):
+        s = s.replace(ch, "")
+    s = s.lower()
+    s = re.sub(r"\s+", "", s)
+    # ② 접두 '제'
+    if s.startswith("제"):
+        s = s[1:]
+    num, kind = "", ""
+    m = re.match(r"^(\d+)(대|단)", s)
+    if m:
+        num, kind = m.group(1), m.group(2)
+        s = s[m.end():]
+    # ④ 접미사 반복 제거 (긴 것부터 — '탐험지역대' 가 '지역대' 보다 먼저)
+    changed = True
+    while changed and s:
+        changed = False
+        for suf in _UNIT_STRIP_SUFFIX:
+            if s.endswith(suf) and len(s) > len(suf):
+                s = s[: -len(suf)]
+                changed = True
+                break
+    core = s
+    if num or kind:
+        return f"{num}{kind}|{core}"
+    return f"|{core}" if core else ""
+
+
+def _unit_num_kind(u):
+    """(번호, 종류) 추출 — 표시·정렬용. 종류: 대 / 단 / ''."""
+    raw = str(u or "").strip()
+    for ch in (" ", "\u00a0", "·", "(", ")", "."):
+        raw = raw.replace(ch, "")
+    m = re.match(r"^제?(\d+)(대|단)?", raw)
+    if not m:
+        return (0, "")
+    return (int(m.group(1)), m.group(2) or "")
+
+
+def _unit_display_name(u):
+    """대표 표기 — 가장 정보가 많은 원본을 고른다(번호+고유명 둘 다 있으면 우선)."""
+    return str(u or "").strip()
+
+
+def _mu_doc():
+    """단위대 별칭/병합 설정 저장소."""
+    return _load_json(MU_FILE, {"alias": {}, "hidden": [], "updated": ""})
+
+
+def _mu_save(doc):
+    doc["updated"] = _now_stamp()
+    _save_json(MU_FILE, doc)
+
+
+def _member_leagues(ms):
+    """연맹 목록 — 실제 데이터에 있는 값 + 정렬."""
+    out = []
+    seen = set()
+    for m in ms:
+        for k in ("league", "regLeague"):
+            v = str(m.get(k) or "").strip()
+            if v and v not in seen:
+                seen.add(v)
+                out.append(v)
+    return sorted(out)
+
+
+def _build_unit_stats(basis="issue", include_hidden=False):
+    """연맹별 · 단위대별 집계를 만든다.
+
+    반환 구조:
+      {
+        "basis": "issue"|"active",
+        "leagues": [ { "league": "서울남부", "total": 337, "units": [...], ... } ],
+        "units":   [ ... 전 연맹 통합 목록(정렬됨) ... ],
+        "groups":  [ { "key":..., "names":[...], "count":N, "leagues":[...] } ],
+        "totals":  { "members": N, "with_unit": N, "no_unit": N, "units": N },
+        "aliasCount": N,
+      }
+
+    ## 단위대 1건(unit row)
+      key        정규화 키
+      name       대표 표기
+      num/kind   제N대 / 제N단
+      league     이 단위대에 가장 많이 나타난 연맹
+      leagues    {연맹: 인원}  ← 연맹이 바뀐 단위대도 드러난다
+      count      총 인원
+      names      {원본표기: 인원}  ← 체크박스로 확인·병합할 대상
+      years      {연도: 인원}      ← 배출 연도 분포
+      firstYear / lastYear         ← 얼마나 오래 배출이 없었는지
+      gapYears   lastYear 이후 경과 (모르면 None)
+      people     [{number,name,date,league,unit}]  ← 이름은 UI 가 가린다
+    """
+    ms = _load_json(DB_FILE, [])
+    if not isinstance(ms, list):
+        ms = []
+    doc = _mu_doc()
+    alias = doc.get("alias") or {}
+    hidden = set(str(x) for x in (doc.get("hidden") or []))
+
+    basis = "active" if str(basis) == "active" else "issue"
+    this_year = datetime.datetime.now().year
+
+    # ── 1단계: 사람 → (연맹, 단위대 키) ──────────────────────────────
+    rows = {}
+    total_with_unit = 0
+    for m in ms:
+        if not isinstance(m, dict):
+            continue
+        if basis == "active":
+            lg = str(m.get("regLeague") or "").strip()
+            un = str(m.get("regUnit") or "").strip()
+        else:
+            lg = str(m.get("league") or "").strip()
+            un = str(m.get("unit") or "").strip()
+        if not un:
+            continue
+        total_with_unit += 1
+        key = _unit_norm_strong(un)
+        #  사용자가 확정한 별칭이 있으면 그 키로 합친다.
+        key = str(alias.get(key) or alias.get(un) or key) or un
+        if not key:
+            continue
+        e = rows.get(key)
+        if e is None:
+            n, k = _unit_num_kind(un)
+            e = rows[key] = {
+                "key": key, "num": n, "kind": k,
+                "names": {}, "leagues": {}, "years": {},
+                "people": [], "count": 0,
+            }
+        e["count"] += 1
+        e["names"][un] = e["names"].get(un, 0) + 1
+        lgk = lg or "(연맹 미기재)"
+        e["leagues"][lgk] = e["leagues"].get(lgk, 0) + 1
+        d = str(m.get("date") or "").strip()
+        yr = 0
+        mm = re.match(r"^(\d{4})", d)
+        if mm:
+            yr = int(mm.group(1))
+            e["years"][str(yr)] = e["years"].get(str(yr), 0) + 1
+        e["people"].append({
+            "number": str(m.get("number") or ""),
+            "name": str(m.get("name") or ""),
+            "date": d,
+            "league": lg,
+            "unit": un,
+            "year": yr,
+        })
+
+    # ── 2단계: 단위대 행 마감 ────────────────────────────────────────
+    units = []
+    for key, e in rows.items():
+        if key in hidden:
+            continue
+        # 대표 표기 = 가장 많이 쓰인 원본 (동률이면 번호+고유명이 긴 것)
+        names = e["names"]
+        #  [turn61] 대표 표기는 **번호가 붙은 표기**를 우선한다.
+        #   대장님 지시: "제1111대 청숫지역대 로 통합" — 인원이 더 많은
+        #   '청숫지역대' 가 대표가 되면 지시와 화면이 어긋난다.
+        #   같은 번호 우선 → 인원 많은 순 → 긴 표기 순.
+        _mynum = int(e.get("num") or 0)
+
+        def _disp_rank(kv):
+            _n, _c = _unit_num_kind(kv[0])
+            #  같은 번호 안에서는 **짧은 표기**가 대표다.
+            #   ('제1111대 청숫지역대' > '제1111대 청숫지역대 벤처스카우트')
+            return (0 if (_mynum and _n == _mynum) else 1,
+                    _c != e.get("kind"),   # 같은 번호면 '대'·'단' 일치 우선
+                    len(kv[0]), -kv[1], kv[0])
+
+        disp = sorted(names.items(), key=_disp_rank)[0][0]
+        years = e["years"]
+        ys = sorted(int(y) for y in years if int(y) > 0)
+        e["name"] = _unit_display_name(disp)
+        e["firstYear"] = ys[0] if ys else None
+        e["lastYear"] = ys[-1] if ys else None
+        e["gapYears"] = (this_year - ys[-1]) if ys else None
+        e["yearCount"] = len(ys)
+        # 대표 연맹 = 최다 인원
+        e["league"] = sorted(e["leagues"].items(),
+                             key=lambda kv: (-kv[1], kv[0]))[0][0]
+        # 이름 있는 명부는 인가번호 순
+        e["people"].sort(key=lambda p: (p["year"] or 9999,
+                                        str(p["number"]).zfill(8)))
+        units.append(e)
+
+    units.sort(key=lambda u: (-u["count"], u["league"], u["name"]))
+
+    # ── 3단계: 연맹별 묶음 ───────────────────────────────────────────
+    leagues = {}
+    for u in units:
+        #  연맹이 섞인 단위대는 **대표 연맹**에 넣고, 다른 연맹 인원은
+        #  leagues 딕셔너리에 남겨 UI 가 "혼재" 표시를 할 수 있게 한다.
+        lg = u["league"]
+        L = leagues.get(lg)
+        if L is None:
+            L = leagues[lg] = {"league": lg, "total": 0, "units": [],
+                               "unitCount": 0, "noDate": 0,
+                               "oldest": None, "newest": None}
+        L["units"].append(u)
+        L["total"] += u["count"]
+        L["unitCount"] += 1
+        if not u["lastYear"]:
+            L["noDate"] += u["count"]
+        for y in u["years"]:
+            iy = int(y)
+            if iy > 0:
+                if L["oldest"] is None or iy < L["oldest"]:
+                    L["oldest"] = iy
+                if L["newest"] is None or iy > L["newest"]:
+                    L["newest"] = iy
+    lg_list = [leagues[k] for k in sorted(leagues,
+              key=lambda x: (-leagues[x]["total"], x))]
+
+    # ── 4단계: 병합 후보 그룹 (표기 변형) ────────────────────────────
+    #  같은 정규화 키에 원본 표기가 2개 이상이면 "같은 단위대일 수 있음".
+    #  ⚠️ '연장대'·'소년대' 는 **고유명이 아니라 종류**다. 고유명 자리에
+    #     이런 종류어만 남으면 이름 비교의 근거가 될 수 없다.
+    _GENERIC_CORE = {
+        "", "연장", "소년", "청소년", "지역", "벤처", "일반", "직할",
+        "육성", "탐험", "탐험지역", "대", "단", "회",
+    }
+
+    def _variant_grade(u):
+        """병합 후보의 위험도 — 화면이 색으로 경고할 수 있게 등급을 준다.
+
+        safe    : 사실상 같은 표기 (공백·'제'·접미사 차이 정도)
+        kindMix : 같은 번호인데 소년대/연장대가 섞임 → **묶으면 안 됨**
+        nameMix : 같은 번호인데 고유명이 다름 → 서로 다른 단위대일 가능성
+        check   : 그 외 사람이 확인해야 하는 것
+        """
+        nm = [str(n or "") for n in u.get("names", {})]
+        has_sc = [x for x in nm if "소년대" in x]
+        has_lj = [x for x in nm if "연장대" in x]
+        if has_sc and has_lj:
+            return "kindMix"
+        cores = set()
+        for n in nm:
+            c = _unit_norm_strong(n).split("|", 1)[-1]
+            if c and c not in _GENERIC_CORE:
+                cores.add(c)
+        if len(cores) > 1:
+            return "nameMix"
+        nums = {_unit_num_kind(n)[0] for n in nm}
+        nums.discard(0)
+        if len(nums) > 1:
+            return "nameMix"
+        return "safe"
+
+    groups = []
+    for u in units:
+        if len(u["names"]) > 1:
+            groups.append({
+                "key": u["key"], "name": u["name"], "count": u["count"],
+                "grade": _variant_grade(u),
+                "leagues": sorted(
+                    [(k, v) for k, v in u["leagues"].items()],
+                    key=lambda kv: (-kv[1], kv[0])),
+                "names": sorted(u["names"].items(), key=lambda kv: (-kv[1], kv[0])),
+            })
+    groups.sort(key=lambda g: (-len(g["names"]), -g["count"]))
+
+    # ── 5단계: [turn61] 추가 병합 후보 — 정규화 키가 **달라도** 같은 단위대 ──
+    #  대장님 지시: "같은 연맹이고 단위대 번호가 같다면 같은 단위대일 거야"
+    #  정규화 키는 이름 글자만 보므로, 아래 두 경우는 키가 갈라져 있었다.
+    #    (A) 같은 연맹 + 같은 번호  : '제110대 서울지역대' / '제110대 서울시지역대'
+    #    (B) 같은 연맹 + 같은 고유명 : '인동지역대' / '제404단 인동지역대'
+    #  둘 다 **연맹까지 같아야** 인정한다 — 번호만 같고 연맹이 다르면 남남이다.
+    extra = []
+
+    def _unit_kinds(u):
+        """이 단위대(키) 안에 나타난 **종류** 집합.
+        벤처 / 소년 / 연장 / 지역(직할·육성 포함) / 스카우트."""
+        ks = set()
+        for n in (u.get("names") or {}):
+            t = str(n or "")
+            if "벤처" in t:
+                ks.add("vent")
+            elif "연장" in t:
+                ks.add("ext")
+            elif "소년" in t:
+                ks.add("scout")
+            elif ("지역" in t) or ("직할" in t) or ("육성" in t):
+                ks.add("region")
+            elif "스카우트" in t:
+                ks.add("scout")
+        ks.discard("")
+        return ks
+
+    def _has_basis_sc(us):
+        """소년대와 연장대가 **함께** 있으면 True — 별개 조직이므로 묶지 않는다."""
+        ks = set()
+        for x in us:
+            ks |= _unit_kinds(x)
+        return ("scout" in ks) and ("ext" in ks)
+
+    def _add_extra(reason, label, us):
+        keys = sorted({x["key"] for x in us})
+        if len(keys) < 2:
+            return
+        head = sorted(us, key=lambda x: (-x["count"], x["name"]))[0]
+        fams = set()
+        for x in us:
+            fams |= _unit_kinds(x)
+        #  소년대·연장대가 다른 종류와 섞이면 사람이 확인해야 한다.
+        grade = "check" if ("ext" in fams and (fams & {"scout", "region", "vent"})) else "safe"
+        #  연맹 교차 방어 — 각 단위대의 1위 연맹이 같아야 한다.
+        for x in us:
+            lgx = x.get("leagues") or {}
+            if lgx and sorted(lgx.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] != head["league"]:
+                grade = "check"
+        extra.append({
+            "reason": reason, "grade": grade, "label": label,
+            "into": head["key"], "intoName": head["name"],
+            "from": [k for k in keys if k != head["key"]],
+            "keys": keys,
+            "count": sum(int(x["count"]) for x in us),
+            "memberCount": len(us),
+            "names": sorted([(n, c) for x in us for n, c in x["names"].items()],
+                            key=lambda kv: (-kv[1], kv[0])),
+            "league": head["league"],
+        })
+
+    #  ── 규칙: **같은 연맹 · 같은 고유명(정확 일치) · 번호 충돌 없음** ──
+    #   대장님 지시("같은 연맹이고 번호가 같으면 같은 단위대")를 그대로 쓰면
+    #   '제90대 연장대' 와 '제90대 인창중학교', '제807대 모양지역대' 와
+    #   '제807대 소년대' 처럼 **서로 다른 단위대**가 섞인다(실측 6건).
+    #   그래서 번호는 '충돌이 없을 때만' 허용하고, 고유명 정확 일치를
+    #   확정 근거로 삼는다. 번호가 갈리면(제122대 vs 제122단 은 같은 번호)
+    #   서로 다른 번호면 남남이므로 제외한다.
+    by_lcore = {}
+    for u in units:
+        core = str(u.get("key") or "").split("|", 1)[-1]
+        if not core or core in _GENERIC_CORE:
+            continue
+        lg = str(u.get("league") or "")
+        by_lcore.setdefault((lg, core), []).append(u)
+
+    for (lg, core), us in sorted(by_lcore.items()):
+        if len(us) < 2:
+            continue
+        nums = {int(x.get("num") or 0) for x in us}
+        nums.discard(0)
+        if len(nums) > 1:          # 번호가 갈리면 다른 단위대
+            continue
+        fams = set()
+        for x in us:
+            fams |= _unit_kinds(x)
+        if ("scout" in fams) and ("ext" in fams):
+            continue               # 소년대·연장대 혼합 → 별개 조직
+        _add_extra("sameName", f"같은 연맹 · 같은 이름 ({core})", us)
+
+    extra.sort(key=lambda g: (-g["count"], g["label"]))
+
+    no_unit = 0
+    for m in ms:
+        if not isinstance(m, dict):
+            continue
+        if basis == "active":
+            if not str(m.get("regUnit") or "").strip():
+                no_unit += 1
+        else:
+            if not str(m.get("unit") or "").strip():
+                no_unit += 1
+
+    return {
+        "basis": basis,
+        "leagues": lg_list,
+        "units": units,
+        "groups": groups,
+        "extra": extra,
+        "totals": {
+            "members": len([m for m in ms if isinstance(m, dict)]),
+            "withUnit": total_with_unit,
+            "noUnit": no_unit,
+            "units": len(units),
+            "leagues": len(lg_list),
+        },
+        "aliasCount": len(alias),
+        "hiddenCount": len(hidden),
+        "thisYear": this_year,
+    }
+
+
+def _so_doc():
+    return _load_json(SO_FILE, {"events": {}, "questions": {}, "answers": {}})
+
+
+def _so_save(doc):
+    _save_json(SO_FILE, doc)
+
+
+def _so_safe_eid(eid):
+    return re.sub(r"[^A-Za-z0-9_-]", "", str(eid or ""))[:48] or "tsak-2026"
+
+
+def _so_event(eid):
+    """행사 정보 — 기본값(SO_EVENTS) 위에 저장값을 덮어 병합한다.
+
+    추모관 `/api/memorial/get` 이 MEM_MEMORIALS 와 doc 을 병합하는 것과
+    같은 방식이다. 그래야 관리자가 설명문을 고쳐도 코드를 안 건드린다.
+    """
+    eid = _so_safe_eid(eid)
+    base = dict(SO_EVENTS.get(eid) or {})
+    try:
+        custom = (_so_doc().get("events") or {}).get(eid) or {}
+    except Exception:
+        custom = {}
+    if custom:
+        #  병합 허용 키 — 여기에 없는 키는 무시한다(임의 필드 주입 방지).
+        for k in ("title", "program", "subtitle", "org", "dateText", "place",
+                  "emblem", "intro", "note"):
+            if k in custom:
+                base[k] = custom[k]
+    base.setdefault("id", eid)
+    return base
+
+
+def _so_questions(eid_raw, include_inactive=False):
+    """질문 목록 — 저장값이 있으면 그것, 없으면 예시 10개.
+
+    ⚠️ "저장값이 없다"는 판단은 `questions` 키의 **존재 여부**로 한다.
+      빈 리스트(`[]`)는 "관리자가 전부 지웠다"는 뜻이므로 예시를 되살리지
+      않는다. (`or` 로 판정하면 [] 가 falsy 라 예시가 살아나 버린다)
+    """
+    eid = _so_safe_eid(eid_raw)
+    doc = _so_doc()
+    qs = (doc.get("questions") or {}).get(eid, None)
+    if qs is None:
+        qs = [dict(q) for q in SO_DEFAULT_QUESTIONS]
+    else:
+        qs = [dict(q) for q in (qs or []) if isinstance(q, dict)]
+    if not include_inactive:
+        qs = [q for q in qs if q.get("active", True)]
+    qs.sort(key=lambda q: (int(q.get("order") or 0), str(q.get("id") or "")))
+    return qs
+
+
+def _so_answers(eid_raw, qid=None):
+    eid = _so_safe_eid(eid_raw)
+    arr = (_so_doc().get("answers") or {}).get(eid) or []
+    out = [dict(a) for a in arr if isinstance(a, dict)]
+    if qid:
+        out = [a for a in out if str(a.get("qid")) == str(qid)]
+    out.sort(key=lambda a: str(a.get("created") or ""))
+    return out
+
+
+def _so_ident_key(a):
+    """응답자 식별키 — 이름+인가번호. 통계의 '사람 수' 계산에 쓴다."""
+    nm = str((a or {}).get("name") or "").strip()
+    no = re.sub(r"[^0-9G]", "", str((a or {}).get("number") or ""))
+    return (nm + "|" + no).strip("|")
+
+
+def _so_pub_answer(a):
+    """답변 → 응답용 사본. editKeyHash·IP 는 **절대** 내보내지 않는다."""
+    return {
+        "id": a.get("id"),
+        "qid": a.get("qid"),
+        "name": a.get("name") or "익명",
+        "number": re.sub(r"[^0-9G]", "", str(a.get("number") or "")),
+        "body": a.get("body") or "",
+        "created": a.get("created") or "",
+        "updated": a.get("updated") or "",
+        "hidden": bool(a.get("hidden")),
+    }
+
+
+def _so_stats(eid_raw):
+    """실시간 통계 — 질문별 응답 수 · 참여자 수 · 응답률.
+
+    [요구] "글은 통계를 내서 실시간으로 볼 수 있어"
+     · byQuestion : 질문마다 몇 명이 답했는가(질문 순서대로)
+     · people     : 서로 다른 응답자 수(이름+번호 기준)
+     · total      : 답변 총 건수
+     · rate       : 응답자 1인당 기대 답변 수(질문 수) 대비 실제 비율(%)
+    """
+    eid = _so_safe_eid(eid_raw)
+    qs = _so_questions(eid)
+    ans = [a for a in _so_answers(eid) if not a.get("hidden")]
+    by_q = []
+    for q in qs:
+        sub = [a for a in ans if str(a.get("qid")) == str(q.get("id"))]
+        people = {_so_ident_key(a) for a in sub if _so_ident_key(a)}
+        by_q.append({
+            "id": q.get("id"),
+            "order": q.get("order"),
+            "text": q.get("text"),
+            "count": len(sub),
+            "people": len(people),
+        })
+    all_people = {_so_ident_key(a) for a in ans if _so_ident_key(a)}
+    total = len(ans)
+    nq = max(1, len(qs))
+    people = len(all_people)
+    return {
+        "total": total,
+        "people": people,
+        "questions": len(qs),
+        "rate": round(100.0 * total / (nq * people), 1) if people else 0.0,
+        "byQuestion": by_q,
+    }
+
+
+def _so_media_dir(eid):
+    """첨부 폴더 — 추모관과 같은 규칙(`_(업로드가능)` 접미어)."""
+    d = BASE + "/" + SO_MEDIA_DIR_NAME + "/" + _so_safe_eid(eid) + UPLOADABLE_SUFFIX
+    return d
+
+
+def _so_edit_hash(answer_id, secret):
+    """답변 수정키 해시 — 추모관 `_mem_edit_key` 와 **같은 방식**.
+
+    [요구] "로그인없이 작성 가능 (추모관과 완전 같은 형식)"
+     · 원문(secret)은 발급 순간에만 브라우저에 주고, 서버는 해시만 저장한다.
+     · 그래서 서버가 뚫려도 남의 글을 고칠 수 있는 열쇠가 남지 않는다.
+    """
+    return hashlib.sha1(
+        ("%s|%s|tsak-scoutsown" % (answer_id, secret)).encode("utf-8")
+    ).hexdigest()
+
+
+def _mem_doc():
+    return _load_json(MEMORIAL_FILE, {"memorials": {}, "posts": {}})
+
+
+def _mem_save(doc):
+    _save_json(MEMORIAL_FILE, doc)
+
+
+def _mem_edit_key(post_id, secret):
+    """수정키 해시 — 원문은 발급 순간에만 알려주고 저장하지 않는다."""
+    return hashlib.sha1(
+        ("%s|%s|tsak-memorial" % (post_id, secret)).encode("utf-8")
+    ).hexdigest()
+
+
+def _mem_owner_key(number):
+    """인가번호 → 소유자키. 같은 인가번호로 쓴 글을 한 번에 관리하기 위함."""
+    d = re.sub(r"[^0-9]", "", str(number or ""))
+    if not d:
+        return ""
+    return hashlib.sha1(("own|%s|tsak-memorial" % d).encode("utf-8")).hexdigest()
+
+
+def _mem_att_pair(a):
+    """첨부 1건 → (url, 파일이름). 3가지 저장 형태를 모두 받아준다.
+
+    ## 왜 필요한가 — [버그 2026-11-04]
+    ##  `/api/memorial/post` 가 오랫동안 이렇게 저장했다:
+    ##      [str(x) for x in (d.get("attachments") or [])]
+    ##  앱·웹은 `{name, url, size}` **객체**를 보내는데 `str()` 이 이를
+    ##  파이썬 repr 문자열로 뭉개 버렸다. 실제 저장된 값:
+    ##      ["{'name': 'IMG_3988_2.png', 'url': '/memorial-file/…/IMG_3988_2.png',
+    ##        'size': 750033}"]
+    ##  이 문자열은 `.png` 로 끝나지 않고 `}` 로 끝나므로 `_kind_of` 가
+    ##  "other" 를 돌려주고, 사진인데도 kind='자료' 로 남아 **사진 탭에서
+    ##  영영 보이지 않았다**(사용자 이승준 님 글 muy4SB6v9LO4 가 실제 피해자).
+    ##
+    ##  저장 형식은 이제 `_norm_att_list` 로 고쳤지만, 이미 저장된 글은
+    ##  그대로이므로 **읽을 때 복원**해야 한다(마이그레이션 없이 낫게).
+    """
+    if isinstance(a, dict):
+        url = str(a.get("url") or "").strip()
+        nm = str(a.get("name") or "").strip()
+        if not url:
+            url = str(a.get("path") or "").strip()
+        return url, (nm or url.rsplit("/", 1)[-1] or url)
+
+    s = str(a or "").strip()
+    if not s:
+        return "", ""
+    if s.startswith("{"):
+        # 파이썬 repr / JSON 어느 쪽이든 'url': '...' / "url": "..." 를 찾는다.
+        m = re.search(r"""['"]url['"]\s*:\s*['"]([^'"]+)['"]""", s)
+        n = re.search(r"""['"]name['"]\s*:\s*['"]([^'"]+)['"]""", s)
+        url = (m.group(1) if m else "").strip()
+        nm = (n.group(1) if n else "").strip()
+        if not url:
+            # url 키가 없으면 경로처럼 보이는 토큰을 찾는다.
+            m2 = re.search(r"""['"](/?[A-Za-z0-9_./%()\[\]\-]+\.\w{2,5})['"]""", s)
+            url = (m2.group(1) if m2 else "").strip()
+        if not url:
+            return "", ""
+        return url, (nm or url.rsplit("/", 1)[-1] or url)
+    # 평범한 URL 문자열
+    return s, (s.rsplit("/", 1)[-1] or s)
+
+
+def _mem_media_of(post):
+    """이 글에 딸린 **미디어(사진·영상)** 목록과 유효 종류를 계산한다.
+
+    ## [요구 2026-11-04] "첨부파일로 올린 자료도 사진, 영상일 경우
+    ##                   사진폴더에 노출시켜줘"
+    ##
+    ## 왜 서버에서 계산하는가
+    ##  '자료 올리기'로 들어온 사진은 `attachments` 에 담기고, 저장 시
+    ##  `kind='자료'` 가 되어 **사진 탭에서 사라졌다.** 사용자 눈에는
+    ##  "분명 사진을 올렸는데 사진 폴더에 없다"로 보인다.
+    ##
+    ##  앱·웹이 각자 보정하면 한쪽만 고쳐져 또 어긋난다. 서버가 읽을 때
+    ##  계산해서 내려주면 **이미 잘못 저장된 기존 글도 함께 고쳐진다**
+    ##  (마이그레이션 불필요).
+    ##
+    ## 반환: (media_urls, has_other_file, kind)
+    ##   media_urls     — photos + 첨부 중 이미지/영상 (중복 제거, 순서 유지)
+    ##   has_other_file — PDF·문서처럼 미디어가 아닌 첨부가 있는가
+    ##   kind           — '사진' | '자료' | '글'
+    """
+    photos = [str(u) for u in (post.get("photos") or []) if str(u or "").strip()]
+    media = list(photos)
+    has_other = False
+    for a in (post.get("attachments") or []):
+        url, nm = _mem_att_pair(a)
+        if not url:
+            continue
+        k = _kind_of(nm if nm else url)
+        if k in ("image", "video"):
+            if url not in media:
+                media.append(url)
+        else:
+            has_other = True
+    if has_other:
+        kind = "자료"
+    elif media:
+        kind = "사진"
+    else:
+        kind = "글"
+    return media, has_other, kind
+
+
+def _mem_pub(post, *, show_key=False):
+    """게시글 → 응답용 사본. 수정키 해시는 **절대** 내보내지 않는다.
+
+    [요구 2026-11-04 추가]
+     "올린글 게시판은 별도로 운영하지만 올렸던 글은 다른 창(첫창)에서
+      직관적으로 모두 볼 수 있도록" → 첫 화면 타임라인이 쓰는 정보를
+     모두 여기에 담는다(본문·사진·첨부·공감수·댓글수·종류).
+    """
+    out = {
+        "id": str(post.get("id", "")),
+        "name": str(post.get("name", "") or ""),
+        "number": str(post.get("number", "") or ""),
+        "body": str(post.get("body", "") or ""),
+        "created": str(post.get("created", "") or ""),
+        "updated": str(post.get("updated", "") or ""),
+        "ipMask": str(post.get("ipMask", "") or ""),
+        "deleted": bool(post.get("deleted")),
+        "hidden": bool(post.get("hidden")),
+        "photos": list(post.get("photos") or []),
+        # 첨부는 **정규화해서** 내보낸다.
+        #  [버그 2026-11-04] 예전에 저장된 글은 첨부가 파이썬 repr 문자열이라
+        #  앱(`whereType<Map>()`)이 통째로 버려 첨부가 화면에서 사라졌다.
+        #  읽을 때 dict 로 되살려 내보내면 기존 글도 즉시 정상으로 보인다.
+        "attachments": [
+            {"name": _n, "url": _u}
+            for (_u, _n) in (
+                _mem_att_pair(a) for a in (post.get("attachments") or [])
+            )
+            if _u
+        ],
+        "likes": list(post.get("likes") or []),
+        "likeCount": len(post.get("likes") or []),
+        "comments": [
+            {
+                "id": str(c.get("id", "")),
+                "name": str(c.get("name", "") or ""),
+                "number": str(c.get("number", "") or ""),
+                "body": str(c.get("body", "") or ""),
+                "created": str(c.get("created", "") or ""),
+                "hidden": bool(c.get("hidden")),
+            }
+            for c in (post.get("comments") or [])
+            if not c.get("deleted")
+        ],
+    }
+    out["commentCount"] = len(out["comments"])
+
+    # ── 종류는 **저장값이 아니라 실제 첨부를 보고** 계산한다 ──────────────
+    #  [요구 2026-11-04] "첨부파일로 올린 자료도 사진, 영상일 경우 사진폴더에
+    #   노출시켜줘"
+    #  종전에는 저장 당시의 kind 를 그대로 내보냈다. '자료 올리기'로 사진을
+    #  올리면 kind='자료' 로 굳어 사진 탭에서 영영 보이지 않았다.
+    #  저장값(kindStored)은 참고용으로만 남기고, 필터에 쓰이는 kind 는
+    #  첨부 실물을 보고 다시 판정한다 → **기존에 잘못 저장된 글도 즉시 바로잡힌다.**
+    media, has_other, kind_calc = _mem_media_of(post)
+    out["kind"] = kind_calc
+    out["kindStored"] = str(post.get("kind", "") or "글")
+    out["media"] = media
+    out["hasOtherFile"] = has_other
+
+    # ── 썸네일 주소를 함께 내려준다 (2026-11-04) ─────────────────────────
+    #  [요구] "로딩속도를 빠르게 하기 위해 썸네일 작업 및 최적화 작업 항상
+    #          자동으로"
+    #  앱·웹이 `/memorial-file/...` 을 `/memorial-thumb/...` 으로 바꾸는
+    #  문자열 조작을 하면 경로 규칙이 바뀔 때 양쪽이 어긋난다. 서버가
+    #  **짝지어** 내려주면 클라이언트는 그대로 쓰기만 하면 된다.
+    #  {url, thumb, isVideo} 목록. thumb 은 대상이 아니면 빈 문자열.
+    items = []
+    for u in media:
+        nm = u.rsplit("/", 1)[-1]
+        is_v = _kind_of(nm) == "video"
+        can_thumb = (_ext_of(nm) not in _MEM_THUMB_SKIP)
+        th = ""
+        if can_thumb:
+            rel_u = u
+            for pre in ("/memorial-file/", "/memorial-thumb/"):
+                if rel_u.startswith(pre):
+                    rel_u = rel_u[len(pre):]
+                    break
+            th = "/memorial-thumb/" + rel_u
+        items.append({"url": u, "thumb": th, "isVideo": is_v})
+    out["mediaItems"] = items
+    return out
+
+
+#  같은 IP 스팸 방지용 (메모리 카운터 — 프록시 재시작 시 초기화)
+_MEM_RATE = {}
+_MEM_RATE_LOCK = threading.Lock()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# [turn64 보안감사 F2] 로그인 브루트포스 방지
+#
+#  ## 실측으로 확인한 문제
+#   `/api/login` 에는 **시도 횟수 제한이 전혀 없었다**. 비밀번호를
+#   틀려도 즉시 다른 값을 계속 넣을 수 있었다. 비밀번호가 8~11자
+#   숫자·특수문자 조합이라도 무제한 시도 앞에서는 시간 문제일 뿐이다.
+#   (게다가 config.json 에 평문으로 들어 있어 이미 노출된 상태 —
+#    2차 방어선이 아예 없었던 셈이다.)
+#
+#  ## 왜 'IP 제한'만으로는 부족한가
+#   IP 제한은 한 대에서만 막는다. 공격자가 여러 IP(프록시·클라우드)로
+#   나눠 시도하면 그대로 뚫린다. 그래서 **계정 단위 잠금**을 함께 둔다.
+#
+#  ## 규칙
+#   · 같은 계정(tier+id): 10회 실패 → 15분 잠금 (IP 무관)
+#   · 같은 IP:           30회 실패 → 15분 잠금 (여러 계정 동시 시도 차단)
+#   · 성공하면 그 계정/IP 카운터를 **즉시 초기화**한다
+#     (정상 사용자가 오타 몇 번 낸 뒤 잠기는 일을 최소화).
+#   · 상태는 메모리에만 둔다(재시작 시 초기화 — 운영 편의 우선).
+# ══════════════════════════════════════════════════════════════════════
+_LOGIN_FAIL_LOCK = threading.Lock()
+_LOGIN_FAIL = {}            # key -> [실패시각...]
+_LOGIN_ACCT_MAX = 10        # 계정 기준 최대 실패
+_LOGIN_IP_MAX = 30          # IP 기준 최대 실패
+_LOGIN_WINDOW = 900.0       # 15분
+
+
+def _login_key(kind, val):
+    return "%s:%s" % (kind, str(val or "").strip().lower())
+
+
+def _login_locked(kind, ident, ip):
+    """잠금 여부 확인. True 면 로그인 거부."""
+    now = time.time()
+    keys = [_login_key(kind, ident), _login_key("ip", ip)]
+    limits = {keys[0]: _LOGIN_ACCT_MAX, keys[1]: _LOGIN_IP_MAX}
+    with _LOGIN_FAIL_LOCK:
+        for k in keys:
+            arr = [t for t in _LOGIN_FAIL.get(k, []) if now - t < _LOGIN_WINDOW]
+            if arr:
+                _LOGIN_FAIL[k] = arr
+            else:
+                _LOGIN_FAIL.pop(k, None)
+            if len(arr) >= limits[k]:
+                return True
+    return False
+
+
+def _login_fail(kind, ident, ip):
+    now = time.time()
+    with _LOGIN_FAIL_LOCK:
+        for k in (_login_key(kind, ident), _login_key("ip", ip)):
+            arr = [t for t in _LOGIN_FAIL.get(k, []) if now - t < _LOGIN_WINDOW]
+            arr.append(now)
+            _LOGIN_FAIL[k] = arr[-200:]
+
+
+def _login_reset(kind, ident, ip):
+    with _LOGIN_FAIL_LOCK:
+        _LOGIN_FAIL.pop(_login_key(kind, ident), None)
+        _LOGIN_FAIL.pop(_login_key("ip", ip), None)
+
+
+def _mem_rate_ok(ip, limit=8, window=60.0):
+    """같은 IP 가 window 초 안에 limit 건까지만 쓸 수 있게 한다.
+
+    [조정 2026-11-04] 3 → **8**.
+     · 추모관은 한 자리에서 여러 분이 이어서 쓰는 경우가 많다(장례식장·추모식).
+       같은 와이파이 = 같은 IP 이므로 3건은 지나치게 빡빡했다.
+     · 대신 본문 4000자 제한 + 사진/자료 12개 제한 + 관리자 즉시 삭제로 악용을 막는다.
+     · 관리자·마스터 세션이면 이 함수를 호출하지 않는다(각 엔드포인트에서 판단).
+    """
+    now = time.time()
+    with _MEM_RATE_LOCK:
+        arr = [t for t in _MEM_RATE.get(ip, []) if now - t < window]
+        if len(arr) >= limit:
+            _MEM_RATE[ip] = arr
+            return False
+        arr.append(now)
+        _MEM_RATE[ip] = arr
+        return True
+
+
+def _mem_mask_ip(d):
+    """IP 를 1.2.3.* 형태로 마스킹 (표시용)."""
+    s = str(d or "").strip()
+    parts = s.split(".")
+    if len(parts) == 4:
+        return "%s.%s.%s.*" % (parts[0], parts[1], parts[2])
+    return ""
+
+
+# ── 추모관 첨부 저장소 ─────────────────────────────────────────────────────
+#  NAS 의 `90_추모관_(업로드가능)/<추모관id>/` 에 사진·자료를 모은다.
+#  · 앱이 아닌 **외부(로그인 없는) 페이지**에서도 올릴 수 있어야 하므로
+#    행사 폴더 체계(_ev_dir 등)와 분리된 전용 경로를 쓴다.
+#  · 파일명은 `_safe_name` 으로 정리하고, 같은 이름이 있으면 뒤에 `_2` 를 붙인다.
+MEM_DIR_NAME = "90_추모관_(업로드가능)"
+
+#  ── 폴더 이름 규칙 (2026-11-04) ────────────────────────────────────────
+#  [요구] "사진 및 자료는 나스 어느폴더에 저장되는 거야? PC에서 수동으로
+#          업로드도 가능한 구조로 설계해주고 폴더명 뒤에는 (업로드가능) 이라고"
+#  · 사람이 탐색기에서 열어 **파일을 직접 끌어다 놓아도 되는 폴더**에는
+#    이름 끝에 `_(업로드가능)` 을 붙인다. 그 표시가 없는 폴더는 앱·자동화
+#    전용이므로 손대면 안 된다는 뜻이다.
+#  · 실제 저장 위치:
+#      /92_Tiger_app_data/TSAK_인가자관리/
+#        90_추모관_(업로드가능)/
+#          noh-kyungha_(업로드가능)/        ← 사진·영상·문서가 여기 쌓인다
+#            IMG_3988_2.png
+#            .thumbnails/                   ← 앱이 만드는 축소본(사람은 무시)
+#  · 썸네일은 원본 옆 `.thumbnails/` 에 두어, 폴더를 통째로 백업/이동해도
+#    같이 따라가게 한다(중앙 캐시에 두면 원본과 분리되어 고아가 된다).
+UPLOADABLE_SUFFIX = "_(업로드가능)"
+MEM_THUMB_SUBDIR = ".thumbnails"
+#  썸네일 긴 변(px). 480 이면 폰 격자 3열(칸당 ~110px)에서도 충분하고,
+#  원본 4~5MB 사진이 15~40KB 로 줄어 목록이 즉시 뜬다.
+MEM_THUMB_SIDE = 480
+
+
+def _mem_safe_id(mid):
+    return re.sub(r"[^A-Za-z0-9_-]", "", str(mid or ""))[:40] or "default"
+
+
+def _mem_dir(mid):
+    """추모관 첨부의 **실제 저장 폴더**(탐색기에서 열어 직접 넣어도 되는 곳)."""
+    return BASE + "/" + MEM_DIR_NAME + "/" + _mem_safe_id(mid) + UPLOADABLE_SUFFIX
+
+
+def _mem_thumb_dir(mid):
+    return _mem_dir(mid) + "/" + MEM_THUMB_SUBDIR
+
+
+def _mem_thumb_name(name):
+    """원본 파일명 → 썸네일 파일명. 확장자만 `.jpg` 로 바꾼다."""
+    stem = os.path.splitext(os.path.basename(str(name or "")))[0]
+    keep = re.sub(r"[^A-Za-z0-9._가-힣-]", "_", stem)[:80] or "f"
+    return keep + ".jpg"
+
+
+def _mem_rel(mid, name):
+    """저장된 파일 → 정적 서빙 경로(프록시가 /memorial-file 로 내려준다)."""
+    return "%s/%s" % (re.sub(r"[^A-Za-z0-9_-]", "", str(mid or ""))[:40] or "default",
+                      name)
+
+
+def _mem_ensure_dir(mid):
+    """첨부 폴더를 보장한다 — `<id>_(업로드가능)` 규칙으로 만든다.
+
+    [요구 2026-11-04] "PC에서 수동으로 업로드도 가능한 구조로 설계해주고
+     폴더명 뒤에는 (업로드가능) 이라고 써줘"
+     · 사람이 탐색기에서 열 폴더이므로 이름에 표시를 남긴다.
+     · 이미 예전 이름(`<id>`)으로 만들어져 있으면 **새 이름으로 옮긴 뒤**
+       계속 쓴다(사용자가 올린 파일을 잃지 않는다).
+    """
+    d = _mem_dir(mid)
+    if NAS.exists(d):
+        return d
+    sid = _mem_safe_id(mid)
+    legacy = BASE + "/" + MEM_DIR_NAME + "/" + sid
+    # BASE → 대분류 → 추모관 폴더 순으로 생성
+    cur = BASE
+    for seg in (MEM_DIR_NAME, sid + UPLOADABLE_SUFFIX):
+        nxt = cur + "/" + seg
+        if not NAS.exists(nxt):
+            if seg == sid + UPLOADABLE_SUFFIX and NAS.exists(legacy):
+                try:
+                    NAS.rename(legacy, seg)
+                    print("[memorial] renamed", legacy, "->", nxt)
+                except Exception as e:
+                    print("[memorial] rename fail", e)
+            if not NAS.exists(nxt):
+                try:
+                    NAS.mkdir(cur, seg)
+                except Exception as e:
+                    print("[memorial] mkdir fail", nxt, e)
+                    return d
+        cur = nxt
+    return d
+
+
+# ── 썸네일 생성/서빙 (2026-11-04) ─────────────────────────────────────
+#  [요구] "로딩속도를 빠르게 하기 위해 썸네일 작업 및 최적화 작업 항상 자동으로"
+#
+#  ## 왜 서버에서 만드는가
+#   폰 원본 사진은 4~5MB, 영상은 수십 MB 다. 격자에 20칸을 그리면 첫 화면에
+#   100MB 를 받아야 해서, 5G 에서도 목록이 몇 초 비어 보인다. 서버에서
+#   480px JPEG(15~40KB)을 만들어 주면 같은 화면이 1MB 미만이 된다.
+#
+#  ## 언제 만드는가 (자동)
+#   ① 앱이 올린 직후 (업로드 응답 전에 백그라운드 스레드로)
+#   ② PC 탐색기에서 직접 복사한 파일 → 첫 조회 때 **그 자리에서** 생성(lazy)
+#   ③ 관리자가 백필을 요청하면 폴더 전체를 훑어 없는 것만 채운다
+#  → ② 덕분에 "PC에서 수동 업로드" 와 "썸네일" 이 충돌하지 않는다.
+_MEM_THUMB_LOCK = threading.Lock()
+_MEM_THUMB_BUSY = set()
+#  썸네일을 만들 수 없는(=원본을 그대로 보여줘야 하는) 확장자
+_MEM_THUMB_SKIP = (".gif", ".svg", ".heic", ".pdf", ".hwp", ".hwpx", ".doc",
+                   ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".zip")
+#  영상 썸네일은 ffmpeg 가 필요하다. 없으면 원본 대신 빈 칸을 그리게 된다.
+_MEM_FFMPEG = shutil.which("ffmpeg")
+
+
+def _mem_thumb_make_bytes(src_path):
+    """원본 파일 → 썸네일 JPEG 바이트. 만들 수 없으면 None.
+
+    이미지: PIL 로 480px 축소(EXIF 회전 반영, 투명 PNG 는 흰 배경).
+    영상  : ffmpeg 로 0.5초 지점 첫 프레임. ffmpeg 없으면 None.
+    """
+    ext = _ext_of(src_path)
+    try:
+        if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic"):
+            import io
+            from PIL import Image, ImageOps
+            raw = NAS.read_bytes(src_path)
+            im = Image.open(io.BytesIO(raw))
+            im = ImageOps.exif_transpose(im)
+            if im.mode in ("RGBA", "LA", "P"):
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                im = im.convert("RGBA")
+                bg.paste(im, mask=im.split()[-1])
+                im = bg
+            else:
+                im = im.convert("RGB")
+            im.thumbnail((MEM_THUMB_SIDE, MEM_THUMB_SIDE))
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=76, optimize=True,
+                    progressive=True)
+            return buf.getvalue()
+        if ext in VIDEO_EXT:
+            ff = _MEM_FFMPEG or "ffmpeg"
+            import subprocess, tempfile
+            # NAS 원본을 로컬 임시파일로 받아 ffmpeg 에 넘긴다.
+            #  (ffmpeg 는 https+인증 URL 을 직접 읽지 못한다)
+            tmpv = tempfile.NamedTemporaryFile(suffix=ext, delete=False).name
+            try:
+                with open(tmpv, "wb") as f:
+                    for b in NAS.iter_bytes(src_path, chunk_size=1024 * 1024):
+                        f.write(b)
+                out = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False).name
+                try:
+                    subprocess.run(
+                        [ff, "-y", "-ss", "0.5", "-i", tmpv, "-frames:v", "1",
+                         "-vf", "scale='min(%d,iw)':-2" % MEM_THUMB_SIDE,
+                         "-q:v", "5", out],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=45)
+                    if os.path.exists(out) and os.path.getsize(out) > 0:
+                        with open(out, "rb") as f:
+                            return f.read()
+                finally:
+                    try:
+                        os.unlink(out)
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    os.unlink(tmpv)
+                except Exception:
+                    pass
+    except Exception as e:
+        print("[mem-thumb] make fail", src_path, e)
+    return None
+
+
+def _mem_thumb_ensure(mid, name, *, wait=False):
+    """썸네일이 없으면 만든다. 있으면 아무것도 하지 않는다(멱등).
+
+    `wait=False` 면 백그라운드 스레드로 돌린다(업로드 응답을 늦추지 않음).
+    """
+    if _ext_of(name) in _MEM_THUMB_SKIP:
+        return None
+    tdir = _mem_thumb_dir(mid)
+    tpath = tdir + "/" + _mem_thumb_name(name)
+    src = _mem_dir(mid) + "/" + name
+
+    def _work():
+        key = (mid, name)
+        with _MEM_THUMB_LOCK:
+            if key in _MEM_THUMB_BUSY:
+                return
+            _MEM_THUMB_BUSY.add(key)
+        try:
+            if NAS.exists(tpath):
+                return
+            data = _mem_thumb_make_bytes(src)
+            if not data:
+                return
+            if not NAS.exists(tdir):
+                try:
+                    NAS.mkdir(_mem_dir(mid), MEM_THUMB_SUBDIR)
+                except Exception:
+                    pass
+            NAS.write(tpath, data)
+            print("[mem-thumb] made", name, len(data), "bytes")
+        except Exception as e:
+            print("[mem-thumb] ensure fail", name, e)
+        finally:
+            with _MEM_THUMB_LOCK:
+                _MEM_THUMB_BUSY.discard(key)
+
+    if wait:
+        _work()
+        return tpath if NAS.exists(tpath) else None
+    threading.Thread(target=_work, daemon=True).start()
+    return tpath
+
+
+def _mem_unique_name(folder, name):
+    """같은 이름이 있으면 `이름_2.ext` 처럼 번호를 붙인다(덮어쓰기 방지)."""
+    base = _safe_name(name) or "file"
+    stem, ext = os.path.splitext(base)
+    cand = base
+    n = 2
+    while NAS.exists(folder + "/" + cand) and n < 500:
+        cand = "%s_%d%s" % (stem, n, ext)
+        n += 1
+    return cand
+
+
+def _mem_can_manage(post, sess, edit_key=""):
+    """이 글을 고칠 수 있는가 — ① 관리자·마스터 ② 글쓴이(editKey).
+
+    [요구 2026-11-04] "관리자나 마스터 혹은 글 쓴이는 그 글을 가리거나
+     삭제 이동 편집 할 수 있도록"
+     · 이동(move)은 글쓴이가 아니라 **관리자·마스터만** 허용한다.
+
+    ⚠️ ownerKey(인가번호 해시)는 **인증 수단으로 쓰지 않는다**.
+      인가번호는 명부에 공개되는 값이라, 그것만으로 남의 글을 고칠 수 있게
+      하면 안 된다. ownerKey 는 "같은 인가번호로 쓴 글을 서버가 묶어 보여주는"
+      통계·관리 용도로만 저장한다. 실제 수정 권한은 아래 둘뿐이다.
+       · 관리자·마스터 세션
+       · 글을 쓸 때 발급받아 브라우저(localStorage)에 보관된 **editKey**
+    """
+    if _cb_is_admin(sess):
+        return True
+    ek = str(edit_key or "").strip()
+    if ek and ek == str(post.get("editKey") or ""):
+        return True
+    return False
+
+
+def _cb_can_see_post_pw(post, session):
+    """비밀번호 평문을 내려도 되는가 — 글쓴 사람 본인 또는 마스터.
+
+    (관리자 'app' 등급은 마스터가 아니므로 노출하지 않는다 — 요구가
+     "글쓴 사람과 마스터한테는 비밀번호가 노출됨(마스터권한)" 이기 때문)
+    """
+    if not (post or {}).get("password"):
+        return False
+    return _cb_tier(session) == "master" or _cb_is_owner(post, session)
+
+
+def _cb_pub_post(post, session, unlocked=False):
+    """게시글 → 응답용 사본. 비밀번호는 권한자에게만 평문으로 붙인다.
+
+    ── [보안 수정 2026-10-26] 본문(body)도 **권한자에게만** 내려준다.
+    종전에는 목록 응답에 body 가 그대로 실려 나가서, 앱이 화면에서만
+    가리는 "눈속임" 상태였다(개발자도구·직접 API 호출로 그대로 열람 가능).
+    요구: "게시물은 권한이 있는 사람에게만 노출됨" → 서버가 실제로 가린다.
+
+    `unlocked=True` 는 **비밀번호 검증을 이미 통과한** 경우(=/post/unlock).
+     이때는 잠금을 풀고 본문을 내려준다.
+    """
+    p = dict(post or {})
+    raw = str(p.get("password", "") or "")
+    # 내부 저장 키는 숨기고, 노출 여부만 별도 필드로 내려준다.
+    p.pop("password", None)
+    p["hasPassword"] = bool(raw)
+    can_see = bool(raw) and _cb_can_see_post_pw(post, session)
+    p["canSeePassword"] = can_see
+    if can_see:
+        p["password"] = raw
+    # ── 잠긴 글: 본문·첨부를 지운다(메타 정보만 노출) ──────────────
+    if raw and not can_see and not unlocked:
+        p["locked"] = True
+        p["body"] = ""
+        p["attachments"] = []
+    else:
+        p["locked"] = False
+    # 읽음 기록은 마스터 이상만 본다.
+    reads = p.get("reads") or []
+    p["readCount"] = len(reads)
+    # ── [요구 2026-10-26] "자료를 읽고 공감하고, 다운받을 수 있도록"
+    #  공감(좋아요)은 **건수와 내가 눌렀는지**만 내려준다.
+    #  누가 눌렀는지(명단)는 읽음 명단과 같은 기준으로 마스터에게만 준다.
+    likes = p.get("likes") or []
+    if not isinstance(likes, list):
+        likes = []
+    p["likeCount"] = len(likes)
+    #  ⚠️ 마스터/관리자는 인가번호가 없어 `_cb_ident` 로는 '' 이 된다.
+    #   공감 저장 때 쓴 키와 **같은 함수**로 뽑아야 iLiked 가 맞는다.
+    me_l = _cb_react_ident(session)
+    p["iLiked"] = any(str((r or {}).get("number", "")) == me_l
+                      for r in likes) if me_l else False
+    if _cb_tier(session) == "master":
+        p["likes"] = likes
+    else:
+        p.pop("likes", None)
+    if _cb_tier(session) == "master":
+        p["reads"] = reads
+    else:
+        p.pop("reads", None)
+        # 본인이 읽었는지는 표시해 준다(중복 집계 방지 안내용).
+        me = _cb_ident(session)
+        p["iRead"] = any(str((r or {}).get("number", "")) == me for r in reads)
+    return p
+
+
 def _review_doc():
     return _load_json(REVIEW_FILE, {"events": {}})
 
@@ -3741,23 +11239,63 @@ def _board_next_id(posts):
     return "bd" + _secrets.token_urlsafe(6)
 
 
+def _notify_admin(type_, title, text, category="", author="", **extra):
+    """[요구 2026-11-04] 관리자 이상 알림 큐(notify.json)에 1건 적재 — 범용 생산자.
+
+    ## 왜 필요했나 (실측 사고)
+     수품구매(굿즈) 주문과 회원가입은 **알림을 만드는 코드가 아예 없었다.**
+     notify.json 의 생산자는 `_board_notify`(게시글)와
+     `_notify_master_import`(자료 가져오기) 둘뿐이었고,
+     `/api/merch/order`(주문)와 `/api/member`(가입) 경로는
+     큐에 아무것도 남기지 않았다.
+      → 2026.11.02 박다운 주문 4건도, 같은 날 회원가입도 알림이 0건.
+
+    ## 규칙
+     · 실패해도 호출부(주문·가입)를 절대 막지 않는다 — 알림은 부가 기능.
+     · 최신 우선 삽입, 최대 200건 유지(기존 `_board_notify` 와 동일 정책).
+     · `type_` 으로 화면이 아이콘·문구를 구분한다:
+       'board' | 'import' | 'order'(수품구매) | 'join'(회원가입) | 'reserve'
+    """
+    try:
+        doc = _load_json(NOTIFY_FILE, {"items": []})
+        if not isinstance(doc, dict):
+            doc = {"items": []}
+        items = doc.get("items")
+        if not isinstance(items, list):
+            items = []
+        entry = {
+            "id": "nt" + _secrets.token_urlsafe(6),
+            "type": str(type_ or "etc"),
+            "title": str(title or ""),
+            "category": str(category or ""),
+            "author": str(author or ""),
+            "text": str(text or ""),
+            "created": _now_stamp(),
+            "read": False,
+        }
+        for _k, _v in (extra or {}).items():
+            if _v is None:
+                continue
+            entry[str(_k)] = _v
+        items.insert(0, entry)
+        doc["items"] = items[:200]
+        _save_json(NOTIFY_FILE, doc)
+        return entry
+    except Exception as _e:
+        print("[notify] 적재 실패(%s): %s" % (type_, _e))
+        return None
+
+
 def _board_notify(post):
     """신규 게시글 → 관리자 이상 알림 큐에 적재."""
-    doc = _load_json(NOTIFY_FILE, {"items": []})
-    items = doc.get("items", [])
-    items.insert(0, {
-        "id": "nt" + _secrets.token_urlsafe(6),
-        "type": "board",
-        "title": str(post.get("title", "") or "새 게시글"),
-        "category": str(post.get("category", "") or ""),
-        "author": str(post.get("author", "") or ""),
-        "postId": str(post.get("id", "") or ""),
-        "text": "새 게시글이 등록되었습니다: " + str(post.get("title", "") or ""),
-        "created": _now_stamp(),
-        "read": False,
-    })
-    doc["items"] = items[:200]
-    _save_json(NOTIFY_FILE, doc)
+    _notify_admin(
+        "board",
+        str(post.get("title", "") or "새 게시글"),
+        "새 게시글이 등록되었습니다: " + str(post.get("title", "") or ""),
+        category=str(post.get("category", "") or ""),
+        author=str(post.get("author", "") or ""),
+        postId=str(post.get("id", "") or ""),
+    )
 
 
 # ===================== 도로명주소 검색 (행정안전부 JUSO 오픈API) =====================
@@ -3817,6 +11355,347 @@ def _addr_search(keyword, page="1", per="10"):
                 "total": int(common.get("totalCount", len(items)) or 0)}
     except Exception as e:
         return {"ok": False, "items": [], "total": 0, "error": str(e)}
+
+
+# ===================== 주소/장소 지오코딩 (좌표 검색) =====================
+#  (요구) 행사기획 시 지도에서 위치를 검색하면 곧바로 좌표가 입력되도록 한다.
+#  - 1순위: 행정안전부 도로명주소 API(juso) — 좌표 미제공이므로 좌표는 아래에서.
+#  - 좌표: OpenStreetMap 기반 Photon 지오코더(무료·키 불필요·한국어 지명 지원).
+_GEO_CACHE = {}          # query -> (ts, items)
+_GEO_TTL = 3600.0
+_GEO_LOCK = threading.Lock()
+
+
+def _kakao_rest_key():
+    """마스터 콘솔에 저장된 카카오 REST API 키 (없으면 '')."""
+    try:
+        cfg = _load_json(CFG_FILE, {})
+        return str(cfg.get("kakaoRestKey", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _kakao_js_key():
+    """마스터 콘솔에 저장된 카카오 JavaScript 키 (지도 임베드용, 없으면 '')."""
+    try:
+        cfg = _load_json(CFG_FILE, {})
+        return str(cfg.get("kakaoJsKey", "") or "").strip()
+    except Exception:
+        return ""
+
+
+# ---- 카카오 REST 상태(짧은 캐시) — 카카오 오버레이를 열어도 되는지 사전 확인용 ----
+_KAKAO_STATUS_CACHE = {"ts": 0.0, "val": None}
+_KAKAO_STATUS_TTL = 180.0
+
+
+def _kakao_status(force=False):
+    """카카오 로컬 API 상태를 실제 호출로 확인(180초 캐시).
+
+    반환 dict: {ok, status, disabled, hint}. 키가 없으면 ok=False, no_key.
+    · 카카오맵 오버레이는 ok=True 일 때만 여는 것이 안전하다(아니면 지도가 하얗게
+      뜨고 버튼이 막혀 앱이 멈춘 것처럼 보인다).
+    """
+    now = time.time()
+    c = _KAKAO_STATUS_CACHE.get("val")
+    if (not force) and c is not None and (now - _KAKAO_STATUS_CACHE.get("ts", 0)) < _KAKAO_STATUS_TTL:
+        return c
+    key = _kakao_rest_key()
+    if not key:
+        out = {"ok": False, "status": 0, "disabled": False, "no_key": True,
+               "hint": "카카오 REST 키가 등록되지 않았습니다."}
+        _KAKAO_STATUS_CACHE.update({"ts": now, "val": out})
+        return out
+    url = ("https://dapi.kakao.com/v2/local/search/keyword.json?query="
+           + urllib.parse.quote("서울") + "&size=1")
+    req = urllib.request.Request(url, headers={
+        "Authorization": "KakaoAK " + key, "Accept": "application/json"})
+    code = 0
+    body = ""
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            code = resp.status
+    except urllib.error.HTTPError as he:
+        try:
+            body = he.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        code = he.code
+    except Exception as e:
+        out = {"ok": False, "status": 0, "disabled": False,
+               "hint": "카카오 연결 오류: " + str(e)}
+        _KAKAO_STATUS_CACHE.update({"ts": now, "val": out})
+        return out
+    try:
+        j = json.loads(body)
+    except Exception:
+        j = {}
+    msg = str((j or {}).get("message", "") or "")
+    disabled = ("OPEN_MAP_AND_LOCAL" in msg) and ("disabled" in msg.lower())
+    hint = ""
+    ok = (code == 200)
+    if ok:
+        hint = "카카오 키·서비스 정상입니다."
+    elif disabled:
+        hint = ("카카오맵 서비스가 꺼져 있어 지도를 열 수 없습니다. "
+                "카카오 콘솔 → 내 애플리케이션 → [한국범스카우트중앙회] → "
+                "제품 설정 → 카카오맵 → '카카오맵(로컬)' 활성화(ON).")
+    elif code == 401:
+        hint = "카카오 REST 키 값이 올바르지 않습니다. 콘솔 키를 다시 등록하세요."
+    elif code == 403:
+        hint = "카카오 권한 오류 — 카카오맵(로컬) 서비스 활성화 상태를 확인하세요."
+    else:
+        hint = "카카오 응답 오류(status %s)." % code
+    out = {"ok": ok, "status": code, "disabled": disabled, "hint": hint}
+    _KAKAO_STATUS_CACHE.update({"ts": now, "val": out})
+    return out
+
+
+def _geo_kakao(q, limit=8):
+    """카카오 로컬 API(키워드 검색) — 키가 등록돼 있으면 최우선 사용.
+
+    REST API 키 하나로 장소 검색(정확한 한국 주소/상호/좌표)을 제공한다.
+    (JavaScript 키·네이티브 앱 키는 서버 지오코딩에는 필요 없다.)
+    """
+    key = _kakao_rest_key()
+    if not key:
+        return []
+    url = ("https://dapi.kakao.com/v2/local/search/keyword.json?query="
+           + urllib.parse.quote(str(q)) + "&size=" + str(int(limit)))
+    req = urllib.request.Request(url, headers={
+        "Authorization": "KakaoAK " + key,
+        "Accept": "application/json",
+    })
+    out = []
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+    j = json.loads(raw)
+    for d in (j.get("documents") or []):
+        name = str(d.get("place_name", "") or "").strip()
+        road = str(d.get("road_address_name", "") or "").strip()
+        jibun = str(d.get("address_name", "") or "").strip()
+        lat = str(d.get("y", "") or "").strip()
+        lng = str(d.get("x", "") or "").strip()
+        if not lat or not lng:
+            continue
+        label = name
+        if road:
+            label = (name + " · " + road) if name else road
+        elif jibun:
+            label = (name + " · " + jibun) if name else jibun
+        out.append({
+            "name": name or road or jibun,
+            "label": label or f"{lat}, {lng}",
+            "lat": f"{float(lat):.6f}",
+            "lng": f"{float(lng):.6f}",
+            "type": str(d.get("category_group_name", "") or "kakao"),
+            "phone": str(d.get("phone", "") or ""),
+            "url": str(d.get("place_url", "") or ""),
+        })
+    return out
+
+
+def _geo_photon(q, limit=8):
+    """Photon(OSM) 지오코딩 — 한국어 지명/주소 → 좌표."""
+    url = ("https://photon.komoot.io/api/?q=" + urllib.parse.quote(str(q))
+           + "&limit=" + str(int(limit)))
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (TSAK Event Planner)",
+        "Accept": "application/json",
+    })
+    out = []
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+    j = json.loads(raw)
+    for f in (j.get("features") or []):
+        pr = f.get("properties") or {}
+        geo = f.get("geometry") or {}
+        co = geo.get("coordinates") or []
+        if len(co) < 2:
+            continue
+        lng, lat = co[0], co[1]
+        nm = (str(pr.get("name", "") or pr.get("street", "") or "")).strip()
+        parts = [nm]
+        for k in ("street", "district", "city", "state", "country"):
+            v = str(pr.get("name") == nm and "" or pr.get(k, "") or "").strip()
+            if v and v not in parts:
+                parts.append(v)
+        label = " ".join([p for p in parts if p]).strip()
+        if not label:
+            label = f"{lat}, {lng}"
+        out.append({
+            "name": nm,
+            "label": label,
+            "lat": f"{float(lat):.6f}",
+            "lng": f"{float(lng):.6f}",
+            "type": str(pr.get("type", "") or ""),
+        })
+    return out
+
+
+_ADDR_LATLNG_URL = "https://business.juso.go.kr/addrlink/addrCoordApi.do"
+
+
+def _geo_from_juso(keyword):
+    """도로명주소 API로 정확한 '도로명주소 + 좌표'를 얻는다(가능하면 우선)."""
+    key = _addr_confm_key()
+    if not key:
+        return []
+    url = (_ADDR_LATLNG_URL + "?confmKey=" + urllib.parse.quote(key)
+           + "&admCd=&rnMgtSn=&udrtYn=&buldMnnm=&buldSlno="
+           + "&searchType=1&keyword=" + urllib.parse.quote(str(keyword))
+           + "&resultType=json")
+    # 도로명주소 API의 '좌표'는 별도 상세조회(addrCoordApi)가 필요하므로
+    # 간단히 검색으로 도로명주소 목록(좌표 없음)만 받아 보조 정보로 쓴다.
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (TSAK App)",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+        j = json.loads(raw)
+        common = (j.get("results") or {}).get("common") or {}
+        if str(common.get("errorCode", "0")) != "0":
+            return []
+        out = []
+        for it in ((j.get("results") or {}).get("juso") or []):
+            lat = str(it.get("entY", "") or "").strip()
+            lng = str(it.get("entX", "") or "").strip()
+            if not lat or not lng:
+                continue
+            road = (str(it.get("roadAddr", "")) or "").strip()
+            out.append({
+                "name": (str(it.get("bdNm", "")) or road).strip(),
+                "label": road,
+                "lat": f"{float(lat):.6f}",
+                "lng": f"{float(lng):.6f}",
+                "type": "road",
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _geo_search(q, limit=8):
+    """장소/주소 검색 → [{name,label,lat,lng}] (캐시, 폴백 체인)."""
+    q = str(q or "").strip()
+    if len(q) < 2:
+        return []
+    ck = (q, int(limit))
+    now = time.time()
+    with _GEO_LOCK:
+        c = _GEO_CACHE.get(ck)
+        if c and (now - c[0]) < _GEO_TTL:
+            return c[1]
+    items = []
+    # 0) 카카오 로컬 API — REST 키가 등록돼 있으면 최우선(한국 장소 정확도 최상).
+    try:
+        items = _geo_kakao(q, limit)
+    except Exception:
+        items = []
+    # 1) 도로명주소(국내 주소 정확도) — 좌표 없으면 다음 단계로.
+    if not items:
+        try:
+            items = _geo_from_juso(q)
+        except Exception:
+            items = []
+    # 2) Photon(OSM) — 한국어 지명/좌표. 병합(중복 제거).
+    if len(items) < int(limit):
+        try:
+            for it in _geo_photon(q, limit):
+                if not any((x["lat"] == it["lat"] and x["lng"] == it["lng"])
+                           or (x["label"] == it["label"]) for x in items):
+                    items.append(it)
+        except Exception:
+            pass
+    items = items[:int(limit)]
+    with _GEO_LOCK:
+        _GEO_CACHE[ck] = (now, items)
+    return items
+
+
+# ------- 정적 지도 이미지(OSM 타일 스티칭) — 검색 위치 미리보기 -------
+_TILE_CACHE = {}         # (z,x,y) -> (ts, bytes)
+_TILE_TTL = 86400.0
+_TILE_LOCK = threading.Lock()
+_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+
+
+def _tile_fetch(z, x, y):
+    ck = (int(z), int(x), int(y))
+    now = time.time()
+    with _TILE_LOCK:
+        c = _TILE_CACHE.get(ck)
+        if c and (now - c[0]) < _TILE_TTL:
+            return c[1]
+    url = _TILE_URL.format(z=int(z), x=int(x), y=int(y))
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (TSAK Event Planner)",
+    })
+    data = b""
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = resp.read()
+    except Exception:
+        data = b""
+    with _TILE_LOCK:
+        _TILE_CACHE[ck] = (now, data)
+    return data
+
+
+def _deg2tile(lat, lng, z):
+    import math
+    lat = max(-85.0511, min(85.0511, float(lat)))
+    n = 2 ** int(z)
+    x = (float(lng) + 180.0) / 360.0 * n
+    lat_r = math.radians(lat)
+    y = (1.0 - math.log(math.tan(lat_r) + 1.0 / math.cos(lat_r)) / math.pi) / 2.0 * n
+    return x, y
+
+
+def _static_map_png(lat, lng, zoom=15, w=640, h=320):
+    """중앙 좌표 주변 OSM 타일을 이어붙이고 중앙에 핀을 그린 PNG(바이트)."""
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        return b""
+    z = max(3, min(18, int(zoom)))
+    tw, th = 256, 256
+    cx, cy = _deg2tile(lat, lng, z)
+    # 중앙 픽셀
+    px, py = cx * tw, cy * th
+    left = int(px - w / 2.0)
+    top = int(py - h / 2.0)
+    x0 = left // tw
+    y0 = top // tw
+    x1 = (left + w) // tw
+    y1 = (top + h) // tw
+    n = 2 ** z
+    canvas = Image.new("RGB", (w, h), (235, 235, 235))
+    for tx in range(x0, x1 + 1):
+        for ty in range(y0, y1 + 1):
+            if ty < 0 or ty >= n:
+                continue
+            wx = tx % n
+            tb = _tile_fetch(z, wx, ty)
+            if not tb:
+                continue
+            try:
+                tile = Image.open(__import__("io").BytesIO(tb)).convert("RGB")
+            except Exception:
+                continue
+            canvas.paste(tile, (tx * tw - left, ty * th - top))
+    d = ImageDraw.Draw(canvas)
+    mx, my = int(px - left), int(py - top)
+    r = 9
+    d.ellipse([mx - r, my - r, mx + r, my + r], fill=(214, 40, 40),
+              outline=(255, 255, 255), width=3)
+    d.ellipse([mx - 3, my - 3, mx + 3, my + 3], fill=(255, 255, 255))
+    out = __import__("io").BytesIO()
+    canvas.save(out, format="PNG")
+    return out.getvalue()
 
 
 # ============================ 수품구매 (굿즈/상품 주문) ============================
@@ -3906,6 +11785,47 @@ def _merch_doc():
         d = {}
     d.setdefault("products", [])
     d.setdefault("orders", [])
+
+    # ── [버그수정 2026-11-20] 기존 주문에 상품 이미지 **백필** ────────────
+    #  ## 증상
+    #   주문상세 화면에서 상품 이미지가 전부 안 보였다.
+    #
+    #  ## 원인
+    #   주문 생성 시 항목 dict 에 image 를 넣지 않았다(위 생성부에서 수정함).
+    #   그래서 저장된 주문 62건 전부에 `image` 키가 아예 없었다.
+    #   상품 카탈로그(products)에만 이미지가 있었다.
+    #
+    #  ## 왜 읽을 때 보완하나
+    #   이미 저장된 주문을 일괄 수정하려면 DB 를 직접 고쳐야 하는데,
+    #   그러면 되돌릴 수 없는 쓰기가 된다. 읽기 시점 보완은
+    #   · 이미지가 **비어 있는 항목만** 채우고 (값이 있으면 건드리지 않음)
+    #   · productId 로 현재 상품을 찾아 채우며
+    #   · 상품이 삭제됐으면 그냥 넘어간다 (예외 없음)
+    #   → 안전하고, 다음 저장 때 자연스럽게 영구 반영된다.
+    try:
+        _pmap = {}
+        for _p in (d.get("products") or []):
+            if not isinstance(_p, dict):
+                continue
+            _pid = str(_p.get("id", "") or "")
+            if _pid:
+                _pmap[_pid] = str(_p.get("image", "") or "")
+        if _pmap:
+            _filled = 0
+            for _o in (d.get("orders") or []):
+                if not isinstance(_o, dict):
+                    continue
+                if str(_o.get("image", "") or ""):
+                    continue          # 이미 있으면 그대로 둔다
+                _img = _pmap.get(str(_o.get("productId", "") or ""), "")
+                if _img:
+                    _o["image"] = _img
+                    _filled += 1
+            if _filled:
+                print("[merch] 주문 %d건에 상품 이미지 백필" % _filled)
+    except Exception as _e:
+        print("[merch] 이미지 백필 건너뜀:", _e)
+
     cfg = d.get("config")
     if not isinstance(cfg, dict):
         cfg = {}
@@ -3993,6 +11913,68 @@ def _merch_survey_applicants(doc, plan_id):
 
 def _merch_save(doc):
     _save_json(MERCH_FILE, doc)
+
+
+def _merch_notify_orders(orders, order_no=""):
+    """[요구 2026-11-04] 수품구매(굿즈) 주문 → 관리자 이상 알림 큐에 적재.
+
+    ## 왜 필요했나 (실측 사고)
+     요구: "수품구매 요청이 오면 알림버튼이 오던 기능이 작동하지 않았음"
+     → 실은 **알림을 만드는 코드가 아예 없었다.**
+       NOTIFY_FILE(notify.json) 생산자는 게시글·자료가져오기 둘뿐이었고
+       `/api/merch/order` 는 `_merch_save(doc)` 만 호출했다.
+       2026.11.02 박다운 주문 4건(주문번호 261102-10:32:06-박다운-0008)도
+       큐에 흔적이 0건이었던 이유다.
+
+    ## 규칙
+     · 장바구니(배치) 주문은 여러 줄이 **하나의 주문번호**를 공유하므로
+       알림도 1건으로 묶는다(4줄 주문 → 알림 4개 스팸 방지).
+     · 단일 품목 주문은 그대로 1건.
+     · 실패해도 주문 응답을 막지 않는다.
+    """
+    try:
+        rows = [o for o in (orders or []) if isinstance(o, dict)]
+        if not rows:
+            return None
+        buyer = str(rows[0].get("buyerName", "") or "").strip() or "비회원"
+        phone = str(rows[0].get("phone", "") or "").strip()
+        no = str(order_no or rows[0].get("orderNo", "") or "").strip()
+        grand = 0
+        for o in rows:
+            try:
+                grand += int(o.get("grandTotal", 0) or 0)
+            except Exception:
+                pass
+        first = str(rows[0].get("product", "") or "")
+        if len(rows) > 1:
+            summary = "%s 외 %d건" % (first, len(rows) - 1)
+        else:
+            try:
+                qty = int(rows[0].get("qty", 1) or 1)
+            except Exception:
+                qty = 1
+            summary = first if qty <= 1 else "%s × %d" % (first, qty)
+        title = "새 수품구매 주문 — %s" % buyer
+        text = "%s님이 %s 을(를) 주문했습니다. 총 %s원" % (
+            buyer, summary, format(grand, ","))
+        if no:
+            text += " (주문번호 %s)" % no
+        return _notify_admin(
+            "order",
+            title,
+            text,
+            category="수품구매",
+            author=buyer,
+            orderNo=no,
+            buyerName=buyer,
+            phone=phone,
+            amount=grand,
+            itemCount=len(rows),
+            orderIds=[str(o.get("id", "") or "") for o in rows],
+        )
+    except Exception as _e:
+        print("[notify] 주문 알림 실패: %s" % _e)
+        return None
 
 
 # 구글폼 공식 수품 안내 연계 기본 판매 목록 (최초 1회 시드)
@@ -4304,7 +12286,9 @@ def _merch_seed_once(doc):
         # 사용자 편집 가능 필드는 기존 값이 있으면 보존 (덮어쓰기 방지)
         _preserve = ("desc", "name", "price", "kind", "stock", "options",
                      "image", "active", "cost", "created", "size",
-                     "makerId", "specList", "quoteFile", "quoteFileName")
+                     "makerId", "specList", "quoteFile", "quoteFileName",
+                     "madeDate", "forSale", "soldStart", "soldBase",
+                     "category")
         if prev:
             for f in _preserve:
                 if f in prev and prev.get(f) not in (None, ""):
@@ -4734,7 +12718,8 @@ def _merch_resolve_contact(num, phone, name="", email=""):
 
 def _merch_json_product(pr):
     out = {k: pr.get(k) for k in
-           ("id", "name", "kind", "price", "stock", "options", "image",
+           ("id", "name", "kind", "price", "stock", "sellableStock",
+            "options", "image",
             "desc", "active", "makerId", "size")}
     # 각인 메달(멘토/페런츠)은 수여받는 사람(수령인) 정보 입력이 필수 → 프런트에서 폼 노출.
     out["recipientKind"] = _medal_recipient_kind(pr.get("name", ""))
@@ -4847,7 +12832,16 @@ def _merch_sync_medal_recipients(buyer_ident, kind, recips):
             ph = str(r.get("phone", "") or "")
             rec_name = str(r.get("name", "") or "")
             # (a) 수령인 비인가(일반)회원 계정 자동 생성/조회 — 전화번호 기준.
-            if ph.strip():
+            #  🐞 2026-11-02 (build #571): 수령인이 **범인가자**면 전화번호 계정을
+            #  만들지 않는다(그분은 이미 카드+로그인이 있다). 인가자 판정은
+            #  인가번호가 members 명단에 실존하는지로 한다.
+            _rec_is_cred = False
+            if n:
+                try:
+                    _rec_is_cred = _is_tsak_credential(n)
+                except Exception:
+                    _rec_is_cred = False
+            if ph.strip() and not _rec_is_cred:
                 try:
                     _merch_ensure_regular(ph, rec_name, "")
                 except Exception as _e:
@@ -4855,40 +12849,228 @@ def _merch_sync_medal_recipients(buyer_ident, kind, recips):
             # (b) 인적사항(프로필) 등록 — 인가번호가 있을 때만 키로 사용.
             if not n:
                 continue
-            if n in profs and isinstance(profs[n], dict):
+            # 종류별 복합키(멘토:<번호>/페런츠:<번호>)로 조회·생성.
+            _pk = _link_key(kind, n)
+            if _pk in profs and isinstance(profs[_pk], dict):
                 # 이미 있으면 아이디/비번만 보정한다(기존 입력 보존).
                 try:
-                    _lid, _lpw = _gen_profile_credentials(ph, rec_name)
-                    if _lid and not str(profs[n].get("loginId") or "").strip():
-                        profs[n]["loginId"] = _lid
-                        profs[n]["password"] = _lpw
+                    if _rec_is_cred:
+                        profs[_pk]["isScouter"] = True
+                        if not re.sub(r"[^0-9]", "", str(
+                                profs[_pk].get("scoutNo", "") or "")):
+                            profs[_pk]["scoutNo"] = n
+                        # 인가자는 전화번호 계정을 만들지 않는다.
+                        profs[_pk]["loginId"] = ""
+                        profs[_pk]["password"] = ""
                         changed = True
+                    else:
+                        _lid, _lpw = _gen_profile_credentials(ph, rec_name)
+                        if _lid and not str(
+                                profs[_pk].get("loginId") or "").strip():
+                            profs[_pk]["loginId"] = _lid
+                            profs[_pk]["password"] = _lpw
+                            changed = True
                 except Exception:
                     pass
                 continue
-            profs[n] = _link_profile_sanitize({
+            profs[_pk] = _link_profile_sanitize({
                 "number": n,
                 "name": rec_name,
                 "phone": ph,
                 "league": str(r.get("league", "") or ""),
                 "unit": str(r.get("unit", "") or ""),
                 "kind": kind,
+                "isScouter": _rec_is_cred,
+                "scoutNo": n if _rec_is_cred else "",
             })
-            profs[n]["receiverNo"] = n
+            profs[_pk]["receiverNo"] = n
             try:
-                _lid, _lpw = _gen_profile_credentials(ph, rec_name)
+                # 인가자면 아이디/비번을 만들지 않는다(2026-11-02).
+                _lid, _lpw = (("", "") if _rec_is_cred
+                              else _gen_profile_credentials(ph, rec_name))
                 if _lid:
-                    profs[n]["loginId"] = _lid
-                    profs[n]["password"] = _lpw
+                    profs[_pk]["loginId"] = _lid
+                    profs[_pk]["password"] = _lpw
             except Exception:
                 pass
-            profs[n]["updatedAt"] = _now_stamp()
+            profs[_pk]["updatedAt"] = _now_stamp()
             changed = True
         if changed:
             with LOCK:
                 _link_profiles_save(profs)
     except Exception as e:
         print("medal recipient link sync fail", e)
+
+
+# ==========================================================================
+# 멘토·페런츠·멘티 장부 — 요구:
+#   "멘토장부, 페런츠 장부, 멘티장부 모두 존재해야함. 멘토·페런츠 장부에는
+#    멘토메달, 멘토항건 구매여부, 시점도 표시함. 연차등록 여부도 표시함."
+#  · 멘토/페런츠 = link_profiles.json(kind) 인적사항.
+#  · 멘티       = 회원 명단 mentees[] 에서 파생(멘토=멘티=페런츠 연동).
+#  · 멘토·페런츠메달 구매여부·시점 = merch.json 주문(recipientKind + 각인번호).
+#  · 중앙회 항건  구매여부·시점 = merch.json 주문(상품명 '항건' + buyerNumber).
+#  · 연차등록 여부 = 회원 feeYears(연회비 납부) / lifetimeMember.
+# ==========================================================================
+def _medal_ledger_map():
+    """merch.json 주문 → {번호: {'mentor': [...], 'parent': [...], 'hangeon': [...]}}."""
+    doc = _load_json(MERCH_FILE, {}) or {}
+    out = {}
+
+    def _slot(n):
+        return out.setdefault(n, {"mentor": [], "parent": [], "hangeon": []})
+
+    for o in (doc.get("orders") or []):
+        if not isinstance(o, dict) or o.get("deleted") is True:
+            continue
+        created = str(o.get("created", "") or "")
+        status = str(o.get("status", "") or "")
+        prod = str(o.get("product", "") or "")
+        kind = str(o.get("recipientKind") or "")
+        # 각인 메달 — 수령인(각인) 번호 기준.
+        if kind in ("mentor", "parent"):
+            recips = o.get("recipients")
+            if not isinstance(recips, list):
+                recips = ([o.get("recipient")]
+                          if isinstance(o.get("recipient"), dict) else [])
+            for r in recips:
+                if not isinstance(r, dict):
+                    continue
+                rno = re.sub(r"[^0-9]", "", str(r.get("number", "") or ""))
+                if not rno:
+                    continue
+                _slot(rno)[kind].append({
+                    "product": prod, "created": created, "status": status,
+                    "qty": int(o.get("qty", 1) or 1),
+                })
+        # 중앙회 항건(넥커치프) — 구매자 기준.
+        if "항건" in prod:
+            bno = re.sub(r"[^0-9]", "", str(o.get("buyerNumber", "") or ""))
+            if bno:
+                _slot(bno)["hangeon"].append({
+                    "product": prod, "created": created, "status": status,
+                    "qty": int(o.get("qty", 1) or 1),
+                })
+    return out
+
+
+def _ledger_annual(m):
+    """연차등록 여부 — 연회비 납부(feeYears) 또는 평생회원 여부."""
+    if not isinstance(m, dict) or not m:
+        return {"status": "—", "life": False, "paidYears": [], "year": ""}
+    fy = m.get("feeYears")
+    paid = sorted([str(k) for k, v in fy.items() if v is True]) \
+        if isinstance(fy, dict) else []
+    life = m.get("lifetimeMember") is True
+    if life:
+        status = "평생회원"
+    elif paid:
+        status = "연차등록(" + paid[-1] + ")"
+    else:
+        status = "미등록"
+    year = str(m.get("lifetimeSince") or (paid[-1] if paid else "") or "")
+    return {"status": status, "life": life, "paidYears": paid, "year": year}
+
+
+def _medal_summary(items):
+    """구매 이력 목록 → {bought, at(최초 시점), count, status}."""
+    if not items:
+        return {"bought": False, "at": "", "count": 0, "status": ""}
+    items2 = sorted(items, key=lambda x: str(x.get("created", "")))
+    return {
+        "bought": True,
+        "at": str(items2[0].get("created", "") or ""),
+        "count": len(items2),
+        "status": str(items2[-1].get("status", "") or ""),
+    }
+
+
+def _link_ledger_entries(kind):
+    """장부 엔트리 — kind: 'mentor' | 'parent' | 'mentee'."""
+    profs = _link_profiles_load()
+    medals = _medal_ledger_map()
+    members = _ev_members()
+    by_num = {}
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        n = re.sub(r"[^0-9]", "", str(m.get("number", "") or ""))
+        if n:
+            by_num[n] = m
+    entries = []
+    if kind in ("mentor", "parent"):
+        for key, p in profs.items():
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("kind") or "mentor") != kind:
+                continue
+            num = re.sub(r"[^0-9]", "", str(p.get("number", "") or key))
+            medal_items = medals.get(num, {}).get(kind, [])
+            # 이 사람이 배출(멘토)·보호(페런츠)한 대원 수.
+            links = 0
+            for m in members:
+                arr = m.get("mentors") if kind == "mentor" else m.get("parents")
+                if num and num in [re.sub(r"[^0-9]", "", str(x))
+                                   for x in (arr or [])]:
+                    links += 1
+            mm = by_num.get(num)
+            entries.append({
+                "number": num,
+                "name": str(p.get("name", "") or ""),
+                "phone": str(p.get("phone", "") or ""),
+                "league": str(p.get("league", "") or ""),
+                "unit": str(p.get("unit", "") or ""),
+                "kind": kind,
+                "kindLabel": "멘토" if kind == "mentor" else "페런츠",
+                "loginId": str(p.get("loginId", "") or ""),
+                "receiverNo": str(p.get("receiverNo", "") or ""),
+                "created": str(p.get("updatedAt", "") or ""),
+                "mentorMedal": _medal_summary(
+                    medal_items if kind == "mentor" else []),
+                "parentMedal": _medal_summary(
+                    medal_items if kind == "parent" else []),
+                "hangeon": _medal_summary(
+                    medals.get(num, {}).get("hangeon", [])),
+                "annual": _ledger_annual(mm) if mm
+                else {"status": "—", "life": False, "paidYears": [], "year": ""},
+                "links": links,
+            })
+    else:  # mentee — 회원 명단 mentees[] 파생.
+        seen = set()
+        for m in members:
+            if m.get("isRegular") is True:
+                continue
+            for code in (m.get("mentees") or []):
+                num = re.sub(r"[^0-9]", "", str(code))
+                if not num or num in seen:
+                    continue
+                seen.add(num)
+                mm = by_num.get(num) or {}
+                entries.append({
+                    "number": num,
+                    "name": str(mm.get("name", "") or ""),
+                    "phone": str(mm.get("phone", "") or ""),
+                    "league": str(mm.get("league", "") or ""),
+                    "unit": str(mm.get("unit", "") or ""),
+                    "kind": "mentee",
+                    "kindLabel": "멘티",
+                    "loginId": str(mm.get("loginId", "") or ""),
+                    "receiverNo": "",
+                    "created": str(mm.get("date", "") or ""),
+                    "mentorMedal": _medal_summary(
+                        medals.get(num, {}).get("mentor", [])),
+                    "parentMedal": _medal_summary(
+                        medals.get(num, {}).get("parent", [])),
+                    "hangeon": _medal_summary(
+                        medals.get(num, {}).get("hangeon", [])),
+                    "annual": _ledger_annual(mm),
+                    "mentor": str(m.get("name", "") or ""),
+                    "mentorNo": re.sub(r"[^0-9]", "",
+                                       str(m.get("number", "") or "")),
+                    "links": 0,
+                })
+    entries.sort(key=lambda x: str(x.get("name", "")))
+    return entries
 
 
 def _merch_mine(ident):
@@ -5054,6 +13236,21 @@ def _merch_match_ident(rec, d):
     return False
 
 
+def _sellable_of(pr):
+    """상품의 **판매가능재고**(쇼핑몰 노출 수량).
+
+    · 직접입력 필드(sellableStock) — 기본 999. 미설정/빈값이면 999.
+    · 음수는 0 으로 보정한다.
+    """
+    raw = pr.get("sellableStock")
+    if raw is None or raw == "":
+        return 999
+    try:
+        return max(0, int(raw))
+    except Exception:
+        return 999
+
+
 def _merch_stats(doc):
     """누적판매·재고·예약 통계."""
     cfg = doc.get("config", {})
@@ -5066,6 +13263,7 @@ def _merch_stats(doc):
     by_product = {}
     by_month = {}
     sold_qty = {}
+    by_name_qty = {}
     for o in orders:
         if not isinstance(o, dict):
             continue
@@ -5085,15 +13283,32 @@ def _merch_stats(doc):
         b["amount"] += t
         sold_qty[str(o.get("productId", ""))] = \
             sold_qty.get(str(o.get("productId", "")), 0) + int(o.get("qty", 0) or 0)
+        # 상품ID 없이 이름으로만 기록된 주문 폴백 집계용.
+        nm_key = nm.strip()
+        if nm_key:
+            by_name_qty[nm_key] = by_name_qty.get(nm_key, 0) + \
+                int(o.get("qty", 0) or 0)
         ym = str(o.get("created", ""))[:7]
         if ym:
             by_month[ym] = by_month.get(ym, 0) + t
     stock = []
     for pr in prods:
+        pid = str(pr.get("id"))
+        nm = str(pr.get("name", ""))
+        sold = sold_qty.get(pid, 0)
+        if sold == 0:
+            sold = by_name_qty.get(nm.strip(), 0)
+        # soldBase(기초 누적판매) — 인수인계 대장 등 기존 누적 + 앱 판매분.
+        sold_live = int(pr.get("soldBase", 0) or 0) + sold
         stock.append({
-            "id": pr.get("id"), "name": pr.get("name"),
+            "id": pr.get("id"), "name": nm,
             "stock": int(pr.get("stock", 0) or 0),
-            "sold": sold_qty.get(str(pr.get("id")), 0),
+            # 판매가능재고 — 수품구매(쇼핑몰)에 노출되는 판매 가능 수량.
+            #  직접입력(기본 999). 미설정 상품은 999 로 간주한다.
+            "sellableStock": int(_sellable_of(pr)),
+            "sold": sold_live,
+            "forSale": pr.get("forSale") is not False,
+            "active": pr.get("active") is not False,
         })
     reserve_by_product = {}
     for r in reserves:
@@ -5160,6 +13375,59 @@ def _make_video_thumb2(local_tmp_path, year, title, name, sub="", max_side=480):
         return None
 
 
+def _make_image_thumb3(src_bytes, year, title, space, name, sub="",
+                       max_side=480):
+    """space(key) 지정형 이미지 썸네일 생성 — media/expense 공용.
+
+    기존 `_make_image_thumb2` 는 썸네일 경로에 매체(media) 하위폴더를 가정한다.
+    이 함수는 `_ev_thumb_path_k` 로 space 를 구분해 저장하므로, 영수증·증빙사진
+    도 사진과 똑같이 '원본과 분리된 최적 썸네일'을 갖는다.
+    """
+    try:
+        import io
+        from PIL import Image, ImageOps
+        im = Image.open(io.BytesIO(src_bytes))
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((max_side, max_side))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=82, optimize=True)
+        _ev_ensure_thumb_dir(year, title)
+        fp = _ev_thumb_path_k(year, title, space, name, sub)
+        NAS.write(fp, buf.getvalue())
+        try:
+            _thumb_disk_put(year, title,
+                            _ev_thumb_key_k(space, name, sub), buf.getvalue())
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print("thumb3 fail", name, e)
+        return False
+
+
+def _make_image_view3(src_bytes, year, title, space, name, sub="",
+                      max_side=1600):
+    """space(key) 지정형 '보기용 최적본' 생성."""
+    try:
+        import io
+        from PIL import Image, ImageOps
+        im = Image.open(io.BytesIO(src_bytes))
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((max_side, max_side))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=85, optimize=True)
+        try:
+            _ev_mkdir_deep(_ev_view_dir(year, title))
+        except Exception:
+            pass
+        fp = _ev_view_path_k(year, title, space, name, sub)
+        NAS.write(fp, buf.getvalue())
+        return True
+    except Exception as e:
+        print("view3 fail", name, e)
+        return False
+
+
 def _make_image_view2(src_bytes, year, title, name, sub="", max_side=1600):
     """사진 '최적 크기' 보기용 지연 생성본(1600px, 품질 85)."""
     try:
@@ -5194,6 +13462,7 @@ _THUMB_JOB = {
     "videos": 0,
     "skipped": 0,
     "failed": 0,
+    "stop": False,
     "started": "",
     "finished": "",
     "last": "",
@@ -5201,12 +13470,88 @@ _THUMB_JOB = {
 _THUMB_JOB_LOCK = threading.Lock()
 _THUMB_INDEX_FILE = BASE + "/db/thumb_index.json"
 
+# ---------------------------------------------------------------------------
+# [성능/안정] 썸네일 '지연 생성' 전용 워커 풀 — 사용자 요청 경로에서 분리
+#   기존 문제: 캐시에 썸네일이 없으면 요청 처리 스레드가 **원본(동영상이면
+#   영상 전체)을 NAS에서 통째로 받아** 즉석 생성했다. 폴더를 열면 사진 N장이
+#   동시에 이 경로를 타 나스 대역폭이 포화 → 사진·행사 폴더가 '안 열리는'
+#   현상이 발생했다.
+#   해결: 즉석 생성을 **백그라운드 워커 풀**로 넘기고, 요청은 즉시 (썸네일 →
+#   없으면 가벼운 플레이스홀더) 응답한다. 생성이 끝나면 다음 요청부터 실제
+#   썸네일이 뜬다. 동시 실행 수를 제한해 나스를 절대 포화시키지 않는다.
+# ---------------------------------------------------------------------------
+_THUMB_GEN_POOL = ThreadPoolExecutor(max_workers=int(
+    os.environ.get("TSAK_THUMB_WORKERS", "3")))
+_THUMB_GEN_LOCK = threading.Lock()
+_THUMB_GEN_PENDING = set()          # 생성 예약된 (year,title,name,sub) 키
+
+
+def _thumb_gen_key(year, title, name, sub=""):
+    return (str(year), str(title), _safe_name(name), str(sub or ""))
+
+
+def _schedule_thumb_generation(year, title, name, sub=""):
+    """썸네일 준비를 백그라운드로 예약(중복 방지). 요청을 절대 막지 않는다.
+
+    워커는 (1) NAS 에 이미 있는 썸네일이면 로컬 캐시로 당겨오고,
+           (2) 없으면 원본에서 생성한 뒤 로컬 캐시로 당겨온다.
+    → 요청 경로는 로컬 디스크만 보고 즉시 응답한다(NAS 왕복 0회).
+    """
+    key = _thumb_gen_key(year, title, name, sub)
+    with _THUMB_GEN_LOCK:
+        if key in _THUMB_GEN_PENDING:
+            return False
+        _THUMB_GEN_PENDING.add(key)
+
+    def _run():
+        try:
+            _thumb_sync_or_create(year, title, name, sub)
+        except Exception as e:
+            print("thumb gen bg fail", name, e)
+        finally:
+            with _THUMB_GEN_LOCK:
+                _THUMB_GEN_PENDING.discard(key)
+
+    try:
+        _THUMB_GEN_POOL.submit(_run)
+    except Exception:
+        with _THUMB_GEN_LOCK:
+            _THUMB_GEN_PENDING.discard(key)
+    return True
+
+
+def _thumb_sync_or_create(year, title, name, sub=""):
+    """백그라운드: NAS 기존 썸네일을 로컬 캐시로 당기거나, 없으면 생성 후 당긴다."""
+    tp = _ev_thumb_path(year, title, name, sub)
+    # (1) NAS 에 이미 있으면 로컬 캐시로 복사(다음 요청부터 0ms).
+    try:
+        if NAS.exists(tp):
+            _thumb_disk_put(year, title, name, sub, NAS.read_bytes(tp))
+            return "synced"
+    except Exception:
+        pass
+    # (2) 없으면 생성.
+    try:
+        _ev_spot_thumb(year, title, name, sub, _kind_of(name), 480)
+    except Exception as e:
+        print("thumb create bg fail", name, e)
+    # (3) 생성 결과를 로컬 캐시로 당긴다.
+    try:
+        if NAS.exists(tp):
+            _thumb_disk_put(year, title, name, sub, NAS.read_bytes(tp))
+            return "created"
+    except Exception:
+        pass
+    return "none"
+
+
 
 def _ev_thumb_job_reset(total):
     with _THUMB_JOB_LOCK:
         _THUMB_JOB.update({
             "running": True, "total": total, "done": 0,
             "images": 0, "videos": 0, "skipped": 0, "failed": 0,
+            "stop": False,
             "started": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "finished": "", "last": "",
         })
@@ -5254,24 +13599,39 @@ def _ev_media_files_with_meta(year, title, key, sub=""):
     return out
 
 
-def _ev_spot_thumb(year, title, name, sub, kind, k):
-    """단일 파일 썸네일 생성. 반환: 'image' | 'video' | 'skip' | 'fail'."""
+def _ev_spot_thumb(year, title, name, sub, kind, k, key="media",
+                   assume_missing=False):
+    """단일 파일 썸네일 생성. 반환: 'image' | 'video' | 'skip' | 'fail'.
+
+    key: 행사 하위폴더 key — 'media'(사진+동영상) 외에 'expense'(영수증·증빙)도
+    같은 썸네일 저장소를 공유한다. 썸네일 파일명에 key 접두어를 붙여 충돌 방지.
+
+    assume_missing: 백필처럼 "썸네일이 없다"를 이미 확인한 경우 True.
+      → 파일마다 하던 NAS exists 왕복(2회)을 건너뛴다. 6,900건 × 0.4초 ≈ 46분 절약.
+    """
     try:
-        if NAS.exists(_ev_thumb_path(year, title, name, sub)):
-            # 이미 있음 → 로컬 디스크 캐시만 보강(예열)하고 skip.
-            try:
-                if _thumb_disk_get(year, title, name, sub) is None:
-                    data = NAS.read_bytes(_ev_thumb_path(year, title, name, sub))
-                    _thumb_disk_put(year, title, name, sub, data)
-            except Exception:
-                pass
-            return "skip"
-        orig = _ev_find_file(year, title, "media", name, sub)
+        if not assume_missing:
+            if NAS.exists(_ev_thumb_path_k(year, title, key, name, sub)):
+                # 이미 있음 → 로컬 디스크 캐시만 보강(예열)하고 skip.
+                try:
+                    _tk = _ev_thumb_key_k(key, name, sub)
+                    if _thumb_disk_get(year, title, _tk) is None:
+                        data = NAS.read_bytes(
+                            _ev_thumb_path_k(year, title, key, name, sub))
+                        _thumb_disk_put(year, title, _tk, data)
+                except Exception:
+                    pass
+                return "skip"
+            orig = _ev_find_file(year, title, key, name, sub)
+        else:
+            # 계획 단계에서 원본 목록을 이미 받아 왔다 → 경로만 조립.
+            fp_dir = _ev_sub_dir(year, title, key, sub)
+            orig = f"{fp_dir}/{_safe_name(name)}" if fp_dir else None
         if not orig:
             return "skip"
         if kind == "image":
-            ok = _make_image_thumb2(
-                NAS.read_bytes(orig), year, title, name, sub, max_side=k)
+            ok = _make_image_thumb3(
+                NAS.read_bytes(orig), year, title, key, name, sub, max_side=k)
             return "image" if ok else "fail"
         if kind == "video":
             # 동영상은 NAS 원본을 임시로 받아 첫 프레임 추출
@@ -5295,45 +13655,136 @@ def _ev_spot_thumb(year, title, name, sub, kind, k):
         return "fail"
 
 
+# 썸네일 생성은 파일마다 `_ev_ensure_thumb_dir` 를 호출한다. 이것이 매번
+#  NAS `exists` 왕복(≈0.2초)을 하면 6,900건 × 0.2초 = 23분을 순수 대기로 버린다.
+#  한 번 확인한 (연도, 행사) 는 프로세스 수명 동안 기억한다(폴더는 사라지지 않음).
+_THUMB_DIR_OK = set()
+_THUMB_DIR_OK_LOCK = threading.Lock()
+
+
 def _ev_ensure_thumb_dir(year, title):
-    """썸네일 저장 폴더 보장(누락 시 생성)."""
+    """썸네일 저장 폴더 보장(누락 시 생성). 결과를 프로세스 캐시."""
+    ck = (str(year), str(title))
+    with _THUMB_DIR_OK_LOCK:
+        if ck in _THUMB_DIR_OK:
+            return True
     tdir = _ev_thumb_dir(year, title)
     if NAS.exists(tdir):
+        with _THUMB_DIR_OK_LOCK:
+            _THUMB_DIR_OK.add(ck)
         return True
     try:
         _ev_mkdir_deep(tdir)
     except Exception as e:
         print("thumb dir fail", tdir, e)
-    return NAS.exists(tdir)
+    ok = NAS.exists(tdir)
+    if ok:
+        with _THUMB_DIR_OK_LOCK:
+            _THUMB_DIR_OK.add(ck)
+    return ok
+
+
+def _ev_thumb_names_on_nas(year, title):
+    """썸네일 폴더에 **이미 있는 파일명 집합** — NAS list 1회로 끝낸다.
+
+    [성능 2026-10-29] 종전 백필은 파일마다 `NAS.exists` 를 호출해 썸네일이
+    이미 있는 12,000여 건을 **전부 skip 하느라 20분 이상**을 낭비했다.
+    폴더 목록 1회(=행사당 1콜)로 대체해 계획 단계를 수십 배 빠르게 만든다.
+    """
+    tdir = _ev_thumb_dir(year, title)
+    out = set()
+    try:
+        if not NAS.exists(tdir):
+            return out
+        r = NAS.list(tdir)
+        for f in (r.get("files") or []):
+            if not f.get("isdir"):
+                out.add(f.get("name", ""))
+    except Exception:
+        pass
+    return out
+
+
+def _ev_thumb_basename(name, sub=""):
+    """`_ev_thumb_path_k(EVENT_MEDIA_KEY, ...)` 의 파일명 부분."""
+    return _ev_thumb_key_k("media", name, sub).replace("/", "__") + ".jpg"
+
+
+def _ev_backfill_plan(force=False):
+    """백필 대상 계획 — [(year, title, name, sub, kind), ...]
+
+    [개선 2026-10-29] 두 가지를 바꿨다.
+      1) `force=False` 면 **썸네일이 없는 파일만** 큐에 넣는다.
+         → 진행률(total)이 '실제 남은 일'을 뜻하게 되어 의미가 정확해진다.
+      2) **누락이 많은 행사부터** 처리한다(내림차순).
+         → 새로 등록된 대형 행사(사진 수천 장)가 뒤에서 몇 시간씩 기다리지
+           않고 즉시 만들어진다. 화면에 사진이 빨리 뜨는 순서와 일치한다.
+    """
+    doc = _ev_doc()
+    per_event = []
+    for eid, e in doc.get("events", {}).items():
+        year = e.get("year", "")
+        title = e.get("title", "")
+        if not year or not title:
+            continue
+        files = _ev_media_files_with_meta(year, title, "media")
+        if not files:
+            continue
+        have = set() if force else _ev_thumb_names_on_nas(year, title)
+        todo = []
+        for nm, sub in files:
+            kind = _kind_of(nm)
+            if kind not in ("image", "video"):
+                continue
+            if not force and _ev_thumb_basename(nm, sub) in have:
+                continue
+            todo.append((year, title, nm, sub, kind))
+        if todo:
+            per_event.append(todo)
+    per_event.sort(key=len, reverse=True)      # 큰 행사 먼저
+    out = []
+    for todo in per_event:
+        out.extend(todo)
+    return out
 
 
 def _ev_backfill_thumbs_worker(max_side=480, force=False):
-    """전체 행사 사진/동영상 썸네일 백필(백그라운드)."""
+    """행사 사진/동영상 썸네일 백필(백그라운드)."""
     try:
-        doc = _ev_doc()
-        jobs = []          # (year, title, name, sub, kind)
-        for eid, e in doc.get("events", {}).items():
-            year = e.get("year", "")
-            title = e.get("title", "")
-            if not year or not title:
+        jobs = _ev_backfill_plan(force=force)
+        # 썸네일 폴더가 없는 행사만 만들어 둔다(이미 있으면 NAS 왕복 0회).
+        seen_ev = set()
+        for (year, title, _nm, _sub, _kind) in jobs:
+            k = (year, title)
+            if k in seen_ev:
                 continue
-            files = _ev_media_files_with_meta(year, title, "media")
-            if not files:
-                continue
+            seen_ev.add(k)
             _ev_ensure_thumb_dir(year, title)
-            for nm, sub in files:
-                kind = _kind_of(nm)
-                if kind in ("image", "video"):
-                    jobs.append((year, title, nm, sub, kind))
+        print("thumb backfill plan", {
+            "jobs": len(jobs), "events": len(seen_ev), "force": force})
         _ev_thumb_job_reset(len(jobs))
-        for (year, title, nm, sub, kind) in jobs:
+        # [성능 2026-10-29] 순차 처리 시 실측 ~1.7초/건 → 6,900건이면 3시간+.
+        #  NAS 연결 풀이 8개까지 동시 사용을 지원하므로 소수 병렬로 단축한다.
+        #  (TSAK_THUMB_CONC 기본 4 — 나스·메모리 부하를 보며 조절 가능)
+        try:
+            conc = int(os.environ.get("TSAK_THUMB_CONC", "4"))
+        except Exception:
+            conc = 4
+        conc = max(1, min(6, conc))
+
+        def _one(item):
+            """파일 1건 처리 — 예외는 여기서 흡수해 워커를 죽이지 않는다."""
+            (year, title, nm, sub, kind) = item
+            if _THUMB_JOB.get("stop"):
+                return
             try:
                 if force:
                     try:
                         NAS.delete(_ev_thumb_path(year, title, nm, sub))
                     except Exception:
                         pass
-                res = _ev_spot_thumb(year, title, nm, sub, kind, max_side)
+                res = _ev_spot_thumb(year, title, nm, sub, kind, max_side,
+                                     assume_missing=not force)
                 if res == "image":
                     _ev_thumb_job_inc("images", f"{title}/{nm}")
                 elif res == "video":
@@ -5345,6 +13796,24 @@ def _ev_backfill_thumbs_worker(max_side=480, force=False):
             except Exception as e:
                 print("backfill item fail", nm, e)
                 _ev_thumb_job_inc("failed")
+
+        if conc <= 1:
+            for it in jobs:
+                if _THUMB_JOB.get("stop"):
+                    print("thumb backfill stopped by user",
+                          _ev_thumb_job_state())
+                    break
+                _one(it)
+        else:
+            # 청크 단위로 끊어 돌려 중단 요청에 빠르게 반응시킨다.
+            chunk = conc * 8
+            for i in range(0, len(jobs), chunk):
+                if _THUMB_JOB.get("stop"):
+                    print("thumb backfill stopped by user",
+                          _ev_thumb_job_state())
+                    break
+                with ThreadPoolExecutor(max_workers=conc) as ex:
+                    list(ex.map(_one, jobs[i:i + chunk]))
         print("thumb backfill done", _ev_thumb_job_state())
     except Exception as e:
         print("thumb backfill worker fail", e)
@@ -5399,7 +13868,7 @@ def _ev_warm_worker(year, title, key, jobs, make_views):
     try:
         for (nm, sub, kind) in jobs:
             try:
-                res = _ev_spot_thumb(year, title, nm, sub, kind, 480)
+                res = _ev_spot_thumb(year, title, nm, sub, kind, 480, key=key)
                 if res in ("image", "video"):
                     _ev_warm_inc("thumbs")
                 elif res == "skip":
@@ -5409,12 +13878,13 @@ def _ev_warm_worker(year, title, key, jobs, make_views):
                 # 최적화(1600px) 본은 이미지만, 없을 때만 생성.
                 if make_views and kind == "image":
                     try:
-                        vp = _ev_view_path(year, title, nm, sub)
+                        vp = _ev_view_path_k(year, title, key, nm, sub)
                         if not NAS.exists(vp):
-                            orig = _ev_find_file(year, title, "media", nm, sub)
+                            orig = _ev_find_file(year, title, key, nm, sub)
                             if orig:
-                                _make_image_view2(
-                                    NAS.read_bytes(orig), year, title, nm, sub)
+                                _make_image_view3(
+                                    NAS.read_bytes(orig), year, title, key,
+                                    nm, sub)
                                 _ev_warm_inc("views")
                     except Exception:
                         pass
@@ -5430,21 +13900,41 @@ def _ev_warm_worker(year, title, key, jobs, make_views):
 
 
 def _ev_warm_folder(year, title, key, sub, make_views=True):
-    """열린 폴더(하위폴더 포함)의 이미지/동영상 예열을 백그라운드로 시작."""
+    """열린 폴더(하위폴더 포함)의 이미지/동영상 예열을 백그라운드로 시작.
+
+    [성능/안정] 파일 목록 스캔(`_ev_media_files_with_meta` → 파일별 NAS.exists)
+      을 **백그라운드 스레드**로 옮긴다. 기존에는 요청 처리 스레드가 NAS 왕복을
+      동기로 수십~수백 회 하느라 폴더 열기가 지연됐다. 이제 호출 즉시 반환한다.
+    """
     with _EV_WARM_LOCK:
         if _EV_WARM.get("running"):
             return False
-    jobs = []
-    for nm, s in _ev_media_files_with_meta(year, title, key, sub):
-        k = _kind_of(nm)
-        if k in ("image", "video"):
-            jobs.append((nm, s, k))
-    if not jobs:
+
+    def _scan_and_warm():
+        try:
+            jobs = []
+            for nm, s in _ev_media_files_with_meta(year, title, key, sub):
+                k = _kind_of(nm)
+                if k in ("image", "video"):
+                    jobs.append((nm, s, k))
+            if not jobs:
+                return
+            _ev_warm_reset(len(jobs), key)
+            _ev_warm_worker(year, title, key, jobs, make_views)
+        except Exception as e:
+            print("warm scan fail", e)
+            with _EV_WARM_LOCK:
+                _EV_WARM["running"] = False
+
+    # 선점 플래그(중복 방지) 후 스캔 스레드 시작.
+    with _EV_WARM_LOCK:
+        _EV_WARM["running"] = True
+    try:
+        threading.Thread(target=_scan_and_warm, daemon=True).start()
+    except Exception:
+        with _EV_WARM_LOCK:
+            _EV_WARM["running"] = False
         return False
-    _ev_warm_reset(len(jobs), key)
-    threading.Thread(target=_ev_warm_worker,
-                     args=(year, title, key, jobs, make_views),
-                     daemon=True).start()
     return True
 
 
@@ -5457,11 +13947,42 @@ def _ev_find_file(year, title, key, name, sub=""):
     return fp if NAS.exists(fp) else None
 
 
+# ---- WebP 최적본(_optimized) 우선 서빙 -------------------------------
+# tools/optimize_event_webp.py 가 원본 옆 `_optimized/<이름>.webp` 로 재압축본을
+# 만들어 두면, 원본 대신 이 WebP 를 서빙한다(평균 ~85% 절감, 예: 5.1GB→0.8GB).
+#  · 원본은 절대 건드리지 않는다(비파괴). 매핑은 파일명 stem 기준.
+#  · 없으면 원본 폴백 → 배치가 중간에 중단돼도 서비스는 항상 정상.
+_OPT_SUBDIR = "_optimized"
+_OPT_DONE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+
+
+def _opt_path_for(orig_path):
+    """원본 NAS 경로 → _optimized 미러 webp 경로(없으면 None)."""
+    if not orig_path or "/" not in orig_path:
+        return None
+    d, base = orig_path.rsplit("/", 1)
+    if "." not in base:
+        return None
+    if _ext_of(base) not in _OPT_DONE_EXT:
+        return None
+    stem = base.rsplit(".", 1)[0]
+    return "%s/%s/%s.webp" % (d, _OPT_SUBDIR, stem)
+
+
+def _ev_opt_path(year, title, key, name, sub=""):
+    """행사 항목 파일의 _optimized webp 경로(존재하지 않으면 None)."""
+    fp = _ev_find_file(year, title, key, name, sub)
+    op = _opt_path_for(fp) if fp else None
+    if op and NAS.exists(op):
+        return op
+    return None
+
+
 # ---- 썸네일 로컬 디스크 캐시 -----------------------------------------------
 # NAS 는 원격(HTTPS)이라 썸네일을 매 요청마다 NAS 에서 읽으면 왕복 ~0.9s 가
 # 걸린다. 백필 후 로컬 디스크에 캐시해 두면 브라우저가 이미 가진 캐시까지
 # 고려해 첫 로딩이 ~0.02s 로 단축된다.
-_THUMB_DISK_DIR = "/home/user/nas_proxy/.thumb_cache"
+_THUMB_DISK_DIR = os.path.join(STATE_ROOT, ".thumb_cache")
 _THUMB_DISK_LOCK = threading.Lock()
 
 
@@ -5495,53 +14016,62 @@ def _thumb_disk_put(year, title, name, sub, data):
         pass
 
 
+_THUMB_PLACEHOLDER = {"data": None}
+
+
+def _thumb_placeholder():
+    """썸네일이 아직 없을 때 즉시 응답할 가벼운 회색 플레이스홀더 JPEG.
+
+    폴더를 열 때 원본(동영상 전체)을 다운로드하느라 멈추는 것을 막는다.
+    백그라운드 생성이 끝나면 다음 요청부터 실제 썸네일이 뜬다.
+    """
+    if _THUMB_PLACEHOLDER["data"] is not None:
+        return _THUMB_PLACEHOLDER["data"]
+    try:
+        import io
+        from PIL import Image
+        im = Image.new("RGB", (16, 16), (222, 222, 228))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=60)
+        _THUMB_PLACEHOLDER["data"] = buf.getvalue()
+    except Exception:
+        _THUMB_PLACEHOLDER["data"] = b""
+    return _THUMB_PLACEHOLDER["data"]
+
+
 def _thumb_get(year, title, name, sub="", build_missing=True):
-    """썸네일 바이트 반환 (로컬캐시 → NAS → 즉석생성 순). 없으면 None."""
+    """썸네일 바이트 반환 — **로컬 디스크 캐시에서만**(NAS 왕복 0회).
+
+    [성능/안정] 요청 경로에서는 NAS 를 전혀 건드리지 않는다. 로컬 캐시에
+      없으면 즉시 None 을 돌려주고(NAS.exists 조차 하지 않음), 준비(기존
+      썸네일 동기화 또는 생성)는 백그라운드 워커가 처리한다. → 사진 N장이
+      동시에 요청돼도 서버 응답이 절대 지연/정체되지 않는다.
+    """
     data = _thumb_disk_get(year, title, name, sub)
     if data is not None:
         return data
-    if not NAS.exists(_ev_thumb_path(year, title, name, sub)):
-        if build_missing:
-            try:
-                orig = _ev_find_file(year, title, "media", name, sub)
-                if orig:
-                    kind = _kind_of(name)
-                    if kind == "image":
-                        _ev_ensure_thumb_dir(year, title)
-                        _make_image_thumb2(NAS.read_bytes(orig), year, title, name, sub)
-                    elif kind == "video":
-                        import tempfile
-                        tmp = tempfile.NamedTemporaryFile(
-                            suffix=_ext_of(name), delete=False).name
-                        try:
-                            with open(tmp, "wb") as w:
-                                w.write(NAS.read_bytes(orig))
-                            _ev_ensure_thumb_dir(year, title)
-                            _make_video_thumb2(tmp, year, title, name, sub)
-                        finally:
-                            try:
-                                os.unlink(tmp)
-                            except Exception:
-                                pass
-            except Exception as e:
-                print("thumb build(get) fail", name, e)
-    if not NAS.exists(_ev_thumb_path(year, title, name, sub)):
-        return None
-    try:
-        data = NAS.read_bytes(_ev_thumb_path(year, title, name, sub))
-    except Exception:
-        return None
-    _thumb_disk_put(year, title, name, sub, data)
-    return data
+    if build_missing:
+        try:
+            _schedule_thumb_generation(year, title, name, sub)
+        except Exception:
+            pass
+    return None
 
 
-def _ev_collect_under(base, rel_prefix="", recursive=True):
-    """base 폴더 아래 파일들을 rel 경로와 함께 수집 (rel_prefix 기준)."""
+
+def _ev_collect_under(base, rel_prefix="", recursive=True, max_entries=None):
+    """base 폴더 아래 파일들을 rel 경로와 함께 수집 (rel_prefix 기준).
+
+    각 항목에 **size** 를 함께 담는다. ZIP 용량을 사전에 계산해
+    메모리 폭발(OOM)을 막기 위한 것이다. max_entries 로 상한을 둘 수 있다.
+    """
     if not base or not NAS.exists(base):
         return []
     paths = []
 
     def walk(p, rel):
+        if max_entries and len(paths) >= max_entries:
+            raise RuntimeError("too many entries: >%d" % max_entries)
         r = NAS.list(p)
         if not r.get("ok"):
             return
@@ -5554,14 +14084,19 @@ def _ev_collect_under(base, rel_prefix="", recursive=True):
                 if recursive:
                     walk(child, f"{rel}/{nm}")
             else:
-                paths.append({"path": child, "rel": f"{rel}/{nm}"})
+                paths.append({
+                    "path": child,
+                    "rel": f"{rel}/{nm}",
+                    "size": int(f.get("size", 0) or 0),
+                })
     walk(base, rel_prefix or base.rsplit("/", 1)[-1])
     return paths
 
 
 def _ev_collect_paths(year, title, key, sub="", recursive=True):
     """항목 폴더(하위경로)의 파일 경로 목록(ZIP용). rel은 하위폴더명 유지."""
-    return _ev_collect_under(_ev_sub_dir(year, title, key, sub), recursive=recursive)
+    return _ev_collect_under(_ev_sub_dir(year, title, key, sub),
+                             recursive=recursive)
 
 
 def _ev_zip_paths(year, title):
@@ -5593,27 +14128,141 @@ def _ev_ext_ok(name):
 
 
 def _ev_build_zip(paths, files=None):
-    """NAS 파일들을 ZIP으로 묶어 bytes 반환. files 우선, 없으면 paths로 fetch."""
-    import io, zipfile
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for it in (files if files is not None else []):
-            z.writestr(it["rel"], it["data"])
-        if files is None:
-            for it in paths:
-                try:
-                    data = NAS.read_bytes(it["path"])
-                except Exception:
+    """[사용금지] ZIP 전체를 RAM 에 만든다 — OOM 사고의 원인.
+
+    호출부가 없음을 확인했으나, 재유입 시 사고가 재발하므로 남겨두지 않고
+    스트리밍 버전으로 강제 위임한다(_ev_build_zip_to_file 참고).
+    """
+    raise RuntimeError(
+        "_ev_build_zip 은 OOM 위험으로 제거되었습니다. "
+        "_ev_build_zip_to_file + _ev_stream_file 을 사용하세요.")
+
+
+# ⚠ [사고 재발 방지] 위 _ev_build_zip 은 ZIP 전체를 RAM 에 만든 뒤 한 번에
+#   반환한다. 사진 폴더 하나(2.3GB)를 다운로드하면 zip 버퍼 + getvalue() 복사
+#   + wfile.write() 로 같은 데이터가 2~3벌 메모리에 동시에 존재해 OOM Killer 가
+#   python3 프로세스를 죽였다(실측 anon-rss 4.9GB, 가용 7.9GB).
+#   → 아래 스트리밍 버전을 쓰고, zip 은 **디스크 임시파일**에 만든다.
+_EV_ZIP_CHUNK = 1024 * 256
+
+
+def _ev_zip_looks_binary(rel):
+    """압축을 시도하지 않을 확장자(이미 압축된 미디어) — CPU/시간 절약."""
+    ext = os.path.splitext(str(rel))[1].lower()
+    return ext in (
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif",
+        ".mp4", ".mov", ".m4v", ".avi", ".mkv", ".3gp", ".wmv",
+        ".zip", ".gz", ".bz2", ".xz", ".7z", ".rar",
+    )
+
+
+def _ev_collect_zip_entries(paths, files=None):
+    """ZIP 에 넣을 (rel, size, fetch_fn) 목록. fetch_fn 은 바이트 반환."""
+    out = []
+    if files is not None:
+        for it in files:
+            out.append((it["rel"], len(it["data"]), (lambda b=it["data"]: b)))
+        return out
+    # ⚠ [OOM 사고 핵심 원인] 예전에는 get_info(path)['size'] 를 믿었다.
+    #   그런데 NAS 는 **폴더**에 대해 size=항목수(예: 16062)를 돌려주고 isdir
+    #   플래그도 주지 않는다. 그래서 5.19GB 폴더가 "16KB"로 계산되어 용량
+    #   검사(probe)를 통과했고, 16,062개 파일을 하나씩 받아 메모리가 폭발했다.
+    #   → 이제 **list() 가 이미 알려준 size** 를 신뢰하고, 없을 때만 조회한다.
+    hits = []
+    for it in paths:
+        fp = it["path"]
+        size = it.get("size")
+        if size is None:
+            try:
+                info = NAS.get_info(fp)
+                if info.get("isdir"):
                     continue
-                z.writestr(it["rel"], data)
-    return buf.getvalue()
+                size = int(info.get("size", 0) or 0)
+            except Exception:
+                continue
+        size = int(size or 0)
+        hits.append((it["rel"], fp, size))
+    for rel, fp, size in hits:
+        out.append((rel, size, (lambda p=fp: NAS.read_bytes(p))))
+    return out
+
+
+def _ev_build_zip_to_file(paths, dest, files=None, max_bytes=None):
+    """NAS 파일들을 **디스크 임시파일**에 ZIP 으로 쓴다. RAM 사용은 청크 크기뿐.
+
+    max_bytes: 넘으면 중단(RuntimeError). 디스크가 꽉 차는 사고 방지.
+    반환: (엔트리수, 건너뛴수, 총바이트)
+    """
+    import zipfile
+    entries = _ev_collect_zip_entries(paths, files)
+    # [핵심] 쓰기 **전에** 총 용량을 검사한다 — 다운로드를 시작조차 하지 않는다.
+    if max_bytes:
+        planned = sum(s for (_r, s, _f) in entries)
+        if planned > max_bytes:
+            raise RuntimeError(
+                "zip too large: %d bytes (limit %d)" % (planned, max_bytes))
+    n = skipped = total = 0
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_STORED) as z:
+        for rel, size, fetch in entries:
+            try:
+                data = fetch()
+            except Exception:
+                skipped += 1
+                continue
+            if not data:
+                skipped += 1
+                continue
+            comp = (zipfile.ZIP_STORED if _ev_zip_looks_binary(rel)
+                    else zipfile.ZIP_DEFLATED)
+            try:
+                z.writestr(zipfile.ZipInfo(rel), data, compress_type=comp)
+            except Exception:
+                # 이름이 너무 길거나 특수문자 문제 → 건너뛴다(전체를 죽이지 않음).
+                skipped += 1
+                continue
+            n += 1
+            total += len(data)
+            del data
+    return n, skipped, total
+
+
+def _ev_stream_file(self, fp, ctype, download_name=None, chunk=_EV_ZIP_CHUNK):
+    """디스크 파일을 **청크 단위**로 응답에 흘려보낸다(RAM 상승 없음)."""
+    size = os.path.getsize(fp)
+    self.send_response(200)
+    self.send_header("Content-Type", ctype)
+    self.send_header("Content-Length", str(size))
+    if download_name:
+        try:
+            fn = urllib.parse.quote(str(download_name))
+        except Exception:
+            fn = str(download_name)
+        self.send_header(
+            "Content-Disposition", f"attachment; filename*=UTF-8''{fn}")
+    self._cors()
+    self.end_headers()
+    with open(fp, "rb") as f:
+        while True:
+            b = f.read(chunk)
+            if not b:
+                break
+            self.wfile.write(b)
 
 
 def _ev_roster_html(year, title):
     """참가자 명단을 무인양품풍 + 컬러풀 디자인 HTML로 출력 (인쇄/저장용)."""
     doc = _ev_doc()
     e = doc.get("events", {}).get(_ev_id(year, title), {})
-    attendees = e.get("attendees", [])
+    # [요구] 명단 출력 시 '인가시 등록대' 대신 '활동등록대'를 표시한다.
+    #   (원본 캐시 보호를 위해 dict 복사 후 표시용 필드 주입)
+    attendees = []
+    for _a in e.get("attendees", []):
+        if isinstance(_a, dict):
+            _a2 = dict(_a)
+            _ev_attendee_view(_a2)
+            attendees.append(_a2)
+        else:
+            attendees.append(_a)
     place = e.get("place", "")
     period = e.get("period", "") or e.get("date", "")
     desc = e.get("desc", "")
@@ -5651,7 +14300,7 @@ def _ev_roster_html(year, title):
         <td style="padding:8px 6px;color:#888;font-size:12px">{i}</td>
         <td style="padding:8px 6px;text-align:center">{vbox}</td>
         <td style="padding:8px 6px;font-weight:700">{esc(a.get('name',''))}</td>
-        <td style="padding:8px 6px;font-size:13px;color:#555">{esc(a.get('unit',''))}</td>
+        <td style="padding:8px 6px;font-size:13px;color:#555">{esc(a.get('unitText') or a.get('unit',''))}</td>
         <td style="padding:8px 6px;font-size:12px">{esc(a.get('gender',''))}</td>
         <td style="padding:8px 6px;font-size:12px">{esc(a.get('phone',''))}</td>
         <td style="padding:8px 6px;font-size:12px">{esc(a.get('email',''))}</td>
@@ -5743,18 +14392,83 @@ def _ev_roster_html(year, title):
 
 
 # ============ 재무 연동 (행사 참가비/후원금/지출) ============
+def _fin_member_link(tx):
+    """인가번호로 **개인카드(회원)에 자동 연결**한다.
+
+    ## 왜 필요한가 (요구)
+    "후원 및 후원금, 참가비 등은 행사비 항목에 인가번호를 기입하면 자동으로
+     개인카드에 반영되도록 함"
+
+    행사 재무(참가비·후원금·지출)를 입력할 때 **인가번호**를 적으면,
+    그 거래가 해당 회원의 개인카드 '입금 내역'에 그대로 나타나야 한다.
+
+    ## 동작
+    거래의 `number`(인가번호)로 members.json 을 찾아:
+      · 찾으면 → `status=matched`, `memberId`·`payer`·`name` 을 회원 정보로 보정
+      · 못 찾으면 → `status=unmatched` (금액·이름은 그대로 보존)
+    개인카드 조회(`depositsOf`)는 `number` 로 필터하므로,
+    number 만 정확해도 화면에는 즉시 반영된다. memberId 는 상세 화면
+    이동(개인카드 열기)에 쓰인다.
+
+    반환: 보정된 tx (in-place 수정 후 그대로 돌려준다).
+    """
+    if not isinstance(tx, dict):
+        return tx
+    raw = str(tx.get("number", "") or "").strip()
+    digits = re.sub(r"[^0-9]", "", raw)
+    if not digits:
+        tx["status"] = "unmatched"
+        return tx
+    try:
+        # [버그 수정 2026-10-29] digits 가 아니라 **raw** 를 넘긴다.
+        #  종전에는 'G75' → '75' 로 깎아 넘겨 은하 회원을 찾을 수 없었고,
+        #  그 '75' 가 범 75호(이항복)에 붙어 은하 G75 카드에 남의 후원이 떴다.
+        #  tx 에 corps 가 실려 있으면 그 소속 명단만 조회한다.
+        m = _ev_member_by_ident(
+            raw, corps=(str(tx.get("corps", "") or "").strip() or None)
+        )
+    except Exception:
+        m = None
+    if not m:
+        tx["status"] = "unmatched"
+        return tx
+    tx["status"] = "matched"
+    tx["memberId"] = str(m.get("id", "") or "")
+    # 이름·인가번호는 회원 원장을 **권위**로 삼는다(오타로 남의 카드에 붙는 것 방지).
+    if str(m.get("name", "") or "").strip():
+        nm = str(m.get("name")).strip()
+        tx["name"] = nm
+        tx["payer"] = nm
+    # 번호는 **접두어 보존**(은하 G75 는 'G75' 로 저장). 숫자만 남기면
+    #  은하 75호와 범 75호가 같은 키가 되어 개인카드가 다시 섞인다.
+    tx["number"] = _ck(str(m.get("number", "") or raw)) or digits
+    tx["corps"] = str(m.get("corps", "") or "")
+    return tx
+
+
 def _ev_fin_add(tx):
     """finance.json 에 거래 1건 append (참가비/후원금/지출 연동)."""
+    # (요구) 인가번호 → 개인카드 자동 반영.
+    try:
+        tx = _fin_member_link(tx)
+    except Exception as _e:
+        print("fin member link fail", _e)
+
     fin = _load_json(FIN_FILE, _default_finance())
     txs = fin.setdefault("transactions", [])
     txs.insert(0, tx)
     fin["version"] = int(fin.get("version", 0)) + 1
     fin["updated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _save_json(FIN_FILE, fin)
+    # ── [속도 turn73] 집계 캐시는 **지연 기록** ───────────────────────────
+    #  종전 `_rebuild_history()` 는 거래 1건마다 `finance_history.json` 전체를
+    #  NAS 에 다시 썼다(왕복 +1.5~2초). 집계는 계산 가능한 캐시이므로
+    #  메모리·로컬 미러에만 즉시 반영하고 NAS 기록은 뒤로 미룬다.
     try:
-        _rebuild_history(fin)
-    except Exception:
-        pass
+        _hist_save_lazy(_hist_compute(fin))
+        _hist_flush_tick()
+    except Exception as _he:
+        print("hist lazy fail(add)", _he)
     return tx
 
 
@@ -5775,6 +14489,158 @@ def _ev_fin_remove(tx):
         fin["updated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _save_json(FIN_FILE, fin)
     return True
+
+
+def _ev_fin_txid(row_id):
+    """행사 재무 항목 1건의 '자료(첨부)' 저장 키.
+
+    재무관리 원장이 쓰는 키(`ev_<rowid>`)와 **동일**하게 맞춘다.
+    → 행사관리에서 올린 자료(영수증·입금표·견적서 등)가 재무관리 화면에서도
+      그대로 보이고, 그 반대도 된다.
+    """
+    rid = _safe_name(str(row_id or ""))
+    return f"ev_{rid}" if rid else ""
+
+
+# ── [요구 2026-10-26] "스탭도 영수증 파일 확인 가능, 업로드 가능" ───────────
+#  ## 문제 1 (권한 설계)
+#   재무 첨부 API(`/api/finance/attach*`)는 전부 `_require("admin")` 이었다.
+#   행사 재무 조회(`/api/event/finance`)는 `_require_event_admin()` 으로
+#   **스탭까지** 통과시키는데, 첨부만 관리자·마스터로 막혀 있었다.
+#   → 스탭은 결산 행은 보이는데 [자료] 를 누르면 401/403.
+#  ## 문제 2 (전역 게이트 — 실측으로 잡은 진짜 원인)
+#   위 5개 경로를 `_require_finance_attach` 로 바꿔도 **여전히 401** 이었다.
+#   do_POST 시작부의 **전역 인증 게이트**가
+#     `p.startswith("/api/finance")` → `need="admin"`
+#   로 경로를 **먼저** 막고 있었기 때문이다. 스탭 세션은 tier 가 `personal`
+#   이라 여기서 무조건 잘린다. (GET 은 게이트가 없어서 조회만 통과했다 —
+#   "조회는 되는데 업로드만 401" 이라는 증상의 정체)
+#   → 게이트에서 **첨부 경로만** 예외로 빼고, 실제 인가는 엔드포인트 안의
+#     `_require_finance_attach()` 가 **단독으로** 판단하게 한다(이중 판정 제거).
+#  ## 해결
+#   첨부 API 에 들어온 txid(`ev_<rowid>`)가 **어느 행사의 재무 행인지** 역추적해
+#   그 행사의 스탭이면 통과시킨다. 재무관리 원장의 일반 거래(txid `tx...`)는
+#   행사와 무관하므로 종전대로 관리자·마스터만 통과한다.
+def _ev_fin_txid_owner(txid):
+    """txid(`ev_<rowid>`) → (year, title). 못 찾으면 ("", "").
+
+    행사 재무 행의 id 는 `ev_fin_decorate` 가 `ev_<rowid>` 로 만들고,
+    `finance/add` 는 원장에 `ev_<rowid>` 를 id 로 넣는다. 그래서 **양쪽 다**
+    확인한다(행사문서 fees/expenses 의 rowid + 원장 transactions 의 id).
+    """
+    txid = str(txid or "").strip()
+    if not txid.startswith("ev_"):
+        return "", ""
+    rid = txid[3:]
+    if not rid:
+        return "", ""
+    # ① 행사 문서(events.json) — fees / expenses 의 row.id
+    try:
+        evs = (_ev_doc() or {}).get("events") or {}
+        for e in evs.values():
+            if not isinstance(e, dict):
+                continue
+            for key in ("fees", "expenses"):
+                for row in (e.get(key) or []):
+                    if not isinstance(row, dict):
+                        continue
+                    if str(row.get("id", "") or "") == rid:
+                        return (str(e.get("year", "") or ""),
+                                str(e.get("title", "") or ""))
+    except Exception:
+        pass
+    # ② 재무 원장(transactions) — id 가 `ev_<rowid>` 이고 event/year 를 들고 있다
+    try:
+        fin = _load_json(FIN_FILE, _default_finance())
+        for t in (fin.get("transactions") or []):
+            if not isinstance(t, dict):
+                continue
+            if str(t.get("id", "") or "") == txid:
+                return (str(t.get("year", "") or ""),
+                        str(t.get("event", "") or ""))
+    except Exception:
+        pass
+    return "", ""
+
+
+def _ev_fin_txid_is_staff(handler, txid):
+    """세션 인가번호가 txid 가 속한 행사의 스탭인지 — 단일 진입점."""
+    year, title = _ev_fin_txid_owner(txid)
+    if not title:
+        return False
+    ident = handler._my_ident()
+    if not ident:
+        return False
+    try:
+        return _staff_is(year, title, ident)
+    except Exception:
+        return False
+
+
+def _require_finance_attach(handler, txid):
+    """재무 첨부 접근 인가 — 관리자·마스터 **또는 그 행사의 스탭**.
+
+    [요구 2026-10-26] "스탭도 영수증 파일 확인 가능, 업로드 가능"
+     · 조회/다운로드/업로드/이름변경/삭제 모두 같은 규칙을 쓴다
+       (스탭이 올린 자료를 스탭이 고칠 수 있어야 실제로 쓸 수 있다).
+     · 행사와 무관한 원장 거래(txid `tx…`)는 종전대로 관리자·마스터만.
+    """
+    if handler._auth_ok("admin"):
+        return True
+    if _ev_fin_txid_is_staff(handler, txid):
+        return True
+    handler._json({"ok": False, "error": "unauthorized"}, 401)
+    return False
+
+
+def _ev_fin_decorate(rows, meta=None):
+    """재무 행 목록에 txid(자료키) + attach(자료 건수) 를 얹어 돌려준다.
+
+    meta 를 넘기면 finance_attach.json 을 한 번만 읽는다(행마다 재조회 방지).
+    """
+    if not isinstance(rows, list):
+        return []
+    if meta is None:
+        try:
+            meta = _fin_attach_meta()
+        except Exception:
+            meta = {}
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        row = dict(r)
+        txid = _ev_fin_txid(row.get("id"))
+        row["txid"] = txid
+        try:
+            row["attach"] = len(meta.get(txid) or []) if txid else 0
+        except Exception:
+            row["attach"] = 0
+        out.append(row)
+    return out
+
+
+def _ev_fin_attach_purge(txid):
+    """재무 항목 삭제 시 그 항목의 자료(첨부) 메타·실물을 함께 정리한다."""
+    txid = str(txid or "").strip()
+    if not txid:
+        return 0
+    meta = _fin_attach_meta()
+    files = meta.pop(txid, None) or []
+    try:
+        _fin_attach_save(meta)
+    except Exception:
+        pass
+    if isinstance(files, list):
+        for f in files:
+            name = str((f or {}).get("name", "") or "")
+            if not name:
+                continue
+            try:
+                NAS.delete(f"{_fin_attach_dir(txid)}/{_safe_rel(name)}")
+            except Exception:
+                pass
+    return len(files)
 
 
 def _ev_fin_event(event_name):
@@ -5800,22 +14666,267 @@ def _ev_save_regular_pw(d):
     _save_json(REGULAR_FILE, d)
 
 
+def _link_profile_ensure_member(name, phone, *, league="", unit="",
+                               login_id="", password="", kind="mentor"):
+    """[요구 2026-11-04] 비인가 멘토·페런츠 → **실제 일반회원 계정 생성**.
+
+    ## 실제 사고
+     보고: "멘토 등록하고 이름+전화번호 기입하면 자동으로 회원가입이 되어야
+           하는데, 오류가 나고 있음"
+     시트는 "아이디: 01046236587 / 비밀번호: 6587!@@" 를 안내했지만,
+     계정은 `link_profiles.json` 에만 기록되고 `members` 명단에는 아무 것도
+     생기지 않았다. 그런데 로그인 검증(`_guest_verify`)은 `members` 중
+     `isRegular` 인 사람만 찾는다 → **안내한 아이디로 로그인 불가**.
+
+    ## 규칙
+     · id = 'reg_<전화번호>'  — 전화번호가 사실상의 유일 키(중복 방지).
+     · 이미 같은 전화번호의 일반회원이 있으면 새로 만들지 않고 그 카드를 쓴다.
+     · approvalStatus='pending' → 통합승인관리 큐 + 관리자 알림(신규 가입과 동일).
+     · 반환: 생성/재사용한 회원 dict (실패 시 None).
+    """
+    ph = re.sub(r"[^0-9]", "", str(phone or ""))
+    if not ph or len(ph) < 7:
+        return None
+    nm = str(name or "").strip() or ("멘토 " + ph[-4:])
+    lid = re.sub(r"[^0-9]", "", str(login_id or "")) or ph
+    pw = str(password or "").strip() or (_ev_phone_last4(ph) + "!@@")
+    now = _now_stamp()
+    with _MEMBER_WRITE_LOCK:
+        members = _load_json(DB_FILE, [])
+        if not isinstance(members, list):
+            members = []
+        # ① 이미 그 전화번호의 일반회원이 있으면 재사용(중복 신원 방지).
+        for m in members:
+            if not isinstance(m, dict) or not m.get("isRegular"):
+                continue
+            mp = re.sub(r"[^0-9]", "", str(
+                m.get("accessPhone") or m.get("phone") or ""))
+            if mp and mp == ph:
+                return {
+                    "id": str(m.get("id", "")),
+                    "name": str(m.get("name", "")),
+                    "phone": ph,
+                    "loginId": str(m.get("loginId", "") or ph),
+                    "password": str(m.get("personalPassword", "") or pw),
+                    "existing": True,
+                }
+        item = {
+            "id": "reg_" + ph,
+            "number": "",
+            "name": nm[:40],
+            "nameEn": "",
+            "corps": "tsak",
+            "league": str(league or "")[:60],
+            "unit": str(unit or "")[:80],
+            "regLeague": str(league or "")[:60],
+            "regUnit": str(unit or "")[:80],
+            "phone": ph,
+            "accessPhone": ph,
+            "isRegular": True,
+            "approvalStatus": "pending",
+            "approvalAt": now,
+            "personalPassword": str(pw).replace("!@@", "") or _ev_phone_last4(ph),
+            "privacyAgreed": True,
+            "privacyAgreedAt": now,
+            "privacyAgreedBy": "link-profile(%s)" % kind,
+            "mentors": [], "parents": [], "mentees": [], "children": [],
+            "feeYears": {}, "eventAttend": {},
+            "createdAt": now,
+            "updatedAt": int(datetime.datetime.now().timestamp() * 1000),
+            "linkApprovalStatus": "",
+            "linkRequestSource": "",
+            # 이 계정이 어디서 만들어졌는지 추적(멘토/페런츠 자동가입).
+            "registrationSource": "link_profile:%s" % kind,
+        }
+        members.append(item)
+        _save_json(DB_FILE, members)
+        try:
+            _touch_meta({"count": len(members), "updatedBy": "link-profile"})
+        except Exception:
+            pass
+        # 로그인 비번 저장소에도 등록(비번 '뒤4자리' 규칙과 일치).
+        try:
+            pws = _ev_load_regular_pw()
+            if not isinstance(pws, dict):
+                pws = {}
+            pws[ph] = _ev_phone_last4(ph)
+            _ev_save_regular_pw(pws)
+        except Exception:
+            pass
+        # 관리자 알림 — 신규 가입과 같은 큐로 보낸다.
+        try:
+            _notify_admin(
+                "join",
+                "새 회원가입 — %s" % nm,
+                "%s님이 %s(으)로부터 자동 가입했습니다. 승인 대기 중입니다." % (
+                    nm, "멘토" if kind == "mentor" else "페런츠"),
+                category="회원가입",
+                author=nm,
+                phone=ph,
+                memberId=item["id"],
+            )
+        except Exception:
+            pass
+        return {
+            "id": item["id"],
+            "name": item["name"],
+            "phone": ph,
+            "loginId": lid,
+            "password": pw,
+            "existing": False,
+        }
+
+
+def _link_apply_mentor_links(profile, member_rec):
+    """[요구 2026-11-04] 비인가 멘토·페런츠 자동가입 → **멘티/자녀 양방향 연동**.
+
+    ## 실제 사고
+     보고: "멘토로 등록되어 신규회원으로 가입되면 멘티회원이 자동으로 등록되어야
+           하는데 연동이 자동으로 되지 않는 버그 있음"
+     화면(선영진 #01046236587)에는 "멘티 양다솜 #1346" 이 보이지만
+     **선영진 레코드의 mentees 는 []** 였다. 화면은 link_profiles 키
+     ('멘토:<멘티번호>')로 상대를 찾아 보여줄 뿐, 실제 연결이 아니었다.
+
+    ## 원인
+     ① 멘토의 link_profiles 키 번호는 **멘티(본인) 번호**다.
+        (예: 양다솜 #1346 의 멘토 선영진 → 키 `멘토:1346`)
+     ② 그래서 멘토 자신은 `mentees` 를 채울 근거가 없었다 —
+        자기 계정이 누구를 배출했는지 아무 데도 기록되지 않았다.
+
+    ## 규칙
+     · 프로필의 `number`(= 멘티/자녀 번호)를 가진 회원을 찾아
+         멘티 쪽: mentors 에 **멘토의 전화번호**(계정 아이디) 추가
+         멘토 쪽: mentees 에 **멘티의 인가번호** 추가
+       (페런츠는 parents ↔ children)
+     · 자기 자신은 넣지 않는다(자기참조 방지).
+     · approvalStatus 는 건드리지 않는다 — 승인은 계정 승인에서 한 번만 받는다.
+     · 반환: 실제로 바뀐 건수.
+    """
+    try:
+        kind = str(profile.get("kind") or "mentor")
+        if kind not in ("mentor", "parent"):
+            kind = "mentor"
+        mentee_no = re.sub(r"[^0-9]", "", str(profile.get("number", "") or ""))
+        mentor_id = re.sub(r"[^0-9]", "", str(profile.get("loginId", "") or ""))
+        if not mentor_id:
+            mentor_id = re.sub(r"[^0-9]", "", str(profile.get("phone", "") or ""))
+        if not mentee_no or not mentor_id:
+            return 0
+        if mentor_id == mentee_no:
+            return 0                       # 같은 번호면 자기참조이므로 중단
+        self_field = "mentees" if kind == "mentor" else "children"
+        peer_field = "mentors" if kind == "mentor" else "parents"
+        changed = 0
+        # [요구 2026-11-04] 값은 **상대 인물의 표준 코드**로 저장한다.
+        #   · 멘티 카드의 mentors  ← 멘토의 표준코드(인가자=인가번호 / 비인가=전화번호)
+        #   · 멘토 카드의 mentees  ← 멘티의 표준코드
+        #   사람 기준으로 비교하므로 전화번호·인가번호 표기가 섞여도
+        #   자기참조·중복이 생기지 않는다.
+        try:
+            _pdx = _link_person_index()
+        except Exception:
+            _pdx = {"persons": [], "alias": {}, "byCanon": {}}
+        _mcode = _link_canon_code(_pdx, mentor_id)
+        _ecode = _link_canon_code(_pdx, mentee_no)
+        _mcanon = _link_canon_of(_pdx, mentor_id)
+        _ecanon = _link_canon_of(_pdx, mentee_no)
+        if _mcanon and _ecanon and _mcanon == _ecanon:
+            return 0                       # 같은 사람 → 자기참조
+        with _MEMBER_WRITE_LOCK:
+            members = _load_json(DB_FILE, [])
+            if not isinstance(members, list):
+                return 0
+            # ① 멘티/자녀 카드 → mentors/parents 에 멘토의 계정 아이디
+            mentee = None
+            for m in members:
+                if not isinstance(m, dict):
+                    continue
+                if re.sub(r"[^0-9]", "", str(m.get("number", ""))) == mentee_no:
+                    mentee = m
+                    break
+            if mentee is not None:
+                cur = mentee.get(peer_field)
+                if not isinstance(cur, list):
+                    cur = []
+                have = {re.sub(r"[^0-9]", "", str(x)) for x in cur}
+                if _mcode not in have:
+                    cur.append(_mcode)
+                    mentee[peer_field] = cur
+                    changed += 1
+            # ② 멘토 카드(자동 생성된 일반회원) → mentees/children 에 멘티 코드
+            if isinstance(member_rec, dict) and member_rec.get("id"):
+                for m in members:
+                    if not isinstance(m, dict):
+                        continue
+                    if str(m.get("id", "")) != str(member_rec.get("id")):
+                        continue
+                    cur2 = m.get(self_field)
+                    if not isinstance(cur2, list):
+                        cur2 = []
+                    if _ecode not in {re.sub(r"[^0-9]", "", str(x))
+                                      for x in cur2}:
+                        cur2.append(_ecode)
+                        m[self_field] = cur2
+                        changed += 1
+                    break
+            if changed:
+                _save_json(DB_FILE, members)
+                try:
+                    _touch_meta({"updatedBy": "link-profile-auto"})
+                except Exception:
+                    pass
+        return changed
+    except Exception as _e:
+        print("[link/profile] 자동 연동 실패: %s" % _e)
+        return 0
+
+
 
 # ============ 행사 참석자 ↔ 회원 연동 · 접근 로그 ============
 def _ev_members():
     return _load_json(DB_FILE, [])
 
 
-def _ev_member_by_ident(ident):
-    """인가번호 또는 전화번호로 회원 1명 찾기."""
-    d = re.sub(r"[^0-9]", "", str(ident or ""))
-    if not d:
+def _ev_member_by_ident(ident, corps=None):
+    """인가번호 또는 전화번호로 회원 1명 찾기 — **소속(corps)을 구분**한다.
+
+    ## [버그 수정 2026-10-29] 범 75호 ↔ 은하 G75 가 같은 사람이 되던 문제
+    종전에는 번호에서 숫자만 뽑아(`G75` → `75`) 범 명단(DB_FILE)만 뒤졌다.
+      · 은하 G75(김건우) 는 **조회 대상에 아예 없었고**
+      · 남은 '75' 가 범 75호(이항복)와 일치해 **이항복이 반환**됐다.
+    그래서 은하 G75 의 개인카드에 이항복의 후원이 표시됐다.
+
+    수정: 접두어를 보존한 키(`_ck`)로 비교하고, 은하 접두어가 있으면
+    은하 명단(EUNHA_DB_FILE)을 먼저 본다. `corps` 를 명시하면 그 명단만 본다.
+
+    [corps] = 'tsak' | 'eunha' | None(자동)
+    """
+    raw = str(ident or "").strip()
+    if not raw:
         return None
-    for m in _ev_members():
-        if re.sub(r"[^0-9]", "", str(m.get("number", ""))) == d:
-            return m
-        if re.sub(r"[^0-9]", "", str(m.get("phone", ""))) == d:
-            return m
+    want_eunha = _ck_is_eunha(raw)
+    if corps in ("tsak", "eunha"):
+        want_eunha = (corps == "eunha")
+    key = _ck(raw)              # 'G75' 는 'G75' 로 유지, '75' 는 '75'
+    digits = _ck_num(raw)       # 전화번호 대조용
+
+    # ① 은하 접두어 → 은하 명단만. ② 그 외 → 범 명단 먼저(레거시 호환).
+    sources = []
+    if want_eunha:
+        sources = [_load_json(EUNHA_DB_FILE, [])]
+    else:
+        sources = [_ev_members(), _load_json(EUNHA_DB_FILE, [])]
+
+    for rows in sources:
+        for m in (rows or []):
+            if not isinstance(m, dict):
+                continue
+            mno = str(m.get("number", "") or "")
+            # 접두어 보존 비교 — 은하 'G75' 와 범 '75' 는 절대 같아지지 않는다.
+            if key and _ck(mno) == key:
+                return m
+            if digits and _ck_num(str(m.get("phone", "") or "")) == digits:
+                return m
     return None
 
 
@@ -5856,6 +14967,50 @@ def _member_by_ident_any(ident):
     raw = str(ident or "").strip()
     if not raw:
         return None, raw
+
+    # ══════════════════════════════════════════════════════════════════════
+    # [최우선 규칙 2026-10-29] **접두어가 곧 신원이다.**
+    #
+    # ## 실제 사고 (요구: "수동입력시 은하10 을 입력하면 또 범10이 검색됨")
+    #  범과 은하는 번호 공간이 겹친다(둘 다 1~165). 종전 코드는 입력에서
+    #  **숫자만 뽑아**(`은하10` → `10`) 범 명단을 먼저 훑고 첫 일치에서
+    #  반환했다. 그래서 '은하10'(이승용) 을 넣으면 '범10'(이순욱) 이 나왔다.
+    #  은하 표기가 '은하'/'갤럭시'/'G'/'g' 무엇이든 결과는 늘 범이었다.
+    #
+    # ## 고친 규칙
+    #  은하 표기가 **있으면 은하 명단만** 본다. 범 명단은 아예 열지 않는다.
+    #  (못 찾으면 '없음'이 정답이다. 남의 카드를 여는 것보다 낫다)
+    #  은하 표기가 없을 때만 범 명단을 본다.
+    # ══════════════════════════════════════════════════════════════════════
+    _raw_low = raw.lower()
+    _eunha_input = (
+        _ck_is_eunha(raw)
+        or _raw_low.startswith(("은하", "갤럭시", "galaxy", "eunha"))
+        or raw.strip().startswith("은하")
+    )
+    if _eunha_input:
+        _ed = _ck_num(raw)
+        if not _ed:
+            return None, raw
+        # ① 은하 명단에서 번호 일치 → 즉시 반환(범 명단 절대 조회 안 함).
+        try:
+            _em = _eunha_member_by_number(_ed)
+        except Exception:
+            _em = None
+        if _em:
+            return _em, str(_em.get("number") or ("G" + _ed))
+        # ② 은하 명단에 없을 때만 전화번호 일치까지 허용(같은 은하 명단 내).
+        try:
+            for _m in (_load_json(EUNHA_DB_FILE, []) or []):
+                _ph = re.sub(r"[^0-9]", "", str(
+                    _m.get("phone") or _m.get("accessPhone") or ""))
+                if _ph and _ph == _ed:
+                    return _m, str(_m.get("number") or raw)
+        except Exception:
+            pass
+        # ③ 은하로 지정됐는데 없으면 **범으로 새지 않는다.**
+        return None, raw
+
     # 'tiger' 접두어 제거(하위호환: 접두어 없는 입력도 그대로 사용).
     bare = _strip_login_prefix(raw)
     low = raw.lower()
@@ -5866,6 +15021,9 @@ def _member_by_ident_any(ident):
     except Exception:
         members = []
     for m in members:
+        # 범 명단 조회에서는 **은하 회원을 절대 반환하지 않는다**.
+        if str(m.get("corps") or "").lower() == "eunha":
+            continue
         no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
         # 표준 접두어 ID('tiger<번호>')와의 대조.
         canon = _login_id_of(m.get("number", ""))
@@ -5886,13 +15044,30 @@ def _member_by_ident_any(ident):
         ph = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
         if ph and ph == digits:
             return m, str(m.get("number", "") or raw)
-    # 은하스카우트 명단에서도 확인
-    try:
-        em = _eunha_member_by_number(digits)
-    except Exception:
-        em = None
-    if em:
-        return em, digits
+    # 은하스카우트 명단 폴백 — **표준 접두어 ID 로는 절대 넘어가지 않는다.**
+    #
+    # ## [버그 수정 2026-10-26] 은하번호 혼동 방지
+    #  범스카우트 인가번호와 은하 인가번호는 숫자가 겹친다(범 43 ↔ 은하 43).
+    #  종전에는 위 범 명단 조회가 실패하면 **번호만으로** 은하 명단을 뒤졌기
+    #  때문에, 표준 ID(`tiger43` = 범 43)로 로그인해도 범 명단에 없으면
+    #  **은하 43호**가 반환될 수 있었다. QR '개인정보 수정'에서 엉뚱한 사람의
+    #  정보가 열리는 심각한 사고로 이어진다.
+    #
+    #  규칙:
+    #   · ID 가 'tiger' 접두어(표준 범스카우트 ID)면 은하 폴백 금지.
+    #   · 은하는 '은하<번호>' 또는 corps=eunha 로만 도달한다.
+    #   · 원시 숫자 입력도 여기서는 은하로 넘기지 않는다(_verify 의 personal
+    #     분기가 은하를 별도 처리하므로 이 폴백은 불필요해졌다).
+    if _strip_login_prefix(raw) != raw:
+        return None, raw
+    if str(raw).strip().startswith("은하"):
+        try:
+            em = _eunha_member_by_number(digits)
+        except Exception:
+            em = None
+        if em:
+            return em, digits
+        return None, raw
     return None, raw
 
 
@@ -5928,19 +15103,44 @@ def _ev_member_set_event(ident, event_name, value=True):
     return hit
 
 
-def _ev_link_attendees_to_profiles(entries, event_name):
-    """참가자 목록을 회원 프로필(eventAttend)에 강제 연동한다.
+def _ev_profile_ident_of(m):
+    """회원 dict → 프로필 연동용 식별자 집합(인가번호/전화/로그인ID, 숫자만)."""
+    out = set()
+    for k in ("number", "phone", "loginId", "accessPhone"):
+        v = re.sub(r"[^0-9]", "", str(m.get(k, "") or ""))
+        if v:
+            out.add(v)
+    return out
 
-    인가자·비인가자 모두 대상:
-      · 인가번호/전화 일치 회원이 있으면 eventAttend[event_name]=True 로 기록.
-      · 비인가자(전화만 있고 프로필이 없는 경우)는 일반회원(서포터즈) 계정을
-        보장한 뒤 기록한다(_ev_guest_ensure_account_async 재사용).
-    개인 프로필의 "내 행사" 및 참가 이력에 자동 반영된다.
-    반환: 연동된 식별자 수.
+
+def _ev_link_attendees_to_profiles(entries, event_name):
+    """참가자 목록을 회원 프로필(eventAttend)에 **양방향** 연동한다.
+
+    ## 왜 삭제(False)까지 여기서 처리하나 — 버그 수정
+      종전에는 추가(True)만 연동했다. 그래서 행사에서 참가자를 **삭제해도**
+      개인정보카드의 '행사참가 이력'에는 그대로 남았다.
+      (사용자 지적: "참가자 삭제시 개인정보카드와 연계해서 참가행사에서도
+       삭제하도록 해줘")
+
+    ## 동작
+      1) 명단에 있는 사람 → eventAttend[행사명] = True   (추가)
+      2) 명단에서 빠진 사람 중 **그 행사에 실제로 참석 기록이 있던** 회원
+         → eventAttend[행사명] = False                     (삭제)
+
+      (2)는 "이 행사에 참가한 적 있는 사람"만 대상으로 한다. 그래야
+      애초에 참가한 적 없는 수백 명의 eventAttend 에 False 를 채워 넣지 않는다.
+
+    ## False 로 두는 이유 (키 삭제가 아니라)
+      개인정보카드는 `attend == true` 인 행사만 노출한다
+      (member_detail_screen.dart 의 _eventSection). False 면 목록에서 사라진다.
+      동시에 '불참' 이력으로는 남아 감사(audit) 추적이 가능하다.
+
+    반환: (추가된 수, 삭제된 수)
     """
     title = str(event_name or "").strip()
     if not title:
-        return 0
+        return (0, 0)
+
     idents = []
     guests = []
     for a in entries or []:
@@ -5953,19 +15153,77 @@ def _ev_link_attendees_to_profiles(entries, event_name):
         # 인가번호(number)가 비어 있으면 비인가(전화만)로 판단 → 계정 보장.
         if not re.sub(r"[^0-9]", "", str(a.get("number", "") or "")):
             guests.append((ident, str(a.get("name", "") or "")))
-    hit = 0
+
+    # ── 1) 명단에 있는 사람 → True ────────────────────────────────────────
+    added = 0
     if idents:
         try:
-            hit = _ev_member_set_event_batch(idents, title, True)
+            added = _ev_member_set_event_batch(idents, title, True)
         except Exception:
-            hit = 0
+            added = 0
+
     # 전화만 있는 비인가자는 계정이 없으면 생성 후 연동(백그라운드).
     for phone, name in guests:
         try:
             _ev_guest_ensure_account_async(phone, name, title)
         except Exception:
             pass
-    return hit
+
+    # ── 2) 명단에서 빠진 사람 → False ─────────────────────────────────────
+    removed = 0
+    try:
+        removed = _ev_unlink_missing_attendees(idents, title)
+    except Exception:
+        removed = 0
+
+    return (added, removed)
+
+
+def _ev_unlink_missing_attendees(keep_idents, event_name):
+    """명단에서 빠진 회원의 eventAttend[행사명] 을 False 로 되돌린다.
+
+    [keep_idents] 는 **현재 명단에 남아 있는** 식별자(숫자 문자열) 목록.
+    그 목록에 없으면서 eventAttend[행사명] == True 인 회원만 False 로 바꾼다.
+    → 참가한 적 없는 회원에게 False 를 뿌리지 않는다(불필요한 쓰기 방지).
+
+    반환: 실제로 변경된 회원 수.
+    """
+    title = str(event_name or "").strip()
+    if not title:
+        return 0
+    keep = {re.sub(r"[^0-9]", "", str(i or "")) for i in keep_idents or []}
+    keep.discard("")
+
+    members = _ev_members()
+    changed = []
+    for i, m in enumerate(members):
+        ev = m.get("eventAttend")
+        if not isinstance(ev, dict):
+            continue
+        # 이 행사에 '참가(True)' 기록이 있는 회원만 대상.
+        if ev.get(title) is not True:
+            continue
+        # 현재 명단에 남아 있으면 건드리지 않는다.
+        if _ev_profile_ident_of(m) & keep:
+            continue
+        ev = dict(ev)
+        ev[title] = False
+        m["eventAttend"] = ev
+        members[i] = m
+        changed.append(m)
+
+    if not changed:
+        return 0
+    try:
+        _ev_backup_members()
+    except Exception:
+        pass
+    _save_json(DB_FILE, members)
+    try:
+        _touch_meta({"count": len(members), "updatedBy": "event-unlink"})
+    except Exception:
+        pass
+    return len(changed)
 
 
 def _ev_member_set_event_batch(idents, event_name, value=True, members=None,
@@ -6004,12 +15262,32 @@ def _ev_member_set_event_batch(idents, event_name, value=True, members=None,
 
 
 def _ev_backup_members():
-    """members.json 백업 1회(쓰기 전 원본 보존)."""
+    """members.json 백업 1회(쓰기 전 원본 보존).
+
+    ── [속도 turn73] NAS 왕복 3회 → 1회 ────────────────────────────────────
+      종전 구현은 `NAS.exists()` + `NAS.read()` + `NAS.write()` 로 **왕복 3회**
+      였다. NAS 왕복이 1회 0.5~0.7초라 백업만으로 1.5~2초가 사라졌고, 이게
+      '참가자 저장 8초'의 한 축이었다.
+      백업 내용은 **어차피 직전 원본 전체**이므로, 이미 메모리 캐시(또는 로컬
+      미러)에 있는 사본을 그대로 쓰면 된다. → 읽기 2회를 없애고 쓰기 1회만.
+      (캐시·미러가 모두 없을 때만 NAS 읽기로 폴백)
+    """
     try:
-        if NAS.exists(DB_FILE):
-            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            NAS.write(f"{BASE}/backups/members_{stamp}.json",
-                      NAS.read(DB_FILE).encode("utf-8"))
+        blob = None
+        with _JSON_CACHE_LOCK:
+            ent = _JSON_CACHE.get(DB_FILE)
+        if ent is not None and ent[0] is not None:
+            blob = json.dumps(ent[0], ensure_ascii=False, indent=1)
+        if blob is None:
+            m = _mirror_read(DB_FILE)
+            if m is not None:
+                blob = json.dumps(m, ensure_ascii=False, indent=1)
+        if blob is None:
+            if not NAS.exists(DB_FILE):
+                return
+            blob = NAS.read(DB_FILE)
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        NAS.write(f"{BASE}/backups/members_{stamp}.json", blob.encode("utf-8"))
     except Exception:
         pass
 
@@ -6245,11 +15523,67 @@ def _ev_guest_ensure_account_async(phone, name, event_name):
             with _MEMBER_WRITE_LOCK:
                 members = _ev_members()
                 found = None
+                # (1차) 전화번호 완전 일치 — accessPhone/phone/loginId 중 하나라도.
                 for m in members:
-                    if re.sub(r"[^0-9]", "", str(
-                            m.get("accessPhone") or m.get("phone") or "")) == d:
+                    if d and d in (
+                        re.sub(r"[^0-9]", "", str(m.get("accessPhone") or "")),
+                        re.sub(r"[^0-9]", "", str(m.get("phone") or "")),
+                        re.sub(r"[^0-9]", "", str(m.get("loginId") or "")),
+                    ):
                         found = m
                         break
+                # (2차) 전화번호 없는 동명(同 name) 일반회원 보완 —
+                #   과거 데이터(전화 미기록 guest)로 인한 중복 아이디 생성을 막고,
+                #   전화번호를 채워 동일인으로 통합한다(요구: 같은 사람 통합).
+                if not found and nm:
+                    for m in members:
+                        if (str(m.get("name") or "").strip() == nm
+                                and m.get("isRegular")
+                                and not re.sub(r"[^0-9]", "",
+                                               str(m.get("accessPhone") or m.get("phone") or ""))):
+                            found = m
+                            break
+                # (3차) [버그수정 2026-11-04 / turn 50] 전화번호가 비어 있는
+                #   **인가자 카드**에 전화번호를 채워 넣고 그 카드를 재사용한다.
+                #
+                #   ## 실제 사고
+                #    보고: *"김종선 카드에서 멘티를 등록하면 박도현카드에서 김종선
+                #          이름은 보이는데, 클릭하면 개인정보 창이 아니라 이름/전화
+                #          입력 창이 나옴"*
+                #    실측(운영 DB): 인가자 카드 `m222` 김종선은 phone 이 **빈칸**,
+                #    그래서 행사 참석 QR 로 들어온 같은 사람이 (3차) 매칭에 걸리지
+                #    않고 `guest_900001` 이라는 **일반회원 카드를 한 장 더** 얻었다.
+                #    결과적으로 김종선이 두 신원(#222 / #900001)으로 갈라져
+                #    mentors=['900001'] 같은 임시 연결이 생겼다.
+                #
+                #   ## 규칙
+                #    · `isRegular` 가 **아닌**(= 인가자) 카드만 대상.
+                #    · 동명이인이 있으면 **전화번호가 비어 있는 카드가 정확히 1장**일
+                #      때만 채운다(모호하면 건드리지 않고 종전대로 신규 생성).
+                #    · 기존 값은 절대 덮어쓰지 않는다(빈 칸만 채움).
+                if not found and nm and d:
+                    _blank = []
+                    _any_phone = False
+                    for m in members:
+                        if str(m.get("name") or "").strip() != nm:
+                            continue
+                        if m.get("isRegular"):
+                            continue
+                        _mp = re.sub(r"[^0-9]", "", str(
+                            m.get("accessPhone") or m.get("phone") or ""))
+                        if _mp:
+                            _any_phone = True
+                        else:
+                            _blank.append(m)
+                    if _blank and not _any_phone and len(_blank) == 1:
+                        _hit = _blank[0]
+                        _hit["phone"] = d
+                        if not str(_hit.get("accessPhone") or "").strip():
+                            _hit["accessPhone"] = d
+                        found = _hit
+                        print("[qr/join] 인가자 카드(#%s %s)에 전화번호 %s 를 채워 "
+                              "중복 일반회원 생성을 막았습니다"
+                              % (_hit.get("number"), nm, d))
                 if not found:
                     existing = {re.sub(r"[^0-9]", "", str(x.get("number", "")))
                                 for x in members}
@@ -6275,12 +15609,32 @@ def _ev_guest_ensure_account_async(phone, name, event_name):
                     }
                     members.append(found)
                 else:
-                    if not found.get("isRegular"):
+                    # [버그수정 2026-11-04 / turn 50] **인가자 카드는 일반회원으로
+                    #  강등(승격)시키지 않는다.** 인가자는 `isRegular=False` 가
+                    #  정본이며(비밀번호·로그인 경로가 다름), 여기서 True 로 바꾸면
+                    #  인가자 카드가 통째로 일반회원이 되어 명부·통계가 틀어진다.
+                    #  (3차 매칭으로 인가자 카드를 재사용하는 경로가 새로 생겼으므로
+                    #   반드시 필요한 가드다.)
+                    _is_cred_card = bool(
+                        re.sub(r"[^0-9]", "", str(found.get("number") or ""))
+                    ) and not found.get("isRegular")
+                    if not found.get("isRegular") and not _is_cred_card:
                         found["isRegular"] = True
-                    if not found.get("loginId"):
-                        found["loginId"] = d
-                    if not found.get("accessPhone"):
-                        found["accessPhone"] = d
+                    if _is_cred_card:
+                        # 인가자 카드 — 전화번호만 보완하고 일반회원용 필드는 손대지 않는다.
+                        if not str(found.get("phone") or "").strip():
+                            found["phone"] = d
+                        if not str(found.get("accessPhone") or "").strip():
+                            found["accessPhone"] = d
+                    else:
+                        if not found.get("loginId"):
+                            found["loginId"] = d
+                        if not found.get("accessPhone"):
+                            found["accessPhone"] = d
+                        if not found.get("phone"):
+                            found["phone"] = d
+                        if not str(found.get("personalPassword") or ""):
+                            found["personalPassword"] = _ev_phone_last4(d)
                 if event_name:
                     ev = found.get("eventAttend")
                     if not isinstance(ev, dict):
@@ -6352,19 +15706,464 @@ def _ev_access_map(eid):
     return out
 
 
+def _ev_cred_lookup():
+    """회원 DB → (인가자맵 {숫자:이름}, 일반회원 식별자집합).
+
+    행사 열람자가 '인가자'인지 판별하기 위한 1회성 조회 테이블.
+    """
+    cred, reg = {}, set()
+    try:
+        members = _ev_members()
+    except Exception:
+        return cred, reg
+    for m in members:
+        nm = str(m.get("name", "") or "")
+        isr = bool(m.get("isRegular"))
+        for k in ("number", "phone"):
+            d = re.sub(r"[^0-9]", "", str(m.get(k, "") or ""))
+            if not d:
+                continue
+            if isr:
+                reg.add(d)
+            else:
+                cred[d] = nm
+    return cred, reg
+
+
+def _ev_credential_viewers(e, cred=None, reg=None):
+    """[요구] 이 행사를 '인가자'가 몇 명 열람했는지 집계.
+
+    accessLog 의 식별자(인가번호/전화)를 회원 DB 와 대조해 일반회원을 제외한
+    인가자(범/은하)만 고유 인원으로 센다. 같은 사람의 반복 접속은 1명.
+    """
+    if not isinstance(e, dict):
+        return {"count": 0, "viewers": []}
+    logs = e.get("accessLog", []) or []
+    if not logs:
+        return {"count": 0, "viewers": []}
+    if cred is None or reg is None:
+        cred, reg = _ev_cred_lookup()
+    seen = {}
+    for it in logs:
+        ident = re.sub(r"[^0-9]", "",
+                       str(it.get("id", "") or it.get("number", "") or ""))
+        if not ident or ident in seen:
+            continue
+        # 인가자로 확인된 식별자만 집계(일반회원/미가입자는 제외).
+        if ident not in cred:
+            continue
+        seen[ident] = {
+            "id": ident,
+            "name": cred.get(ident) or str(it.get("name", "") or ""),
+            "at": str(it.get("at", "") or ""),
+        }
+    out = list(seen.values())
+    out.sort(key=lambda x: x.get("at", ""), reverse=True)
+    return {"count": len(out), "viewers": out}
+
+
 # ============ QR 행사 참여 (스캔 → 참가 등록) ============
+def _ev_norm_contacts(raw):
+    """담당자 연락처 목록 정규화 — [{name, phone}] 로 표준화.
+
+    [요구] 행사 개설·수정 시 담당자 번호를 (복수) 입력하고, 참가신청
+    페이지에 '문의하기' 버튼(담당자 번호 노출)을 제공한다.
+    문자열/숫자 단독 입력도 허용해 dict 로 감싼다.
+    """
+    out = []
+    if isinstance(raw, str):
+        # 쉼표/줄바꿈으로 구분된 문자열도 허용.
+        parts = re.split(r"[,;\n]", raw)
+        raw = [{"name": "", "phone": p} for p in parts]
+    if not isinstance(raw, list):
+        return out
+    for it in raw[:20]:
+        if isinstance(it, dict):
+            nm = str(it.get("name", "") or "").strip()[:40]
+            ph = re.sub(r"[^0-9]", "", str(it.get("phone", "") or ""))
+        else:
+            nm = ""
+            ph = re.sub(r"[^0-9]", "", str(it or ""))
+        if ph:
+            out.append({"name": nm, "phone": ph})
+    return out
+
+
+def _ev_dist_dir(year, title):
+    """참가신청시 배포용 자료 폴더 — 기획서(plan) 폴더 하위."""
+    return f"{_ev_sub_dir(year, title, 'plan')}/참가신청시 배포용"
+
+
+def _ev_dist_dirs_all(year, title):
+    """'참가신청시 배포용' 폴더 후보 경로 전체.
+
+    ⚠️ 과거 이벤트 '이름 변경' 과정에서 `행사관리/<연도>/<접두사 2026 제목>` 처럼
+    실제 폴더가 남는 경우가 있다. 배포용 자료가 한쪽에만 들어가 '1개만 노출'
+    되는 문제를 막기 위해, 해당 연도의 이벤트 폴더 중 '제목을 포함'하는 폴더를
+    모두 찾아 그 안의 배포용 폴더를 합쳐서 본다.
+    """
+    y = _ev_safe(year)
+    t = _ev_safe(title).strip()
+    dirs = []
+    cur = _ev_dist_dir(y, t)
+    dirs.append(cur)
+    # 같은 연도(그리고 이전 연도) 아래 이벤트 폴더를 스캔해 제목과 일치하는 폴더 추가.
+    def _norm(s):
+        return re.sub(r"[\s_\-·.]+", "", str(s or "")).lower()
+    tn = _norm(t)
+    if not tn:
+        return dirs
+    for yy in [y, str(int(y) - 1) if str(y).isdigit() else y]:
+        yroot = f"{EVENT_DIR}/{yy}"
+        # [고속화] 연도 폴더 목록은 거의 변하지 않으므로 디스크 캐시(6h).
+        files = _ev_meta_cached(
+            "evyear|%s" % yy,
+            lambda yy=yy: (NAS.list(f"{EVENT_DIR}/{yy}") or {}).get("files") or [])
+        for f in files:
+            if not f.get("isdir"):
+                continue
+            nm = str(f.get("name", ""))
+            if _norm(nm) == tn or (tn in _norm(nm)) or (_norm(nm) in tn):
+                cand = f"{yroot}/{nm}/01_계획서_(업로드가능)/참가신청시 배포용"
+                if cand not in dirs:
+                    dirs.append(cand)
+    return dirs
+
+
+def _ev_dist_all_files(year, title):
+    """배포용 자료 전체(후보 폴더 합집합, 이름 중복 제거) — 디스크 캐시."""
+    ck = "evdist|%s|%s" % (str(year), str(title))
+    return _ev_meta_cached(ck, lambda: _ev_dist_all_files_compute(year, title))
+
+
+def _ev_dist_all_files_compute(year, title):
+    dirs = _ev_dist_dirs_all(year, title)
+
+    def _scan(d):
+        try:
+            r = NAS.list(d)
+        except Exception:
+            return []
+        if not r.get("ok"):
+            return []
+        return [f for f in (r.get("files") or [])
+                if not f.get("isdir")]
+
+    out = {}
+    try:
+        if _in_meta_worker():
+            # 이미 메타 워커 안 — 병렬 제출하면 풀 중첩 교착 위험이 있어 직렬 처리.
+            results = [_scan(d) for d in dirs]
+        else:
+            results = (list(_EV_META_POOL_BG.map(_scan, dirs))
+                       if dirs else [])
+    except Exception:
+        results = [_scan(d) for d in dirs]
+    for files in results:
+        for f in files:
+            nm = str(f.get("name", ""))
+            if not nm or nm.startswith("."):
+                continue
+            if nm in out:
+                continue
+            out[nm] = {"name": nm, "size": int(f.get("size", 0) or 0),
+                       "ext": _ext_of(nm)}
+    return sorted(out.values(), key=lambda x: x["name"])
+
+
+# 배포용 자료 목록 캐시 — event/get 마다 NAS 왕복이 발생하지 않도록.
+_EV_DIST_CACHE = {}                  # (year,title) -> (ts, [files])
+_EV_DIST_TTL = 15.0
+_EV_DIST_LOCK = threading.Lock()
+
+
+def _ev_dist_invalidate(year, title):
+    with _EV_DIST_LOCK:
+        _EV_DIST_CACHE.pop((str(year), str(title)), None)
+    try:
+        _ev_meta_invalidate("evdist|%s|%s" % (str(year), str(title)))
+    except Exception:
+        pass
+
+
+def _ev_dist_files(year, title):
+    """참가신청 페이지에서 내려받을 '배포용' 자료 목록(공개 가능).
+
+    (요구) 이벤트 폴더가 이름 변경 잔재로 2개 존재해도 '모든' 배포용 자료를
+    노출한다 — 후보 폴더를 합집합으로 스캔. 영구 디스크 캐시(위 _ev_dist_all_files).
+    """
+    return _ev_dist_all_files(year, title)
+
+
+def _ev_map_query(title, place):
+    """지도 검색어 — '장소' 우선.
+
+    (버그수정) 종전에는 '행사명 + 장소'로 검색해 행사명이 섞여 엉뚱한
+    결과가 나왔다. 이제 장소가 있으면 장소만, 없으면 행사명으로 검색한다.
+    """
+    place = str(place or "").strip()
+    if place:
+        return place
+    return str(title or "").strip()
+
+
+def _ev_map_url(title, place, lat="", lng=""):
+    """카카오맵 **웹 지도** 링크.
+
+    (요구) 참가신청 화면에서 '카카오맵에서 보기'를 누르면 **카카오맵 앱이 곧바로
+    뜨지 않고**, 웹 지도(map.kakao.com)가 먼저 열려 위치를 확인한 뒤 사용자가
+    필요하면 앱으로 넘어가게 한다.
+    · 기존 `map.kakao.com/link/...` 는 **앱 딥링크**라 곧바로 앱이 실행됐다.
+    · 검색어(q)는 '장소' 우선(행사명이 섞이면 엉뚱한 곳이 잡힌다).
+    """
+    place_s = str(place or "").strip()
+    title_s = str(title or "").strip()
+    q = place_s or title_s
+    if not q:
+        # 이름이 없으면 좌표로 지도를 연다.
+        la = lo = None
+        try:
+            if str(lat).strip() not in ("", "None") and str(lng).strip() not in ("", "None"):
+                la = float(lat)
+                lo = float(lng)
+        except Exception:
+            la = lo = None
+        if la is not None and lo is not None:
+            q = f"{la},{lo}"
+    if not q:
+        return "https://map.kakao.com/"
+    return "https://map.kakao.com/?q=" + urllib.parse.quote(q)
+
+
+# ============================================================================
+# [행사 로딩 고속화] 영구 디스크 메타 캐시 + 부팅 예열
+# ----------------------------------------------------------------------------
+#  문제: 행사 폴더를 열 때마다 NAS(원격)를 5~10회 왕복(각 ~230ms, 계정당 직렬)
+#        하여 1~3초가 걸렸다("행사 창이 안 열림"). 이 캐시는 폴더 메타(파일목록·
+#        하위폴더·배포자료)를 디스크에 저장한다.
+#   · TTL(기본 6시간) 동안 NAS 왕복 0회 → 즉시 응답.
+#   · TTL 만료 후에도 **stale 값을 즉시 반환 + 백그라운드 갱신**(무중단).
+#   · 부팅 시 모든 행사 메타를 미리 계산(예열) → 첫 진입도 즉시.
+#   · 업로드/삭제/이름변경/회의록 저장 시 무효화(invalidate)한다.
+# ============================================================================
+_EV_META_DIR = os.path.join(STATE_ROOT, ".ev_meta_cache")
+try:
+    os.makedirs(_EV_META_DIR, exist_ok=True)
+except Exception:
+    pass
+_EV_META_MEM = {}                 # key -> (ts, value)
+_EV_META_LOCK = threading.Lock()
+_EV_META_REFRESHING = set()
+try:
+    # (버그 수정) 종전 6시간 → 90초. 사용자가 **PC·NAS 파일탐색기에서 직접**
+    #  폴더를 만들어 사진을 넣으면 서버 캐시가 갱신되지 않아 앱에는 옛 목록이
+    #  최대 7일(stale)까지 보였다. (요구: "나스 내에 있는 폴더내 사진이
+    #  보여지지 않음 / 직접 업로드 한 폴더가 보여지지 않는 버그")
+    #  파일 목록은 NAS list 1회라 비용이 낮다 → 짧게 가져가도 충분하다.
+    _EV_META_TTL = float(os.environ.get("TSAK_EV_META_TTL", "90"))
+except Exception:
+    _EV_META_TTL = 21600.0
+# (버그 수정) 종전 7일 → 600초. '즉시 응답'을 위해 옛 값을 계속 쓰던 탓에
+#  외부에서 올린 파일이 앱에 영영 안 나타났다. 이제 10분이 지나면 새로 읽는다.
+_EV_META_STALE = 600.0            # 10분까지는 stale 값이라도 즉시 사용
+_EV_META_POOL = ThreadPoolExecutor(max_workers=8)
+
+# [교착 방지] 메타 계산은 **풀 스레드 안에서 다시 풀에 제출**되는 구조가 있다
+#  (`_ev_meta_cached` 안에서 `_ev_dist_all_files` → `_ev_meta_cached` → ...).
+#  같은 풀(8개)에 중첩 제출하면 서로의 완료를 기다리다 **영원히 멈춘다**.
+#  실측: ATAS 신규 행사(캐시 없음)에서 /api/event/get 이 무한 대기 → 앱은
+#  스피너만 표시("새로 만든 행사 접속 안 됨"). 반면 캐시된 행사는 2ms 에 응답.
+#  → 메타 계산 전용 풀을 **넉넉히** 두고, 중첩 제출을 감지해 즉시 실행한다.
+_EV_META_POOL_BG = ThreadPoolExecutor(max_workers=24)
+_EV_META_TLS = threading.local()
+
+
+def _in_meta_worker():
+    """현재 스레드가 메타 계산 풀에서 실행 중인지."""
+    return bool(getattr(_EV_META_TLS, "busy", False))
+
+
+class _MetaBusy:
+    """메타 계산 구간 표시(중첩 제출 감지용)."""
+    def __enter__(self):
+        self._prev = getattr(_EV_META_TLS, "busy", False)
+        _EV_META_TLS.busy = True
+        return self
+
+    def __exit__(self, *a):
+        _EV_META_TLS.busy = self._prev
+        return False
+
+
+def _meta_run(produce):
+    """메타 계산 실행 — 풀 안에서 부르면 즉시, 밖이면 풀에 맡긴다."""
+    if _in_meta_worker():
+        return produce()
+    with _MetaBusy():
+        return produce()
+
+
+
+def _ev_meta_slug(key):
+    return hashlib.sha1(str(key).encode("utf-8")).hexdigest()
+
+
+def _ev_meta_load(key):
+    try:
+        with open(os.path.join(_EV_META_DIR, _ev_meta_slug(key) + ".json"),
+                  "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return float(d.get("ts", 0)), d.get("v")
+    except Exception:
+        return None
+
+
+def _ev_meta_store(key, value):
+    now = time.time()
+    with _EV_META_LOCK:
+        _EV_META_MEM[key] = (now, value)
+    try:
+        tmp = os.path.join(_EV_META_DIR, _ev_meta_slug(key) + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"k": key, "ts": now, "v": value}, f, ensure_ascii=False)
+        os.replace(tmp, os.path.join(_EV_META_DIR, _ev_meta_slug(key) + ".json"))
+    except Exception:
+        pass
+
+
+def _ev_meta_invalidate(prefix=""):
+    """prefix 로 시작하는 캐시 키를 무효화(파일/메모리). 업로드·삭제 시 호출."""
+    with _EV_META_LOCK:
+        for k in list(_EV_META_MEM.keys()):
+            if not prefix or str(k).startswith(prefix):
+                _EV_META_MEM.pop(k, None)
+    try:
+        for fn in os.listdir(_EV_META_DIR):
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(_EV_META_DIR, fn), "r",
+                          encoding="utf-8") as f:
+                    k = str(json.load(f).get("k", ""))
+                if (not prefix) or k.startswith(prefix):
+                    os.remove(os.path.join(_EV_META_DIR, fn))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _ev_meta_refresh_bg(key, produce):
+    if key in _EV_META_REFRESHING:
+        return
+
+    def _job():
+        _EV_META_REFRESHING.add(key)
+        try:
+            with _MetaBusy():
+                _ev_meta_store(key, produce())
+        except Exception:
+            pass
+        finally:
+            _EV_META_REFRESHING.discard(key)
+
+    _EV_META_REFRESHING.add(key)
+    _EV_META_POOL_BG.submit(_job)
+
+
+def _ev_meta_cached(key, produce):
+    """캐시 우선 조회 — 히트 시 NAS 왕복 0회. 만료 시 stale 즉시 + 백그라운드 갱신."""
+    now = time.time()
+    with _EV_META_LOCK:
+        mem = _EV_META_MEM.get(key)
+    ts, val = (mem if mem else _ev_meta_load(key) or (None, None))
+    if ts is not None:
+        age = now - ts
+        if age < _EV_META_TTL:
+            with _EV_META_LOCK:
+                _EV_META_MEM[key] = (ts, val)
+            return val
+        if age < _EV_META_STALE:
+            # 만료됐지만 사용 가능 — 즉시 반환하고 백그라운드에서 새로 계산.
+            with _EV_META_LOCK:
+                _EV_META_MEM[key] = (ts, val)
+            _ev_meta_refresh_bg(key, produce)
+            return val
+    # [교착 방지] 계산 자체는 중첩 제출을 피해 실행한다.
+    with _MetaBusy():
+        val = produce()
+    _ev_meta_store(key, val)
+    return val
+
+
+def _ev_meta_warm(limit=0):
+    """모든 행사 메타(파일목록·배포자료)를 미리 계산해 캐시에 채운다(예열)."""
+    try:
+        doc = _ev_doc()
+        events = list((doc.get("events") or {}).values())
+    except Exception:
+        events = []
+    if limit and limit > 0:
+        events = events[:limit]
+    n = 0
+    for e in events:
+        y = str(e.get("year", "") or "")
+        t = str(e.get("title", "") or "")
+        if not y or not t:
+            continue
+        try:
+            _ev_files(y, t, "photo")
+            _ev_files(y, t, "video")
+            _ev_files(y, t, "plan")
+            _ev_dist_files(y, t)     # 배포자료(참가신청 페이지)도 함께 예열
+            n += 1
+        except Exception:
+            continue
+        time.sleep(0.08)     # NAS 과부하 방지(계정당 직렬) — 천천히 예열
+    return n
+
+
 def _ev_public_event(year, title):
     """QR 착지용 공개 행사 요약(민감정보 제외). 없으면 None."""
     doc = _ev_doc()
     e = doc.get("events", {}).get(_ev_id(year, title))
     if not e:
         return None
+    # [요구] 참가신청 페이지에 담당자 문의(번호 노출) + 배포 자료 다운로드 링크.
+    try:
+        dist = _ev_dist_files(year, title)
+    except Exception:
+        dist = []
+    place = e.get("place", "")
+    lat = e.get("lat", "")
+    lng = e.get("lng", "")
+    # (요구) 참가신청 페이지에 입금/후원 계좌 안내를 노출한다.
+    try:
+        _cfg = _load_json(CFG_FILE, _default_config())
+        _don = _cfg.get("donations")
+        don = [d for d in _don if isinstance(d, dict)] if isinstance(_don, list) else []
+        holder = str(_cfg.get("donationHolder", "") or "")
+    except Exception:
+        don = []
+        holder = ""
     return {
         "year": e.get("year", year),
         "title": e.get("title", title),
         "period": e.get("period", "") or e.get("date", ""),
-        "place": e.get("place", ""),
+        "place": place,
+        "desc": e.get("desc", ""),
         "count": len(e.get("attendees", [])),
+        "contacts": _ev_norm_contacts(e.get("contacts")),
+        "docs": dist,
+        "hasDocs": bool(dist),
+        # (요구) 지도 — 기획 시 지정한 위치를 참가신청 화면에 노출.
+        "lat": lat,
+        "lng": lng,
+        "mapQuery": _ev_map_query(e.get("title", title), place),
+        "mapUrl": _ev_map_url(e.get("title", title), place, lat, lng),
+        # (요구) 계좌번호 안내(대표/수품구매/행사비 등) — 참가신청 화면 하부 노출.
+        "donations": don,
+        "donationHolder": holder,
     }
 
 
@@ -6372,6 +16171,363 @@ def _ev_attendee_ident(a):
     """참가자 항목의 식별자(인가번호 우선, 없으면 전화/로그인ID)."""
     return re.sub(r"[^0-9]", "", str(
         a.get("number") or a.get("loginId") or a.get("phone") or ""))
+
+
+def _ev_live_unit(ident, fallback_league="", fallback_unit=""):
+    """[요구] 행사 참가 신청/등록 시 '인가시 등록대' 대신 '활동등록대'를 보여준다.
+
+    참가자 entry 에는 등록 시점의 (인가시) 소속만 저장되어 있어, 이후 소속이
+    바뀌면 실제 활동 소속과 어긋난다. 표시 시점에 회원 DB 를 조회해
+    현재 활동등록(regLeague/regUnit/position)을 우선 사용하고, 없으면
+    인가시 소속(league/unit)으로 폴백한다. 반환: (league, unit).
+    """
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return str(fallback_league or ""), str(fallback_unit or "")
+    try:
+        m = _ev_member_by_ident(d)
+    except Exception:
+        m = None
+    if not m:
+        return str(fallback_league or ""), str(fallback_unit or "")
+    rl = str(m.get("regLeague", "") or "").strip()
+    ru = str(m.get("regUnit", "") or "").strip()
+    pos = str(m.get("position", "") or "").strip()
+    unit = ru or str(m.get("unit", "") or "").strip() or str(fallback_unit or "")
+    league = rl or str(m.get("league", "") or "").strip() or str(fallback_league or "")
+    if pos and pos not in unit:
+        unit = (unit + " · " + pos).strip(" ·") if unit else pos
+    return league, unit
+
+
+def _ev_role_code(roles):
+    """역할 라벨 배열 → 대표 구분자 코드 (B/C/S/V/R/L/일반/기타).
+    (요구) 직책: 비버(B)·컵(C)·스카우트(S)·벤쳐스카우트(V)·로버스카우트(R)
+                ·리더(L)·일반(일반)·기타(직접입력).
+    우선순위: 리더(L) > 벤처(V) > 로버(R) > 스카우트(S) > 컵(C) > 비버(B)
+             > 일반 > 기타."""
+    rs = [str(r or "").strip() for r in (roles or [])]
+    joined = " ".join(rs)
+    def has(*ks):
+        return any(k in joined for k in ks)
+    if has("리더", "지도자", "멘토", "지도"):
+        return "L"
+    if has("벤처", "벤쳐"):
+        return "V"
+    if has("로버"):
+        return "R"
+    if has("스카우트"):
+        return "S"
+    if has("컵"):
+        return "C"
+    if has("비버"):
+        return "B"
+    if has("일반"):
+        return "일반"
+    if rs:
+        return "기타"
+    return ""
+
+
+def _ev_role_label(code):
+    return {"L": "리더", "B": "비버", "C": "컵", "S": "스카우트",
+            "V": "벤쳐스카우트", "R": "로버스카우트", "일반": "일반",
+            "본부": "본부", "학부모": "학부모",
+            "기타": "기타"}.get(code, code)
+
+
+def _ev_has_number(m):
+    """인가자 여부 — 회원 유무 및 인가번호 존재로 판정."""
+    if not m:
+        return False
+    if m.get("isRegular"):
+        return False
+    return bool(re.sub(r"[^0-9]", "", str(m.get("number", "") or "")))
+
+
+def _ev_attendee_view(a):
+    """참가자 entry 를 '표시용'으로 정규화.
+
+    호출자는 항상 dict 복사본을 넘긴다(원본 캐시 보호). 매번 재계산하므로
+    저장된 stale 값이 있어도 최신 회원 정보로 덮어쓴다. 주입 필드:
+      · unitText/leagueText — 활동등록대 우선 소속(요구)
+      · corps         — 'tsak'(범) | 'eunha'(은하) | ''(일반/비인가)
+      · numberLabel   — '범#415' / '은하#43' / '일반#010…'(비인가)
+      · emailText     — 개인카드(회원 프로필) 우선 메일주소(요구)
+      · genderText    — 개인카드 우선 성별(요구)
+      · phoneText     — 개인카드 우선 연락처(요구)
+      · roleCode      — L/B/S/V/R/본부/학부모/기타
+      · roleLabel     — 위 코드의 한글명(리더/비버/스카우트…)
+      · rawRoles      — 저장된 원본 roles(관리 메뉴 편집용)
+      · registered    — 개인카드(회원 등록정보) 존재 여부
+      · linkable      — 개인카드 열기 가능(회원 등록정보 존재) 여부
+    """
+    ident = _ev_attendee_ident(a)
+    lg, unit = _ev_live_unit(ident, a.get("league", ""), a.get("unit", ""))
+    m = None
+    # [2026-10-29] **저장된 신원**을 먼저 신뢰한다. 번호가 없으면 조회하지 않는다.
+    #   비인가자는 번호가 없는 것이 정상이므로 '조회 실패' 가 아니라 '일반' 이다.
+    stored_licensed = a.get("licensed")
+    stored_key = str(a.get("identityKey", "") or "")
+    is_regular = False
+    if stored_licensed is False or stored_key.startswith("reg:"):
+        is_regular = True          # 명시적으로 비인가 → 회원 조회 자체를 안 함
+    elif ident:
+        try:
+            m = _ev_member_by_ident(ident, (a.get("corps") or None))
+        except Exception:
+            m = None
+        is_regular = bool(m and m.get("isRegular"))
+    # ---- 소속(corps) · 번호 라벨 ----------------------------------------
+    corps = ""
+    number_label = ""
+    if m and not is_regular:
+        corps = str(m.get("corps") or "tsak")
+        num = re.sub(r"[^0-9]", "", str(m.get("number", "") or ""))
+        if num:
+            number_label = ("은하#" + num) if corps == "eunha" else ("범#" + num)
+    else:
+        # [요구] 일반회원(비인가)은 인가번호가 없다 → 전화번호로 '일반#010…'.
+        #   "일반회원은 회원명부에서 범#01074451179로 표시하지 말고 →
+        #    일반#01074451179로 표시 (모든 개인카드에 동일규칙)"
+        #   회원카드(일반회원)이면 카드 전화, 카드가 없으면 저장된 참가자 전화.
+        phone_d = ""
+        if m:
+            phone_d = re.sub(r"[^0-9]", "", str(
+                m.get("phone") or m.get("accessPhone") or ""))
+        if not phone_d:
+            phone_d = re.sub(r"[^0-9]", "", str(
+                a.get("phone") or a.get("loginId") or a.get("number") or ""))
+        if phone_d:
+            number_label = "일반#" + phone_d
+    # ---- 개인카드(회원 프로필) 우선 표시값 (요구: 메일주소·그 외 정보) ----
+    def _pick(key, *alts):
+        if m:
+            v = str(m.get(key) or "").strip()
+            if v:
+                return v
+        for k in alts:
+            v = str(a.get(k) or "").strip()
+            if v:
+                return v
+        return ""
+    email_text = _pick("email", "email")
+    gender_text = _pick("gender", "gender")
+    phone_text = _pick("phone", "phone")
+    # 역할 코드(요구: 명부에서 L/B/S/V/R 등 노출)
+    raw_roles = a.get("roles") or ([a.get("role")] if a.get("role") else [])
+    raw_roles = [str(r) for r in raw_roles if str(r).strip()]
+    code = _ev_role_code(raw_roles)
+    a["unitText"] = unit
+    a["leagueText"] = lg
+    a["corps"] = corps
+    a["numberLabel"] = number_label
+    a["emailText"] = email_text
+    a["genderText"] = gender_text
+    a["phoneText"] = phone_text
+    a["roleCode"] = code
+    a["roleLabel"] = _ev_role_label(code) if code else ""
+    a["rawRoles"] = raw_roles
+    # [요구] 회원 등록정보(개인카드) 존재 여부 — 없으면 클릭 시 신규 등록 유도.
+    #   ⚠️ linkable 은 '인가자 여부'(정렬·개인카드열기 판단) 의미를 그대로 둔다.
+    a["registered"] = bool(m)
+    a["linkable"] = bool(number_label)
+    return a
+
+
+_EV_VIEW_ONLY_KEYS = ("unitText", "leagueText", "numberLabel",
+                      "emailText", "genderText", "phoneText",
+                      "roleCode", "roleLabel", "rawRoles",
+                      "registered", "linkable")
+
+# ══════════════════════════════════════════════════════════════════════════
+# [신원 명시 모델 2026-10-29] 이름은 ID 가 아니다 — 서버 측 정본
+#
+#  ## 사고: 행사 참석자에 수동 입력한 비인가자 '김순철' 이
+#           범인가자 동명이인 '김순철' 의 개인카드로 연결됨
+#  ## 원인 (2개가 겹침)
+#   ① `corps` 가 **표시용 키로 분류되어 저장 시 제거**됐다.
+#      → 참석자 행에는 "인가자인지 아닌지" 를 알 근거가 아예 남지 않았다.
+#   ② 조회가 번호 없으면 이름으로 폴백했고, 이름은 동명이인을 구분 못 한다.
+#
+#  ## 해결: 저장 시점에 신원을 **못박는다**
+#   · identityType = 'licensed'(인가자) | 'regular'(비인가/일반)
+#   · identityKey  = 'tsak:415' | 'eunha:G75' | 'reg:010…'  ← 카드 연결 유일 키
+#   · licensed     = bool
+#   · corps        = 'tsak' | 'eunha' | ''  (이제 **저장**한다)
+#  이름(name)은 표시용일 뿐, 어떤 조회 경로에서도 단독 식별자로 쓰지 않는다.
+# ══════════════════════════════════════════════════════════════════════════
+_EV_IDENTITY_STORED_KEYS = ("identityType", "identityKey", "licensed", "corps")
+
+
+def _ev_is_phone(raw) -> bool:
+    """`raw` 가 **전화번호 모양**인지 판별한다.
+
+    ## [무한루프 사고 2026-10-29] 이 판별이 없어서 벌어진 일
+    참석자 행의 `number` 칸에 전화번호(`010-2702-1126`)가 들어 있는데,
+    서버가 저장할 때마다 그걸 **인가번호로 오인**해
+      identityKey = "tsak:01027021126", licensed = True, corps = "tsak"
+    로 덮어썼다. 그러나 회원 명부의 실제 레코드는 일반회원
+      id = reg_1793253833650, identityKey = "reg:01027021126"
+    이다. 두 키는 **절대 만나지 않는다** → 이름을 누를 때마다
+    "신규 회원 등록" 창이 다시 떴다(= 루틴 반복).
+
+    인가번호는 범 1~415 / 은하 G1~ 정도로 **짧다**. 그런데 11자리
+    휴대폰 번호를 인가번호로 보는 것은 구조적으로 불가능하다.
+    """
+    d = re.sub(r"[^0-9]", "", str(raw or ""))
+    if not d:
+        return False
+    if len(d) >= 10:
+        return True
+    return d.startswith("01") and len(d) >= 9
+
+
+def _ev_identity_key(number="", phone="", corps=""):
+    """참석자 신원 키 — 인가자 `tsak:415`/`eunha:G75`, 비인가 `reg:010…`.
+
+    이름은 절대 쓰지 않는다(동명이인 사고의 원인).
+    **전화번호 모양은 인가번호로 쓰지 않는다**(무한루프 사고의 원인).
+    """
+    raw = str(number or "").strip()
+    d = re.sub(r"[^0-9]", "", raw)
+    c = str(corps or "").strip().lower()
+    ph = re.sub(r"[^0-9]", "", str(phone or ""))
+
+    # ⚠️ number 칸이 전화번호 모양 → 인가번호가 아니라 연락처다.
+    if d and _ev_is_phone(raw):
+        ph0 = ph or d
+        return ("reg:" + ph0) if ph0 else ""
+    if d:
+        is_e = (c == "eunha") or bool(re.match(r"^(g|은하|갤럭시)",
+                                              raw, re.IGNORECASE))
+        # 은하가 아닌데 5자리 이상이면 인가번호가 아니다(최대 3자리대).
+        if not is_e and len(d) >= 5:
+            ph0 = ph or d
+            return ("reg:" + ph0) if ph0 else ""
+        return ("eunha:G" + d) if is_e else ("tsak:" + d)
+    return ("reg:" + ph) if ph else ""
+
+
+def _ev_normalize_identity(e):
+    """참석자 dict 에 신원 필드를 **계산해 채운다**(저장 직전 호출).
+
+    이미 값이 있으면 존중하되, 비어 있으면 number/phone/corps 로 추론한다.
+    반환: 정규화된 새 dict(원본 불변).
+    """
+    if not isinstance(e, dict):
+        return e
+    o = dict(e)
+    num = o.get("number", "")
+    ph = o.get("phone", "") or o.get("loginId", "")
+    corps = str(o.get("corps", "") or "").strip().lower()
+
+    # corps 추론 — 저장된 값이 없으면 인가번호 접두어로 판단.
+    #  ⚠️ 전화번호 모양은 corps 판단 근거가 될 수 없다(무한루프 사고).
+    if not corps:
+        raw = str(num or "").strip()
+        if re.match(r"^(g|은하|갤럭시)", raw, re.IGNORECASE):
+            corps = "eunha"
+        elif re.sub(r"[^0-9]", "", raw) and not _ev_is_phone(raw):
+            corps = "tsak"
+    if corps not in ("tsak", "eunha"):
+        corps = ""
+
+    # ══════════════════════════════════════════════════════════════════
+    # [2026-10-29] **저장된 키가 데이터와 일관되면 그대로 존중한다.**
+    #  매번 재계산하면 이미 고쳐 둔 행이 저장할 때마다 되돌아간다
+    #  (이지원 무한루프의 직접 원인).
+    #   · reg:010…  ← phone/number 의 숫자와 일치하면 유지
+    #   · tsak:415  ← number 가 '415' 처럼 짧은 인가번호면 유지
+    #   · eunha:G75 ← number 에 G/은하 표기가 있으면 유지
+    # ══════════════════════════════════════════════════════════════════
+    _stored = str(o.get("identityKey") or "").strip()
+    if _stored:
+        _sd = re.sub(r"[^0-9]", "", _stored)
+        _numd = re.sub(r"[^0-9]", "", str(num or ""))
+        _phd = re.sub(r"[^0-9]", "", str(ph or ""))
+        if _stored.startswith("reg:"):
+            if _sd and (_sd == _phd or _sd == _numd or not (_phd or _numd)):
+                key = _stored
+                corps = ""
+                o["identityKey"] = key
+                o["identityType"] = "regular"
+                o["licensed"] = False
+                o["corps"] = ""
+                return o
+        elif _stored.startswith("eunha:"):
+            if _sd and _numd == _sd and re.match(
+                    r"^(g|은하|갤럭시)", str(num or "").strip(), re.IGNORECASE):
+                o["identityKey"] = _stored
+                o["identityType"] = "licensed"
+                o["licensed"] = True
+                o["corps"] = "eunha"
+                return o
+        elif _stored.startswith("tsak:"):
+            if _sd and _numd == _sd and not _ev_is_phone(num) and len(_sd) <= 4:
+                o["identityKey"] = _stored
+                o["identityType"] = "licensed"
+                o["licensed"] = True
+                o["corps"] = "tsak"
+                return o
+
+    key = _ev_identity_key(num, ph, corps)
+    # 번호가 있는데 corps 가 비어 있으면 key 앞부분에서 복원.
+    if key.startswith("eunha:") and corps != "eunha":
+        corps = "eunha"
+    elif key.startswith("tsak:") and not corps:
+        corps = "tsak"
+
+    licensed = bool(key.startswith("tsak:") or key.startswith("eunha:"))
+    if not key and o.get("identityKey"):
+        key = str(o.get("identityKey"))
+        licensed = not key.startswith("reg:")
+
+    o["identityKey"] = key
+    o["identityType"] = "licensed" if licensed else "regular"
+    o["licensed"] = licensed
+    o["corps"] = corps if licensed else ""
+    return o
+
+
+def _ev_strip_view_keys(entries):
+    """저장 직전 표시용 필드를 제거하고 **신원 필드를 확정**한다."""
+    if not isinstance(entries, list):
+        return entries
+    out = []
+    for e in entries:
+        if isinstance(e, dict):
+            e = {k: v for k, v in e.items() if k not in _EV_VIEW_ONLY_KEYS}
+            e = _ev_normalize_identity(e)
+        out.append(e)
+    return out
+
+
+def _ev_attendee_sort_key(a):
+    """명단 정렬 키 — (요구) 인가자 먼저, 인가번호 오름차순, 그다음 일반.
+    linkable(인가자)이면 0, 아니면 1. 2차는 인가번호 숫자 오름차순."""
+    is_regular = 0 if a.get("linkable") else 1
+    try:
+        num = int(re.sub(r"[^0-9]", "", str(a.get("number", "")) or "0") or 0)
+    except Exception:
+        num = 0
+    return (is_regular, num, str(a.get("name", "")))
+
+
+def _ev_attendees_view(entries, sort=True):
+    """참가자 배열 → 표시용 목록(사본). 기본은 '인가자 우선' 정렬."""
+    out = []
+    for a in (entries or []):
+        if isinstance(a, dict):
+            out.append(_ev_attendee_view(dict(a)))
+        else:
+            out.append(a)
+    if sort:
+        try:
+            out.sort(key=_ev_attendee_sort_key)
+        except Exception:
+            pass
+    return out
 
 
 def _ev_is_attendee(e, ident):
@@ -6391,7 +16547,107 @@ def _ev_add_attendee_entry(e, entry):
     return True
 
 
-def _ev_qr_join_credentialed(year, title, number):
+def _ev_extract_extra(d):
+    """참가신청 추가 입력값 정규화.
+
+    (요구) 이동방법(자차/대중교통/기타), 숙박여부, 도착예정시간(정시/기타),
+    동행자 이름, 운영진 전달 내용, 이메일, 개인정보 활용 동의.
+    빈 값은 저장하지 않아 명부를 깔끔하게 유지하고, 동의값은 항상 기록한다.
+    """
+    def s(k, mx=200):
+        return str(d.get(k, "") or "").strip()[:mx]
+    out = {}
+    for k, mx in (("email", 120), ("transport", 40), ("transportNote", 120),
+                  ("lodging", 20), ("arrive", 40), ("arriveNote", 120),
+                  ("companion", 200), ("message", 500),
+                  ("address", 200), ("from", 80), ("eta", 60)):
+        v = s(k, mx)
+        if v:
+            out[k] = v
+    # (요구) 직책 — QR 폼에서 선택/직접입력한 값(복수 허용).
+    roles = d.get("roles")
+    if isinstance(roles, list):
+        rr = [str(x).strip()[:30] for x in roles if str(x).strip()][:6]
+        if rr:
+            out["roles"] = rr
+    # 동의 여부는 미동의(False)도 기록해 명부에서 확인 가능하게 한다.
+    out["consent"] = bool(d.get("consent") or d.get("privacyConsent"))
+    out["photoConsent"] = bool(d.get("photoConsent"))
+    return out
+
+
+def _ev_sync_member_from_extra_async(ident, extra):
+    """참가신청 시 입력/수정한 개인정보를 '개인카드'(회원 프로필)에도 반영.
+
+    (요구) 이메일·연락처·주소를 카드에 반영하고, 무엇을 언제 어떤 행사에서
+    바꿨는지를 `infoHistory`(JSON 문자열 목록)에 '복수 히스토리'로 누적 저장한다.
+    각 항목 우측의 ✕(삭제)는 앱의 개인카드 화면에서 처리한다.
+    응답 지연을 피하기 위해 백그라운드에서 members.json 을 갱신한다.
+    """
+    d = re.sub(r"[^0-9]", "", str(ident or ""))
+    if not d:
+        return
+    extra = extra or {}
+    email = str(extra.get("email") or "").strip()
+    phone = str(extra.get("phone") or "").strip()
+    address = str(extra.get("address") or "").strip()
+    event_ref = str(extra.get("_event") or "").strip()
+    if not (email or phone or address):
+        return
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    def _job():
+        try:
+            with _MEMBER_WRITE_LOCK:
+                members = _ev_members()
+                for m in members:
+                    hit = (
+                        re.sub(r"[^0-9]", "", str(m.get("number") or "")) == d
+                        or re.sub(r"[^0-9]", "", str(m.get("phone") or "")) == d
+                        or re.sub(r"[^0-9]", "", str(m.get("loginId") or "")) == d
+                    )
+                    if not hit or bool(m.get("isRegular")):
+                        continue
+                    changed = False
+                    # 히스토리: [{at, by(event), email, phone, address}] 최신 우선.
+                    hist = m.get("infoHistory")
+                    if not isinstance(hist, list):
+                        hist = []
+                    entry = {"at": stamp, "by": event_ref}
+                    if email and str(m.get("email") or "") != email:
+                        m["email"] = email
+                        entry["email"] = email
+                        changed = True
+                    if phone and str(m.get("phone") or "") != phone:
+                        m["phone"] = phone
+                        entry["phone"] = phone
+                        changed = True
+                    if address and str(m.get("address") or "") != address:
+                        m["address"] = address
+                        entry["address"] = address
+                        changed = True
+                    if changed or email or phone or address:
+                        # 중복 방지: 완전히 같은 값의 최근 항목이 있으면 스킵.
+                        keys = ("email", "phone", "address")
+                        if any(entry.get(k) for k in keys):
+                            dup = False
+                            for h in hist[:3]:
+                                if all(str(h.get(k) or "") == str(entry.get(k) or "")
+                                       for k in keys):
+                                    dup = True
+                                    break
+                            if not dup:
+                                hist.insert(0, entry)
+                                m["infoHistory"] = hist[:30]
+                        _save_json(DB_FILE, members)
+                    return
+        except Exception as e:
+            print("member sync fail", e)
+
+    threading.Thread(target=_job, daemon=True).start()
+
+
+def _ev_qr_join_credentialed(year, title, number, extra=None):
     """[QR] 범스카우트 인가자: 인가번호로 행사 참여 등록.
 
     로그인 과정 없이 인가번호만으로 등록한다(QR 자체가 접근 매개).
@@ -6419,6 +16675,7 @@ def _ev_qr_join_credentialed(year, title, number):
         "phone": str(m.get("phone", "")),
         "roles": [],
     }
+    entry.update(_ev_extract_extra(extra or {}))
     eid = _ev_id(year, title)
     # 이벤트 문서 1회 저장
     with LOCK:
@@ -6429,6 +16686,16 @@ def _ev_qr_join_credentialed(year, title, number):
                     "message": "행사를 찾을 수 없습니다."}, 404
         if _ev_is_attendee(e, d):
             already = True
+            # 이미 등록된 참가자라도 추가 입력값은 보완(요구: 필요시 수정 반영).
+            if extra:
+                for _a in e.get("attendees", []):
+                    if _ev_attendee_ident(_a) == d:
+                        for _k, _v in entry.items():
+                            if _k.startswith("_") or _k in ("number", "name"):
+                                continue
+                            _a[_k] = _v
+                        break
+                _ev_save(doc)
         else:
             already = False
             _ev_add_attendee_entry(e, entry)
@@ -6440,6 +16707,11 @@ def _ev_qr_join_credentialed(year, title, number):
     # 회원 eventAttend 연동 — 응답 지연을 피하기 위해 백그라운드 처리
     if not already:
         _ev_member_event_async(d, title, True)
+    # 개인카드(회원 프로필)에 email·phone·address 연동 + 히스토리 누적
+    if extra:
+        _ex = dict(extra)
+        _ex["_event"] = f"{year} · {title}" if title else ""
+        _ev_sync_member_from_extra_async(d, _ex)
     if already:
         return {"ok": True, "already": True, "name": m.get("name", ""),
                 "kind": "credentialed",
@@ -6448,7 +16720,7 @@ def _ev_qr_join_credentialed(year, title, number):
             "message": "행사 참가자로 등록되었습니다."}, 200
 
 
-def _ev_qr_join_guest(year, title, name, phone):
+def _ev_qr_join_guest(year, title, name, phone, extra=None):
     """[QR] 비인가자: 전화번호+이름으로 아이디 자동 생성 후 참여 등록.
 
     · 신규: members.json 에 isRegular=true 회원 생성(loginId=전화번호)
@@ -6479,15 +16751,28 @@ def _ev_qr_join_guest(year, title, name, phone):
                 "phone": d,
                 "roles": [],
             }
+            entry.update(_ev_extract_extra(extra or {}))
             _ev_add_attendee_entry(e, entry)
             e.setdefault("accessLog", []).insert(0, {
                 "id": d, "name": name, "via": "qr",
                 "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
             e["accessLog"] = e["accessLog"][:500]
             _ev_save(doc)
+        elif extra:
+            # 기존 등록자라도 추가 입력값은 보완.
+            for _a in e.get("attendees", []):
+                if _ev_attendee_ident(_a) == d:
+                    for _k, _v in _ev_extract_extra(extra).items():
+                        _a[_k] = _v
+                    break
+            _ev_save(doc)
     # 회원 계정 보장(신규 생성/재사용) + eventAttend 를 백그라운드에서 처리
     if not already:
         _ev_guest_ensure_account_async(d, name, title)
+    if extra:
+        _ex = dict(extra)
+        _ex["_event"] = f"{year} · {title}" if title else ""
+        _ev_sync_member_from_extra_async(d, _ex)
     if already:
         return {"ok": True, "already": True, "name": name,
                 "loginId": d, "kind": "guest",
@@ -6712,8 +16997,17 @@ def _recompute_member_sums(fin):
     return by_no
 
 
-def _rebuild_history(fin):
-    """연도·월별 집계 스냅샷 저장."""
+def _hist_compute(fin):
+    """연도·월별 집계를 **메모리에서만** 계산한다(NAS 쓰기 없음).
+
+    ## 왜 계산과 저장을 나눴나 (2026-11-07, 속도)
+      종전 `_rebuild_history()` 는 호출될 때마다 `finance_history.json`
+      **전체를 NAS 에 다시 썼다**. 그런데 이 함수는 `_ev_fin_add()` 안에서
+      **거래 1건을 추가할 때마다** 불린다. 즉 후원금·참가비 1건 등록에
+      NAS 왕복이 한 번 더 붙어 등록이 2.7초 걸렸다.
+      집계는 100% 계산 가능한 캐시이므로, **즉시(메모리+로컬 미러)** 반영하고
+      NAS 쓰기는 지연한다.
+    """
     years = {}
     for t in fin.get("transactions", []):
         y = str(t.get("year") or (re.findall(r"(20\d{2})", str(t.get("date", ""))) or ["미지정"])[0])
@@ -6729,8 +17023,97 @@ def _rebuild_history(fin):
         yy["byCategory"][cat] = yy["byCategory"].get(cat, 0) + amt
         mm = yy["months"].setdefault(m.zfill(2), {"income": 0, "expense": 0})
         mm["income" if typ != "expense" else "expense"] += amt
-    hist = {"years": years, "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    _save_json(HIST_FILE, hist)
+    hist = {"years": years,
+            "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    return hist
+
+
+# ── 집계 캐시(HIST_FILE) 지연 쓰기 ────────────────────────────────────────
+#  ## 동작
+#   `_hist_save_lazy()` 는 (가) NAS 를 건드리지 않고 (나) 캐시+로컬 미러만
+#   갱신하며 (다) dirty 표시만 남긴다. 그 뒤 아래 세 시점 중 먼저 오는 곳에서
+#   `_hist_flush()` 가 NAS 에 **한 번** 쓴다.
+#     ① `_rebuild_history()` — 집계를 실제로 '읽어 가는' 경로
+#        (재무 엑셀 내보내기, 재무관리 일괄 저장)
+#     ② `_hist_flush_tick()` — dirty 후 `_HIST_FLUSH_DELAY` 초 경과
+#        (저장 응답을 붙잡지 않는 백그라운드 스레드)
+#   → 결과: 등록 응답은 빨라지고, 집계 파일은 몇 초 안에 결국 NAS 에 남는다.
+#   (앱은 등록 직후 집계를 읽지 않으므로 체감 차이 없음)
+_HIST_DIRTY = False
+_HIST_DIRTY_AT = 0.0
+_HIST_FLUSH_DELAY = 20.0        # 초
+_HIST_FLUSH_BUSY = False
+_HIST_LOCK = threading.Lock()
+
+
+def _hist_save_lazy(hist):
+    """집계 스냅샷을 캐시·로컬 미러에만 반영하고 dirty 표시한다(NAS 쓰기 0회)."""
+    global _HIST_DIRTY, _HIST_DIRTY_AT
+    try:
+        _json_gen_bump(HIST_FILE)
+        with _JSON_CACHE_LOCK:
+            _JSON_CACHE[HIST_FILE] = (hist, time.time())
+        _mirror_write(HIST_FILE, hist)
+        with _HIST_LOCK:
+            _HIST_DIRTY = True
+            _HIST_DIRTY_AT = time.time()
+    except Exception as e:
+        print("hist lazy save fail", e)
+
+
+def _hist_flush(reason="tick"):
+    """dirty 이면 집계 파일을 NAS 에 1회 기록한다. 실패해도 조용히 넘어간다."""
+    global _HIST_DIRTY, _HIST_FLUSH_BUSY
+    with _HIST_LOCK:
+        if not _HIST_DIRTY or _HIST_FLUSH_BUSY:
+            return False
+        _HIST_DIRTY = False
+        _HIST_FLUSH_BUSY = True
+    try:
+        with _JSON_CACHE_LOCK:
+            ent = _JSON_CACHE.get(HIST_FILE)
+        hist = ent[0] if ent is not None else _mirror_read(HIST_FILE)
+        if hist is None:
+            return False
+        _save_json(HIST_FILE, hist, force=True)
+        return True
+    except Exception as e:
+        print("hist flush fail(%s) %s" % (reason, e))
+        with _HIST_LOCK:
+            _HIST_DIRTY = True          # 다음 기회에 다시 시도
+        return False
+    finally:
+        with _HIST_LOCK:
+            _HIST_FLUSH_BUSY = False
+
+
+def _hist_flush_tick():
+    """dirty 후 _HIST_FLUSH_DELAY 초가 지났으면 백그라운드로 NAS 기록 1회."""
+    global _HIST_DIRTY
+    with _HIST_LOCK:
+        if not _HIST_DIRTY:
+            return
+        if time.time() - _HIST_DIRTY_AT < _HIST_FLUSH_DELAY:
+            return
+
+    def _work():
+        _hist_flush("delay")
+
+    try:
+        threading.Thread(target=_work, name="hist-flush", daemon=True).start()
+    except Exception:
+        pass
+
+
+def _rebuild_history(fin):
+    """연도·월별 집계 스냅샷을 **계산해서** 즉시 반환한다(지연 쓰기).
+
+    반환값은 예전과 완전히 동일(`{"years": {...}, "updated": ...}`).
+    차이는 NAS 기록 시점뿐이다 — 반환 직후 `_hist_flush()` 가 1회 기록한다.
+    """
+    hist = _hist_compute(fin)
+    _hist_save_lazy(hist)
+    _hist_flush("rebuild")
     return hist
 
 
@@ -7436,6 +17819,110 @@ class Handler(BaseHTTPRequestHandler):
     #  (작은 응답이 ACK 를 기다리며 멈추는 지연-ACK/Nagle 상호작용 방지)
     disable_nagle_algorithm = True
 
+    # ── [안정 turn72] 어떤 요청 처리 실패도 **프로세스를 죽이지 않는다** ──
+    #  ## 배경 (2026-11-07 실제 사고)
+    #   참가자 저장(8초) 중 앱이 먼저 연결을 끊자 응답 쓰기에서
+    #   BrokenPipeError 가 났고, 그 예외가 핸들러 경계를 넘어가
+    #   프록시 프로세스가 종료됐다. 이후 모든 요청이 Connection refused 가
+    #   되어 사용자에게는 "등록하면 느리고 버그남"으로 보였다.
+    #  ## 원칙
+    #   개별 요청이 실패하는 것과 **서버가 죽는 것**은 완전히 다른 사건이다.
+    #   전자는 500 응답으로 끝나야 하고, 후자는 절대 일어나면 안 된다.
+    #   socketserver 는 handle_error() 를 부르고 스레드를 끝낼 뿐이지만,
+    #   일부 경로(파이썬 버전/소켓 상태)에서 프로세스가 내려간 사례가 있어
+    #   여기서 한 번 더 확실히 막는다.
+    # ── [버그 수정 turn77] keep-alive 연결 오염(501) 방지 ───────────────
+    #  ## 실제 증상
+    #   브라우저에서 로그인 도중 **한 번** 이런 응답을 만났다.
+    #     HTTP/1.1 501 Unsupported method ('{}GET')
+    #   메서드 자리에 '{}' 가 들어갔다. 즉 **요청줄이 깨진 것**이다.
+    #
+    #  ## 원인 (재현 성공)
+    #   `_json()` 은 인증 실패(401) 등에서 **바디를 읽지 않고** 곧바로 응답한다.
+    #   그런데 클라이언트는 이미 `Content-Length` 만큼 바디를 보낸 상태다.
+    #   HTTP/1.1 은 keep-alive 가 기본이라 **같은 소켓으로 다음 요청**이 온다.
+    #   → 읽히지 않은 바디 `{"x":"AAAA…` 가 버퍼에 남고,
+    #     그 뒤에 도착한 `GET /api/...` 와 이어 붙어
+    #        '{"x":"AAAA…}GET'
+    #   라는 **한 줄**이 된다. BaseHTTPRequestHandler 는 이를 메서드명으로
+    #   해석해 501 을 돌려준다.
+    #   (바디가 짧으면 앞부분만 남아 정확히 '{}GET' 처럼 보인다)
+    #
+    #  ## 왜 지금까지 안 터졌나
+    #   대부분의 POST 는 인증을 통과해 `_body()` 로 바디를 읽었다.
+    #   **세션이 만료된 상태에서 저장 요청**을 보낼 때만 남았다.
+    #   즉 "로그인이 만료되었습니다" 배너가 뜨는 바로 그 순간과 겹친다.
+    #
+    #  ## 수정
+    #   응답을 마친 뒤 `Content-Length - 읽은바이트` 만큼을 **반드시 소진**한다.
+    #   소진할 수 없으면(연결이 끊겼거나 chunked 전송) **연결을 닫는다**.
+    #   연결을 닫으면 다음 요청은 새 소켓으로 오므로 오염이 전파되지 않는다.
+    def _rfile_read(self, n):
+        """rfile.read 를 감싸서 '몇 바이트 읽었는지' 누적한다."""
+        buf = self.rfile.read(n)
+        try:
+            self._body_read_n = getattr(self, "_body_read_n", 0) + len(buf)
+        except Exception:
+            pass
+        return buf
+
+    def _drain_body(self):
+        """응답 후 남은 요청 바디를 소진. 실패하면 False."""
+        try:
+            te = (self.headers.get("Transfer-Encoding", "") or "").lower()
+        except Exception:
+            te = ""
+        if "chunked" in te:
+            # 조각 전송은 길이를 알 수 없다. 안전하게 연결을 닫는다.
+            return False
+        try:
+            cl = int(self.headers.get("Content-Length", 0) or 0)
+        except Exception:
+            cl = 0
+        if cl <= 0:
+            return True
+        left = cl - getattr(self, "_body_read_n", 0)
+        if left <= 0:
+            return True
+        try:
+            while left > 0:
+                chunk = self.rfile.read(min(65536, left))
+                if not chunk:
+                    return False
+                left -= len(chunk)
+            return True
+        except Exception:
+            return False
+
+    def handle_one_request(self):
+        try:
+            self._body_read_n = 0
+            super().handle_one_request()
+            # 응답이 끝난 뒤 남은 바디를 정리한다(다음 요청 오염 방지).
+            if not self.close_connection:
+                if not self._drain_body():
+                    self.close_connection = True
+            return
+        except (BrokenPipeError, ConnectionResetError,
+                ConnectionAbortedError):
+            self.close_connection = True
+        except Exception as _e:
+            # 마지막 방어선 — 로그만 남기고 연결만 닫는다.
+            try:
+                print("[handler-guard] 요청 처리 실패: %r" % (_e,))
+            except Exception:
+                pass
+            self.close_connection = True
+
+    def handle_error(self, request, client_address):
+        # 기본 구현은 트레이스백을 stderr 로 쏟아낸다. 소음만 줄이고 계속 간다.
+        import sys as _sys
+        try:
+            et = _sys.exc_info()[0]
+            print("[handler-error] %s: %s" % (client_address, et))
+        except Exception:
+            pass
+
     def setup(self):
         super().setup()
         try:
@@ -7446,6 +17933,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+    def _redirect(self, location, code=302):
+        """가벼운 리다이렉트 응답.
+
+        썸네일을 만들 수 없는 파일(문서·heic 등)을 원본 주소로 넘길 때 쓴다.
+        화면에 깨진 이미지가 뜨는 대신 원본이 열린다.
+        """
+        try:
+            self.send_response(code)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self._cors()
+            self.end_headers()
+        except Exception as e:
+            print("[redirect] fail", e)
 
     def _cors(self):
         # 보안 감사 F02 대응 — 임의 출처 읽기 차단.
@@ -7485,9 +17987,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self' blob:; script-src 'self' 'unsafe-inline' "
-            "'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' blob:; "
-            "img-src 'self' data: blob:; font-src 'self' data:; "
-            "connect-src 'self' https: blob:; frame-src 'self' blob:; "
+            "'unsafe-eval' blob: https://dapi.kakao.com https://t1.daumcdn.net "
+            "https://*.daumcdn.net; "
+            "style-src 'self' 'unsafe-inline' blob:; "
+            "img-src 'self' data: blob: https://*.kakao.com "
+            "https://*.kakaocdn.net https://*.daumcdn.net https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' https: blob:; "
+            "frame-src 'self' blob: https://*.kakao.com https://map.kakao.com; "
             "child-src 'self' blob:; object-src 'none'; base-uri 'self'")
         self.send_header("Cache-Control", "no-store")
 
@@ -7557,6 +18064,94 @@ class Handler(BaseHTTPRequestHandler):
     def _sess(self):
         return _sess_get(self._sid())
 
+    def _share_page(self, token):
+        """🔓 음원 공유 플레이어 — 로그인 불필요 독립 HTML.
+
+        ## 보안상 왜 '독립 페이지' 인가
+        Flutter 앱 페이지를 재사용하면 앱의 라우터/세션 코드가 같이 실린다.
+        그러면 토큰 하나로 앱 전체 표면이 노출된다. 이 페이지는 **음원 재생
+        외의 어떤 기능도 갖지 않는다** — 메뉴도, 링크도, 세션 저장도 없다.
+        토큰은 URL 에만 있고 localStorage 에 저장하지 않는다(공용 PC 대비).
+        """
+        tok = str(token or "").strip()
+        safe_tok = urllib.parse.quote(tok, safe="")
+        # 유효성은 페이지 로딩 후 /api/share/audio/list 가 판정한다.
+        # (만료/폐기 메시지를 사용자에게 정확히 보여주기 위해)
+        html = _SHARE_PAGE_HTML.replace("__TOKEN__", safe_tok)
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        #  공유 페이지는 캐시 금지(폐기 즉시 반영), 검색엔진 수집 금지
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Robots-Tag", "noindex, nofollow, noarchive")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "ALLOWALL")
+        self.send_header("Content-Security-Policy",
+                         "frame-ancestors *; default-src 'self'; "
+                         "media-src 'self' blob:; img-src 'self' data:; "
+                         "style-src 'self' 'unsafe-inline'; "
+                         "script-src 'self' 'unsafe-inline'")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except Exception:
+            pass
+
+    def _photo_view_allowed(self):
+        """[turn64 보안감사 F1] 회원 사진 열람 허용 여부.
+
+        목적: 번호를 1씩 올려 **전 회원 얼굴을 무단 수집**하는 것만 막는다.
+        정상 사용자는 한 명도 막지 않는 것이 두 번째 목표다.
+
+        통과 조건
+          ① 같은 출처에서 온 요청 + 세션 존재
+             · Flutter 웹은 `<img src="/api/photo/43">` 로 그린다.
+               <img> 는 헤더를 못 붙이지만, 같은 출처면 브라우저가
+               `tsak_sid` 쿠키(HttpOnly, SameSite=Strict)를 **자동 전송**한다.
+               따라서 앱 화면·개인 프로필은 아무 변경 없이 그대로 동작한다.
+             · curl/python 같은 외부 클라이언트는 Origin 을 안 보내거나
+               다른 값을 넣으므로 이 경로로는 통과하지 못한다.
+          ② 세션이 헤더/쿼리로 직접 온 경우 — API 클라이언트 경로.
+          ③ 세션이 없더라도 Origin 이 아예 없는 동일 호스트 요청은 막는다
+             (①과 같은 규칙이므로 별도 분기 없음).
+
+        ※ 사진은 '공개 자료'가 아니다. 명부·QR 참가신청·추모관 페이지는
+          회원 사진을 쓰지 않으므로 이 제한이 기능을 깨지 않는다.
+
+        ## ⚠️ 1차 구현의 실수 (기록)
+         처음에는 "Origin == Host 이면 통과"로 만들었다. 그런데
+         **Origin·Host 는 공격자가 그대로 적어 보낼 수 있는 헤더**다.
+         실측: 쿠키 없이 `Origin: <host>` 만 붙여도 200 이 나왔다.
+         즉 헤더 흉내만으로 우회되는 **가짜 방어**였다.
+         → 세션(쿠키/헤더/쿼리)이 **실제로 있어야** 통과하도록 고쳤다.
+        """
+        try:
+            # 세션 없으면 무조건 거부. (Origin/Host 만으로는 통과 불가)
+            if not self._sess():
+                return False
+            # 브라우저 요청이면 Referer 까지 같은 호스트인지 확인(이중 확인).
+            origin = str(self.headers.get("Origin") or "").strip()
+            host = str(self.headers.get("Host") or "").strip()
+            if origin and host:
+                try:
+                    o = urllib.parse.urlparse(origin)
+                    if o.netloc and o.netloc != host:
+                        return False
+                except Exception:
+                    return False
+            ref = str(self.headers.get("Referer") or "").strip()
+            if ref and host:
+                try:
+                    r = urllib.parse.urlparse(ref)
+                    if r.netloc and r.netloc != host:
+                        return False
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+
     def _auth_ok(self, need=None):
         """세션 또는 마스터 비번으로 인증 통과 여부."""
         s = self._sess()
@@ -7565,8 +18160,30 @@ class Handler(BaseHTTPRequestHandler):
         if need == "master":
             return s.get("tier") == "master"
         if need == "admin":
-            return s.get("tier") in ("app", "master")
+            # 세션 등급이 app/master 면 통과 (앱의 isApp 과 동일).
+            if s.get("tier") in ("app", "master"):
+                return True
+            # ── [버그 수정 2026-10-26] personal 세션을 **무조건** 통과시키던 문제 ──
+            #  종전: `tier in ("app","master","personal")` → personal 이면 전부 통과.
+            #  의도는 "마스터가 관리자 권한을 부여한 인가번호"(adminGranted)였는데,
+            #  조건이 personal 전체라 **아무 인가자나** 관리자 API(재무·비번)를
+            #  통과할 수 있었다. (실측: 스탭이 아닌 218호도 재무 조회/추가 성공)
+            #  수정: grantedAdmin 플래그가 선 세션만 인정한다.
+            #   · 로그인 시 본인이 adminGranted 면 서버가 세션 tier 를 'app' 으로
+            #     승격하므로(main login 로직), 대부분은 위에서 이미 통과한다.
+            #   · 여기서는 세션에 실린 명시 플래그만 추가로 본다.
+            return bool(s.get("grantedAdmin"))
         return True
+
+    def _set_granted_admin_flag(self, sid, granted):
+        """세션에 관리자 부여 플래그를 기록(로그인 직후 1회)."""
+        if not sid:
+            return
+        with _SESS_LOCK:
+            v = _SESS.get(sid)
+            if v is not None:
+                v["grantedAdmin"] = bool(granted)
+        _sess_save_async()      # [turn73] 권한 플래그도 유지
 
     def _require(self, need=None):
         """인증 실패 시 401 JSON 을 보내고 False 반환."""
@@ -7575,22 +18192,89 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _my_ident(self):
+        """현재 세션의 인가번호 — **은하 G접두어를 보존**한다.
+
+        ── [버그 수정 2026-10-26] 은하 신원이 숫자로 깎이던 문제 ────────────
+        종전에는 `re.sub(r"[^0-9]", "", ...)` 로 숫자만 남겼다. 그래서 은하
+        43호 세션도 '43' 이 되어, 이 값을 키로 쓰는 모든 경로(개인카드·멤버
+        조회·사진)가 **범 43호**를 가리켰다.
+
+        수정: 세션 corps 가 'eunha' 이면 `_ck()` 로 'G43' 을 돌려준다.
+              범스카우트는 종전과 동일하게 숫자('43').
+        """
+        s = self._sess() or {}
+        is_eunha = str(s.get("corps", "") or "").strip().lower() == "eunha"
+        for k in ("who", "number", "ident"):
+            raw = str(s.get(k, "") or "")
+            if not raw.strip():
+                continue
+            if is_eunha:
+                v = _ck(raw)
+            else:
+                v = _ck_num(raw)
+            if v:
+                return v
+        return ""
+
+    def _is_event_staff(self, year, title):
+        """현재 세션이 이 행사의 **스탭(STAFF)** 인지."""
+        ident = self._my_ident()
+        if not ident:
+            return False
+        try:
+            return _staff_is(year, title, ident)
+        except Exception:
+            return False
+
+    def _require_event_admin(self, year, title):
+        """행사 관리 등급 필요 — 다만 **스탭이면 허용**한다.
+
+        ── [요구 2026-10-26] "스탭으로 등록되면 다 보이도록 할 것" ───────────
+        증상: 스탭 계정으로 행사에 들어가면 참가자·사진·계획서 탭은 보이는데
+              **참가비·후원금 / 후원·기타수입 / 행사비지출 / 행사결재**만
+              0원·"없음" 으로 비어 있었다. 마스터로는 정상.
+        원인(서버): `/api/event/finance` 가 `_require("admin")` 만 통과시켰다.
+              스탭은 개인(personal) 세션이라 401 → 앱이 빈 목록으로 표시.
+        원인(앱): 재무 조회를 `widget.canManage`(=관리자·마스터)로만 감쌌다.
+              스탭 여부(`_isStaff`)는 판정했지만 재무 요청 조건에 쓰지 않았다.
+        해결: **관리자·마스터이거나, 그 행사의 스탭이면** 통과.
+              (스탭은 앱에서 이미 해당 행사 전체 열람 권한을 갖는다)
+        """
+        if self._auth_ok("admin"):
+            return True
+        if self._is_event_staff(year, title):
+            return True
+        self._json({"ok": False, "error": "unauthorized"}, 401)
+        return False
+
     def _my_member(self):
         """현재 세션의 '본인' 회원 dict(없으면 {}).
-        세션 who(인가번호/전화) 또는 tier=personal 의 인가번호로 조회한다."""
+
+        ── [번호체계 2026-10-26] 은하 번호가 범 회원으로 잡히던 문제 ────────
+        종전에는 who/number/ident 를 **숫자만** 남겨 후보로 삼았다. 은하
+        G43 세션의 who='G43' 이 '43' 이 되어, 은하 43호가 **범 43호 회원**으로
+        조회됐다(개인카드·권한·프로필이 남의 것). 번호체계를 G로 바꾼 뒤에도
+        이 함수가 깎으면 정확히 같은 오류가 재현된다.
+
+        수정: 세션 corps 가 'eunha' 면 범 명단(DB_FILE)에서 **찾지 않는다**.
+              (은하 회원은 은하 명단에만 있고, 이 함수는 범 회원을 돌려주는
+               용도이므로 은하 세션에는 빈 dict 가 정답이다.)
+        """
         s = self._sess() or {}
+        if str(s.get("corps", "") or "").strip().lower() == "eunha":
+            return {}
         cand = []
-        cand.append(re.sub(r"[^0-9]", "", str(s.get("who", "") or "")))
-        cand.append(re.sub(r"[^0-9]", "", str(s.get("number", "") or "")))
-        cand.append(re.sub(r"[^0-9]", "", str(s.get("ident", "") or "")))
+        cand.append(_ck_num(s.get("who", "")))
+        cand.append(_ck_num(s.get("number", "")))
+        cand.append(_ck_num(s.get("ident", "")))
         cand = [c for c in cand if c]
         if not cand:
             return {}
         for m in _ev_members():
-            no = re.sub(r"[^0-9]", "", str(m.get("number", "")))
-            ph = re.sub(r"[^0-9]", "",
-                        str(m.get("accessPhone") or m.get("phone") or ""))
-            if no in cand or ph in cand:
+            no = _ck_num(m.get("number", ""))
+            ph = _ck_num(m.get("accessPhone") or m.get("phone") or "")
+            if no in cand or (ph and ph in cand):
                 return m
         return {}
 
@@ -7615,9 +18299,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
+        # ── [속도 2026-11-06] API JSON 압축 전송 ─────────────────────────
+        #  ## 문제
+        #   /api/members 는 7.6MB 를 **무압축**으로 보냈다. 정적 파일(.js/.json)은
+        #   이미 br/gzip 캐시를 타는데, API 응답만 빠져 있었다. 모바일 회선에서
+        #   7.6MB 는 수십 초이고, 데이터 요금도 그대로 나간다.
+        #  ## 측정 (실데이터 기준)
+        #   raw 7,593,943 B → br 3,486,122 B (45.9%) → gzip 3,583,980 B (47.2%)
+        #  ## 안전장치
+        #   · 1KB 미만은 압축 이득이 없어 원본 전송.
+        #   · Vary: Accept-Encoding 을 반드시 붙인다(프록시 캐시 오염 방지).
+        #   · 압축이 원본보다 커지면 원본을 보낸다.
+        _enc = _pick_encoding(self.headers.get("Accept-Encoding", ""), body)
+        if _enc is not None:
+            _zbody, _encname = _enc
+            body = _zbody
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Encoding", _encname)
+            self.send_header("Vary", "Accept-Encoding")
+        else:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+        # ⚠️ API/오류 응답은 캐시 금지.
+        #  404·인증오류 JSON 을 일부 브라우저/인앱브라우저(카톡·문자)가 캐시하면
+        #  서버가 정상화된 뒤에도 계속 그 오류 화면이 뜨는 문제가 있었다.
+        self.send_header("Cache-Control", "no-store")
         if getattr(self, "_pending_sid", None):
             # 세션토큰 쿠키 — HttpOnly 로 JS/XSS 탈취 차단, HTTPS 요청이면 Secure 부여.
             #  (앱은 응답 본문의 sid 를 X-TSAK-Session 헤더로 사용하므로 쿠키는
@@ -7629,13 +18338,61 @@ class Handler(BaseHTTPRequestHandler):
                 % (urllib.parse.quote(self._pending_sid), _SESS_TTL, secure))
             self._pending_sid = None
         self._cors()
-        self.end_headers()
-        self.wfile.write(body)
+        # ── [안정 turn72] 클라이언트가 먼저 끊어도 프로세스가 죽지 않게 ────
+        #  ## 실제 사고 (2026-11-07)
+        #   참가자 저장이 8초 걸리자 앱/브라우저가 먼저 연결을 끊었다.
+        #   서버는 이미 닫힌 소켓에 응답을 쓰려다
+        #     BrokenPipeError: [Errno 32] Broken pipe
+        #   를 맞았고, 이 예외가 ThreadingHTTPServer 핸들러 밖으로 나가
+        #   **프로세스가 종료**됐다. 그 뒤 모든 요청이 Connection refused →
+        #   앱에서는 "로딩 걸림 + 버그"로 보였다.
+        #   응답 쓰기는 실패해도 서버가 살아 있어야 한다.
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError,
+                OSError):
+            # 클라이언트가 이미 떠났다. 보낼 대상이 없으므로 조용히 포기한다.
+            self.close_connection = True
+            return
 
-    def _bytes(self, b, ctype="application/octet-stream"):
+    def _bytes(self, b, ctype="application/octet-stream", filename=""):
+        # 텍스트성 응답(CSV/HTML/SVG)만 압축. 이미지·압축파일은 대상 아님.
+        _compressible = any(
+            str(ctype).startswith(t) for t in
+            ("text/", "application/json", "application/xml",
+             "image/svg", "application/javascript"))
+        if _compressible:
+            _enc2 = _pick_encoding(self.headers.get("Accept-Encoding", ""), b)
+            if _enc2 is not None:
+                b, _encname2 = _enc2
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(b)))
+                self.send_header("Content-Encoding", _encname2)
+                self.send_header("Vary", "Accept-Encoding")
+                if filename:
+                    try:
+                        fn = urllib.parse.quote(str(filename))
+                    except Exception:
+                        fn = str(filename)
+                    self.send_header(
+                        "Content-Disposition",
+                        f"attachment; filename*=UTF-8''{fn}")
+                self._cors()
+                self.end_headers()
+                self.wfile.write(b)
+                return
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(b)))
+        if filename:
+            try:
+                fn = urllib.parse.quote(str(filename))
+            except Exception:
+                fn = str(filename)
+            self.send_header(
+                "Content-Disposition", f"attachment; filename*=UTF-8''{fn}")
         self._cors()
         self.end_headers()
         self.wfile.write(b)
@@ -7656,7 +18413,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             want_crop = False
         if safe:
-            local = os.path.join(HERE, "merch_img", safe)
+            local = os.path.join(APP_ROOT, "merch_img", safe)
             if not os.path.exists(local):
                 local = os.path.join(MERCH_IMG_UPLOAD_DIR, safe)
             if os.path.exists(local):
@@ -7680,7 +18437,7 @@ class Handler(BaseHTTPRequestHandler):
         if not src or not (src.startswith("http://") or src.startswith("https://")):
             return self._json({"ok": False, "error": "src"}, 400)
         key = hashlib.sha1(src.encode("utf-8")).hexdigest()
-        cache_dir = os.path.join(HERE, ".merch_img_cache")
+        cache_dir = os.path.join(STATE_ROOT, ".merch_img_cache")
         cache_path = os.path.join(cache_dir, key)
         try:
             if os.path.exists(cache_path):
@@ -7700,6 +18457,42 @@ class Handler(BaseHTTPRequestHandler):
             return self._bytes_cache(body, ctype, max_age=86400)
         except Exception as e:
             return self._json({"ok": False, "error": str(e)}, 502)
+
+    def _img_bytes(self, b, ctype, tier="orig", max_age=None):
+        """[요구 2026-11-20] 이미지 3단계 서빙용 바이트 응답.
+
+        ## 왜 `_bytes()` 를 그대로 쓰면 안 되나
+            `_cors()` 가 **모든 응답**에 `Cache-Control: no-store` 를 붙인다
+            (보안감사 F02 — 개인정보 JSON 을 브라우저 캐시에 남기지 않으려는
+            조치). 그런데 사진에도 그대로 적용돼서, 파생본(썸네일/중간화질)을
+            아무리 잘 만들어 둬도 **브라우저가 매번 다시 받는다.**
+            실측: 웜 상태에서도 `Cache-Control: no-store` → 0ms 절감 효과 없음.
+
+        ## 정책
+            · thumb / mid — 내용이 원본에서 파생되고 URL 이 고정이므로
+              `public, max-age` + `immutable` 로 길게 캐시한다.
+              (원본 사진을 교체하면 앱이 `?v=` 를 갱신해 무효화한다)
+            · orig — 원본은 용량이 크고 교체 가능성이 있으므로 짧게만.
+            · `no-store` 는 여기서 **덮어쓴다**(send_header 는 중복 시 뒤엣것이
+              이기지 않으므로 `_cors()` 를 부르지 않고 직접 헤더를 쓴다).
+        """
+        if max_age is None:
+            max_age = 2592000 if tier in ("thumb", "mid") else 86400
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(b)))
+        cc = "public, max-age=%d" % int(max_age)
+        if tier in ("thumb", "mid"):
+            cc += ", immutable"
+        self.send_header("Cache-Control", cc)
+        #  이미지 교체 시 즉시 반영을 위해 약한 ETag 를 준다.
+        try:
+            self.send_header("ETag", 'W/"%s-%d"' % (tier, len(b)))
+        except Exception:
+            pass
+        self._cors_static()          # ACAO 만 붙고 캐시 정책은 건드리지 않는다
+        self.end_headers()
+        self.wfile.write(b)
 
     def _bytes_cache(self, b, ctype="application/octet-stream",
                      max_age=604800, immutable=True):
@@ -7729,13 +18522,63 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _serve_nas_file(self, path, ctype, *, download_name=None, allow_range=True):
-        """NAS 파일을 (동영상 탐색 가능한) Range 서빙."""
+    def _serve_nas_file(self, path, ctype, *, download_name=None,
+                        allow_range=True, cache_control=None):
+        """NAS 파일을 (동영상 탐색 가능한) Range 서빙.
+
+        ## [수정 2026-11-04 / turn53] 왜 "통째로 읽기"를 버렸는가
+         기존 구현은 `data = NAS.read_bytes(path)` 로 **파일 전체**를 메모리에
+         올린 뒤 잘라서 보냈다. 추모관 상한이 500MB 로 올라간 지금, 영상 하나를
+         재생할 때마다 500MB 가 RAM 에 통째로 올라온다. 게다가 `read_bytes()` 는
+         백엔드에서 읽은 내용을 로컬 스토어에 **다시 쓰기까지** 한다.
+
+         Range 요청은 본래 "이 구간만 달라"는 뜻이다. 전체를 읽어 놓고 잘라
+         보내면 Range 의 취지가 사라진다. 그래서:
+           ① 전체 크기는 `get_info()` 로 **메타데이터만** 먼저 얻고,
+           ② 요청 구간이 작으면 그 구간만 `read_range()` 로 읽고,
+           ③ 구간이 크면(또는 Range 가 없으면) `iter_bytes()` 로 **스트리밍**한다.
+         → 메모리 사용량이 파일 크기가 아니라 **한 번에 읽는 양**에 비례한다.
+
+        ## [수정] start > end 일 때 응답 본문이 어긋나던 문제
+         기존 코드는 잘못된 Range(`bytes=99999999-`)에서 `start` 를 0 으로
+         되돌리면서 `status` 는 206 인 채로 두었다. 그러면
+         `Content-Range: bytes 0-.../total` 이 200 응답처럼 보이지만 상태는
+         206 이라 플레이어가 혼란스러워한다. → 되돌릴 때는 200 으로 낮춘다.
+        """
+        # ⓪ 로컬 미디어 캐시에 있으면 **NAS 왕복 0회**로 바로 서빙한다.
+        #  (turn65) 37MB 영상이 캐시에 없을 때 첫 재생까지 16.3초가 걸렸다.
+        #  캐시가 있으면 아래 ①의 get_info() 조차 부르지 않는다.
+        _cf = _media_cache_file(path)
+        _cached = None
         try:
-            data = NAS.read_bytes(path)
-        except Exception as e:
-            return self._json({"ok": False, "error": str(e)}, 404)
-        total = len(data)
+            if os.path.exists(_cf):
+                _cached = os.path.getsize(_cf)
+        except Exception:
+            _cached = None
+        if _cached:
+            return self._serve_local_range(_cf, _cached, ctype,
+                                           download_name=download_name,
+                                           allow_range=allow_range,
+                                           cache_control=cache_control)
+
+        # ① 전체 크기 — 메타데이터만(본문 읽지 않음)
+        total = -1
+        try:
+            info = NAS.get_info(path)
+            if isinstance(info, dict) and info.get("ok"):
+                total = int(info.get("size") or 0)
+        except Exception:
+            total = -1
+        if total < 0:
+            # 크기를 못 얻는 백엔드면 종전처럼 전체를 읽는다(최후 수단).
+            try:
+                data = NAS.read_bytes(path)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 404)
+            total = len(data)
+        else:
+            data = None
+
         start, end = 0, max(0, total - 1)
         status = 200
         rng = self.headers.get("Range") if allow_range else None
@@ -7749,27 +18592,159 @@ class Handler(BaseHTTPRequestHandler):
                 if end >= total:
                     end = total - 1
                 if start > end or start >= total:
-                    start = 0
-                status = 206
-        chunk = data[start:end + 1] if total else b""
+                    # 만족할 수 없는 Range — 200 으로 되돌린다(206 금지).
+                    start, end, status = 0, max(0, total - 1), 200
+                else:
+                    status = 206
+        length = (end - start + 1) if total else 0
+
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(len(chunk)))
+        self.send_header("Content-Length", str(length))
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
         if download_name:
             self.send_header(
                 "Content-Disposition",
                 "attachment; filename*=UTF-8''" + urllib.parse.quote(download_name))
+        if cache_control:
+            #  썸네일은 내용이 바뀌지 않는다 → 오래 캐시해 트래픽을 아낀다.
+            self.send_header("Cache-Control", cache_control)
         self._cors()
         self.end_headers()
-        if chunk:
-            self.wfile.write(chunk)
+        if not length:
+            return
+
+        try:
+            self._pump_bytes(path, start, length, data)
+        except Exception as e:
+            # 헤더를 이미 보낸 뒤라 상태 코드를 바꿀 수 없다 — 로그만 남긴다.
+            print("[serve] body fail", path, e)
+        finally:
+            #  캐시 미스로 NAS 에서 직접 흘려보냈다면 **다음 방문자**를 위해
+            #  백그라운드로 한 번만 내려받아 둔다.
+            #  (반드시 스트리밍이 끝난 뒤에 시작한다 — 먼저 시작하면 느린 NAS
+            #   연결을 두고 이 스트리밍과 경쟁해 첫 재생이 더 느려진다)
+            if data is None and total and total >= _MEDIA_FILL_MIN:
+                _media_cache_fill_async(path, total)
+
+    def _serve_local_range(self, fp, total, ctype, *, download_name=None,
+                           allow_range=True, cache_control=None):
+        """**로컬 디스크** 파일을 Range 로 서빙한다 (turn65).
+
+        `_serve_nas_file` 과 헤더 규칙은 같지만 본문을 파일 핸들에서 직접
+        `seek/read` 한다. NAS 왕복이 0회라 첫 프레임이 즉시 뜬다.
+        """
+        start, end = 0, max(0, total - 1)
+        status = 200
+        rng = self.headers.get("Range") if allow_range else None
+        if rng and rng.startswith("bytes="):
+            m = re.match(r"bytes=(\d*)-(\d*)", rng)
+            if m:
+                if m.group(1):
+                    start = int(m.group(1))
+                if m.group(2):
+                    end = int(m.group(2))
+                if end >= total:
+                    end = total - 1
+                if start > end or start >= total:
+                    start, end, status = 0, max(0, total - 1), 200
+                else:
+                    status = 206
+        length = (end - start + 1) if total else 0
+
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+        if download_name:
+            self.send_header(
+                "Content-Disposition",
+                "attachment; filename*=UTF-8''" + urllib.parse.quote(download_name))
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
+        self._cors()
+        self.end_headers()
+        if not length:
+            return
+
+        CHUNK = 256 * 1024
+        sent = 0
+        try:
+            with open(fp, "rb") as f:
+                f.seek(start)
+                while sent < length:
+                    n = min(CHUNK, length - sent)
+                    b = f.read(n)
+                    if not b:
+                        break
+                    self.wfile.write(b)
+                    sent += len(b)
+            #  LRU: 읽은 시각을 갱신해 evict 대상에서 밀려나게 한다.
+            try:
+                os.utime(fp, None)
+            except Exception:
+                pass
+        except Exception as e:
+            # 헤더를 이미 보낸 뒤 — 로그만 남긴다(정상적인 재생 중단 포함).
+            print("[serve-local] body fail", os.path.basename(fp), e)
+
+    def _pump_bytes(self, path, start, length, whole=None):
+        """`path` 의 [start, start+length) 를 클라이언트로 흘려보낸다.
+
+        작은 구간은 한 번에, 큰 구간은 청크로 나눠 보낸다. 스트리밍 도중
+        끊기면(사용자가 창을 닫음) BrokenPipe 가 나는데, 그건 오류가 아니라
+        정상적인 중단이므로 조용히 삼킨다.
+        """
+        CHUNK = 4 * 1024 * 1024   # 4MB — 메모리와 syscall 사이의 절충
+        sent = 0
+        if whole is not None:
+            view = memoryview(whole)[start:start + length]
+            for i in range(0, length, CHUNK):
+                self.wfile.write(view[i:i + CHUNK])
+            return
+        reader = getattr(NAS, "read_range", None)
+        if callable(reader):
+            # 작은 구간은 한 번에 읽는 편이 syscall 이 적다.
+            if length <= CHUNK:
+                self.wfile.write(reader(path, start, length))
+                return
+            while sent < length:
+                n = min(CHUNK, length - sent)
+                b = reader(path, start + sent, n)
+                if not b:
+                    break
+                self.wfile.write(b)
+                sent += len(b)
+            return
+        it = getattr(NAS, "iter_bytes", None)
+        if callable(it):
+            skip = start
+            for b in it(path, chunk_size=CHUNK):
+                if skip:
+                    if len(b) <= skip:
+                        skip -= len(b)
+                        continue
+                    b = b[skip:]
+                    skip = 0
+                if sent + len(b) > length:
+                    b = b[:length - sent]
+                if b:
+                    self.wfile.write(b)
+                    sent += len(b)
+                if sent >= length:
+                    break
+            return
+        # 최후 수단 — 전체 읽기
+        data = NAS.read_bytes(path)
+        self.wfile.write(memoryview(data)[start:start + length])
 
     def _body(self):
         n = int(self.headers.get("Content-Length", 0) or 0)
-        return self.rfile.read(n) if n else b""
+        return self._rfile_read(n) if n else b""
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -7785,6 +18760,17 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "paused": _server_paused(),
                     "ts": datetime.datetime.now().isoformat(),
+                    # ── [안전장치 2026-10-26] 저장 차단 관측 ────────────────
+                    #  호출부가 _save_json 의 False 를 무시하므로, 차단이
+                    #  실제로 일어나는지 여기서 확인할 수 있어야 한다.
+                    #  (0 이 정상. 값이 올라가면 게이트가 오탐 중일 수 있으니
+                    #   .safe_snapshots 를 보고 판단한다)
+                    "saveGuard": {
+                        "blockedCount": _SAVE_BLOCK_STATS.get("count", 0),
+                        "last": _SAVE_BLOCK_STATS.get("last", ""),
+                        "lastAt": _SAVE_BLOCK_STATS.get("lastAt", ""),
+                        "recent": _SAVE_BLOCK_STATS.get("recent", []),
+                    },
                 })
             # ---- 도로명주소 검색 (행정안전부 JUSO 오픈API, 공개·무인증) ----
             if p == "/api/address/search":
@@ -7792,6 +18778,136 @@ class Handler(BaseHTTPRequestHandler):
                 kw = (q.get("q", [""])[0] or "").strip()
                 page = (q.get("page", ["1"])[0] or "1").strip()
                 return self._json(_addr_search(kw, page))
+            # ---- 지도 위치 검색(지오코딩) — 검색하면 좌표가 바로 나온다 ----
+            if p == "/api/geo/search":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                kw = (q.get("q", [""])[0] or "").strip()
+                try:
+                    lim = int((q.get("limit", ["8"])[0] or "8").strip())
+                except Exception:
+                    lim = 8
+                return self._json({"ok": True, "items": _geo_search(kw, lim)})
+            # ---- 카카오 키 진단(마스터 전용) — 실제 카카오 응답을 그대로 반환 ----
+            if p == "/api/geo/kakao-test":
+                if not self._require("admin"):
+                    return
+                key = _kakao_rest_key()
+                if not key:
+                    return self._json({"ok": False, "error": "REST 키가 비어 있습니다"})
+                url = ("https://dapi.kakao.com/v2/local/search/keyword.json?query="
+                       + urllib.parse.quote("송정해수욕장") + "&size=1")
+                req = urllib.request.Request(url, headers={
+                    "Authorization": "KakaoAK " + key,
+                    "Accept": "application/json",
+                })
+                try:
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        body = resp.read().decode("utf-8", "replace")
+                        code = resp.status
+                except urllib.error.HTTPError as he:
+                    body = he.read().decode("utf-8", "replace")
+                    code = he.code
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)})
+                try:
+                    j = json.loads(body)
+                except Exception:
+                    j = {"raw": body}
+                # ---- 원인별 정확한 안내(사용자가 바로 조치할 수 있도록) ----
+                msg = str((j or {}).get("message", "") or "")
+                disabled = ("OPEN_MAP_AND_LOCAL" in msg) and ("disabled" in msg)
+                hint = ""
+                if disabled:
+                    hint = ("카카오맵 서비스가 꺼져 있습니다. 카카오 콘솔 → 내 애플리케이션 "
+                            "→ [한국범스카우트중앙회] → 제품 설정 → 카카오맵 → "
+                            "'카카오맵(로컬)' 활성화(ON) 후 저장하면 즉시 정상 동작합니다.")
+                elif code == 401:
+                    hint = ("REST 키 값이 카카오에 등록된 값과 다릅니다. "
+                            "콘솔의 REST API 키를 마스터 콘솔에 다시 입력하세요.")
+                elif code == 403:
+                    hint = ("권한 오류 — 카카오맵(로컬) 서비스 활성화 상태를 확인하세요.")
+                elif code == 200:
+                    hint = "카카오 키·서비스 모두 정상입니다."
+                return self._json({
+                    "ok": (code == 200),
+                    "status": code,
+                    "kakao": j,
+                    "disabled": disabled,
+                    "hint": hint,
+                    "keyTail": key[-6:],
+                    "keyLen": len(key),
+                })
+            # ---- 지도 임베드용 공개 설정(마스터 저장 키 중 공개용 JS 키만) ----
+            if p == "/api/geo/config":
+                cfg = _load_json(CFG_FILE, {})
+                js = str(cfg.get("kakaoJsKey", "") or "").strip()
+                st = _kakao_status()
+                return self._json({
+                    "ok": True,
+                    "kakaoJsKey": js,
+                    # 카카오 오버레이는 키가 있고 서버가 카카오맵 확인에 성공할 때만
+                    # 여는 것이 안전하다(아니면 지도가 하얗게 뜨고 앱이 멈춘 듯 보임).
+                    "canOpenKakao": bool(js) and bool(st.get("ok")),
+                    "kakaoDisabled": bool(st.get("disabled")),
+                    "kakaoHint": str(st.get("hint", "") or ""),
+                    "hasRestKey": bool(str(cfg.get("kakaoRestKey", "") or "").strip()),
+                })
+            # ---- 카카오 지도 정적 이미지 프록시(JS 키 필요) ----
+            if p == "/api/geo/kakaomap":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                key = _kakao_js_key()
+                if not key:
+                    return self._json({"ok": False, "error": "no js key"}, 400)
+                try:
+                    lat = float((q.get("lat", [""])[0] or "").strip())
+                    lng = float((q.get("lng", [""])[0] or "").strip())
+                except Exception:
+                    return self._json({"ok": False, "error": "lat/lng"}, 400)
+                try:
+                    lvl = max(1, min(14, int((q.get("level", ["3"])[0] or "3").strip())))
+                    w = max(160, min(1280, int((q.get("w", ["640"])[0] or "640").strip())))
+                    h = max(120, min(960, int((q.get("h", ["320"])[0] or "320").strip())))
+                except Exception:
+                    lvl, w, h = 3, 640, 320
+                url = ("https://staticmap.kakao.com/staticmap/map.png"
+                       "?appkey=" + urllib.parse.quote(key)
+                       + f"&center={lat},{lng}&level={lvl}"
+                       + f"&w={w}&h={h}&maptype=map&format=png")
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0 (TSAK App)",
+                    "Referer": "https://map.kakao.com/",
+                    "Accept": "image/png,image/*,*/*",
+                })
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = resp.read()
+                    ct = resp.headers.get("Content-Type", "image/png")
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 502)
+                if not data or "image" not in (ct or ""):
+                    return self._json({"ok": False, "error": "bad image"}, 502)
+                return self._bytes_cache(data, "image/png", max_age=3600)
+            # ---- 정적 지도 이미지 (검색 위치 미리보기, OSM 타일 스티칭) ----
+            if p == "/api/geo/staticmap":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    lat = float((q.get("lat", [""])[0] or "").strip())
+                    lng = float((q.get("lng", [""])[0] or "").strip())
+                except Exception:
+                    return self._json({"ok": False, "error": "lat/lng"}, 400)
+                try:
+                    zoom = int((q.get("z", ["15"])[0] or "15").strip())
+                except Exception:
+                    zoom = 15
+                try:
+                    w = max(160, min(1280, int((q.get("w", ["640"])[0] or "640").strip())))
+                    h = max(120, min(960, int((q.get("h", ["320"])[0] or "320").strip())))
+                except Exception:
+                    w, h = 640, 320
+                png = _static_map_png(lat, lng, zoom, w, h)
+                if not png:
+                    return self._json({"ok": False, "error": "map unavailable"}, 502)
+                return self._bytes_cache(png, "image/png", max_age=3600)
             # ---- 수품상품 이미지 프록시 (로컬 이미지/외부 이미지를 같은 출처로 제공) ----
             if p == "/api/merch/img":
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -7937,6 +19053,24 @@ class Handler(BaseHTTPRequestHandler):
                 members = _scope_members(s.get("tier"), s.get("who"), members,
                                          regular=bool(s.get("regular")),
                                          corps=str(s.get("corps") or "tsak"))
+                # [자기조회 고속화] ?self=1 → 로그인 본인 1건만 강제 반환.
+                #  개인정보 수정 진입 시 클라이언트가 전체(4.5MB) 파싱으로 멈추는
+                #  문제를 막기 위한 것으로, 응답을 수 KB로 축소한다.
+                try:
+                    _qs = urllib.parse.parse_qs(
+                        urllib.parse.urlparse(self.path).query)
+                    if _qs.get("self", ["0"])[0] in ("1", "true", "yes"):
+                        _who_q = re.sub(r"[^0-9]", "", str(s.get("who") or ""))
+                        if _who_q:
+                            members = [
+                                _redact_member(m, self=True) for m in members
+                                if _who_q in (
+                                    re.sub(r"[^0-9]", "", str(m.get("number", ""))),
+                                    re.sub(r"[^0-9]", "", str(m.get("loginId", ""))),
+                                    re.sub(r"[^0-9]", "", str(m.get("phone", ""))))
+                            ]
+                except Exception:
+                    pass
                 _attach_pending_event_names(members)
                 return self._json({"ok": True, "members": members})
             # ---- '범스카우트 인가정보 연동' 검색 (멘토·페런츠 직접 입력용) ----
@@ -7963,16 +19097,57 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._require("admin"):
                     return
                 members = _load_json(EUNHA_DB_FILE, [])
+                # ── [요구 2026-11-02 build #579] 응답 직전 인가정보 보충 ────
+                #  증상: "은하20호 정보가 누락됨 / 은하19호의 인가시 정보와
+                #        동일하게 업데이트 해줘"
+                #  실측: NAS 원본은 정상(67키)인데 **로컬 미러**가 옛 얇은 값
+                #        (5키)으로 되돌아가 있었다. `_load_json` 은 미러를 먼저
+                #        읽으므로 부팅 보충이 미러 때문에 무효화될 수 있다.
+                #        → 응답을 만들 때 한 번 더 메모리에서 보충한다.
+                #        (비어 있는 필드만 채우므로 사용자가 고친 값은 보존)
+                try:
+                    members = _eunha_fill_from_seed(members)
+                except Exception as _e:
+                    print("eunha fill(inline) skip:", _e)
                 return self._json({"ok": True, "members": members,
                                    "corps": "eunha"})
             if p == "/api/member/password":
                 if not self._require("master"):
                     return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-                no = re.sub(r"[^0-9]", "", str(q.get("number", [""])[0]))
+                _raw_q = str(q.get("number", [""])[0])
+                no = re.sub(r"[^0-9]", "", _raw_q)
                 if not no:
                     return self._json({"ok": False, "error": "number"}, 400)
-                m = _ev_member_by_ident(no)
+                # ── [turn68] 소속 확정 ─────────────────────────────────────
+                #  범/은하 번호가 전부 겹치는데 종전에는 범 명단을 먼저 뒤졌다.
+                #  → 마스터가 '은하 3번' 비번을 물어도 **범 3번(서인식)** 의
+                #    비밀번호가 돌아왔다(엉뚱한 사람의 비번 노출·오배포 위험).
+                #  이제 corps 쿼리(또는 G 접두어)로 명단을 확정하고,
+                #  확정할 수 없으면 409 로 되묻는다.
+                _qc = str(q.get("corps", [""])[0] or "").strip().lower()
+                if _qc not in ("tsak", "eunha"):
+                    _qc = ""
+                if not _qc and _ck_is_eunha(_raw_q):
+                    _qc = "eunha"
+                if not _qc:
+                    _in_e3 = bool(_eunha_member_by_number(no))
+                    _in_t3 = bool(_member_by_number(no))
+                    if _in_e3 and not _in_t3:
+                        _qc = "eunha"
+                    elif _in_t3 and not _in_e3:
+                        _qc = "tsak"
+                    elif _in_e3 and _in_t3:
+                        return self._json({
+                            "ok": False,
+                            "ambiguous": True,
+                            "error": ("번호 %s 은(는) 범스카우트·은하스카우트 양쪽에 "
+                                      "있습니다. corps=tsak|eunha 를 지정해 주세요."
+                                      % no),
+                        }, 409)
+                m = _ev_member_by_ident(
+                    (_ck(_raw_q) if _qc == "eunha" else no),
+                    corps=(_qc or None))
                 if not m:
                     return self._json({"ok": False, "error": "not found"}, 404)
                 is_regular = bool(m.get("isRegular"))
@@ -7984,9 +19159,13 @@ class Handler(BaseHTTPRequestHandler):
                              or _ev_phone_last4(m.get("phone") or key))
                     default_pw = _ev_phone_last4(m.get("phone") or key)
                 else:
-                    pw = _personal_pw_of(re.sub(r"[^0-9]", "",
-                                                str(m.get("number", ""))))
-                    default_pw = f"{re.sub(r'[^0-9]', '', str(m.get('number', '')))}!@@"
+                    # [turn68] 은하는 은하 전용 저장소에서만 읽는다.
+                    _mno = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                    if _qc == "eunha":
+                        pw = _eunha_pw_of(_mno)
+                    else:
+                        pw = _personal_pw_of(_mno)
+                    default_pw = f"{_mno}!@@"
                 return self._json({
                     "ok": True,
                     "password": pw,
@@ -8011,19 +19190,28 @@ class Handler(BaseHTTPRequestHandler):
                 if not s:
                     return self._json({"ok": False, "error": "unauthorized"}, 401)
                 d = json.loads(self._body() or b"{}")
-                target = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                # [turn68] 접두어(G)를 보존한다 — 숫자만 남기면 은하 3번 열람이
+                #   범 3번 열람으로 기록되고, '본인 열람' 판정도 어긋난다.
+                _raw_target = str(d.get("number", "") or "")
+                target = re.sub(r"[^0-9]", "", _raw_target)
                 if not target:
                     return self._json({"ok": False, "error": "number"}, 400)
                 ua = self.headers.get("User-Agent", "")
                 ip = self.client_address[0] if self.client_address else ""
                 viewer_tier = str(s.get("tier", ""))
                 viewer_who = str(s.get("who", ""))
+                _vcorps = str(s.get("corps", "") or "").strip().lower()
+                if _vcorps not in ("eunha", "tsak"):
+                    _vcorps = ("eunha" if _ck_is_eunha(_raw_target or viewer_who)
+                               else "tsak")
                 # 개인/비인가자가 본인 프로필을 열람한 경우 → 로그인 기록만으로
                 #  충분하므로 중복 열람기록은 남기지 않는다.
                 is_self = (viewer_tier in ("personal", "guest")
-                           and viewer_who and viewer_who == target)
+                           and viewer_who
+                           and _ck(viewer_who) == _ck(_raw_target))
                 if not is_self:
-                    _log_access_view(viewer_tier, viewer_who, target, ua, ip)
+                    _log_access_view(viewer_tier, viewer_who, _raw_target,
+                                     ua, ip, corps=_vcorps)
                 return self._json({"ok": True, "logged": (not is_self)})
             # ---- 전체 회원 접속 로그 (마스터 전용, 대시보드용) ----
             if p == "/api/access/logs":
@@ -8100,9 +19288,12 @@ class Handler(BaseHTTPRequestHandler):
                     "event": "행사 참가자 등록",
                     "qualification": "자격 지정",
                     "regular": "비인가회원 등록",
+                    "donation": "후원금 등록",
+                    "supply": "후원물품 등록",
                 }
-                _order = ["lifetime", "fee", "event", "qualification"]
-                _known = set(_order) | {"regular", "pwreset"}
+                _order = ["lifetime", "fee", "event", "qualification",
+                          "donation", "supply"]
+                _known = set(_order) | {"regular", "pwreset", "linkfix"}
                 for t in _order + sorted(
                         {str(it.get("type", "")) for it in pend} - _known):
                     sub = [it for it in pend if str(it.get("type", "")) == t]
@@ -8129,9 +19320,28 @@ class Handler(BaseHTTPRequestHandler):
                     q3 = _link_pending_members()
                 except Exception:
                     q3 = []
+                # 3-1) [요구] 정보 수정요청(메모) — 비인가회원 본인의 수정 요청을
+                #   같은 '멘토·페런츠 연결' 큐에 병합해 노출(처리 시 메모 해제).
+                try:
+                    _seen3 = {str(x.get("number", "")) for x in q3}
+                    for _fx in _link_fix_members():
+                        _k = str(_fx.get("number", ""))
+                        if _k and _k in _seen3:
+                            # 이미 pending 항목이면 fixNote 만 보강.
+                            for _q3 in q3:
+                                if str(_q3.get("number", "")) == _k:
+                                    _q3["fixNote"] = _fx.get("fixNote", "")
+                                    _q3["hasFixNote"] = True
+                                    break
+                            continue
+                        q3.append(_fx)
+                        if _k:
+                            _seen3.add(_k)
+                except Exception as _e:
+                    print("link fix merge fail", _e)
                 if q3:
                     queues.append({
-                        "key": "link", "title": "멘토·페런츠 연결",
+                        "key": "link", "title": "멘토·페런츠 연결 · 정보 수정요청",
                         "kind": "link", "count": len(q3), "items": q3,
                     })
                 # 4) 비밀번호 초기화 요청 대기 (요구: 분실 시 관리자·마스터에게 초기화 요청)
@@ -8144,6 +19354,14 @@ class Handler(BaseHTTPRequestHandler):
                         "key": "pwreset", "title": "비밀번호 초기화 요청",
                         "kind": "request", "count": len(q4), "items": q4,
                     })
+                # 마스터 위임 주석 부착 — 관리자(app)가 마스터에게 위임한 항목은
+                #  각 항목에 delegated/delegatedBy/delegatedAt 를 실어 내려보내고,
+                #  UI 는 마스터만 선택·처리 가능하도록 잠근다(요구).
+                for _q in queues:
+                    _src = {"regular": "regular",
+                            "link": "link"}.get(
+                        str(_q.get("key", "")), "request")
+                    _deleg_annotate(_src, _q.get("items") or [])
                 total = sum(int(q.get("count", 0)) for q in queues)
                 # 해당 아이디가 아직 확인하지 않은(미확인) 건수 — 배지용.
                 owner = _owner_key(self._sess())
@@ -8176,6 +19394,23 @@ class Handler(BaseHTTPRequestHandler):
                 pending = _link_pending_members()
                 return self._json({"ok": True, "pending": pending,
                                    "count": len(pending)})
+            if p == "/api/link/ledger":
+                # 멘토장부 · 페런츠장부 · 멘티장부 — 관리자·마스터 전용.
+                #   각 항목은 회원정보와 동일한 카드구성으로 노출되며, 출력은
+                #   공용 출력시트(출력항목 선택·미리보기·사이즈조정)를 그대로 쓴다.
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                kind = str((q.get("kind", [""])[0] or "")).strip()
+                kinds = [kind] if kind in ("mentor", "parent", "mentee") \
+                    else ["mentor", "parent", "mentee"]
+                out = {k: _link_ledger_entries(k) for k in kinds}
+                return self._json({
+                    "ok": True,
+                    "mentor": out.get("mentor", []),
+                    "parent": out.get("parent", []),
+                    "mentee": out.get("mentee", []),
+                })
             if p == "/api/link/profiles":
                 # 멘토·페런츠(수동 등록) 인적사항 조회.
                 #   관리자·마스터: 전체 프로필
@@ -8186,10 +19421,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True,
                                        "profiles": _link_profiles_load()})
                 me = self._my_member()
-                linked = [str(x) for x in (list(me.get("mentors") or [])
-                                           + list(me.get("parents") or []))]
+                linked = {re.sub(r"[^0-9]", "", str(x)) for x in
+                          (list(me.get("mentors") or [])
+                           + list(me.get("parents") or []))}
                 allp = _link_profiles_load()
-                out = {k: v for k, v in allp.items() if str(k) in linked}
+                out = {k: v for k, v in allp.items()
+                       if _link_key_nums(v) & linked}
                 return self._json({"ok": True, "profiles": out})
             if p == "/api/member/medals":
                 # 개인프로필 연동 — 해당 인가번호가 받은/수여한 각인 메달 기록.
@@ -8247,16 +19484,114 @@ class Handler(BaseHTTPRequestHandler):
                 fv.update(cfg.get("fieldVisibility") or {})
                 cfg["fieldVisibility"] = fv
                 return self._json({"ok": True, "config": cfg})
+            # ---- 후원계좌 목록 조회 (인증 필요) ----
+            if p == "/api/donation/accounts":
+                if not self._require():
+                    return
+                cfg = _load_json(CFG_FILE, _default_config())
+                accs = cfg.get("donations")
+                if not isinstance(accs, list):
+                    accs = []
+                return self._json({"ok": True, "donations": accs,
+                                   "donationHolder": str(cfg.get("donationHolder", ""))})
             # ---- 역할별 메뉴 접근권한 (조회: 인증, 설정: 마스터 전용) ----
             if p == "/api/perms":
                 if not self._require():
                     return
-                return self._json({"ok": True, "perms": _role_perms()})
+                perms = _role_perms()
+                # 관리자별 개별 권한 override 를 세션의 'app' 표에 반영
+                #  (앱의 can() 이 관리자 개별 허용범위를 그대로 따르도록).
+                ov = _session_admin_override(self._sess())
+                if ov:
+                    base = dict(perms.get("app") or {})
+                    base.update(ov)
+                    perms = dict(perms)
+                    perms["app"] = base
+                return self._json({"ok": True, "perms": perms})
+            # ---- 홈 메뉴 노출 설정 (조회: 인증, 설정: 마스터 전용) ----
+            if p == "/api/home/menus":
+                if not self._require():
+                    return
+                return self._json({"ok": True, "menus": _home_menus()})
+            # ---- 관리자별 개별 메뉴권한 조회 (마스터 전용) ----
+            if p == "/api/admin/perms":
+                if not self._require("master"):
+                    return
+                cfg = _load_json(CFG_FILE, _default_config())
+                ap = cfg.get("adminPermissions", {})
+                if not isinstance(ap, dict):
+                    ap = {}
+                allkeys = set(_default_role_perms().get("app", {}).keys())
+                clean = {}
+                for k, v in ap.items():
+                    if isinstance(v, dict):
+                        clean[str(k)] = {kk: bool(vv)
+                                         for kk, vv in v.items()
+                                         if str(kk) in allkeys}
+                return self._json({
+                    "ok": True,
+                    "defaults": _default_role_perms().get("app", {}),
+                    "adminPerms": clean,
+                    "perms": _role_perms(),
+                })
+            # ---- 아이디/암호 관리자 계정 조회 (마스터 전용) ----
+            if p == "/api/admin/accounts":
+                if not self._require("master"):
+                    return
+                return self._json({"ok": True, "accounts": _admin_accounts()})
             # ---- 재무 (F02: 관리자·마스터 전용) ----
             if p == "/api/finance":
-                if not self._require("admin"):
+                # ── [요구 2026-10-26] 개인카드에 후원금·참가비 내역을 보여줄 것 ──
+                #  요구: "후원금, 후원물품, 참가비, 각종 찬조 등록시 인가번호를
+                #        넣으면 개인카드에 후원금 및 금액 상당의 내역을 추가할 것"
+                #
+                #  ## 왜 개인카드가 비어 있었나 (실측)
+                #   이 엔드포인트는 `_require("admin")` 만 통과시켰다.
+                #   개인(personal) 세션은 401 → 앱의 FinanceService.load() 가
+                #   throw → `_status='offline'` → `depositsOf()` 가 **빈 목록**.
+                #   즉 finance.json 에는 이미 415·75 등의 후원 거래가
+                #   `ev_*` 로 들어가 있는데도 화면에는 아무것도 안 보였다.
+                #
+                #  ## 수정 방침 (원장 전체를 개인에게 열지 않는다)
+                #   · 관리자·마스터  → 종전과 동일하게 **전체** 반환.
+                #   · 개인 세션      → **본인 인가번호 거래만** 반환.
+                #     남의 후원 금액·이름이 새지 않게 화이트리스트 방식으로
+                #     걸러낸다. 카테고리 목록·버전 등 메타는 그대로 준다
+                #     (개인카드는 카테고리 색/아이콘만 쓰므로 무해).
+                #   · 세션 없음      → 401 (종전과 동일).
+                if not self._require():
                     return
-                return self._json({"ok": True, "finance": _load_json(FIN_FILE, _default_finance())})
+                _fin_all = _load_json(FIN_FILE, _default_finance())
+                if self._auth_ok("admin"):
+                    return self._json({"ok": True, "finance": _fin_all})
+                _me_no = self._my_ident()
+                if not _me_no:
+                    # 마스터/앱이 아닌데 인가번호도 없으면 보여줄 것이 없다.
+                    return self._json({"ok": True,
+                                       "finance": dict(_default_finance(),
+                                                       transactions=[],
+                                                       scoped=True)})
+                _mine = []
+                for _t in (_fin_all.get("transactions") or []):
+                    if not isinstance(_t, dict):
+                        continue
+                    if re.sub(r"[^0-9]", "",
+                              str(_t.get("number", "") or "")) == _me_no:
+                        _mine.append(_t)
+                return self._json({
+                    "ok": True,
+                    "finance": {
+                        "transactions": _mine,
+                        # 개인에게는 원장 통계를 주지 않는다(전체 합계 노출 방지).
+                        "income_categories":
+                            _fin_all.get("income_categories", []),
+                        "expense_categories":
+                            _fin_all.get("expense_categories", []),
+                        "updated": _fin_all.get("updated", ""),
+                        "version": _fin_all.get("version", 0),
+                        "scoped": True,
+                    },
+                })
             if p == "/api/finance/rules":
                 if not self._require("admin"):
                     return
@@ -8271,6 +19606,76 @@ class Handler(BaseHTTPRequestHandler):
                 members = _load_json(DB_FILE, [])
                 fin = _load_json(FIN_FILE, _default_finance())
                 return self._json({"ok": True, "stats": _compute_stats(fin, members)})
+            # ---- 재무 그룹핑 목록 (전체/연도/월/항목) ----
+            #   거래들에 첨부파일 개수를 붙이고, 여러 기준으로 그룹핑한 요약을 함께 내려준다.
+            if p == "/api/finance/list":
+                if not self._require("admin"):
+                    return
+                fin = _load_json(FIN_FILE, _default_finance())
+                meta = _fin_attach_meta()
+                txs = []
+                for t in fin.get("transactions", []):
+                    if not isinstance(t, dict):
+                        continue
+                    tx = dict(t)
+                    tx["attachCount"] = len(meta.get(str(tx.get("id", "")), []) or [])
+                    txs.append(tx)
+
+                def _ym(t):
+                    d = re.sub(r"[^0-9]", "-", str(t.get("date", "")))
+                    m = re.match(r"(20\d{2})-(\d{2})", d)
+                    return (m.group(1), m.group(2)) if m else ("미지정", "00")
+
+                by_year, by_month, by_category = {}, {}, {}
+                for t in txs:
+                    y, mo = _ym(t)
+                    inc = 0 if t.get("type") == "expense" else int(t.get("amount", 0) or 0)
+                    exp = int(t.get("amount", 0) or 0) if t.get("type") == "expense" else 0
+                    for bucket, key in ((by_year, y), (by_month, f"{y}-{mo}"),
+                                        (by_category, str(t.get("category", "기타")))):
+                        b = bucket.setdefault(key, {"count": 0, "income": 0, "expense": 0})
+                        b["count"] += 1
+                        b["income"] += inc
+                        b["expense"] += exp
+                return self._json({
+                    "ok": True, "transactions": txs,
+                    "byYear": by_year, "byMonth": by_month,
+                    "byCategory": by_category,
+                    "categories": {
+                        "income": fin.get("income_categories", []),
+                        "expense": fin.get("expense_categories", []),
+                    },
+                })
+            # ---- 재무 거래 첨부파일 목록 ----
+            if p == "/api/finance/attach":
+                # [요구 2026-10-26] "스탭도 영수증 파일 확인 가능" — 첨부 조회는
+                #  관리자·마스터 **또는 해당 행사 스탭**까지 허용한다.
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                txid = (q.get("txid", [""])[0] or "").strip()
+                if not _require_finance_attach(self, txid):
+                    return
+                return self._json({"ok": True, "txid": txid,
+                                   "files": _fin_attach_list(txid)})
+            # ---- 재무 거래 첨부파일 다운로드 ----
+            if p == "/api/finance/attach/download":
+                # [요구 2026-10-26] 스탭도 영수증을 열어볼 수 있어야 한다.
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                txid = _safe_name((q.get("txid", [""])[0] or "").strip())
+                if not _require_finance_attach(self, txid):
+                    return
+                name = _safe_rel((q.get("name", [""])[0] or "").strip())
+                fp = f"{FIN_ATTACH_DIR}/{txid}/{name}"
+                if not NAS.exists(fp):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                ext = os.path.splitext(name)[1].lower()
+                ct = MIME.get(ext, "application/octet-stream")
+                return self._bytes(NAS.read_bytes(fp), ct,
+                                   filename=name.split("/")[-1])
+            # ---- 자료 저장공간 설정 조회 (마스터 전용) ----
+            if p == "/api/storage":
+                if not self._require("master"):
+                    return
+                return self._json({"ok": True, "storage": _storage()})
             # ---- 기본자료 파일 목록 (마스터 전용) ----
             if p == "/api/files":
                 if not self._require("master"):
@@ -8330,13 +19735,107 @@ class Handler(BaseHTTPRequestHandler):
                             files.append({"name": f["name"], "size": f["size"]})
                 files.sort(key=lambda x: x["name"], reverse=True)
                 return self._json({"ok": True, "backups": files})
+            # ---- 사진 보유 목록 (photos/ 폴더에 실제 파일이 있는 인가번호) ----
+            #  요구: DB 의 photoPath 가 비어 있어도 서버에 사진 파일이 있으면 앱이
+            #  /api/photo/<번호> 로 골라 불러올 수 있게, 보유 번호 목록을 제공한다.
+            if p == "/api/photo/have":
+                if not self._require():
+                    return
+                r = NAS.list(f"{BASE}/photos")
+                nums = {}
+                if r.get("ok"):
+                    for f in r["files"]:
+                        if f.get("isdir"):
+                            continue
+                        nm = str(f.get("name", ""))
+                        base, _, ext = nm.rpartition(".")
+                        if ext.lower() not in ("jpg", "jpeg", "png"):
+                            continue
+                        # ── [번호체계 2026-10-26] 접두어 보존 ──────────────
+                        #  종전: `d = re.sub(r"[^0-9]","",base)` → 'G43' 이
+                        #  '43' 이 되어 **은하 사진 보유가 범 번호로 등록**됐다.
+                        #  이제 키를 `_ck()` 로 만들어 'G43' 과 '43' 을 분리한다.
+                        key = _ck(base)
+                        if key:
+                            nums[key] = ext.lower()
+                return self._json({"ok": True, "have": nums, "count": len(nums)})
             if p.startswith("/api/photo/"):
-                no = re.sub(r"[^0-9]", "", p.split("/")[-1])
-                for ext in (".jpg", ".png", ".jpeg"):
-                    fp = f"{BASE}/photos/{no}{ext}"
-                    if NAS.exists(fp):
-                        ct = "image/png" if ext == ".png" else "image/jpeg"
-                        return self._bytes(NAS.read_bytes(fp), ct)
+                # ── [버그 수정 2026-10-26] 은하 사진에 범 사진이 뜨던 문제 ──
+                #  요구(원문): "은하스카우트 사진에 범스카우트 동일인가번호의
+                #               사진이 표시되고 있음"
+                #
+                #  ## 종전 코드 (문제)
+                #    no = re.sub(r"[^0-9]", "", p.split("/")[-1])
+                #  요청 'G43' → 문자까지 전부 지워 **'43'** 이 되고,
+                #  `/photos/43.jpg` 를 반환했다 = **범 43호 사진**.
+                #  즉 은하 43호는 구조적으로 남의 사진을 볼 수밖에 없었다.
+                #
+                #  ## 수정
+                #   접두어를 보존한 `_ck()` 로 정규화한다.
+                #     범 43호  → 사진 '43.jpg'
+                #     은하 43호 → 사진 'G43.jpg'
+                #   두 파일은 서로 다른 이름이라 **덮어쓰지도, 섞이지도 않는다**.
+                #
+                #  ## 하위호환
+                #   은하 사진이 아직 'G' 없이 저장돼 있을 수 있으므로,
+                #   G 파일이 없으면 **은하 명단에 그 번호가 실재할 때만**
+                #   구(數字) 파일로 폴백한다. 범 번호를 은하로 오인해
+                #   남의 사진을 주는 일은 이 조건 때문에 생기지 않는다.
+                raw = urllib.parse.unquote(str(p.split("/")[-1] or ""))
+                key = _ck(raw)
+                if not key:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                # ══════════════════════════════════════════════════════════
+                # [turn64 보안감사 F1] 회원 사진은 **로그인 사용자만** 볼 수 있다.
+                #
+                #  ## 실측으로 확인한 문제
+                #   무인증 상태로 `GET /api/photo/2` → 200 + image/jpeg(34KB),
+                #   `GET /api/photo/415` → 200 + 61KB 가 그대로 내려왔다.
+                #   번호만 1씩 올리면 **전 회원의 얼굴 사진을 순차 수집**할 수
+                #   있었다(2,245명). 이름·연락처는 막혀 있는데 사진만 열려 있었다.
+                #
+                #  ## 그런데 그냥 '_require()' 만 걸면 앱이 깨진다
+                #   Flutter 웹은 사진을 <img src> 로 그린다. <img> 는
+                #   **커스텀 헤더를 못 붙이므로** X-TSAK-Session 을 못 보낸다.
+                #   또 개인 로그인 사용자는 자기 사진을 봐야 하고,
+                #   비회원 QR 참가신청 페이지는 사진이 필요 없다.
+                #   → 아래 3중 조건으로 통과시킨다.
+                #     ① 같은 출처 요청(브라우저가 쿠키를 자동 전송 → SameSite=Strict)
+                #        이고 세션이 있으면 통과  — 앱 화면용
+                #     ② 커스텀 헤더/쿼리 세션이 있으면 통과 — API 클라이언트용
+                #     ③ 연맹·단위대 '명부'를 보는 관리자·마스터
+                #   셋 다 아니면 401. (외부에서 무단 수집만 막는 것이 목적)
+                # ══════════════════════════════════════════════════════════
+                if not self._photo_view_allowed():
+                    return self._json(
+                        {"ok": False, "error": "unauthorized"}, 401)
+                cands = [key]
+                if key.startswith(EUNHA_PREFIX):
+                    # 구 저장분(접두어 없음) 폴백 — 은하 명단 실재 확인 후에만.
+                    _d = _ck_num(key)
+                    if _eunha_member_by_number(_d) and not _member_by_number(_d):
+                        cands.append(_d)
+                for _name in cands:
+                    for ext in (".jpg", ".png", ".jpeg"):
+                        fp = f"{BASE}/photos/{_name}{ext}"
+                        if NAS.exists(fp):
+                            # [요구] 3단계 서빙 — ?size=thumb|mid|orig
+                            #  앱이 목록에서 thumb, 크게 볼 때 mid 를 요청한다.
+                            #  지정이 없으면 orig(기존 동작 그대로 보존).
+                            try:
+                                _q = urllib.parse.parse_qs(
+                                    urllib.parse.urlparse(self.path).query)
+                                _step, _pw = _imgp.parse_img_query(_q)
+                            except Exception:
+                                _step, _pw = "orig", True
+                            b, ct, _tier = _serve_photo_tier(fp, _step, _pw)
+                            if b:
+                                # [요구 2026-11-20] 이미지 캐시 허용 —
+                                #  `_bytes()` 는 `_cors()` 때문에 no-store 가
+                                #  붙어 매번 재전송된다. `_img_bytes()` 사용.
+                                return self._img_bytes(b, ct, _tier)
+                            return self._json(
+                                {"ok": False, "error": "not found"}, 404)
                 return self._json({"ok": False, "error": "not found"}, 404)
             # ---- 행사관리: 미디어 목록 ----
             if p == "/api/event/list":
@@ -8372,8 +19871,203 @@ class Handler(BaseHTTPRequestHandler):
                 if not NAS.exists(fp):
                     return self._json({"ok": False, "error": "not found"}, 404)
                 ct = MIME.get(_ext_of(name), "application/octet-stream")
+                # ══════════════════════════════════════════════════════════
+                # [요구 2026-11-20] 이미지 3단계 — ?size=thumb|mid|orig
+                #
+                #  "최적화(중간단계화질)도 넣어줘. 썸네일만으로는 화질이
+                #   떨어지고, 여전히 나스에서 원본을 부르기엔 시간이 오래걸려"
+                #
+                #  행사 사진은 원본이 2~5MB 라 여기가 체감 차이가 가장 크다.
+                #  · thumb (480px)  → 격자·목록
+                #  · mid   (1280px) → 전체화면으로 크게 보기
+                #  · orig           → 다운로드·인쇄 (dl=1 이면 항상 원본)
+                #
+                #  다운로드(dl=1)는 **반드시 원본**을 준다. 축소본을 저장하면
+                #  사용자는 원본을 받았다고 믿는데 실제로는 화질이 깎인 파일을
+                #  갖게 되므로, 조용한 품질 손실이 된다.
+                # ══════════════════════════════════════════════════════════
+                if not dl and _imgp.is_image(name):
+                    try:
+                        _step, _pwv = _imgp.parse_img_query(q)
+                    except Exception:
+                        _step, _pwv = "orig", True
+                    if _step in ("thumb", "mid"):
+                        _b, _ct2, _tr = _serve_photo_tier(fp, _step, _pwv)
+                        if _b:
+                            return self._img_bytes(_b, _ct2, _tr)
+                        # 파생본 실패 → 아래 원본 경로로 자연 폴백
+                    elif _step == "orig":
+                        # 원본 보기(다운로드 아님)도 캐시를 허용해 준다.
+                        try:
+                            _ob = NAS.read_bytes(fp)
+                            return self._img_bytes(_ob, ct, "orig")
+                        except Exception:
+                            pass
                 return self._serve_nas_file(
                     fp, ct, download_name=name if dl else None)
+            # ════════════ [요구 2026-10-28] 행사자료 (음원·영상·문서) ════════════
+            #  "행사때 항상 반복적으로 필요한 자료들을 재생하고, 다운로드"
+            #
+            #  대상 폴더: 행사관리/01 행사자료 (업로드가능)
+            #  · 재생은 Range 스트리밍(_serve_nas_file) — 곡을 끝까지 받지 않고
+            #    필요한 구간만 받아 즉시 재생·탐색(seek)이 된다.
+            #  · 0000 폴더정리법(샘플)은 **PC 전용** — 이 API 는 그 폴더를
+            #    아예 읽지 않으므로 웹에 노출될 경로가 없다.
+            if p == "/api/event/res/list":
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                sub = _safe_relpath(q.get("sub", [""])[0])
+                target = RES_DIR + ("/" + sub if sub else "")
+                if not NAS.exists(target):
+                    return self._json({"ok": True, "sub": sub, "files": [], "folders": []})
+                deep = q.get("deep", ["0"])[0] == "1"
+
+                def _kind_of(nm):
+                    ext = _ext_of(nm)
+                    if ext in AUDIO_EXT:
+                        return "audio", ext
+                    if ext in VIDEO_EXT:
+                        return "video", ext
+                    if ext in IMAGE_EXT:
+                        return "image", ext
+                    return "doc", ext
+
+                def _scan(path, rel, depth):
+                    """한 폴더를 읽어 파일/하위폴더를 돌려준다.
+                    deep=1 이면 하위 폴더까지 내려가 **모든 자료를 한 화면**에
+                    모은다(행사 게시판은 '전체 자료'가 먼저 보여야 쓸모가 있다).
+                    """
+                    out_f, out_d = [], []
+                    try:
+                        rr = NAS.list(path)
+                    except Exception:
+                        return out_f, out_d
+                    for f in (rr.get("files") or []):
+                        nm = f.get("name", "")
+                        if not nm or nm.startswith(".") or nm.startswith("@"):
+                            continue
+                        # 샘플 폴더는 어떤 깊이에서도 제외(PC 전용)
+                        if nm.startswith("0000 "):
+                            continue
+                        if f.get("isdir"):
+                            out_d.append({"name": nm,
+                                          "sub": (rel + "/" + nm) if rel else nm})
+                            if deep and depth < 3:
+                                sf, sd = _scan(
+                                    path + "/" + nm,
+                                    (rel + "/" + nm) if rel else nm,
+                                    depth + 1)
+                                out_f.extend(sf)
+                                out_d.extend(sd)
+                            continue
+                        kind, ext = _kind_of(nm)
+                        out_f.append({
+                            "name": nm,
+                            "size": int(f.get("size", 0) or 0),
+                            "mtime": int(f.get("mtime", 0) or 0),
+                            "kind": kind,
+                            "ext": ext.lstrip("."),
+                            "sub": rel,
+                        })
+                    return out_f, out_d
+
+                files, folder_objs = _scan(target, sub, 0)
+                # 폴더는 경로만 내려준다(화면은 이름/개수만 쓰면 된다).
+                folders = sorted({d["sub"] for d in folder_objs})
+                # ── 저장된 **사용자 지정 순서**를 먼저 적용한다 ──────────
+                #  [요구 2026-10-30] "행사자료(음원포함)들은 순서 변경할 수
+                #  있도록" — 종전에는 (mtime, name) 역순 고정이라 손댈 수
+                #  없었다. 관리자가 정한 순서가 있으면 그 순서가 최우선이고,
+                #  순서를 정하지 않은 파일은 뒤에 기존 규칙으로 붙는다.
+                order = _res_order_map()
+
+                def _order_key(x):
+                    k = _res_order_key(x.get("sub", ""), x.get("name", ""))
+                    idx = order.get(k)
+                    # 순서 미지정 파일은 큰 값 → 뒤로 밀린다.
+                    return (0, idx, "") if idx is not None else (
+                        1, 0, (-x["mtime"], x["name"].lower()))
+
+                files.sort(key=_order_key)
+                return self._json({"ok": True, "sub": sub, "deep": deep,
+                                   "files": files, "folders": folders})
+            # ============ 🔓 음원 공유 — **로그인 불필요** (공개 경로) ============
+            #  [요구 2026-10-30] "음원 QR 받으면 누구나 재생할 수 있도록,
+            #   다만 로그인 없이 들어온 불특정다수는 **다른 페이지로 절대
+            #   이용하지 않아야 함**"
+            #
+            #  이 두 경로는 `_require()` 를 **일부러 호출하지 않는다.**
+            #  대신 `_share_require()` 로 범위가 `res:audio` 로 못박힌 전용
+            #  토큰만 통과시킨다. 따라서:
+            #    · 회원명단·재정·업로드·삭제 → 이 토큰으로 **불가능**
+            #    · 음원 외 형식(영상·문서·이미지) → 목록에서 제외,
+            #      스트리밍도 확장자 검사로 차단
+            #    · 만료/폐기 즉시 401
+            if p == "/api/share/audio/list":
+                ent = _share_require(self)
+                if not ent:
+                    return
+                sub = ent.get("sub", "") or ""
+                return self._json({
+                    "ok": True,
+                    "scope": _SHARE_SCOPE_AUDIO,
+                    "sub": sub,
+                    "label": ent.get("label", ""),
+                    "exp": ent.get("exp", 0),
+                    "files": _share_list_audio(sub),
+                })
+            if p == "/api/share/audio/stream":
+                ent = _share_require(self)
+                if not ent:
+                    return
+                q = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query)
+                sub = _safe_relpath(q.get("sub", [""])[0])
+                name = _safe_name(q.get("name", [""])[0])
+                # ① 확장자 재검사 — 목록을 우회한 직접 요청도 여기서 막힌다.
+                if _ext_of(name) not in AUDIO_EXT:
+                    return self._json(
+                        {"ok": False, "error": "audio_only"}, 403)
+                # ② 토큰 범위(sub) 밖으로는 못 나간다.
+                scope_sub = str(ent.get("sub", "") or "").strip("/")
+                if scope_sub and not (sub == scope_sub
+                                      or sub.startswith(scope_sub + "/")):
+                    return self._json(
+                        {"ok": False, "error": "out_of_scope"}, 403)
+                fp = RES_DIR + ("/" + sub if sub else "") + "/" + name
+                if not NAS.exists(fp):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                ct = MIME.get(_ext_of(name), "audio/mpeg")
+                return self._serve_nas_file(fp, ct, download_name=None)
+            # ============ 행사자료 (로그인 필요) ============
+            if p == "/api/event/res/stream":
+                # 재생용 스트리밍 — Range 지원. 인증은 쿠키/헤더 모두 허용
+                # (<audio> 태그는 헤더를 못 넣으므로 쿠키 tsak_sid 를 쓴다).
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                sub = _safe_relpath(q.get("sub", [""])[0])
+                name = _safe_name(q.get("name", [""])[0])
+                fp = RES_DIR + ("/" + sub if sub else "") + "/" + name
+                if not NAS.exists(fp):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                ct = MIME.get(_ext_of(name), "application/octet-stream")
+                dl = q.get("dl", ["0"])[0] == "1"
+                return self._serve_nas_file(
+                    fp, ct, download_name=name if dl else None)
+            # ── 행사자료 삭제 — 관리자/마스터. GET(쿼리) 방식 ──
+            if p == "/api/event/res/delete":
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                sub = _safe_relpath(q.get("sub", [""])[0])
+                name = _safe_name(q.get("name", [""])[0])
+                fp = RES_DIR + ("/" + sub if sub else "") + "/" + name
+                if not NAS.exists(fp):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                NAS.delete(fp)
+                return self._json({"ok": True})
             # ============ 행사관리 v2 (연도/행사/항목 폴더) ============
             if p == "/api/event/list2":
                 if not self._require():
@@ -8386,7 +20080,38 @@ class Handler(BaseHTTPRequestHandler):
                     print("list2 fail", e)
                     events = _ev_list()
                 return self._json({"ok": True, "events": events})
+            if p == "/api/event/trash/list":
+                # 휴지통(삭제한 행사) 목록 — 관리자/마스터 전용.
+                if not self._require("admin"):
+                    return
+                return self._json({"ok": True, "trash": _ev_trash_entries()})
             # ---- QR 착지용 공개 행사 정보 (인증 불필요) ----
+            if p == "/api/event/dist":
+                # [요구] 참가신청 페이지 배포용 자료 다운로드(공개) —
+                #   기획서 폴더 하위 '참가신청시 배포용' 폴더의 파일만 허용.
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = _ev_safe(q.get("year", [""])[0])
+                title = _ev_safe(q.get("title", [""])[0])
+                name = _safe_name(q.get("name", [""])[0])
+                dl = q.get("dl", ["0"])[0] == "1"
+                if not (year and title and name):
+                    return self._json({"ok": False, "error": "params"}, 400)
+                # 배포용 폴더(후보 전체) 안의 파일만 서빙(경로 탈출 방지).
+                fp = None
+                for d in _ev_dist_dirs_all(year, title):
+                    cand = f"{d}/{name}"
+                    try:
+                        if NAS.exists(cand):
+                            fp = cand
+                            break
+                    except Exception:
+                        continue
+                if not fp:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                ct = MIME.get(_ext_of(name), "application/octet-stream")
+                if dl:
+                    return self._serve_nas_file(fp, ct, download_name=name)
+                return self._serve_nas_file(fp, ct)
             if p == "/api/event/qr/info":
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
@@ -8408,15 +20133,304 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "not found"}, 404)
                 e = dict(e)
                 e["id"] = eid
+                # [요구] 참가자 명단: 활동등록대 우선 + 소속 뱃지(범/은하/일반)
+                #   + 역할 코드(L/B/S/V/R/본부·학부모·기타) + 인가자 우선 정렬.
+                #   원본 캐시는 dict 복사 후 가공하므로 오염되지 않는다.
+                if isinstance(e.get("attendees"), list):
+                    e["attendees"] = _ev_attendees_view(e["attendees"])
                 try:
                     e["staff"] = _staff_of(year, title)
                 except Exception:
                     e["staff"] = []
+                # [요구] 인가자 열람자 수 + 문의 담당자 + 배포 자료 목록.
+                try:
+                    vw = _ev_credential_viewers(e)
+                    e["credViewers"] = vw["count"]
+                    e["credViewerNames"] = [v["name"] for v in vw["viewers"][:60]]
+                except Exception:
+                    e["credViewers"] = 0
+                    e["credViewerNames"] = []
+                try:
+                    e["contacts"] = _ev_norm_contacts(e.get("contacts"))
+                except Exception:
+                    e["contacts"] = []
+                try:
+                    e["distFiles"] = _ev_dist_files(year, title)
+                except Exception:
+                    e["distFiles"] = []
                 return self._json({"ok": True, "event": e})
             if p == "/api/event/photos/all":
                 if not self._require():
                     return
                 return self._json(_ev_all_photos())
+            # ============ 행사 커스텀 게시판 (메뉴추가 → 게시판형) ============
+            # ── 추모관 — **로그인 없이** 열람 (공개) ─────────────────────
+            # ═══════════════════════════════════════════════════════════
+            #  Scout's Own — 공개 게시판 + 마스터 관리 (turn57)
+            # ═══════════════════════════════════════════════════════════
+            #  [요구] "로그인없이 작성 가능 (추모관과 완전 같은 형식)
+            #          질문은 관리자가 넣을 수 있고, 글은 통계를 내서
+            #          실시간으로 볼 수 있어 / 관리자로그인 항목(마스터)"
+            #  · 조회·작성 = **인증 없음** (추모관과 동일한 공개 정책)
+            #  · 질문 편집·삭제·순서·통계 = **마스터만**
+            # ══════════════════════════════════════════════════════════
+            #  단위대 통계 API — 2026-11-11 / turn58
+            # ══════════════════════════════════════════════════════════
+            #  [요구] "연맹별 단위대별 인가자 리스트를 출력 / 현재 활동정보도
+            #   동일하게 / 단위대 이름이 다른 경우 체크박스로 선택 /
+            #   전체 명부의 통계 및 상세내역까지 출력"
+            #
+            #  권한: **로그인한 인가자**(personal 이상). 명부가 나오므로 공개 아님.
+            #   · 개인정보(이름) 노출은 클라이언트가 `showNames` 로 결정한다.
+            #     (서버도 `names=1` 을 주지 않으면 이름을 빈 값으로 가린다)
+            if p == "/api/stats/units":
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                basis = "active" if q.get("basis", ["issue"])[0] == "active" else "issue"
+                want_names = q.get("names", ["0"])[0] in ("1", "true", "yes")
+                try:
+                    st = _build_unit_stats(basis=basis)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 500)
+                #  이름 가리기 — 요청하지 않으면 **서버에서** 지운다(실수 방지).
+                if not want_names:
+                    for u in st.get("units") or []:
+                        for pp in u.get("people") or []:
+                            pp["name"] = ""
+                st["ok"] = True
+                st["namesIncluded"] = want_names
+                st["leaguesAll"] = _member_leagues(_load_json(DB_FILE, []))
+                return self._json(st)
+
+            if p == "/api/scoutsown/get":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                eid = _so_safe_eid(q.get("id", ["tsak-2026"])[0])
+                ev = _so_event(eid)
+                qs = _so_questions(eid)
+                ans = [a for a in _so_answers(eid) if not a.get("hidden")]
+                sess = self._sess() or {}
+                is_master = _cb_tier(sess) == "master"
+                return self._json({
+                    "ok": True,
+                    "event": ev,
+                    "questions": qs,
+                    "answers": [_so_pub_answer(a) for a in ans],
+                    "stats": _so_stats(eid),
+                    "isMaster": is_master,
+                    "isAdmin": _cb_is_admin(sess),
+                })
+
+            if p == "/api/scoutsown/stats":
+                # 통계만 따로(실시간 갱신용 폴링) — 공개.
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                eid = _so_safe_eid(q.get("id", ["tsak-2026"])[0])
+                return self._json({"ok": True, "stats": _so_stats(eid)})
+
+
+            if p == "/api/memorial/get":
+                # 추모관 정보 + 글 목록. 인증을 요구하지 않는다(공개 링크).
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                mid = str(q.get("id", ["noh-kyungha"])[0] or "noh-kyungha")
+                info = MEM_MEMORIALS.get(mid)
+                if not info:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                doc = _mem_doc()
+                custom = (doc.get("memorials") or {}).get(mid) or {}
+                merged = dict(info)
+                # ── [버그수정 2026-11-04 / turn51] `videos`·`video` 병합 누락 ──
+                #  보고(원문): "순서대로 영상을 추가해서 게시해줘"
+                #  영상 5편을 업로드하고 memorial.json 의
+                #  memorials.noh-kyungha.videos 에 **순서대로 저장까지 성공**했는데
+                #  화면에는 기본값 2편만 나왔다.
+                #  이유: 이 병합이 `title/subtitle/years/photoUrl` **4개 키만**
+                #  허용해서, 저장된 videos 배열이 통째로 무시됐다.
+                #  (저장은 되고 읽기만 무시 → "추가가 안 된 것처럼" 보인다)
+                #  이제 videos/video 도 병합 대상에 넣는다.
+                merged.update({k: v for k, v in custom.items()
+                               if k in ("title", "subtitle", "years", "photoUrl",
+                                        "videos", "video")})
+                posts = list((doc.get("posts") or {}).get(mid) or [])
+                # 삭제글은 관리자에게만
+                sess = self._sess() or {}
+                is_admin = _cb_is_admin(sess)
+                if not is_admin:
+                    posts = [x for x in posts if not x.get("deleted")]
+                posts.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                #  영상의 **실제 서빙 URL** 을 함께 내려준다.
+                #  (앱·웹이 같은 경로를 쓰게 해 '한쪽만 고쳐지는' 일을 막는다)
+                #  turn69: 단일 video → videos 리스트로 확장.
+                def _deco_video(vid):
+                    if not (isinstance(vid, dict) and vid.get("file")):
+                        return None
+                    out = dict(vid)
+                    _fn = str(vid["file"])
+                    out["url"] = ("/memorial-file/" + _mem_safe_id(mid) + "/"
+                                  + urllib.parse.quote(_fn))
+                    if vid.get("poster"):
+                        out["posterUrl"] = (
+                            "/memorial-file/" + _mem_safe_id(mid) + "/"
+                            + urllib.parse.quote(str(vid["poster"])))
+                    elif _ext_of(_fn) in VIDEO_EXT:
+                        # ── [버그수정 2026-11-04 / turn55] 영상 포스터 자동 연결 ─
+                        #  보고(원문·스크린샷): 영상 5편을 올렸더니 카드가
+                        #  **까만 박스에 재생버튼만** 있는 모습으로 나온다.
+                        #
+                        #  ## 원인
+                        #   이 함수는 `memorial.json` 의 `videos[i].poster`
+                        #   값이 있을 때만 `posterUrl` 을 만들었다. 그런데
+                        #   turn54 에서 영상을 등록할 때 `poster` 를 적어주지
+                        #   않았고(수동 등록), 업로드 경로가 만드는 자동 썸네일은
+                        #   `.thumbnails/<이름>.jpg` 로 따로 저장된다.
+                        #   결과: 썸네일 파일은 **디스크에 있는데**
+                        #         응답에는 주소가 없어서 화면이 못 쓴다.
+                        #
+                        #  ## 수정
+                        #   `poster` 가 없으면 자동 썸네일(`/memorial-thumb/`)을
+                        #   기본값으로 내려준다. 썸네일이 아직 없어도 그 경로를
+                        #   주면 `/memorial-thumb/` 핸들러가 **그 자리에서 만들어**
+                        #   주므로(lazy) 화면이 깨지지 않는다.
+                        #   → 앞으로 어떤 경로로 영상을 올려도 썸네일이 자동으로
+                        #     붙는다. 사람이 poster 를 손으로 적을 일이 없다.
+                        out["posterUrl"] = (
+                            "/memorial-thumb/" + _mem_safe_id(mid) + "/"
+                            + urllib.parse.quote(_fn))
+                    return out
+
+                merged = dict(merged)
+                vlist = merged.get("videos")
+                if isinstance(vlist, list) and vlist:
+                    merged["videos"] = [
+                        d for d in (_deco_video(v) for v in vlist) if d
+                    ]
+                else:
+                    merged["videos"] = []
+                merged["video"] = _deco_video(merged.get("video")) or (
+                    merged["videos"][0] if merged["videos"] else {})
+                return self._json({
+                    "ok": True,
+                    "memorial": merged,
+                    "posts": [_mem_pub(x) for x in posts],
+                    "count": len(posts),
+                    "isAdmin": is_admin,
+                })
+            if p == "/api/memorial/list":
+                # 추모관 목록(링크·QR 안내용).
+                return self._json({
+                    "ok": True,
+                    "memorials": [
+                        {k: v for k, v in m.items()}
+                        for m in MEM_MEMORIALS.values()
+                    ],
+                })
+            if p == "/api/memorial/accounts":
+                # ── 추모관 후원계좌 (공개) ───────────────────────────────
+                #  [요구 2026-11-04] "추모페이지에 후원계좌 3종 하단에 넣어줘"
+                #
+                #  ⚠️ **공개 엔드포인트인 이유**
+                #   추모관은 로그인 없이 열린다. 그런데 기존 `/api/donation/accounts`
+                #   는 인증을 요구하므로(401), 로그인 안 한 참여자는 계좌를 볼 수
+                #   없다. 그래서 이 경로만 따로 열어 준다.
+                #
+                #  ⚠️ **무엇을 내보내지 않는가 (중요)**
+                #   config.json 에는 계좌 외에 마스터/앱 비밀번호, 개인비번,
+                #   관리자 목록, 권한표가 함께 들어 있다. 여기서는 **딱 3개
+                #   필드(label·bank·account)와 예금주만** 골라 내보낸다.
+                #   cfg 를 통째로 돌려주면 안 된다.
+                cfg = _load_json(CFG_FILE, _default_config())
+                rows = []
+                for a in (cfg.get("donations") or []):
+                    if not isinstance(a, dict):
+                        continue
+                    acct = str(a.get("account") or "").strip()
+                    if not acct:
+                        continue
+                    rows.append({
+                        "label": str(a.get("label") or "")[:40],
+                        "bank": str(a.get("bank") or "")[:20],
+                        "account": acct[:40],
+                    })
+                return self._json({
+                    "ok": True,
+                    "holder": str(cfg.get("donationHolder") or "")[:40],
+                    "accounts": rows[:6],
+                })
+            if p == "/api/event/cboard/list":
+                # 게시판 목록 + 현재 세션이 볼 수 있는지 여부.
+                #  [요구 2026-10-26] 3단계 노출권한(all/staff/admin).
+                #   · 관리자·마스터: 전부 + 관리 가능 플래그
+                #   · 일반회원: 권한이 맞는 게시판만 (나머지는 hiddenCount 로만)
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = q.get("year", [""])[0]
+                title = q.get("title", [""])[0]
+                if not title:
+                    return self._json({"ok": False, "error": "title"}, 400)
+                sess = self._sess() or {}
+                is_admin = _cb_is_admin(sess)
+                boards = _cb_all(year, title)
+                out = []
+                hidden = 0
+                for bid, b in boards.items():
+                    if not isinstance(b, dict):
+                        continue
+                    vis = _cb_visible_to(b, sess, year, title)
+                    if not vis:
+                        hidden += 1
+                    out.append({
+                        "id": bid,
+                        "name": str(b.get("name", "") or ""),
+                        "note": str(b.get("note", "") or ""),
+                        "visibility": _cb_visibility(b),
+                        "openToAll": _cb_visibility(b) == CB_VIS_ALL,
+                        "visible": vis,
+                        "created": str(b.get("created", "") or ""),
+                        "updated": str(b.get("updated", "") or ""),
+                        "postCount": len(b.get("posts") or []),
+                    })
+                out.sort(key=lambda x: str(x.get("created", "")))
+                return self._json({
+                    "ok": True, "boards": out, "isAdmin": is_admin,
+                    "canManage": is_admin,
+                    "hiddenCount": hidden,
+                })
+            if p == "/api/event/cboard/get":
+                # 한 게시판의 글 목록(+첨부). 권한 없으면 403.
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = q.get("year", [""])[0]
+                title = q.get("title", [""])[0]
+                bid = q.get("id", [""])[0]
+                sess = self._sess() or {}
+                boards = _cb_all(year, title)
+                b = boards.get(bid)
+                if not isinstance(b, dict):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                if not _cb_visible_to(b, sess, year, title):
+                    return self._json({"ok": False, "error": "forbidden"}, 403)
+                posts = list(b.get("posts") or [])
+                posts.sort(key=lambda x: str(x.get("created", "")), reverse=True)
+                is_master = _cb_tier(sess) == "master"
+                return self._json({
+                    "ok": True,
+                    "board": {
+                        "id": bid,
+                        "name": str(b.get("name", "") or ""),
+                        "note": str(b.get("note", "") or ""),
+                        "visibility": _cb_visibility(b),
+                        "openToAll": _cb_visibility(b) == CB_VIS_ALL,
+                    },
+                    # 비밀번호는 글쓴이·마스터에게만, 읽음 명단은 마스터에게만.
+                    "posts": [_cb_pub_post(x, sess) for x in posts],
+                    "isAdmin": _cb_is_admin(sess),
+                    "isMaster": is_master,
+                    # 상단 버튼(노출권한)은 **모두에게** 노출되지만 값 변경은
+                    #  관리자·마스터만 가능하다(요구: "상부 버튼은 모두에게
+                    #  노출되지만, 게시물은 권한이 있는 사람에게만 노출됨").
+                    "canManage": _cb_is_admin(sess),
+                })
             if p == "/api/event/review/list":
                 if not self._require():
                     return
@@ -8482,6 +20496,96 @@ class Handler(BaseHTTPRequestHandler):
                 if pst.get("hidden") and not is_admin:
                     return self._json({"ok": False, "error": "hidden"}, 403)
                 return self._json({"ok": True, "post": _board_public(pst, is_admin)})
+            # ---- [turn69] 마스터 비밀번호 상태 조회 (읽기 전용) ----
+            #  마스터 화면이 "지금 기본 비번인지 / 언제 바꿨는지" 를 보여줄 때 쓴다.
+            #  · 마스터 세션에게만 응답한다(존재 여부 자체를 숨긴다).
+            #  · 비밀번호 값은 어떤 형태로도 내려보내지 않는다.
+            if p == "/api/master/state":
+                _st = self._sess() or {}
+                if str(_st.get("tier", "")) != "master":
+                    return self._json(
+                        {"ok": False, "error": "unauthorized"}, 401)
+                _a = _master_auth_cfg()
+                return self._json({
+                    "ok": True,
+                    "custom": _master_pw_is_custom(),
+                    "changedAt": str(_a.get("masterChangedAt", "") or ""),
+                })
+            # ══════════════════════════════════════════════════════════
+            # [turn65] 같은 IP 다계정 접속 현황 — 관리자·마스터 승인창용
+            #  "특정 IP 로 어떤 아이디들이 접속했는지"를 한눈에 보여준다.
+            #  · 개인정보 최소화: 인가번호·이름·횟수·최근시각만. 비밀번호는
+            #    애초에 저장하지 않는다.
+            #  · 관리자·마스터 전용(_require("admin")).
+            # ══════════════════════════════════════════════════════════
+            if p == "/api/security/ipseen":
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query)
+                want = str(q.get("band", [""])[0] or "").strip()
+                try:
+                    logs = _ipwatch_recent()
+                except Exception:
+                    logs = []
+                groups = {}
+                for it in logs:
+                    band = _ip24(it.get("ip"))
+                    if not band:
+                        continue
+                    k = re.sub(r"[^0-9]", "", str(it.get("ident") or ""))
+                    if not k:
+                        continue
+                    g = groups.setdefault(band, {})
+                    a = g.setdefault(k, {
+                        "ident": k,
+                        "name": str(it.get("name") or ""),
+                        "tier": str(it.get("role") or it.get("tier") or ""),
+                        "count": 0,
+                        "last": "",
+                        "device": str(it.get("device") or ""),
+                    })
+                    a["count"] += 1
+                    if str(it.get("ts") or "") > a["last"]:
+                        a["last"] = str(it.get("ts") or "")
+                out = []
+                for band, acc in groups.items():
+                    if len(acc) < 2:
+                        continue
+                    if want and band != want:
+                        continue
+                    rows = sorted(acc.values(),
+                                  key=lambda x: (-x["count"], x["ident"]))
+                    out.append({
+                        "band": band,
+                        "accountCount": len(rows),
+                        "loginCount": sum(r["count"] for r in rows),
+                        "risk": ("high" if len(rows) >= _IPWATCH_MIN_ACCTS
+                                 else "watch"),
+                        "accounts": rows,
+                    })
+                out.sort(key=lambda x: (-x["accountCount"], x["band"]))
+                alerts = {}
+                try:
+                    alerts = (_load_json(IPWATCH_FILE, {}) or {}).get(
+                        "alerts") or {}
+                except Exception:
+                    alerts = {}
+                for g in out:
+                    t = alerts.get(g["band"])
+                    g["alerted"] = bool(t)
+                    g["lastAlert"] = (
+                        datetime.datetime.fromtimestamp(t).strftime(
+                            "%Y-%m-%d %H:%M:%S") if isinstance(
+                                t, (int, float)) else "")
+                return self._json({
+                    "ok": True,
+                    "windowMin": int(_IPWATCH_WINDOW / 60),
+                    "threshold": _IPWATCH_MIN_ACCTS,
+                    "groups": out,
+                    "highCount": sum(
+                        1 for g in out if g["risk"] == "high"),
+                })
             if p == "/api/notify/list":
                 if not self._require("admin"):
                     return
@@ -8490,7 +20594,121 @@ class Handler(BaseHTTPRequestHandler):
                 # 해당 관리자(아이디)가 아직 확인하지 않은 건수만 배지로 표시.
                 owner = _owner_key(self._sess())
                 unread = _board_badge_unread(owner)
-                return self._json({"ok": True, "items": items[:100], "unread": unread})
+                # [요구 2026-11-20] "수품 주문이 들어오면 관리자/마스터에게
+                #  알림주고 단추에 표시해줘"
+                #  종전에는 주문 알림이 생겨도 오직 '게시판' 단추 숫자만
+                #  올라갔다. 수품판매관리 단추에도 표시하려면 종류별
+                #  미확인 건수가 따로 필요하다.
+                unread_order = _board_badge_unread(owner, ["order"])
+                unread_board = _board_badge_unread(owner, ["board"])
+                # [요구 2026-11-04] 항목별 '읽음(read)' 플래그도 함께 계산한다.
+                #
+                #  ## 왜 필요한가 (실측 모순)
+                #   라이브 큐는 8건 모두 `read: False` 인데 배지는 `unread: 0`
+                #   이었다. 배지는 **워터마크(_seen_get)** 기준이라, 한 번이라도
+                #   게시판을 열어 확인한 아이디는 그 이후 것만 세기 때문이다.
+                #   그런데 'read' 플래그를 True 로 바꾸는 코드는 서버에 **없다**.
+                #   → 화면이 이 플래그로 점을 그리면 영원히 안 꺼진다.
+                #   그래서 목록 응답에 두 값을 모두 실어 보내고, 화면이
+                #   '워터마크 기준'을 쓰도록 명시한다(회귀 방지용 readUnread 병기).
+                try:
+                    read_unread = sum(
+                        1 for it in items if it.get("read") is not True)
+                except Exception:
+                    read_unread = 0
+                return self._json({
+                    "ok": True,
+                    "items": items[:100],
+                    "unread": unread,
+                    "unreadOrder": unread_order,
+                    "unreadBoard": unread_board,
+                    "readUnread": read_unread,
+                    "total": len(items),
+                })
+            # ---- [요구 2026-11-20] 종류별 미확인 건수 (가벼운 폴링) ----
+            #  "수품 주문이 들어오면 관리자/마스터에게 알림주고 단추에 표시해줘"
+            #
+            #  ## 왜 별도 엔드포인트인가
+            #   `/api/notify/list` 는 항목 100건을 통째로 내려준다. 배지 숫자
+            #   하나 갱신하려고 10~20초마다 그걸 받으면 나스 RPC 가 계속 돈다.
+            #   여기서는 **숫자만** 돌려준다.
+            #
+            #  ## 응답
+            #   { ok, order, board, total, latest:{order:{title,...,created}} }
+            #   `latest.order` 는 화면이 "새 주문 N건 도착" 스낵바를 띄울 때
+            #   바로 쓸 수 있게 함께 실어 보낸다.
+            if p == "/api/notify/badge":
+                if not self._require("admin"):
+                    return
+                owner = _owner_key(self._sess())
+                n_order = _board_badge_unread(owner, ["order"])
+                n_board = _board_badge_unread(owner, ["board"])
+                # 가장 최근 주문 알림 1건 — 스낵바/팝업 안내용
+                latest = None
+                try:
+                    doc2 = _load_json(NOTIFY_FILE, {"items": []})
+                    # 주문 전용 워터마크 — 게시판 워터마크와 분리되어 있다.
+                    wm = _seen_get(owner, "order")
+                    wm_key, wm_empty = _norm_stamp(wm)
+                    for it in (doc2.get("items") or []):
+                        if str(it.get("type", "")) != "order":
+                            continue
+                        ts_key, ts_empty = _norm_stamp(it.get("created"))
+                        if not (ts_empty or wm_empty or ts_key > wm_key):
+                            continue        # 이미 확인한 건
+                        latest = {
+                            "id": str(it.get("id", "")),
+                            "title": str(it.get("title", "")),
+                            "text": str(it.get("text", "")),
+                            "buyerName": str(it.get("buyerName", "")),
+                            "amount": it.get("amount", 0),
+                            "orderNo": str(it.get("orderNo", "")),
+                            "created": str(it.get("created", "")),
+                        }
+                        break
+                except Exception:
+                    latest = None
+                return self._json({
+                    "ok": True,
+                    "order": n_order,
+                    "board": n_board,
+                    "total": n_order + n_board,
+                    "latest": latest,
+                })
+            if p == "/api/import/log":
+                # 자료 가져오기(AI 인식) 감사로그 — 관리자 이상 조회.
+                #  각 항목: who(계정)·what(요약/변경내역)·when(시각) + 복원 가능 여부.
+                if not self._require("admin"):
+                    return
+                items = _import_log_items(200)
+                out = []
+                for it in items:
+                    changes = it.get("changes", [])
+                    out.append({
+                        "id": str(it.get("id", "")),
+                        "at": str(it.get("at", "")),
+                        "name": str(it.get("name", "")),
+                        "folder": str(it.get("folder", "")),
+                        "byLabel": str(it.get("byLabel", "") or it.get("by", "")),
+                        "tier": str(it.get("tier", "")),
+                        "summary": str(it.get("summary", "")),
+                        "added": int(it.get("added", 0) or 0),
+                        "updated": int(it.get("updated", 0) or 0),
+                        "skipped": int(it.get("skipped", 0) or 0),
+                        "changes": [
+                            {
+                                "label": str(c.get("label", "")),
+                                "number": str(c.get("number", "")),
+                                "name": str(c.get("name", "")),
+                                "diffs": c.get("diffs", []),
+                            }
+                            for c in (changes if isinstance(changes, list) else [])
+                        ],
+                        "restoreCount": len(
+                            changes if isinstance(changes, list) else []),
+                        "restored": it.get("restored") is True,
+                    })
+                return self._json({"ok": True, "items": out})
             # ---------- 수품구매 (굿즈) ----------
             if p == "/api/merch":
                 # 로그인 없이도 공개 조회 가능 (무인증 구매 버튼용)
@@ -8520,6 +20738,10 @@ class Handler(BaseHTTPRequestHandler):
                 for pr in _merch_products_sorted(doc):
                     if pr.get("active") is False and not is_admin:
                         continue
+                    # "상품판매" 대상이 아닌 소품(forSale=False)은 쇼핑몰 목록에서
+                    #  제외한다(재고표 전용 — 관리자에게만 노출).
+                    if pr.get("forSale") is False and not is_admin:
+                        continue
                     # 인가자 전용 상품은 비인가(비로그인·전화) 사용자에게도 노출한다.
                     #  (요구사항) 상품 구매는 누구나 가능하되, 결제 단계에서 인가번호를
                     #  입력하면 해당 회원의 수품구매 내역에 자동 연동된다.
@@ -8527,6 +20749,7 @@ class Handler(BaseHTTPRequestHandler):
                                   ("id", "name", "kind", "price", "stock",
                                    "options", "image", "desc", "active",
                                    "credentialOnly")}
+                                 | {"sellableStock": _sellable_of(pr)}
                                  | {"recipientKind":
                                     _medal_recipient_kind(pr.get("name", ""))})
                 # 수요조사 진행중인 기획 아이템(누구나 조회 — 사전신청용).
@@ -8802,6 +21025,93 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 return
+            # ---- [요구] 앱 제목 ↔ 나스 폴더명 연결/수정 (관리자·마스터) ----
+            if p == "/api/event/folder":
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = q.get("year", [""])[0]
+                title = q.get("title", [""])[0]
+                action = q.get("action", ["status"])[0]
+                if not (year and title):
+                    return self._json({"ok": False, "error": "params"}, 400)
+                real = _ev_dir_resolve(year, title)
+                real_name = real.rsplit("/", 1)[-1]
+                alias = _ev_folder_alias(year, title)
+                try:
+                    exists = NAS.exists(real)
+                except Exception:
+                    exists = False
+                base = {
+                    "ok": True,
+                    "year": year,
+                    "title": title,
+                    "nasFolder": real_name,
+                    "alias": ({"app": alias[0], "nas": alias[1]} if alias else None),
+                    "exists": exists,
+                    "suggest": _ev_folder_suggest(year, title),
+                }
+                if action == "status":
+                    return self._json(base)
+                if action == "list":
+                    base["dirs"] = _ev_year_dirs(year)
+                    return self._json(base)
+                # ---- action=relink : 앱 행사 폴더를 '지정한 나스 폴더'로 맞춘다 ----
+                target = _ev_safe(q.get("to", [""])[0])
+                if action == "relink":
+                    if not target:
+                        return self._json({"ok": False, "error": "no target"}, 400)
+                    dirs = _ev_year_dirs(year)
+                    if target not in dirs:
+                        return self._json(
+                            {"ok": False, "error": "not found", "dirs": dirs}, 404)
+                    doc = _ev_doc()
+                    ev = doc.get("events", {}).get(_ev_id(year, title))
+                    if ev is None:
+                        return self._json({"ok": False, "error": "event"}, 404)
+                    # 행사 제목을 나스 폴더명으로 바꾼다(경로 계산이 제목 기반).
+                    old_title = str(ev.get("title", "") or title)
+                    if old_title == target:
+                        return self._json(dict(base, ok=True, changed=False))
+                    # 새 id 로 옮긴다.
+                    new_id = _ev_id(year, target)
+                    if new_id in doc["events"]:
+                        return self._json(
+                            {"ok": False, "error": "duplicate", "id": new_id}, 409)
+                    ev["title"] = target
+                    doc["events"].pop(_ev_id(year, title), None)
+                    doc["events"][new_id] = ev
+                    _ev_save(doc)
+                    # 캐시 무효화(개수/파일목록/폴더해석)
+                    for fn in (_ev_media_counts_invalidate,
+                               _ev_files_invalidate, _ev_folder_forget):
+                        try:
+                            fn(year, title)
+                            fn(year, target)
+                        except Exception:
+                            pass
+                    try:
+                        _ev_meta_invalidate("evdirs|%s" % str(year))
+                        _ev_meta_invalidate("evcount")
+                        _ev_meta_invalidate("evallphotos:")
+                    except Exception:
+                        pass
+                    new_base = _ev_dir_resolve(year, target)
+                    return self._json(dict(
+                        base, ok=True, changed=True,
+                        title_new=target, id_new=new_id,
+                        nasFolder=target, resolved=new_base))
+                if action == "mkdir":
+                    _ensure_event_dirs(year, title)
+                    try:
+                        _ev_folder_forget(year, title)
+                    except Exception:
+                        pass
+                    real = _ev_dir_resolve(year, title)
+                    return self._json(dict(
+                        base, ok=True, created=True,
+                        nasFolder=real.rsplit("/", 1)[-1], exists=True))
+                return self._json({"ok": False, "error": "action"}, 400)
             if p == "/api/event/files":
                 if not self._require():
                     return
@@ -8810,15 +21120,77 @@ class Handler(BaseHTTPRequestHandler):
                 title = q.get("title", [""])[0]
                 key = q.get("key", [""])[0]
                 sub = q.get("sub", [""])[0]
+                # (요구) "직접 업로드 한 폴더가 보여지지 않는 버그"
+                #  PC·NAS 파일탐색기에서 직접 올린 파일은 서버 캐시가 모른다.
+                #  앱의 새로고침 버튼/당겨서 새로고침이 fresh=1 을 보내
+                #  캐시를 버리고 NAS 에서 **실제로 다시 읽는다**.
+                if q.get("fresh", [""])[0] in ("1", "true", "yes"):
+                    try:
+                        _ev_files_invalidate(year, title, key, sub)
+                    except Exception:
+                        pass
+                # [요구] '폴더 안 사진이 안 보인다' 근본 해결 —
+                #  미디어 폴더 전체를 재귀 평탄화해서 한 번에 보여준다(deep=1).
+                if q.get("deep", [""])[0] in ("1", "true", "yes") and key == "media":
+                    items = _ev_media_files_recursive(year, title, sub)
+                    ev = _ev_doc().get("events", {}).get(_ev_id(year, title), {})
+                    upl = ev.get("uploaders", {}).get("media", {})
+                    ftimes = ev.get("fileTimes", {}).get("media", {})
+                    flat = []
+                    for it in items:
+                        nm = str(it.get("name", ""))
+                        s = str(it.get("sub", ""))
+                        ukey = f"{s}/{nm}" if s else nm
+                        flat.append({
+                            "name": nm,
+                            "isdir": False,
+                            "size": int(it.get("size", 0) or 0),
+                            "ext": _ext_of(nm),
+                            "kind": it.get("kind") or _kind_of(nm),
+                            "sub": s,
+                            "folder": s.split("/")[-1] if s else "",
+                            "uploader": upl.get(ukey, ""),
+                            "uploaded": ftimes.get(ukey, ""),
+                        })
+                    return self._json({
+                        "ok": True,
+                        "deep": True,
+                        "files": flat,
+                        "total": len(flat),
+                    })
                 files = _ev_files(year, title, key, sub)
+                # [요구] '사진이 안 보인다' 3대 원인을 응답에 함께 실어 보낸다.
+                #  ① 앱 제목과 나스 폴더명 불일치 → folderTitle 로 실제명 노출
+                #  ② 사진이 '00 사진+동영상' 같은 안쪽 폴더에 있음 → mediaDirs
+                #  ③ 캐시 → fresh=1 (위에서 처리)
+                alias = None
+                media_dirs = []
+                try:
+                    alias = _ev_folder_alias(year, title)
+                except Exception:
+                    alias = None
+                if key == "media" and not _ev_sub_safe(sub):
+                    try:
+                        media_dirs = [{"name": n, "sub": s}
+                                      for (n, s) in _ev_media_dirs(year, title) if s]
+                    except Exception:
+                        media_dirs = []
                 # 목록 응답 직후, 열린 폴더의 썸네일(+최적화본)을 백그라운드 예열.
                 #  → 다음 진입/새로고침 시 로딩이 즉시 끝난다(응답은 지연되지 않음).
-                if key == "media":
+                # (요구) PC 등에서 NAS 에 직접 올린 영수증/증빙도 썸네일을 만들어
+                #   앱에서 바로 보이게 한다 — media 와 동일한 예열 경로 사용.
+                if key in ("media", "expense"):
                     try:
                         _ev_warm_folder(year, title, key, sub, make_views=True)
                     except Exception:
                         pass
-                return self._json({"ok": True, "files": files})
+                return self._json({
+                    "ok": True,
+                    "files": files,
+                    "folderAlias": ({"app": alias[0], "nas": alias[1]}
+                                    if alias else None),
+                    "mediaDirs": media_dirs,
+                })
             if p == "/api/event/thumb2":
                 if not self._require():
                     return
@@ -8827,41 +21199,88 @@ class Handler(BaseHTTPRequestHandler):
                 title = q.get("title", [""])[0]
                 name = _safe_name(q.get("name", [""])[0])
                 sub = q.get("sub", [""])[0]
+                # (요구) 영수증·증빙자료도 사진과 같은 썸네일 파이프라인을 쓰도록
+                #   폴더 key 를 받는다. 미지정이면 종전과 동일하게 'media'.
+                space = q.get("key", ["media"])[0] or "media"
+                if space not in ("media", "expense", "plan", "review",
+                                 "attendees"):
+                    space = "media"
                 size = q.get("size", ["normal"])[0]  # normal | view | orig
                 if size == "orig":
-                    orig = _ev_find_file(year, title, "media", name, sub)
+                    # 최적본(_optimized/*.webp) 우선 → 85% 작은 이미지로 빠르게.
+                    _op = _ev_opt_path(year, title, space, name, sub)
+                    if _op:
+                        try:
+                            return _serve_served_image(
+                                self, NAS.read_bytes(_op), name, "image/webp")
+                        except Exception:
+                            pass
+                    orig = _ev_find_file(year, title, space, name, sub)
                     if orig:
                         ct = MIME.get(_ext_of(name), "image/jpeg")
                         if ct.startswith("image/"):
                             return _serve_served_image(self, NAS.read_bytes(orig), name, ct)
                         return self._serve_nas_file(orig, ct)
                 if size == "view":
+                    # 최적본(_optimized/*.webp, ~2048px) 있으면 그대로 확대본으로 서빙
+                    # (별도 1600px JPEG 생성 불필요 → 저장공간/시간 절약).
+                    _op = _ev_opt_path(year, title, space, name, sub)
+                    if _op:
+                        try:
+                            return _serve_served_image(
+                                self, NAS.read_bytes(_op), name, "image/webp")
+                        except Exception:
+                            pass
                     # 지연 생성 1600px 최적본 (없으면 생성, 실패 시 썸네일/원본 폴백)
-                    vp = _ev_view_path(year, title, name, sub)
+                    vp = _ev_view_path_k(year, title, space, name, sub)
                     if not NAS.exists(vp):
                         try:
-                            orig = _ev_find_file(year, title, "media", name, sub)
+                            orig = _ev_find_file(year, title, space, name, sub)
                             if orig and _kind_of(name) == "image":
-                                _make_image_view2(NAS.read_bytes(orig), year, title, name, sub)
+                                _make_image_view3(NAS.read_bytes(orig), year,
+                                                  title, space, name, sub)
                         except Exception:
                             pass
                     if NAS.exists(vp):
                         return _serve_served_image(self, NAS.read_bytes(vp), name, "image/jpeg")
-                fp = _ev_thumb_path(year, title, name, sub)
                 # 로컬 디스크 캐시 우선 → NAS 왕복 없이 즉시 응답 (~0.02s).
-                data = _thumb_get(year, title, name, sub)
+                tk = _ev_thumb_key_k(space, name, sub)
+                data = _thumb_get(year, title, tk)
                 if data is not None:
                     return _serve_served_image(self, data, name, "image/jpeg")
-                # 그래도 없으면 이미지 원본/동영상 원본으로 최종 폴백
+                # (요구) PC 등에서 NAS 폴더에 직접 올린 파일은 썸네일이 없다.
+                #   요청이 오면 '그 자리에서' 생성하고 캐시한다(사진 폴더와 동일).
                 try:
-                    orig = _ev_find_file(year, title, "media", name, sub)
-                    if orig:
-                        ct = MIME.get(_ext_of(name), "image/jpeg")
-                        if ct.startswith("image/"):
-                            return _serve_served_image(self, NAS.read_bytes(orig), name, ct)
-                        return self._serve_nas_file(orig, ct)
+                    kind = _kind_of(name)
+                    if kind == "image":
+                        orig = _ev_find_file(year, title, space, name, sub)
+                        if orig and _make_image_thumb3(
+                                NAS.read_bytes(orig), year, title, space,
+                                name, sub):
+                            data = _thumb_get(year, title, tk)
+                            if data is not None:
+                                return _serve_served_image(
+                                    self, data, name, "image/jpeg")
                 except Exception:
                     pass
+                # [성능/안정] 여기서 원본(동영상이면 영상 전체)을 다운로드하지
+                #  않는다. 생성은 이미 백그라운드로 예약됐고, 지금은 즉시
+                #  가벼운 플레이스홀더로 응답해 폴더 열기를 막지 않는다.
+                #
+                # (버그 수정) 이미지도 동영상도 아닌 파일(.txt·.xlsx·.pdf 등)에
+                #  썸네일을 요청하면 **회색 플레이스홀더 JPEG** 가 나가고, 화면에는
+                #  '빈 사진'으로 보였다(사용자 신고: "나스에 있는 사진이 보이지
+                #  않음"). 썸네일을 만들 수 없는 형식은 404 로 정직하게 알려
+                #  클라이언트가 파일 카드를 그리게 한다.
+                if _kind_of(name) not in ("image", "video"):
+                    return self._json(
+                        {"ok": False, "error": "not a media file"}, 404)
+                ph = _thumb_placeholder()
+                if ph:
+                    # 플레이스홀더는 캐시 금지(max_age=0) → 생성 완료 후 다음
+                    #  요청에서 실제 썸네일로 자연스럽게 교체된다.
+                    return self._bytes_cache(ph, "image/jpeg",
+                                             max_age=0, immutable=False)
                 return self._json({"ok": False, "error": "no thumb"}, 404)
             if p == "/api/event/f2":
                 # 항목 폴더 내 파일 서빙 (Range 지원, 원본/다운로드)
@@ -8882,6 +21301,14 @@ class Handler(BaseHTTPRequestHandler):
                 # 이미지 '미리보기'(dl 없음)는 손상 파일이면 플레이스홀더로 대체.
                 # 실제 다운로드(dl=1)는 원본 그대로 내보낸다.
                 if not dl and ct.startswith("image/"):
+                    # 최적본(_optimized/*.webp) 우선 서빙.
+                    _op = _ev_opt_path(year, title, key, name, sub)
+                    if _op:
+                        try:
+                            return _serve_served_image(
+                                self, NAS.read_bytes(_op), safe, "image/webp")
+                        except Exception:
+                            pass
                     try:
                         return _serve_served_image(self, NAS.read_bytes(fp), safe, ct)
                     except Exception:
@@ -8896,6 +21323,72 @@ class Handler(BaseHTTPRequestHandler):
                 key = q.get("key", [""])[0]
                 sub = q.get("sub", [""])[0]
                 FilesParam = q.get("files", [""])[0]  # 선택 다운로드: 'a.jpg|b.mp4'
+                # [사고 대응] 앱이 '너무 큰가?'만 물어보는 가벼운 선검사.
+                #  실제 ZIP 을 만들지 않고 용량 합계만 계산해 즉시 답한다.
+                if q.get("probe", [""])[0] in ("1", "true", "yes"):
+                    if FilesParam:
+                        probe_paths = []
+                        for tok in FilesParam.split("|"):
+                            tok = tok.strip()
+                            if not tok:
+                                continue
+                            seg_sub, sep, fname = tok.rpartition(":")
+                            if not sep:
+                                fname = tok
+                                seg_sub = ""
+                            fname = _safe_name(fname)
+                            tgt_sub = f"{sub}/{seg_sub}" if seg_sub else sub
+                            tgt_dir = _ev_sub_dir(year, title, key, tgt_sub)
+                            if not tgt_dir:
+                                continue
+                            sp = f"{tgt_dir}/{fname}"
+                            # ⚠ get_info 는 **폴더**에 항목수(size=16062)를 주고
+                            #   isdir 도 주지 않는다 → 부모 list 로 판별한다.
+                            try:
+                                pr = NAS.list(tgt_dir)
+                            except Exception:
+                                continue
+                            for _f in (pr.get("files") or []):
+                                if str(_f.get("name")) != fname:
+                                    continue
+                                if _f.get("isdir"):
+                                    # 폴더 → 안의 파일을 모두 수집(용량 합산).
+                                    try:
+                                        probe_paths.extend(
+                                            _ev_collect_under(sp, rel_prefix=fname))
+                                    except Exception:
+                                        pass
+                                else:
+                                    probe_paths.append({
+                                        "path": sp, "rel": fname,
+                                        "size": int(_f.get("size", 0) or 0)})
+                                break
+                    else:
+                        probe_paths = _ev_collect_paths(year, title, key, sub)
+                    total = 0
+                    for it in probe_paths:
+                        sz = it.get("size")
+                        if sz is None:
+                            try:
+                                inf = NAS.get_info(it["path"])
+                                sz = int(inf.get("size", 0) or 0)
+                            except Exception:
+                                continue
+                        total += int(sz or 0)
+                    try:
+                        free = (os.statvfs(STATE_ROOT).f_bavail *
+                                os.statvfs(STATE_ROOT).f_frsize)
+                    except Exception:
+                        free = 0
+                    cap = int(free * 0.4) if free else 0
+                    if cap and total > cap:
+                        return self._json({
+                            "ok": False, "error": "too large",
+                            "total": total, "limit": cap,
+                            "hint": "폴더를 나누어 받으세요.",
+                        }, 413)
+                    return self._json({
+                        "ok": True, "total": total, "limit": cap})
                 if FilesParam:
                     # 명시된 파일/폴더만 (선택 다운로드).
                     # 토큰 형식: 'name'(현재 폴더) 또는 'sub/seg:name'(하위폴더 파일)
@@ -8917,8 +21410,19 @@ class Handler(BaseHTTPRequestHandler):
                         sp = f"{tgt_dir}/{fname}"
                         if not NAS.exists(sp):
                             continue
-                        info = NAS.get_info(sp)
-                        if info.get("isdir"):
+                        # ⚠ get_info 는 폴더에 isdir 를 주지 않는다 → 부모 list 로 판별.
+                        is_dir = False
+                        fsize = 0
+                        try:
+                            pr = NAS.list(tgt_dir)
+                            for _f in (pr.get("files") or []):
+                                if str(_f.get("name")) == fname:
+                                    is_dir = bool(_f.get("isdir"))
+                                    fsize = int(_f.get("size", 0) or 0)
+                                    break
+                        except Exception:
+                            pass
+                        if is_dir:
                             for it in _ev_collect_under(sp, rel_prefix=fname):
                                 if it["path"] not in seen:
                                     seen.add(it["path"])
@@ -8927,18 +21431,52 @@ class Handler(BaseHTTPRequestHandler):
                             if sp not in seen:
                                 seen.add(sp)
                                 rel = f"{seg_sub}/{fname}" if seg_sub else fname
-                                paths.append({"path": sp, "rel": rel})
+                                paths.append({"path": sp, "rel": rel,
+                                              "size": fsize})
                 else:
                     paths = _ev_collect_paths(year, title, key, sub)
-                b = _ev_build_zip(paths)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition",
-                                 "attachment; filename*=UTF-8''" + urllib.parse.quote(f"{title}_{key or 'all'}.zip"))
-                self.send_header("Content-Length", str(len(b)))
-                self._cors()
-                self.end_headers()
-                self.wfile.write(b)
+                # ⚠ [사고 재발 방지] 예전에는 ZIP 전체를 RAM 에 만들어 한 번에
+                #   보냈다. 사진 폴더 하나가 2.3GB → OOM Killer 가 프록시를 죽였다.
+                #   이제 디스크 임시파일에 쓴 뒤 청크 스트리밍하고 즉시 삭제한다.
+                import tempfile
+                tmpd = tempfile.mkdtemp(prefix="tsakzip_", dir=STATE_ROOT)
+                zpath = os.path.join(tmpd, "out.zip")
+                # 디스크 여유의 40% 를 넘지 않게 제한(디스크 92% 사용 중 사고 방지).
+                try:
+                    free = os.statvfs(STATE_ROOT).f_bavail * \
+                        os.statvfs(STATE_ROOT).f_frsize
+                except Exception:
+                    free = 0
+                cap = int(free * 0.4) if free else None
+                try:
+                    n_ok, n_skip, tot = _ev_build_zip_to_file(
+                        paths, zpath, max_bytes=cap)
+                    if n_ok == 0:
+                        return self._json(
+                            {"ok": False, "error": "empty zip",
+                             "skipped": n_skip}, 404)
+                    _ev_stream_file(
+                        self, zpath, "application/zip",
+                        download_name=f"{title}_{key or 'all'}.zip")
+                    print("zip streamed: entries=%d skipped=%d bytes=%d"
+                          % (n_ok, n_skip, tot))
+                except RuntimeError as e:
+                    # 너무 큼 → 앱에 이유를 알려준다(프록시는 계속 산다).
+                    return self._json({
+                        "ok": False,
+                        "error": "too large",
+                        "detail": str(e),
+                        "hint": "폴더를 나누어 받거나 하위 폴더를 선택해 받으세요.",
+                    }, 413)
+                finally:
+                    try:
+                        os.remove(zpath)
+                    except Exception:
+                        pass
+                    try:
+                        os.rmdir(tmpd)
+                    except Exception:
+                        pass
                 return
             if p == "/api/event/roster":
                 if not self._require():
@@ -8963,18 +21501,224 @@ class Handler(BaseHTTPRequestHandler):
                 title = q.get("title", [""])[0]
                 return self._json({"ok": True, "access": _ev_access_map(_ev_id(year, title))})
             if p == "/api/event/finance":
-                if not self._require("admin"):
-                    return
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 year = q.get("year", [""])[0]
                 title = q.get("title", [""])[0]
+                # 관리자·마스터 또는 해당 행사 스탭만 열람(요구 2026-10-26).
+                if not self._require_event_admin(year, title):
+                    return
                 docs = _ev_doc()
                 e = docs.get("events", {}).get(_ev_id(year, title), {})
+                # (요구) 항목별 '자료 추가' — 각 행에 txid(자료키)와 자료 건수를
+                #   함께 실어 보낸다. 앱은 이 txid 로 /api/finance/attach 를 호출해
+                #   자료 목록을 읽고/올리고/지운다.
+                meta = {}
+                try:
+                    meta = _fin_attach_meta()
+                except Exception:
+                    meta = {}
                 return self._json({
                     "ok": True,
-                    "fees": e.get("fees", []),
-                    "expenses": e.get("expenses", []),
+                    "fees": _ev_fin_decorate(e.get("fees", []), meta),
+                    "expenses": _ev_fin_decorate(e.get("expenses", []), meta),
                 })
+            # --- 🔓 음원 공유 페이지 (로그인 불필요) ---
+            #  QR 이 가리키는 주소: /s/<token>
+            #  이 페이지는 Flutter 앱과 **완전히 분리된** 독립 HTML 이다.
+            #  따라서 로그인 없이 들어온 사람은 앱의 다른 화면으로 갈 수 있는
+            #  링크 자체가 없다(앱 라우트·메뉴·세션 접근 코드 0줄).
+            # --- 추모관 참여 페이지 (로그인 불필요 · 공개) ---
+            #  [요구 2026-11-04] "바로가기 링크와 QR 을 생성해서 로그인 없이도
+            #   글 쓰고 확인 및 수정할 수 있도록"
+            #  · /memorial            → 대표 추모관(故 노경하)
+            #  · /memorial?id=xxx     → 지정 추모관 (쿼리는 HTML 이 읽는다)
+            # --- Scout's Own 게시판 페이지 (로그인 불필요 · 공개) ---
+            #  [요구 2026-11-08 / turn57] "추모관 운영과 같이 별도 게시판을
+            #   만들꺼야 '2026년 전국훈육지도자회의 Scout's Own'"
+            #  · /scoutsown        → 2026 전국훈육지도자회의
+            #  · /scoutsown?id=xx  → 지정 행사 (쿼리는 HTML 이 읽는다)
+            #  추모관과 **같은 방식**으로 후보 경로를 차례로 확인한다.
+            #  (build/web 이 단일 배포물이므로 거기에 있으면 그것을 쓴다)
+            if p in ("/scoutsown", "/scoutsown/", "/scoutsown.html"):
+                cand_so = [
+                    os.path.join(STATIC_DIR, "scoutsown.html"),
+                    os.path.join(os.path.dirname(STATIC_DIR.rstrip("/")), "web",
+                                 "scoutsown.html"),
+                    os.path.join(APP_ROOT, "..", "web_custom_backup",
+                                 "scoutsown.html"),
+                ]
+                for c in cand_so:
+                    if os.path.isfile(c):
+                        try:
+                            with open(c, "rb") as f:
+                                body_so = f.read()
+                            self.send_response(200)
+                            self.send_header("Content-Type",
+                                             "text/html; charset=utf-8")
+                            self.send_header("Content-Length", str(len(body_so)))
+                            self.send_header("Cache-Control", "no-cache")
+                            self.send_header("X-Frame-Options", "ALLOWALL")
+                            self.send_header("Referrer-Policy",
+                                             "strict-origin-when-cross-origin")
+                            self._cors()
+                            self.end_headers()
+                            self.wfile.write(body_so)
+                            return
+                        except Exception as e:
+                            print("[scoutsown] page fail", e)
+                            break
+                return self._json({"ok": False, "error": "page missing"}, 500)
+            # --- Scout's Own 첨부 파일 서빙 (로그인 불필요 · 공개) ---
+            #  경로: /scoutsown-file/<행사id>/<파일명>
+            if p.startswith("/scoutsown-file/"):
+                rel = urllib.parse.unquote(p[len("/scoutsown-file/"):])
+                parts = [x for x in rel.split("/") if x]
+                if len(parts) != 2 or ".." in parts:
+                    return self._json({"ok": False, "error": "path"}, 400)
+                eid2 = _so_safe_eid(parts[0])
+                fn2 = _safe_name(parts[1])
+                if not (eid2 and fn2) or fn2 in (".", ".."):
+                    return self._json({"ok": False, "error": "path"}, 400)
+                fp_so = _so_media_dir(eid2) + "/" + fn2
+                try:
+                    if not NAS.exists(fp_so):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    ct_so = MIME.get(_ext_of(fn2), "application/octet-stream")
+                    return self._serve_nas_file(fp_so, ct_so, allow_range=True)
+                except Exception as e:
+                    print("[scoutsown] file fail", e)
+                    return self._json({"ok": False, "error": "read"}, 500)
+            if p in ("/memorial", "/memorial/", "/memorial.html"):
+                fp_m = os.path.join(os.path.dirname(STATIC_DIR.rstrip("/")), "web",
+                                    "memorial.html")
+                # build/web 안에 복사돼 있으면 그걸 쓴다(단일 배포물).
+                cand = [os.path.join(STATIC_DIR, "memorial.html"), fp_m,
+                        os.path.join(APP_ROOT, "..", "web_custom_backup",
+                                     "memorial.html")]
+                for c in cand:
+                    if os.path.isfile(c):
+                        try:
+                            with open(c, "rb") as f:
+                                body_m = f.read()
+                            self.send_response(200)
+                            self.send_header("Content-Type",
+                                             "text/html; charset=utf-8")
+                            self.send_header("Content-Length", str(len(body_m)))
+                            self.send_header("Cache-Control", "no-cache")
+                            self.send_header("X-Frame-Options", "ALLOWALL")
+                            self.send_header("Referrer-Policy",
+                                             "strict-origin-when-cross-origin")
+                            self._cors()
+                            self.end_headers()
+                            self.wfile.write(body_m)
+                            return
+                        except Exception as e:
+                            print("[memorial] page fail", e)
+                            break
+                return self._json({"ok": False, "error": "page missing"}, 500)
+            if p == "/s" or p.startswith("/s/"):
+                tok = p[3:] if p.startswith("/s/") else ""
+                return self._share_page(tok)
+            # --- 추모관 첨부 파일 서빙 (로그인 불필요 · 공개) ---
+            #  사진·자료를 외부 참여자가 바로 볼 수 있어야 하므로 공개한다.
+            #  경로: /memorial-file/<추모관id>/<파일명>
+            # --- 추모관 썸네일 서빙 (로그인 불필요 · 공개) ---
+            #  [요구 2026-11-04] "로딩속도를 빠르게 하기 위해 썸네일 작업 및
+            #   최적화 작업 항상 자동으로 진행해줘"
+            #  경로: /memorial-thumb/<추모관id>/<파일명>
+            #
+            #  ## lazy 생성
+            #   PC 탐색기에서 폴더에 직접 복사한 사진은 아직 썸네일이 없다.
+            #   그런 파일이 목록에 처음 등장하는 순간 여기로 요청이 오므로,
+            #   **없으면 그 자리에서 만들어** 바로 내려준다. 사용자는 한 번의
+            #   지연(0.2~1초)만 겪고, 그 뒤로는 캐시된 작은 파일을 받는다.
+            #   (원본을 그대로 주면 다음 방문에도 계속 수 MB 를 받게 된다)
+            if p.startswith("/memorial-thumb/"):
+                rel = urllib.parse.unquote(p[len("/memorial-thumb/"):])
+                parts = [x for x in rel.split("/") if x]
+                if len(parts) != 2 or ".." in parts:
+                    return self._json({"ok": False, "error": "path"}, 400)
+                mid2 = _mem_safe_id(parts[0])
+                fn2 = _safe_name(parts[1])
+                if not (mid2 and fn2) or fn2 in (".", ".."):
+                    return self._json({"ok": False, "error": "path"}, 400)
+                src2 = _mem_dir(mid2) + "/" + fn2
+                if not NAS.exists(src2):
+                    _lg = (BASE + "/" + MEM_DIR_NAME + "/" + mid2 + "/" + fn2)
+                    if NAS.exists(_lg):
+                        src2 = _lg
+                tdir2 = _mem_thumb_dir(mid2)
+                tpath2 = tdir2 + "/" + _mem_thumb_name(fn2)
+                try:
+                    if not NAS.exists(tpath2):
+                        if _ext_of(fn2) in _MEM_THUMB_SKIP:
+                            # 썸네일 대상이 아니면 원본으로 되돌린다.
+                            raise FileNotFoundError("no thumb for ext")
+                        if not NAS.exists(src2):
+                            raise FileNotFoundError("no source")
+                        _mem_thumb_ensure(mid2, fn2, wait=True)
+                    if not NAS.exists(tpath2):
+                        raise FileNotFoundError("thumb not made")
+                    # 썸네일은 내용이 바뀌지 않으므로 브라우저가 오래 캐시해도
+                    #  안전하다. (원본을 덮어쓰면 _mem_unique_name 이 새 이름을
+                    #  주므로 썸네일 파일명도 함께 달라진다 = 자동 무효화)
+                    #
+                    #  ⚠️ 여기서 직접 send_response/send_header 를 부르면
+                    #   _serve_nas_file 이 **또** 헤더를 보내 중복되어
+                    #   몸통이 사라진다(실측: 200 + 0 byte). 그래서 헤더는
+                    #   _serve_nas_file 에 cache_control 로 넘겨 일원화한다.
+                    return self._serve_nas_file(
+                        tpath2, "image/jpeg", allow_range=False,
+                        cache_control="public, max-age=2592000, immutable")
+                except FileNotFoundError:
+                    # 302 로 원본에 넘긴다 — 화면이 깨지지 않게.
+                    return self._redirect(
+                        "/memorial-file/" + urllib.parse.quote(
+                            _mem_rel(mid2, fn2)))
+                except Exception as e:
+                    print("[memorial] thumb serve fail", e)
+                    return self._json({"ok": False, "error": "read"}, 500)
+            if p.startswith("/memorial-file/"):
+                rel = urllib.parse.unquote(p[len("/memorial-file/"):])
+                parts = [x for x in rel.split("/") if x]
+                if len(parts) != 2 or ".." in parts or "." in (parts[0], parts[1]):
+                    return self._json({"ok": False, "error": "path"}, 400)
+                mid2 = re.sub(r"[^A-Za-z0-9_-]", "", parts[0])[:40]
+                fn2 = _safe_name(parts[1])
+                if not (mid2 and fn2) or fn2 in (".", ".."):
+                    return self._json({"ok": False, "error": "path"}, 400)
+                fp2 = _mem_dir(mid2) + "/" + fn2
+                # ── 구 경로 호환 (2026-11-04 폴더명 변경) ────────────────
+                #  폴더명에 `_(업로드가능)` 을 붙이기 전에 발행된 링크
+                #  (`/memorial-file/noh-kyungha/xxx.jpg`) 가 게시판 DB 에
+                #  남아 있다. 새 폴더에 없으면 예전 폴더를 한 번 더 본다.
+                #  (게시판 글을 고치지 않아도 사진이 계속 보이게)
+                if not NAS.exists(fp2):
+                    legacy_fp = (BASE + "/" + MEM_DIR_NAME + "/" + mid2
+                                 + "/" + fn2)
+                    if NAS.exists(legacy_fp):
+                        fp2 = legacy_fp
+                try:
+                    if not NAS.exists(fp2):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    # ── Range 지원으로 교체 (turn53) ──────────────────────
+                    #  [요구] 500MB 영상을 "올리기만" 하면 반쪽이다. 올린
+                    #  영상을 **재생·탐색(되감기)** 하려면 서버가 Range 요청에
+                    #  답해야 한다. 브라우저 <video> 와 Flutter 의
+                    #  video_player 는 둘 다 Range 로 조각을 받아 재생한다.
+                    #
+                    #  종전 구현은 파일 전체를 read_bytes() 로 올린 뒤 그대로
+                    #  보냈다(500MB 영상 → 500MB RAM). `_serve_nas_file` 은
+                    #  get_info() 로 크기만 얻고 Range 구간만 읽는다.
+                    #
+                    #  ⚠️ NAS.read() 는 텍스트(str)라 바이너리에 쓰면 깨진다
+                    #   (IncompleteRead 의 원인). _serve_nas_file 은 내부에서
+                    #   바이트 경로만 사용한다.
+                    ct2 = MIME.get(_ext_of(fn2), "application/octet-stream")
+                    return self._serve_nas_file(fp2, ct2, allow_range=True)
+                except Exception as e:
+                    print("[memorial] file serve fail", e)
+                    return self._json({"ok": False, "error": "read"}, 500)
             # --- 정적 파일 서빙 (Flutter 웹앱) ---
             if p == "/":
                 p = "/index.html"
@@ -9021,10 +21765,24 @@ class Handler(BaseHTTPRequestHandler):
                 if self.headers.get("If-None-Match") == etag:
                     self.send_response(304)
                     self.send_header("ETag", etag)
+                    # ── [캐시 2026-11-06] 영정처럼 **사람이 교체하는 이미지**는
+                    #  no-cache 로 재검증시킨다.
+                    #  ## 문제
+                    #   기본 정책상 .jpg 는 `public, max-age=604800`(7일)이다.
+                    #   그래서 추모관 영정을 새 사진으로 바꿔도, 방문자 브라우저가
+                    #   이미 받아둔 옛 사진을 **최대 7일간** 계속 보여준다.
+                    #   "바꿨는데 안 바뀌어요" 의 전형적인 원인이다.
+                    #  ## 해결
+                    #   아래 파일들은 no-cache 로 보낸다. no-cache 는 '캐시 금지'가
+                    #   아니라 '쓸 때마다 확인'이라는 뜻이라, ETag 가 같으면 304
+                    #   (수십 바이트)로 끝나 속도 손해가 사실상 없다.
+                    _MUTABLE_ASSETS = ("memorial_noh.jpg", "memorial_hero.jpg",
+                                       "tsak_emblem_splash.png")
                     _reval = name in ("index.html", "flutter_bootstrap.js",
                                       "main.dart.js", "flutter_service_worker.js",
                                       "manifest.json") or \
-                        _os.path.splitext(name)[1].lower() in (".ttf", ".woff", ".woff2", ".otf")
+                        name in _MUTABLE_ASSETS or \
+                        _os.path.splitext(name)[1].lower() in (".ttf", ".woff", ".woff2", ".otf", ".html")
                     self.send_header("Cache-Control",
                                      "no-cache" if _reval else "public, max-age=604800")
                     self._cors_static()
@@ -9036,10 +21794,28 @@ class Handler(BaseHTTPRequestHandler):
                 if compressed is None:
                     enc = "identity"
                 body = compressed if compressed is not None else data
-                # ---- 캐시 정책: 진입점/앱코드는 매번 재검증(즉시 반영), 정적 자산은 장기 ----
+                # ---- 캐시 정책: 진입점/앱코드/HTML은 매번 재검증(즉시 반영), 정적 자산은 장기 ----
+                # ── [캐시 2026-11-06] 사람이 직접 교체하는 이미지는 재검증 대상.
+                #  ## 실측으로 확인한 문제
+                #   추모관 영정(memorial_noh.jpg)을 새 사진으로 바꿨는데
+                #   응답 헤더가 여전히 `public, max-age=86400`(1일) 이었다.
+                #   이미 사진을 받아둔 방문자 브라우저는 **하루 동안 옛 영정**을
+                #   계속 보여준다. "바꿨는데 안 바뀌어요" 의 정확한 원인이다.
+                #  ## 왜 no-cache 인가
+                #   no-cache 는 '저장하지 마라'가 아니라 '쓸 때 서버에 물어봐라'다.
+                #   내용이 그대로면 ETag 비교로 304(수십 바이트)만 오가므로
+                #   속도 손해가 사실상 없고, 내용이 바뀌면 즉시 새 파일이 간다.
+                _MUTABLE_ASSETS = ("memorial_noh.jpg", "memorial_hero.jpg",
+                                   "tsak_emblem_splash.png")
                 if name in ("index.html", "flutter_bootstrap.js", "main.dart.js",
-                            "flutter_service_worker.js", "manifest.json"):
+                            "flutter_service_worker.js", "manifest.json",
+                            "apk.json") or \
+                        ext == ".html" or name in _MUTABLE_ASSETS:
                     cache = "no-cache"                 # 항상 재검증(304) → 업데이트 즉시 반영
+                elif ext == ".apk":
+                    # APK(≈97MB)는 URL 고정(덮어쓰기) → 짧은 캐시만 허용.
+                    #  새 빌드 배포 시 최대 5분 내 자동 갱신.
+                    cache = "public, max-age=300"
                 elif ext in (".ttf", ".woff", ".woff2", ".otf"):
                     # ⚠️ 폰트(특히 MaterialIcons)는 앱 코드 변경에 따라 서브셋 내용이 바뀐다.
                     #  immutable(1년) 로 캐시하면 사용자가 새 아이콘을 영영 못 본다(PC 누락 원인).
@@ -9064,13 +21840,212 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            # ===== NAS 폴더 → 행사 자동 등록 (GET = 조회/미리보기) =====
+            if p == "/api/event/nas/preview":
+                if not self._require("admin"):
+                    return
+                r = _ev_nas_sync(dry_run=True)
+                return self._json({"ok": True, **r})
+            if p == "/api/event/nas/sync":
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                mk = q.get("createDirs", ["1"])[0] != "0"
+                r = _ev_nas_sync(dry_run=False, create_dirs=mk)
+                _ev_list_cache_bust()
+                return self._json({"ok": True, **r})
             return self._json({"ok": False, "error": "unknown"}, 404)
+        except (BrokenPipeError, ConnectionResetError,
+                ConnectionAbortedError) as _e:
+            # [안정 turn72] 클라이언트 끊김 — 서버는 계속 살아 있어야 한다.
+            self.close_connection = True
+            return
         except Exception as e:
-            return self._json({"ok": False, "error": str(e)}, 500)
+            try:
+                return self._json({"ok": False, "error": str(e)}, 500)
+            except (BrokenPipeError, ConnectionResetError,
+                    ConnectionAbortedError, OSError):
+                self.close_connection = True
+                return
 
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
         try:
+            # ════════════ [요구 2026-10-28] 행사자료 업로드·삭제 ════════════
+            #  GET 이 아니라 **POST** 로 옮겼다(Flutter 는 http.post 로 보낸다).
+            #  본문은 순수 바이트 + 파일명은 쿼리 → 한글 파일명 인코딩 문제 없음.
+            if p == "/api/event/res/upload":
+                # 업로드 — 마스터/관리자. body 를 그대로 NAS 에 쓴다.
+                #  파일명은 쿼리로 받고(한글 안전), 중복이면 자동 번호를 붙인다.
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                sub = _safe_relpath(q.get("sub", [""])[0])
+                raw_name = q.get("name", [""])[0]
+                name = _safe_name(raw_name)
+                if not name or name in (".", ".."):
+                    return self._json({"ok": False, "error": "bad name"}, 400)
+                ext = _ext_of(name)
+                if ext not in (AUDIO_EXT | VIDEO_EXT | IMAGE_EXT | DOC_EXT):
+                    return self._json(
+                        {"ok": False,
+                         "error": "지원하지 않는 형식: " + (ext or "확장자 없음")}, 400)
+                body = self._body()
+                if not body:
+                    return self._json({"ok": False, "error": "empty"}, 400)
+                folder = RES_DIR + ("/" + sub if sub else "")
+                if not NAS.exists(folder):
+                    # [수정] mkdir(parent, name) 2인자 — 종전 1인자 호출은 실패했다.
+                    #  하위 폴더는 상위부터 단계적으로 만든다.
+                    try:
+                        acc = RES_DIR
+                        for seg in (sub.split("/") if sub else []):
+                            try:
+                                NAS.mkdir(acc, seg)
+                            except Exception:
+                                pass
+                            acc = acc + "/" + seg
+                    except Exception:
+                        pass
+                # 같은 이름이 있으면 '이름 (2).mp3' 처럼 비켜 간다(덮어쓰지 않음).
+                stem, dot, tail = name.rpartition(".")
+                if not dot:
+                    stem, tail = name, ""
+                final, i = name, 2
+                while NAS.exists(folder + "/" + final):
+                    final = f"{stem} ({i})" + (("." + tail) if tail else "")
+                    i += 1
+                okw = NAS.write(folder + "/" + final, body)   # [수정] write_bytes 아님
+                if not okw:
+                    return self._json({"ok": False, "error": "nas write failed"}, 500)
+                print("행사자료 업로드:", sub or "/", final, len(body), "bytes")
+                return self._json({"ok": True, "name": final, "size": len(body)})
+            # ── 행사자료 **순서 저장** — 관리자/마스터 ──────────────
+            #  [요구 2026-10-30] "행사자료(음원포함)들은 순서 변경할 수 있도록"
+            #  body = {"keys": ["군가/001.mp3", "002.mp3", ...]}  ← 화면에 보이는
+            #  순서 그대로. 이 목록의 index 가 곧 표시 순서가 된다.
+            if p == "/api/event/res/reorder":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "bad json"}, 400)
+                keys = d.get("keys") or []
+                if not isinstance(keys, list):
+                    return self._json({"ok": False, "error": "keys"}, 400)
+                # 키 정규화 — 경로 탈출 문자 제거(저장 키일 뿐 NAS 접근은 없다).
+                clean = []
+                for k in keys[:5000]:
+                    k = str(k or "").replace("\\", "/").strip()
+                    if not k:
+                        continue
+                    parts = [x for x in k.split("/") if x and x not in (".", "..")]
+                    parts = [re.sub(r"[\x00-\x1f]", "", x) for x in parts]
+                    parts = [x for x in parts if x]
+                    if parts:
+                        clean.append("/".join(parts))
+                _res_order_save(clean)
+                return self._json({"ok": True, "count": len(clean)})
+            # ── 행사자료 순서 **초기화**(기본: 최신순) ────────────────
+            if p == "/api/event/res/reorder/reset":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    d = {}
+                sub = _safe_relpath(d.get("sub", ""))
+                doc = _load_json(RES_ORDER_FILE, {}) or {}
+                cur = doc.get("order") or {}
+                if isinstance(cur, dict):
+                    for k in list(cur.keys()):
+                        pref = k.rsplit("/", 1)[0] if "/" in k else ""
+                        if pref == sub:
+                            cur.pop(k, None)
+                    doc["order"] = cur
+                    doc["updated"] = int(time.time())
+                    _save_json(RES_ORDER_FILE, doc)
+                _RES_ORDER_CACHE["t"] = 0.0
+                return self._json({"ok": True})
+            # ---- 행사 스텝(STAFF) 등록/해제 — 관리자·마스터 전용 ----
+            # ============ 음원 공유 토큰 발급/관리 (관리자·마스터) ============
+            if p == "/api/event/res/share/create":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    d = {}
+                sub = _safe_relpath(d.get("sub", ""))
+                days = int(d.get("days", _SHARE_DEFAULT_DAYS) or _SHARE_DEFAULT_DAYS)
+                days = max(1, min(_SHARE_MAX_DAYS, days))
+                label = str(d.get("label", "") or "")[:80]
+                token = _secrets.token_urlsafe(24)      # 192비트
+                now = int(time.time())
+                doc = _share_doc()
+                h = _share_hash(token)
+                doc.setdefault("tokens", {})[h] = {
+                    "scope": _SHARE_SCOPE_AUDIO,
+                    "sub": sub,
+                    "label": label,
+                    "created": now,
+                    "exp": now + days * 86400,
+                    "revoked": False,
+                    "hits": 0,
+                    "created_by": str(
+                        (self._sess() or {}).get("who", "")
+                        or (self._sess() or {}).get("tier", "")),
+                    "last_used": 0,
+                    "last_ip": "",
+                }
+                _share_save(doc)
+                print("음원 공유 토큰 발급:", sub or "/", f"{days}일", h[:12])
+                return self._json({"ok": True, "token": token, "sub": sub,
+                                   "days": days, "exp": now + days * 86400,
+                                   "id": h[:12]})
+            if p == "/api/event/res/share/list":
+                if not self._require("admin"):
+                    return
+                doc = _share_doc()
+                now = int(time.time())
+                items = []
+                for h, e in (doc.get("tokens") or {}).items():
+                    if not isinstance(e, dict):
+                        continue
+                    items.append({
+                        "id": h[:12],
+                        "sub": e.get("sub", ""),
+                        "label": e.get("label", ""),
+                        "created": int(e.get("created", 0) or 0),
+                        "exp": int(e.get("exp", 0) or 0),
+                        "revoked": bool(e.get("revoked")),
+                        "expired": bool(e.get("exp") and now > int(e["exp"])),
+                        "hits": int(e.get("hits", 0) or 0),
+                        "last_used": int(e.get("last_used", 0) or 0),
+                        "last_ip": e.get("last_ip", ""),
+                    })
+                items.sort(key=lambda x: x["created"], reverse=True)
+                return self._json({"ok": True, "items": items})
+            if p == "/api/event/res/share/revoke":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    d = {}
+                want = str(d.get("id", "") or "")
+                if not want:
+                    return self._json({"ok": False, "error": "id"}, 400)
+                doc = _share_doc()
+                n = 0
+                for h, e in (doc.get("tokens") or {}).items():
+                    if h.startswith(want) and isinstance(e, dict):
+                        e["revoked"] = True
+                        e["revoked_at"] = int(time.time())
+                        n += 1
+                _share_save(doc)
+                return self._json({"ok": True, "revoked": n})
             # ---- 행사 스텝(STAFF) 등록/해제 — 관리자·마스터 전용 ----
             if p == "/api/event/staff/add":
                 if not self._require("admin"):
@@ -9081,9 +22056,17 @@ class Handler(BaseHTTPRequestHandler):
                 number = str(d.get("number", "")).strip()
                 if not title or not number:
                     return self._json({"ok": False, "error": "args"}, 400)
-                m = _ev_member_by_ident(number)
+                # [turn68] 소속 확정 — 은하 번호(G3)는 은하 명단에서만 찾는다.
+                #  숫자만 넘기면 범 명단의 같은 번호 이름·소속이 붙는다.
+                _stc = str(d.get("corps", "") or "").strip().lower()
+                if _stc not in ("tsak", "eunha"):
+                    _stc = "eunha" if _ck_is_eunha(number) else "tsak"
+                m = _ev_member_by_ident(
+                    (_ck(number) if _stc == "eunha" else number),
+                    corps=_stc)
                 entry = {
-                    "number": number,
+                    "number": (_ck(number) if _stc == "eunha" else number),
+                    "corps": _stc,
                     "name": str((m or {}).get("name", "") or d.get("name", "")),
                     "unit": str((m or {}).get("unit", "")),
                     "league": str((m or {}).get("league", "")),
@@ -9166,25 +22149,83 @@ class Handler(BaseHTTPRequestHandler):
                 updates = d.get("updates", d.get("perms", {})) or {}
                 if not isinstance(updates, dict):
                     updates = {}
-                cfg = _load_json(CFG_FILE, _default_config())
-                rp = cfg.get("rolePermissions") or _default_role_perms()
-                cur = dict(rp.get(role) or _default_role_perms()[role])
+                # 기본값과 병합해 **누락된 신규 메뉴키까지 포함**한 전체 권한을 저장.
+                #  (저장된 rolePermissions 가 구버전이라 신규 키가 없어도 반영되도록)
+                cur = dict(_role_perms().get(role) or {})
+                if not cur:
+                    cur = dict(_default_role_perms().get(role) or {})
                 for k, v in updates.items():
                     if str(k) in cur:
                         cur[str(k)] = bool(v)
+                cfg = _load_json(CFG_FILE, _default_config())
+                rp = cfg.get("rolePermissions")
+                if not isinstance(rp, dict):
+                    rp = {}
                 rp[role] = cur
                 cfg["rolePermissions"] = rp
                 _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "role": role, "perms": cur})
+            if p == "/api/home/menus/set":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                updates = d.get("updates", d.get("menus", {})) or {}
+                if not isinstance(updates, dict):
+                    updates = {}
+                cfg = _load_json(CFG_FILE, _default_config())
+                hm = cfg.get("homeMenus")
+                if not isinstance(hm, dict):
+                    hm = {}
+                defaults = _default_home_menus()
+                for key, v in updates.items():
+                    if str(key) not in defaults or not isinstance(v, dict):
+                        continue
+                    cur = dict(hm.get(str(key)) or {})
+                    if "master" in v:
+                        cur["master"] = bool(v["master"])
+                    if "admin" in v:
+                        cur["admin"] = bool(v["admin"])
+                    hm[str(key)] = cur
+                cfg["homeMenus"] = hm
+                _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "menus": _home_menus()})
             if p == "/api/admin/grant":
                 d = json.loads(self._body() or b"{}")
                 if not _is_master_val(d.get("master")):
                     return self._json({"ok": False, "error": "master"}, 401)
-                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                _raw_g = str(d.get("number", "") or "")
+                no = re.sub(r"[^0-9]", "", _raw_g)
                 if not no:
                     return self._json({"ok": False, "error": "number"}, 400)
+                # ── [turn68] 소속 확정 ─────────────────────────────────────
+                #  종전에는 범 명단 우선이라, 은하 3번에게 관리자 권한을 주려고
+                #  하면 **범 3번(서인식)** 이 '존재 확인'을 통과해 권한 목록에
+                #  남의 번호가 올라갈 수 있었다.
+                #  은하스카우트는 범 관리자 제도와 무관하므로 명시적으로 거부한다.
+                _gc = str(d.get("corps", "") or "").strip().lower()
+                if not _gc and _ck_is_eunha(_raw_g):
+                    _gc = "eunha"
+                if not _gc:
+                    _in_e4 = bool(_eunha_member_by_number(no))
+                    _in_t4 = bool(_member_by_number(no))
+                    if _in_e4 and not _in_t4:
+                        _gc = "eunha"
+                    elif _in_t4 and not _in_e4:
+                        _gc = "tsak"
+                    elif _in_e4 and _in_t4:
+                        return self._json({
+                            "ok": False, "ambiguous": True,
+                            "error": ("번호 %s 은(는) 범·은하 양쪽에 있습니다. "
+                                      "corps=tsak|eunha 를 지정해 주세요." % no),
+                        }, 409)
+                if _gc == "eunha":
+                    return self._json({
+                        "ok": False, "corps": "eunha",
+                        "error": ("은하스카우트 회원에게는 범스카우트 관리자 "
+                                  "권한을 부여할 수 없습니다."),
+                    }, 400)
                 # 실제 존재하는 인가자인지 확인
-                m = _ev_member_by_ident(no)
+                m = _ev_member_by_ident(no, corps="tsak")
                 if not m or not str(m.get("number", "")).strip():
                     return self._json(
                         {"ok": False, "error": "not_found"}, 404)
@@ -9231,9 +22272,192 @@ class Handler(BaseHTTPRequestHandler):
                     if isinstance(ga, dict):
                         ga.pop(no, None)
                         cfg["adminGrantedAt"] = ga
+                    # 회수 시 개별 메뉴권한 override 도 제거.
+                    ap = cfg.get("adminPermissions")
+                    if isinstance(ap, dict):
+                        ap.pop(no, None)
+                        cfg["adminPermissions"] = ap
                     _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "admins": cfg["admins"],
                                    "number": no})
+            # ---- 관리자별 개별 메뉴권한 (조회/설정: 마스터 전용) ----
+            if p == "/api/admin/perms":
+                if not self._require("master"):
+                    return
+                cfg = _load_json(CFG_FILE, _default_config())
+                ap = cfg.get("adminPermissions", {})
+                if not isinstance(ap, dict):
+                    ap = {}
+                allkeys = set(_default_role_perms().get("app", {}).keys())
+                clean = {}
+                for k, v in ap.items():
+                    if isinstance(v, dict):
+                        clean[str(k)] = {kk: bool(vv)
+                                         for kk, vv in v.items()
+                                         if str(kk) in allkeys}
+                return self._json({
+                    "ok": True,
+                    "defaults": _default_role_perms().get("app", {}),
+                    "adminPerms": clean,
+                    "perms": _role_perms(),
+                })
+            if p == "/api/admin/perms/set":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                no = _perm_key(d.get("number", ""))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                updates = d.get("updates", d.get("perms", {})) or {}
+                if not isinstance(updates, dict):
+                    updates = {}
+                allkeys = set(_default_role_perms().get("app", {}).keys())
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    ap = cfg.get("adminPermissions")
+                    if not isinstance(ap, dict):
+                        ap = {}
+                    cur = dict(ap.get(no) or {})
+                    for k, v in updates.items():
+                        if str(k) in allkeys:
+                            cur[str(k)] = bool(v)
+                    ap[no] = cur
+                    cfg["adminPermissions"] = ap
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "number": no, "perms": cur})
+            if p == "/api/admin/perms/reset":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                no = _perm_key(d.get("number", ""))
+                if not no:
+                    return self._json({"ok": False, "error": "number"}, 400)
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    ap = cfg.get("adminPermissions")
+                    if isinstance(ap, dict):
+                        ap.pop(no, None)
+                        cfg["adminPermissions"] = ap
+                        _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "number": no})
+            # ---- 관리자 계정(아이디/암호) 생성·수정·삭제 — 마스터 전용 ----
+            #  기존 인가번호 관리자 체계는 그대로 두고, 아이디/암호 관리자를 추가.
+            #  action: create(신규) | update(비번/메모) | delete(삭제)
+            if p == "/api/admin/accounts":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                action = str(d.get("action", "create") or "create").strip()
+                uname = str(d.get("username", "") or "").strip()
+                if not re.match(r"^[A-Za-z0-9_.-]{2,24}$", uname):
+                    return self._json(
+                        {"ok": False, "error": "아이디는 영문/숫자 2~24자"}, 400)
+                pw = str(d.get("password", "") or "")
+                note = str(d.get("note", "") or "").strip()[:60]
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    accs = cfg.get("adminAccounts")
+                    if not isinstance(accs, list):
+                        accs = []
+                    lows = [str(a.get("username", "")).strip().lower()
+                            for a in accs if isinstance(a, dict)]
+                    exists = uname.lower() in lows
+
+                    def _find(u):
+                        for a in accs:
+                            if (isinstance(a, dict)
+                                    and str(a.get("username", "")).strip().lower()
+                                    == u):
+                                return a
+                        return None
+
+                    if action == "delete":
+                        if not exists:
+                            return self._json(
+                                {"ok": False, "error": "not found"}, 404)
+                        accs = [a for a in accs
+                                if not (isinstance(a, dict)
+                                        and str(a.get("username", "")).strip().lower()
+                                        == uname.lower())]
+                        ap = cfg.get("adminPermissions")
+                        if isinstance(ap, dict):
+                            ap.pop(uname.lower(), None)
+                            cfg["adminPermissions"] = ap
+                    elif action in ("update", "save"):
+                        a = _find(uname.lower())
+                        if a is None:
+                            return self._json(
+                                {"ok": False, "error": "not found"}, 404)
+                        if pw:
+                            a["password"] = pw
+                        a["note"] = note
+                    else:  # create
+                        if not pw:
+                            return self._json(
+                                {"ok": False, "error": "비밀번호를 입력하세요"}, 400)
+                        if exists:
+                            return self._json(
+                                {"ok": False, "error": "이미 있는 아이디"}, 409)
+                        accs.append({
+                            "username": uname, "password": pw, "note": note,
+                            "created": datetime.datetime.now().strftime(
+                                "%Y-%m-%d %H:%M:%S")})
+                    cfg["adminAccounts"] = accs
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "accounts": _admin_accounts()})
+            # ---- 후원 안내(계좌 목록·예금주) 편집 — 마스터 전용 ----
+            if p == "/api/donation/accounts/set":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                action = str(d.get("action", "set") or "set")
+                with LOCK:
+                    cfg = _load_json(CFG_FILE, _default_config())
+                    accs = cfg.get("donations")
+                    if not isinstance(accs, list):
+                        accs = []
+
+                    def _clean(a):
+                        if not isinstance(a, dict):
+                            return None
+                        return {
+                            "label": str(a.get("label", "") or "").strip()[:60],
+                            "bank": str(a.get("bank", "") or "").strip()[:40],
+                            "account": str(a.get("account", "") or "").strip()[:60],
+                        }
+
+                    if action == "holder":
+                        cfg["donationHolder"] = str(
+                            d.get("donationHolder", "") or "").strip()[:60]
+                    elif action == "delete":
+                        try:
+                            idx = int(d.get("index", -1))
+                        except Exception:
+                            idx = -1
+                        if 0 <= idx < len(accs):
+                            accs.pop(idx)
+                    elif action == "save":
+                        item = _clean(d.get("account") or {})
+                        if not item or not (item["bank"] or item["account"]):
+                            return self._json(
+                                {"ok": False, "error": "empty"}, 400)
+                        try:
+                            idx = int(d.get("index", -1))
+                        except Exception:
+                            idx = -1
+                        if 0 <= idx < len(accs):
+                            accs[idx] = item
+                        else:
+                            accs.append(item)
+                    else:  # set — 목록 전체 교체
+                        raw = d.get("donations")
+                        if not isinstance(raw, list):
+                            raw = []
+                        accs = [c for c in (_clean(a) for a in raw) if c]
+                    cfg["donations"] = accs
+                    _save_json(CFG_FILE, cfg)
+                return self._json({"ok": True, "donations": accs,
+                                   "donationHolder": str(cfg.get("donationHolder", ""))})
             if p == "/api/login":
                 d = json.loads(self._body() or b"{}")
                 tier = d.get("tier", "")
@@ -9241,10 +22465,33 @@ class Handler(BaseHTTPRequestHandler):
                 ident = d.get("id", "")
                 _ua = self.headers.get("User-Agent", "")
                 _ip = self.client_address[0] if self.client_address else ""
+                # [turn64 F2] 브루트포스 방어 — 게스트(전화번호 로그인)도 포함한다.
+                #  잠금 키: 계정 + IP. 자세한 규칙은 _login_locked 주석.
+                #
+                #  ⚠️ 계정 키를 '입력값'으로 잡으면 안 된다 (1차 시도에서 실패).
+                #   마스터·관리자 로그인은 id 칸이 없어 ident 가 비어 있고,
+                #   value(비밀번호)만 들어온다. 이걸 키로 쓰면 시도마다 키가
+                #   달라져('wrong1','wrong2'…) 카운터가 쌓이지 않는다
+                #   = 방어가 아예 없는 것과 같다.
+                #   → 개인 로그인은 인가번호가 곧 계정이므로 ident 를,
+                #     마스터·관리자는 **등급 자체가 계정**이므로 tier 를 쓴다.
+                #     (관리자 계정은 id 로 개별 구분되므로 ident 우선)
+                _lk_ident = str(ident or "").strip() or str(tier or "").strip()
+                if _login_locked(tier, _lk_ident, _ip):
+                    _log_access_login(tier, "잠금", _lk_ident or "-", _lk_ident or "-",
+                                      _ua, _ip)
+                    return self._json({
+                        "ok": False,
+                        "error": "시도 횟수가 너무 많습니다. 15분 뒤 다시 시도해 주세요.",
+                        "locked": True,
+                    }, 429)
                 if tier == "guest":
                     ok, role = _guest_verify(ident, value)
                     no = ""
-                    if ok:
+                    if not ok:
+                        _login_fail(tier, _lk_ident, _ip)
+                    else:
+                        _login_reset(tier, _lk_ident, _ip)
                         m = _ev_member_by_ident(ident) or _ev_member_by_ident(ident)
                         no = re.sub(r"[^0-9]", "", str(m.get("number", ""))) if m else ""
                         _log_access_login("guest", "일반회원",
@@ -9258,11 +22505,34 @@ class Handler(BaseHTTPRequestHandler):
                 # 소속(corps) 판정 — 은하스카우트는 별도 관리(로그인 규칙·명단 분리).
                 corps = _resolve_corps(d.get("corps", ""), (ident or value))
                 ok, role = _verify(tier, value, ident=ident, corps=corps)
+                # [turn64 F2] 성공/실패 카운터 갱신 — 실패는 즉시 기록,
+                #  성공하면 그 계정·IP 의 누적 실패를 0으로 되돌린다.
+                if ok:
+                    _login_reset(tier, _lk_ident, _ip)
+                else:
+                    _login_fail(tier, _lk_ident, _ip)
                 # 세션에 기록할 신원: 개인은 인가번호, 그 외는 role
                 who = ""
                 if ok and tier == "personal":
-                    who = (re.sub(r"[^0-9]", "", str(ident))
-                           or re.sub(r"[^0-9]", "", str(value)))
+                    # ── [버그 수정 2026-10-26] 세션 신원에서 은하 접두어 소실 ──
+                    #  종전: `re.sub(r"[^0-9]", "", ident)` → '은하43' 이 '43'.
+                    #  세션 `who`='43' 이 되면 **이후 모든 API 가 범 43호로
+                    #  해석**한다(사진·개인카드·권한·접속로그 전부).
+                    #  corps='eunha' 는 따로 저장되지만, who 를 숫자로 깎으면
+                    #  who 를 키로 쓰는 경로(개인카드·멤버조회)에서 충돌한다.
+                    #
+                    #  수정: `_ck()` 로 접두어를 보존한다.
+                    #    범  tiger43 / 43!@@  → who = '43'
+                    #    은하 은하43  / 43!@@  → who = 'G43'
+                    #  (은하 비밀번호는 종전과 동일한 '43!@@' 그대로)
+                    if corps == "eunha":
+                        who = _ck(ident) or _ck(value)
+                    else:
+                        who = (_ck_num(ident) or _ck_num(value))
+                # 아이디/암호 관리자 계정 로그인은 'who' 에 username 을 넣어
+                #  계정별 개별 권한(adminPermissions)이 적용되게 한다.
+                if ok and tier == "app" and str(ident).strip():
+                    who = str(ident).strip()
                 # 마스터가 관리자 권한을 부여한 인가번호는 개인 로그인이어도
                 #  관리자(app) 세션을 받는다(마스터 권한 부여 기능).
                 #  (은하스카우트는 범스카우트 관리자 부여와 무관 — 적용 제외)
@@ -9278,17 +22548,88 @@ class Handler(BaseHTTPRequestHandler):
                         and not granted_admin):
                     is_supporter = _is_regular_member(who)
                 if ok:
+                    # [turn68] 소속을 넘긴다 — 안 넘기면 은하 회원의 접속기록에
+                    #  범 명단의 같은 번호 이름이 남는다.
                     _log_access_login(tier, role,
-                                      who or re.sub(r"[^0-9]", "", str(ident)),
-                                      who, _ua, _ip)
+                                      who or str(ident),
+                                      who, _ua, _ip, corps=corps)
                 sid = _sess_new(sess_tier, who, regular=bool(is_supporter),
                                 corps=corps) if ok else ""
                 if sid:
+                    # [요구 2026-10-26] 관리자 권한 부여 인가번호 플래그.
+                    #  grantSession 경로와 동일하게 기록해야, 개인 로그인으로
+                    #  들어온 관리자 부여 계정이 관리 API(재무 등)를 쓸 수 있다.
+                    if granted_admin:
+                        self._set_granted_admin_flag(sid, True)
                     self._set_sid_cookie(sid)
+                # [turn65] 같은 IP 에서 서로 다른 계정 3개 이상 접속 감시.
+                #  · admitted=True  → 통과(정상)
+                #  · admitted=False → 같은 IP 에서 3개 이상 계정이 겹친 상태.
+                #    앱은 이 값으로 경고 팝업을 띄운다.
+                #    ⚠️ 차단하지 않는다. 가족·기관이 IP 를 공유하는 경우가
+                #    흔해 로그인 자체를 막으면 정상 사용자가 피해를 본다.
+                _ipw = None
+                if ok:
+                    try:
+                        _ipw = _ipwatch_check(
+                            _ip, _ua,
+                            who or re.sub(r"[^0-9]", "", str(ident)))
+                    except Exception as _e4:
+                        print("[ipwatch] 점검 실패: %s" % _e4)
+                        _ipw = None
+                ip_notice = None
+                if _ipw:
+                    try:
+                        _ipwatch_notify(
+                            _ipw, _ip, _ua,
+                            who or re.sub(r"[^0-9]", "", str(ident)))
+                    except Exception as _e5:
+                        print("[ipwatch] 알림 실패: %s" % _e5)
+                    ip_notice = {
+                        "active": True,
+                        # ── [turn69] 사용자 지시를 코드로 못박는다 ──────────
+                        #  "3계정/15분, 단 경고만 팝업하고 기능 및 권한 제약은
+                        #   없음. 경고 및 확인만 시켜주려는 목적임."
+                        #  → 이 값들은 **항상 True/False 로 고정**이다. 조건부로
+                        #    만들지 않는다. 앱이 이 값을 보고 혹시라도 분기해도
+                        #    '차단'으로 흘러갈 길을 만들지 않기 위함이다.
+                        #  (세션은 이 블록 **이전에** 이미 발급된다 — 위쪽
+                        #   `_sess_new(...)` 참고. 즉 감시가 실패해도 로그인은
+                        #   성공한 상태이며, 이 경고는 순수 안내다.)
+                        "admitted": True,
+                        "blocking": False,
+                        "band": _ipw["band"],
+                        "count": _ipw["count"],
+                        "windowMin": int(_IPWATCH_WINDOW / 60),
+                        "threshold": _IPWATCH_MIN_ACCTS,
+                        "accounts": _ipw["accounts"],
+                        # 팝업 본문 — 앱이 그대로 표시한다(서버가 한 곳에서 관리).
+                        #  ⚠️ [turn66] 사용자 지시: "경고창만 띄우고 다른 불이익은
+                        #  없도록 함". 따라서 위반·처벌·이용제한 표현을 모두 빼고
+                        #  사실 안내 + 부탁 문구로만 구성한다.
+                        "title": "같은 인터넷 회선에서 여러 계정이 접속했습니다",
+                        "body": (
+                            "이 기기에서 최근 %d분 동안 서로 다른 %d개의 계정으로 "
+                            "접속한 기록이 있습니다.\n\n"
+                            "· 같은 회선: %s\n\n"
+                            "가족·기관·사무실처럼 한 회선을 여러 사람이 함께 쓰는 "
+                            "경우에는 이 안내가 정상적으로 표시될 수 있습니다.\n\n"
+                            "이 안내는 참고용 경고이며, 이용에 아무런 제한을 두지 "
+                            "않습니다. 타인의 개인정보는 본인 동의 없이 열람하지 "
+                            "않도록 부탁드립니다."
+                            % (int(_IPWATCH_WINDOW / 60), _ipw["count"],
+                               _ipw["band"])),
+                        "policy": (
+                            "본 서비스는 개인정보보호법에 따라 접속 기록을 "
+                            "보관합니다. 이 기록은 필요할 때 본인 확인 용도로만 "
+                            "사용되며, 이 안내 때문에 이용이 제한되거나 불이익을 "
+                            "받는 일은 없습니다."),
+                    }
                 return self._json(
                     {"ok": ok, "role": role, "silent": (tier == "master"),
                      "admin": granted_admin, "supporter": is_supporter,
-                     "corps": corps, "sid": sid})
+                     "corps": corps, "sid": sid,
+                     "ipNotice": ip_notice})
             # ---- 세션 종료 ----
             if p == "/api/logout":
                 _sess_del(self._sid())
@@ -9303,7 +22644,11 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/session/grant":
                 d = json.loads(self._body() or b"{}")
                 tier = str(d.get("tier", "")).strip()
-                ident = re.sub(r"[^0-9]", "", str(d.get("id", "")))
+                # [turn68] 원본 ID 를 보존한다 — 숫자로 깎으면 '은하43' 이 '43' 이
+                #   되어 `_resolve_corps` 가 은하 힌트를 잃고 범 43호로 해석한다.
+                _raw_id = str(d.get("id", "") or "")
+                ident = re.sub(r"[^0-9]", "", _raw_id)
+                _corps = ""   # [turn68] 로그에 넘길 소속(기본 빈 값)
                 if tier == "master":
                     if not _is_master_val(d.get("master")):
                         return self._json(
@@ -9318,27 +22663,40 @@ class Handler(BaseHTTPRequestHandler):
                 elif tier == "personal":
                     if not ident:
                         return self._json({"ok": False, "error": "id"}, 400)
-                    try:
-                        _mems = _load_json(DB_FILE, [])
-                    except Exception:
-                        _mems = []
-                    _ok = any(
-                        re.sub(r"[^0-9]", "", str(m.get("number", ""))) == ident
-                        for m in _mems
-                    )
-                    if not _ok:
-                        m = _ev_member_by_ident(ident)
-                        _ok = bool(m)
-                    # 은하스카우트는 별도 명단에서 확인(분리 관리).
-                    _corps = _resolve_corps(d.get("corps", ""), ident)
-                    if not _ok and _corps == "eunha":
+                    # ── [버그 수정 2026-10-26] 소속(corps)별 명단 엄격 대조 ──
+                    #  은하스카우트 인가번호(1~165)는 범스카우트 인가번호와
+                    #  **같은 숫자**를 쓴다(예: 은하 43호 / 범 43호).
+                    #  종전에는 범 명단을 먼저 뒤져 `_ok=True` 가 되면 소속과
+                    #  무관하게 통과시켰다. 그 결과 `은하43` QR·딥링크가
+                    #  범 43호 명단과 뒤섞일 여지가 있었다.
+                    #  → 소속이 정해졌으면 **해당 명단에서만** 확인한다.
+                    #   (개인정보 수정 QR 생성 오류의 재발 방지)
+                    _corps = _resolve_corps(
+                        d.get("corps", ""), (_raw_id or ident))
+                    if _corps == "eunha":
                         _ok = bool(_eunha_member_by_number(ident))
+                    else:
+                        try:
+                            _mems = _load_json(DB_FILE, [])
+                        except Exception:
+                            _mems = []
+                        _ok = any(
+                            re.sub(r"[^0-9]", "", str(m.get("number", ""))) == ident
+                            for m in _mems
+                        )
+                        if not _ok:
+                            _ok = bool(_ev_member_by_ident(ident))
                     if not _ok:
-                        return self._json({"ok": False, "error": "unknown"}, 404)
+                        return self._json(
+                            {"ok": False, "error": "unknown"}, 404)
                     sid = _sess_new("personal", ident,
                                     regular=(_corps != "eunha"
                                              and _is_regular_member(ident)),
                                     corps=_corps)
+                    # 관리자 권한을 부여받은 인가번호는 _auth_ok("admin") 통과용
+                    #  플래그를 세션에 남긴다(개인 등급 유지 + 관리 API 허용).
+                    if _corps != "eunha" and _is_granted_admin(ident):
+                        self._set_granted_admin_flag(sid, True)
                 elif tier == "guest":
                     if len(ident) < 4:
                         return self._json({"ok": False, "error": "id"}, 400)
@@ -9352,11 +22710,21 @@ class Handler(BaseHTTPRequestHandler):
                 if bool(d.get("log")):
                     _ua = self.headers.get("User-Agent", "")
                     _ip = self.client_address[0] if self.client_address else ""
+                    _via = str(d.get("via", "") or "").strip()
                     _role = {"master": "master", "app": "app",
                              "personal": "personal", "guest": "일반회원"}.get(
                         tier, tier)
+                    # [접속기록] QR 직접 진입(?access=personal)은 역할 라벨에
+                    #  '(QR)' 를 붙여 구분하고, via=qr 메타를 남긴다.
+                    _extra = None
+                    if _via == "qr":
+                        _role = (_role + " (QR)") if _role else "QR"
+                        _extra = {"via": "qr"}
                     try:
-                        _log_access_login(tier, _role, ident, ident, _ua, _ip)
+                        # [turn68] 소속(가능한 경우) 전달.
+                        _log_access_login(tier, _role, ident, ident,
+                                          _ua, _ip, extra=_extra,
+                                          corps=(_corps or None))
                     except Exception as _e:
                         print("session grant log fail", _e)
                 self._set_sid_cookie(sid)
@@ -9366,7 +22734,29 @@ class Handler(BaseHTTPRequestHandler):
             #  관리자 전용 경로는 추가로 tier 검사.
             if p.startswith("/api/"):
                 # QR 행사참여(스캔) 경로·수품구매 주문/예약·수요조사 사전신청은 공개.
+                #  · /api/event/dist — 참가신청 페이지 배포용 자료 다운로드(공개).
+                #  · /api/finance/attach* — 인가를 **경로 단위로 미리 판단하지 않는다**.
+                #    (아래 [버그 수정 2026-10-26] 주석 참고)
                 if (p.startswith("/api/event/qr/")
+                        or p == "/api/event/dist"
+                        or p.startswith("/api/geo/")
+                        or p == "/api/finance/attach"           # GET 조회
+                        or p.startswith("/api/finance/attach/")  # download/upload/rename/delete
+                        # ── [요구 2026-11-04 / turn 52] 추모관은 **로그인 없이** ──
+                        #  사용자 원문: "바로가기 링크와 qr 생성 해서 로그인 없이도
+                        #   글 쓰고 확인 및 수장할 수 있도록 해줘"
+                        #  → /api/memorial/* 은 전역 게이트를 통과시킨다.
+                        #  (권한 검사는 각 엔드포인트가 **개별로** 한다:
+                        #   삭제/가리기/이동/댓글삭제 = _mem_can_manage(글쓴이·관리자),
+                        #   글쓰기·공감·댓글 = 누구나. 스팸은 IP 레이트리밋으로 막는다.)
+                        or p.startswith("/api/memorial/")
+                        # ── [요구 2026-11-08 / turn57] Scout's Own 게시판 ──
+                        #  추모관과 **완전히 같은 공개 정책**으로 운영한다:
+                        #  · 답변 작성/수정/숨김 = 로그인 없이 (editKey 보유자만 수정)
+                        #  · 질문·소개문 관리 = 마스터 전용
+                        #  여기(게이트)를 열어 두고, 실제 인가는 각 엔드포인트가
+                        #  개별로 판단한다. 스팸은 IP 레이트리밋(20건/60초)으로 막는다.
+                        or p.startswith("/api/scoutsown/")
                         or p in ("/api/merch/order", "/api/merch/reserve",
                                  "/api/merch/survey/apply")):
                     pass
@@ -9379,6 +22769,537 @@ class Handler(BaseHTTPRequestHandler):
                         need = "admin"
                     if not self._require(need):
                         return
+            # ══════════════════════════════════════════════════════════
+            # [turn63] 평생회원 **직접 지정 / 해제** — 관리자·마스터 전용
+            #
+            #  ## 요구 (사용자 원문 — 오타 '최소' = '취소')
+            #   "관리자, 마스터 계정으로 로그인 후 평생회원 취소 할 수 있어야 함"
+            #
+            #  ## 왜 기존 /api/member 저장으로는 안 되는가
+            #   위 `/api/member` 핸들러의 병합 규칙에는 **빈 문자열 보호**가 있다:
+            #     if v == "" and 기존값이 비어있지 않으면 → continue(기존값 보존)
+            #   이 규칙은 사진·메모·주소 같은 필드를 앱이 못 받아 빈 값으로
+            #   덮어쓰는 사고를 막는 **중요한 안전장치**다. 그런데 그 부작용으로
+            #   `lifetimeSince: ""` 를 보내도 서버가 **무시**한다.
+            #   → `lifetimeMember: False` 는 반영되는데 `lifetimeSince` 는 옛
+            #     날짜가 그대로 남아, 화면에는 "평생회원 미등록 (2026-11-15)"
+            #     처럼 모순된 상태가 된다.
+            #   → 그래서 해제는 **전용 경로**로 처리한다. 이름을 명시적으로
+            #     지정하므로 안전장치를 건드리지 않아도 된다.
+            #
+            #  ## body
+            #   {"ident": "1957" | "G43", "on": true|false, "date": "YYYY-MM-DD"}
+            #   · ident = 인가번호(범) 또는 은하 G번호. 없으면 id 로도 찾는다.
+            #   · on=true  → lifetimeMember=True, date(없으면 오늘) 기록
+            #   · on=false → lifetimeMember=False, lifetimeSince=""  ← 완전 해제
+            #   · date 는 on=true 일 때만 의미가 있다.
+            #
+            #  ## 함께 기록하는 것
+            #   · 평생회원 '등록요청' 이력 중 승인(approved) 상태인 건을
+            #     '해제(cancelled)' 로 바꾼다. 그렇게 하지 않으면 화면의
+            #     등록요청 내역에 "✔ 평생회원 등록 (2026-11-15) 승인됨" 이
+            #     그대로 남아, 평생회원이 아니라는 사실과 **정면으로 모순**된다.
+            #   · 요청 이력 자체는 지우지 않는다(감사 기록). 상태만 바꾼다.
+            # ══════════════════════════════════════════════════════════
+            if p == "/api/member/lifetime/set":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                on = d.get("on")
+                if not isinstance(on, bool):
+                    # 문자열/숫자로 와도 받아준다(관대한 파싱).
+                    on = str(d.get("on", "")).strip().lower() in (
+                        "1", "true", "yes", "on", "y")
+                raw_ident = str(d.get("ident") or d.get("id") or "").strip()
+                if not raw_ident:
+                    return self._json(
+                        {"ok": False, "error": "ident 필요"}, 400)
+                _want_eunha = _ck_is_eunha(raw_ident) or str(
+                    d.get("corps") or "") == "eunha"
+                target_db = EUNHA_DB_FILE if _want_eunha else DB_FILE
+                _key = _ck(raw_ident) if _want_eunha else _ck_num(raw_ident)
+                date_s = str(d.get("date") or "").strip()
+                if on and not date_s:
+                    date_s = datetime.datetime.now().strftime("%Y-%m-%d")
+                with _MEMBER_WRITE_LOCK:
+                    members = _load_json(target_db, [])
+                    hit = None
+                    for i, m in enumerate(members):
+                        if not isinstance(m, dict):
+                            continue
+                        # id 완전 일치 → 인가번호 → 전화번호 순으로 찾는다.
+                        if str(m.get("id", "")) == raw_ident:
+                            hit = i
+                            break
+                        mn = (_ck(m.get("number")) if _want_eunha
+                              else _ck_num(m.get("number")))
+                        if _key and mn == _key:
+                            hit = i
+                            break
+                    if hit is None:
+                        # 2차: 전화번호로 한 번 더.
+                        _digits = _ck_num(raw_ident)
+                        for i, m in enumerate(members):
+                            if not isinstance(m, dict):
+                                continue
+                            mp = _ck_num(m.get("accessPhone") or m.get("phone"))
+                            if _digits and mp == _digits:
+                                hit = i
+                                break
+                    if hit is None:
+                        return self._json(
+                            {"ok": False, "error": "해당 회원을 찾을 수 없습니다"},
+                            404)
+                    before = dict(members[hit])
+                    tgt = dict(members[hit])
+
+                    # ── 요청이력 매칭용 식별키를 **회원 레코드에서** 뽑는다 ──
+                    #  등록요청의 ident 는 인가번호(없으면 전화번호)로 저장된다.
+                    #  호출자가 id('reg_…')만 보냈을 때 번호만 비교하면
+                    #  한 건도 매칭되지 않아 이력이 '승인됨'으로 남는다.
+                    _match_keys = set()
+                    for _v in (tgt.get("number"), tgt.get("accessPhone"),
+                               tgt.get("phone"), tgt.get("id"), raw_ident):
+                        _s = str(_v or "").strip()
+                        if _s:
+                            _match_keys.add(_ck_num(_s))
+                    _match_keys.discard("")
+
+                    if on:
+                        tgt["lifetimeMember"] = True
+                        tgt["lifetimeSince"] = date_s
+                    else:
+                        tgt["lifetimeMember"] = False
+                        tgt["lifetimeSince"] = ""
+                    tgt["lifetimeUpdatedAt"] = _now_stamp()
+                    tgt["lifetimeUpdatedBy"] = str(
+                        (self._sess() or {}).get("who") or "") or "admin"
+                    members[hit] = tgt
+                    _save_json(target_db, members)
+                    # 요청 이력 상태 정리 — 승인된 평생회원 요청만 건드린다.
+                    _req_changed = 0
+                    try:
+                        doc = _load_member_requests()
+                        items = doc.get("items") or []
+                        for it in items:
+                            if not isinstance(it, dict):
+                                continue
+                            if str(it.get("type", "")) != "lifetime":
+                                continue
+                            if str(it.get("status", "")) != "approved":
+                                continue
+                            # 인가번호·전화번호 어느 형식으로 저장됐어도 잡는다.
+                            _it_raw = str(it.get("ident") or "").strip()
+                            if not _it_raw:
+                                continue
+                            if _ck_num(_it_raw) not in _match_keys:
+                                continue
+                            it["status"] = "approved" if on else "cancelled"
+                            it["cancelledAt"] = ("" if on else _now_stamp())
+                            _req_changed += 1
+                        if _req_changed:
+                            doc["items"] = items
+                            _save_member_requests(doc)
+                    except Exception as _e3:
+                        print("[lifetime] 요청이력 정리 실패: %s" % _e3)
+                    print("[lifetime] %s → %s (요청이력 %d건)" % (
+                        raw_ident, "지정" if on else "해제", _req_changed))
+                return self._json({
+                    "ok": True,
+                    "ident": raw_ident,
+                    "lifetimeMember": bool(tgt.get("lifetimeMember")),
+                    "lifetimeSince": str(tgt.get("lifetimeSince") or ""),
+                    "changedFrom": {
+                        "lifetimeMember": bool(before.get("lifetimeMember")),
+                        "lifetimeSince": str(
+                            before.get("lifetimeSince") or ""),
+                    },
+                    "requestsUpdated": _req_changed,
+                })
+            #  표기 병합/숨김 설정 저장 — 관리자·마스터만.
+            if p == "/api/stats/units/alias":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                action = str(d.get("action") or "")
+                with LOCK:
+                    doc = _mu_doc()
+                    alias = doc.setdefault("alias", {})
+                    hidden = list(doc.get("hidden") or [])
+                    if action == "merge":
+                        #  from(여러 표기/키) → into(대표 키)
+                        into = str(d.get("into") or "").strip()
+                        srcs = [str(x or "").strip() for x in (d.get("from") or [])]
+                        srcs = [x for x in srcs if x and x != into]
+                        if not into or not srcs:
+                            return self._json(
+                                {"ok": False, "error": "into/from 필요"}, 400)
+                        #  [turn61] 안전 검사 — 되돌리기 어려운 병합을 미리 막는다.
+                        #   같은 키로 모으는 것이 **정말 같은 단위대**인지 확인.
+                        _st = _build_unit_stats(
+                            basis=("active" if d.get("basis") == "active" else "issue"))
+                        _um = {u["key"]: u for u in _st.get("units") or []}
+                        _tg = [_um[k] for k in [into] + srcs if k in _um]
+                        if len(_tg) >= 2:
+                            _lgs = {str(x.get("league") or "") for x in _tg}
+                            _nums = {int(x.get("num") or 0) for x in _tg}
+                            _nums.discard(0)
+                            if len(_lgs) > 1:
+                                return self._json({
+                                    "ok": False,
+                                    "error": "서로 다른 연맹의 단위대는 합칠 수 없습니다: "
+                                             + " / ".join(sorted(_lgs)),
+                                }, 400)
+                            if len(_nums) > 1:
+                                return self._json({
+                                    "ok": False,
+                                    "error": "단위대 번호가 서로 다릅니다(제%s). "
+                                             "정말 같은 곳이면 하나씩 직접 확인해 주세요."
+                                             % ", 제".join(str(n) for n in sorted(_nums)),
+                                }, 400)
+                        for src in srcs:
+                            alias[src] = into
+                            #  이미 into 로 매핑된 것들도 함께 옮긴다(체인 정리)
+                            for k2, v2 in list(alias.items()):
+                                if v2 == src:
+                                    alias[k2] = into
+                    elif action == "mergeAll":
+                        #  [turn61] 병합 후보를 한 번에 모두 묶는다.
+                        #   scope = "variants"(표기 변형 61곳) | "extra"(추가 후보) | "both"
+                        #   각 후보는 이미 **같은 연맹**으로 검증된 것만 올라온다.
+                        scope = str(d.get("scope") or "variants")
+                        _st = _build_unit_stats(
+                            basis=("active" if d.get("basis") == "active" else "issue"))
+                        _um = {u["key"]: u for u in _st.get("units") or []}
+                        cand = []
+                        if scope in ("variants", "both"):
+                            for g in (_st.get("groups") or []):
+                                cand.append((g["key"], [g["key"]], g.get("count") or 0))
+                        if scope in ("extra", "both"):
+                            for g in (_st.get("extra") or []):
+                                cand.append((g["into"], list(g.get("from") or []),
+                                             g.get("count") or 0))
+                        merged_n = 0
+                        merged_people = 0
+                        skipped = 0
+                        for into, srcs, cnt in cand:
+                            tg = [_um[k] for k in [into] + srcs if k in _um]
+                            if len(tg) < 2:
+                                skipped += 1
+                                continue
+                            #  연맹이 섞였으면 건너뛴다(안전).
+                            if len({str(x.get("league") or "") for x in tg}) > 1:
+                                skipped += 1
+                                continue
+                            _nums = {int(x.get("num") or 0) for x in tg}
+                            _nums.discard(0)
+                            if len(_nums) > 1:
+                                skipped += 1
+                                continue
+                            for src in srcs:
+                                if src and src != into:
+                                    alias[src] = into
+                                    for k2, v2 in list(alias.items()):
+                                        if v2 == src:
+                                            alias[k2] = into
+                            merged_n += 1
+                            merged_people += int(cnt or 0)
+                        #  병합 후 재계산한 값을 함께 돌려준다.
+                        doc["alias"] = alias
+                        doc["hidden"] = hidden
+                        _mu_save(doc)
+                        st2 = _build_unit_stats(
+                            basis=("active" if d.get("basis") == "active" else "issue"))
+                        return self._json({
+                            "ok": True, "mergedGroups": merged_n,
+                            "mergedPeople": merged_people, "skipped": skipped,
+                            "aliasCount": len(alias), "hiddenCount": len(hidden),
+                            "stats": st2,
+                        })
+
+                    elif action == "unmerge":
+                        srcs = [str(x or "").strip() for x in (d.get("from") or [])]
+                        for src in srcs:
+                            alias.pop(src, None)
+                    elif action == "hide":
+                        key = str(d.get("key") or "").strip()
+                        if key and key not in hidden:
+                            hidden.append(key)
+                    elif action == "unhide":
+                        key = str(d.get("key") or "").strip()
+                        hidden = [x for x in hidden if x != key]
+                    elif action == "reset":
+                        alias = {}
+                        hidden = []
+                    else:
+                        return self._json({"ok": False, "error": "unknown action"}, 400)
+                    doc["alias"] = alias
+                    doc["hidden"] = hidden
+                    _mu_save(doc)
+                return self._json({
+                    "ok": True, "aliasCount": len(alias),
+                    "hiddenCount": len(hidden),
+                    "stats": _build_unit_stats(
+                        basis=("active" if d.get("basis") == "active" else "issue")),
+                })
+
+            # ════ [turn57] Scout's Own 게시판 — 쓰기 (do_POST 본체) ════
+            #  ## 왜 여기로 옮겼나 (제가 처음에 틀린 것)
+            #   처음엔 이 4개를 do_GET 안에 넣었다. 그래서
+            #    · GET 으로는 잡히지만 실제 POST 는 do_POST 로 와서 **아무 데도
+            #      걸리지 않고** 전역 인증 게이트에 먼저 걸렸다(401 unauthorized).
+            #    · 게다가 게이트가 `/api/*` 쓰기를 전부 막으므로, 추모관처럼
+            #      `/api/scoutsown/` 도 **공개 예외**로 등록해야 한다.
+            #   → 쓰기 4개(답변·답변삭제·질문·행사)를 여기(게이트 뒤)로 옮기고,
+            #     게이트 화이트리스트에 `/api/scoutsown/` 를 추가했다.
+            #   → 인가는 **각 엔드포인트가 개별로** 판단한다:
+            #      답변 작성/수정 = 누구나(수정은 editKey 보유자),
+            #      질문·행사 관리 = 마스터 전용.
+
+            if p == "/api/scoutsown/answer":
+                # 답변 등록·수정 — 로그인 불필요 (추모관 글쓰기와 같은 정책).
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                eid = _so_safe_eid(d.get("id", "tsak-2026"))
+                qid = str(d.get("qid", "") or "").strip()
+                body = str(d.get("body", "") or "").strip()
+                if not qid:
+                    return self._json({"ok": False, "error": "질문을 찾지 못했습니다"}, 400)
+                if not body:
+                    return self._json({"ok": False, "error": "내용을 입력해 주세요"}, 400)
+                if len(body) > 4000:
+                    return self._json(
+                        {"ok": False, "error": "4000자 이내로 적어 주세요"}, 400)
+                # 질문이 실제로 존재하는지(숨김 포함) 확인 — 임의 qid 주입 방지
+                valid = {str(x.get("id")) for x in
+                         _so_questions(eid, include_inactive=True)}
+                if qid not in valid:
+                    return self._json({"ok": False, "error": "없는 질문입니다"}, 404)
+                ip = self.client_address[0] if self.client_address else "?"
+                if not _mem_rate_ok(ip + "|so", limit=20, window=60.0):
+                    return self._json(
+                        {"ok": False, "error": "잠시 후 다시 시도해 주세요"}, 429)
+                name = str(d.get("name", "") or "").strip()[:40] or "익명"
+                number = re.sub(r"[^0-9G]", "",
+                                str(d.get("number", "") or "").strip())[:12]
+                secret = str(d.get("secret", "") or "").strip()
+                aid = str(d.get("answerId", "") or "").strip()
+                with LOCK:
+                    doc = _so_doc()
+                    allA = doc.setdefault("answers", {})
+                    arr = list(allA.get(eid) or [])
+                    now = _now_stamp()
+                    saved = None
+                    if aid:
+                        # 수정 — 본인(editKey) 또는 마스터만
+                        tgt = next((x for x in arr
+                                    if str(x.get("id")) == aid), None)
+                        if tgt is None:
+                            return self._json(
+                                {"ok": False, "error": "not found"}, 404)
+                        can = (_so_edit_hash(aid, secret) ==
+                               str(tgt.get("editKeyHash") or "")
+                               and str(tgt.get("editKeyHash") or "")) \
+                            or _cb_tier(self._sess() or {}) == "master"
+                        if not can:
+                            return self._json(
+                                {"ok": False, "error": "수정 권한이 없습니다"}, 403)
+                        tgt["body"] = body
+                        tgt["name"] = name
+                        if number:
+                            tgt["number"] = number
+                        tgt["updated"] = now
+                        arr[arr.index(tgt)] = tgt
+                        saved = tgt
+                        new_secret = ""
+                    else:
+                        # 같은 사람이 같은 질문에 또 쓰면 → 덮어쓰지 않고 새 글.
+                        #  (현장에서 여러 차례 생각이 바뀔 수 있다)
+                        new_secret = _secrets.token_urlsafe(16)
+                        cid = "a" + _secrets.token_urlsafe(8)
+                        rec = {
+                            "id": cid, "qid": qid, "name": name,
+                            "number": number, "body": body,
+                            "editKeyHash": _so_edit_hash(cid, new_secret),
+                            "created": now, "updated": "",
+                            "hidden": False,
+                            "ipMask": _mem_mask_ip(ip),
+                        }
+                        arr.append(rec)
+                        saved = rec
+                    allA[eid] = arr
+                    doc["answers"] = allA
+                    _so_save(doc)
+                out = {"ok": True, "answer": _so_pub_answer(saved),
+                       "stats": _so_stats(eid)}
+                if new_secret:
+                    #  수정키 원문은 **발급 순간에만** 내려준다(해시만 저장).
+                    out["secret"] = new_secret
+                return self._json(out)
+
+            if p == "/api/scoutsown/answer/delete":
+                # 답변 숨김·삭제 — 본인(editKey) 또는 마스터.
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                eid = _so_safe_eid(d.get("id", "tsak-2026"))
+                aid = str(d.get("answerId", "") or "").strip()
+                secret = str(d.get("secret", "") or "").strip()
+                action = str(d.get("action", "hide") or "hide")
+                sess = self._sess() or {}
+                with LOCK:
+                    doc = _so_doc()
+                    allA = doc.setdefault("answers", {})
+                    arr = list(allA.get(eid) or [])
+                    tgt = next((x for x in arr
+                                if str(x.get("id")) == aid), None)
+                    if tgt is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    can = (_so_edit_hash(aid, secret) ==
+                           str(tgt.get("editKeyHash") or "")
+                           and str(tgt.get("editKeyHash") or "")) \
+                        or _cb_tier(sess) == "master"
+                    if not can:
+                        return self._json(
+                            {"ok": False, "error": "권한이 없습니다"}, 403)
+                    if action == "delete":
+                        arr = [x for x in arr if str(x.get("id")) != aid]
+                    else:
+                        tgt["hidden"] = True
+                        arr[arr.index(tgt)] = tgt
+                    allA[eid] = arr
+                    doc["answers"] = allA
+                    _so_save(doc)
+                return self._json({"ok": True, "stats": _so_stats(eid)})
+
+            if p == "/api/scoutsown/questions":
+                # 질문 관리 — **마스터 전용**.
+                #   POST {id, action: add|update|move|delete|restore, ...}
+                sess = self._sess() or {}
+                if _cb_tier(sess) != "master":
+                    return self._json({"ok": False, "error": "마스터 전용"}, 403)
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                eid = _so_safe_eid(d.get("id", "tsak-2026"))
+                action = str(d.get("action", "") or "")
+                #  [turn57] list — 숨김(active=False) 질문까지 전부 읽기 전용으로.
+                #   관리자 화면이 "지운 질문 복구"를 하려면 비활성까지 보여야 한다.
+                #   아무것도 저장하지 않는다(읽기 전용).
+                if action == "list":
+                    return self._json({
+                        "ok": True,
+                        "questions": _so_questions(eid, include_inactive=True),
+                        "stats": _so_stats(eid),
+                    })
+                with LOCK:
+                    doc = _so_doc()
+                    allQ = doc.setdefault("questions", {})
+                    qs = list(_so_questions(eid, include_inactive=True))
+                    now = _now_stamp()
+                    if action == "add":
+                        text = str(d.get("text", "") or "").strip()
+                        if not text:
+                            return self._json(
+                                {"ok": False, "error": "질문 내용을 입력해 주세요"}, 400)
+                        qid = "q" + _secrets.token_urlsafe(5)
+                        qs.append({
+                            "id": qid, "text": text[:500],
+                            "hint": str(d.get("hint", "") or "").strip()[:300],
+                            "order": (max([int(x.get("order") or 0) for x in qs] or [0]) + 1),
+                            "active": True, "created": now,
+                        })
+                    elif action == "update":
+                        qid = str(d.get("qid", "") or "").strip()
+                        tgt = next((x for x in qs if str(x.get("id")) == qid), None)
+                        if tgt is None:
+                            return self._json({"ok": False, "error": "not found"}, 404)
+                        if "text" in d:
+                            t = str(d.get("text") or "").strip()
+                            if not t:
+                                return self._json(
+                                    {"ok": False, "error": "질문 내용을 입력해 주세요"}, 400)
+                            tgt["text"] = t[:500]
+                        if "hint" in d:
+                            tgt["hint"] = str(d.get("hint") or "").strip()[:300]
+                        tgt["updated"] = now
+                    elif action == "move":
+                        qid = str(d.get("qid", "") or "").strip()
+                        delta = -1 if str(d.get("dir")) == "up" else 1
+                        idx = next((i for i, x in enumerate(qs)
+                                    if str(x.get("id")) == qid), -1)
+                        if idx < 0:
+                            return self._json({"ok": False, "error": "not found"}, 404)
+                        jdx = idx + delta
+                        if 0 <= jdx < len(qs):
+                            qs[idx], qs[jdx] = qs[jdx], qs[idx]
+                        #  order 를 1..n 으로 다시 매긴다(빈틈 없이).
+                        for i, x in enumerate(qs):
+                            x["order"] = i + 1
+                    elif action == "delete":
+                        qid = str(d.get("qid", "") or "").strip()
+                        tgt = next((x for x in qs if str(x.get("id")) == qid), None)
+                        if tgt is None:
+                            return self._json({"ok": False, "error": "not found"}, 404)
+                        #  soft delete — 답변이 달려 있어도 기록은 남긴다.
+                        tgt["active"] = False
+                    elif action == "restore":
+                        qid = str(d.get("qid", "") or "").strip()
+                        tgt = next((x for x in qs if str(x.get("id")) == qid), None)
+                        if tgt is None:
+                            return self._json({"ok": False, "error": "not found"}, 404)
+                        tgt["active"] = True
+                    elif action == "reset":
+                        #  예시 10개로 되돌리기(관리자 실수 복구용).
+                        qs = [dict(x) for x in SO_DEFAULT_QUESTIONS]
+                    else:
+                        return self._json(
+                            {"ok": False, "error": "unknown action"}, 400)
+                    allQ[eid] = qs
+                    doc["questions"] = allQ
+                    _so_save(doc)
+                return self._json({
+                    "ok": True,
+                    "questions": _so_questions(eid, include_inactive=True),
+                    "stats": _so_stats(eid),
+                })
+
+            if p == "/api/scoutsown/event":
+                # 행사 소개문 · 제목 수정 — **마스터 전용**.
+                sess = self._sess() or {}
+                if _cb_tier(sess) != "master":
+                    return self._json({"ok": False, "error": "마스터 전용"}, 403)
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                eid = _so_safe_eid(d.get("id", "tsak-2026"))
+                with LOCK:
+                    doc = _so_doc()
+                    evs = doc.setdefault("events", {})
+                    cur = dict(evs.get(eid) or {})
+                    for k in ("title", "program", "subtitle", "org",
+                              "dateText", "place", "emblem", "note"):
+                        if k in d:
+                            cur[k] = str(d.get(k) or "").strip()[:400]
+                    if "intro" in d and isinstance(d.get("intro"), list):
+                        cur["intro"] = [str(x or "").strip()[:1000]
+                                        for x in d["intro"]][:12]
+                    evs[eid] = cur
+                    doc["events"] = evs
+                    _so_save(doc)
+                return self._json({"ok": True, "event": _so_event(eid)})
+
             # ---- 마스터 앱관리 ----
             if p == "/api/admin/app-password":
                 d = json.loads(self._body() or b"{}")
@@ -9458,7 +23379,27 @@ class Handler(BaseHTTPRequestHandler):
                     _save_json(ACCESS_LOG_FILE, doc)
                 return self._json({"ok": True, "count": len(logs)})
             # ---- 일반회원 승인 처리 (관리자·마스터) ----
-            #  action: 'approve' | 'hold' | 'pending' | 'delete' | 'bulk'
+            #  action: 'approve' | 'hold' | 'pending' | 'reject' | 'delete' | 'bulk'
+            #  · 마스터에게 위임된 항목은 **마스터만** 처리할 수 있다(요구).
+            if p == "/api/approval/note/clear":
+                # [요구] 정보 수정요청(메모) 처리 — 관리자·마스터가 확인 후 해제.
+                #   body: { ident, id? }  (id=항목 id, ident=인가번호/전화/id)
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                ident = str(d.get("ident", "") or "")
+                mid = str(d.get("id", "") or "")
+                if not _clean_no(ident) and not mid:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                # 마스터 위임 잠금(있으면).
+                if not self._auth_ok("master") and _deleg_is_master_only(
+                        "request", mid or ident):
+                    return self._json({
+                        "ok": False, "error": "master_only",
+                        "message": "마스터에게 위임된 항목은 마스터만 처리할 수 있습니다."},
+                        403)
+                ok = _link_note_clear(ident, mid)
+                return self._json({"ok": True, "cleared": ok})
             if p == "/api/approval/set":
                 if not self._require("admin"):
                     return
@@ -9470,6 +23411,15 @@ class Handler(BaseHTTPRequestHandler):
                 idents = [str(x) for x in idents if str(x).strip()]
                 if not idents:
                     return self._json({"ok": False, "error": "ident"}, 400)
+                # 마스터 위임 잠금 — 위임된 항목은 마스터 전용.
+                if not self._auth_ok("master"):
+                    locked = [x for x in idents
+                              if _deleg_is_master_only("regular", x)]
+                    if locked:
+                        return self._json({
+                            "ok": False, "error": "master_only",
+                            "message": "마스터에게 위임된 항목은 마스터만 처리할 수 있습니다.",
+                            "locked": locked}, 403)
                 done = 0
                 _adm = _sess_label(self._sess())
                 if action == "delete":
@@ -9502,14 +23452,20 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     status = {
                         "approve": "approved", "hold": "held",
-                        "pending": "pending", "bulk": "approved",
+                        "pending": "pending", "reject": "rejected",
+                        "bulk": "approved",
                     }.get(action, "approved")
                     for x in idents:
                         ok, nm = _set_member_approval(x, status)
                         if ok:
                             done += 1
-                            # 승인/보류 → 히스토리에 기록(대기 복귀는 제외).
-                            if status in ("approved", "held"):
+                            # 처리 후 해당 항목의 마스터 위임은 해제한다.
+                            try:
+                                _deleg_clear_for("regular", x)
+                            except Exception:
+                                pass
+                            # 승인/보류/거절 → 히스토리에 기록(대기 복귀는 제외).
+                            if status in ("approved", "held", "rejected"):
                                 mm = _member_of_ident(x) or {}
                                 _approval_history_record(
                                     "regular", "member",
@@ -9536,7 +23492,8 @@ class Handler(BaseHTTPRequestHandler):
                 d = json.loads(self._body() or b"{}")
                 rtype = str(d.get("type", "")).strip()
                 if rtype not in ("lifetime", "fee", "qualification",
-                                 "event", "regular"):
+                                 "event", "regular", "donation", "supply",
+                                 "linkfix"):
                     return self._json({"ok": False, "error": "type"}, 400)
                 # ident(인가번호) — 미지정 시 세션 who 사용, 그래도 없으면 400
                 ident = re.sub(r"[^0-9]", "", str(d.get("ident", "")))
@@ -9544,11 +23501,47 @@ class Handler(BaseHTTPRequestHandler):
                     ident = re.sub(r"[^0-9]", "", str(s.get("who", "")))
                 if not ident:
                     return self._json({"ok": False, "error": "ident"}, 400)
-                m = _member_by_number(ident) or _ev_member_by_ident(ident)
+                # ── [turn68] 소속 확정 후 조회 ──────────────────────────────
+                #  종전: `_member_by_number(ident)` (범 명단 우선) → 은하 회원의
+                #        평생회비/연회비/행사/후원 요청이 **범 명단의 같은 번호**
+                #        회원 이름으로 접수됐다. 승인되면 그 남의 계정에
+                #        평생회원·납부·참석·후원 이력이 붙었다.
+                _sess_corps2 = str(s.get("corps") or "").strip().lower()
+                if str(s.get("tier", "")) in ("master", "app"):
+                    _sess_corps2 = ""
+                _hint2 = str(d.get("corps") or "").strip().lower()
+                _corps2 = ""
+                for _cand2 in (_sess_corps2, _hint2):
+                    if _cand2 in ("tsak", "eunha"):
+                        _corps2 = _cand2
+                        break
+                if not _corps2 and _ck_is_eunha(d.get("ident", "")):
+                    _corps2 = "eunha"
+                if not _corps2:
+                    _in_e2 = bool(_eunha_member_by_number(ident))
+                    _in_t2 = bool(_member_by_number(ident))
+                    if _in_e2 and not _in_t2:
+                        _corps2 = "eunha"
+                    elif _in_t2 and not _in_e2:
+                        _corps2 = "tsak"
+                    elif _in_e2 and _in_t2:
+                        return self._json({
+                            "ok": False,
+                            "ambiguous": True,
+                            "error": ("번호 %s 은(는) 범스카우트·은하스카우트 양쪽에 "
+                                      "있습니다. 소속을 지정해 주세요 "
+                                      "(corps=tsak 또는 corps=eunha)." % ident),
+                        }, 409)
+                if not _corps2:
+                    return self._json({"ok": False, "error": "unknown"}, 404)
+                m = _ev_member_by_ident(
+                    (_ck(d.get("ident", "")) if _corps2 == "eunha" else ident),
+                    corps=("eunha" if _corps2 == "eunha" else "tsak"))
                 if not m:
                     return self._json({"ok": False, "error": "unknown"}, 404)
                 req = {
                     "ident": ident,
+                    "corps": _corps2,
                     "number": re.sub(r"[^0-9]", "", str(m.get("number", ""))),
                     "name": str(m.get("name", "")),
                     "type": rtype,
@@ -9561,11 +23554,42 @@ class Handler(BaseHTTPRequestHandler):
                            "personal": "범스카우트", "guest": "비인가자"}.get(
                         s.get("tier"), s.get("tier")),
                 }
+                # 평생회비·연회비 등록요청 — 납부자 이름(payer) + 납부시점(timing).
+                #  · payer      : 납부자 이름(미입력 시 인가자 본인 이름)
+                #  · payerIsSelf: '인가자와 동일' 체크 여부
+                #  · timing     : lifetime='old'(1년이상)/recent'(1년내)/'due'(납부예정)
+                #                 fee='paid'(납부완료)/'due'(납부예정)
+                if rtype in ("lifetime", "fee"):
+                    _payer = str(d.get("payer", "")).strip()
+                    _timing = str(d.get("timing", "")).strip()
+                    if rtype == "lifetime" and _timing not in (
+                            "old", "recent", "due"):
+                        _timing = "recent"
+                    if rtype == "fee" and _timing not in ("paid", "due"):
+                        _timing = "paid"
+                    req["payerIsSelf"] = bool(d.get("payerIsSelf"))
+                    if not _payer:
+                        _payer = str(m.get("name", "")).strip()
+                        req["payerIsSelf"] = True
+                    req["payer"] = _payer
+                    req["timing"] = _timing
+                # 후원금·후원물품 — 항목(item)·금액(amount) 추가 저장.
+                if rtype in ("donation", "supply"):
+                    req["item"] = str(d.get("item", "")).strip()
+                    try:
+                        req["amount"] = int(d.get("amount") or 0)
+                    except Exception:
+                        req["amount"] = 0
+                    if not req["item"] and not req["amount"]:
+                        return self._json({"ok": False, "error": "item/amount"}, 400)
                 if rtype == "fee" and not req["year"]:
                     return self._json({"ok": False, "error": "year"}, 400)
                 ok, rid = _add_member_request(req)
                 return self._json({"ok": ok, "id": rid})
-            # ---- 회원 등록요청 승인/반려(관리자·마스터) ----
+            # ---- 회원 등록요청 승인/보류/대기/거절/삭제(관리자·마스터) ----
+            #  action: 'approve'(승인) | 'hold'(보류) | 'pending'(대기)
+            #          | 'reject'(거절) | 'delete'(삭제)
+            #  · 마스터에게 위임된 항목은 **마스터만** 처리할 수 있다(요구).
             if p == "/api/member/request/set":
                 if not self._require("admin"):
                     return
@@ -9574,8 +23598,16 @@ class Handler(BaseHTTPRequestHandler):
                 action = str(d.get("action", "approve")).strip()
                 if not rid:
                     return self._json({"ok": False, "error": "id"}, 400)
-                if action not in ("approve", "reject", "pending", "delete"):
+                if action not in ("approve", "reject", "pending", "delete",
+                                  "hold"):
                     return self._json({"ok": False, "error": "action"}, 400)
+                # 마스터 위임 잠금 — 위임된 등록요청은 마스터 전용.
+                if (not self._auth_ok("master")
+                        and _deleg_is_master_only("request", rid)):
+                    return self._json({
+                        "ok": False, "error": "master_only",
+                        "message": "마스터에게 위임된 항목은 마스터만 처리할 수 있습니다."},
+                        403)
                 # 처리 전 원본 요청을 확보(히스토리 payload·표시용).
                 _before = None
                 for it in (_load_member_requests().get("items") or []):
@@ -9583,18 +23615,52 @@ class Handler(BaseHTTPRequestHandler):
                         _before = it
                         break
                 ok, name, rtype = _set_member_request_status(rid, action)
-                # 승인/반려/삭제 → 히스토리에 기록(대기 복귀는 제외).
+                # [요구] 정보 수정요청(메모) 처리 → 회원/프로필의 메모를 해제한다.
+                if ok and str(rtype) == "linkfix" and _before:
+                    try:
+                        _link_note_clear(str(_before.get("ident", "")))
+                    except Exception as _e:
+                        print("linkfix clear fail", _e)
+                # 처리 후 해당 항목의 마스터 위임은 해제한다.
+                if ok and action in ("approve", "reject", "delete", "hold"):
+                    try:
+                        _deleg_clear_for("request", rid)
+                    except Exception:
+                        pass
+                # 승인/거절/삭제 → 히스토리에 기록(대기/보류 복귀는 제외).
                 if ok and action in ("approve", "reject", "delete") and _before:
                     _status = {"approve": "approved", "reject": "rejected",
                                "delete": "deleted"}.get(action, action)
                     _ident = str(_before.get("ident", ""))
                     _summary = _req_type_label(rtype)
+                    # 납부자·납부시점(평생회비/연회비) — 승인 히스토리 요약에 반영.
+                    if str(rtype) in ("lifetime", "fee"):
+                        _payer = str(_before.get("payer", "")).strip()
+                        _timing = str(_before.get("timing", "")).strip()
+                        _ttxt = {"old": "오래전 납부(1년 이상)",
+                                 "recent": "최근 납부(1년 내)",
+                                 "due": "납부예정",
+                                 "paid": "납부완료"}.get(_timing, "")
+                        if _ttxt:
+                            _summary += " · %s" % _ttxt
+                        if _payer:
+                            _summary += " · 납부자 %s" % _payer
                     if str(rtype) == "fee" and str(_before.get("year", "")):
                         _summary += " · %s년" % _before.get("year")
                     elif str(rtype) == "lifetime" and str(_before.get("date", "")):
                         _summary += " · 납부일 %s" % _before.get("date")
                     elif str(rtype) == "event" and str(_before.get("event", "")):
                         _summary += " · %s" % _before.get("event")
+                    elif str(rtype) in ("donation", "supply"):
+                        _it = str(_before.get("item", "")).strip()
+                        try:
+                            _amt = int(_before.get("amount") or 0)
+                        except Exception:
+                            _amt = 0
+                        if _it:
+                            _summary += " · %s" % _it
+                        if _amt:
+                            _summary += " · %s원" % format(_amt, ",")
                     _approval_history_record(
                         "request", "request", _ident, name,
                         str(_before.get("number", "") or _ident),
@@ -9689,12 +23755,55 @@ class Handler(BaseHTTPRequestHandler):
                     d = {}
                 kind = str(d.get("kind", "all")).strip() or "all"
                 owner = _owner_key(self._sess())
-                kinds = ["approval", "board"] if kind == "all" else [kind]
+                # [요구 2026-11-20] "주문을 확인하면 버튼 숫자는 없어져야 함"
+                #
+                # ## 왜 꺼지지 않았나 (실측)
+                #  ① 화이트리스트가 ("approval","board") 뿐이라 kind='order' 는
+                #     **조용히 무시**됐다(에러도 없이 ok:True 만 반환).
+                #  ② 더 근본적으로, board/order/join 등 **모든 종류가 같은
+                #     워터마크(seen['board_at'])를 공유**했다. 그래서 어느 것을
+                #     읽음 처리해도 다른 종류의 미확인 건수까지 함께 0 이 됐다.
+                #  ③ 그리고 앱은 주문 읽음 처리를 **호출한 적이 없었다**.
+                #
+                # ## 수정
+                #  · 종류별로 **독립된 워터마크**를 쓴다(order / board / approval).
+                #    → 게시판을 안 봐도 주문만 확인해서 주문 배지를 끌 수 있다.
+                #  · 'order' 를 허용 목록에 추가.
+                #  · 'order' 는 'board' 와 같은 큐(notify.json)를 보므로, 워터마크
+                #    키만 'order' 로 따로 둔다(`_board_badge_unread` 가 kind 를
+                #    받도록 확장).
+                kinds = ["approval", "board", "order"] if kind == "all" else [kind]
+                kinds = [k for k in kinds if k in ("approval", "board", "order")]
                 for k in kinds:
-                    if k in ("approval", "board"):
-                        _seen_set(owner, k)
+                    _seen_set(owner, k)
                 return self._json({"ok": True, "owner": owner,
                                    "kinds": kinds})
+            if p == "/api/link/note":
+                # [요구] 정보 수정요청 메모 — 비인가회원(본인)이 관리자·마스터에게
+                #  정보 수정을 요청한다. 처리되면 통합승인 '정보 수정요청' 큐에 노출.
+                #   body: { ident?, note, scope? }
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                note = str(d.get("note", "") or "").strip()
+                scope = str(d.get("scope", "") or "").strip()
+                ident = re.sub(r"[^0-9]", "", str(d.get("ident", "")))
+                # 본인(개인·비인가) 세션은 세션 who 로 강제, 관리자·마스터는 지정 가능.
+                s = self._sess() or {}
+                who = re.sub(r"[^0-9]", "", str(s.get("who", "") or ""))
+                if not self._auth_ok("admin"):
+                    if not who:
+                        return self._json({"ok": False, "error": "본인만 요청할 수 있습니다."}, 403)
+                    ident = who
+                if not ident:
+                    ident = who
+                if not ident:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                if not note:
+                    return self._json({"ok": False, "error": "메모 내용을 입력하세요."}, 400)
+                ok, nm = _member_note_fix(
+                    ident, note, scope=scope, by=_sess_label(s))
+                return self._json({"ok": ok, "ident": ident, "name": nm})
             if p == "/api/link/set":
                 # 멘토·페런츠 연결 승인/보류/대기 처리(관리자·마스터).
                 if not self._require("admin"):
@@ -9708,12 +23817,55 @@ class Handler(BaseHTTPRequestHandler):
                 idents = [str(x) for x in idents if str(x).strip()]
                 if not idents:
                     return self._json({"ok": False, "error": "ident"}, 400)
+                # 마스터 위임 잠금 — 위임된 연결은 마스터 전용(요구).
+                if not self._auth_ok("master"):
+                    locked = [x for x in idents
+                              if _deleg_is_master_only("link", x)]
+                    if locked:
+                        return self._json({
+                            "ok": False, "error": "master_only",
+                            "message": "마스터에게 위임된 항목은 마스터만 처리할 수 있습니다.",
+                            "locked": locked}, 403)
                 status = {
                     "approve": "approved", "hold": "held",
-                    "pending": "pending",
+                    "pending": "pending", "reject": "rejected",
                 }.get(action, "approved")
                 done = 0
                 _adm = _sess_label(self._sess())
+                # 삭제 = 연결 승인 요청을 큐에서 제거(승인요청 메타 정리).
+                #  입력된 멘토/페런츠 정보는 보존하되 요청 상태만 초기화한다.
+                if action == "delete":
+                    with _MEMBER_WRITE_LOCK:
+                        _ms = _ev_members()
+                        keys = {re.sub(r"[^0-9]", "", x) for x in idents}
+                        for _i, _m in enumerate(_ms):
+                            mk = re.sub(r"[^0-9]", "", str(_m.get("number", "")))
+                            if mk not in keys:
+                                continue
+                            _before = _link_member_entry(_m)
+                            _m["linkApprovalStatus"] = ""
+                            _m.pop("linkRequestedAt", None)
+                            _m.pop("linkRequestSource", None)
+                            _ms[_i] = _m
+                            done += 1
+                            _approval_history_record(
+                                "link", "link",
+                                str(_m.get("number", "") or mk),
+                                str(_m.get("name", "")),
+                                str(_m.get("number", "") or mk),
+                                "멘토·페런츠 연결 - %s" % _before.get("linkKind", ""),
+                                "deleted", str(_before.get("requestedAt", "")),
+                                _adm,
+                                summary="연결 요청 삭제 (복원 시 재요청)",
+                                payload={"member": _before})
+                        _save_json(DB_FILE, _ms)
+                        _touch_meta({"updatedBy": "link-approval-del"})
+                    for x in idents:
+                        try:
+                            _deleg_clear_for("link", x)
+                        except Exception:
+                            pass
+                    return self._json({"ok": True, "done": done})
                 for x in idents:
                     mm = _member_of_ident(x) or {}
                     # 멘토/페런츠 구분 + 승인요청시간·요청방법 + 전 인적사항(요구).
@@ -9727,20 +23879,64 @@ class Handler(BaseHTTPRequestHandler):
                     ok, nm = _set_member_link(x, status, note)
                     if ok:
                         done += 1
-                        # 승인/보류 → 히스토리 기록(대기 복귀는 제외).
-                        if status in ("approved", "held"):
+                        # [요구] 연결을 실제 처리하면 정보 수정요청 메모도 해제한다.
+                        #
+                        # ── [버그 수정 2026-10-26] 승인했는데 큐에 계속 남던 문제 ──
+                        #  증상(사용자 신고): "페런츠 인가 승인을 했는데도 계속
+                        #   인가창에 남는 버그가 발견됨"
+                        #
+                        #  원인: 종전 호출은 `_link_note_clear(x)` 였다.
+                        #   `_link_note_clear(ident, mid="")` 는 ident 를
+                        #   **숫자만 남겨** 회원의 인가번호/전화와 대조한다.
+                        #   그런데 큐가 넘겨주는 `x` 는 인가번호가 아니라
+                        #   **회원 id**(비인가회원은 인가번호가 아예 없다)일 수
+                        #   있다. 그러면 `_clean_no(x)` 가 '' 이 되고 mid 도
+                        #   비어 있어 **아무도 매칭되지 않아** 메모가 남는다.
+                        #   메모가 남으면 `_link_fix_members()` 가 그 회원을
+                        #   계속 '정보 수정요청' 큐에 올린다 → 승인해도 안 없어짐.
+                        #
+                        #  수정: 회원 id 를 `mid` 로 함께 넘겨 id 매칭도 되게 한다.
+                        #   (mid 파라미터는 원래 이 용도로 있었는데 호출부가
+                        #    쓰지 않고 있었다)
+                        try:
+                            _link_note_clear(x, str(mm.get("id", "") or ""))
+                        except Exception:
+                            pass
+                        # 처리 후 해당 항목의 마스터 위임은 해제한다.
+                        try:
+                            _deleg_clear_for("link", x)
+                        except Exception:
+                            pass
+                        # 승인/보류/거절 → 히스토리 기록(대기 복귀는 제외).
+                        if status in ("approved", "held", "rejected"):
+                            # ── [버그 수정 2026-10-26] 히스토리 인가번호 오염 ──
+                            #  증상(스크린샷): 인가번호 자리에
+                            #   '범#010336574801791800000000' 처럼
+                            #   **전화번호+타임스탬프**가 붙어 표시됐다.
+                            #
+                            #  원인: 종전 코드는 `str(mm.get("number") or x)` 로
+                            #   인가번호가 비면 큐 식별자 `x` 를 그 자리에 넣었다.
+                            #   비인가회원(예: 노본)은 인가번호가 '', 그리고
+                            #   큐 식별자는 내부 id('010336574801791800000000')
+                            #   이므로 화면에 그대로 노출됐다.
+                            #
+                            #  수정: 인가번호가 없으면 **빈 문자열**로 두고,
+                            #   표시에 필요한 식별은 payload 의 id 로 넘긴다.
+                            #   (없는 번호를 다른 값으로 대신 채우지 않는다)
+                            _hist_no = str(mm.get("number", "") or "").strip()
                             _approval_history_record(
                                 "link", "link",
-                                str(mm.get("number", "") or x),
+                                _hist_no,
                                 nm or str(mm.get("name", "")),
-                                str(mm.get("number", "") or x),
+                                _hist_no,
                                 "멘토·페런츠 연결 - %s" % _lklabel, status,
                                 _lreq_at, _adm,
                                 summary="%s · %s · 요청 %s" % (
                                     _lklabel, _status_kr(status),
                                     _req_source_label(_lreq_src)),
                                 payload={"member": {
-                                    "number": str(mm.get("number", "")),
+                                    "number": _hist_no,
+                                    "id": str(mm.get("id", "")),
                                     "name": nm or str(mm.get("name", "")),
                                     "linkKind": _lklabel,
                                     "hasMentor": "mentor" in _lkinds,
@@ -9765,6 +23961,38 @@ class Handler(BaseHTTPRequestHandler):
                 if done:
                     _link_reconcile_apply(_ev_members())
                 return self._json({"ok": True, "done": done})
+            # ---- 마스터에게 위임 (관리자·마스터) ----
+            #  요구: "통합승인관리에서 ... 마스터에게 위임.
+            #         마스터에게 위임한 경우 마스터만 선택할 수 있도록 함."
+            #  관리자(app)가 항목을 마스터에게 위임하면, 그 항목은 마스터 전용이
+            #  되어 마스터만 선택/처리할 수 있다. 마스터 본인도 위임 등록 가능.
+            #   body: {source:'regular'|'request'|'link', ident, action:'delegate'|'cancel'}
+            if p == "/api/approval/delegate":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                source = str(d.get("source", "request")).strip()
+                if source not in ("regular", "request", "link"):
+                    source = "request"
+                ident = str(d.get("ident") or d.get("id") or "").strip()
+                act = str(d.get("action", "delegate")).strip()
+                if not ident:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                by = _sess_label(self._sess())
+                if act in ("cancel", "undelegate", "clear"):
+                    n = 0
+                    for r in _deleg_refs_for(source, ident):
+                        if _deleg_clear(source, r):
+                            n += 1
+                    return self._json({"ok": True, "cleared": n})
+                # 위임 등록 — 등록요청(req_*)은 id 그대로, 회원은 번호/id 양쪽.
+                refs = _deleg_refs_for(source, ident)
+                if not refs:
+                    refs = {ident}
+                for r in refs:
+                    _deleg_set(source, r, by=by, note=str(d.get("note", "")))
+                return self._json({"ok": True, "delegated": True,
+                                   "source": source, "ref": ident})
             if p == "/api/link/profiles":
                 # 멘토·페런츠(수동 등록) 인적사항 저장/삭제 + 아이디·비번 생성.
                 if not self._require():
@@ -9775,11 +24003,67 @@ class Handler(BaseHTTPRequestHandler):
                 profs = _link_profiles_load()
                 if action in ("delete", "remove"):
                     key = re.sub(r"[^0-9]", "", str(d.get("number", "")))
-                    if key and key in profs:
-                        del profs[key]
+                    # 종류별 복합키 우선, 없으면 구(무접두어) 키도 시도.
+                    _kind_del = str(d.get("kind", "") or "")
+                    _cands = []
+                    # ── [버그수정 2026-11-04] 표준 키(`person:<대표번호>`) 누락 ──
+                    #  표준 저장키를 `person:` 으로 옮긴 뒤로, 삭제 경로가
+                    #  '멘토:'/'페런츠:'/무접두어만 지워서 **아무 것도 지우지
+                    #  못하고** `{"ok": true, "deleted": <번호>}` 만 돌려줬다.
+                    #  → 인적사항 삭제 버튼이 조용히 실패(화면엔 성공처럼 보임).
+                    #  실측: person:01099998888 삭제 요청 → deleted 응답,
+                    #        그런데 파일에는 그대로 남아 있었다.
+                    if key:
+                        _cands.append(_link_person_key(key))
+                    if _kind_del in ("mentor", "parent"):
+                        _cands.append(_link_key(_kind_del, key))
+                    _cands += [_link_key("mentor", key), _link_key("parent", key), key]
+                    # ── 번호가 아니라 '사람'으로도 찾는다 ──
+                    #  화면(클라이언트)은 멘토를 **멘티 번호**로 부르는 경우가
+                    #  있고, 저장된 프로필의 number 는 그 사람의 대표번호일 수
+                    #  있다. 같은 인물로 해석되면 그 항목을 지운다.
+                    _hit_keys = []
+                    for _k, _v in list(profs.items()):
+                        if not isinstance(_v, dict):
+                            continue
+                        _nums = _link_key_nums(_v) | {
+                            _clean_no(_v.get("phone")),
+                            _clean_no(_v.get("loginId")),
+                            _clean_no(_v.get("scoutNo")),
+                        }
+                        _nums.discard("")
+                        if key and key in _nums:
+                            _hit_keys.append(_k)
+                    # ⚠️ 종류가 지정됐을 때만 이 보조 경로를 쓴다.
+                    #  멘토 프로필의 `number` 는 관례상 **멘티 번호**라서, 같은
+                    #  멘티를 둔 멘토가 여럿이면 번호만으로는 구분되지 않는다.
+                    #  따라서 ① 정확한 키가 하나도 없고 ② 종류가 지정됐고
+                    #  ③ 그 종류로 걸러낸 결과가 **정확히 1건**일 때만 지운다.
+                    #  (그렇지 않으면 남의 인적사항을 함께 지울 수 있다.)
+                    if _kind_del in ("mentor", "parent") and _hit_keys:
+                        _only = []
+                        for _k in _hit_keys:
+                            _v = profs.get(_k) or {}
+                            _ks = _v.get("kinds")
+                            _ok = (_link_key_kind(_v, _k) == _kind_del) or (
+                                isinstance(_ks, list)
+                                and _kind_del in [str(x) for x in _ks])
+                            if _ok:
+                                _only.append(_k)
+                        if len(_only) == 1 and _only[0] not in _cands:
+                            _cands.append(_only[0])
+                    _done = []
+                    for _k in _cands:
+                        if _k and _k in profs:
+                            del profs[_k]
+                            _done.append(_k)
+                    if _done:
                         with LOCK:
                             _link_profiles_save(profs)
-                    return self._json({"ok": True, "deleted": key})
+                        return self._json({"ok": True, "deleted": _done[0],
+                                           "deletedKeys": _done})
+                    return self._json({"ok": False, "error": "not found",
+                                       "deleted": key}, 404)
                 # 명부관리 — '받는분의 범인가번호'만 인라인 수정(관리자·마스터).
                 #   멘토/페런츠 명부에서 값을 직접 입력·수정할 수 있게 한다.
                 if action in ("receiver", "set-receiver"):
@@ -9788,11 +24072,21 @@ class Handler(BaseHTTPRequestHandler):
                                            "error": "권한이 없습니다."}, 403)
                     key = re.sub(r"[^0-9]", "", str(d.get("number", "")))
                     val = re.sub(r"[^0-9]", "", str(d.get("receiverNo", "") or ""))[:12]
-                    if not key or key not in profs:
+                    _kind_r = str(d.get("kind", "") or "")
+                    _rk = None
+                    for _cand in (([_link_key(_kind_r, key)]
+                                   if _kind_r in ("mentor", "parent") else [])
+                                  + [_link_key("mentor", key),
+                                     _link_key("parent", key), key]):
+                        if _cand and _cand in profs:
+                            _rk = _cand
+                            break
+                    if not _rk:
                         return self._json({"ok": False,
                                            "error": "not found"}, 404)
-                    profs[key]["receiverNo"] = val
-                    profs[key]["updatedAt"] = _now_stamp()
+                    profs[_rk]["number"] = key
+                    profs[_rk]["receiverNo"] = val
+                    profs[_rk]["updatedAt"] = _now_stamp()
                     with LOCK:
                         _link_profiles_save(profs)
                     return self._json({"ok": True, "number": key,
@@ -9814,18 +24108,206 @@ class Handler(BaseHTTPRequestHandler):
                              "error": "본인 멘토·페런츠 인가번호만 등록할 수 있습니다."},
                             403)
                 # 기존 프로필의 '받는분 인가번호'는 입력이 없으면 보존한다.
-                prev = profs.get(p["number"]) if isinstance(profs.get(p["number"]), dict) else None
+                #  (종류별 복합키 기준 — 같은 번호의 다른 종류와 섞이지 않게)
+                # [요구 2026-11-04] **같은 사람이면 새 임시코드를 만들지 않는다.**
+                #  실사고: 멘토 인적사항을 저장할 때마다 시트가 이름 해시 기반
+                #  임시코드(9000xx)를 새로 만들어 `멘토:9000xx` 키가 계속 늘고,
+                #  이름·전화번호가 사라졌다. 사람(전화번호)이 이미 등록돼 있으면
+                #  그 프로필의 number 로 붙인다.
+                try:
+                    _pdx0 = _link_person_index()
+                    _ex = _link_person_of(_pdx0, p.get("phone") or
+                                          p.get("number"))
+                    if isinstance(_ex, dict):
+                        _exnum = _clean_no(_ex.get("number"))
+                        _exphone = _clean_no(_ex.get("phone"))
+                        _curnum = _clean_no(p.get("number"))
+                        # 지금 번호가 '임시코드'(900000~999999)거나 비어 있으면
+                        # 기존 신원 번호로 교체한다.
+                        _is_temp = (len(_curnum) == 6
+                                    and _curnum.startswith("9"))
+                        if (_is_temp or not _curnum) and _exnum:
+                            p["number"] = _exnum
+                        # 전화번호가 비어 있으면 기존 값으로 보존.
+                        if not _clean_no(p.get("phone")) and _exphone:
+                            p["phone"] = _exphone
+                except Exception as _e0:
+                    print("[link/profile] 기존 신원 확인 실패: %s" % _e0)
+                # ── [버그수정 2026-11-04] `number` 는 **그 사람의 대표번호** ──
+                #  화면이 멘토 등록 시 `code` 자리에 **멘티(본인) 번호**를 넣어
+                #  보내기 때문에, 저장된 멘토 프로필의 number 가 멘티 번호가
+                #  된다. 그러면 그 멘티를 둔 멘토가 여럿일 때 **모두 같은
+                #  number** 를 갖게 되어(실측: 선영진·테스트멘토 둘 다 1346)
+                #  명부·삭제·중복판정이 꼬인다.
+                #  규칙: 인가자 → 인가번호(scoutNo) / 일반회원·비인가 → 전화번호.
+                #        임시코드(9000xx)는 위에서 이미 보정했다.
+                try:
+                    _selfnum = _clean_no(p.get("scoutNo"))
+                    _selfph = _clean_no(p.get("phone"))
+                    _curnum2 = _clean_no(p.get("number"))
+                    _is_temp2 = (len(_curnum2) == 6 and _curnum2.startswith("9"))
+                    if not _is_temp2:
+                        _canon = _selfnum if bool(p.get("isScouter")) and _selfnum \
+                            else (_selfph or _selfnum)
+                        if _canon and _canon != _curnum2:
+                            p["number"] = _canon
+                except Exception as _e1:
+                    print("[link/profile] 대표번호 보정 실패: %s" % _e1)
+                _skey = _link_person_key(_clean_no(p.get("phone")) or
+                                         _clean_no(p.get("number"))) or \
+                    (p.get("_key") or _link_key(p.get("kind"), p["number"]))
+                # 옛 키('멘토:<번호>' 등)에 이미 저장돼 있으면 그 키도 함께 갱신.
+                for _legacy in (_link_key(p.get("kind"), p["number"]),
+                                _clean_no(p.get("number"))):
+                    if _legacy and _legacy in profs and _legacy != _skey:
+                        profs[_legacy] = dict(p)
+                prev = profs.get(_skey) if isinstance(profs.get(_skey), dict) else None
+                # ── [버그수정 2026-11-04] kinds(겸임 역할)는 **줄이지 않는다** ──
+                #  화면은 멘토 시트/페런츠 시트 중 하나만 열기 때문에 `kind`가
+                #  한쪽으로만 전달된다. 그대로 저장하면 겸임자(노본: 멘토+페런츠,
+                #  현승용: 멘토+페런츠)의 역할이 하나씩 사라진다(실측: 노본
+                #  kinds=['parent','mentor'] → ['parent']). 이전 값과 **합집합**.
+                if isinstance(prev, dict):
+                    _pk = set(str(x) for x in (prev.get("kinds") or []))
+                    if prev.get("kind"):
+                        _pk.add(str(prev.get("kind")))
+                    _nk = set(str(x) for x in (p.get("kinds") or []))
+                    if p.get("kind"):
+                        _nk.add(str(p.get("kind")))
+                    _u = sorted(x for x in (_pk | _nk)
+                                if x in ("mentor", "parent"))
+                    if _u:
+                        p["kinds"] = _u
+                        # 대표 kind 는 '이전 값'을 유지한다(화면이 안 보낸 역할 보존).
+                        _prevkind = str(prev.get("kind") or "")
+                        if _prevkind in _u and \
+                                str(d.get("kind") or "") not in ("mentor", "parent"):
+                            p["kind"] = _prevkind
                 if prev and not p.get("receiverNo"):
                     p["receiverNo"] = str(prev.get("receiverNo", "") or "")
-                login_id, pw = _gen_profile_credentials(p.get("phone"), p.get("name"))
+                # 범인가자면 전화번호 계정을 만들지 않는다(2026-11-02, build #571).
+                #  인가자는 이미 카드+로그인(아이디=인가번호)이 있으므로
+                #  전화번호로 계정을 또 만들면 같은 사람이 두 신원을 갖게 된다.
+                login_id, pw = _profile_creds_or_blank(p)
                 p["loginId"] = login_id
                 p["password"] = pw          # 관리자·본인에게만 반환/표시용
                 p["updatedAt"] = _now_stamp()
-                profs[p["number"]] = p
+                # 종류별 복합키로 저장 → 멘토/페런츠 번호가 같아도 서로 덮어쓰지 않음.
+                profs[_skey] = p
                 with LOCK:
                     _link_profiles_save(profs)
+                # ══════════════════════════════════════════════════════════
+                # [요구 2026-11-04] 비인가 멘토·페런츠 → **실제 회원 계정 생성**
+                #
+                # ## 실제 사고
+                #  보고: "멘토 등록하고 이름+전화번호 기입하면 자동으로 회원가입이
+                #        되어야 하는데, 오류가 나고 있음"
+                #  시트는 "아이디: 01046236587 / 비밀번호: 6587!@@" 를 안내했지만
+                #  계정은 `link_profiles.json` 에만 기록되고 `members` 명단에는
+                #  **아무 것도 생기지 않았다.**
+                #  그런데 로그인 검증(`_guest_verify`)은 `members` 중
+                #  `isRegular` 인 사람만 찾는다. → 안내한 아이디로 **로그인 불가**.
+                #  게다가 멘토의 link_profiles 키 번호는 **멘티(본인) 번호**라
+                #  (예: 차동엽 #1051 의 멘토 선영진 → 키 '멘토:1051')
+                #  그 사람의 실제 신원과 연결되지도 않는다.
+                #
+                # ## 규칙
+                #  · 비인가자(isScouter=false, scoutNo 없음)이고 전화번호가 있으면
+                #    members 에 일반회원 카드를 만든다.
+                #      id        = 'reg_<전화>'        (전화번호가 사실상의 유일 키)
+                #      accessPhone/phone = 전화
+                #      personalPassword = 뒤 4자리 (+ regular_passwords 등록)
+                #      approvalStatus   = 'pending'    → 관리자 승인 대기 + 알림
+                #  · 이미 그 전화번호의 일반회원이 있으면 **새로 만들지 않는다**.
+                #  · 인가자(isScouter)는 카드+계정이 이미 있으므로 만들지 않는다.
+                #  · 실패해도 프로필 저장은 이미 끝났으므로 응답을 막지 않는다.
+                # ══════════════════════════════════════════════════════════
+                _created = None
+                try:
+                    _ph = re.sub(r"[^0-9]", "", str(p.get("phone", "") or ""))
+                    _is_cred = (bool(p.get("isScouter"))
+                                or bool(re.sub(r"[^0-9]", "",
+                                               str(p.get("scoutNo", "") or ""))))
+                    if _ph and len(_ph) >= 7 and not _is_cred:
+                        _nm = str(p.get("name", "") or "").strip()
+                        _created = _link_profile_ensure_member(
+                            name=_nm, phone=_ph,
+                            league=str(p.get("league", "") or ""),
+                            unit=str(p.get("unit", "") or ""),
+                            login_id=login_id, password=pw,
+                            kind=str(p.get("kind", "") or "mentor"))
+                except Exception as _e:
+                    print("[link/profile] 멤버 카드 생성 실패: %s" % _e)
+                # [요구 2026-11-04] 가입한 멘토 ↔ 멘티(자녀) **양방향 자동 연동**.
+                #  화면이 link_profiles 키로 상대를 '보여주기만' 하던 것을
+                #  실제 카드 연결로 만든다.
+                _linked = 0
+                if _created:
+                    try:
+                        _linked = _link_apply_mentor_links(p, _created)
+                    except Exception as _e2:
+                        print("[link/profile] 자동 연동 실패: %s" % _e2)
                 return self._json({"ok": True, "profile": p,
-                                   "loginId": login_id, "password": pw})
+                                   "loginId": login_id, "password": pw,
+                                   "memberCreated": bool(_created),
+                                   "member": _created,
+                                   "linksApplied": _linked})
+            # ---- 은하스카우트 소속(corps) 복구 (관리자·마스터) ----
+            #  [버그수정] 종전 앱은 **신규 회원의 corps 를 항상 'tsak'** 으로
+            #  저장했다. 그래서 은하 화면에서 새로 만든 회원도 범스카우트
+            #  명단에 들어가고, 그 회원의 QR 이 '범 인가번호 QR' 로 생성됐다.
+            #  (요구: "새로만든 은하스카우트 qr생성 오류")
+            #  · 이미 잘못 저장된 회원을 은하 명단으로 옮긴다.
+            #  · id 또는 number 로 대상을 지정한다.
+            if p == "/api/eunha/adopt":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                ids = [str(x) for x in (d.get("ids") or []) if str(x).strip()]
+                nums = [re.sub(r"[^0-9]", "", str(x))
+                        for x in (d.get("numbers") or [])]
+                nums = [x for x in nums if x]
+                if not ids and not nums:
+                    return self._json({"ok": False, "error": "ids"}, 400)
+                moved = []
+                with LOCK:
+                    beom = _load_json(DB_FILE, [])
+                    eunha = _load_json(EUNHA_DB_FILE, [])
+                    eunha_ids = {str(x.get("id", "")) for x in eunha}
+                    keep = []
+                    for m in beom:
+                        mid = str(m.get("id", ""))
+                        mnum = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                        hit = (mid in ids) or (mnum and mnum in nums)
+                        if not hit:
+                            keep.append(m)
+                            continue
+                        m2 = dict(m)
+                        m2["corps"] = "eunha"
+                        # 은하 명단 id 규칙(eunha_<번호>)이 아니어도 그대로 보존.
+                        if mid not in eunha_ids:
+                            eunha.append(m2)
+                            eunha_ids.add(mid)
+                        else:
+                            for i, x in enumerate(eunha):
+                                if str(x.get("id", "")) == mid:
+                                    eunha[i] = m2
+                                    break
+                        moved.append({"id": mid, "number": mnum,
+                                      "name": str(m.get("name", ""))})
+                    if moved:
+                        if NAS.exists(DB_FILE):
+                            stamp = datetime.datetime.now().strftime(
+                                "%Y%m%d_%H%M%S")
+                            NAS.write(
+                                f"{BASE}/backups/members_{stamp}.json",
+                                NAS.read(DB_FILE).encode("utf-8"))
+                        _save_json(DB_FILE, keep)
+                        _save_json(EUNHA_DB_FILE, eunha)
+                        _touch_meta({"count": len(keep),
+                                     "updatedBy": "eunha-adopt"})
+                return self._json({"ok": True, "moved": moved,
+                                   "count": len(moved)})
             if p == "/api/member/delete":
                 # 선택 계정 완전 삭제(마스터 전용) — 스포츠/은하 모두 지원.
                 if not self._require("master"):
@@ -9901,27 +24383,167 @@ class Handler(BaseHTTPRequestHandler):
                 _s = self._sess() or {}
                 _tier = str(_s.get("tier", ""))
                 _swho = re.sub(r"[^0-9]", "", str(_s.get("who", "") or ""))
+                # ── [turn67] 소속(corps) 판정은 **가장 먼저** 한다 ──────────
+                #  소유권 검사와 저장 위치가 모두 소속에 달려 있다.
+                #  범과 은하는 번호 공간이 겹치므로(1~165) 소속 없이는
+                #  "은하 3번" 과 "범 3번" 을 절대 구분할 수 없다.
+                #  세션 corps — **마스터/관리자는 소속 신원이 없다**.
+                #  `_sess_new` 는 corps 를 생략하면 'tsak' 을 기본 저장하므로,
+                #  그 값을 그대로 믿으면 마스터가 은하 회원을 고를 때
+                #  '범 소속'으로 오판한다(실측: 은하3 변경이 범 경로로 샘).
+                _sess_corps = str(_s.get("corps") or "").strip().lower()
+                if _tier in ("master", "app"):
+                    _sess_corps = ""
+                # 본문으로 소속을 명시할 수도 있다(마스터/관리자가 겹치는 번호를
+                #  고칠 때 필요). 세션 소속이 있으면 세션을 우선한다.
+                _req_corps = str(d.get("corps") or "").strip().lower()
+                if _sess_corps not in ("eunha", "tsak") \
+                        and _req_corps in ("eunha", "tsak"):
+                    _sess_corps = _req_corps
+                # 은하 판정 — 두 신호를 모두 인정한다.
+                #  ① 세션이 은하로 로그인했다 + 번호가 은하 명단에 있다
+                #  ② 번호가 **은하 명단에만** 있다 (범에 없음 → 소속이 확정됨)
+                #  ② 덕분에 마스터가 은하 전용 번호를 고쳐도 범 저장소를
+                #  건드리지 않는다.
+                _in_eunha = bool(_eunha_member_by_number(no))
+                _in_tsak = bool(_member_by_number(no))
+                _is_eunha_target = _in_eunha and (
+                    _sess_corps == "eunha" or not _in_tsak)
+                # ── [turn67] 소속을 알 수 없는 '겹치는 번호'는 추측하지 않는다 ──
+                #  범·은하 양쪽에 같은 번호가 있고, 세션이 은하도 범도 아니면
+                #  (예: 마스터 세션) 어느 사람을 바꾸는지 알 수 없다.
+                #  종전에는 이 경우 조용히 범을 골라 덮어썼고, 그 결과
+                #  은하 회원의 비번을 바꿀 수 없으면서 범 회원의 비번이
+                #  오염됐다. → 추측 대신 거부하고 소속을 명시하게 한다.
+                _ambiguous = _in_eunha and _in_tsak and _sess_corps not in (
+                    "eunha", "tsak")
+                if _ambiguous:
+                    return self._json({
+                        "ok": False,
+                        "error": ("번호 %s 은(는) 범스카우트·은하스카우트 양쪽에 "
+                                  "있습니다. 소속을 지정해 주세요 "
+                                  "(corps=tsak 또는 corps=eunha)."
+                                  % no),
+                        "ambiguous": True,
+                        "corps": "",
+                    }, 409)
+                # 대상 회원 — 소속이 정해졌으므로 그 명단만 조회한다.
+                #  ── [turn69 버그 수정] 은하는 명단의 `number` 가 'G3' 형식 ──
+                #   종전엔 숫자 '3' 으로 범 명단 조회기를 불렀는데,
+                #   은하 명단의 번호는 G 접두어가 정본이라 **항상 None** 이 나왔다.
+                #   (범 명단에는 3호가 있으므로, 은하 대상인데 범 3호가 잡히는
+                #    소속 혼입 위험도 있었다.)
+                #   → 은하 대상일 때는 은하 전용 조회기를 쓴다.
+                if _is_eunha_target:
+                    _m_target = _eunha_member_by_number(no) or {}
+                else:
+                    _m_target = _ev_member_by_ident(no, corps="tsak") or {}
                 if _tier in ("personal", "guest") and _swho:
-                    _mm0 = _ev_member_by_ident(no) or {}
                     _mkey0 = re.sub(r"[^0-9]", "", str(
-                        _mm0.get("accessPhone") or _mm0.get("phone") or ""))
-                    _mnum0 = re.sub(r"[^0-9]", "", str(_mm0.get("number", "") or ""))
+                        _m_target.get("accessPhone") or _m_target.get("phone") or ""))
+                    _mnum0 = re.sub(r"[^0-9]", "", str(_m_target.get("number", "") or ""))
                     # 세션 who 는 인가번호/전화/회원번호 어느 것이든 본인으로 인정.
                     if _swho not in (no, _mkey0, _mnum0):
                         return self._json(
                             {"ok": False, "error": "본인 비밀번호만 변경할 수 있습니다"},
                             403)
-                # 대상 회원 조회 — 번호/전화/로그인아이디 어느 것으로 와도 매칭.
-                m = _ev_member_by_ident(no)
+                # ── [turn67] 대상 회원 조회 — 소속(corps)을 반드시 구분한다 ──
+                #
+                #  ## 실제 사고 (중대 보안 결함)
+                #   범과 은하는 번호 공간이 겹친다(둘 다 1~165).
+                #   종전 코드는 소속을 보지 않고 **번호만**으로 대상을 찾은 뒤
+                #   무조건 범 저장소(cfg.personalPasswords[번호])에 저장했다.
+                #   그래서 은하 3번이 비번을 바꾸면
+                #     · 은하 3번: 저장소가 달라 새 비번이 먹지 않고 기본 3!@@ 유지
+                #     · 범  3번: 은하 3번의 새 비번으로 로그인 가능 (계정 탈취)
+                #   라는 두 결함이 동시에 생겼다.
+                #
+                #  ## 수정 원칙
+                #   "저장하는 곳 = 검증하는 곳" 을 소속별로 일치시킨다.
+                #     · 은하  → cfg.eunhaPasswords[번호]  (+ 은하 명단 레코드)
+                #     · 일반  → regular_passwords[전화]   (+ 회원 레코드)
+                #     · 범    → cfg.personalPasswords[번호] (+ 회원 레코드)
+                m = _m_target or None
                 is_regular = bool(m.get("isRegular")) if m else False
+
+                # ── [turn69] 비번 변경 후 "다른 기기 세션 정리" 공통 처리 ──
+                #  요구: 비밀번호를 바꾸면 기존 세션도 정리되어야 한다.
+                #  · 지금 이 요청을 보낸 세션은 **남긴다**(안 그러면 즉시 로그아웃).
+                #  · 같은 신원(person: who+corps / guest)의 세션만 끊는다.
+                #  · 마스터가 남의 비번을 바꾼 경우, 마스터 세션은 'personal'
+                #    이 아니라 'master' 라 애초에 대상이 아니다 → 안전하다.
+                _self_sess = self._sess() or {}
+                _self_tier = str(_self_sess.get("tier", "") or "")
+                _self_who = str(_self_sess.get("who", "") or "")
+                _self_sid = self._sid()
+
+                def _kill_target_sessions(_twho, _tcorps, _reg):
+                    """대상 신원의 다른 세션을 정리하고 (끊은 수)를 돌려준다."""
+                    _keep = _self_sid if (_self_tier == "personal"
+                                          and _self_who == _twho) else ""
+                    n = _sess_del_others("personal", _twho,
+                                         corps=_tcorps, keep_sid=_keep)
+                    # 일반회원은 guest 세션도 존재할 수 있다.
+                    if _reg:
+                        n += _sess_del_others("guest", _twho,
+                                             keep_sid=(_self_sid
+                                                       if _self_tier == "guest"
+                                                       else ""))
+                    return n
+
+                # ── (가) 은하스카우트 ──────────────────────────────────
+                if _is_eunha_target:
+                    # 현재 비번 — 은하 전용 조회(범 저장소 절대 참조 안 함)
+                    if not (_norm_pw(cur) == _eunha_pw_of(no) or _master_pw_matches(cur)):
+                        return self._json(
+                            {"ok": False, "error": "현재 비밀번호가 올바르지 않습니다"}, 401)
+                    with LOCK:
+                        cfg = _load_json(CFG_FILE, _default_config())
+                        epw = cfg.get("eunhaPasswords")
+                        if not isinstance(epw, dict):
+                            epw = {}
+                        prev_pw = _norm_pw(epw.get(no))
+                        epw[no] = new
+                        cfg["eunhaPasswords"] = epw
+                        _save_json(CFG_FILE, cfg)
+                    # 은하 명단 레코드에도 반영(관리자 조회 일관성)
+                    try:
+                        with _MEMBER_WRITE_LOCK:
+                            rows = _load_json(EUNHA_DB_FILE, [])
+                            _hit = False
+                            for i, mm in enumerate(rows):
+                                if _ck_num(str(mm.get("number", ""))) == _ck(no):
+                                    mm["personalPassword"] = new
+                                    rows[i] = mm
+                                    _hit = True
+                                    break
+                            if _hit:
+                                _save_json(EUNHA_DB_FILE, rows)
+                    except Exception:
+                        pass
+                    # [turn69] 같은 은하 회원의 다른 세션 정리(이 세션은 유지).
+                    #  ⚠️ 세션 `who` 는 은하에서 'G135' 형식이다. 숫자만 넘기면
+                    #     아무 세션도 매칭되지 않아 정리가 조용히 실패한다.
+                    #  ⚠️ 명단 레코드를 못 찾았을 수 있으므로 `m` 을 방어적으로
+                    #     다루고, 최악의 경우 'G'+번호로 되돌린다(정본 형식).
+                    _who_e = str((m or {}).get("number", "") or "").strip()
+                    if not _who_e:
+                        _who_e = "G" + no
+                    _killed = _kill_target_sessions(_ck(_who_e), "eunha", False)
+                    return self._json(
+                        {"ok": True, "corps": "eunha", "scope": "eunha",
+                         "replaced": bool(prev_pw and prev_pw != new),
+                         "sessionsKilled": _killed})
+
                 if is_regular and m:
                     # 비인가(일반회원): 전화번호 키의 regular_passwords 에 저장.
                     key = re.sub(r"[^0-9]", "", str(
                         m.get("accessPhone") or m.get("phone") or no))
                     pws = _ev_load_regular_pw()
-                    cur_ok = str(pws.get(key) or m.get("personalPassword")
-                                 or _ev_phone_last4(m.get("phone") or key))
-                    if not (cur == cur_ok or cur == MASTER_PW):
+                    cur_ok = _norm_pw(pws.get(key)) \
+                        or _norm_pw(m.get("personalPassword")) \
+                        or _ev_phone_last4(m.get("phone") or key)
+                    if not (_norm_pw(cur) == cur_ok or _master_pw_matches(cur)):
                         return self._json({"ok": False, "error": "현재 비밀번호가 올바르지 않습니다"}, 401)
                     with LOCK:
                         pws2 = _ev_load_regular_pw()
@@ -9941,33 +24563,127 @@ class Handler(BaseHTTPRequestHandler):
                                     break
                     except Exception:
                         pass
-                    return self._json({"ok": True, "isRegular": True})
-                # 인가자: cfg.personalPasswords[인가번호]
-                if not (cur == _personal_pw_of(no) or cur == MASTER_PW):
+                    # [turn69] 일반회원: 같은 번호/전화의 다른 세션 정리.
+                    _killed = _kill_target_sessions(key, "tsak", True)
+                    return self._json({"ok": True, "isRegular": True,
+                                       "sessionsKilled": _killed})
+                # ── (다) 범스카우트 인가자: cfg.personalPasswords[인가번호] ──
+                if not (_norm_pw(cur) == _personal_pw_of(no) or _master_pw_matches(cur)):
                     return self._json({"ok": False, "error": "현재 비밀번호가 올바르지 않습니다"}, 401)
                 with LOCK:
                     cfg = _load_json(CFG_FILE, _default_config())
                     pws = cfg.setdefault("personalPasswords", {})
                     pws[no] = new
                     _save_json(CFG_FILE, cfg)
-                return self._json({"ok": True})
+                # 회원 레코드에도 반영(조회 경로가 둘로 갈라져도 결과가 같도록)
+                try:
+                    with _MEMBER_WRITE_LOCK:
+                        ms = _ev_members()
+                        for i, mm in enumerate(ms):
+                            if _ck_num(str(mm.get("number", ""))) == _ck(no):
+                                mm["personalPassword"] = new
+                                ms[i] = mm
+                                _save_json(DB_FILE, ms)
+                                break
+                except Exception:
+                    pass
+                # [turn69] 범 인가자: 같은 번호의 다른 세션 정리(이 세션은 유지).
+                _killed = _kill_target_sessions(no, "tsak", bool(is_regular))
+                return self._json({"ok": True, "corps": "tsak",
+                                   "sessionsKilled": _killed})
             # ---- 비밀번호 초기화 "요청" (본인) ----
             #  요구: "비밀번호 분실 변경 시 관리자나 마스터에게 초기화 요청하십시요."
             #   → 회원이 직접 초기화 요청을 접수하면 통합승인관리에 '비번초기화' 큐로 뜬다.
             if p == "/api/personal/password-request":
                 d = json.loads(self._body() or b"{}")
-                no = re.sub(r"[^0-9]", "", str(d.get("number", "")))
+                _raw_no = str(d.get("number", "") or "")
+                no = re.sub(r"[^0-9]", "", _raw_no)
                 if not no:
                     return self._json({"ok": False, "error": "number"}, 400)
-                m = _ev_member_by_ident(no) or {}
-                who = re.sub(r"[^0-9]", "", str(self._sess().get("who", "")))
+                # ── [turn68] 소속 확정 ────────────────────────────────────
+                #  종전: `_ev_member_by_ident(no)` (corps 없음) → 범 명단 우선.
+                #        은하 135번의 요청이 **범 135번(김종환)** 이름으로 접수됐다.
+                #  이제: 세션 소속 → 접두어 → 요청 본문 힌트 → 명단 유일성 순.
+                _s = self._sess() or {}
+                _sess_corps = str(_s.get("corps") or "").strip().lower()
+                if str(_s.get("tier", "")) in ("master", "app"):
+                    _sess_corps = ""
+                _hint_corps = str(d.get("corps") or "").strip().lower()
+                _corps = ""
+                for _cand in (_sess_corps, _hint_corps):
+                    if _cand in ("tsak", "eunha"):
+                        _corps = _cand
+                        break
+                if not _corps and _ck_is_eunha(_raw_no):
+                    _corps = "eunha"
+                if not _corps:
+                    _in_e = bool(_eunha_member_by_number(no))
+                    _in_t = bool(_member_by_number(no))
+                    if _in_e and not _in_t:
+                        _corps = "eunha"
+                    elif _in_t and not _in_e:
+                        _corps = "tsak"
+                    elif _in_e and _in_t:
+                        # 양쪽에 있고 힌트도 없다 → 추측하지 않는다.
+                        return self._json({
+                            "ok": False,
+                            "ambiguous": True,
+                            "error": ("번호 %s 은(는) 범스카우트·은하스카우트 양쪽에 "
+                                      "있습니다. 관리자에게 소속을 알려 주세요 "
+                                      "(corps=tsak 또는 corps=eunha)." % no),
+                        }, 409)
+                m = _ev_member_by_ident(
+                    (_ck(_raw_no) if _corps == "eunha" else no),
+                    corps=("eunha" if _corps == "eunha" else "tsak")) or {}
+                who = re.sub(r"[^0-9]", "", str(_s.get("who", "")))
                 rec = _ev_password_reset_request(
-                    str(m.get("number", "") or no),
+                    str(m.get("number", "") or _raw_no),
                     str(m.get("name", "") or ""),
                     str(m.get("phone", "") or ""),
-                    requested_by=who)
-                return self._json({"ok": True, "request": rec})
+                    requested_by=who,
+                    corps=_corps)
+                return self._json({"ok": True, "request": rec, "corps": _corps})
 
+            # ---- [turn69] 마스터 비밀번호 변경 ----
+            #  요구: "마스터창에 비번 변경 창 추가 / 변경된 비번 확인 3번"
+            #   · 확인 3회는 **앱(화면)에서** 수행한다(사용자 입력 실수를 막는 용도).
+            #   · 서버는 '현재 비번 검증 → 새 비번 저장(해시)' 만 책임진다.
+            #  ※ 조회(GET /api/master/state)는 do_GET 쪽에 있다.
+            #    (처음에 여기 넣었다가 404 가 났다 — turn69 수정)
+            if p == "/api/master/password":
+                d = json.loads(self._body() or b"{}")
+                _cur = str(d.get("current", "") or "")
+                _new = str(d.get("new", "") or "")
+                # ── 권한 확인 ─────────────────────────────────────────────
+                #  ⚠️ `_require("master_pw")` 같은 **없는 등급**을 쓰면
+                #     `_auth_ok` 의 마지막 `return True` 로 흘러가 아무 세션이나
+                #     통과한다. 그래서 명시적으로 판정한다.
+                #   ① 마스터 등급 세션  ② 본문에 유효한 마스터 값(master 필드)
+                #   둘 중 하나 + 아래 '현재 비번 일치' 를 **모두** 만족해야 한다.
+                _s0 = self._sess() or {}
+                _is_m = (str(_s0.get("tier", "")) == "master"
+                         or _is_master_val(d.get("master")))
+                if not _is_m:
+                    return self._json(
+                        {"ok": False, "error": "unauthorized"}, 401)
+                if not _master_pw_matches(_cur):
+                    return self._json(
+                        {"ok": False,
+                         "error": "현재 마스터 비밀번호가 올바르지 않습니다"}, 401)
+                if _norm_pw(_new) == _cur:
+                    return self._json(
+                        {"ok": False,
+                         "error": "지금 쓰는 비밀번호와 다르게 정해 주세요"}, 400)
+                _ok, _err = _master_pw_set(_new)
+                if not _ok:
+                    return self._json({"ok": False, "error": _err}, 400)
+                # [turn69] 비번을 바꿨으니 **다른 기기의 마스터 세션은 정리**한다.
+                #  (지금 이 세션은 유지 — 바꾸자마자 튕기면 고장으로 보인다)
+                _killed = _sess_del_others("master", "",
+                                           keep_sid=self._sid())
+                print("[master-pw] 변경 완료 · 다른 마스터 세션 %d개 정리" % _killed)
+                return self._json({"ok": True, "changed": True,
+                                   "sessionsKilled": _killed})
             if p == "/api/admin/server-pause":
                 d = json.loads(self._body() or b"{}")
                 if not _is_master_val(d.get("master")):
@@ -9977,6 +24693,39 @@ class Handler(BaseHTTPRequestHandler):
                     cfg["serverPaused"] = bool(d.get("paused", False))
                     _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "serverPaused": bool(d.get("paused", False))})
+            if p == "/api/member/info-history/delete":
+                # (요구) 개인카드 개인정보 히스토리 항목 삭제 — 마스터 또는 본인.
+                d = json.loads(self._body() or b"{}")
+                mid = str(d.get("id", "")).strip()
+                idx = d.get("index")
+                if not mid or not isinstance(idx, int):
+                    return self._json({"ok": False, "error": "params"}, 400)
+                sess = self._sess() or {}
+                is_master = bool(sess.get("master"))
+                with LOCK:
+                    members = _load_json(DB_FILE, [])
+                    target = None
+                    for m in members:
+                        if str(m.get("id", "")) == mid:
+                            target = m
+                            break
+                    if target is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    # 본인 확인 — 세션 식별자가 그 회원(번호/전화/로그인ID)과 일치.
+                    if not is_master:
+                        sid = re.sub(r"[^0-9]", "", str(sess.get("id", "") or ""))
+                        mine = any(
+                            re.sub(r"[^0-9]", "", str(target.get(k) or "")) == sid
+                            and sid for k in ("number", "phone", "loginId"))
+                        if not mine:
+                            return self._json({"ok": False, "error": "denied"}, 403)
+                    hist = target.get("infoHistory")
+                    if not isinstance(hist, list) or idx < 0 or idx >= len(hist):
+                        return self._json({"ok": False, "error": "index"}, 400)
+                    hist.pop(idx)
+                    target["infoHistory"] = hist
+                    _save_json(DB_FILE, members)
+                return self._json({"ok": True, "history": hist})
             if p == "/api/member":
                 # 단일 인가자 부분 갱신 (개인 접근의 안전한 저장 — 전체 DB 덮어쓰기 방지)
                 d = json.loads(self._body() or b"{}")
@@ -10024,6 +24773,19 @@ class Handler(BaseHTTPRequestHandler):
                                     # 빈 문자열은 '값 비우기'가 아니라 '미지정'으로
                                     #  간주해 기존값을 보존한다(사진·메모 보호).
                                     continue
+                                # ── [안전장치 2026-10-26] 빈 리스트 보호 ──
+                                #  종전에는 `[]` 를 그대로 반영했다. 앱이 링크
+                                #  필드를 못 받아 기본값 [] 로 저장하면 서버가
+                                #  "사용자가 링크를 전부 지웠다"로 오해해
+                                #  **조용히 삭제**했다(417·2229·노본 사고).
+                                #  내용이 있는 리스트는 빈 리스트로 덮지 않는다.
+                                if (isinstance(v, list) and not v
+                                        and isinstance(cur, list) and cur
+                                        and k in _LINK_FIELDS):
+                                    print(f"[안전장치] 빈 리스트 무시: "
+                                          f"#{m.get('number','')} {k} "
+                                          f"{len(cur)}건 보존")
+                                    continue
                                 merged[k] = v
                             mem = merged
                             # 아이디(계정) 생성년월 보존 — 명부관리 '아이디생성년월'용.
@@ -10039,6 +24801,20 @@ class Handler(BaseHTTPRequestHandler):
                                 elif m.get("linkRequestSource"):
                                     mem["linkRequestSource"] = m.get("linkRequestSource")
                                 _link_mark_request(mem, m)
+                            # [요구] 관리자·마스터가 연결(멘토/페런츠/멘티/자녀)을
+                            #  실제로 수정하면 열려 있던 '정보 수정요청 메모'를 해제한다.
+                            if (not _is_eunha_save and self._auth_ok("admin")
+                                    and any(k in mem for k in
+                                            ("linkFixNote", "linkFixRequestedAt"))):
+                                _chg = any(
+                                    sorted(_norm_codes(m.get(f))) !=
+                                    sorted(_norm_codes(mem.get(f)))
+                                    for f in ("mentors", "parents",
+                                              "mentees", "children"))
+                                if _chg:
+                                    for _k in ("linkFixNote", "linkFixRequestedAt",
+                                               "linkFixRequestedBy", "linkFixScope"):
+                                        mem.pop(_k, None)
                             members[i] = mem
                             found = True
                             break
@@ -10050,7 +24826,57 @@ class Handler(BaseHTTPRequestHandler):
                             mem["linkRequestSource"] = "direct"
                         if not _is_eunha_save:
                             _link_mark_request(mem, None)
+                        # ══════════════════════════════════════════════════
+                        # [요구 2026-11-04] 신규 회원가입 → 승인 대기(pending)
+                        #  + 관리자 알림 적재.
+                        #
+                        # ## 실제 사고
+                        #  요구: "박다운이 회원가입한 내역도 알림이 오지 않음"
+                        #  신규 일반회원을 저장하면 `approvalStatus` 가 **빈 값**
+                        #  으로 저장됐다. 그런데 `_approval_of()` 는 빈 값을
+                        #  'approved' 로 해석하고, `_pending_members()` 는
+                        #  pending 만 모은다.
+                        #   → 가입해도 승인 큐에 0건 → 배지·팝업 0건.
+                        #   실측: reg_* 8건 중 7건이 빈 값(박다운 포함).
+                        #
+                        # ## 규칙
+                        #  · 신규 일반회원(isRegular)은 반드시 'pending' 으로
+                        #    시작한다(관리자가 승인해야 정식 인정).
+                        #  · 인가자(정식)는 기존처럼 승인이 필요 없으므로
+                        #    빈 값을 그대로 둔다(= approved 해석).
+                        #  · 이미 approvalStatus 를 명시해 보낸 경우는 존중한다.
+                        # ══════════════════════════════════════════════════
+                        _is_new_reg = bool(mem.get("isRegular")) and (
+                            not _is_eunha_save)
+                        if _is_new_reg and not str(
+                                mem.get("approvalStatus") or "").strip():
+                            mem["approvalStatus"] = "pending"
+                            if not str(mem.get("approvalAt") or "").strip():
+                                mem["approvalAt"] = _now_stamp()
+                        if _is_new_reg:
+                            # 승인 대기 배지의 '미확인' 기준 시각을 보장한다.
+                            if not str(mem.get("approvalAt") or "").strip():
+                                mem["approvalAt"] = str(
+                                    mem.get("createdAt") or "") or _now_stamp()
                         members.append(mem)
+                        if _is_new_reg:
+                            try:
+                                _nm = str(mem.get("name", "") or "").strip() or "이름없음"
+                                _ph = re.sub(r"[^0-9]", "", str(
+                                    mem.get("accessPhone")
+                                    or mem.get("phone") or ""))
+                                _notify_admin(
+                                    "join",
+                                    "새 회원가입 — %s" % _nm,
+                                    "%s님이 일반회원으로 가입했습니다. "
+                                    "승인 대기 중입니다." % _nm,
+                                    category="회원가입",
+                                    author=_nm,
+                                    phone=_ph,
+                                    memberId=str(mem.get("id", "") or ""),
+                                )
+                            except Exception as _e2:
+                                print("[notify] 가입 알림 실패: %s" % _e2)
                     if NAS.exists(target_db):
                         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                         _bkind = "eunha_" if _is_eunha_save else ""
@@ -10090,6 +24916,27 @@ class Handler(BaseHTTPRequestHandler):
                             for x in _old_list
                             if isinstance(x, dict) and str(x.get("id", ""))
                         }
+                        # ══════════════════════════════════════════════════
+                        # [사고 재발 방지 2026-10-29] 전체저장은 **병합 전용**.
+                        #
+                        #  ## 실제 사고
+                        #   낡은 브라우저 탭(구버전 번들)이 /api/members 로
+                        #   전체저장을 하면서 자기가 모르는 회원 5명을
+                        #   **조용히 지웠다**(일반회원 김종선·함영주·류호준·
+                        #   임영욱 등). 클라이언트가 오래된 사본을 들고 있으면
+                        #   "모른다" 가 곧 "삭제" 가 되어 버린다.
+                        #
+                        #  ## 규칙
+                        #   들어온 목록에 없는 기존 회원은 **지우지 않고 보존**한다.
+                        #   진짜 삭제는 /api/member/delete(단건 명시)로만 한다.
+                        #   정말로 전체 교체가 필요하면 payload 에
+                        #   `allowDrop: true` 를 명시해야 한다(관리 도구 전용).
+                        # ══════════════════════════════════════════════════
+                        _incoming_ids = {
+                            str(x.get("id", ""))
+                            for x in members
+                            if isinstance(x, dict) and str(x.get("id", ""))
+                        }
                         _merged_list = []
                         for _m in members:
                             if not isinstance(_m, dict):
@@ -10106,10 +24953,28 @@ class Handler(BaseHTTPRequestHandler):
                                             and isinstance(_cur, str)
                                             and _cur.strip()):
                                         continue  # 빈 문자열=미지정 → 기존값 보존
+                                    # ── [안전장치 2026-10-26] 빈 리스트 보호 ──
+                                    if (isinstance(_v, list) and not _v
+                                            and isinstance(_cur, list) and _cur
+                                            and _k in _LINK_FIELDS):
+                                        print(f"[안전장치] 빈 리스트 무시(전체저장): "
+                                              f"#{_m.get('number','')} {_k} "
+                                              f"{len(_cur)}건 보존")
+                                        continue
                                     _mm[_k] = _v
                                 _merged_list.append(_mm)
                             else:
                                 _merged_list.append(_m)
+                        # ── 보존: 클라이언트가 모르는 기존 회원 되살리기 ──
+                        if not bool(d.get("allowDrop")):
+                            _kept = 0
+                            for _oid, _om in _old_by_id.items():
+                                if _oid and _oid not in _incoming_ids:
+                                    _merged_list.append(_om)
+                                    _kept += 1
+                            if _kept:
+                                print(f"[안전장치] 전체저장에서 누락된 회원 "
+                                      f"{_kept}명 보존(삭제는 단건 삭제로만)")
                         members = _merged_list
                     except Exception:
                         pass
@@ -10200,22 +25065,216 @@ class Handler(BaseHTTPRequestHandler):
                                      "updatedBy": "addressbook"})
                 # 감사 로그
                 try:
-                    with LOCK:
-                        log = _load_json(IMP_LOG_FILE, {"items": []})
-                        log.setdefault("items", []).append({
-                            "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "folder": "주소록", "name": fname,
-                            "summary": (f"매칭 {summary['matched']}명 · 갱신 "
-                                        f"{summary['updated']}명"
-                                        + (" · 미리보기" if dry else "")),
-                            "by": (self._sess() or {}).get("who", ""),
-                        })
-                        _save_json(IMP_LOG_FILE, log)
+                    _import_log_add({
+                        "id": "imp" + _secrets.token_urlsafe(6),
+                        "at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "folder": "주소록", "name": fname,
+                        "byLabel": _sess_label(self._sess()),
+                        "by": re.sub(r"[^0-9]", "",
+                                     str((self._sess() or {}).get("who", ""))),
+                        "tier": str((self._sess() or {}).get("tier", "")),
+                        "summary": (f"매칭 {summary['matched']}명 · 갱신 "
+                                    f"{summary['updated']}명"
+                                    + (" · 미리보기" if dry else "")),
+                    })
                 except Exception:
                     pass
                 return self._json({"ok": True, "dry": dry,
                                    "overwrite": overwrite,
                                    "rowsParsed": len(rows), **summary})
+            if p == "/api/import/apply":
+                # (요구) 자료 가져오기(AI 인식) — 등록/업데이트 적용.
+                #  · 관리자·마스터 전용. dry=true 면 미리보기(중복/변경 비교만).
+                #  · 각 행에 action: 'add'(신규 등록) | 'update'(기존 갱신) | 'skip'.
+                #  · 기존 갱신 시 반영 전 '이전값(prev)'을 감사로그에 보관 →
+                #    마스터가 복원 버튼으로 되돌릴 수 있다.
+                #  · 반영 시 관리자 이상에게 알림(notify.json)을 적재한다.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                rows = d.get("rows") or []
+                if not isinstance(rows, list) or not rows:
+                    return self._json({"ok": False, "error": "rows"}, 400)
+                dry = d.get("dry") is True
+                uid = str(d.get("id") or ("imp" + _secrets.token_urlsafe(6)))
+                source = str(d.get("source") or d.get("name") or "자료 가져오기")
+                sess = self._sess() or {}
+                by_label = _sess_label(sess)
+                by_num = re.sub(r"[^0-9]", "", str(sess.get("who", "") or ""))
+                with _MEMBER_WRITE_LOCK:
+                    members = _ev_members()
+                    added = updated = skipped = 0
+                    changes = []
+                    new_rows = []
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        act = str(row.get("action") or "").strip().lower()
+                        if act == "skip":
+                            skipped += 1
+                            continue
+                        dup, _how = _import_find_dup(members, row)
+                        if dup is not None and act != "add":
+                            # 기존 갱신 — 이전값 보관 + 선택 필드만 반영
+                            prev = dict(dup)
+                            diffs = _import_diff(dup, row)
+                            fields_key = str(row.get("fields") or "").strip()
+                            allow = None
+                            if fields_key:
+                                allow = set(
+                                    f for f in fields_key.split(",") if f)
+                            merged = dict(dup)
+                            for k, _label in _IMPORT_FIELDS:
+                                v = str(row.get(k, "") or "").strip()
+                                if not v:
+                                    continue
+                                if allow is not None and k not in allow:
+                                    continue
+                                merged[k] = v
+                            # 연맹명 정규화
+                            if merged.get("league"):
+                                merged["league"] = _normalize_league(
+                                    merged.get("league", ""))
+                            dup.clear()
+                            dup.update(merged)
+                            updated += 1
+                            if diffs:
+                                changes.append({
+                                    "id": dup.get("id", ""),
+                                    "number": str(dup.get("number", "")),
+                                    "name": str(dup.get("name", "")),
+                                    "label": "%s %s" % (dup.get("number", ""),
+                                                        dup.get("name", "")),
+                                    "diffs": diffs,
+                                    "prev": prev,
+                                })
+                        else:
+                            # 신규 등록 — 인가번호 없거나 중복이면 새 번호 부여
+                            no = re.sub(r"[^0-9]", "",
+                                        str(row.get("number", "") or ""))
+                            if not no or any(
+                                re.sub(r"[^0-9]", "",
+                                       str(m.get("number", "") or "")) == no
+                                for m in members):
+                                no = str(_next_member_number(members))
+                            m = {
+                                "id": "imp%d%s" % (
+                                    int(datetime.datetime.now().timestamp()
+                                        * 1000000),
+                                    _secrets.token_urlsafe(4)),
+                                "number": no,
+                                "name": str(row.get("name", "") or ""),
+                                "corps": "tsak",
+                                "league": _normalize_league(
+                                    str(row.get("league", "") or "")),
+                                "unit": str(row.get("unit", "") or ""),
+                                "address": str(row.get("address", "") or ""),
+                                "phone": str(row.get("phone", "") or ""),
+                                "tel": str(row.get("tel", "") or ""),
+                                "email": str(row.get("email", "") or ""),
+                                "birthday": str(row.get("birthday", "") or ""),
+                                "atasNo": str(row.get("atasNo", "") or ""),
+                                "date": str(row.get("date", "") or ""),
+                                "activity": str(row.get("activity", "") or ""),
+                                "position": str(row.get("position", "") or ""),
+                                "memo": str(row.get("memo", "") or ""),
+                                "createdAt": _now_stamp(),
+                                "linkRequestSource": "direct",
+                            }
+                            members.append(m)
+                            new_rows.append(m)
+                            added += 1
+                    if not dry and (added > 0 or updated > 0):
+                        _ev_backup_members()
+                        _link_reconcile_apply(members, save=False)
+                        _save_json(DB_FILE, members)
+                        _touch_meta({"count": len(members),
+                                     "updatedBy": "import"})
+                    summary = ("신규 %d건 · 갱신 %d건 · 건너뜀 %d건"
+                               % (added, updated, skipped)
+                               + (" · 미리보기" if dry else ""))
+                    entry = None
+                    if not dry and (added > 0 or updated > 0):
+                        entry = _import_log_add({
+                            "id": uid,
+                            "at": datetime.datetime.now().strftime(
+                                "%Y-%m-%d %H:%M:%S"),
+                            "folder": "자료 가져오기", "name": source,
+                            "byLabel": by_label, "by": by_num,
+                            "tier": str(sess.get("tier", "")),
+                            "summary": summary,
+                            "added": added, "updated": updated,
+                            "skipped": skipped,
+                            "changes": changes,
+                        })
+                        _notify_master_import(entry)
+                return self._json({
+                    "ok": True, "dry": dry, "id": uid,
+                    "added": added, "updated": updated, "skipped": skipped,
+                    "changes": changes, "summary": summary,
+                })
+            if p == "/api/import/restore":
+                # (요구) 마스터 복원 — 감사로그 항목에 보관된 이전값으로 되돌린다.
+                #  미지정(restoreItems 없음) 시 해당 감사 항목의 모든 변경을 복원.
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                eid = str(d.get("id") or "").strip()
+                if not eid:
+                    return self._json({"ok": False, "error": "id"}, 400)
+                only = d.get("restoreItems")
+                only_ids = None
+                if isinstance(only, list) and only:
+                    only_ids = set(str(x) for x in only)
+                entry = _import_log_find(eid)
+                if not entry:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                changes = entry.get("changes", [])
+                if not isinstance(changes, list):
+                    changes = []
+                with _MEMBER_WRITE_LOCK:
+                    members = _ev_members()
+                    idx = {str(m.get("id", "")): i for i, m in enumerate(members)}
+                    restored = 0
+                    for ch in changes:
+                        mid = str(ch.get("id", ""))
+                        if only_ids is not None and mid not in only_ids:
+                            continue
+                        prev = ch.get("prev")
+                        if not isinstance(prev, dict):
+                            continue
+                        i = idx.get(mid)
+                        if i is None:
+                            continue
+                        cur = members[i]
+                        # 현재 값 유지 + 이전값의 변경 필드만 되돌린다(비파괴 복원).
+                        for df in (ch.get("diffs") or []):
+                            k = str(df.get("field", ""))
+                            if k and k in prev:
+                                cur[k] = prev[k]
+                        restored += 1
+                    if restored > 0:
+                        _ev_backup_members()
+                        _link_reconcile_apply(members, save=False)
+                        _save_json(DB_FILE, members)
+                        _touch_meta({"count": len(members),
+                                     "updatedBy": "import-restore"})
+                        try:
+                            with LOCK:
+                                doc = _load_json(IMP_FILE,
+                                                 {"files": [], "items": []})
+                                for it in doc.get("items", []):
+                                    if str(it.get("id", "")) == eid:
+                                        it["restored"] = True
+                                        it["restoredAt"] = datetime.datetime.now(
+                                        ).strftime("%Y-%m-%d %H:%M:%S")
+                                        it["restoredBy"] = _sess_label(self._sess())
+                                        break
+                                _save_json(IMP_FILE, doc)
+                        except Exception:
+                            pass
+                return self._json({"ok": True, "restored": restored,
+                                   "id": eid})
             if p == "/api/member/name-visible":
                 # 관리자·마스터: 회원 이름 공개/비공개 토글 (개인 프로필 좌우 버튼)
                 if not self._require("admin"):
@@ -10283,21 +25342,89 @@ class Handler(BaseHTTPRequestHandler):
                 _save_json(CFG_FILE, cfg)
                 return self._json({"ok": True, "config": cfg})
             if p.startswith("/api/photo/"):
-                no = re.sub(r"[^0-9]", "", p.split("/")[-1])
-                raw = self._body()
+                # ── [번호체계 2026-10-26] 저장 파일명에도 소속을 새긴다 ──────
+                #  종전에는 `re.sub(r"[^0-9]", "", ...)` 로 **문자를 지웠기**
+                #  때문에, 은하 43호가 사진을 올리면 `/photos/43.jpg` 에 저장돼
+                #  **범 43호 사진을 덮어썼다**(조회 버그의 짝이 되는 저장 버그).
+                #  이제 `_ck()` 로 접두어를 보존해 `G43.jpg` 에 따로 저장한다.
+                raw = urllib.parse.unquote(str(p.split("/")[-1] or ""))
+                no = _ck(raw)
+                if not no:
+                    return self._json({"ok": False, "error": "bad number"}, 400)
+                # 저장 주체가 은하인데 접두어를 빠뜨린 경우를 구제:
+                #  은하 세션이면 번호가 은하 명단에 있을 때 G 를 붙인다.
+                try:
+                    if (not no.startswith(EUNHA_PREFIX)
+                            and _resolve_corps("", self._my_ident())
+                            == "eunha"
+                            and _eunha_member_by_number(no)):
+                        no = EUNHA_PREFIX + _ck_num(no)
+                except Exception:
+                    pass
+                raw_body = self._body()
                 ext = ".jpg"
                 ctyp = self.headers.get("Content-Type", "")
                 if "png" in ctyp:
                     ext = ".png"
-                NAS.write(f"{BASE}/photos/{no}{ext}", raw)
-                return self._json({"ok": True})
+                NAS.write(f"{BASE}/photos/{no}{ext}", raw_body)
+                # [요구] 업로드 즉시 파생본(thumb/mid)을 만들어 NAS 에 함께 둔다.
+                #  → 명부·상세가 원본을 매번 읽지 않는다.
+                #  실패해도 업로드 자체는 성공으로 응답한다(원본은 저장됨).
+                _made = []
+                try:
+                    _got = _derived_ensure(
+                        f"{BASE}/photos/{no}{ext}", ("thumb", "mid"))
+                    _made = sorted(_got.keys())
+                except Exception as _de:
+                    print("[derived] 업로드 후 생성 실패: %s" % _de)
+                return self._json({"ok": True, "savedAs": f"{no}{ext}",
+                                   "derived": _made})
             # ---- 재무 저장(전체 교체, 서버 자동 스냅샷) ----
             if p == "/api/finance":
+                # (보호) 관리자·마스터만 저장 가능 — 비관리자/익명 클라이언트가
+                #  빈 목록으로 전체 거래내역을 덮어써 소실시키는 것을 차단.
+                if not self._require("admin"):
+                    return
                 d = json.loads(self._body() or b"{}")
                 fin = _load_json(FIN_FILE, _default_finance())
                 with LOCK:
-                    if "transactions" in d:
-                        fin["transactions"] = d["transactions"]
+                    if "transactions" in d and isinstance(d["transactions"], list):
+                        incoming = d["transactions"]
+                        old = fin.get("transactions")
+                        old = old if isinstance(old, list) else []
+                        old_by_id = {
+                            str(t.get("id", "")): t for t in old
+                            if isinstance(t, dict) and str(t.get("id", ""))
+                        }
+                        # 삭제 프로토콜 — payload 의 deletedIds 만 제거(그 외 보존).
+                        dels = d.get("deletedIds")
+                        dels = {str(x) for x in dels} if isinstance(dels, list) else set()
+                        out, seen = [], set()
+                        for t in incoming:
+                            if not isinstance(t, dict):
+                                continue
+                            tid = str(t.get("id", ""))
+                            if tid:
+                                seen.add(tid)
+                            # 빈 거래(날짜·입금자·이름·금액 모두 없음)는 미입력 폼
+                            #  전송으로 간주한다 → 기존 레코드가 있으면 보존, 없으면 무시.
+                            _blank = (not str(t.get("date", "")).strip()
+                                      and not str(t.get("payer", "")).strip()
+                                      and not str(t.get("name", "")).strip()
+                                      and int(t.get("amount", 0) or 0) == 0)
+                            if _blank:
+                                if tid in old_by_id:
+                                    out.append(old_by_id[tid])  # 기존값 보존
+                                continue  # 빈 항목은 새로 추가하지 않음
+                            out.append(t)
+                        # payload 에 없는 기존 거래 — 삭제 목록에 있으면 제거, 없으면 보존.
+                        for oid, orec in old_by_id.items():
+                            if oid in seen:
+                                continue
+                            if oid in dels:
+                                continue  # 삭제 확정
+                            out.append(orec)  # 소실 방지: 서버에만 있던 거래 보존
+                        fin["transactions"] = out
                     for k in ("income_categories", "expense_categories"):
                         if k in d:
                             fin[k] = d[k]
@@ -10313,6 +25440,170 @@ class Handler(BaseHTTPRequestHandler):
                 rules["updated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 _save_json(MAT_FILE, rules)
                 return self._json({"ok": True, "rules": rules})
+            # ---- 재무 거래 첨부파일 업로드 (스트리밍, 모든 포맷) ----
+            #   ?txid=<거래id>&name=<파일명>. 엑셀·pdf·jpg·png·zip·ppt 등 제한 없음.
+            if p == "/api/finance/attach/upload":
+                # [요구 2026-10-26] "스탭도 ... 업로드 가능"
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                txid = _safe_name((q.get("txid", [""])[0] or "").strip())
+                if not _require_finance_attach(self, txid):
+                    return
+                name = _safe_name((q.get("name", [""])[0] or "").strip())
+                if not txid or not name:
+                    return self._json({"ok": False, "error": "txid/name"}, 400)
+                total = int(self.headers.get("Content-Length", 0) or 0)
+                d = _fin_attach_ensure_dir(txid)
+                ctyp = self.headers.get("Content-Type", "application/octet-stream")
+
+                def _chunks():
+                    remaining = total
+                    while remaining > 0:
+                        buf = self._rfile_read(min(262144, remaining))
+                        if not buf:
+                            break
+                        remaining -= len(buf)
+                        yield buf
+
+                NAS.write_stream(f"{d}/{name}", _chunks(), size=total,
+                                 content_type=ctyp)
+                files = _fin_attach_list(txid)
+                files = [f for f in files if f.get("name") != name]
+                files.insert(0, {
+                    "name": name,
+                    "size": total,
+                    "kind": _kind_of(name),
+                    "storage": _storage_active(),
+                    "uploaded": datetime.datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"),
+                })
+                meta = _fin_attach_meta()
+                meta[txid] = files
+                _fin_attach_save(meta)
+                return self._json({"ok": True, "txid": txid, "files": files})
+            # ---- 재무 첨부파일 이름변경(이름변경/이동 공용) ----
+            #   ?txid=&name=&newName=  (newName 에 경로가 있으면 하위폴더로 이동)
+            if p == "/api/finance/attach/rename":
+                # [요구 2026-10-26] 스탭이 올린 자료는 스탭이 고칠 수 있어야 한다.
+                d = json.loads(self._body() or b"{}")
+                txid = _safe_name(str(d.get("txid", "")).strip())
+                if not _require_finance_attach(self, txid):
+                    return
+                name = _safe_rel(str(d.get("name", "")).strip())
+                new = (str(d.get("newName", "")).strip()
+                       or str(d.get("destination", "")).strip())
+                if not txid or not name or not new:
+                    return self._json({"ok": False, "error": "args"}, 400)
+                base_dir = _fin_attach_dir(txid)
+                src = f"{base_dir}/{name}"
+                if not NAS.exists(src):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                # 하위폴더 이동 지원: new 에 '/' 가 있으면 폴더 생성 후 이동.
+                sub = "/".join(_safe_name(p) for p in new.split("/")[:-1] if p.strip())
+                leaf = _safe_name(new.split("/")[-1])
+                dest_dir = f"{base_dir}/{sub}" if sub else base_dir
+                if sub:
+                    cur = base_dir
+                    for part in sub.split("/"):
+                        if not NAS.exists(f"{cur}/{part}"):
+                            NAS.mkdir(cur, part)
+                        cur = f"{cur}/{part}"
+                try:
+                    if dest_dir == base_dir:
+                        NAS.rename(src, leaf)
+                    else:
+                        NAS.move(src, dest_dir)
+                except Exception:
+                    # 폴백: 읽어서 새 위치에 쓰고 원본 삭제
+                    b = NAS.read_bytes(src)
+                    NAS.write(f"{dest_dir}/{leaf}", b)
+                    NAS.delete(src)
+                files = _fin_attach_list(txid)
+                for f in files:
+                    if f.get("name") == name:
+                        f["name"] = (sub + "/" + leaf) if sub else leaf
+                meta = _fin_attach_meta()
+                meta[txid] = files
+                _fin_attach_save(meta)
+                return self._json({"ok": True, "txid": txid, "files": files})
+            # ---- 재무 첨부파일 삭제 ----
+            if p == "/api/finance/attach/delete":
+                # [요구 2026-10-26] 스탭도 자기 행사 자료를 지울 수 있다.
+                d = json.loads(self._body() or b"{}")
+                txid = _safe_name(str(d.get("txid", "")).strip())
+                if not _require_finance_attach(self, txid):
+                    return
+                name = _safe_rel(str(d.get("name", "")).strip())
+                if not txid or not name:
+                    return self._json({"ok": False, "error": "args"}, 400)
+                try:
+                    NAS.delete(f"{_fin_attach_dir(txid)}/{name}")
+                except Exception:
+                    pass
+                files = [f for f in _fin_attach_list(txid)
+                         if f.get("name") != name]
+                meta = _fin_attach_meta()
+                meta[txid] = files
+                _fin_attach_save(meta)
+                return self._json({"ok": True, "txid": txid, "files": files})
+            # ---- 자료 저장공간 설정 저장 (마스터 전용) ----
+            #   active(사용할 공간) + spaces(공간별 config: id/password/folderUrl 등)
+            if p == "/api/storage/set":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                with LOCK:
+                    cfg = _storage()
+                    if isinstance(d.get("active"), str) and d["active"]:
+                        cfg["active"] = str(d["active"])
+                    sp = cfg.get("spaces", {})
+                    incoming = d.get("spaces")
+                    if isinstance(incoming, dict):
+                        for k, v in incoming.items():
+                            if k in sp and isinstance(v, dict):
+                                if isinstance(v.get("label"), str):
+                                    sp[k]["label"] = v["label"][:40]
+                                if "enabled" in v:
+                                    sp[k]["enabled"] = bool(v["enabled"])
+                                if isinstance(v.get("config"), dict):
+                                    cur = sp[k].setdefault("config", {})
+                                    for ck, cv in v["config"].items():
+                                        cur[str(ck)] = (str(cv)[:300]
+                                                        if cv is not None else "")
+                    cfg["spaces"] = sp
+                    _save_json(STORAGE_FILE, cfg)
+                return self._json({"ok": True, "storage": cfg})
+            # ---- 저장공간 전환/이관 (마스터 전용) ----
+            #   "기존자료를 저장 후 업로드하시겠습니까?" 확인 → 예: 이관 실행.
+            #   sweep=true 이면 대상 공간의 자료 통계만 반환(전환 전 미리보기).
+            if p == "/api/storage/migrate":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                target = str(d.get("target", "") or "").strip()
+                if not target:
+                    return self._json({"ok": False, "error": "target"}, 400)
+                if d.get("sweep") is True:
+                    mats = _storage_material_files()
+                    return self._json({"ok": True, "material": mats,
+                                       "active": _storage_active()})
+                res = _storage_migrate(target, delete_old=bool(d.get("deleteOld")))
+                return self._json(res)
+            # ---- 이관 완료 후: 기존 저장공간 자료 삭제(선택) ----
+            if p == "/api/storage/purge-old":
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                which = str(d.get("which", "") or "").strip()
+                mats = _storage_material_files()
+                files = mats["finance"] + mats["event"] + mats["files"]
+                n = 0
+                for it in files:
+                    try:
+                        NAS.delete(it["path"])
+                        n += 1
+                    except Exception:
+                        pass
+                return self._json({"ok": True, "deleted": n, "which": which})
             # ---- 행사관리: 미디어 삭제 (구 갤러리 전용 경로 분리) ----
             if p == "/api/event/media/delete":
                 d = json.loads(self._body() or b"{}")
@@ -10401,7 +25692,7 @@ class Handler(BaseHTTPRequestHandler):
                 def _chunks():
                     remaining = total
                     while remaining > 0:
-                        buf = self.rfile.read(min(262144, remaining))
+                        buf = self._rfile_read(min(262144, remaining))
                         if not buf:
                             break
                         remaining -= len(buf)
@@ -10824,6 +26115,16 @@ class Handler(BaseHTTPRequestHandler):
                             "id": oid,
                             "year": str(datetime.datetime.now().year),
                             "productId": str(lprod.get("id", "")),
+                            #  [버그수정 2026-11-20] 주문 항목에 **상품 이미지를
+                            #  함께 저장**한다.
+                            #   증상: 주문상세에서 상품 이미지가 하나도 안 보임.
+                            #   원인: 여기서 image 를 저장하지 않아, 앱이
+                            #         `o['image']` 를 읽으면 항상 null 이었다.
+                            #         (상품 카탈로그에만 image 가 있었다)
+                            #   대책: 주문 시점의 이미지를 항목에 복사해 둔다.
+                            #         상품 이미지를 나중에 바꿔도 **주문 당시**
+                            #         그림이 남아 이력이 흔들리지 않는다.
+                            "image": str(lprod.get("image", "") or ""),
                             "product": str(lprod.get("name", "")),
                             "kind": str(lprod.get("kind", "")),
                             "unitPrice": lunit,
@@ -10864,6 +26165,8 @@ class Handler(BaseHTTPRequestHandler):
                                 oc0 or ident0, mkind, recips)
                         out_orders.append(order)
                     _merch_save(doc)
+                    # [요구 2026-11-04] 장바구니 주문 → 관리자 알림 1건(묶음).
+                    _merch_notify_orders(out_orders, shared_no)
                     return self._json({
                         "ok": True,
                         "orders": out_orders,
@@ -10970,6 +26273,8 @@ class Handler(BaseHTTPRequestHandler):
                 #    구매자(비인가)도 정확히 연동되도록 한다(수정).
                 if mkind and recips:
                     _merch_sync_medal_recipients(oc or ident, mkind, recips)
+                # [요구 2026-11-04] 단일 품목 주문 → 관리자 알림 1건.
+                _merch_notify_orders([order])
                 return self._json({"ok": True, "order": order,
                                    "contactId": oc, "contactType": octype,
                                    "account": cfg.get("account", {})})
@@ -11025,6 +26330,22 @@ class Handler(BaseHTTPRequestHandler):
                 _merch_save(doc)
                 if oc:
                     _merch_attach_to_member(oc, rid, "reservation")
+                # [요구 2026-11-04] 예약/수요조사 접수 → 관리자 알림.
+                try:
+                    _b = bname.strip() or "비회원"
+                    _notify_admin(
+                        "reserve",
+                        "새 수품 예약 — %s" % _b,
+                        "%s님이 %s 을(를) %d개 예약했습니다." % (
+                            _b, str(prod.get("name", "")), qty),
+                        category="수품예약",
+                        author=_b,
+                        productId=pid,
+                        phone=phone[:20],
+                        qty=qty,
+                    )
+                except Exception:
+                    pass
                 return self._json({"ok": True, "reservation": rec,
                                    "contactId": oc, "contactType": octype})
             if p == "/api/merch/product":
@@ -11039,8 +26360,18 @@ class Handler(BaseHTTPRequestHandler):
                     "id": pid,
                     "name": str(d.get("name", "") or "")[:80],
                     "kind": str(d.get("kind", "") or "")[:40],
+                    # 구분(카테고리) — 인수인계 대장의 4구분(의류·착용류 / 배지·패치·
+                    #  조임류 / 약장·메달·기념품 / 기타·열전사·포장).
+                    "category": str(
+                        d.get("category", (existing or {}).get("category", ""))
+                        or "")[:40],
                     "price": int(d.get("price", 0) or 0),
                     "stock": int(d.get("stock", 0) or 0),
+                    # 판매가능재고 — 수품구매(쇼핑몰) 노출 수량(직접입력, 기본 999).
+                    "sellableStock": _sellable_of({
+                        "sellableStock": d.get(
+                            "sellableStock",
+                            (existing or {}).get("sellableStock"))}),
                     "options": d.get("options", (existing or {}).get("options", [])),
                     "image": str(d.get("image", "") or "")[:300],
                     "desc": str(d.get("desc", "") or "")[:400],
@@ -11051,6 +26382,16 @@ class Handler(BaseHTTPRequestHandler):
                     "madeDate": str(
                         d.get("madeDate", (existing or {}).get("madeDate", ""))
                         or "")[:40],
+                    # 상품판매 여부 — 재고표에서 [V]로 확인(기획실 상품판매 개념).
+                    #  false 면 쇼핑몰 노출에서 제외된다(재고 전용 소품).
+                    "forSale": d.get(
+                        "forSale", (existing or {}).get("forSale", True)) is not False,
+                    # 판매 개시일 / 기초 누적판매(인수인계 대장 수치).
+                    "soldStart": str(
+                        d.get("soldStart", (existing or {}).get("soldStart", ""))
+                        or "")[:40],
+                    "soldBase": int(d.get(
+                        "soldBase", (existing or {}).get("soldBase", 0)) or 0),
                     # 견적서 기반 세부항목(사양/옵션) — 마스터 전용 관리, 관리자 노출은
                     #  설정(quoteSpecAdminAllowed)에 따른다. [{label, value, note}]
                     "specList": _norm_spec_list(
@@ -11190,11 +26531,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True,
                                    "removed": before - len(doc["purchases"])})
             if p == "/api/merch/supplies":
-                # 비품 등록/수정(관리자).
+                # 비품 등록/수정(관리자 — '비품재고' 권한 필요).
                 #  - id 없으면 신규. id 있으면 수정.
                 #  - 확인자(인가번호/이름)는 세션에서 자동 기록. 별도 override 가능.
-                if not self._require("admin"):
-                    return
+                if not _perm_admin(self._sess(), "supplies"):
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
                 d = json.loads(self._body() or b"{}")
                 doc = _merch_doc()
                 sid = str(d.get("id", "") or "")
@@ -11216,6 +26557,7 @@ class Handler(BaseHTTPRequestHandler):
                     item = {
                         "id": sid or ("sp" + _secrets.token_urlsafe(5)),
                         "name": str(d.get("name", "") or "")[:80],
+                        "category": str(d.get("category", "") or "")[:40],
                         "qty": _sint(d.get("qty", 0)),
                         "note": str(d.get("note", "") or "")[:400],
                         "photo": str(d.get("photo", "") or "")[:300],
@@ -11233,6 +26575,9 @@ class Handler(BaseHTTPRequestHandler):
                         if k in d:
                             item_len = 80 if k == "name" else 400
                             existing[k] = str(d.get(k, "") or "")[:item_len]
+                    if "category" in d:
+                        existing["category"] = str(
+                            d.get("category", "") or "")[:40]
                     if "photo" in d:
                         existing["photo"] = str(d.get("photo", "") or "")[:300]
                     if "qty" in d:
@@ -11264,9 +26609,9 @@ class Handler(BaseHTTPRequestHandler):
                 _merch_save(doc)
                 return self._json({"ok": True, "item": item})
             if p == "/api/merch/supplies/delete":
-                # 비품 삭제(관리자).
-                if not self._require("admin"):
-                    return
+                # 비품 삭제(관리자 — '비품재고' 권한 필요).
+                if not _perm_admin(self._sess(), "supplies"):
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
                 d = json.loads(self._body() or b"{}")
                 doc = _merch_doc()
                 sid = str(d.get("id", "") or "")
@@ -11284,9 +26629,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True,
                                    "removed": before - len(doc["supplies"])})
             if p == "/api/merch/supplies/order":
-                # 비품 표시 순서 저장(관리자).
-                if not self._require("admin"):
-                    return
+                # 비품 표시 순서 저장(관리자 — '비품재고' 권한 필요).
+                if not _perm_admin(self._sess(), "supplies"):
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
                 d = json.loads(self._body() or b"{}")
                 doc = _merch_doc()
                 ids = [str(x) for x in (d.get("ids") or [])]
@@ -12069,6 +27414,10 @@ class Handler(BaseHTTPRequestHandler):
                 if "quoteSpecAdminAllowed" in d:
                     cfg["quoteSpecAdminAllowed"] = bool(
                         d.get("quoteSpecAdminAllowed"))
+                # 재고표 "단가(원가)" 컬럼의 마스터 노출 여부(마스터가 직접 선택).
+                if "costVisibleToMaster" in d:
+                    cfg["costVisibleToMaster"] = bool(
+                        d.get("costVisibleToMaster"))
                 if "notices" in d:
                     cfg["notices"] = str(d.get("notices", "") or "")
                 if "statuses" in d and isinstance(d.get("statuses"), list):
@@ -12104,12 +27453,47 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "config": cfg})
             # ============ 행사관리 v2 (POST) ============
             if p == "/api/admin/set-password":
+                # ── [보안 수정 2026-10-26] 인증 없는 비번 변경 구멍 ──────────
+                #  종전 코드는 이렇게 되어 있었다(주석만 있고 **아무것도 안 함**):
+                #      if tier == "master" and str(d.get("master","")) != MASTER_PW
+                #         and d.get("master") is not None:
+                #          pass          ← 검증 실패해도 그냥 통과
+                #  즉 클라이언트가 `tier:"master"` 라고 **말하기만 하면**
+                #  누구든 다른 회원의 비밀번호를 바꿀 수 있었다(_require 없음).
+                #
+                #  수정: ① 반드시 인증된 세션을 요구하고(_require("admin")),
+                #        ② 마스터 권한은 **서버 세션 등급**으로만 판정한다.
+                #           (본문의 tier/master 값은 신뢰하지 않는다)
+                #        ③ 관리자(app)는 초기화만, 인가자 비번 '변경'은 마스터만
+                #           가능 — 이 정책은 _set_password 안에 이미 있다.
+                if not self._require("admin"):
+                    return
                 d = json.loads(self._body() or b"{}")
-                tier = str(d.get("tier", "app"))
-                if tier == "master" and str(d.get("master", "")) != MASTER_PW and d.get("master") is not None:
-                    pass
+                sess = self._sess() or {}
+                sess_tier = str(sess.get("tier", ""))
+                sess_master = sess_tier == "master"
+                # 개인(personal)·비인가(guest) 세션은 남의 비번을 건드릴 수 없다.
+                #  (앱 화면은 관리자에게만 이 버튼을 보여주지만, API 는 화면을
+                #   믿지 않는다. 남의 비번 변경은 가장 민감한 조작이다.)
+                if sess_tier not in ("app", "master"):
+                    return self._json(
+                        {"ok": False,
+                         "error": "권한 없음: 관리자 이상만 비밀번호를 "
+                                  "변경·초기화할 수 있습니다."},
+                        403,
+                    )
+                # 본문이 master 를 주장하면 세션도 master 여야 한다.
+                if str(d.get("tier", "")) == "master" and not sess_master:
+                    return self._json(
+                        {"ok": False,
+                         "error": "권한 없음: 마스터 세션이 아닙니다. "
+                                  "마스터 비밀번호로 다시 로그인해 주세요."},
+                        403,
+                    )
+                eff_tier = "master" if sess_master else "app"
                 ok, err, new_pw = _set_password(
-                    tier, d.get("id", ""), d.get("value", ""), bool(d.get("reset")))
+                    eff_tier, d.get("id", ""), d.get("value", ""),
+                    bool(d.get("reset")))
                 if ok:
                     return self._json({"ok": True, "newPassword": new_pw})
                 return self._json({"ok": False, "error": err}, 400)
@@ -12130,13 +27514,30 @@ class Handler(BaseHTTPRequestHandler):
                     "started": started,
                     "job": _ev_thumb_job_state(),
                 })
-            if p == "/api/event/meta":
-                # 행사 사용자 정의 '메뉴추가' 탭 저장 (PDF page9 최종 결정).
+            # ---- 행사 썸네일 백필 **중단** (관리자·마스터) ----
+            #  대량 백필은 수십 분 걸릴 수 있어 사용자가 멈출 수 있어야 한다.
+            #  현재 파일 처리가 끝난 뒤 안전하게 루프를 빠져나온다.
+            if p == "/api/event/thumbs/stop":
                 if not self._require("admin"):
                     return
+                with _THUMB_JOB_LOCK:
+                    was = bool(_THUMB_JOB.get("running"))
+                    _THUMB_JOB["stop"] = True
+                return self._json({
+                    "ok": True, "wasRunning": was,
+                    "job": _ev_thumb_job_state(),
+                })
+            if p == "/api/event/meta":
+                # 행사 사용자 정의 '메뉴추가' 탭 저장 (PDF page9 최종 결정).
+                #  [요구 2026-10-26] "B + A" — 관리자·마스터 **또는 해당 행사
+                #  스탭**이 메뉴를 추가/변경/삭제할 수 있다.
+                #  ⚠️ 종전 `_require("admin")` 이라 스탭 계정에서는 메뉴 추가가
+                #   조용히 실패했다(화면은 열리는데 저장이 안 됨).
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
                 title = _ev_safe(d.get("title", ""))
+                if not self._require_event_admin(year, title):
+                    return
                 if not title:
                     return self._json({"ok": False, "error": "title"}, 400)
                 tabs_in = d.get("customTabs")
@@ -12154,13 +27555,65 @@ class Handler(BaseHTTPRequestHandler):
                             nm = str(t.get("name", "") or "")[:60].strip()
                             if not nm:
                                 continue
+                            # [요구 2026-10-26] 메뉴추가 = **게시판형**.
+                            #  kind='board' 이면 글쓰기+첨부+다운로드가 되는
+                            #  게시판으로 렌더된다(기본값). kind='note' 는 종전
+                            #  메모형(하위 호환).
+                            _kind = str(t.get("kind", "") or "board")
+                            if _kind not in ("board", "note"):
+                                _kind = "board"
                             clean.append({
                                 "name": nm,
                                 "note": str(t.get("note", "") or "")[:4000],
+                                "kind": _kind,
+                                "openToAll": bool(t.get("openToAll", False)),
                             })
                         e["customTabs"] = clean
+                    # [요구] 행사 수정 — 입력했던 내용을 모두 수정할 수 있다.
+                    #   기간(시작/종료일)·장소·소개·담당자(복수)를 함께 저장한다.
+                    if "place" in d:
+                        e["place"] = str(d.get("place", "") or "")
+                    # (요구) 기획 시 지정한 지도 위치(좌표) 저장.
+                    if "lat" in d:
+                        e["lat"] = str(d.get("lat", "") or "")
+                    if "lng" in d:
+                        e["lng"] = str(d.get("lng", "") or "")
+                    if "mapQuery" in d:
+                        e["mapQuery"] = str(d.get("mapQuery", "") or "")
+                    if "desc" in d:
+                        e["desc"] = str(d.get("desc", "") or "")
+                    if "period" in d:
+                        e["period"] = str(d.get("period", "") or "")
+                    if "startDate" in d:
+                        e["startDate"] = str(d.get("startDate", "") or "")
+                    if "endDate" in d:
+                        e["endDate"] = str(d.get("endDate", "") or "")
+                    if "contacts" in d:
+                        e["contacts"] = _ev_norm_contacts(d.get("contacts"))
                     _ev_save(doc)
                 return self._json({"ok": True, "customTabs": e.get("customTabs", [])})
+            # ============ NAS 폴더 → 행사 자동 등록 ============
+            #  [요구 2026-10-30] "나스에 행사들을 추가했는데, 행사관리에서
+            #   자동으로 추가되지 않았음. 확인 후 업데이트 해줘"
+            #
+            #  · /preview : 무엇이 추가될지 **미리 보기** (아무것도 안 씀)
+            #  · /apply   : 실제 등록 (+ 항목 폴더 생성)
+            if p == "/api/event/nas/preview":
+                if not self._require("admin"):
+                    return
+                r = _ev_nas_sync(dry_run=True)
+                return self._json({"ok": True, **r})
+            if p == "/api/event/nas/sync":
+                if not self._require("admin"):
+                    return
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    d = {}
+                mk = d.get("createDirs", True) is not False
+                r = _ev_nas_sync(dry_run=False, create_dirs=mk)
+                _ev_list_cache_bust()
+                return self._json({"ok": True, **r})
             if p == "/api/event/create":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
@@ -12185,6 +27638,18 @@ class Handler(BaseHTTPRequestHandler):
                         "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "createdBy": str(d.get("by", "")),
                     })
+                    # (요구) 기획 시 지정한 지도 위치(좌표) 저장.
+                    e["lat"] = str(d.get("lat", "") or "")
+                    e["lng"] = str(d.get("lng", "") or "")
+                    e["mapQuery"] = str(d.get("mapQuery", "") or "")
+                    # [요구] 담당자 연락처(복수) — 참가신청 페이지 '문의하기' 노출용.
+                    if "contacts" in d:
+                        e["contacts"] = _ev_norm_contacts(d.get("contacts"))
+                    # [요구] 기간 시작일/종료일(구조화) — 달력 선택값.
+                    if "startDate" in d:
+                        e["startDate"] = str(d.get("startDate", "") or "")
+                    if "endDate" in d:
+                        e["endDate"] = str(d.get("endDate", "") or "")
                     e.setdefault("attendees", [])
                     e.setdefault("fees", [])
                     e.setdefault("expenses", [])
@@ -12245,6 +27710,136 @@ class Handler(BaseHTTPRequestHandler):
                     events[new_id] = e
                     _ev_save(doc)
                 return self._json({"ok": True, "id": new_id})
+            if p == "/api/event/archive":
+                # 소프트 삭제 — 행사를 휴지통(trash)으로 이동. 파일은 보존하며
+                # 활성 목록에서만 제외한다. 관리자/마스터 전용. 실수 삭제 대비.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not title:
+                    return self._json({"ok": False, "error": "title"}, 400)
+                deleted_by = str(d.get("by", "") or "")
+                with LOCK:
+                    doc = _ev_doc()
+                    events = doc.get("events", {})
+                    trash = doc.setdefault("trash", {})
+                    eid = _ev_id(year, title)
+                    e = None
+                    src_id = eid
+                    if eid in events:
+                        e = events.pop(eid)
+                    else:
+                        # year 불일치 대비 — 제목으로 탐색.
+                        for k in [k for k, v in events.items()
+                                  if str(v.get("title", "")) == title]:
+                            e = events.pop(k)
+                            src_id = k
+                            break
+                    if e is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    e = dict(e)
+                    e["deletedAt"] = datetime.datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S")
+                    e["deletedBy"] = deleted_by
+                    trash[str(src_id)] = e
+                    _ev_save(doc)
+                try:
+                    _ev_media_counts_invalidate(year, title)
+                    _ev_files_invalidate(year, title)
+                except Exception:
+                    pass
+                return self._json({"ok": True, "id": str(src_id), "trash": True})
+            if p == "/api/event/restore":
+                # 휴지통 → 복구. 관리자/마스터 전용.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                eid = str(d.get("id", "") or "").strip()
+                title = _ev_safe(d.get("title", ""))
+                year = _ev_safe(d.get("year", ""))
+                with LOCK:
+                    doc = _ev_doc()
+                    trash = doc.get("trash", {})
+                    events = doc.setdefault("events", {})
+                    key = None
+                    if eid and eid in trash:
+                        key = eid
+                    else:
+                        for k, v in trash.items():
+                            if isinstance(v, dict) and str(v.get("title", "")) == title:
+                                key = k
+                                break
+                    if key is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    e = trash.pop(key)
+                    if not isinstance(e, dict):
+                        e = {}
+                    e.pop("deletedAt", None)
+                    e.pop("deletedBy", None)
+                    if year:
+                        e["year"] = year
+                    elif not e.get("year"):
+                        e["year"] = key.split("::", 1)[0] if "::" in key else ""
+                    eid_new = _ev_id(e.get("year", ""), e.get("title", ""))
+                    events[eid_new] = e
+                    _ev_save(doc)
+                return self._json({"ok": True, "id": eid_new, "event": e})
+            if p == "/api/event/trash/list":
+                # 휴지통 목록 — 관리자/마스터 전용.
+                if not self._require("admin"):
+                    return
+                doc = _ev_doc()
+                return self._json({"ok": True, "trash": _ev_trash_entries(doc)})
+            if p == "/api/event/purge":
+                # 완전 삭제 — 휴지통에서 제거하고 NAS 파일/썸네일/개인프로필까지 삭제.
+                # 되돌릴 수 없음(휴지통 화면에서 한 번 더 확인). 관리자/마스터 전용.
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                ids = d.get("ids")
+                if not isinstance(ids, list):
+                    ids = [d.get("id", "")]
+                ids = [str(i) for i in ids if str(i).strip()]
+                purged = []
+                with LOCK:
+                    doc = _ev_doc()
+                    trash = doc.get("trash", {})
+                    for eid in ids:
+                        e = trash.pop(eid, None)
+                        if isinstance(e, dict):
+                            purged.append({
+                                "year": e.get("year", ""),
+                                "title": e.get("title", ""),
+                            })
+                    _ev_save(doc)
+                titles = []
+                for item in purged:
+                    y = _ev_safe(item.get("year", ""))
+                    t = _ev_safe(item.get("title", ""))
+                    if not t:
+                        continue
+                    titles.append(t)
+                    try:
+                        NAS.delete(_ev_dir(y, t))
+                    except Exception:
+                        pass
+                    try:
+                        NAS.delete(_ev_thumb_dir(y, t))
+                    except Exception:
+                        pass
+                    try:
+                        _ev_media_counts_invalidate(y, t)
+                        _ev_files_invalidate(y, t)
+                    except Exception:
+                        pass
+                if titles:
+                    try:
+                        _ev_remove_member_events(titles)
+                    except Exception as e:
+                        print("member event purge fail", e)
+                return self._json({"ok": True, "purged": purged})
             if p == "/api/event/delete":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
@@ -12294,20 +27889,100 @@ class Handler(BaseHTTPRequestHandler):
                 year = _ev_safe(d.get("year", ""))
                 title = _ev_safe(d.get("title", ""))
                 eid = _ev_id(year, title)
+                # ── [속도 turn72] NAS 쓰기를 한 번으로 모은다 ──────────────
+                #  ## 실측 (2026-11-07)
+                #   참가자 저장 1회가 **8.1초 / 7.7초 / 7.5초** 걸렸다.
+                #   이유는 한 번의 '저장'에 NAS 왕복이 **4번** 있었기 때문:
+                #     ① events.json 쓰기
+                #     ② members.json 백업(원본 읽기 + 백업 쓰기)
+                #     ③ members.json 쓰기
+                #     ④ _touch_meta() 쓰기
+                #   NAS 는 왕복 1회가 1.5~2초라 4번이면 6~8초가 된다.
+                #  ## 해결
+                #   회원 명부는 **메모리에서 한 번만** 갱신하고, 파일 쓰기도
+                #   **한 번만** 한다. 백업은 원본을 이미 읽은 김에 함께 남긴다.
+                #   (events.json 은 참가자 목록 자체라 별도로 써야 한다 — 2회)
+                readds = _ev_strip_view_keys(d.get("attendees", []))
+                linked_add = linked_del = 0
                 with LOCK:
                     doc = _ev_doc()
                     e = doc.get("events", {}).get(eid)
                     if not e:
                         return self._json({"ok": False, "error": "not found"}, 404)
-                    e["attendees"] = d.get("attendees", [])
+                    e["attendees"] = readds
                     _ev_save(doc)
-                # 회원 프로필(eventAttend) 연동 — 인가자·비인가자 모두 자동 반영.
+
+                # ── 회원 프로필 양방향 연동 (메모리 1회 로드 → 1회 저장) ──
                 try:
-                    _ev_link_attendees_to_profiles(
-                        d.get("attendees", []), title)
-                except Exception:
-                    pass
-                return self._json({"ok": True})
+                    members = _ev_members()
+                    is_new = not members
+                    idents, guests = [], []
+                    for a in readds:
+                        if not isinstance(a, dict):
+                            continue
+                        ident = _ev_attendee_ident(a)
+                        if not ident:
+                            continue
+                        idents.append(ident)
+                        if not re.sub(r"[^0-9]", "",
+                                      str(a.get("number", "") or "")):
+                            guests.append((ident,
+                                           str(a.get("name", "") or "")))
+
+                    keep = {re.sub(r"[^0-9]", "", str(i or ""))
+                            for i in idents}
+                    keep.discard("")
+                    keep_full = set(idents)
+
+                    touched = False
+                    for i, m in enumerate(members):
+                        if not isinstance(m, dict):
+                            continue
+                        mid = re.sub(r"[^0-9]", "", str(m.get("number", "")))
+                        mp = re.sub(r"[^0-9]", "", str(m.get("phone", "")))
+                        mlid = re.sub(r"[^0-9]", "", str(m.get("loginId", "")))
+                        ev = m.get("eventAttend")
+                        if not isinstance(ev, dict):
+                            ev = {}
+                        if mid in keep or mp in keep or mlid in keep:
+                            if ev.get(title) is not True:
+                                ev = dict(ev)
+                                ev[title] = True
+                                m["eventAttend"] = ev
+                                members[i] = m
+                                linked_add += 1
+                                touched = True
+                        elif ev.get(title) is True and \
+                                _ev_profile_ident_of(m) & keep_full:
+                            pass        # 명단에 그대로 있음
+                        elif ev.get(title) is True:
+                            # 명단에서 빠진 회원 → False (참가 이력 해제)
+                            ev = dict(ev)
+                            ev[title] = False
+                            m["eventAttend"] = ev
+                            members[i] = m
+                            linked_del += 1
+                            touched = True
+
+                    if touched or is_new:
+                        # 백업은 원본을 이미 읽었으므로 여기서 1회만.
+                        _ev_backup_members()
+                        _save_json(DB_FILE, members)
+                        _touch_meta({"count": len(members),
+                                     "updatedBy": "event"})
+                    # 전화만 있는 비인가자 계정 생성(백그라운드, 응답 지연 없음).
+                    for phone, name in guests:
+                        try:
+                            _ev_guest_ensure_account_async(phone, name, title)
+                        except Exception:
+                            pass
+                except Exception as _le:
+                    print("attendee link fail", _le)
+                return self._json({
+                    "ok": True,
+                    "linkedAdded": linked_add,
+                    "linkedRemoved": linked_del,
+                })
             if p == "/api/event/search-member":
                 d = json.loads(self._body() or b"{}")
                 q = re.sub(r"[^0-9가-힣A-Za-z]", "", str(d.get("q", ""))).lower()
@@ -12332,6 +28007,248 @@ class Handler(BaseHTTPRequestHandler):
                         break
                 return self._json({"ok": True, "results": results,
                                    "count": len(results)})
+            # ---- (요구) 개인정보 단건 조회 — 행사 수동입력 자동채움 ----
+            #   인가번호(또는 전화번호/이름) 하나로 이름·소속·성별·연락처·
+            #   메일·주소를 채우기 위한 조회. 범/은하 명단을 모두 확인한다.
+            #   은하스카우트는 범과 번호가 겹치므로 corps 힌트를 함께 받는다.
+            if p == "/api/member/lookup":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                raw_q = str(d.get("q", "") or "").strip()
+                digits = re.sub(r"[^0-9]", "", raw_q)
+                hint = str(d.get("corps", "") or "").strip().lower()
+                name_q = raw_q if not digits else ""
+                m = None
+                # ══════════════════════════════════════════════════════════
+                # [2026-10-29] 접두어가 신원이다 — 은하 표기가 있으면 은하만.
+                #
+                #  종전: `은하10` → 숫자 10 → 범 명단 먼저 → 범10(이순욱).
+                #   사용자는 은하10(이승용)을 원했는데 남의 카드가 열렸다.
+                #  3단계 "은하 폴백"도 위험했다 — 범에 없으면 같은 숫자의
+                #   은하 회원이 조용히 반환됐다(반대 방향 사고).
+                # ══════════════════════════════════════════════════════════
+                _qlow = raw_q.lower()
+                _q_eunha = (
+                    _ck_is_eunha(raw_q)
+                    or _qlow.startswith(("은하", "갤럭시", "galaxy", "eunha"))
+                )
+                if hint == "eunha":
+                    _q_eunha = True
+                # ── A. 은하 지정 입력 → 은하 명단만 조회(범 조회 금지) ──
+                if _q_eunha:
+                    if digits:
+                        m = _eunha_member_by_number(digits)
+                # ── B. 일반 입력 → 범 명단만 조회(은하 조회 금지) ──
+                #  `all:true` 는 아래 '후보 전부' 블록이 전담한다(중복 응답 방지).
+                elif raw_q and not bool(d.get("all")):
+                    try:
+                        m, _resolved = _member_by_ident_any(raw_q)
+                    except Exception:
+                        m = None
+                    # 이름만 입력한 경우 — 범 명단에서 **후보 전부** 수집.
+                    if m is None and name_q:
+                        _nm_hits = [
+                            _c for _c in _ev_members()
+                            if str(_c.get("name", "")).strip() == name_q
+                            and str(_c.get("corps") or "tsak").lower() != "eunha"
+                        ]
+                        if len(_nm_hits) == 1:
+                            m = _nm_hits[0]
+                        elif len(_nm_hits) > 1:
+                            # 동명이인 — 단정하지 않고 후보를 모두 내려준다.
+                            return self._json({
+                                "ok": True, "found": False,
+                                "ambiguous": True,
+                                "count": len(_nm_hits),
+                                "candidates": [
+                                    {
+                                        "id": str(_c.get("id", "")),
+                                        "name": str(_c.get("name", "")),
+                                        "numberLabel": (
+                                            "일반#" + re.sub(r"[^0-9]", "", str(
+                                                _c.get("phone") or _c.get(
+                                                    "accessPhone") or ""))
+                                            if _c.get("isRegular") else
+                                            "범#" + re.sub(r"[^0-9]", "", str(
+                                                _c.get("number", "")))),
+                                        "corps": str(
+                                            _c.get("corps") or "tsak"),
+                                        "isRegular": bool(
+                                            _c.get("isRegular")),
+                                        "unit": str(_c.get("regUnit")
+                                                    or _c.get("unit") or ""),
+                                    } for _c in _nm_hits[:20]
+                                ],
+                                "message": ("이름이 같은 회원이 %d명입니다. "
+                                            "인가번호나 전화번호로 조회하세요."
+                                            % len(_nm_hits)),
+                            })
+                # ══════════════════════════════════════════════════════
+                # [요구 2026-10-29] **후보 전부 보여 주기** (`all: true`)
+                #
+                #  "조회를 인가자, 비인가자 모두 노출되어서 선택할 수 있도록"
+                #  "인가자 중에도 동명 2인이 많고, 어떤 이름을 선택할지
+                #   노출해서 선택할 수 있도록"
+                #
+                #  이름만 넣었을 때 범/은하/일반 **전 계층**에서 일치 후보를
+                #  모아 내려준다. 1명이면 그대로 확정, 2명 이상이면 앱이
+                #  목록을 띄워 사용자가 직접 고른다(자동 단정 금지).
+                # ══════════════════════════════════════════════════════
+                if bool(d.get("all")):
+                    # ══════════════════════════════════════════════════
+                    # [2026-10-29 재수정] **접두어 우선 규칙을 여기에도 적용.**
+                    #
+                    #  종전엔 `corps == 'eunha'` 일 때만 은하를 뒤졌다. 그래서
+                    #  수동입력 시트가 보내는 `{"q":"은하10","all":true}` 는
+                    #  은하 가지를 **건너뛰고** 범10(이순욱)만 돌려줬다.
+                    #  → 사용자가 은하10 을 넣었는데 범10 이 나오는 그 사고.
+                    #
+                    #  이제 입력에 은하 표기가 있으면:
+                    #    · 범 명단은 **아예 뒤지지 않고**
+                    #    · 은하 명단만 본다. 없으면 "없음"이 정답이다.
+                    # ══════════════════════════════════════════════════
+                    _want_e = (
+                        str(d.get("corps", "") or "").lower() == "eunha"
+                        or _q_eunha
+                    )
+                    _seen, _cands = set(), []
+                    _q_d = digits
+                    _q_nm = str(raw_q or "").strip()
+
+                    def _push(_mm):
+                        if not isinstance(_mm, dict):
+                            return
+                        _k = str(_mm.get("id", "") or "")
+                        if not _k:
+                            _k = "%s|%s|%s" % (
+                                _mm.get("number", ""), _mm.get("name", ""),
+                                re.sub(r"[^0-9]", "", str(
+                                    _mm.get("phone") or "")))
+                        if _k in _seen:
+                            return
+                        _seen.add(_k)
+                        _cands.append(_mm)
+
+                    # 은하 지정 입력이면 범 명단은 건너뛴다(교차 오염 방지).
+                    for _mm in ([] if _want_e else (_ev_members() or [])):
+                        if str(_mm.get("corps") or "tsak").lower() == "eunha":
+                            continue
+                        _hit = False
+                        if _q_d:
+                            if _q_d in (
+                                re.sub(r"[^0-9]", "", str(_mm.get("number", ""))),
+                                re.sub(r"[^0-9]", "", str(_mm.get("phone", ""))),
+                                re.sub(r"[^0-9]", "", str(_mm.get("accessPhone", ""))),
+                                re.sub(r"[^0-9]", "", str(_mm.get("loginId", ""))),
+                            ):
+                                _hit = True
+                        if not _hit and _q_nm:
+                            if str(_mm.get("name", "")).strip() == _q_nm:
+                                _hit = True
+                        if _hit:
+                            _push(_mm)
+                    # 은하 지정이면 **항상** 은하 명단을 본다(후보 유무 무관).
+                    if _want_e or (not _q_d and not _cands):
+                        try:
+                            for _mm in (_load_json(EUNHA_DB_FILE, []) or []):
+                                _hit = False
+                                if _q_d:
+                                    if _q_d == re.sub(r"[^0-9]", "", str(
+                                            _mm.get("number", ""))):
+                                        _hit = True
+                                if not _hit and _q_nm:
+                                    if str(_mm.get("name", "")).strip() == _q_nm:
+                                        _hit = True
+                                if _hit:
+                                    _push(_mm)
+                        except Exception:
+                            pass
+
+                    def _label(_x):
+                        _c = str(_x.get("corps") or "tsak").lower()
+                        _d2 = re.sub(r"[^0-9]", "", str(
+                            _x.get("phone") or _x.get("accessPhone") or ""))
+                        if _x.get("isRegular"):
+                            return ("일반#" + _d2) if _d2 else "일반"
+                        _n2 = re.sub(r"[^0-9]", "", str(_x.get("number", "")))
+                        return ("은하#" if _c == "eunha" else "범#") + _n2
+
+                    _out = []
+                    for _x in _cands:
+                        _c = str(_x.get("corps") or "tsak").lower()
+                        _out.append({
+                            "id": str(_x.get("id", "")),
+                            "number": str(_x.get("number", "")),
+                            "name": str(_x.get("name", "")),
+                            "corps": "" if _x.get("isRegular") else _c,
+                            "corpsLabel": ("일반" if _x.get("isRegular")
+                                           else ("은하" if _c == "eunha" else "범")),
+                            "numberLabel": _label(_x),
+                            "isRegular": bool(_x.get("isRegular")),
+                            "league": str(_x.get("regLeague") or "").strip()
+                                      or str(_x.get("league") or "").strip(),
+                            "unit": str(_x.get("regUnit") or "").strip()
+                                    or str(_x.get("unit") or "").strip(),
+                            "gender": str(_x.get("gender", "")),
+                            "phone": str(_x.get("phone")
+                                         or _x.get("accessPhone") or ""),
+                            "email": str(_x.get("email", "")),
+                            "address": str(_x.get("address", "")),
+                        })
+                    _out.sort(key=lambda z: (not z["isRegular"], z["corps"], z["name"]))
+                    if not _out:
+                        return self._json({"ok": True, "found": False,
+                                           "candidates": []})
+                    return self._json({
+                        "ok": True, "found": len(_out) == 1,
+                        "ambiguous": len(_out) > 1,
+                        "count": len(_out),
+                        "candidates": _out,
+                        "member": _out[0] if len(_out) == 1 else None,
+                        "message": ("일치하는 회원이 %d명입니다. 한 명을 "
+                                    "선택하세요." % len(_out)) if len(_out) > 1
+                                   else "",
+                    })
+
+                if not m:
+                    return self._json({"ok": True, "found": False})
+                corps = str(m.get("corps") or "tsak")
+                is_regular = bool(m.get("isRegular"))
+                # 표시용 소속: 활동등록(regLeague/regUnit) 우선, 없으면 인가 소속.
+                league = str(m.get("regLeague") or "").strip() or \
+                         str(m.get("league") or "").strip()
+                unit = str(m.get("regUnit") or "").strip() or \
+                       str(m.get("unit") or "").strip()
+                pos = str(m.get("position") or "").strip()
+                if pos and pos not in unit:
+                    unit = (unit + " · " + pos).strip(" ·") if unit else pos
+                return self._json({
+                    "ok": True,
+                    "found": True,
+                    "member": {
+                        "id": str(m.get("id", "")),
+                        "number": str(m.get("number", "")),
+                        "name": str(m.get("name", "")),
+                        "corps": corps,
+                        "corpsLabel": ("은하" if corps == "eunha"
+                                       else ("일반" if is_regular else "범")),
+                        "numberLabel": (
+                            f"은하#{re.sub(r'[^0-9]', '', str(m.get('number', '')))}"
+                            if (corps == "eunha" and not is_regular) else
+                            (f"범#{re.sub(r'[^0-9]', '', str(m.get('number', '')))}"
+                             if not is_regular else
+                             "일반#" + re.sub(r"[^0-9]", "", str(
+                                 m.get("phone") or m.get("accessPhone") or "")))),
+                        "isRegular": is_regular,
+                        "league": league,
+                        "unit": unit,
+                        "gender": str(m.get("gender", "")),
+                        "phone": str(m.get("phone") or m.get("accessPhone") or ""),
+                        "email": str(m.get("email", "")),
+                        "address": str(m.get("address", "")),
+                    },
+                })
             # ---- 참가자 일괄 추가 (다중 선택) ----
             if p == "/api/event/attendees/add":
                 d = json.loads(self._body() or b"{}")
@@ -12348,11 +28265,28 @@ class Handler(BaseHTTPRequestHandler):
                     if not e:
                         return self._json({"ok": False, "error": "not found"}, 404)
                     for a in entries:
+                        # [2026-10-29] 신원을 **먼저 확정**한 뒤 중복 검사한다.
+                        #  종전: number/loginId/phone 에서 숫자가 없으면 `not ident`
+                        #   로 **그냥 건너뛰었다** → 번호·전화가 모두 없는
+                        #   비인가 참가자는 등록 자체가 불가능했다.
+                        #  또 필드를 수동 화이트리스트로 복사해 identityKey/
+                        #   licensed/corps 가 유실됐다(사고 원인 ①).
+                        a = _ev_normalize_identity(a)
                         ident = _ev_attendee_ident(a)
-                        if not ident or _ev_is_attendee(e, ident):
+                        ikey = str(a.get("identityKey", "") or "")
+                        # 중복 판정: 신원키 우선, 없으면 예전 방식(숫자)으로.
+                        dup = False
+                        for ex in e.get("attendees", []):
+                            if ikey and str(ex.get("identityKey", "")) == ikey:
+                                dup = True
+                                break
+                            if ident and _ev_attendee_ident(ex) == ident:
+                                dup = True
+                                break
+                        if dup:
                             added_skip += 1
                             continue
-                        e.setdefault("attendees", []).append({
+                        entry = {
                             "number": str(a.get("number", "")),
                             "loginId": str(a.get("loginId", "")),
                             "name": str(a.get("name", "")),
@@ -12360,9 +28294,15 @@ class Handler(BaseHTTPRequestHandler):
                             "league": str(a.get("league", "")),
                             "phone": str(a.get("phone", "")),
                             "roles": a.get("roles", []),
-                        })
+                            # 신원 명시 필드 — 저장 정본
+                            "identityKey": ikey,
+                            "identityType": str(a.get("identityType", "")),
+                            "licensed": bool(a.get("licensed")),
+                            "corps": str(a.get("corps", "") or ""),
+                        }
+                        e.setdefault("attendees", []).append(entry)
                         added_ok += 1
-                        added_idents.append(ident)
+                        added_idents.append(ident or ikey)
                     if added_ok:
                         _ev_save(doc)
                 # 회원 프로필(eventAttend) 연동 — 인가자·비인가자 모두 자동 반영.
@@ -12381,17 +28321,155 @@ class Handler(BaseHTTPRequestHandler):
                 if not year or not title:
                     return self._json({"ok": False, "error": "event",
                                        "message": "행사 정보가 없습니다."}, 400)
+                # 개인정보 활용(얼굴 사진 홍보 활용) 동의는 필수(요구).
+                if not bool(d.get("consent")):
+                    return self._json({"ok": False, "error": "consent",
+                                       "message": "개인정보 활용에 동의해 주세요."}, 400)
                 kind = str(d.get("kind", "")).strip()
                 if kind == "credentialed":
                     res, code = _ev_qr_join_credentialed(
-                        year, title, d.get("number", ""))
+                        year, title, d.get("number", ""), extra=d)
                 elif kind == "guest":
                     res, code = _ev_qr_join_guest(
-                        year, title, d.get("name", ""), d.get("phone", ""))
+                        year, title, d.get("name", ""), d.get("phone", ""),
+                        extra=d)
                 else:
                     res, code = ({"ok": False, "error": "kind",
                                   "message": "참여 유형이 올바르지 않습니다."}, 400)
                 return self._json(res, code)
+            # ---- [QR] 기존 회원 조회(인가번호/전화) — 참가신청 폼 프리필 ----
+            if p == "/api/event/qr/lookup":
+                d = json.loads(self._body() or b"{}")
+                q = re.sub(r"[^0-9]", "", str(d.get("q", "") or ""))
+                if not q:
+                    return self._json({"ok": False, "error": "q",
+                                       "message": "인가번호 또는 전화번호를 입력해 주세요."}, 400)
+                m = None
+                for _x in _ev_members():
+                    if (re.sub(r"[^0-9]", "", str(_x.get("number") or "")) == q
+                            or re.sub(r"[^0-9]", "", str(_x.get("phone") or "")) == q
+                            or re.sub(r"[^0-9]", "", str(_x.get("accessPhone") or "")) == q
+                            or re.sub(r"[^0-9]", "", str(_x.get("loginId") or "")) == q):
+                        m = _x
+                        break
+                if not m:
+                    return self._json({"ok": True, "found": False,
+                                       "message": "일치하는 회원이 없습니다."})
+                is_reg = bool(m.get("isRegular"))
+                num = re.sub(r"[^0-9]", "", str(m.get("number") or ""))
+                return self._json({
+                    "ok": True, "found": True,
+                    "member": {
+                        "number": num,
+                        "numberLabel": ("" if is_reg else
+                                        (("은하#" + num) if str(m.get("corps") or "") == "eunha"
+                                         else ("범#" + num))),
+                        "name": str(m.get("name") or ""),
+                        "phone": str(m.get("phone") or m.get("accessPhone") or ""),
+                        "email": str(m.get("email") or ""),
+                        "unit": str(m.get("regUnit") or m.get("unit") or ""),
+                        "league": str(m.get("regLeague") or m.get("league") or ""),
+                        "isRegular": is_reg,
+                    },
+                })
+            # ---- [QR] 참가자 명부 — 로그인(앱) 사용자만 ----
+            #  [요구] 참가자 명부·게시판 글은 QR 페이지에서 '노출하지 않는다'.
+            #   등록을 마친 사람이 앱(행사 게시판)에서만 열람하도록, 공개였던
+            #   이 엔드포인트도 이제 유효한 세션을 요구한다(개인정보 보호).
+            if p == "/api/event/qr/roster":
+                if not self._require():
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = _ev_safe(q.get("year", [""])[0])
+                title = _ev_safe(q.get("title", [""])[0])
+                doc = _ev_doc()
+                e = doc.get("events", {}).get(_ev_id(year, title))
+                if not e:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                rows = []
+                for a in _ev_attendees_view(e.get("attendees", [])):
+                    rows.append({
+                        "name": str(a.get("name") or ""),
+                        "corps": str(a.get("corps") or ""),
+                        "numberLabel": str(a.get("numberLabel") or ""),
+                        "roleCode": str(a.get("roleCode") or ""),
+                        "roleLabel": str(a.get("roleLabel") or ""),
+                        "unit": str(a.get("unitText") or a.get("unit") or ""),
+                        "phone": str(a.get("phone") or ""),
+                    })
+                return self._json({"ok": True, "count": len(rows), "roster": rows})
+            # ---- [QR] 참가자 명부 관리(마스터·관리자) — 삭제/수정 ----
+            if p == "/api/event/attendee/manage":
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                eid = _ev_id(year, title)
+                action = str(d.get("action", "")).strip()
+                ident = re.sub(r"[^0-9]", "", str(d.get("ident", "") or ""))
+                if not ident:
+                    return self._json({"ok": False, "error": "ident"}, 400)
+                changed = False
+                with LOCK:
+                    doc = _ev_doc()
+                    e = doc.get("events", {}).get(eid)
+                    if not e:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    att = e.get("attendees", [])
+                    if action == "delete":
+                        e["attendees"] = [a for a in att
+                                          if _ev_attendee_ident(a) != ident]
+                        changed = True
+                    elif action in ("move", "start", "up", "down", "top"):
+                        # 위치 변경: up/down/top 이동 또는 from→to 인덱스.
+                        idx = None
+                        for i, a in enumerate(att):
+                            if _ev_attendee_ident(a) == ident:
+                                idx = i
+                                break
+                        if idx is None:
+                            return self._json({"ok": False, "error": "not found"}, 404)
+                        item = att.pop(idx)
+                        if action == "top":
+                            att.insert(0, item)
+                        elif action == "up":
+                            att.insert(max(0, idx - 1), item)
+                        elif action == "down":
+                            att.insert(min(len(att), idx + 1), item)
+                        else:  # move (from→to)
+                            try:
+                                to = int(d.get("to"))
+                            except Exception:
+                                to = idx
+                            att.insert(max(0, min(len(att), to)), item)
+                        e["attendees"] = att
+                        changed = True
+                    elif action == "rename":
+                        nm = str(d.get("name", "") or "").strip()[:60]
+                        for a in att:
+                            if _ev_attendee_ident(a) == ident:
+                                a["name"] = nm
+                                changed = True
+                                break
+                    elif action == "role":
+                        roles = d.get("roles")
+                        if not isinstance(roles, list):
+                            roles = []
+                        roles = [str(r)[:20] for r in roles if str(r).strip()]
+                        for a in att:
+                            if _ev_attendee_ident(a) == ident:
+                                a["roles"] = roles
+                                changed = True
+                                break
+                    else:
+                        return self._json({"ok": False, "error": "action"}, 400)
+                    if changed:
+                        _ev_save(doc)
+                return self._json({"ok": True, "changed": changed,
+                                   "attendees": _ev_attendees_view(
+                                       (_ev_doc().get("events", {}).get(eid, {})
+                                        ).get("attendees", []))})
             # ---- QR 착지 페이지 (스캔 시 표시) ----
             if p == "/api/event/upload2":
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -12416,7 +28494,7 @@ class Handler(BaseHTTPRequestHandler):
                 written = 0
                 remaining = total
                 while remaining > 0:
-                    buf = self.rfile.read(min(262144, remaining))
+                    buf = self._rfile_read(min(262144, remaining))
                     if not buf:
                         break
                     tmp.write(buf)
@@ -12455,10 +28533,99 @@ class Handler(BaseHTTPRequestHandler):
                 if key == "media":
                     _ev_media_counts_invalidate(year, title)
                 try:
+                    _ev_files_invalidate(year, title, key, sub)
+                except Exception:
+                    pass
+                try:
                     os.unlink(tmp_path)
                 except Exception:
                     pass
                 return self._json({"ok": True, "name": up_name, "size": written, "kind": kind})
+            if p == "/api/event/dist/upload":
+                # [요구] 행사 등록/수정 시 첨부파일(복수)을
+                #   기획서 폴더 하위 '참가신청시 배포용' 폴더로 저장한다.
+                #   → 업로드 즉시 참가신청 페이지에서 다운로드 가능.
+                if not self._require("admin"):
+                    return
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                year = _ev_safe(q.get("year", [""])[0])
+                title = _ev_safe(q.get("title", [""])[0])
+                up_name = _safe_name(q.get("name", [""])[0])
+                if not (year and title and up_name):
+                    return self._json({"ok": False, "error": "bad request"}, 400)
+                base = _ev_dir(year, title)
+                if not NAS.exists(base):
+                    _ensure_event_dirs(year, title)
+                fp_dir = _ev_dist_dir(year, title)
+                if not NAS.exists(fp_dir):
+                    _ev_mkdir_deep(fp_dir)
+                total = int(self.headers.get("Content-Length", 0) or 0)
+                import tempfile
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=_ext_of(up_name) or ".bin", delete=False)
+                tmp_path = tmp.name
+                written = 0
+                remaining = total
+                while remaining > 0:
+                    buf = self._rfile_read(min(262144, remaining))
+                    if not buf:
+                        break
+                    tmp.write(buf)
+                    written += len(buf)
+                    remaining -= len(buf)
+                tmp.close()
+                ctyp = self.headers.get("Content-Type",
+                                        "application/octet-stream")
+                try:
+                    with open(tmp_path, "rb") as f:
+                        def _file_chunks():
+                            while True:
+                                b = f.read(262144)
+                                if not b:
+                                    break
+                                yield b
+                        NAS.write_stream(f"{fp_dir}/{up_name}", _file_chunks(),
+                                         size=written, content_type=ctyp)
+                except Exception as e:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+                    return self._json({"ok": False, "error": str(e)}, 500)
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+                _ev_dist_invalidate(year, title)
+                return self._json({"ok": True, "name": up_name, "size": written,
+                                   "dir": "참가신청시 배포용"})
+            if p == "/api/event/dist/delete":
+                # 배포용 자료 삭제(관리자·마스터).
+                if not self._require("admin"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                name = _safe_name(d.get("name", ""))
+                if not (year and title and name):
+                    return self._json({"ok": False, "error": "bad request"}, 400)
+                fp = None
+                for _d in _ev_dist_dirs_all(year, title):
+                    _cand = f"{_d}/{name}"
+                    try:
+                        if NAS.exists(_cand):
+                            fp = _cand
+                            break
+                    except Exception:
+                        continue
+                if not fp:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                try:
+                    NAS.delete(fp)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 500)
+                _ev_dist_invalidate(year, title)
+                return self._json({"ok": True})
             if p == "/api/event/mkdir":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
@@ -12500,6 +28667,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
                     _ev_media_counts_invalidate(year, title)
+                    _ev_files_invalidate(year, title, key, sub)
                 ukey = f"{_ev_sub_safe(sub)}/{name}" if _ev_sub_safe(sub) else name
                 with LOCK:
                     doc = _ev_doc()
@@ -12548,6 +28716,10 @@ class Handler(BaseHTTPRequestHandler):
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
                 title = _ev_safe(d.get("title", ""))
+                # 관리자·마스터 또는 해당 행사 스탭만 (요구 2026-10-26).
+                #  ⚠️ 종전 이 엔드포인트에는 인증 검사가 **아예 없었다**.
+                if not self._require_event_admin(year, title):
+                    return
                 kind = d.get("kind", "fee")  # fee | expense
                 row = d.get("row", {})
                 eid = _ev_id(year, title)
@@ -12579,29 +28751,58 @@ class Handler(BaseHTTPRequestHandler):
                     "source": "event",
                 }
                 try:
-                    _ev_fin_add(tx)
+                    _ev_fin_add(tx)   # ← 내부에서 인가번호→개인카드 링크
                 except Exception as ex:
                     print("fin add fail", ex)
-                return self._json({"ok": True, "row": row})
+                # (요구) 화면에서 "개인카드에 반영됨/인가번호 확인"을 즉시 알 수 있게
+                #   링크 결과를 응답에 실어 보낸다.
+                return self._json({
+                    "ok": True,
+                    "row": row,
+                    "linked": tx.get("status") == "matched",
+                    "memberId": tx.get("memberId", ""),
+                    "memberName": tx.get("name", ""),
+                })
             if p == "/api/event/finance/delete":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
                 title = _ev_safe(d.get("title", ""))
+                if not self._require_event_admin(year, title):
+                    return
                 kind = d.get("kind", "fee")
                 rid = str(d.get("id", ""))
                 eid = _ev_id(year, title)
                 target = None
+                # ── [버그 수정 2026-10-26] '삭제'가 조용히 실패하던 문제 ──
+                #  화면은 kind 를 `fee | donation | expense` 로 보내는데,
+                #  종전 코드는 `kind == "fee"` 가 **아니면 전부** expenses 로
+                #  간주했다. 그래서 후원(kind='donation') 삭제 요청이
+                #  expenses 배열을 뒤지고, 못 찾아도 아래에서 **ok=True** 를
+                #  돌려줬다 → 화면에는 '성공'으로 보이지만 그대로 남았다.
+                #  수정: fee 가 아니면 expense 인지 **명시적으로 검증**하고,
+                #  대상 id 를 못 찾으면 404 로 정직하게 알린다.
+                if kind not in ("fee", "expense", "donation"):
+                    return self._json(
+                        {"ok": False, "error": "bad kind"}, 400)
+                arr_key = "expenses" if kind == "expense" else "fees"
                 with LOCK:
                     doc = _ev_doc()
                     e = doc.get("events", {}).get(eid)
-                    if e:
-                        arr = e.get("fees" if kind == "fee" else "expenses", [])
-                        for i, r in enumerate(arr):
-                            if str(r.get("id", "")) == rid:
-                                target = r
-                                arr.pop(i)
-                                break
-                        _ev_save(doc)
+                    if not e:
+                        return self._json(
+                            {"ok": False, "error": "event not found"}, 404)
+                    arr = e.get(arr_key, [])
+                    for i, r in enumerate(arr):
+                        if str(r.get("id", "")) == rid:
+                            target = r
+                            arr.pop(i)
+                            break
+                    if target is None:
+                        # 지우지 못했으면 저장도 하지 않고 실패를 알린다.
+                        return self._json(
+                            {"ok": False, "error": "item not found",
+                             "kind": kind, "id": rid}, 404)
+                    _ev_save(doc)
                 if target:
                     try:
                         _ev_fin_remove({
@@ -12613,27 +28814,100 @@ class Handler(BaseHTTPRequestHandler):
                         })
                     except Exception:
                         pass
+                    # (요구) 항목별 자료도 함께 정리 — 단, 재무관리 원장에 같은
+                    #   자료키의 거래가 아직 남아 있으면 자료를 지우지 않는다
+                    #   (다른 화면에서 쓰고 있을 수 있으므로).
+                    try:
+                        txid = _ev_fin_txid(rid)
+                        still = any(
+                            str(t.get("id", "")) == txid
+                            for t in _load_json(FIN_FILE, _default_finance())
+                            .get("transactions", [])
+                        )
+                        if txid and not still:
+                            _ev_fin_attach_purge(txid)
+                    except Exception:
+                        pass
                 return self._json({"ok": True})
             if p == "/api/event/finance/update":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
                 title = _ev_safe(d.get("title", ""))
+                if not self._require_event_admin(year, title):
+                    return
                 kind = d.get("kind", "fee")
                 rid = str(d.get("id", ""))
                 row = d.get("row", {})
                 row["id"] = rid
+                # ── [버그 수정 2026-10-26] delete 와 같은 kind 함정 ──
+                #  화면은 'donation' 을 보내는데 종전엔 `kind == "fee"` 가
+                #  아니면 무조건 expenses 를 뒤졌다 → 후원 행 수정이
+                #  엉뚱한 배열을 건드리고 조용히 성공으로 끝났다.
+                if kind not in ("fee", "expense", "donation"):
+                    return self._json({"ok": False, "error": "bad kind"}, 400)
+                arr_key = "expenses" if kind == "expense" else "fees"
                 with LOCK:
                     doc = _ev_doc()
                     e = doc.get("events", {}).get(_ev_id(year, title))
                     if not e:
                         return self._json({"ok": False, "error": "not found"}, 404)
-                    arr = e.get("fees" if kind == "fee" else "expenses", [])
+                    arr = e.get(arr_key, [])
+                    hit_idx = None
                     for i, r in enumerate(arr):
                         if str(r.get("id", "")) == rid:
-                            arr[i] = row
+                            hit_idx = i
                             break
+                    if hit_idx is None:
+                        return self._json(
+                            {"ok": False, "error": "item not found"}, 404)
+                    arr[hit_idx] = row
                     _ev_save(doc)
-                return self._json({"ok": True})
+                # (버그 수정) 종전에는 행사 재무 행만 고치고 **재무 원장은 그대로**
+                #  였다. 그래서 인가번호를 나중에 채워 넣어도 개인카드에는
+                #  반영되지 않았다. → 원장 거래를 같은 키로 찾아 갱신한다.
+                linked = False
+                try:
+                    txid = _ev_fin_txid(rid)
+                    fin = _load_json(FIN_FILE, _default_finance())
+                    txs = fin.get("transactions", [])
+                    hit = None
+                    for t in txs:
+                        if str(t.get("id", "")) == txid:
+                            hit = t
+                            break
+                    if hit is not None:
+                        hit.update({
+                            "date": str(row.get("date", "")),
+                            "payer": str(row.get("name", "")),
+                            "name": str(row.get("name", "")),
+                            "number": str(row.get("number", "")),
+                            "amount": int(row.get("amount", 0) or 0),
+                            "category": ("행사비" if kind == "expense"
+                                         else ("참가비" if row.get("category", "참가비") == "참가비"
+                                               else str(row.get("category", "후원")))),
+                            "event": title,
+                            "context": f"{year} {title}",
+                            "memo": str(row.get("memo", "")),
+                            "year": year,
+                            "source": "event",
+                            "memberId": "",
+                            "status": "unmatched",
+                        })
+                        _fin_member_link(hit)
+                        linked = hit.get("status") == "matched"
+                        fin["version"] = int(fin.get("version", 0)) + 1
+                        fin["updated"] = datetime.datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S")
+                        _save_json(FIN_FILE, fin)
+                        # [속도 turn73] 집계는 지연 기록(등록/수정 응답 가속).
+                        try:
+                            _hist_save_lazy(_hist_compute(fin))
+                            _hist_flush_tick()
+                        except Exception:
+                            pass
+                except Exception as ex:
+                    print("fin update relink fail", ex)
+                return self._json({"ok": True, "linked": linked})
             if p == "/api/event/access/log":
                 d = json.loads(self._body() or b"{}")
                 year = _ev_safe(d.get("year", ""))
@@ -12740,23 +29014,932 @@ class Handler(BaseHTTPRequestHandler):
                     "note": "" if mailed else
                     "메일 서버 미설정: 문의가 서버에 접수되었습니다.",
                 })
+            # ============ 행사 커스텀 게시판 — 쓰기 (do_POST 본체) ============
+            # ── [치명 버그 수정 2026-10-26] 이 엔드포인트들이 **do_GET 안에**
+            #    들어 있어서 POST 로 부르면 라우터가 못 찾고
+            #    `404 {"ok":false,"error":"unknown"}` 을 돌려주고 있었다.
+            #    (실측: POST /api/event/cboard/create → 404)
+            #    그런데 앱은 `json.decode(r.bodyBytes)` 로 응답을 그대로 파싱해
+            #    예외를 던졌고, 화면에는
+            #      "FormatException: Unexpected token '<', \"<!DOCTYPE\" ... "
+            #    가 떴다. → 아래와 같이 **do_POST 로 이동**하고 게시판 관리·
+            #      비밀번호·읽음기록까지 한 곳에서 처리한다.
+            if p == "/api/event/cboard/create":
+                # 게시판 생성/이름·권한 수정.
+                #  [요구 2026-10-26] "B + A 조합" — 관리자·마스터 **또는 해당
+                #  행사 스탭**이 메뉴(게시판)를 만들고 고칠 수 있다.
+                #  (스탭은 이미 그 행사 전체 열람·재무 편집 권한을 갖는다)
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not self._require_event_admin(year, title):
+                    return
+                name = str(d.get("name", "") or "").strip()[:60]
+                if not title or not name:
+                    return self._json({"ok": False, "error": "params"}, 400)
+                bid = str(d.get("id", "") or "") or _cb_board_id(name)
+                now = _now_stamp()
+                with LOCK:
+                    doc = _cb_doc()
+                    ev = doc.setdefault("events", {}).setdefault(
+                        _ev_id(year, title), {"boards": {}})
+                    boards = ev.setdefault("boards", {})
+                    cur = boards.get(bid) or {}
+                    # 노출권한: visibility 우선, 없으면 옛 openToAll 로 환산.
+                    if "visibility" in d:
+                        vis = str(d.get("visibility") or "").strip()
+                        if vis not in CB_VIS_VALUES:
+                            return self._json(
+                                {"ok": False, "error": "visibility"}, 400)
+                    elif "openToAll" in d:
+                        vis = (CB_VIS_ALL if bool(d.get("openToAll"))
+                               else CB_VIS_ADMIN)
+                    else:
+                        vis = _cb_visibility(cur)
+                    boards[bid] = {
+                        "id": bid,
+                        "name": name,
+                        "note": str(d.get("note", cur.get("note", "")) or "")[:4000],
+                        "visibility": vis,
+                        "openToAll": vis == CB_VIS_ALL,   # 옛 클라이언트 호환
+                        "owner": str(cur.get("owner") or _cb_ident(self._sess())),
+                        "created": str(cur.get("created") or now),
+                        "updated": now,
+                        "posts": list(cur.get("posts") or []),
+                    }
+                    _cb_save(doc)
+                return self._json({"ok": True, "id": bid, "visibility": vis})
+            if p == "/api/event/cboard/visibility":
+                # 노출권한 지정(3단계). [요구 2026-10-26] 관리자·마스터 또는 스탭.
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not self._require_event_admin(year, title):
+                    return
+                bid = str(d.get("id", "") or "")
+                vis = str(d.get("visibility", "") or "").strip()
+                if not title or not bid or vis not in CB_VIS_VALUES:
+                    return self._json({"ok": False, "error": "params"}, 400)
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    b["visibility"] = vis
+                    b["openToAll"] = vis == CB_VIS_ALL   # 옛 클라이언트 호환
+                    b["updated"] = _now_stamp()
+                    _cb_save(doc)
+                return self._json({"ok": True, "visibility": vis})
+            if p == "/api/event/cboard/toggle":
+                # (하위호환) 예전 앱이 부르던 2단계 토글 → all ↔ admin.
+                #  [요구 2026-10-26] 관리자·마스터 또는 스탭.
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                if not self._require_event_admin(year, title):
+                    return
+                bid = str(d.get("id", "") or "")
+                if not title or not bid:
+                    return self._json({"ok": False, "error": "params"}, 400)
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    cur_all = _cb_visibility(b) == CB_VIS_ALL
+                    nv = (not cur_all) if "value" not in d else bool(d.get("value"))
+                    b["visibility"] = CB_VIS_ALL if nv else CB_VIS_ADMIN
+                    b["openToAll"] = bool(nv)
+                    b["updated"] = _now_stamp()
+                    _cb_save(doc)
+                    v = bool(b["openToAll"])
+                    cur_vis = b["visibility"]
+                return self._json({"ok": True, "openToAll": v,
+                                   "visibility": cur_vis})
+            if p == "/api/event/cboard/board/delete":
+                # 게시판 삭제(글·첨부목록 포함).
+                #  [요구 2026-10-26] 앱은 이 동작을 **마스터 전용**으로 보여준다
+                #  (`MenuManageRights.canDeleteBoard => isMaster`). 서버는 지금까지
+                #  `_require("admin")` 이라 관리자도 통과했다 — UI 와 서버가
+                #  어긋나면 "보이지 않는 버튼이 실제로는 동작"하는 셈이라
+                #  서버를 마스터로 **좁혀서** 양쪽을 일치시킨다.
+                #  (관리자는 '탭에서 빼기'로 목록에서 제거할 수 있고, 게시판
+                #   데이터는 보존된다. 글까지 지우는 건 마스터만.)
+                #  NAS 의 실제 첨부파일은 지우지 않는다(복구 여지 남김).
+                if not self._require("master"):
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("id", "") or "")
+                if not title or not bid:
+                    return self._json({"ok": False, "error": "params"}, 400)
+                with LOCK:
+                    doc = _cb_doc()
+                    ev = (doc.get("events") or {}).get(_ev_id(year, title)) or {}
+                    boards = ev.get("boards") or {}
+                    if bid not in boards:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    removed = boards.pop(bid)
+                    _cb_save(doc)
+                return self._json({"ok": True,
+                                   "removedPosts": len(removed.get("posts") or [])})
+            # ══ 추모관 — 글쓰기/수정/삭제/숨김/이동/공감/댓글 ═════════════
+            #  [요구 2026-11-04] **로그인 없이** 쓰고 고칠 수 있어야 한다.
+            #   → 세션 검사를 하지 않는다. 대신 글마다 editKey(수정키)를 발급.
+            if p == "/api/memorial/post":
+                # 글 작성·수정.
+                #  {id?(추모관), postId?(수정 시), name, number, body,
+                #   photos[], attachments[], editKey?(수정 시), kind?}
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                mid = str(d.get("id", "") or "noh-kyungha")
+                if mid not in MEM_MEMORIALS:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                body = str(d.get("body", "") or "").strip()
+                # ── [요구 2026-11-06] 사진 상한 **50장**
+                #  변천: 12 → 20(2026-11-04) → **50**(2026-11-06)
+                #  요구(원문): "한번에 올릴 수 있는 사진수 제한을 50장으로 늘릴 것"
+                #  20장은 행사·추모 사진을 한 번에 정리할 때 금방 찼다.
+                #  초과분을 조용히 자르지 않고 개수를 세어 **명확히 알린다**는
+                #  정책은 그대로 유지한다(올리고 나서 거절당하면 헛수고).
+                #
+                #  ⚠️ 앱(lib/screens/memorial_screen.dart 의 maxMedia)과
+                #     웹(memorial.html 안내문)도 **같은 값**이어야 한다.
+                #     서버만 올리면 앱이 20에서 먼저 막고,
+                #     앱만 올리면 서버가 50 초과분을 400 으로 거절한다.
+                MEM_MAX_MEDIA = 50
+
+                # ── [치명 버그 수정 2026-11-04] 첨부가 문자열로 뭉개지던 문제 ──
+                #  종전: `photos = [str(x) for x in ...]`
+                #  앱·웹은 첨부를 `{name, url, size}` **객체**로 보내는데,
+                #  `str(x)` 가 이를 파이썬 repr 문자열
+                #  `"{'name': '사진.jpg', 'url': '/memorial-file/...', ...}"`
+                #  로 바꿔 버렸다. 그 결과
+                #    · 확장자를 읽을 수 없어 사진/영상 판정이 전부 '기타'가 되고
+                #      → [요구] "사진폴더에 노출시켜줘" 가 원천적으로 불가능,
+                #    · 화면에는 `{&#39;name&#39;...}` 같은 쓰레기 문자열이 표시되고,
+                #    · 다운로드 링크 URL 이 깨져 눌러도 열리지 않았다.
+                #  → **URL 문자열만** 문자열로 정규화하고 나머지는 dict 그대로 둔다.
+                def _norm_url_list(v):
+                    """URL 목록 정규화 — dict 면 url 을, 아니면 문자열로."""
+                    out = []
+                    for x in (v or []):
+                        if isinstance(x, dict):
+                            u = str(x.get("url") or "").strip()
+                        else:
+                            u = str(x or "").strip()
+                        if u:
+                            out.append(u)
+                    return out
+
+                def _norm_att_list(v):
+                    """첨부 목록 정규화 — {name,url,size} 구조를 **보존**한다."""
+                    out = []
+                    for x in (v or []):
+                        if isinstance(x, dict):
+                            u = str(x.get("url") or "").strip()
+                            if not u:
+                                continue
+                            try:
+                                sz = int(x.get("size") or 0)
+                            except Exception:
+                                sz = 0
+                            out.append({
+                                "name": str(x.get("name") or u.rsplit("/", 1)[-1])[:200],
+                                "url": u[:600],
+                                "size": sz,
+                            })
+                        else:
+                            u = str(x or "").strip()
+                            if not u:
+                                continue
+                            out.append({
+                                "name": u.rsplit("/", 1)[-1][:200],
+                                "url": u[:600],
+                                "size": 0,
+                            })
+                    return out
+
+                photos = _norm_url_list(d.get("photos"))
+                atts = _norm_att_list(d.get("attachments"))
+                if len(photos) > MEM_MAX_MEDIA:
+                    return self._json(
+                        {"ok": False,
+                         "error": "사진은 한 번에 %d장까지 올릴 수 있습니다"
+                                  " (지금 %d장)" % (MEM_MAX_MEDIA, len(photos))},
+                        400)
+                if len(atts) > MEM_MAX_MEDIA:
+                    return self._json(
+                        {"ok": False,
+                         "error": "자료는 한 번에 %d개까지 올릴 수 있습니다"
+                                  " (지금 %d개)" % (MEM_MAX_MEDIA, len(atts))},
+                        400)
+                if len(body) > 4000:
+                    return self._json(
+                        {"ok": False, "error": "본문이 너무 깁니다(4000자 이내)"}, 400)
+                if not body and not photos and not atts:
+                    return self._json(
+                        {"ok": False, "error": "내용이나 사진·자료를 넣어주세요"}, 400)
+                sess = self._sess() or {}
+                is_admin = _cb_is_admin(sess)
+                ip = _mem_mask_ip(self.client_address[0] if self.client_address else "")
+                pid_in = str(d.get("postId", "") or "").strip()
+                now = _now_stamp()
+                with LOCK:
+                    doc = _mem_doc()
+                    allp = doc.setdefault("posts", {})
+                    arr = list(allp.get(mid) or [])
+                    cur = None
+                    if pid_in:
+                        cur = next((x for x in arr
+                                    if str(x.get("id")) == pid_in), None)
+                        if cur is None:
+                            return self._json(
+                                {"ok": False, "error": "not found"}, 404)
+                        if not _mem_can_manage(cur, sess,
+                                               str(d.get("editKey", "") or "")):
+                            return self._json(
+                                {"ok": False,
+                                 "error": "수정 권한이 없습니다(글쓴이 또는 관리자만)"},
+                                403)
+                    edit_key = ""
+                    if cur is None:
+                        # 신규 — 스팸 제한 적용 (관리자·마스터는 예외)
+                        if not is_admin and not _mem_rate_ok(
+                                self.client_address[0]
+                                if self.client_address else "?"):
+                            return self._json(
+                                {"ok": False,
+                                 "error": "잠시 후 다시 시도해 주세요(1분 8건 제한)"},
+                                429)
+                        pid = "m" + _secrets.token_urlsafe(8)
+                        secret = _secrets.token_urlsafe(16)
+                        edit_key = _mem_edit_key(pid, secret)
+                        row = {
+                            "id": pid,
+                            "editKey": edit_key,
+                            "created": now,
+                            "deleted": False,
+                            "hidden": False,
+                            "likes": [],
+                            "comments": [],
+                            "ipMask": ip,
+                        }
+                        row["ownerKey"] = _mem_owner_key(d.get("number"))
+                    else:
+                        row = dict(cur)
+                        pid = str(cur.get("id"))
+                    # 작성자 정보 — 관리자가 아니면 **최초 작성자**를 유지한다.
+                    if cur is None or is_admin:
+                        row["name"] = str(d.get("name", "") or "").strip()[:40]
+                        row["number"] = re.sub(
+                            r"[^0-9G]", "",
+                            str(d.get("number", "") or "").strip())[:12]
+                    row["body"] = body
+                    row["photos"] = photos
+                    row["attachments"] = atts
+                    # 종류 자동 판정(첫 화면 필터용).
+                    #  [요구 2026-11-04] "첨부파일로 올린 자료도 사진, 영상일
+                    #   경우 사진폴더에 노출시켜줘"
+                    #  ⚠️ 종전에는 `if atts: kind='자료'` 였다. 그래서 사진을
+                    #   '자료 올리기'로 올리면 사진 탭에서 사라졌다.
+                    #   → 첨부의 **실물 종류**를 보고 판정한다.
+                    #     미디어(사진·영상)만 있으면 '사진',
+                    #     PDF·문서가 섞여 있으면 '자료',
+                    #     아무것도 없으면 '글'.
+                    #  (읽을 때 _mem_pub 이 한 번 더 계산하므로 이 값은
+                    #   목록 정렬·통계용 참고값이다)
+                    _kind_chk = {"photos": photos, "attachments": atts}
+                    _m, _other, _kc = _mem_media_of(_kind_chk)
+                    row["kind"] = _kc
+                    # 클라이언트가 명시적으로 보냈더라도 **미디어가 있는데
+                    #  '글'로 낮추지는 못하게** 한다(사진이 사라지는 요구 위반).
+                    req_kind = str(d.get("kind", "") or "")
+                    if req_kind in ("글", "사진", "자료"):
+                        if req_kind == "글" and (_m or _other):
+                            pass          # 무시 — 첨부가 있으면 글이 아니다
+                        elif req_kind == "사진" and _other:
+                            row["kind"] = "자료"   # 문서가 섞였으면 자료
+                        else:
+                            row["kind"] = req_kind
+                    row["updated"] = now
+                    if cur:
+                        arr[arr.index(cur)] = row
+                    else:
+                        arr.append(row)
+                    allp[mid] = arr
+                    _mem_save(doc)
+                return self._json({"ok": True, "id": pid,
+                                   "editKey": edit_key if edit_key else None})
+            if p == "/api/memorial/delete":
+                # 삭제(실제 제거) · 숨김(가리기) · 이동(다른 추모관으로)
+                #  {id, postId, action:'delete'|'hide'|'unhide'|'move',
+                #   editKey?, targetId?(이동)}
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                mid = str(d.get("id", "") or "noh-kyungha")
+                pid = str(d.get("postId", "") or "")
+                act = str(d.get("action", "delete") or "delete")
+                sess = self._sess() or {}
+                is_admin = _cb_is_admin(sess)
+                with LOCK:
+                    doc = _mem_doc()
+                    allp = doc.get("posts") or {}
+                    arr = list(allp.get(mid) or [])
+                    tgt = next((x for x in arr if str(x.get("id")) == pid), None)
+                    if tgt is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    if act == "move":
+                        # 이동은 관리자·마스터만 (글쓴이가 남의 추모관으로 옮기면 안 됨)
+                        if not is_admin:
+                            return self._json(
+                                {"ok": False, "error": "이동 권한이 없습니다"}, 403)
+                        tid = str(d.get("targetId", "") or "")
+                        if tid not in MEM_MEMORIALS or tid == mid:
+                            return self._json(
+                                {"ok": False, "error": "대상 추모관이 올바르지 않습니다"}, 400)
+                        arr = [x for x in arr if str(x.get("id")) != pid]
+                        tgt = dict(tgt)
+                        tgt["movedFrom"] = mid
+                        tgt["movedAt"] = _now_stamp()
+                        if tgt.get("kind") is None:
+                            tgt["kind"] = "글"
+                        tgt["updated"] = _now_stamp()
+                        tgt2 = list((allp.get(tid) or [])) + [tgt]
+                        allp[tid] = tgt2
+                    else:
+                        if not is_admin and not _mem_can_manage(
+                                tgt, sess, str(d.get("editKey", "") or "")):
+                            return self._json(
+                                {"ok": False, "error": "권한이 없습니다"}, 403)
+                        if act == "delete":
+                            arr = [x for x in arr if str(x.get("id")) != pid]
+                        elif act == "hide":
+                            tgt["hidden"] = True
+                            tgt["updated"] = _now_stamp()
+                            arr[arr.index(tgt)] = tgt
+                        elif act == "unhide":
+                            tgt["hidden"] = False
+                            tgt["updated"] = _now_stamp()
+                            arr[arr.index(tgt)] = tgt
+                        else:
+                            return self._json(
+                                {"ok": False, "error": "action"}, 400)
+                    allp[mid] = arr
+                    doc["posts"] = allp
+                    _mem_save(doc)
+                return self._json({"ok": True})
+            if p == "/api/memorial/like":
+                # 공감 — 로그인 없이도 누를 수 있다(브라우저당 1회, likeKey 로 식별).
+                #  {id, postId, likeKey}
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                mid = str(d.get("id", "") or "noh-kyungha")
+                pid = str(d.get("postId", "") or "")
+                lk = re.sub(r"[^A-Za-z0-9_-]", "",
+                            str(d.get("likeKey", "") or ""))[:40]
+                if not lk:
+                    return self._json({"ok": False, "error": "likeKey"}, 400)
+                with LOCK:
+                    doc = _mem_doc()
+                    allp = doc.get("posts") or {}
+                    arr = list(allp.get(mid) or [])
+                    tgt = next((x for x in arr if str(x.get("id")) == pid), None)
+                    if tgt is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    likes = list(tgt.get("likes") or [])
+                    if lk in likes:
+                        likes.remove(lk)   # 토글(취소)
+                        liked = False
+                    else:
+                        likes.append(lk)
+                        liked = True
+                    tgt["likes"] = likes
+                    arr[arr.index(tgt)] = tgt
+                    allp[mid] = arr
+                    doc["posts"] = allp
+                    _mem_save(doc)
+                return self._json({"ok": True, "liked": liked,
+                                   "likeCount": len(likes)})
+            if p == "/api/memorial/comment":
+                # 댓글 — {id, postId, name, number, body}
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                mid = str(d.get("id", "") or "noh-kyungha")
+                pid = str(d.get("postId", "") or "")
+                body = str(d.get("body", "") or "").strip()
+                if not body:
+                    return self._json({"ok": False, "error": "내용 없음"}, 400)
+                if len(body) > 1000:
+                    return self._json(
+                        {"ok": False, "error": "댓글이 너무 깁니다(1000자 이내)"}, 400)
+                if not _mem_rate_ok(
+                        (self.client_address[0] if self.client_address else "?") + "|c",
+                        limit=10, window=60.0):
+                    return self._json(
+                        {"ok": False, "error": "잠시 후 다시 시도해 주세요"}, 429)
+                with LOCK:
+                    doc = _mem_doc()
+                    allp = doc.get("posts") or {}
+                    arr = list(allp.get(mid) or [])
+                    tgt = next((x for x in arr if str(x.get("id")) == pid), None)
+                    if tgt is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    cid = "c" + _secrets.token_urlsafe(6)
+                    cs = list(tgt.get("comments") or [])
+                    cs.append({
+                        "id": cid,
+                        "name": str(d.get("name", "") or "").strip()[:40],
+                        "number": re.sub(
+                            r"[^0-9G]", "",
+                            str(d.get("number", "") or "").strip())[:12],
+                        "body": body,
+                        "created": _now_stamp(),
+                        "deleted": False,
+                        "hidden": False,
+                        "ipMask": _mem_mask_ip(
+                            self.client_address[0] if self.client_address else ""),
+                    })
+                    tgt["comments"] = cs
+                    arr[arr.index(tgt)] = tgt
+                    allp[mid] = arr
+                    doc["posts"] = allp
+                    _mem_save(doc)
+                return self._json({"ok": True, "cid": cid})
+            if p == "/api/memorial/comment/delete":
+                # 댓글 삭제·숨김 — 글쓴이(editKey) 또는 관리자·마스터.
+                try:
+                    d = json.loads(self._body() or b"{}")
+                except Exception:
+                    return self._json({"ok": False, "error": "json"}, 400)
+                mid = str(d.get("id", "") or "noh-kyungha")
+                pid = str(d.get("postId", "") or "")
+                cid = str(d.get("commentId", "") or "")
+                sess = self._sess() or {}
+                with LOCK:
+                    doc = _mem_doc()
+                    allp = doc.get("posts") or {}
+                    arr = list(allp.get(mid) or [])
+                    tgt = next((x for x in arr if str(x.get("id")) == pid), None)
+                    if tgt is None:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    if not _mem_can_manage(tgt, sess,
+                                           str(d.get("editKey", "") or "")):
+                        return self._json({"ok": False, "error": "권한 없음"}, 403)
+                    cs = list(tgt.get("comments") or [])
+                    hit = next((c for c in cs if str(c.get("id")) == cid), None)
+                    if not hit:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    cs = [c for c in cs if str(c.get("id")) != cid]
+                    tgt["comments"] = cs
+                    arr[arr.index(tgt)] = tgt
+                    allp[mid] = arr
+                    doc["posts"] = allp
+                    _mem_save(doc)
+                return self._json({"ok": True})
+            if p == "/api/memorial/upload":
+                # 첨부 업로드 — **로그인 없이** 가능(외부 참여 페이지용).
+                #  쿼리: ?id=<추모관>&name=<파일명>&kind=photo|file
+                #  본문: 원시 바이트(Content-Length 필요)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                mid = str(q.get("id", ["noh-kyungha"])[0] or "noh-kyungha")
+                if mid not in MEM_MEMORIALS:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                up_name = _safe_name(q.get("name", [""])[0])
+                if not up_name:
+                    return self._json({"ok": False, "error": "name"}, 400)
+                total = int(self.headers.get("Content-Length", 0) or 0)
+                if total <= 0:
+                    return self._json({"ok": False, "error": "empty"}, 400)
+                # 파일 1개 최대 **500MB** (사진·문서·영상 기준).
+                #  [요구 2026-11-04] "용량 500메가로 늘리고"
+                #  · 25MB 는 추모 영상(1~3분)에 턱없이 모자랐다. 스마트폰으로
+                #    찍은 1분 영상이 대략 80~150MB 이므로 3~5분짜리도 들어간다.
+                #  · 본문은 **디스크 임시파일로 256KB씩 흘려 받으므로** 메모리는
+                #    파일 크기와 무관하게 일정하다(전체를 RAM 에 올리지 않는다).
+                #  · 서버는 ThreadingHTTPServer 라 큰 업로드가 다른 사람의
+                #    조회를 막지 않는다.
+                #  · 남용 방지는 크기가 아니라 **개수·속도**로 막는다:
+                #    IP 당 1분 30건 제한 + 사진·자료 12개 제한 + 관리자 즉시 삭제.
+                if total > 500 * 1024 * 1024:
+                    return self._json(
+                        {"ok": False, "error": "파일이 너무 큽니다(최대 500MB)"}, 413)
+                if not _mem_rate_ok(
+                        (self.client_address[0] if self.client_address else "?") + "|u",
+                        limit=30, window=60.0):
+                    return self._json(
+                        {"ok": False, "error": "잠시 후 다시 시도해 주세요"}, 429)
+                folder = _mem_ensure_dir(mid)
+                final_name = _mem_unique_name(folder, up_name)
+                import tempfile
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=_ext_of(final_name) or ".bin", delete=False)
+                tmp_path = tmp.name
+                written = 0
+                remaining = total
+                try:
+                    while remaining > 0:
+                        buf = self._rfile_read(min(262144, remaining))
+                        if not buf:
+                            break
+                        tmp.write(buf)
+                        written += len(buf)
+                        remaining -= len(buf)
+                    tmp.close()
+                    ctyp = self.headers.get(
+                        "Content-Type", "application/octet-stream")
+                    with open(tmp_path, "rb") as f:
+                        def _chunks():
+                            while True:
+                                b = f.read(262144)
+                                if not b:
+                                    break
+                                yield b
+                        NAS.write_stream(f"{folder}/{final_name}", _chunks(),
+                                         size=written, content_type=ctyp)
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+                k = _kind_of(final_name)
+                # ── 썸네일 자동 생성 (2026-11-04) ────────────────────────
+                #  [요구] "로딩속도를 빠르게 하기 위해 썸네일 작업 및 최적화
+                #          작업 항상 자동으로 진행해줘"
+                #  업로드 응답을 기다리게 하면 500MB 영상에서 체감이 나빠지므로
+                #  **백그라운드 스레드**로 만든다. 목록 첫 조회 때는 이미
+                #  만들어져 있거나, 없으면 lazy 로 그 자리에서 만든다.
+                _mem_thumb_ensure(mid, final_name, wait=False)
+                rel = _mem_rel(mid, final_name)
+                return self._json({
+                    "ok": True,
+                    "name": final_name,
+                    "size": written,
+                    "isImage": (k == "image"),
+                    "isVideo": (k == "video"),
+                    "url": "/memorial-file/" + urllib.parse.quote(rel),
+                    "thumb": ("/memorial-thumb/" + urllib.parse.quote(rel)
+                              if k in ("image", "video") else ""),
+                })
+            if p == "/api/event/cboard/post":
+                # 글 작성/수정.  {year,title,boardId,id?,author,number,body,
+                #                  attachments?,password?}
+                #  · `password` 를 주면 그 글이 잠긴다(글쓴이·마스터만 열람).
+                #    빈 문자열을 주면 잠금 해제.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("boardId", "") or "")
+                if not title or not bid:
+                    return self._json({"ok": False, "error": "params"}, 400)
+                sess = self._sess() or {}
+                is_admin = _cb_is_admin(sess)
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    if not _cb_visible_to(b, sess, year, title):
+                        return self._json({"ok": False, "error": "forbidden"}, 403)
+                    posts = list(b.get("posts") or [])
+                    pid = str(d.get("id", "") or "")
+                    cur = None
+                    if pid:
+                        cur = next((x for x in posts
+                                    if str(x.get("id")) == pid), None)
+                    if cur is None:
+                        pid = "p" + _secrets.token_urlsafe(6)
+                    now = _now_stamp()
+                    # ── 작성자 인가번호는 **세션 값을 우선**한다.
+                    #    남의 이름으로 글을 쓰는 것을 막기 위함(관리자는 예외).
+                    num = str(d.get("number", "") or "").strip()[:20]
+                    if not is_admin and _cb_ident(sess):
+                        num = _cb_ident(sess)
+                    row = dict(cur or {})
+                    row.update({
+                        "id": pid,
+                        "author": str(d.get("author", "")
+                                      or (cur or {}).get("author", ""))[:40],
+                        "number": num,
+                        "body": str(d.get("body", "") or ""),
+                        "created": str((cur or {}).get("created") or now),
+                        "updated": now,
+                        "attachments": list(
+                            d.get("attachments")
+                            or (cur or {}).get("attachments") or []),
+                    })
+                    # 비밀번호 — 키가 없으면 기존 유지, 빈 값이면 해제.
+                    if "password" in d:
+                        npw = str(d.get("password") or "")
+                        if npw and npw != str((cur or {}).get("password", "")):
+                            # 마스터·본인만 남의 글 비번을 바꿀 수 있다.
+                            if (cur and str((cur or {}).get("password", ""))
+                                    and not (_cb_is_owner(cur, sess)
+                                             or _cb_tier(sess) == "master")):
+                                return self._json(
+                                    {"ok": False, "error": "password"}, 403)
+                            row["password"] = npw[:60]
+                        elif not npw:
+                            row["password"] = ""
+                    row.setdefault("reads", list((cur or {}).get("reads") or []))
+                    if cur:
+                        posts[posts.index(cur)] = row
+                    else:
+                        posts.append(row)
+                    b["posts"] = posts
+                    b["updated"] = now
+                    _cb_save(doc)
+                return self._json({"ok": True, "id": pid})
+            if p == "/api/event/cboard/delete":
+                # 글 삭제(관리자·마스터 또는 작성자 본인).
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("boardId", "") or "")
+                pid = str(d.get("postId", "") or d.get("id", "") or "")
+                sess = self._sess() or {}
+                is_admin = _cb_is_admin(sess)
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    posts = list(b.get("posts") or [])
+                    tgt = next((x for x in posts if str(x.get("id")) == pid), None)
+                    if not tgt:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    # 비관리자는 **본인 글만** 삭제(인가번호 대조 — 위조 불가).
+                    if not is_admin and not _cb_is_owner(tgt, sess):
+                        return self._json({"ok": False, "error": "forbidden"}, 403)
+                    posts = [x for x in posts if str(x.get("id")) != pid]
+                    b["posts"] = posts
+                    b["updated"] = _now_stamp()
+                    _cb_save(doc)
+                return self._json({"ok": True})
+            if p == "/api/event/cboard/password/reset":
+                # 게시글 비밀번호 초기화.
+                #  [요구] "비밀번호를 잃어버렸을 경우 초기화할 수 있음
+                #         (게시판 비밀번호 초기화는 'id'+'!@@', 예) 415!@@
+                #          - 별도 안내하지 않음)"
+                #  → 새 비밀번호를 **글쓴이 인가번호 + '!@@'** 로 조용히 설정한다.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("boardId", "") or "")
+                pid = str(d.get("postId", "") or d.get("id", "") or "")
+                sess = self._sess() or {}
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    posts = list(b.get("posts") or [])
+                    tgt = next((x for x in posts if str(x.get("id")) == pid), None)
+                    if not tgt:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    # 글쓴이 본인 또는 마스터만 초기화할 수 있다.
+                    if not (_cb_is_owner(tgt, sess)
+                            or _cb_tier(sess) == "master"):
+                        return self._json({"ok": False, "error": "forbidden"}, 403)
+                    ident = _cb_owner_ident(tgt)
+                    if not ident:
+                        return self._json(
+                            {"ok": False,
+                             "error": "글쓴이 인가번호가 없어 초기화할 수 없습니다."},
+                            400)
+                    tgt["password"] = ident + CB_PW_RESET_SUFFIX
+                    tgt["updated"] = _now_stamp()
+                    b["posts"] = posts
+                    b["updated"] = tgt["updated"]
+                    _cb_save(doc)
+                return self._json({"ok": True})
+            if p == "/api/event/cboard/read":
+                # 읽음 기록 — 글을 실제로 열었을 때 호출한다.
+                #  [요구] "마스터는 읽은 사람을 기록하고 볼 수 있도록 관리"
+                #  같은 사람이 여러 번 읽어도 **1회만** 기록한다.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("boardId", "") or "")
+                pid = str(d.get("postId", "") or d.get("id", "") or "")
+                sess = self._sess() or {}
+                ident = _cb_ident(sess)
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    if not _cb_visible_to(b, sess, year, title):
+                        return self._json({"ok": False, "error": "forbidden"}, 403)
+                    posts = list(b.get("posts") or [])
+                    tgt = next((x for x in posts if str(x.get("id")) == pid), None)
+                    if not tgt:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    reads = list(tgt.get("reads") or [])
+                    if not ident:
+                        return self._json({"ok": True, "read": False})
+                    if not any(str((r or {}).get("number", "")) == ident
+                               for r in reads):
+                        reads.append({
+                            "number": ident,
+                            "name": str(d.get("name", "")
+                                        or (sess.get("name") or ""))[:40],
+                            "at": _now_stamp(),
+                        })
+                        tgt["reads"] = reads
+                        b["posts"] = posts
+                        _cb_save(doc)
+                    cnt = len(reads)
+                return self._json({"ok": True, "read": True, "readCount": cnt})
+            if p == "/api/event/cboard/react":
+                # ── [요구 2026-10-26] "자료를 읽고 **공감**하고, 다운받을 수
+                #    있도록 하고"
+                #  읽음(read)은 기록만 남기지만, 공감(reaction)은 **사람 수**를
+                #  세야 한다. 같은 사람이 여러 번 눌러도 1로 센다(토글).
+                #   {year,title,boardId,postId,on?:bool}
+                #   → on 을 주지 않으면 **토글**한다.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("boardId", "") or "")
+                pid = str(d.get("postId", "") or d.get("id", "") or "")
+                sess = self._sess() or {}
+                # ── [버그 수정 2026-10-26] 마스터 401 ─────────────────────
+                #  종전 `ident = _cb_ident(sess)` 는 **숫자 인가번호만** 남기므로
+                #  비밀번호로 로그인한 마스터는 '' → 401 로 막혔다.
+                #  (실측: react on=True(master) → 401 unauthorized)
+                #  공감 주체는 `_cb_react_ident()` 로 뽑아 "master"/"admin"
+                #  폴백을 허용한다.
+                ident = _cb_react_ident(sess)
+                if not ident:
+                    return self._json({"ok": False, "error": "unauthorized"}, 401)
+                if not bid or not pid:
+                    return self._json({"ok": False, "error": "params"}, 400)
+                with LOCK:
+                    doc = _cb_doc()
+                    boards = ((doc.get("events") or {})
+                              .get(_ev_id(year, title)) or {}).get("boards") or {}
+                    b = boards.get(bid)
+                    if not isinstance(b, dict):
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    if not _cb_visible_to(b, sess, year, title):
+                        return self._json({"ok": False, "error": "forbidden"}, 403)
+                    posts = list(b.get("posts") or [])
+                    tgt = next((x for x in posts if str(x.get("id")) == pid), None)
+                    if not tgt:
+                        return self._json({"ok": False, "error": "not found"}, 404)
+                    likes = list(tgt.get("likes") or [])
+                    mine = next((x for x in likes
+                                 if str((x or {}).get("number", "")) == ident),
+                                None)
+                    if "on" in d:
+                        want = bool(d.get("on"))
+                    else:
+                        want = mine is None          # 토글
+                    if want and mine is None:
+                        likes.append({
+                            "number": ident,
+                            "name": str(d.get("name", "")
+                                        or (sess.get("name") or ""))[:40],
+                            "at": _now_stamp(),
+                        })
+                    elif not want and mine is not None:
+                        likes = [x for x in likes
+                                 if str((x or {}).get("number", "")) != ident]
+                    tgt["likes"] = likes
+                    b["posts"] = posts
+                    _cb_save(doc)
+                    cnt = len(likes)
+                    on = any(str((x or {}).get("number", "")) == ident
+                             for x in likes)
+                return self._json({"ok": True, "liked": on, "likeCount": cnt})
+            if p == "/api/event/cboard/post/unlock":
+                # 비밀번호가 걸린 글의 본문 열람 시도.
+                #  글쓴이·마스터는 비번 없이 통과, 그 외는 값을 맞춰야 한다.
+                if not self._require():
+                    return
+                d = json.loads(self._body() or b"{}")
+                year = _ev_safe(d.get("year", ""))
+                title = _ev_safe(d.get("title", ""))
+                bid = str(d.get("boardId", "") or "")
+                pid = str(d.get("postId", "") or "")
+                pw = str(d.get("password", "") or "")
+                sess = self._sess() or {}
+                boards = _cb_all(year, title)
+                b = boards.get(bid)
+                if not isinstance(b, dict):
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                if not _cb_visible_to(b, sess, year, title):
+                    return self._json({"ok": False, "error": "forbidden"}, 403)
+                tgt = next((x for x in (b.get("posts") or [])
+                            if str(x.get("id")) == pid), None)
+                if not tgt:
+                    return self._json({"ok": False, "error": "not found"}, 404)
+                need = str(tgt.get("password", "") or "")
+                if not need or _cb_can_see_post_pw(tgt, sess) or pw == need:
+                    return self._json({
+                        "ok": True,
+                        "post": _cb_pub_post(tgt, sess, unlocked=True),
+                    })
+                return self._json({"ok": False, "error": "비밀번호가 다릅니다."}, 403)
             return self._json({"ok": False, "error": "unknown"}, 404)
+        except (BrokenPipeError, ConnectionResetError,
+                ConnectionAbortedError) as _e:
+            # [안정 turn72] 클라이언트 끊김 — 서버는 계속 살아 있어야 한다.
+            self.close_connection = True
+            return
         except Exception as e:
-            return self._json({"ok": False, "error": str(e)}, 500)
+            try:
+                return self._json({"ok": False, "error": str(e)}, 500)
+            except (BrokenPipeError, ConnectionResetError,
+                    ConnectionAbortedError, OSError):
+                self.close_connection = True
+                return
 
 
 if __name__ == "__main__":
     _boot()
-    port = CONF.get("port", 5071)
+    port = int(os.environ.get("TSAK_PORT") or CONF.get("port", 5071))
+    # [행사 목록 즉시 응답] 폴더 별칭맵 + 행사 목록을 **서버가 문을 열기 전에**
+    #  동기로 준비한다. 백그라운드에 두면 재시작 직후 들어온 첫 요청이
+    #  59개 행사 × exists 0.217s = 12.8초 콜드 경로를 그대로 탄다(실측).
+    #  · 별칭맵 복원: 디스크 JSON 약 6KB → 수 밀리초.
+    #  · 목록 조립: 별칭이 모두 확정된 상태라 연산만(수십 ms).
+    try:
+        print("event folder map restored:", _ev_folder_map_load(), flush=True)
+        print("event media counts restored:", _ev_media_count_load(), flush=True)
+        _ev_union_events()
+        print("event list cache prewarmed", flush=True)
+    except Exception as e:
+        print("event prewarm skipped:", e, flush=True)
     # 성능: NAS 연결/TLS/로그인을 백그라운드로 미리 데운다.
     #  첫 사용자 요청의 콜드 스타트 지연을 제거(실패해도 무해).
     def _warm_bg():
+        # (0) 로컬 미러 선적재 — 재시작 직후에도 원격 NAS 없이 즉시 응답 가능.
+        try:
+            print("json mirror warmed:", _warm_mirror())
+        except Exception as e:
+            print("mirror warm skipped:", e)
         try:
             NAS.warm()
             print("NAS connection warmed")
         except Exception as e:
             print("NAS warm skipped:", e)
-        # 행사 미디어 개수 캐시 예열 → 첫 행사관리 진입이 즉시 뜬다.
+        # [행사 로딩 고속화] 행사 메타(파일목록) 예열을 **가장 먼저** —
+        #  '행사 창 열기'가 가장 크리티컬하므로 우선 예열한다(디스크 캐시 영구).
+        #  (2026-10-26) 폴더 별칭맵은 이미 __main__ 에서 동기 복원했다.
+        #  여기서는 '아직 확정 안 된 항목'만 병렬로 채운다.
+        try:
+            _doc0 = _ev_doc()
+            _pairs = [(e.get("year", ""), e.get("title", ""))
+                      for e in (_doc0.get("events") or {}).values()]
+            print("event folder map prefetched:",
+                  _ev_folder_prefetch(_pairs, workers=12))
+        except Exception as e:
+            print("event folder map prefetch skipped:", e)
+        try:
+            n = _ev_meta_warm(limit=0)
+            print(f"event meta warmed: {n}")
+        except Exception as e:
+            print("event meta warm skipped:", e)
+        # 행사 목록 최상위 캐시를 미리 조립해 둔다 → 첫 진입도 즉시.
+        try:
+            _ev_union_events()
+            print("event list cache warmed")
+        except Exception as e:
+            print("event list warm skipped:", e)
+        # 행사 미디어 개수 캐시 예열(행사 '목록' 화면용) — 메타 이후.
         try:
             n = _ev_media_counts_warm()
             print(f"event media counts warmed: {n}")
@@ -12764,10 +29947,14 @@ if __name__ == "__main__":
             print("event media warm skipped:", e)
         # 정적 자산 사전 압축(첫 사용자 지연 제거)
         _precompress_static()
-        # JSON 캐시 예열 — 자주 읽는 파일을 미리 메모리에 적재하여
-        #  첫 요청의 NAS 왕복(콜드 스타트 ~0.5초)까지 제거한다.
+        # JSON 캐시/미러 예열 — 자주 읽는 파일을 미리 적재해 첫 요청의 NAS 왕복
+        #  (콜드 스타트 ~0.5초)까지 제거하고, 로컬 미러를 생성한다.
         try:
-            for _f in (CFG_FILE, DB_FILE, MERCH_FILE, EVENTS_FILE):
+            for _f in (CFG_FILE, DB_FILE, EUNHA_DB_FILE, META_FILE, MERCH_FILE,
+                       EVENTS_FILE, EVENT_MEDIA_FILE, FIN_FILE, STORAGE_FILE,
+                       REGULAR_FILE, REVIEW_FILE, BOARD_FILE, NOTIFY_FILE,
+                       ACCESS_LOG_FILE, APPROVAL_HISTORY_FILE, DELEG_FILE,
+                       HIST_FILE, _member_requests_file()):
                 try:
                     _load_json(_f, None)
                 except Exception:
@@ -12776,6 +29963,130 @@ if __name__ == "__main__":
         except Exception as e:
             print("json warm skipped:", e)
     threading.Thread(target=_warm_bg, daemon=True).start()
-    srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"TSAK NAS proxy on 0.0.0.0:{port}")
-    srv.serve_forever()
+
+    # [안정/속도] 연결 폭주 대비 — 서버 TCP 대기 큐를 크게(512) 키우고,
+    #  keep-alive/스레드 스택을 조정한다.
+    #   · 기본 request_queue_size=5 라서 앱이 행사 API 5종+썸네일을 동시에
+    #     보내면 accept 큐가 넘쳐 연결이 거부되고, 그 앞단(샌드박스 인그레스)이
+    #     HTTP 501 text/html 을 반환 → 앱에는 "<!DOCTYPE ... is not valid JSON"
+    #     으로 보였다. 큐를 늘려 이 거부를 원천 차단한다.
+    ServerCls = ThreadingHTTPServer
+    try:
+        from socketserver import ThreadingMixIn as _TM
+
+        class _Server(ThreadingHTTPServer):
+            daemon_threads = True
+            allow_reuse_address = True
+            request_queue_size = 512          # 기본 5 → 512
+            block_on_close = False
+    except Exception:
+        _Server = ThreadingHTTPServer
+
+    def _new_server():
+        try:
+            s = _Server(("0.0.0.0", port), Handler)
+            try:
+                s.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            except Exception:
+                pass
+            return s
+        except Exception as e:
+            print("server init retry:", e)
+            return ThreadingHTTPServer(("0.0.0.0", port), Handler)
+
+    # ---- 자체 감시 루프: serve_forever 가 예외로 끝나면 즉시 재기동 ----------
+    #  (가변 홀더로 관리 → 클로저 변수 재할당 문제 없음)
+    _srv_holder = {"srv": _new_server()}
+
+    def _serve_guard():
+        while True:
+            srv = _srv_holder["srv"]
+            try:
+                srv.serve_forever(poll_interval=0.2)
+                print("serve_forever returned — 재기동 시도")
+            except Exception as e:
+                print("serve_forever 예외:", e)
+            try:
+                srv.server_close()
+            except Exception:
+                pass
+            time.sleep(1)
+            try:
+                _srv_holder["srv"] = _new_server()
+                print("proxy 재기동 완료")
+            except Exception as e2:
+                print("재기동 실패:", e2)
+                time.sleep(3)
+
+    # ── [turn73] 세션 복원 — 재기동해도 사용자가 로그아웃되지 않게 ────────
+    _restored = _sess_load_from_disk()
+    if _restored:
+        print("[sess] 디스크에서 세션 %d개 복원 (재기동 후 로그인 유지)" % _restored)
+    else:
+        print("[sess] 복원할 세션 없음 — 새로 로그인하면 디스크에 저장됩니다")
+
+    print(f"TSAK NAS proxy on 0.0.0.0:{port} (queue=512)")
+
+    # ---- [사고 재발 방지] 메모리 자가 감시 -------------------------------
+    #  2026-10-25 OOM Killer 가 이 프로세스를 죽였다(anon-rss 4.9GB/7.9GB).
+    #  ZIP 을 디스크+스트리밍으로 바꿔 근본 원인은 제거했지만, 다른 경로로
+    #  메모리가 새는 경우를 조기에 잡기 위해 임계치를 넘으면 경고를 남기고
+    #  디스크 임시파일·캐시를 정리한다(프로세스는 계속 살린다).
+    def _mem_read_rss_kb():
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        return int(line.split()[1])
+        except Exception:
+            pass
+        return 0
+
+    def _mem_guard_loop():
+        warn_rss = 1800 * 1024        # 1.8GB
+        hard_rss = 3000 * 1024        # 3.0GB
+        # 기동 직후 1회 자기 보고 — 스레드가 실제로 살아 있는지 로그로 확인한다.
+        print("[mem-guard] 시작 · 현재 RSS=%.0fMB (경고 %.0fMB / 정리 %.0fMB)"
+              % (_mem_read_rss_kb() / 1024.0, warn_rss / 1024.0, hard_rss / 1024.0))
+        while True:
+            time.sleep(30)
+            try:
+                rss = _mem_read_rss_kb()
+                if rss >= hard_rss:
+                    print("[mem-guard] 위험 수준 RSS=%.0fMB → 임시파일 정리"
+                          % (rss / 1024.0))
+                    # 남아있는 zip 임시폴더 정리
+                    for nm in os.listdir(STATE_ROOT):
+                        if nm.startswith("tsakzip_"):
+                            try:
+                                import shutil
+                                shutil.rmtree(os.path.join(STATE_ROOT, nm))
+                                print("[mem-guard] removed", nm)
+                            except Exception:
+                                pass
+                elif rss >= warn_rss:
+                    print("[mem-guard] 경고 RSS=%.0fMB" % (rss / 1024.0))
+            except Exception:
+                pass
+
+    threading.Thread(target=_mem_guard_loop, daemon=True).start()
+
+    # ---- [속도 turn73] 집계 캐시 지연 쓰기 감시 스레드 --------------------
+    #  등록 응답에서 NAS 왕복을 뺀 대신, dirty 가 남아 있으면 몇 초 뒤
+    #  **백그라운드에서** 한 번 기록한다. (사용자 요청 경로는 건드리지 않음)
+    def _hist_guard_loop():
+        while True:
+            time.sleep(5)
+            try:
+                _hist_flush_tick()
+            except Exception:
+                pass
+
+    try:
+        threading.Thread(target=_hist_guard_loop, daemon=True,
+                         name="hist-guard").start()
+        print("[hist-guard] 시작 · 지연 집계 쓰기 감시(간격 5s)")
+    except Exception as _hge:
+        print("[hist-guard] 시작 실패:", _hge)
+
+    _serve_guard()

@@ -1,46 +1,62 @@
 """Synology DSM FileStation API 클라이언트 (쿠키 세션 방식)
 
 [성능] NAS(원격, HTTPS)와의 통신은 매 호출마다 새 TLS 연결을 열면
-핸드셰이크 비용으로 무겁다. 전역 keep-alive 연결을 재사용하여 호출당
-지연을 크게 줄인다(측정: 2.0s → 0.43s). 스레드 안전을 위해 Lock 으로
-연결 사용을 직렬화한다.
+핸드셰이크 비용으로 무겁다. 전역 keep-alive **연결 풀**을 재사용한다.
+
+⚠️ 종전에는 전역 락(_CONN_LOCK) + 단일 연결이라 **모든 NAS 호출이 직렬화**
+되어, 행사 1건 조회에 NAS를 5~10회 부르면 230ms×N = 1~3초가 걸렸다
+(실측: 병렬 3회 = 718ms → 완전 직렬). 이제 연결 풀(기본 8개)로 **병렬 수행**
+하여 동일 작업이 약 1회 왕복(≈230ms)으로 끝난다.
 """
-import urllib.request, urllib.parse, ssl, json, time, threading
+import os, urllib.request, urllib.parse, ssl, json, time, threading
 
-# ---- 전역 keep-alive 연결 (호스트별 1개) ----
-_CONN = {}                 # host -> (http.client.HTTPSConnection, ts)
-_CONN_LOCK = threading.Lock()
-_CONN_TTL = 100.0          # 초. 이 시간 넘게 미사용이면 새 연결로 교체
+# ---- 전역 keep-alive 연결 풀 (호스트별 N개) ----
+_CONN_TTL = 100.0          # 초. 이 시간 넘게 미사용이면 연결 폐기
 
-def _get_conn(host, ctx):
-    import http.client
-    now = time.time()
-    entry = _CONN.get(host)
-    if entry is not None:
-        conn, ts = entry
-        if now - ts < _CONN_TTL:
-            return conn, ts
+
+class _ConnPool:
+    """호스트별 keep-alive 연결 풀 — 동시 NAS 호출을 병렬로 처리한다."""
+
+    def __init__(self, max_size=8):
+        self.max_size = max(1, int(max_size))
+        self._idle = {}                     # host -> [(conn, ts), ...]
+        self._lock = threading.Lock()
+        self._sem = threading.Semaphore(self.max_size)
+
+    def acquire(self, host, ctx):
+        self._sem.acquire()
+        now = time.time()
+        with self._lock:
+            stack = self._idle.get(host)
+            while stack:
+                conn, ts = stack.pop()
+                if now - ts < _CONN_TTL:
+                    return conn
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        import http.client
+        return http.client.HTTPSConnection(host, timeout=90, context=ctx)
+
+    def release(self, host, conn):
+        with self._lock:
+            self._idle.setdefault(host, []).append((conn, time.time()))
+        self._sem.release()
+
+    def discard(self, host, conn):
         try:
             conn.close()
         except Exception:
             pass
-    conn = http.client.HTTPSConnection(host, timeout=90, context=ctx)
-    _CONN[host] = (conn, now)
-    return conn, now
+        self._sem.release()
 
-def _drop_conn(host, conn):
-    entry = _CONN.get(host)
-    if entry and entry[0] is conn:
-        _CONN.pop(host, None)
-    try:
-        conn.close()
-    except Exception:
-        pass
+    def stats(self):
+        with self._lock:
+            return {h: len(s) for h, s in self._idle.items()}
 
-def _refresh_ts(host, conn):
-    entry = _CONN.get(host)
-    if entry and entry[0] is conn:
-        _CONN[host] = (conn, time.time())
+
+_POOL = _ConnPool(int(os.environ.get("TSAK_NAS_POOL", "8")))
 
 
 class NasClient:
@@ -54,12 +70,13 @@ class NasClient:
         self.cookie = None
         self._host = self.base.split("//", 1)[-1]
 
-    # ---- 저수준: keep-alive 연결로 리소스 경로에 POST 바디 전송 ----
+    # ---- 저수준: keep-alive 연결(풀)로 리소스 경로에 POST 바디 전송 ----
     def _conn_post(self, path, body, cookie=None, content_type=None,
                    extra_headers=None):
-        """persistent 연결로 POST 수행 후 (status, headers, bytes) 반환.
+        """풀에서 연결을 빌려 POST 수행 후 (status, headers, bytes) 반환.
 
         연결이 끊겨 있으면(RemoteDisconnected 등) 새 연결로 1회 재시도한다.
+        응답 후 연결은 풀에 반납(release)되어 다음 호출이 즉시 재사용한다.
         """
         headers = {}
         if content_type:
@@ -70,19 +87,18 @@ class NasClient:
             headers.update(extra_headers)
         last_err = None
         for attempt in (0, 1):
-            with _CONN_LOCK:
-                conn, _ = _get_conn(self._host, self.ctx)
-                try:
-                    conn.request("POST", path, body=body, headers=headers)
-                    resp = conn.getresponse()
-                    data = resp.read()
-                    hdrs = resp.headers
-                    status = resp.status
-                    _refresh_ts(self._host, conn)
-                    return status, hdrs, data
-                except Exception as e:
-                    last_err = e
-                    _drop_conn(self._host, conn)
+            conn = _POOL.acquire(self._host, self.ctx)
+            try:
+                conn.request("POST", path, body=body, headers=headers)
+                resp = conn.getresponse()
+                data = resp.read()
+                hdrs = resp.headers
+                status = resp.status
+                _POOL.release(self._host, conn)
+                return status, hdrs, data
+            except Exception as e:
+                last_err = e
+                _POOL.discard(self._host, conn)
         raise last_err
 
     def _login(self):
@@ -168,6 +184,54 @@ class NasClient:
 
     def read(self, path):
         return self.read_bytes(path).decode("utf-8", errors="replace")
+
+    def read_range(self, path, start, length):
+        """[start, start+length) 구간만 내려받는다.
+
+        ## 왜 필요한가 (turn53)
+         추모관 업로드 상한을 500MB 로 올리면서, 영상 재생·탐색(Range 요청)을
+         지원해야 했다. 종전에는 파일 전체를 받아 잘라 보냈으므로 500MB 영상을
+         1초 보려 해도 500MB 를 내려받았다.
+
+        ## 실측 (2026-11-04)
+         Synology FileStation.Download 에 `Range` 헤더를 붙이면 **정말로 206** 과
+         `Content-Range` 를 돌려주고, 본문도 요청한 구간만 온다.
+         (3,038,408 바이트 파일에 `bytes=1000-1999` → 정확히 1000 바이트 수신 확인)
+
+        ## 실패 시
+         서버가 Range 를 무시하고 전체를 주면(=길이가 요청보다 크면) 그중 구간만
+         잘라 돌려준다. 헤더 자체를 거부하면 b"" 를 돌려주고 호출부가 다른
+         경로(전체 읽기)로 폴백한다.
+        """
+        if length <= 0:
+            return b""
+        if not self.cookie:
+            self._login()
+        p = {"api": "SYNO.FileStation.Download", "version": "2",
+             "method": "download", "path": '["%s"]' % path, "mode": "open"}
+        data = urllib.parse.urlencode(p).encode()
+        hdrs = {"Range": "bytes=%d-%d" % (start, start + length - 1)}
+        for attempt in (0, 1):
+            try:
+                status, hh, raw = self._conn_post(
+                    "/webapi/entry.cgi", data, cookie=self.cookie,
+                    content_type="application/x-www-form-urlencoded",
+                    extra_headers=hdrs)
+                if status == 206:
+                    return raw[:length]
+                if status == 200:
+                    # Range 를 무시하고 전체를 준 경우 — 구간만 잘라낸다.
+                    return raw[start:start + length]
+                if status == 416:
+                    return b""
+                return b""
+            except Exception:
+                if attempt == 0:
+                    self.cookie = None
+                    self._login()
+                    continue
+                raise
+        return b""
 
     def write(self, path, content_bytes):
         boundary = "----TSAKBOUNDARY7d01"
