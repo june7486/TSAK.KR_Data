@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2E1A47">
+<title>故 노경하 · 추모관 · TSAK</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<meta property="og:title" content="故 노경하 · 범스카우트 2호">
+<meta property="og:description" content="우리의 영원한 지도자, 故 노경하 선배님을 기억합니다. 추모글과 사진+영상을 남겨주세요.">
+<style>
+  :root{
+    --purple:#4B2E83; --purple-d:#2E1A47; --gold:#B8964F; --gold-l:#E8D9B0;
+    --ink:#1D1B24; --muted:#6E6880; --line:#E7E3EE; --bg:#F5F3F8;
+    --card:#FFFFFF; --ok:#1E7A46; --warn:#B7791F; --danger:#C0392B;
+    --radius:20px; --shadow:0 10px 34px rgba(46,26,71,.10);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
+    min-height:100vh; padding-bottom:40px;
+    overflow-x:hidden; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:0 14px;}
+
+  /* ── 상단 히어로 ── */
+  .hero{
+    background:linear-gradient(160deg,var(--purple-d) 0%,var(--purple) 60%,#5E3D9A 100%);
+    color:#fff; padding:26px 18px 30px; position:relative; overflow:hidden;
+  }
+  .hero::after{
+    content:""; position:absolute; right:-60px; top:-60px; width:220px; height:220px;
+    border-radius:50%; background:rgba(255,255,255,.05);
+  }
+  .hero-in{max-width:720px;margin:0 auto;position:relative;z-index:1;}
+  .emblem{width:46px;height:46px;object-fit:contain;opacity:.92;}
+  /* 중앙회 로고 = 앱으로 가는 링크. 로고만으로는 '누를 수 있다'는 걸
+     알기 어려워 아래에 작은 라벨을 붙이고, 누를 때 살짝 반응하게 한다. */
+  .emblem-link{
+    float:right;display:flex;flex-direction:column;align-items:center;gap:2px;
+    text-decoration:none;color:#fff;cursor:pointer;
+    padding:2px 4px 4px;border-radius:10px;
+    transition:background .15s,transform .12s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .emblem-link:hover{background:rgba(255,255,255,.12);}
+  .emblem-link:active{transform:scale(.94);}
+  .emblem-link:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .emblem-cap{
+    font-size:9px;letter-spacing:.2px;opacity:.7;white-space:nowrap;
+    font-weight:600;
+  }
+  .emblem-link:hover .emblem-cap{opacity:1;}
+  .hero h1{font-size:30px;margin:6px 0 6px;letter-spacing:-.5px;font-weight:800;}
+  .hero .sub{font-size:13.5px;opacity:.86;margin:0 0 4px;}
+  .hero .years{font-size:12px;opacity:.62;letter-spacing:1px;margin-top:8px;}
+  .hero .goldline{width:56px;height:2.5px;background:var(--gold);margin:14px 0 12px;border-radius:2px;}
+
+  /* 선배님 영정 */
+  .portrait{
+    width:118px;height:118px;border-radius:50%;object-fit:cover;
+    object-position:center 18%;
+    border:3px solid rgba(232,217,176,.75);
+    box-shadow:0 8px 26px rgba(0,0,0,.30), inset 0 0 0 2px rgba(255,255,255,.15);
+    margin:0 auto 14px; display:block; float:none;
+    filter:grayscale(1) contrast(1.04);
+  }
+  .portrait-wrap{text-align:center;}
+
+  /* ══ 흰 배경 참여 밴드 ══════════════════════════════════════════════
+     [요구 2026-11-06 / turn66] "추모관 디자인이 서로 달라 / 통일해줘 /
+      자료 버튼을 삭제하고 첨부한 파일의 디자인으로 통일하고"
+
+     기준은 앱(flutter_app/lib/screens/memorial_screen.dart)이다. 앱은
+       보라 그라데이션 히어로 → **흰 배경** 밴드(CTA → 영상 → 통계 → 탭) → 피드
+     순서다. 종전 웹은 CTA·통계가 보라 히어로 **안**에 들어 있었고, CTA 가
+     flex 로 줄바꿈(flex-wrap)되어 좁은 화면에서 2줄로 깨졌다.
+     → 구조를 앱과 같게 옮기고 줄바꿈을 없앤다. */
+  .actband{background:#fff;}
+  .actband-in{max-width:720px;margin:0 auto;padding:0 14px;}
+
+  /* ── 상부 참여 버튼 2종 ────────────────────────────────────────────
+     앱 `_ctaBar()` 와 동일: 흰 배경 위, 보라 5.5% 카드 + 보라 16% 테두리,
+     모서리 14, 아이콘 19px, 라벨 12.5px/800 보라, 보조문구 9.5px 회색.
+     · '자료' 는 **삭제**했다(요구). 자료는 '사진+영상' 외 첨부로만 받는다.
+     · '사진' → '사진+영상' (요구). 탭 이름과 같은 낱말을 쓴다.
+     · flex:1 1 0 + min-width:0 → 두 칸이 **정확히 반반**, 절대 줄바꿈 없음. */
+  .cta-bar{display:flex; gap:8px; padding:14px 0;}
+  .cta{
+    flex:1 1 0; min-width:0;
+    background:rgba(75,46,131,.055); border:1px solid rgba(75,46,131,.16);
+    color:var(--purple); border-radius:14px; padding:12px 6px; cursor:pointer;
+    font-size:12.5px; font-weight:800; text-align:center; line-height:1.25;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    transition:.16s; -webkit-user-select:none; user-select:none;
+  }
+  .cta:hover{background:rgba(75,46,131,.10);}
+  .cta:active{transform:scale(.985);}
+  .cta .ico{font-size:19px;line-height:1.1;}
+  .cta .sm{font-size:9.5px;font-weight:600;color:var(--muted);}
+
+  /* ── 대표 추모영상 (CTA 바로 아래 · 별도 칸) ────────────────────────
+     [요구 2026-11-06 / turn65] "이찬희 총재 추모영상을 업로드 후 스트리밍
+      재생해줘" + [turn66] "총재님 영상 스트리밍만 추가해줘"
+     · 흰 배경으로 옮겼으므로 카드도 '흰 카드 + 회색 테두리'로 바꾼다.
+       (종전엔 보라 히어로 안이라 반투명 흰색이었다)
+     · 카드 전체가 클릭 영역(모바일 44px 이상 확보).
+     · 포스터 = 영상 **오프닝 타이틀 카드**(0~5초). 살아 계신 총재님의
+       얼굴을 추모 화면 첫 이미지로 크게 걸지 않기 위한 선택이다. */
+  /* turn69: 영상이 여러 개면 세로로 쌓는다. 순서 = 서버 videos 배열 순서. */
+  .vidlist{display:flex; flex-direction:column; gap:9px; padding:0 0 2px;}
+  .vidcard{
+    margin:0 0 2px; background:#fff;
+    border:1px solid var(--line); border-radius:14px;
+    overflow:hidden; cursor:pointer; transition:.16s;
+    box-shadow:0 2px 10px rgba(46,26,71,.05);
+  }
+  .vidcard:hover{box-shadow:0 4px 16px rgba(46,26,71,.10);}
+  .vidcard:active{transform:scale(.994);}
+  .vidthumb{
+    position:relative; display:block; width:100%; aspect-ratio:16/9;
+    background:#0F1724; overflow:hidden;
+  }
+  .vidthumb img{
+    width:100%; height:100%; object-fit:cover; display:block;
+    opacity:.94; transition:opacity .2s;
+  }
+  .vidcard:hover .vidthumb img{opacity:1;}
+  /* ▶ 는 **좌측 하단**에 둔다. 포스터(오프닝 타이틀 카드)의 글자가
+     화면 중앙에 있어서, 가운데 재생 버튼을 얹으면 제목을 가린다. */
+  .vidplay{
+    position:absolute; left:10px; bottom:10px; display:flex;
+    align-items:center; justify-content:center; pointer-events:none;
+  }
+  .vidplay i{
+    width:46px; height:46px; border-radius:50%;
+    background:rgba(255,255,255,.94); color:var(--purple-d);
+    display:flex; align-items:center; justify-content:center;
+    font-size:17px; font-style:normal; padding-left:4px;
+    box-shadow:0 6px 20px rgba(0,0,0,.45);
+    transition:transform .16s;
+  }
+  .vidcard:hover .vidplay i{transform:scale(1.08);}
+  .viddur{
+    position:absolute; right:8px; bottom:8px;
+    background:rgba(0,0,0,.72); color:#fff; font-size:11px;
+    font-weight:700; padding:2px 7px; border-radius:6px; letter-spacing:.3px;
+  }
+  .vidmeta{padding:10px 12px 11px; display:flex; flex-direction:column; gap:2px;}
+  .vidmeta b{font-size:13px; font-weight:800; letter-spacing:-.2px; color:var(--purple);}
+  .vidmeta span{font-size:10.5px; font-weight:600; color:var(--muted);}
+
+  /* ── 통계 4종 ────────────────────────────────────────────────────────
+     앱 `_stats()` 와 동일하게 **카드 박스 없이** 숫자+라벨만 둔다.
+     (종전 웹은 박스 4개 = 앱과 다른 인상) */
+  .stats{display:flex; padding:2px 0 12px;}
+  .stat{flex:1; text-align:center;}
+  .stat b{display:block; font-size:17px; color:var(--purple); font-weight:800; line-height:1.3;}
+  .stat span{font-size:10px; color:var(--muted);}
+
+  /* ── 종류 필터 (앱 ChoiceChip 과 동일한 모양) ──────────────────────── */
+  .tabs{display:flex; gap:7px; padding:0 0 10px; overflow-x:auto;}
+  .tab{
+    flex:0 0 auto; padding:7px 14px; border-radius:999px; border:none;
+    background:#F6F4FB; color:var(--muted); font-size:12px; font-weight:500;
+    cursor:pointer; transition:.14s; white-space:nowrap;
+  }
+  .tab.on{background:var(--purple); color:#fff; font-weight:800;}
+
+  /* ── 글 카드 ── */
+  .post{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px; margin-bottom:12px; box-shadow:0 3px 14px rgba(46,26,71,.055);
+    position:relative;
+  }
+  .post.hidden{opacity:.5; border-style:dashed;}
+  .post-head{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .who{flex:1;min-width:0;}
+  .who .nm{font-weight:800;font-size:14px;color:var(--ink);}
+  .who .no{
+    font-size:10.5px;color:var(--purple);background:#F0EBF8;
+    padding:1.5px 7px;border-radius:6px;font-weight:800;margin-left:5px;
+  }
+  .who .meta{font-size:10.5px;color:var(--muted);margin-top:2px;}
+  .badge{
+    font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;
+    background:#F3EFFA;color:var(--purple);
+  }
+  .badge.자료{background:#FFF4E0;color:#9A6B10;}
+  .badge.사진{background:#E8F4EC;color:#1E7A46;}
+  .post-body{
+    font-size:14px;line-height:1.72;white-space:pre-wrap;word-break:break-word;
+    color:#2A2733;margin-bottom:2px;
+  }
+  .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+  .thumb{
+    width:92px;height:92px;border-radius:12px;overflow:hidden;background:#eee;
+    cursor:pointer;border:1px solid var(--line);position:relative;
+  }
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .files{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
+  .file{
+    display:flex;align-items:center;gap:8px;padding:9px 11px;
+    background:#FAF8FD;border:1px solid var(--line);border-radius:11px;
+    font-size:12.5px;color:var(--ink);text-decoration:none;
+  }
+  .file:hover{background:#F3EFFA;}
+  .file .fi{font-size:15px;}
+  .file .fn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .file .fs{font-size:10.5px;color:var(--muted);}
+  /* 영상 재생 카드 — 500MB 상한 이후 추가 (turn53) */
+  .vcard{margin-top:2px;border-radius:11px;overflow:hidden;background:#000;}
+  .vcard video{display:block;width:100%;max-height:52vh;background:#000;}
+  .vcard .vmeta{
+    display:flex;align-items:center;gap:6px;padding:7px 10px;
+    background:#14161F;color:#D8DAE4;font-size:11.5px;
+  }
+  .vcard .vmeta .fn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .vcard .vmeta .fs{font-size:10px;color:#8A8FA3;}
+
+  .post-foot{
+    display:flex;align-items:center;gap:6px;margin-top:12px;
+    padding-top:11px;border-top:1px solid var(--line);flex-wrap:wrap;
+  }
+  .act{
+    border:none;background:transparent;color:var(--muted);font-size:12px;
+    font-weight:700;cursor:pointer;padding:6px 9px;border-radius:9px;
+    display:flex;align-items:center;gap:4px;transition:.13s;
+  }
+  .act:hover{background:#F5F3F8;color:var(--purple);}
+  .act.on{color:var(--danger);}
+  .act.on .h{color:var(--danger);}
+  .grow{flex:1;}
+
+  /* ── 댓글 ── */
+  .cmts{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);}
+  .cmt{padding:8px 0;border-bottom:1px solid #F3F1F7;font-size:12.5px;}
+  .cmt:last-child{border-bottom:none;}
+  .cmt .cn{font-weight:800;color:var(--purple);font-size:12px;}
+  .cmt .cb{margin-top:3px;line-height:1.6;white-space:pre-wrap;word-break:break-word;}
+  .cmt .cd{font-size:10px;color:var(--muted);margin-left:6px;font-weight:600;}
+  .cmt-form{display:flex;gap:6px;margin-top:9px;}
+  .cmt-form input{
+    flex:1;border:1px solid var(--line);border-radius:10px;padding:9px 11px;
+    font-size:12.5px;font-family:inherit;outline:none;
+  }
+  .cmt-form input:focus{border-color:var(--purple);}
+  /* ── 댓글 작성자 한 칸 (2026-11-08 / turn56) ────────────────────────
+     댓글은 **글에 대한 다른 사람의 피드백**이다. 글쓴이로 등록하는 시트를
+     띄우지 않고, 이 한 칸(이름 또는 '익명')만 받는다. */
+  .cmt-form .who{
+    width:96px;flex:0 0 96px;
+    border:1px solid var(--line);border-radius:10px;padding:9px 9px;
+    font-size:12px;font-family:inherit;outline:none;background:#FAF9FC;
+  }
+  .cmt-form .who:focus{border-color:var(--purple);background:#fff;}
+  .cmt-hint{
+    margin-top:6px;font-size:10.5px;color:var(--muted);
+    font-weight:600;line-height:1.5;
+  }
+
+  /* ── 버튼 ── */
+  .btn{
+    border:none;border-radius:12px;padding:12px 18px;font-size:13.5px;
+    font-weight:800;cursor:pointer;font-family:inherit;transition:.14s;
+  }
+  .btn-p{background:var(--purple);color:#fff;}
+  .btn-p:hover{background:var(--purple-d);}
+  .btn-p:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-s{background:#fff;color:var(--purple);border:1.5px solid var(--purple);}
+  .btn-s:hover{background:#F5F1FB;}
+  .btn-xs{padding:6px 11px;font-size:11.5px;border-radius:9px;}
+
+  /* ── 모달 ── */
+  .mask{
+    position:fixed;inset:0;background:rgba(20,14,32,.55);backdrop-filter:blur(3px);
+    display:none;align-items:flex-end;justify-content:center;z-index:100;
+    padding:0; overscroll-behavior:contain;
+  }
+  .mask.on{display:flex;}
+  @media(min-width:640px){ .mask{align-items:center;padding:20px;} }
+  .sheet{
+    background:#fff;width:100%;max-width:600px;border-radius:22px 22px 0 0;
+    max-height:92vh;overflow-y:auto;padding:20px 18px 26px;
+    animation:up .22s ease-out;
+  }
+  @media(min-width:640px){ .sheet{border-radius:22px;} }
+  @keyframes up{from{transform:translateY(26px);opacity:.4;}to{transform:translateY(0);opacity:1;}}
+  .sheet h2{margin:0 0 4px;font-size:18px;color:var(--purple-d);}
+  .sheet .hint{font-size:11.5px;color:var(--muted);margin-bottom:14px;line-height:1.55;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:5px;}
+  .field input[type=text],.field input[type=tel],.field textarea{
+    width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 13px;
+    font-size:14px;font-family:inherit;outline:none;background:#FCFBFE;
+    transition:.14s;
+  }
+  .field input:focus,.field textarea:focus{border-color:var(--purple);background:#fff;}
+  .field textarea{min-height:110px;resize:vertical;line-height:1.65;}
+  .two{display:flex;gap:9px;}
+  .two .field{flex:1;}
+
+  .drop{
+    border:2px dashed #D8D2E4;border-radius:14px;padding:22px 14px;text-align:center;
+    cursor:pointer;transition:.16s;background:#FBF9FE;
+  }
+  .drop:hover,.drop.over{border-color:var(--purple);background:#F5F1FB;}
+  .drop .di{font-size:26px;margin-bottom:5px;}
+  .drop .dt{font-size:12.5px;font-weight:700;color:var(--purple);}
+  .drop .ds{font-size:10.5px;color:var(--muted);margin-top:3px;}
+  .uplist{margin-top:9px;display:flex;flex-direction:column;gap:5px;}
+  .upitem{
+    display:flex;align-items:center;gap:7px;font-size:11.5px;
+    background:#F5F1FB;border-radius:9px;padding:7px 10px;
+  }
+  .upitem .un{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .upitem .ux{cursor:pointer;color:var(--danger);font-weight:800;padding:0 3px;}
+
+  .toast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);
+    background:var(--purple-d);color:#fff;padding:12px 20px;border-radius:13px;
+    font-size:13px;font-weight:700;z-index:200;opacity:0;transition:.26s;
+    box-shadow:0 8px 26px rgba(46,26,71,.34);max-width:90vw;text-align:center;
+  }
+  .toast.on{transform:translateX(-50%) translateY(0);opacity:1;}
+
+  .empty{text-align:center;padding:44px 20px;color:var(--muted);}
+  .empty .ei{font-size:40px;margin-bottom:10px;opacity:.5;}
+  .empty .et{font-size:13.5px;font-weight:700;}
+  .empty .es{font-size:11.5px;margin-top:5px;line-height:1.6;}
+
+  .detailimg{
+    position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;
+    align-items:center;justify-content:center;z-index:300;padding:16px;
+  }
+  .detailimg.on{display:flex;}
+  .detailimg img{max-width:100%;max-height:90vh;object-fit:contain;border-radius:8px;}
+  .detailimg .x{
+    position:absolute;top:16px;right:18px;color:#fff;font-size:30px;
+    cursor:pointer;line-height:1;
+  }
+
+  .foot{text-align:center;padding:28px 14px 10px;color:var(--muted);font-size:11px;line-height:1.8;}
+  .foot b{color:var(--purple);}
+  /* 하단 앱 복귀 버튼 */
+  .back-app{
+    display:inline-block;margin:0 auto 14px;padding:11px 20px;border-radius:999px;
+    background:#fff;border:1.5px solid var(--purple);color:var(--purple);
+    font-size:12.5px;font-weight:800;text-decoration:none;letter-spacing:-.2px;
+    box-shadow:0 2px 8px rgba(75,46,131,.14);
+    transition:background .15s,color .15s,transform .12s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .qr-link{margin-top:8px;border-color:var(--gold,#B8860B);color:#8A6B27;}
+  .back-app:hover{background:var(--purple);color:#fff;}
+  .back-app:active{transform:scale(.97);}
+  .foot-note{opacity:.9;}
+
+  /* ── 후원 계좌 ────────────────────────────────────────────────── */
+  .donate{
+    margin:18px 0 4px;padding:16px 15px 14px;background:#fff;
+    border:1px solid #E6DFF2;border-radius:14px;
+    box-shadow:0 2px 10px rgba(75,46,131,.06);
+  }
+  .donate-h{display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;}
+  .donate-ico{font-size:19px;line-height:1.3;}
+  .donate-t{font-size:14px;font-weight:800;color:var(--purple);letter-spacing:-.3px;}
+  .donate-s{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.5;}
+  .drow{
+    display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:6px;
+    background:var(--bg2,#F7F5FB);border-radius:9px;cursor:pointer;
+    transition:background .14s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .drow:active{background:#EDE8F7;}
+  .drow-l{flex:1;min-width:0;}
+  .drow-label{
+    font-size:10.5px;font-weight:700;color:var(--gold-d,#8A6B27);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .drow-no{
+    font-size:13px;font-weight:800;color:var(--purple);
+    letter-spacing:.2px;font-variant-numeric:tabular-nums;
+    word-break:break-all;
+  }
+  .drow-bank{
+    font-size:10px;font-weight:700;color:#fff;background:var(--purple);
+    padding:3px 7px;border-radius:5px;white-space:nowrap;flex-shrink:0;
+  }
+  .drow-copy{
+    font-size:9.5px;color:var(--muted);flex-shrink:0;
+    border:1px solid #DDD6EA;background:#fff;border-radius:6px;
+    padding:4px 7px;font-weight:700;
+  }
+  .donate-holder{
+    font-size:11px;color:var(--text,#2E2A38);margin-top:9px;font-weight:700;
+    text-align:center;
+  }
+  .donate-holder:empty{display:none;}
+  .donate-note{
+    font-size:10px;color:var(--muted);margin-top:5px;text-align:center;line-height:1.6;
+  }
+  .donate-contact{
+    margin-top:11px;padding-top:10px;border-top:1px dashed #E6DFF2;
+    font-size:11.5px;color:var(--purple);text-align:center;font-weight:700;
+  }
+  .donate-contact a{color:var(--purple);text-decoration:none;font-weight:800;}
+  .donate-contact a:hover{text-decoration:underline;}
+  .spin{
+    display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);
+    border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;
+    vertical-align:-3px;
+  }
+  @keyframes sp{to{transform:rotate(360deg);}}
+
+  /* ── 사진 앨범(사진 탭) ───────────────────────────────────────── */
+  .palbum{padding:12px 4px 4px;}
+  .palb-h{font-size:12px;font-weight:800;color:#6E6A7C;margin:0 0 8px 4px;}
+  .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .pcell{display:flex;flex-direction:column;gap:4px;}
+  .pimg{aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--bg,#F6F4FB);cursor:zoom-in;}
+  .pimg img{width:100%;height:100%;object-fit:cover;display:block;}
+  .pwho{font-size:10.5px;font-weight:700;text-align:center;color:#1F1A2E;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* 사진+영상 앨범 - 영상 칸 */
+  .pimg{position:relative;}
+  .pvid video{width:100%;height:100%;object-fit:cover;display:block;background:#000;}
+  .pbadge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+          font-size:22px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6);
+          background:rgba(61,27,99,.32);pointer-events:none;}
+  .pnote{font-weight:600;color:#9a95a8;}
+  /* 영상 모달 */
+  #vidBox{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;
+          align-items:center;justify-content:center;z-index:90;padding:12px;}
+  #vidBox.on{display:flex;}
+  #vidBig{max-width:100%;max-height:88vh;background:#000;border-radius:10px;}
+  /* [수정 2026-11-06 / turn65] 닫기 버튼이 없어서 closeVid() 가 **죽은 코드**
+     였다(모달을 열면 빠져나갈 방법이 없었다). 상단 우측에 × 를 둔다. */
+  #vidClose{
+    position:absolute; top:calc(10px + env(safe-area-inset-top)); right:12px;
+    width:44px; height:44px; border:0; border-radius:50%;
+    background:rgba(255,255,255,.16); color:#fff; font-size:24px; line-height:1;
+    cursor:pointer; z-index:2; display:flex; align-items:center;
+    justify-content:center; padding:0; -webkit-tap-highlight-color:transparent;
+  }
+  #vidClose:hover{background:rgba(255,255,255,.3);}
+  #vidCap{
+    position:absolute; left:0; right:0; bottom:calc(10px + env(safe-area-inset-bottom));
+    text-align:center; color:rgba(255,255,255,.72); font-size:11.5px;
+    font-weight:600; padding:0 14px; pointer-events:none;
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-in">
+    <!-- 중앙회 엠블럼 — 누르면 **중앙회 앱(Flutter) 첫 화면**으로 이동.
+         [요구 2026-11-04 / turn 52] "추모페이지에선 중앙회 로고 누르면 앱으로 링크"
+         · 이 페이지는 프록시가 /memorial 로 직접 내려주고, 앱은 같은 서버의
+           루트(/)에 있으므로 상대경로 '/' 하나면 앱으로 넘어간다.
+         · 새 창이 아니라 **같은 탭**으로 보낸다(모바일에서 탭이 쌓이지 않게).
+           Ctrl/⌘+클릭은 브라우저 기본대로 새 탭이 열린다.
+         · target=_top 은 카톡·인앱브라우저의 iframe 안에서 열렸을 때
+           프레임에 갇히지 않고 전체 화면으로 앱을 띄우기 위함이다. -->
+    <a class="emblem-link" href="/" target="_top" rel="noopener"
+       title="한국 범스카우트 중앙회 앱으로 이동" aria-label="중앙회 앱으로 이동">
+      <img class="emblem" src="tsak_emblem_splash.png" alt="한국 범스카우트 중앙회"
+           onerror="this.style.display='none'">
+      <span class="emblem-cap">중앙회 앱</span>
+    </a>
+    <div class="portrait-wrap">
+      <!-- 영정 교체: web_custom_backup/memorial_noh.jpg 한 파일만 바꾸면 된다.
+           (서버가 no-cache 로 재검증 응답 → 방문자 브라우저에 즉시 반영) -->
+      <img class="portrait" id="hPhoto" src="memorial_noh.jpg" alt="故 노경하"
+           onerror="this.style.display='none'">
+    </div>
+    <h1 id="hTitle">故 노경하</h1>
+    <p class="sub" id="hSub">범스카우트 2호 · 우리의 영원한 지도자</p>
+    <div class="goldline"></div>
+    <div class="years" id="hYears">1940 – 2023</div>
+
+  </div>
+</div>
+
+<div class="actband">
+  <div class="actband-in">
+    <!-- ── 참여 버튼 2종 ────────────────────────────────────────────
+         앱(memorial_screen.dart `_ctaBar()`)과 **같은 구성·같은 문구**.
+         [요구 2026-11-06 / turn66]
+           "자료 버튼을 삭제하고 첨부한 파일의 디자인으로 통일하고/
+            사진-> 사진+영상 으로 변경"
+         · 3개 → 2개. '자료'는 게시글 작성 시 첨부로만 받는다.
+         · '사진' → '사진+영상' : 아래 탭 이름과 낱말을 맞춘다. -->
+    <div class="cta-bar">
+      <div class="cta" onclick="openEditor('글')">
+        <span class="ico">✍️</span><span>추모글</span>
+        <span class="sm">기억 남기기</span>
+      </div>
+      <div class="cta" onclick="openEditor('사진')">
+        <span class="ico">📷</span><span>사진+영상</span>
+        <span class="sm">추억 올리기</span>
+      </div>
+    </div>
+
+    <!-- ── 추모영상 카드들 (총재님 영상 → 노경하 선배 영상) ─────────────
+         [요구 2026-11-06 / turn69]
+           "추모관에 이 영상을 노출해줘 / 이찬희 총재님 영상 아래에
+            동일 포멧으로 넣어줘"
+         · 카드는 JS 가 만든다(`applyMemVideos`). 서버 응답
+           `memorial.videos` **배열 순서가 곧 노출 순서**다 — 여기에
+           파일명을 적지 않는다. 단일 소스는 proxy_server.py 의
+           MEM_MEMORIALS[...]["videos"] 이고 앱도 같은 배열을 받는다.
+         · 서버가 Range(206) 를 지원하므로 받으면서 바로 재생되고
+           되감기·앞으로 감기도 된다(대용량을 통째로 기다리지 않는다).
+         · 영상이 없으면(다른 추모관 등) 이 영역 자체를 접는다. -->
+    <div class="vidlist" id="vidList"></div>
+
+    <!-- ── 통계 4종 ────────────────────────────────────────────────
+         라벨·계산 모두 앱과 동일. '자료'는 첨부 파일 수가 아니라
+         **문서가 달린 글 수**다(앱 `docPostTotal`). -->
+    <div class="stats">
+      <div class="stat"><b id="stPosts">0</b><span>게시글</span></div>
+      <div class="stat"><b id="stPhotos">0</b><span>사진+영상</span></div>
+      <div class="stat"><b id="stFiles">0</b><span>자료</span></div>
+      <div class="stat"><b id="stLikes">0</b><span>공감</span></div>
+    </div>
+
+    <!-- 첫 화면 = 게시글 통합 타임라인 -->
+    <div class="tabs">
+      <!-- [요구 2026-11-04] "사진, 추모글 이렇게 구분하지 말고 게시글로 통합해
+           주고 / 사진 폴더 이름을 사진+영상 으로 변경하고 사진과 영상 자료는
+           그 폴더에서 통합해서 보여 줘" -->
+      <div class="tab on" data-f="전체" onclick="setFilter('전체',this)">게시글</div>
+      <div class="tab" data-f="사진+영상" onclick="setFilter('사진+영상',this)">사진+영상</div>
+      <div class="tab" data-f="자료" onclick="setFilter('자료',this)">자료</div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div id="feed"></div>
+
+  <!-- ── 후원계좌 3종 ────────────────────────────────────────────────
+       [요구 2026-11-04] "추모페이지에 후원계좌 3종 하단에 넣어줘"
+       문의: 이승준 (010-6322-7558)
+       · 계좌는 서버(/api/memorial/accounts)에서 받아온다 — 하드코딩하지
+         않는다. 중앙회가 앱에서 계좌를 바꾸면 이 페이지도 즉시 따라간다.
+       · 공개 엔드포인트인 이유: 이 페이지는 로그인 없이 열리므로 기존
+         /api/donation/accounts(인증필요)로는 계좌가 보이지 않는다.
+       · 계좌번호를 누르면 복사된다(모바일에서 타이핑 실수 방지). -->
+  <div class="donate" id="donateBox" style="display:none">
+    <div class="donate-h">
+      <span class="donate-ico">🌼</span>
+      <div>
+        <div class="donate-t">후원 계좌 안내</div>
+        <div class="donate-s">선배님을 기리는 자리에 마음을 보태주시는 분들을 위하여</div>
+      </div>
+    </div>
+    <div id="donateRows"></div>
+    <div class="donate-holder" id="donateHolder"></div>
+    <div class="donate-note">
+      입금자명에 <b>성함</b>을 남겨주시면 감사히 기록하겠습니다.
+    </div>
+    <!-- 문의 — [요구] "문의: 이승준 (010-6322-7558)" -->
+    <div class="donate-contact">
+      문의 : 이승준
+      <a href="tel:01063227558">010-6322-7558</a>
+    </div>
+  </div>
+
+  <div class="foot">
+    <!-- 하단 앱 복귀 버튼 — [요구 turn52 추가] "중앙회 로고 누르면 앱으로 링크".
+         상단 로고를 지나 아래로 스크롤한 뒤에도 앱으로 돌아갈 길을 남긴다. -->
+    <a class="back-app" href="/" target="_top" rel="noopener">
+      🐯 한국범스카우트중앙회 앱으로 돌아가기
+    </a>
+    <!-- QR · 인쇄 안내 — [turn53] 식장·게시판에 붙일 QR 안내문 -->
+    <a class="back-app qr-link" href="/memorial_qr.html" target="_blank" rel="noopener">
+      📱 QR 안내문 (인쇄용)
+    </a>
+    <div class="foot-note">
+      <b>한국범스카우트중앙회 · TSAK</b><br>
+      이 페이지는 로그인 없이 누구나 참여할 수 있습니다.<br>
+      남긴 글은 이 브라우저에서 <b>수정·삭제</b>할 수 있습니다.
+    </div>
+  </div>
+</div>
+
+<!-- 글쓰기/수정 시트 -->
+<div class="mask" id="mask" onclick="if(event.target===this)closeEditor()">
+  <div class="sheet">
+    <h2 id="edTitle">추모글 쓰기</h2>
+    <div class="hint" id="edHint">
+      로그인 없이도 남길 수 있습니다. 인가자이시면 인가번호를 함께 적어주세요.
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label>이름 <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="fName" placeholder="홍길동" maxlength="40">
+      </div>
+      <div class="field">
+        <label>인가번호 <span style="font-weight:600;color:#aaa">(선택)</span></label>
+        <input type="tel" id="fNum" placeholder="예) 415" maxlength="12">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>내용</label>
+      <textarea id="fBody" placeholder="선배님과의 추억, 감사한 마음을 남겨주세요."></textarea>
+    </div>
+
+    <div class="field">
+      <label>사진 · 자료 첨부 <span style="font-weight:600;color:#aaa">(선택)</span></label>
+      <div class="drop" id="drop">
+        <div class="di">📎</div>
+        <div class="dt">눌러서 파일 선택</div>
+        <div class="ds">사진 · 문서 · 영상 · <b>여러 개 동시 선택 가능</b><br>(1개 최대 500MB · 한 글에 50개까지)</div>
+      </div>
+      <input type="file" id="fFile" multiple style="display:none"
+             accept="image/*,video/*,.pdf,.doc,.docx,.hwp,.txt,.ppt,.pptx,.xls,.xlsx">
+      <div class="uplist" id="upList"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-s" onclick="closeEditor()" style="flex:1">취소</button>
+      <button class="btn btn-p" id="btnSave" onclick="savePost()" style="flex:2">등록하기</button>
+    </div>
+  </div>
+</div>
+
+<div id="vidBox"><video id="vidBig" controls playsinline></video><button id="vidClose" onclick="closeVid()" aria-label="닫기">×</button><div id="vidCap"></div></div>
+<div class="detailimg" id="imgBox" onclick="closeImg()">
+  <span class="x">×</span>
+  <img id="imgBig" src="" alt="">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  TSAK 추모관 — 로그인 없는 참여 페이지
+//  · 서버: /api/memorial/*  (인증 불필요)
+//  · 수정권한: 글마다 발급되는 editKey 를 localStorage 에 보관
+// ═══════════════════════════════════════════════════════════════
+const MID = new URLSearchParams(location.search).get('id') || 'noh-kyungha';
+const LS_KEY = 'tsak_memorial_keys_' + MID;
+const LS_NM  = 'tsak_memorial_name';
+const LS_NO  = 'tsak_memorial_num';
+const LS_LIKE= 'tsak_memorial_like_' + MID;
+
+// ── 대표 추모영상 (이찬희 총재) ─────────────────────────────────────
+//  [요구 2026-11-06 / turn66] "총재님 영상 스트리밍만 추가해줘"
+//
+//  · 종전(turn65)에는 이 파일에 파일명을 **하드코딩**했다. 그러면 서버에서
+//    영상을 바꿔도 웹은 옛 파일을 계속 가리키고, 앱만 새 영상을 본다.
+//    → 이제 `/api/memorial/get` 이 내려주는 memorial.video 를 그대로 쓴다.
+//    파일명·포스터·재생시간·설명의 **단일 소스는 서버**(proxy_server.py
+//    MEM_MEMORIALS) 이다. 앱(Flutter)도 같은 값을 받는다.
+//  · 응답에 영상이 없으면(다른 추모관) 카드를 숨긴 채로 둔다.
+// ── 추모영상 카드(복수) ─────────────────────────────────────────
+//  [요구 2026-11-06] "총재님 영상 스트리밍만 추가"
+//  [요구 2026-11-06 / turn69] "이찬희 총재님 영상 아래에 동일 포멧으로"
+//    → 서버가 내려주는 `memorial.videos` 배열을 **순서대로** 카드로 만든다.
+//      파일명·포스터·재생시간의 단일 소스는 서버(proxy_server.py
+//      MEM_MEMORIALS["noh-kyungha"]["videos"]) 다. 앱도 같은 배열을 받는다.
+//  · 구버전 응답(`memorial.video` 단수)도 계속 동작하도록 폴백을 둔다.
+let MEM_VIDEOS = [];
+
+function _escHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function applyMemVideos(m){
+  const list = document.getElementById('vidList');
+  if(!list) return;
+
+  let arr = (m && Array.isArray(m.videos)) ? m.videos.slice() : [];
+  if(!arr.length && m && m.video && m.video.url) arr = [m.video];
+
+  arr = arr.filter(v => v && v.url);
+  MEM_VIDEOS = arr;
+  list.innerHTML = '';
+
+  arr.forEach((v, idx) => {
+    const title = v.title || '추모영상';
+    const sub   = v.subtitle || '';
+    const dur   = v.durationLabel || '';
+    const label = title + (sub ? ' · ' + sub : '');
+
+    const card = document.createElement('div');
+    card.className = 'vidcard';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('data-idx', String(idx));
+    card.setAttribute('aria-label',
+      title + ' 재생' + (dur ? ' (' + dur + ')' : ''));
+
+    card.innerHTML =
+      '<span class="vidthumb">' +
+        (v.posterUrl
+          ? '<img alt="' + _escHtml(title) + '" src="' + _escHtml(v.posterUrl) +
+            '" onerror="this.style.display=\'none\'">'
+          : '') +
+        '<span class="vidplay"><i>▶</i></span>' +
+        (dur ? '<span class="viddur">' + _escHtml(dur) + '</span>' : '') +
+      '</span>' +
+      '<span class="vidmeta">' +
+        '<b>' + _escHtml(title) + '</b>' +
+        (sub ? '<span>' + _escHtml(sub) + '</span>' : '') +
+      '</span>';
+
+    // 인라인 onclick 은 쓰지 않는다 — 스크립트 로드 전 클릭 시 빈 주소를
+    // 재생하려 든다. 카드를 만든 뒤 여기서 한 번만 묶는다.
+    const go = () => playVid(v.url, label);
+    card.onclick = go;
+    card.onkeydown = (e) => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go(); }
+    };
+
+    list.appendChild(card);
+  });
+
+  // 영상이 하나도 없으면 영역 자체를 접는다.
+  list.style.display = arr.length ? '' : 'none';
+}
+
+/* 구 이름 호출부 호환 */
+function applyMemVideo(m){ applyMemVideos(m); }
+
+let POSTS = [];
+let FILTER = '전체';
+let editingId = null;      // 수정 중인 글 id
+let uploaded = [];          // {name,url,isImage,size}
+
+function keys(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
+function saveKey(id, k){ const m=keys(); m[id]=k; localStorage.setItem(LS_KEY, JSON.stringify(m)); }
+function myKey(id){ return keys()[id] || ''; }
+function likeKey(){
+  let k = localStorage.getItem(LS_LIKE);
+  if(!k){ k='lk'+Math.random().toString(36).slice(2,12); localStorage.setItem(LS_LIKE,k); }
+  return k;
+}
+
+function toast(msg, ms){
+  const t=document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('on'), ms||2400);
+}
+
+function esc(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function fmtDate(s){
+  if(!s) return '';
+  // 2026-11-04 12:34:56
+  const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if(!m) return s;
+  return `${+m[2]}.${+m[3]} ${m[4]}:${m[5]}`;
+}
+function fmtSize(n){
+  n = +n || 0;
+  if(n < 1024) return n+'B';
+  if(n < 1048576) return (n/1024).toFixed(0)+'KB';
+  return (n/1048576).toFixed(1)+'MB';
+}
+
+// ── 불러오기 ──────────────────────────────────────────────────
+async function load(){
+  try{
+    const r = await fetch('/api/memorial/get?id='+encodeURIComponent(MID), {cache:'no-store'});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'load');
+    const m = j.memorial || {};
+    document.getElementById('hTitle').textContent = m.title || '故 노경하';
+    document.getElementById('hSub').textContent   = m.subtitle || '';
+    document.getElementById('hYears').textContent = m.years || '';
+    document.title = (m.title||'추모관') + ' · 추모관 · TSAK';
+    applyMemVideos(m);         // ← 추모영상 카드들 (서버 정의·순서대로)
+    POSTS = j.posts || [];
+    render();
+    loadAccounts();
+  }catch(e){
+    document.getElementById('feed').innerHTML =
+      '<div class="empty"><div class="ei">😢</div><div class="et">불러오지 못했습니다</div>'+
+      '<div class="es">잠시 후 다시 시도해 주세요.</div></div>';
+  }
+}
+
+// ── 후원계좌 3종 ────────────────────────────────────────────────
+//  [요구] "추모페이지에 후원계좌 3종 하단에 넣어줘 / 문의: 이승준 (010-6322-7558)"
+//  · 계좌를 HTML 에 하드코딩하지 않고 서버에서 받는다.
+//    중앙회가 앱에서 계좌를 바꾸면 이 페이지도 자동으로 따라간다.
+//  · 실패해도 페이지 본문(추모글)은 그대로 보여야 하므로 조용히 감춘다.
+async function loadAccounts(){
+  try{
+    const r = await fetch('/api/memorial/accounts', {cache:'no-store'});
+    const j = await r.json();
+    if(!j.ok || !(j.accounts||[]).length) return;
+    const box = document.getElementById('donateBox');
+    const rows = document.getElementById('donateRows');
+    rows.innerHTML = (j.accounts||[]).map(a=>{
+      const no = a.account || '';
+      return `<div class="drow" onclick="copyAcct(this,'${esc(no)}')" title="눌러서 계좌번호 복사">
+        <div class="drow-l">
+          <div class="drow-label">${esc(a.label||'계좌')}</div>
+          <div class="drow-no">${esc(no)}</div>
+        </div>
+        <span class="drow-bank">${esc(a.bank||'')}</span>
+        <span class="drow-copy">복사</span>
+      </div>`;
+    }).join('');
+    if(j.holder){
+      document.getElementById('donateHolder').textContent = '예금주 : ' + j.holder;
+    }
+    box.style.display = '';
+  }catch(e){ /* 계좌는 부가 정보 — 실패해도 본문에 영향 없게 */ }
+}
+
+// 계좌번호 복사 — 모바일에서 숫자를 받아 적다 틀리는 일을 막는다.
+async function copyAcct(el, no){
+  const done = ()=>{
+    const c = el.querySelector('.drow-copy');
+    if(!c) return;
+    const old = c.textContent;
+    c.textContent = '복사됨 ✓';
+    c.style.color = 'var(--gold-d,#8A6B27)';
+    setTimeout(()=>{ c.textContent = old; c.style.color=''; }, 1500);
+  };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(no);
+      done(); return;
+    }
+  }catch(e){ /* 아래 폴백 */ }
+  // 클립보드 API 가 막힌 환경(구형·비HTTPS) → 임시 input 으로 선택 복사
+  try{
+    const t = document.createElement('textarea');
+    t.value = no; t.setAttribute('readonly','');
+    t.style.position='fixed'; t.style.left='-9999px';
+    document.body.appendChild(t); t.select();
+    document.execCommand('copy');
+    document.body.removeChild(t);
+    done();
+  }catch(e){ toast('계좌번호 : ' + no, 3000); }
+}
+
+function setFilter(f, el){
+  FILTER = f;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  if(el) el.classList.add('on');
+  render();
+}
+
+// ── 썸네일 주소 헬퍼 (2026-11-04) ────────────────────────────────────
+//  [요구] "로딩속도를 빠르게 하기 위해 썸네일 작업 및 최적화 작업 항상 자동"
+//  서버가 `mediaItems` 로 {url, thumb, isVideo} 를 짝지어 준다. 격자·띠에는
+//  thumb(480px, 15~40KB)만 쓰고, 크게 볼 때만 url(원본)을 연다.
+//  서버가 아직 안 보내주면 `/memorial-file/` → `/memorial-thumb/` 로
+//  규칙적으로 바꿔 폴백한다(둘 다 실패하면 원본).
+function thumbOf(p, url){
+  const items = p && p.mediaItems;
+  if(items && items.length){
+    const it = items.find(x => x && x.url === url);
+    if(it && it.thumb) return it.thumb;
+  }
+  if(!url) return url;
+  if(/\.(pdf|docx?|hwpx?|txt|pptx?|xlsx?|gif|zip)$/i.test(String(url).split('?')[0])) return url;
+  return url.replace('/memorial-file/', '/memorial-thumb/');
+}
+
+function visible(){
+  // [요구 2026-11-04] 게시글로 통합 — '전체'는 종류와 무관하게 모든 게시글.
+  if(FILTER==='전체') return POSTS;
+  const media = p => (p.media && p.media.length) ? p.media : (p.photos||[]);
+  if(FILTER==='사진+영상') return POSTS.filter(p=> media(p).length > 0);
+  if(FILTER==='자료') return POSTS.filter(p=> (p.attachments||[]).length > 0);
+  return POSTS;
+}
+
+// ── 렌더 ──────────────────────────────────────────────────────
+function render(){
+  // ── 통계 4종 — 앱(MemorialData)과 **같은 정의**를 쓴다 ──────────────
+  //  [요구 2026-11-06 / turn66] "추모관 디자인이 서로 달라 / 통일해줘"
+  //
+  //  종전 웹은 '자료'를 첨부 **파일 수**(attachments.length 합)로 세었고,
+  //  앱은 문서가 달린 **글 수**(docPostTotal)로 셌다. 그래서 같은 추모관이
+  //  웹 32 · 앱 0 으로 갈렸다 — 사용자 눈에는 "숫자가 다르다"로 보인다.
+  //  앱 정의로 통일한다.
+  //    게시글   = 가려지지 않은 글 수
+  //    사진+영상 = media(사진+영상) **장수** 합   ← 앱 mediaTotal
+  //    자료     = hasOtherFile 인 **글 수**        ← 앱 docPostTotal
+  //    공감     = likeCount 합
+  const alive = POSTS.filter(p=>!p.hidden);
+  const mediaOf = p => (p.media && p.media.length) ? p.media : (p.photos||[]);
+  document.getElementById('stPosts').textContent  = alive.length;
+  document.getElementById('stPhotos').textContent =
+    alive.reduce((a,p)=>a+mediaOf(p).length,0);
+  document.getElementById('stFiles').textContent  =
+    alive.filter(p=>p.hasOtherFile===true).length;
+  document.getElementById('stLikes').textContent  =
+    alive.reduce((a,p)=>a+(p.likeCount||0),0);
+
+  const box = document.getElementById('feed');
+
+  // ── 사진 탭 = 앨범 ─────────────────────────────────────────────────
+  //  [요구 2026-11-04] "사진 폴더를 클릭하면 사진이 포함된 게시글을 보여 주는
+  //   것이 아니라 첨부된 사진만 보여 주면 돼 / 그리고 사진 밑에 올린 사람
+  //   이름을 써주면 돼 / 만약에 범 Scout 인가자의 경우 이름의 괄호 안에
+  //   번호를 써주면 돼"
+  //  글 카드를 나열하면 사진은 스크롤 한참 아래에 나온다. 사진만 격자로 깐다.
+  if(FILTER === '사진+영상'){
+    const cells = [];
+    POSTS.forEach(p=>{
+      if(p.hidden) return;
+      const list = (p.media && p.media.length) ? p.media : (p.photos||[]);
+      list.forEach(u=>{
+        if(/\.(pdf|docx?|hwpx?|txt|pptx?|xlsx?)$/i.test(String(u).split('?')[0])) return;
+        const who = esc(p.name||'익명') + (p.number ? ` (${esc(p.number)})` : '');
+        // [요구 2026-11-04] "사진과 영상 자료는 그 폴더에서 통합해서 보여 줘"
+        //  영상도 같은 격자에 넣는다. 사진은 정사각 썸네일, 영상은 재생 카드.
+        if(isVideoName(u)){
+          cells.push(`<div class="pcell">
+            <div class="pimg pvid" onclick="playVid('${esc(u)}', decodeURIComponent('${esc(u)}'.split('/').pop()))">
+              <video preload="metadata" playsinline muted src="${esc(u)}" poster="${esc(thumbOf(p,u))}"></video>
+              <span class="pbadge">&#9654;</span>
+            </div>
+            <div class="pwho">${who}</div>
+          </div>`);
+          return;
+        }
+        cells.push(`<div class="pcell">
+          <div class="pimg" onclick="showImg('${esc(u)}')"><img src="${esc(thumbOf(p,u))}" alt="" loading="lazy" decoding="async"></div>
+          <div class="pwho">${who}</div>
+        </div>`);
+      });
+    });
+    const nVid = cells.filter(c=>c.includes('pvid')).length;
+    if(!cells.length){
+      box.innerHTML = '<div class="empty"><div class="ei">&#128247;</div>'+
+        '<div class="et">아직 올려진 사진·영상이 없습니다</div>'+
+        '<div class="es">위의 <b>사진 올리기</b>로 첫 사진을 남겨주세요.</div></div>';
+      return;
+    }
+    box.innerHTML = `<div class="palbum"><div class="palb-h">사진+영상 ${cells.length}개`+
+      (nVid?` <span class="pnote">(영상 ${nVid})</span>`:'')+`</div>`+
+      `<div class="pgrid">${cells.join('')}</div></div>`;
+    return;
+  }
+
+  const list = visible();
+  // 통계도 사진 '장수' 기준 (글 수와 어긋나지 않게)
+  if(!list.length){
+    box.innerHTML =
+      '<div class="empty"><div class="ei">🌼</div>'+
+      '<div class="et">아직 남겨진 글이 없습니다</div>'+
+      '<div class="es">위의 <b>추모글</b> 버튼으로 첫 마음을 남겨주세요.</div></div>';
+    return;
+  }
+  box.innerHTML = list.map(card).join('');
+}
+
+function card(p){
+  const k = myKey(p.id);
+  const mine = !!k;
+  const lk = likeKey();
+  const liked = (p.likes||[]).indexOf(lk) >= 0;
+  const nm = esc(p.name || '익명');
+  const no = p.number ? `<span class="no">범#${esc(p.number)}</span>` : '';
+  // [요구 2026-11-04] "사진, 추모글 이렇게 구분하지 말고 게시글로 통합해
+  //  주고" → 오른쪽 종류 배지를 없앤다. 사진이든 글이든 모두 게시글이다.
+  const body = p.body ? `<div class="post-body">${esc(p.body)}</div>` : '';
+
+  // 사진
+  //  [요구 2026-11-04] "첨부파일로 올린 자료도 사진, 영상일 경우 사진폴더에
+  //   노출시켜줘" — 서버가 `media`(사진 + 첨부 중 이미지·영상)를 내려준다.
+  //   썸네일은 `media` 중 영상이 아닌 것만 그린다. 자료 영역에서는 사진을
+  //   빼서 같은 파일이 두 번 보이지 않게 한다.
+  const mediaAll = (p.media && p.media.length) ? p.media : (p.photos || []);
+  let thumbs = '';
+  const imgList = mediaAll.filter(u => !isVideoName(u) && !/\.(pdf|docx?|hwpx?|txt|pptx?|xlsx?)$/i.test(String(u).split('?')[0]));
+  if(imgList.length){
+    thumbs = '<div class="thumbs">' + imgList.map(u=>
+      `<div class="thumb" onclick="showImg('${esc(u)}')"><img src="${esc(thumbOf(p,u))}" alt="" loading="lazy" decoding="async"></div>`
+    ).join('') + '</div>';
+  }
+  // 첨부
+  //  [turn53] 상한이 500MB 로 올라가 영상이 실제로 올라온다. 링크만 주면
+  //  내려받아야 볼 수 있어 어르신들께 문턱이 높다. 서버가 Range(206)를
+  //  지원하므로 <video controls preload="metadata"> 로 바로 재생한다.
+  //  preload="metadata" 인 이유: 목록에 영상이 여러 개일 때 전부 받으면
+  //  트래픽이 폭발한다. 첫 프레임 정보만 받고, 누르면 그때 스트리밍한다.
+  let files = '';
+  const fileOnly = (p.attachments || []).filter(a=>{
+    const n = (typeof a === 'string') ? a.split('/').pop() : (a.name || a.url || '');
+    return !(/\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(String(n).split('?')[0]));
+  });
+  if(fileOnly.length){
+    files = '<div class="files">' + fileOnly.map(a=>{
+      const url = typeof a==='string' ? a : (a.url||'');
+      const name = typeof a==='string' ? a.split('/').pop() : (a.name||'파일');
+      const sz = (typeof a==='object' && a.size) ? `<span class="fs">${fmtSize(a.size)}</span>` : '';
+      if(isVideoName(name)){
+        return `<div class="vcard">
+          <video controls preload="metadata" playsinline src="${esc(url)}"></video>
+          <div class="vmeta"><span class="fi">🎬</span>
+            <span class="fn">${esc(name)}</span>${sz}</div>
+        </div>`;
+      }
+      return `<a class="file" href="${esc(url)}" target="_blank" rel="noopener">
+        <span class="fi">📄</span><span class="fn">${esc(name)}</span>${sz}</a>`;
+    }).join('') + '</div>';
+  }
+
+  // 댓글
+  let cmts = '';
+  if(p.comments && p.comments.length){
+    cmts = '<div class="cmts">' + p.comments.map(c=>
+      `<div class="cmt">
+         <span class="cn">${esc(c.name||'익명')}</span>${c.number?`<span class="no">범#${esc(c.number)}</span>`:''}
+         <span class="cd">${fmtDate(c.created)}</span>
+         <div class="cb">${esc(c.body)}</div>
+       </div>`).join('') + '</div>';
+  }
+  // ── 댓글 입력 (2026-11-08 / turn56 구조 변경) ──────────────────────
+  //  [지적] "댓글 등록하려고 하니 글쓴이 정보가 뜸 /
+  //         댓글은 글쓴이 글에 대한 다른 사람의 피드백임 구조 변경 필요함"
+  //
+  //  ## 종전 구조의 문제
+  //   `addComment()` 가 이름을 localStorage 에서 읽고, 없으면
+  //   **글쓰기 시트(openEditor)를 통째로 띄웠다.** 그래서 댓글 한 줄을
+  //   남기려는 사람에게 '이름·인가번호·내용·사진첨부·등록하기' 라는
+  //   글 작성 폼이 떴다. 댓글과 글쓰기가 같은 폼을 쓰는 잘못된 설계였다.
+  //
+  //  ## 새 구조 — '글 = 신원 필요 / 댓글 = 신원 불필요'
+  //   · 글쓰기 : 종전대로 이름(필수)·인가번호(선택)를 받는다.
+  //              (추모글의 주인은 누구인지 남겨야 하므로)
+  //   · 댓글   : **이름 한 칸(선택)** 만 둔다. 비우면 '익명'으로 기록된다.
+  //              시트를 띄우지 않고, 방문자가 미리 적어둔 이름이 있으면
+  //              그 값을 채워만 준다(= 한 번 적으면 계속 편함).
+  //   서버는 이미 name 이 빈 문자열이어도 받아주고, 화면은 '익명'으로
+  //   표시한다(renderPost 의 `c.name||'익명'`). 그래서 서버 변경은 없다.
+  const cmtForm = `<div class="cmt-form">
+      <input type="text" class="who" id="cn_${esc(p.id)}" placeholder="익명"
+             maxlength="40" aria-label="댓글에 표시할 이름(선택)"
+             onkeydown="if(event.key==='Enter')addComment('${esc(p.id)}')">
+      <input type="text" id="ci_${esc(p.id)}" placeholder="댓글 남기기" maxlength="1000"
+             onkeydown="if(event.key==='Enter')addComment('${esc(p.id)}')">
+      <button class="btn btn-p btn-xs" onclick="addComment('${esc(p.id)}')">등록</button>
+    </div>
+    <div class="cmt-hint">
+      댓글은 글에 대한 짧은 인사말입니다. 이름을 비우면 <b>익명</b>으로 남습니다.
+    </div>`;
+
+  // 관리 버튼
+  let admin = '';
+  if(mine){
+    admin += `<button class="act" onclick="openEditor('', '${esc(p.id)}')">✏️ 편집</button>`;
+    admin += `<button class="act" onclick="delPost('${esc(p.id)}','hide')">🙈 가리기</button>`;
+    admin += `<button class="act" onclick="delPost('${esc(p.id)}','delete')">🗑 삭제</button>`;
+  }
+
+  return `<div class="post ${p.hidden?'hidden':''}" id="pc_${esc(p.id)}">
+    <div class="post-head">
+      <div class="who">
+        <div class="nm">${nm}${no}</div>
+        <div class="meta">${fmtDate(p.created)}${p.hidden?' · (가려짐)':''}</div>
+      </div>
+      ${/* 종류 배지 없음 — 게시글로 통합 */''}
+    </div>
+    ${body}${thumbs}${files}
+    <div class="post-foot">
+      <button class="act ${liked?'on':''}" onclick="toggleLike('${esc(p.id)}')">
+        <span class="h">${liked?'❤️':'🤍'}</span> 공감 <b>${p.likeCount||0}</b>
+      </button>
+      <button class="act" onclick="focusCmt('${esc(p.id)}')">💬 댓글 <b>${p.commentCount||0}</b></button>
+      <span class="grow"></span>
+      ${admin}
+    </div>
+    ${cmts}${cmtForm}
+  </div>`;
+}
+
+function focusCmt(id){
+  // [turn56] 댓글 입력창으로 바로 이동한다(이름 칸은 비어 있어도 되므로
+  //  본문 칸에 포커스를 준다). 댓글 버튼은 '쓰기 유도'이지 '신원 요구'가 아니다.
+  const el = document.getElementById('ci_'+id);
+  if(el){ el.focus(); el.scrollIntoView({block:'center', behavior:'smooth'}); }
+}
+
+// ── 공감 ──────────────────────────────────────────────────────
+async function toggleLike(id){
+  try{
+    const r = await fetch('/api/memorial/like',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id:MID, postId:id, likeKey:likeKey()})
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'like');
+    const p = POSTS.find(x=>x.id===id);
+    if(p){
+      p.likeCount = j.likeCount;
+      p.likes = p.likes || [];
+      if(j.liked){ if(p.likes.indexOf(likeKey())<0) p.likes.push(likeKey()); }
+      else { p.likes = p.likes.filter(x=>x!==likeKey()); }
+    }
+    render();
+  }catch(e){ toast('공감 처리에 실패했습니다'); }
+}
+
+// ── 댓글 ──────────────────────────────────────────────────────
+//  [turn56 구조 변경] 글쓴이 정보를 **요구하지 않는다**.
+//   댓글은 글에 대한 다른 사람의 피드백이므로, 이름은 선택이고
+//   비우면 서버에 빈 값으로 저장되어 화면에서 '익명'으로 보인다.
+//   (종전: `if(!name){ openEditor(...) }` → 글쓰기 폼이 떠서 사용자가
+//    "글쓴이 정보가 뜬다" 고 보고한 원인)
+async function addComment(id){
+  const el  = document.getElementById('ci_'+id);
+  const wEl = document.getElementById('cn_'+id);
+  const body = (el && el.value || '').trim();
+  if(!body){ toast('댓글 내용을 입력해 주세요'); if(el) el.focus(); return; }
+
+  // 이름은 **선택**. 비어 있으면 '익명'으로 저장한다.
+  // 방문자가 예전에 적어둔 이름이 있으면 그 값을 기본으로 채워준다.
+  let name = (wEl && wEl.value || '').trim();
+  if(!name) name = localStorage.getItem(LS_NM) || '';
+  if(!name) name = '익명';
+  // 익명 댓글에는 인가번호를 붙이지 않는다 — 신원을 밝히지 않은 글에
+  //  명부 번호가 붙으면 남의 번호로 오인될 수 있다.
+  const num = (name === '익명') ? '' : (localStorage.getItem(LS_NO) || '');
+
+  try{
+    const r = await fetch('/api/memorial/comment',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id:MID, postId:id, name, number:num, body})
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'comment');
+    if(el) el.value='';
+    await load();
+    toast('댓글을 남겼습니다');
+  }catch(e){ toast('댓글 등록에 실패했습니다'); }
+}
+
+// ── 삭제·숨김 ─────────────────────────────────────────────────
+async function delPost(id, action){
+  if(action==='delete' && !confirm('이 글을 완전히 삭제할까요?\n삭제 후에는 되돌릴 수 없습니다.')) return;
+  if(action==='hide'   && !confirm('이 글을 가릴까요?\n(관리자는 계속 볼 수 있습니다)')) return;
+  try{
+    const r = await fetch('/api/memorial/delete',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id:MID, postId:id, action, editKey:myKey(id)})
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'delete');
+    await load();
+    toast(action==='delete'?'삭제했습니다':'가렸습니다');
+  }catch(e){ toast('처리하지 못했습니다: '+e.message); }
+}
+
+// ── 에디터 ────────────────────────────────────────────────────
+function openEditor(kind, editId){
+  editingId = editId || null;
+  const t = document.getElementById('edTitle');
+  const h = document.getElementById('edHint');
+  document.getElementById('fName').value = localStorage.getItem(LS_NM) || '';
+  document.getElementById('fNum').value  = localStorage.getItem(LS_NO) || '';
+  document.getElementById('fBody').value = '';
+  uploaded = [];
+  renderUpList();
+
+  if(editId){
+    const p = POSTS.find(x=>x.id===editId);
+    t.textContent = '글 수정';
+    h.textContent = '글쓴이 본인만 수정할 수 있습니다.';
+    if(p){
+      document.getElementById('fName').value = p.name || '';
+      document.getElementById('fNum').value  = p.number || '';
+      document.getElementById('fBody').value = p.body || '';
+      uploaded = []
+        .concat((p.photos||[]).map(u=>({name:u.split('/').pop(), url:u, isImage:true})))
+        .concat((p.attachments||[]).map(a=>({
+          name: typeof a==='string'?a.split('/').pop():(a.name||'파일'),
+          url:  typeof a==='string'?a:(a.url||''),
+          size: (typeof a==='object'&&a.size)||0,
+          isImage:false
+        })));
+      renderUpList();
+    }
+  }else{
+    t.textContent = kind==='사진' ? '사진 올리기'
+                  : kind==='자료' ? '자료 올리기' : '추모글 쓰기';
+    h.textContent = '로그인 없이도 남길 수 있습니다. 인가자이시면 인가번호를 함께 적어주세요.';
+    if(kind==='사진'||kind==='자료'){
+      setTimeout(()=>document.getElementById('fFile').click(), 260);
+    }
+  }
+  document.getElementById('mask').classList.add('on');
+  document.body.style.overflow='hidden';
+}
+
+function closeEditor(){
+  document.getElementById('mask').classList.remove('on');
+  document.body.style.overflow='';
+  editingId = null;
+}
+
+// 파일명이 영상인가 — 서버의 VIDEO_EXT 와 같은 목록.
+function isVideoName(n){
+  var t = String(n||'').toLowerCase().split('?')[0];
+  return /\.(mp4|mov|webm|m4v|avi|mkv|3gp)$/.test(t);
+}
+
+function renderUpList(){
+  const box = document.getElementById('upList');
+  if(!uploaded.length){ box.innerHTML=''; return; }
+  box.innerHTML = uploaded.map((u,i)=>
+    `<div class="upitem"><span>${u.isImage?'🖼':'📄'}</span>
+      <span class="un">${esc(u.name)}</span>
+      <span class="ux" onclick="rmUp(${i})">×</span></div>`).join('');
+}
+function rmUp(i){ uploaded.splice(i,1); renderUpList(); }
+
+// ── 업로드 ────────────────────────────────────────────────────
+async function uploadOne(file){
+  const url = '/api/memorial/upload?id='+encodeURIComponent(MID)
+            + '&name='+encodeURIComponent(file.name);
+  const r = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type': file.type || 'application/octet-stream'},
+    body: file
+  });
+  const j = await r.json();
+  if(!j.ok) throw new Error(j.error || 'upload');
+  return {name:j.name, url:j.url, isImage:!!j.isImage, size:j.size};
+}
+
+async function handleFiles(files){
+  // 배열(스냅샷)로 받는다 — 호출측에서 FileList 를 비워도 안전하다.
+  const arr = Array.from(files || []);
+  let done = 0, fail = 0;
+  for(const f of arr){
+    done++;
+    if(f.size > 500*1024*1024){ toast(f.name+' — 500MB 를 넘습니다'); fail++; continue; }
+    const t = document.createElement('div');
+    t.className='upitem';
+    const tag = arr.length > 1 ? ` (${done}/${arr.length})` : '';
+    t.innerHTML='<span>⏳</span><span class="un">'+esc(f.name)+tag+' 업로드 중…</span>';
+    document.getElementById('upList').appendChild(t);
+    try{
+      const u = await uploadOne(f);
+      uploaded.push(u);
+      t.remove(); renderUpList();
+    }catch(e){
+      t.remove(); fail++;
+      toast(f.name+' 업로드 실패: '+e.message);
+    }
+  }
+  if(arr.length > 1){
+    toast(fail ? `${arr.length-fail}개 올림 · ${fail}개 실패`
+               : `${arr.length}개 모두 올렸습니다 ✓`, 2200);
+  }
+}
+
+// ── 저장 ──────────────────────────────────────────────────────
+async function savePost(){
+  const name = document.getElementById('fName').value.trim();
+  const num  = document.getElementById('fNum').value.trim();
+  const body = document.getElementById('fBody').value.trim();
+  if(!name){ toast('이름을 입력해 주세요'); document.getElementById('fName').focus(); return; }
+  if(!body && !uploaded.length){ toast('내용이나 사진·자료를 넣어주세요'); return; }
+
+  localStorage.setItem(LS_NM, name);
+  localStorage.setItem(LS_NO, num);
+
+  // ── [요구 2026-11-04] "첨부파일로 올린 자료도 사진, 영상일 경우
+  //    사진폴더에 노출시켜줘"
+  //  종전에는 업로드 응답의 isImage 만 믿었다. 그런데 '자료 올리기'로
+  //  들어온 파일은 서버가 isImage=false 로 줄 수 있어(확장자 판정 차이),
+  //  사진이 자료로 굳어 사진 탭에서 사라졌다.
+  //  → 파일명 확장자로 한 번 더 판정해 **이미지면 photos 로** 보낸다.
+  //    (영상은 photos 가 아니라 attachments 유지 — 재생 카드로 보인다)
+  const isImg = u => !!u.isImage || /\.(jpg|jpeg|png|gif|webp|bmp|heic)$/i.test(String(u.name||u.url||'').split('?')[0]);
+  const photos = uploaded.filter(isImg).map(u=>({
+    name:u.name, url:u.url, size:u.size
+  }));
+  const atts = uploaded.filter(u=>!isImg(u)).map(u=>({
+    name:u.name, url:u.url, size:u.size
+  }));
+  // 사진도 첨부로 열람 가능하게 URL 문자열 목록으로 보낸다
+  const payload = {
+    id: MID, name, number: num, body,
+    photos: uploaded.filter(isImg).map(u=>u.url),
+    attachments: uploaded.map(u=>({name:u.name, url:u.url, size:u.size})),
+    editKey: editingId ? myKey(editingId) : ''
+  };
+  if(editingId) payload.postId = editingId;
+
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 저장 중…';
+  try{
+    const r = await fetch('/api/memorial/post',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'save');
+    if(j.editKey) saveKey(j.id, j.editKey);
+    closeEditor();
+    await load();
+    toast(editingId?'수정했습니다':'남겨주셔서 감사합니다');
+  }catch(e){
+    toast('저장하지 못했습니다: '+e.message, 4000);
+  }finally{
+    btn.disabled=false; btn.textContent='등록하기';
+  }
+}
+
+// ── 이미지 크게 보기 ───────────────────────────────────────────
+function showImg(u){
+  document.getElementById('imgBig').src = u;
+  document.getElementById('imgBox').classList.add('on');
+}
+function closeImg(){ document.getElementById('imgBox').classList.remove('on'); }
+
+// -- 영상 크게 보기(모달) ---------------------------------------------
+//  [요구 2026-11-04] 사진+영상 폴더에서 영상을 눌렀을 때 그 자리에서 재생.
+//  서버가 Range(206) 를 지원하므로 <video> 에 URL 만 주면 스트리밍된다.
+//  [보강 2026-11-06 / turn65]
+//   · 종전에는 닫기 버튼이 없고 closeVid() 를 부르는 곳도 없어서 **죽은
+//     코드**였다(모달을 열면 ESC 도 안 먹고 빠져나갈 수 없었다).
+//     → × 버튼 · 배경 클릭 · ESC 세 가지로 닫는다.
+//   · 대표 추모영상은 길다(3분 19초). 어느 영상인지 잊지 않게 하단 캡션.
+function playVid(u, cap){
+  const v = document.getElementById('vidBig');
+  if (!v || !u) return;
+  const capEl = document.getElementById('vidCap');
+  if (capEl) capEl.textContent = cap || '';
+  v.src = u;
+  document.getElementById('vidBox').classList.add('on');
+  document.body.style.overflow = 'hidden';   // 뒤 배경 스크롤 잠금
+  v.play().catch(()=>{});                     // iOS 자동재생 차단은 정상
+}
+function closeVid(){
+  const v = document.getElementById('vidBig');
+  document.getElementById('vidBox').classList.remove('on');
+  document.body.style.overflow = '';
+  try{ v.pause(); v.removeAttribute('src'); v.load(); }catch(e){}
+}
+// 모달 자체를 눌렀을 때(영상·버튼 바깥) 닫기 + ESC
+document.getElementById('vidBox').addEventListener('click', function(e){
+  if (e.target === this) closeVid();
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && document.getElementById('vidBox').classList.contains('on')){
+    closeVid();
+  }
+});
+
+// ── 이벤트 연결 ───────────────────────────────────────────────
+const drop = document.getElementById('drop');
+const fFile = document.getElementById('fFile');
+drop.addEventListener('click', ()=>fFile.click());
+fFile.addEventListener('change', ()=>{
+  // ── [치명 버그 수정 2026-11-04] "여러 파일 동시 선택이 안 된다" ──────
+  //  종전 코드:
+  //      handleFiles(fFile.files);   // ← 살아있는(live) FileList 를 넘기고
+  //      fFile.value='';             // ← 곧바로 선택을 비웠다
+  //
+  //  `input.files` 는 **live FileList** 다. value='' 로 선택을 비우면
+  //  그 FileList 의 length 가 0 이 되어 버린다. handleFiles 는 첫 파일을
+  //  업로드하는 동안 await 로 멈추는데, 그 사이 목록이 비워지므로
+  //  두 번째 next() 가 곧바로 끝나 **첫 1개만 올라갔다.**
+  //  사용자 눈에는 "여러 개 골라도 하나만 올라간다"로 보인다.
+  //
+  //  수정: 비우기 **전에** 일반 배열로 복사해 둔다. 배열은 스냅샷이라
+  //  input 을 비워도 파일이 남는다. (같은 input 을 다시 쓸 수 있도록
+  //  value='' 는 그대로 유지 — 안 하면 같은 파일 재선택이 무시된다.)
+  const files = Array.from(fFile.files || []);
+  fFile.value='';
+  if(files.length){
+    if(files.length > 1) toast(files.length + '개 파일을 올립니다…', 1800);
+    handleFiles(files);
+  }
+});
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev, e=>{
+  e.preventDefault(); drop.classList.add('over');
+}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev, e=>{
+  e.preventDefault(); drop.classList.remove('over');
+}));
+drop.addEventListener('drop', e=>{
+  // 드래그앤드롭도 live FileList 이므로 배열로 복사해 넘긴다.
+  if(e.dataTransfer && e.dataTransfer.files){
+    const files = Array.from(e.dataTransfer.files);
+    if(files.length) handleFiles(files);
+  }
+});
+
+// 첫 방문 안내
+window.addEventListener('load', ()=>{
+  load();
+  const seen = localStorage.getItem('tsak_memorial_seen');
+  if(!seen){
+    localStorage.setItem('tsak_memorial_seen','1');
+    setTimeout(()=>toast('선배님을 기억하는 마음을 남겨주세요 🌼', 3400), 900);
+  }
+});
+</script>
+</body>
+</html>

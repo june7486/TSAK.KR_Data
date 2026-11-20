@@ -1,0 +1,17 @@
+# TSAK 프록시 의존성
+#  ## 종전 주석이 거짓이었다 (2026-11-20 확인)
+#   "표준 라이브러리만 사용합니다 (필수 의존성 없음)" 이라고 적혀 있었지만,
+#   proxy_server.py 가 openpyxl 을 **세 곳에서 최상위 import** 한다.
+#     · 6311  엑셀(.xlsx) 인원 명단 업로드 파싱   ← 실사용 핵심 기능
+#     · 8226  견본 xlsx 생성
+#     · 17354 통합 재무 엑셀 내보내기 (Font/PatternFill/Alignment)
+#   이걸 설치하지 않으면 앱은 뜨지만 **엑셀 기능만 조용히 죽는다.**
+#   기동 실패가 아니라 기능 실패라서 눈치채기 어렵다 → 실제로 이전 시 위험했다.
+#
+#  설치:
+#    Debian/Ubuntu : sudo apt install python3-openpyxl
+#    또는          : pip3 install -r requirements.txt
+openpyxl>=3.0
+
+# 선택: brotli 가 있으면 gzip 대신 더 작은 압축으로 전송 (없어도 동작)
+# brotli

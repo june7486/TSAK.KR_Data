@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2E1A47">
+<title>2026년 전국훈육지도자회의 · Scout's Own · TSAK</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<meta property="og:title" content="2026년 전국훈육지도자회의 · Scout's Own">
+<meta property="og:description" content="전쟁과 고통 앞에서, 지도자는 무엇을 말할 것인가. 로그인 없이 답을 남겨주세요.">
+<style>
+  /* ══════════════════════════════════════════════════════════════════
+     Scout's Own 게시판 (2026-11-08 / turn57)
+     [요구] "추모관 운영과 같이 별도 게시판을 만들꺼야
+             '2026년 전국훈육지도자회의 Scout's Own'
+             로그인없이 작성 가능 (추모관과 완전 같은 형식)"
+
+     ## 디자인 원칙 — 추모관과 **같은 골격**
+      추모관(memorial.html)과 같은 색 토큰·같은 카드 반경·같은 여백을 쓴다.
+      방문자가 두 페이지를 오갈 때 같은 사이트라는 인상을 유지해야 한다.
+      다른 점은 하나 — **추모관은 영정과 먹빛 보라, 여기는 앰블럼과 청록**.
+      (성찰의 자리이므로 차분한 청록-먹 계열을 보조색으로 둔다)
+
+     ## 구조 (위 → 아래)
+      ① 히어로(앰블럼 + 회의명 + 주제)
+      ② 소개문 (Scout's Own 이 무엇인지 · 이번 주제)
+      ③ 질문 목록 (관리자가 순서·내용·삭제 관리) ← 이 게시판의 '축'
+      ④ 통계 (실시간)
+      ⑤ 관리자 로그인 / 관리 패널 (마스터)
+     ══════════════════════════════════════════════════════════════════ */
+  :root{
+    --purple:#4B2E83; --purple-d:#2E1A47; --gold:#B8964F; --gold-l:#E8D9B0;
+    --teal:#1F6F6B; --teal-l:#E4F2F1;          /* Scout's Own 보조색 */
+    --ink:#1D1B24; --muted:#6E6880; --line:#E7E3EE; --bg:#F5F3F8;
+    --card:#FFFFFF; --ok:#1E7A46; --warn:#B7791F; --danger:#C0392B;
+    --radius:20px; --shadow:0 10px 34px rgba(46,26,71,.10);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
+    min-height:100vh; padding-bottom:40px;
+    overflow-x:hidden; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:0 14px;}
+
+  /* ── 히어로 ── */
+  .hero{
+    background:linear-gradient(160deg,var(--purple-d) 0%,var(--purple) 55%,#2A6663 100%);
+    color:#fff; padding:26px 18px 30px; position:relative; overflow:hidden;
+  }
+  .hero::after{
+    content:""; position:absolute; right:-70px; top:-70px; width:240px; height:240px;
+    border-radius:50%; background:rgba(255,255,255,.05);
+  }
+  .hero-in{max-width:720px;margin:0 auto;position:relative;z-index:1;text-align:center;}
+  .emblem{
+    width:74px;height:74px;object-fit:contain;margin:0 auto 12px;display:block;
+    filter:drop-shadow(0 6px 16px rgba(0,0,0,.35));
+  }
+  .program{
+    display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:1.6px;
+    color:var(--gold-l);border:1px solid rgba(232,217,176,.45);
+    padding:4px 12px;border-radius:999px;margin-bottom:12px;
+  }
+  .hero h1{font-size:24px;margin:0 0 8px;letter-spacing:-.5px;font-weight:800;line-height:1.35;}
+  .hero .sub{font-size:13px;opacity:.9;margin:0;line-height:1.6;}
+  .goldline{width:56px;height:2.5px;background:var(--gold);margin:14px auto 12px;border-radius:2px;}
+  .hero .meta{font-size:11.5px;opacity:.66;letter-spacing:.4px;}
+  /* 하단 앱 복귀 — 추모관과 같은 위치·같은 방식 */
+  .hero-nav{margin-top:18px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+  .hero-nav a{
+    font-size:11px;font-weight:700;color:#fff;text-decoration:none;
+    border:1px solid rgba(255,255,255,.35);border-radius:999px;
+    padding:6px 13px;transition:.15s;
+  }
+  .hero-nav a:hover{background:rgba(255,255,255,.14);}
+
+  /* ── 흰 밴드 ── */
+  .band{background:#fff;}
+  .band-in{max-width:720px;margin:0 auto;padding:0 14px;}
+
+  /* 소개문 */
+  .intro{padding:20px 0 6px;}
+  .intro p{
+    font-size:13.5px;line-height:1.85;color:#3A3648;margin:0 0 12px;
+    word-break:keep-all;
+  }
+  .intro p:last-child{margin-bottom:0;}
+  .note{
+    margin:14px 0 4px;padding:12px 14px;background:#FAF8FD;
+    border-left:3px solid var(--teal);border-radius:0 12px 12px 0;
+    font-size:12px;line-height:1.7;color:var(--muted);
+  }
+
+  /* ── 통계 ── */
+  .stats{display:flex;padding:16px 0 8px;border-top:1px solid var(--line);margin-top:16px;}
+  .stat{flex:1;text-align:center;}
+  .stat b{display:block;font-size:18px;color:var(--purple);font-weight:800;line-height:1.3;}
+  .stat span{font-size:10px;color:var(--muted);}
+  .stats-h{
+    display:flex;align-items:center;gap:7px;padding:16px 0 2px;
+    font-size:12.5px;font-weight:800;color:var(--purple);
+  }
+  .stats-h .live{
+    font-size:9.5px;font-weight:700;color:var(--ok);background:#E8F4EC;
+    padding:2px 7px;border-radius:999px;letter-spacing:.3px;
+  }
+
+  /* 질문별 응답 막대 */
+  .qbar{padding:16px 0 2px;}
+  .qbar-h{font-size:12px;font-weight:800;color:var(--purple);margin-bottom:10px;}
+  .qbar-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+  .qbar-n{
+    flex:0 0 22px;font-size:10px;font-weight:800;color:var(--muted);text-align:right;
+  }
+  .qbar-t{
+    flex:1;min-width:0;height:9px;background:#F1EEF7;border-radius:999px;overflow:hidden;
+  }
+  .qbar-f{height:100%;background:linear-gradient(90deg,var(--purple),var(--teal));border-radius:999px;transition:width .4s;}
+  .qbar-v{flex:0 0 54px;font-size:10.5px;font-weight:800;color:var(--purple);text-align:right;}
+
+  /* ── 질문 카드 ── */
+  .qhead{
+    display:flex;align-items:center;gap:7px;padding:22px 0 10px;
+    font-size:14px;font-weight:800;color:var(--ink);
+  }
+  .qhead .cnt{
+    font-size:10.5px;font-weight:800;color:var(--teal);background:var(--teal-l);
+    padding:2px 8px;border-radius:999px;
+  }
+  .qlist{display:flex;flex-direction:column;gap:12px;padding-bottom:6px;}
+  .qcard{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;box-shadow:0 3px 14px rgba(46,26,71,.055);
+    position:relative;transition:.16s;
+  }
+  .qcard:hover{box-shadow:0 6px 22px rgba(46,26,71,.09);}
+  .qcard-h{display:flex;gap:9px;align-items:flex-start;margin-bottom:9px;}
+  .qnum{
+    flex:0 0 26px;height:26px;border-radius:9px;background:var(--teal-l);
+    color:var(--teal);font-size:12px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;margin-top:1px;
+  }
+  .qtext{
+    flex:1;font-size:14.5px;font-weight:800;line-height:1.6;color:var(--ink);
+    letter-spacing:-.2px;word-break:keep-all;
+  }
+  .qhint{
+    font-size:11.5px;line-height:1.65;color:var(--muted);margin:0 0 12px;
+    padding-left:35px;word-break:keep-all;
+  }
+  .qmeta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-left:35px;}
+  .qmeta .pill{
+    font-size:10.5px;font-weight:800;color:var(--purple);background:#F0EBF8;
+    padding:3px 9px;border-radius:999px;
+  }
+  .qmeta .btn{margin-left:auto;}
+
+  /* 답변 목록 */
+  .anslist{margin-top:12px;padding-top:11px;border-top:1px dashed var(--line);}
+  .ans{
+    padding:10px 0;border-bottom:1px solid #F3F1F7;font-size:13px;
+  }
+  .ans:last-child{border-bottom:none;}
+  .ans-h{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;}
+  .ans-h .nm{font-weight:800;font-size:12.5px;color:var(--purple);}
+  .ans-h .no{
+    font-size:10px;color:var(--purple);background:#F0EBF8;
+    padding:1px 6px;border-radius:5px;font-weight:800;
+  }
+  .ans-h .cd{font-size:10px;color:var(--muted);font-weight:600;}
+  .ans-b{font-size:13px;line-height:1.72;white-space:pre-wrap;word-break:break-word;color:#2A2733;}
+  .ans-toggle{
+    border:none;background:transparent;color:var(--teal);font-size:11.5px;
+    font-weight:800;cursor:pointer;padding:7px 0;
+  }
+  .ans-toggle:hover{text-decoration:underline;}
+
+  /* ── 입력 폼 ── */
+  .field{margin-bottom:11px;}
+  .field label{
+    display:block;font-size:11.5px;font-weight:800;color:var(--muted);
+    margin-bottom:5px;letter-spacing:-.1px;
+  }
+  .field label .opt{font-weight:600;color:#AAA4B8;}
+  .field input[type=text],.field input[type=tel],.field input[type=password],
+  .field textarea,.field select{
+    width:100%;border:1px solid var(--line);border-radius:12px;
+    padding:11px 13px;font-size:13.5px;font-family:inherit;outline:none;
+    background:#fff;color:var(--ink);transition:.15s;
+  }
+  .field input:focus,.field textarea:focus,.field select:focus{
+    border-color:var(--purple);box-shadow:0 0 0 3px rgba(75,46,131,.08);
+  }
+  .field textarea{min-height:96px;resize:vertical;line-height:1.7;}
+  .two{display:flex;gap:8px;}
+  .two .field{margin-bottom:0;}
+
+  .btn{
+    border:none;border-radius:12px;padding:11px 17px;font-size:13px
+    ;font-weight:800;cursor:pointer;font-family:inherit;transition:.14s;
+  }
+  .btn-p{background:var(--purple);color:#fff;}
+  .btn-p:hover{background:var(--purple-d);}
+  .btn-t{background:var(--teal);color:#fff;}
+  .btn-t:hover{background:#17564F;}
+  .btn-s{background:#fff;color:var(--purple);border:1.5px solid var(--purple);}
+  .btn-s:hover{background:#F5F1FB;}
+  .btn-g{background:#fff;color:var(--muted);border:1.5px solid var(--line);}
+  .btn-g:hover{background:#F7F6FA;}
+  .btn-d{background:#fff;color:var(--danger);border:1.5px solid #E9C4BE;}
+  .btn-d:hover{background:#FCF1EF;}
+  .btn-xs{padding:6px 11px;font-size:11.5px;border-radius:9px;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+
+  /* ── 관리자 바 ── */
+  .adbar{
+    display:flex;align-items:center;gap:8px;padding:12px 0;
+    font-size:11.5px;color:var(--muted);flex-wrap:wrap;
+  }
+  .adbar .grow{flex:1;}
+  /* 답변 보이기/가리기 — [요구 2026-11-11] "답변 보이기/가리기 버튼 달아줘" */
+  #btnAnsToggle{white-space:nowrap;}
+  #btnAnsToggle .ico{font-size:10px;margin-right:3px;}
+  .adlock{
+    display:inline-flex;align-items:center;gap:5px;font-weight:800;
+    color:var(--purple);background:#F0EBF8;border-radius:999px;padding:5px 11px;
+    font-size:11px;
+  }
+
+  /* 마스터 패널 — 질문 편집 */
+  .panel{
+    background:#FBFAFD;border:1px dashed #CFC6E2;border-radius:16px;
+    padding:14px;margin:6px 0 4px;
+  }
+  .panel-h{
+    display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;
+    color:var(--purple);margin-bottom:10px;
+  }
+  .prow{
+    display:flex;gap:6px;align-items:center;background:#fff;
+    border:1px solid var(--line);border-radius:11px;padding:9px 10px;margin-bottom:7px;
+  }
+  .prow .pn{flex:0 0 20px;font-size:10px;font-weight:800;color:var(--muted);}
+  .prow .pt{
+    flex:1;min-width:0;font-size:12px;line-height:1.5;color:var(--ink);
+    overflow:hidden;text-overflow:ellipsis;
+  }
+  .prow .pt.off{color:#B8B2C6;text-decoration:line-through;}
+  .prow .pacts{display:flex;gap:2px;flex:0 0 auto;}
+  .mv{
+    border:none;background:#F5F3F8;color:var(--purple);width:26px;height:26px;
+    border-radius:7px;cursor:pointer;font-size:12px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;transition:.13s;
+  }
+  .mv:hover{background:#E9E2F5;}
+  .mv:disabled{opacity:.32;cursor:not-allowed;}
+
+  /* ── 모달(공통) ── */
+  .mask{
+    position:fixed;inset:0;background:rgba(24,18,38,.52);display:none;
+    z-index:90;padding:0;overflow-y:auto;
+  }
+  .mask.on{display:flex;}
+  @media(min-width:640px){.mask{align-items:center;padding:20px;}}
+  .sheet{
+    background:#fff;width:100%;max-width:560px;margin:auto;
+    border-radius:22px 22px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));
+    box-shadow:var(--shadow);animation:up .22s ease;max-height:94vh;overflow-y:auto;
+  }
+  @media(min-width:640px){.sheet{border-radius:22px;padding:24px 22px;}}
+  @keyframes up{from{transform:translateY(26px);opacity:.6}to{transform:none;opacity:1}}
+  .sheet h2{font-size:17px;margin:0 0 4px;letter-spacing:-.3px;color:var(--purple);}
+  .sheet .hint{font-size:11.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;}
+
+  /* 토스트 */
+  #toast{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+    background:rgba(30,22,48,.94);color:#fff;font-size:12.5px;font-weight:700;
+    padding:11px 20px;border-radius:999px;opacity:0;pointer-events:none;
+    transition:.22s;z-index:200;max-width:88vw;text-align:center;line-height:1.5;
+  }
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* 푸터 */
+  .foot{
+    text-align:center;padding:26px 0 8px;font-size:10.5px;color:var(--muted);
+    line-height:1.9;
+  }
+  .foot a{color:var(--purple);text-decoration:none;font-weight:700;}
+  .foot a:hover{text-decoration:underline;}
+
+  /* 빈 상태 */
+  .empty{
+    text-align:center;padding:34px 16px;color:var(--muted);font-size:13px;line-height:1.8;
+  }
+  .empty .ico{font-size:30px;display:block;margin-bottom:8px;opacity:.5;}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-in">
+    <!-- 스카우트 앰블럼 — [요구] "스카우트 앰블럼을 넣으면 됨"
+         추모관에서 쓰던 것과 **같은 파일**을 쓴다(tsak_emblem_splash.png).
+         파일 하나만 바꾸면 두 페이지가 동시에 바뀐다. -->
+    <img class="emblem" id="hEmblem" src="tsak_emblem_splash.png"
+         alt="한국 범스카우트 중앙회" onerror="this.style.display='none'">
+    <div><span class="program" id="hProgram">SCOUT'S OWN</span></div>
+    <h1 id="hTitle">2026년 전국훈육지도자회의</h1>
+    <p class="sub" id="hSub">전쟁과 고통 앞에서, 지도자는 무엇을 말할 것인가</p>
+    <div class="goldline"></div>
+    <div class="meta" id="hMeta">한국 범스카우트 중앙회 · 2026년</div>
+    <div class="hero-nav">
+      <a href="/" target="_top" rel="noopener">중앙회 앱</a>
+      <a href="/memorial.html" target="_top" rel="noopener">故 노경하 추모관</a>
+    </div>
+  </div>
+</div>
+
+<div class="band">
+  <div class="band-in">
+
+    <!-- ── ② 소개문 ────────────────────────────────────────────────
+         [요구] "이번 스카우트 오운에 대한 간략한 설명을 위에 노출" -->
+    <div class="intro" id="introBox"></div>
+    <div class="note" id="noteBox" style="display:none"></div>
+
+    <!-- ── ③ 통계 (실시간) ─────────────────────────────────────────
+         [요구] "글은 통계를 내서 실시간으로 볼 수 있어" -->
+    <div class="stats-h">
+      <span>지금까지의 기록</span>
+      <span class="live" id="liveTag">LIVE</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="stPeople">0</b><span>참여 인원</span></div>
+      <div class="stat"><b id="stAnswers">0</b><span>남긴 글</span></div>
+      <div class="stat"><b id="stQ">0</b><span>질문</span></div>
+      <div class="stat"><b id="stRate">0%</b><span>응답률</span></div>
+    </div>
+    <div class="qbar" id="qbarBox">
+      <div class="qbar-h">질문별 응답 현황</div>
+      <div id="qbarRows"></div>
+    </div>
+
+    <!-- ── 관리자 바 ──────────────────────────────────────────────
+         [요구] "게시판에는 관리자로그인 항목이 있어야함 (관리자는 마스터임)" -->
+    <div class="adbar">
+      <!-- 전체 답변 보이기/가리기 — [요구 2026-11-11] "마스터만 권한이 있음"
+           → 로그인 전에는 아예 보이지 않는다(renderAdmin 이 켠다). -->
+      <button class="btn btn-t btn-xs" id="btnAnsToggle"
+              onclick="toggleAllAnswers()"
+              style="display:none">답변 보이기</button>
+      <span class="grow"></span>
+      <span id="adState"></span>
+      <button class="btn btn-g btn-xs" id="btnAdmin"
+              onclick="onAdminClick()">관리자 로그인</button>
+    </div>
+
+    <!-- 마스터 전용 패널 (질문 관리) -->
+    <div class="panel" id="adminPanel" style="display:none">
+      <div class="panel-h">⚙️ 질문 관리 <span style="font-weight:600;color:#9A93B0">— 마스터 전용</span></div>
+      <div id="pRows"></div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn btn-p btn-xs" onclick="openQEditor('')">+ 질문 추가</button>
+        <button class="btn btn-g btn-xs" onclick="resetQuestions()">예시 10개로 되돌리기</button>
+        <button class="btn btn-g btn-xs" onclick="openEventEditor()">행사 소개문 수정</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-d btn-xs" onclick="logoutAdmin()">로그아웃</button>
+      </div>
+    </div>
+
+    <!-- ── ④ 질문 목록 ─────────────────────────────────────────────
+         [요구] "하단에 함께 내용 주제들을 나열" -->
+    <div class="qhead">
+      <span>함께 나누는 질문</span>
+      <span class="cnt" id="qCount">0</span>
+    </div>
+    <div class="qlist" id="qlist"></div>
+
+    <div class="foot">
+      <div>한국 범스카우트 중앙회 · 2026년 전국훈육지도자회의</div>
+      <div style="margin-top:6px;">
+        <a href="/memorial.html" target="_top">故 노경하 추모관</a> ·
+        <a href="/" target="_top">중앙회 앱</a>
+      </div>
+      <div style="margin-top:8px;opacity:.7;">
+        로그인 없이 남길 수 있으며, 남기신 글은 본인만 고칠 수 있습니다.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 답변 작성/수정 시트 ────────────────────────────────────── -->
+<div class="mask" id="maskAns" onclick="if(event.target===this)closeAns()">
+  <div class="sheet">
+    <h2 id="ansTitle">답변 남기기</h2>
+    <p class="hint" id="ansHint"></p>
+    <div class="field">
+      <label>질문</label>
+      <div id="ansQText" style="font-size:13px;line-height:1.65;font-weight:700;
+        background:#FAF8FD;border-radius:11px;padding:11px 13px;color:#3A3648;"></div>
+    </div>
+    <div class="two">
+      <div class="field" style="flex:2">
+        <label>이름 <span class="opt">(별칭으로 쓰셔도 됩니다)</span></label>
+        <input type="text" id="fName" placeholder="홍길동 또는 별칭" maxlength="40">
+      </div>
+      <div class="field" style="flex:1">
+        <label>인가번호 <span class="opt">(범인가번호 · 선택)</span></label>
+        <input type="tel" id="fNum" placeholder="예) 415" maxlength="12">
+      </div>
+    </div>
+    <div class="field" style="margin-top:11px;">
+      <label>나의 생각</label>
+      <textarea id="fBody" placeholder="정답이 아니어도 괜찮습니다. 지금 드는 생각을 그대로 적어 주세요."></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn btn-g" onclick="closeAns()" style="flex:1">취소</button>
+      <button class="btn btn-t" id="btnAnsSave" onclick="saveAnswer()" style="flex:2">남기기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 질문 편집 시트 (마스터) ─────────────────────────────────── -->
+<div class="mask" id="maskQ" onclick="if(event.target===this)closeQEditor()">
+  <div class="sheet">
+    <h2 id="qEdTitle">질문 추가</h2>
+    <p class="hint">질문은 방문자에게 그대로 보입니다. 짧고 열린 질문일수록 좋습니다.</p>
+    <div class="field">
+      <label>질문 <span style="color:var(--danger)">*</span></label>
+      <textarea id="qText" placeholder="예) 지금 이 순간, 누가 가장 먼저 떠오릅니까?"></textarea>
+    </div>
+    <div class="field">
+      <label>실마리 <span class="opt">(선택 · 질문 아래 작은 글씨)</span></label>
+      <input type="text" id="qHint" placeholder="생각을 여는 한 줄" maxlength="300">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn btn-g" onclick="closeQEditor()" style="flex:1">취소</button>
+      <button class="btn btn-p" onclick="saveQuestion()" style="flex:2">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 행사 소개문 편집 시트 (마스터) ──────────────────────────── -->
+<div class="mask" id="maskEv" onclick="if(event.target===this)closeEventEditor()">
+  <div class="sheet">
+    <h2>행사 소개문 수정</h2>
+    <p class="hint">상단에 노출되는 제목·주제·소개문입니다. 문단은 빈 줄로 구분합니다.</p>
+    <div class="field">
+      <label>회의명</label>
+      <input type="text" id="evTitle" maxlength="120">
+    </div>
+    <div class="field">
+      <label>프로그램명</label>
+      <input type="text" id="evProgram" maxlength="60">
+    </div>
+    <div class="field">
+      <label>주제(한 줄)</label>
+      <input type="text" id="evSub" maxlength="160">
+    </div>
+    <div class="field">
+      <label>주관</label>
+      <input type="text" id="evOrg" maxlength="80">
+    </div>
+    <div class="field">
+      <label>기간 표기</label>
+      <input type="text" id="evDate" maxlength="80" placeholder="예) 2026. 11. 7 ~ 11. 8">
+    </div>
+    <div class="field">
+      <label>소개문</label>
+      <textarea id="evIntro" style="min-height:150px"></textarea>
+    </div>
+    <div class="field">
+      <label>하단 안내문</label>
+      <input type="text" id="evNote" maxlength="300">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn btn-g" onclick="closeEventEditor()" style="flex:1">취소</button>
+      <button class="btn btn-p" onclick="saveEvent()" style="flex:2">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 관리자 로그인 시트 ─────────────────────────────────────── -->
+<div class="mask" id="maskAd" onclick="if(event.target===this)closeAdmin()">
+  <div class="sheet">
+    <h2>관리자 로그인</h2>
+    <p class="hint">질문을 넣고 고치고 순서를 바꾸는 일은 <b>마스터</b>만 할 수 있습니다.
+      글을 읽는 것과 답을 남기는 것은 로그인 없이 가능합니다.</p>
+    <div class="field">
+      <label>비밀번호</label>
+      <input type="password" id="adPw" placeholder="마스터 비밀번호"
+             onkeydown="if(event.key==='Enter')doAdminLogin()">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn btn-g" onclick="closeAdmin()" style="flex:1">취소</button>
+      <button class="btn btn-p" id="btnAdLogin" onclick="doAdminLogin()" style="flex:2">로그인</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  Scout's Own — 공개 게시판 + 마스터 관리
+// ══════════════════════════════════════════════════════════════════════
+//  [요구] "로그인없이 작성 가능 (추모관과 완전 같은 형식)"
+//
+//  ## 추모관(memorial.html)과 공유하는 방식
+//   · 수정키(secret)를 localStorage 에 보관해 로그인 없이 자기 글을 고친다.
+//     키 이름 규칙만 다르다: `tsak_so_keys_<eid>` / `tsak_so_author`.
+//   · 행사 id 는 URL 쿼리 `?id=` 로 받는다(추모관의 `?id=` 와 같다).
+//   · 토스트·모달·카드 모양도 추모관과 같은 것을 쓴다.
+//
+//  ## 서버 API (proxy_server.py)
+//   GET  /api/scoutsown/get?id=            행사+질문+답변+통계 (공개)
+//   POST /api/scoutsown/answer             답변 등록/수정 (공개)
+//   POST /api/scoutsown/answer/delete      숨김/삭제 (본인·마스터)
+//   POST /api/scoutsown/questions          질문 CRUD (마스터)
+//   POST /api/scoutsown/event              소개문 수정 (마스터)
+//   GET  /api/scoutsown/stats?id=          통계 폴링 (공개)
+//   POST /api/login {tier:'master'}        마스터 세션
+// ══════════════════════════════════════════════════════════════════════
+
+const EID = (new URLSearchParams(location.search).get('id') || 'tsak-2026');
+const LS_KEYS = 'tsak_so_keys_' + EID;    // { answerId: secret }
+const LS_NM   = 'tsak_so_name';           // 마지막으로 적은 이름
+const LS_NO   = 'tsak_so_num';
+
+let EV = {};            // 행사 정보
+let QS = [];            // 공개 질문 목록
+let ANS = [];           // 공개 답변 목록
+let STATS = null;       // 통계
+let IS_MASTER = false;  // 마스터 여부
+let ALLQ = [];          // 마스터 패널용(비활성 포함)
+let editingAnswerId = '';   // 수정 중인 답변
+let editingQid = '';        // 수정 중인 질문
+let openAnswers = {};       // 펼친 질문 id → true
+let ALL_OPEN = (localStorage.getItem('tsak_so_allopen') === '1');  // 전체 펼침
+let polling = null;
+
+// ── 작은 도구들 ────────────────────────────────────────────────
+function esc(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function keys(){
+  try{ return JSON.parse(localStorage.getItem(LS_KEYS)||'{}'); }
+  catch(e){ return {}; }
+}
+function saveKey(id,k){
+  const m=keys(); m[id]=k;
+  localStorage.setItem(LS_KEYS, JSON.stringify(m));
+}
+function myKey(id){ return keys()[id] || ''; }
+function toast(msg, ms){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('on'), ms||2600);
+}
+function fmtDate(s){
+  if(!s) return '';
+  const m = String(s).match(/(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})[ T](\d{1,2}):(\d{2})/);
+  if(!m) return s;
+  return `${+m[2]}.${+m[3]} ${String(m[4]).padStart(2,'0')}:${m[5]}`;
+}
+function api(action){
+  return '/api/scoutsown/' + action;
+}
+
+// ── 불러오기 ──────────────────────────────────────────────────
+async function load(){
+  try{
+    const r = await fetch(api('get')+'?id='+encodeURIComponent(EID),
+                          {cache:'no-store'});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'load');
+    EV = j.event || {};
+    QS = j.questions || [];
+    ANS = j.answers || [];
+    STATS = j.stats || null;
+    IS_MASTER = !!j.isMaster;
+    //  [방어 2026-11-11] 펼침 상태는 **마스터 전용**이다.
+    //   이전 세션에서 마스터로 펼쳐 둔 값이 남아 있어도, 지금 마스터가
+    //   아니면 무시하고 접는다(버튼도 숨긴다 — renderAdmin).
+    if(!IS_MASTER){ ALL_OPEN = false; openAnswers = {}; }
+    applyEvent();
+    renderStats();
+    renderQuestions();
+    renderAdmin();
+    // 마스터면 비활성 질문까지 받아 패널을 그린다.
+    if(IS_MASTER) await loadAdminQuestions();
+    // 실시간 — 20초마다 통계만 가볍게 갱신한다.
+    if(!polling){
+      polling = setInterval(refreshStats, 20000);
+    }
+  }catch(e){
+    document.getElementById('qlist').innerHTML =
+      '<div class="empty"><span class="ico">⚠️</span>불러오지 못했습니다.<br>'+
+      '잠시 후 새로고침해 주세요.</div>';
+    toast('불러오기에 실패했습니다');
+  }
+}
+
+// 통계만 다시 — 화면 깜빡임 없이 숫자와 막대만 갱신한다.
+async function refreshStats(){
+  try{
+    const r = await fetch(api('stats')+'?id='+encodeURIComponent(EID),
+                          {cache:'no-store'});
+    const j = await r.json();
+    if(!j.ok) return;
+    STATS = j.stats;
+    renderStats();
+  }catch(e){ /* 조용히 넘어간다 — 폴링 실패로 화면을 흔들지 않는다 */ }
+}
+
+function applyEvent(){
+  const t = EV.title || '2026년 전국훈육지도자회의';
+  document.title = t + ' · ' + (EV.program || "Scout's Own") + ' · TSAK';
+  document.getElementById('hTitle').textContent = t;
+  document.getElementById('hProgram').textContent =
+    String(EV.program || "Scout's Own").toUpperCase();
+  document.getElementById('hSub').textContent = EV.subtitle || '';
+  document.getElementById('hMeta').textContent =
+    [EV.org || '', EV.dateText || '', EV.place || ''].filter(x=>x).join(' · ');
+  if(EV.emblem){
+    const im = document.getElementById('hEmblem');
+    if(im.getAttribute('src') !== EV.emblem) im.src = EV.emblem;
+  }
+  // 소개문 — 배열이면 문단으로, 문자열이면 통째로
+  const ib = document.getElementById('introBox');
+  const intro = Array.isArray(EV.intro) ? EV.intro : (EV.intro ? [EV.intro] : []);
+  ib.innerHTML = intro.filter(x=>String(x||'').trim())
+    .map(p=>'<p>'+esc(p)+'</p>').join('');
+  const nb = document.getElementById('noteBox');
+  if(EV.note){ nb.textContent = EV.note; nb.style.display=''; }
+  else nb.style.display='none';
+}
+
+function renderStats(){
+  const s = STATS || {total:0,people:0,questions:0,rate:0,byQuestion:[]};
+  document.getElementById('stPeople').textContent = s.people||0;
+  document.getElementById('stAnswers').textContent = s.total||0;
+  document.getElementById('stQ').textContent = s.questions||0;
+  document.getElementById('stRate').textContent = (s.rate||0)+'%';
+  const rows = document.getElementById('qbarRows');
+  const max = Math.max(1, ...(s.byQuestion||[]).map(q=>q.count||0));
+  rows.innerHTML = (s.byQuestion||[]).map((q,i)=>{
+    const pct = Math.round(100*(q.count||0)/max);
+    return '<div class="qbar-row">'+
+      '<span class="qbar-n">'+(i+1)+'</span>'+
+      '<span class="qbar-t"><span class="qbar-f" style="width:'+pct+'%"></span></span>'+
+      '<span class="qbar-v">'+q.count+'명</span></div>';
+  }).join('') || '';
+  document.getElementById('qCount').textContent = (QS||[]).length;
+}
+
+// ── 질문 카드 렌더 ────────────────────────────────────────────
+function renderQuestions(){
+  const box = document.getElementById('qlist');
+  if(!QS.length){
+    box.innerHTML = '<div class="empty"><span class="ico">🌿</span>'+
+      '아직 등록된 질문이 없습니다.<br>'+
+      '관리자가 질문을 추가하면 여기에 나타납니다.</div>';
+    document.getElementById('qCount').textContent = '0';
+    return;
+  }
+  document.getElementById('qCount').textContent = QS.length;
+  box.innerHTML = QS.map((q,i)=>{
+    const mine = ANS.filter(a=>a.qid===q.id);
+    // [요구 2026-11-11] 전체 펼침(ALL_OPEN) 또는 개별 펼침
+    const open = ALL_OPEN || !!openAnswers[q.id];
+    const shown = open ? mine : mine.slice(0,2);
+    const ansHtml = shown.map(a=>ansItem(a)).join('');
+    //  펼친 상태면 '접기'를, 남은 답변이 있으면 '모두 보기'를 붙인다.
+    const more = (open && mine.length>2 && !ALL_OPEN)
+      ? '<button class="ans-toggle" onclick="toggleAns(\''+esc(q.id)+'\')">'+
+        '접기 ▴</button>'
+      : ((!open && mine.length>2)
+        ? '<button class="ans-toggle" onclick="toggleAns(\''+esc(q.id)+'\')">'+
+          '답변 '+mine.length+'개 모두 보기 ▾</button>' : '');
+    return '<div class="qcard" id="qc_'+esc(q.id)+'">'+
+      '<div class="qcard-h">'+
+        '<span class="qnum">'+(i+1)+'</span>'+
+        '<span class="qtext">'+esc(q.text)+'</span>'+
+      '</div>'+
+      (q.hint ? '<p class="qhint">'+esc(q.hint)+'</p>' : '')+
+      '<div class="qmeta">'+
+        '<span class="pill">답변 '+mine.length+'</span>'+
+        '<button class="btn btn-t btn-xs" onclick="openAns(\''+esc(q.id)+'\')">'+
+          '✍️ 답변 남기기</button>'+
+      '</div>'+
+      ((mine.length||more)
+        ? '<div class="anslist">'+ansHtml+more+'</div>'
+        : '<div class="anslist" style="border-top:none;padding-top:4px">'+
+          '<span style="font-size:11.5px;color:var(--muted)">'+
+          '아직 답변이 없습니다. 첫 생각을 남겨 보세요.</span></div>')+
+    '</div>';
+  }).join('');
+  updateAnsToggleLabel();
+}
+
+function ansItem(a){
+  const mine = !!myKey(a.id);      // 내 브라우저에서 쓴 글
+  const num = a.number ? '<span class="no">범#'+esc(a.number)+'</span>' : '';
+  const acts = (mine || IS_MASTER)
+    ? '<span style="margin-left:auto;display:flex;gap:2px">'+
+      (mine ? '<button class="mv" title="수정" onclick="openAns(\''+esc(a.qid)+'\',\''+esc(a.id)+'\')">✏️</button>' : '')+
+      '<button class="mv" title="가리기" onclick="delAnswer(\''+esc(a.id)+'\')">🗑</button>'+
+      '</span>' : '';
+  return '<div class="ans">'+
+    '<div class="ans-h">'+
+      '<span class="nm">'+esc(a.name||'익명')+'</span>'+num+
+      '<span class="cd">'+fmtDate(a.updated||a.created)+
+        (a.updated?' (수정)':'')+'</span>'+acts+
+    '</div>'+
+    '<div class="ans-b">'+esc(a.body)+'</div>'+
+  '</div>';
+}
+
+function toggleAns(qid){
+  openAnswers[qid] = !openAnswers[qid];
+  renderQuestions();
+}
+
+// ── 전체 답변 보이기/가리기 ────────────────────────────────────
+//  [요구 2026-11-11] "답변 보이기/가리기 버튼 달아줘"
+//  · 질문마다 2개씩만 보이던 답변을 **한 번에** 전부 펼치거나 접는다.
+//  · 상태는 localStorage 에 남겨 새로고침해도 유지한다.
+function updateAnsToggleLabel(){
+  const b = document.getElementById('btnAnsToggle');
+  if(!b) return;
+  //  [수정 2026-11-11] "답변보이기, 가리기를 해도 반응이 없음"
+  //   원인: 답변이 0건일 때 disabled 로 잠가 두어 눌러도 아무 일이 없었다.
+  //         (현장에서 처음엔 항상 0건이므로 사실상 항상 잠김)
+  //   수정: 잠그지 않는다. 대신 **마스터만** 이 버튼을 쓴다.
+  const total = ANS.length;
+  b.innerHTML = ALL_OPEN
+    ? '<span class="ico">▴</span>답변 가리기'
+    : '<span class="ico">▾</span>답변 보이기 (' + total + ')';
+  b.disabled = false;
+  b.title = ALL_OPEN ? '모든 답변을 접습니다' : '모든 답변을 펼칩니다';
+}
+function toggleAllAnswers(){
+  ALL_OPEN = !ALL_OPEN;
+  localStorage.setItem('tsak_so_allopen', ALL_OPEN ? '1' : '0');
+  if(!ALL_OPEN) openAnswers = {};      // 접을 때는 개별 상태도 초기화
+  renderQuestions();
+}
+
+// ── 답변 작성/수정 ────────────────────────────────────────────
+function openAns(qid, answerId){
+  const q = QS.find(x=>x.id===qid) || ALLQ.find(x=>x.id===qid);
+  if(!q){ toast('질문을 찾지 못했습니다'); return; }
+  editingAnswerId = answerId || '';
+  document.getElementById('ansTitle').textContent =
+    editingAnswerId ? '답변 수정' : '답변 남기기';
+  document.getElementById('ansHint').textContent = editingAnswerId
+    ? '내용을 고쳐 다시 저장할 수 있습니다.'
+    : '로그인 없이 남길 수 있습니다. 이름은 별칭으로 쓰셔도 되고, 비우면 익명으로 기록됩니다.';
+  document.getElementById('ansQText').textContent = q.text;
+  const cur = editingAnswerId ? ANS.find(a=>a.id===editingAnswerId) : null;
+  document.getElementById('fName').value =
+    cur ? (cur.name==='익명'?'':cur.name) : (localStorage.getItem(LS_NM)||'');
+  document.getElementById('fNum').value =
+    cur ? (cur.number||'') : (localStorage.getItem(LS_NO)||'');
+  document.getElementById('fBody').value = cur ? (cur.body||'') : '';
+  document.getElementById('maskAns').classList.add('on');
+  document.body.style.overflow='hidden';
+  setTimeout(()=>document.getElementById('fBody').focus(), 260);
+}
+function closeAns(){
+  document.getElementById('maskAns').classList.remove('on');
+  document.body.style.overflow='';
+  editingAnswerId='';
+}
+
+async function saveAnswer(){
+  const body = document.getElementById('fBody').value.trim();
+  if(!body){ toast('내용을 입력해 주세요'); return; }
+  const name = document.getElementById('fName').value.trim();
+  const num  = document.getElementById('fNum').value.trim();
+  // 편집 중이면 그 답변의 질문, 새 글이면 열 때 잡아둔 질문
+  const targetQid = editingAnswerId
+    ? ((ANS.find(a=>a.id===editingAnswerId)||{}).qid || _openQid)
+    : _openQid;
+  const btn = document.getElementById('btnAnsSave');
+  btn.disabled = true;
+  try{
+    const payload = {
+      id: EID, qid: targetQid, body,
+      name: name || '익명', number: num,
+      answerId: editingAnswerId || '',
+      secret: editingAnswerId ? myKey(editingAnswerId) : ''
+    };
+    const r = await fetch(api('answer'),{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'save');
+    // 수정키 보관 — 다음에 고칠 수 있게
+    if(j.secret && j.answer && j.answer.id) saveKey(j.answer.id, j.secret);
+    if(name){ localStorage.setItem(LS_NM, name); }
+    if(num){ localStorage.setItem(LS_NO, num); }
+    closeAns();
+    await load();
+    toast(editingAnswerId?'답변을 고쳤습니다':'답변을 남겼습니다');
+  }catch(e){
+    toast('저장에 실패했습니다: '+(e.message||e));
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function delAnswer(aid){
+  if(!confirm('이 답변을 가릴까요?\n(관리자는 계속 볼 수 있습니다)')) return;
+  try{
+    const r = await fetch(api('answer/delete'),{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id:EID, answerId:aid, action:'hide',
+                            secret:myKey(aid)})
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'del');
+    await load();
+    toast('답변을 가렸습니다');
+  }catch(e){ toast('처리에 실패했습니다: '+(e.message||e)); }
+}
+
+// 열어둔 질문 id — saveAnswer 가 어느 질문에 쓰는지 기억한다.
+let _openQid = '';
+
+// ── 관리자 ────────────────────────────────────────────────────
+function onAdminClick(){
+  if(IS_MASTER){ logoutAdmin(); return; }
+  document.getElementById('adPw').value='';
+  document.getElementById('maskAd').classList.add('on');
+  document.body.style.overflow='hidden';
+  setTimeout(()=>document.getElementById('adPw').focus(), 200);
+}
+function closeAdmin(){
+  document.getElementById('maskAd').classList.remove('on');
+  document.body.style.overflow='';
+}
+async function doAdminLogin(){
+  const pw = document.getElementById('adPw').value;
+  if(!pw){ toast('비밀번호를 입력해 주세요'); return; }
+  const btn = document.getElementById('btnAdLogin');
+  btn.disabled = true;
+  try{
+    const r = await fetch('/api/login',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',           // 세션 쿠키를 주고받는다
+      body: JSON.stringify({tier:'master', value:pw})
+    });
+    const j = await r.json();
+    if(!j.ok){ toast('비밀번호가 맞지 않습니다'); return; }
+    closeAdmin();
+    await load();
+    toast('마스터로 로그인했습니다');
+  }catch(e){
+    toast('로그인에 실패했습니다');
+  }finally{
+    btn.disabled = false;
+  }
+}
+async function logoutAdmin(){
+  // 서버 세션은 쿠키 만료 전까지 남는다. 여기서는 화면 상태만 되돌린다.
+  try{ await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); }
+  catch(e){}
+  IS_MASTER = false;
+  ALL_OPEN = false;                    // 마스터가 아니면 펼침 상태를 남기지 않는다
+  localStorage.setItem('tsak_so_allopen','0');
+  openAnswers = {};
+  renderQuestions();
+  renderAdmin();
+  document.getElementById('adminPanel').style.display='none';
+  toast('로그아웃했습니다. (새로고침하면 세션이 정리됩니다)');
+}
+
+function renderAdmin(){
+  const st = document.getElementById('adState');
+  const btn = document.getElementById('btnAdmin');
+  const panel = document.getElementById('adminPanel');
+  if(IS_MASTER){
+    st.innerHTML = '<span class="adlock">🔑 마스터</span>';
+    btn.textContent = '로그아웃';
+    btn.className = 'btn btn-g btn-xs';
+    panel.style.display='';
+    //  [요구 2026-11-11] 답변 보이기/가리기는 **마스터만** 쓴다.
+    const tg = document.getElementById('btnAnsToggle');
+    if(tg){ tg.style.display=''; }
+    updateAnsToggleLabel();
+  }else{
+    st.innerHTML = '';
+    btn.textContent = '관리자 로그인';
+    btn.className = 'btn btn-g btn-xs';
+    panel.style.display='none';
+    const tg = document.getElementById('btnAnsToggle');
+    if(tg){ tg.style.display='none'; }
+  }
+}
+
+async function loadAdminQuestions(){
+  // 공개 목록에는 비활성 질문이 없으므로, 편집하려면 따로 받아야 한다.
+  //  stats 응답에는 비활성 질문 정보가 없으므로 get 을 include_inactive 로
+  //  다시 부르지 않고, 서버가 isMaster 일 때 questions 를 그대로 준다.
+  //  (아래는 안전한 대체 경로 — 실패해도 화면이 깨지지 않는다)
+  try{
+    const r = await fetch(api('questions'),{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({id:EID, action:'list'})
+    });
+    const j = await r.json();
+    if(j.ok && Array.isArray(j.questions)) ALLQ = j.questions;
+  }catch(e){
+    ALLQ = QS.slice();
+  }
+  renderPanel();
+}
+
+function renderPanel(){
+  const box = document.getElementById('pRows');
+  if(!box) return;
+  const list = ALLQ.length ? ALLQ : QS;
+  box.innerHTML = list.map((q,i)=>{
+    const off = q.active===false;
+    return '<div class="prow" data-qid="'+esc(q.id)+'" data-order="'+
+      esc(q.order)+'">'+
+      '<span class="pn">'+(i+1)+'</span>'+
+      '<span class="pt'+(off?' off':'')+'">'+esc(q.text)+'</span>'+
+      '<span class="pacts">'+
+        '<button class="mv" title="위로" '+(i===0?'disabled':'')+
+          ' onclick="moveQ(\''+esc(q.id)+'\',\'up\')">↑</button>'+
+        '<button class="mv" title="아래로" '+(i===list.length-1?'disabled':'')+
+          ' onclick="moveQ(\''+esc(q.id)+'\',\'down\')">↓</button>'+
+        '<button class="mv" title="수정" onclick="openQEditor(\''+esc(q.id)+'\')">✏️</button>'+
+        (off
+          ? '<button class="mv" title="되살리기" onclick="restoreQ(\''+esc(q.id)+'\')">♻️</button>'
+          : '<button class="mv" title="삭제" onclick="deleteQ(\''+esc(q.id)+'\')">🗑</button>')+
+      '</span></div>';
+  }).join('') || '<div style="font-size:11.5px;color:var(--muted)">질문이 없습니다.</div>';
+}
+
+async function qAction(payload, okMsg){
+  try{
+    const r = await fetch(api('questions'),{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify(Object.assign({id:EID}, payload))
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'fail');
+    ALLQ = j.questions || [];
+    await load();
+    if(okMsg) toast(okMsg);
+  }catch(e){ toast('실패: '+(e.message||e)); }
+}
+function moveQ(qid,dir){ qAction({action:'move', qid, dir}); }
+function deleteQ(qid){
+  if(!confirm('이 질문을 목록에서 감출까요?\n(달린 답변 기록은 남습니다)')) return;
+  qAction({action:'delete', qid}, '질문을 감췄습니다');
+}
+function restoreQ(qid){ qAction({action:'restore', qid}, '질문을 되살렸습니다'); }
+function resetQuestions(){
+  if(!confirm('질문을 예시 10개로 되돌릴까요?\n직접 추가한 질문과 순서는 사라집니다.')) return;
+  qAction({action:'reset'}, '예시 10개로 되돌렸습니다');
+}
+
+function openQEditor(qid){
+  editingQid = qid || '';
+  const q = qid ? (ALLQ.find(x=>x.id===qid)||QS.find(x=>x.id===qid)) : null;
+  document.getElementById('qEdTitle').textContent = qid?'질문 수정':'질문 추가';
+  document.getElementById('qText').value = q ? (q.text||'') : '';
+  document.getElementById('qHint').value = q ? (q.hint||'') : '';
+  document.getElementById('maskQ').classList.add('on');
+  document.body.style.overflow='hidden';
+  setTimeout(()=>document.getElementById('qText').focus(), 220);
+}
+function closeQEditor(){
+  document.getElementById('maskQ').classList.remove('on');
+  document.body.style.overflow='';
+  editingQid='';
+}
+function saveQuestion(){
+  const text = document.getElementById('qText').value.trim();
+  if(!text){ toast('질문 내용을 입력해 주세요'); return; }
+  const hint = document.getElementById('qHint').value.trim();
+  if(editingQid){
+    qAction({action:'update', qid:editingQid, text, hint}, '질문을 고쳤습니다');
+  }else{
+    qAction({action:'add', text, hint}, '질문을 추가했습니다');
+  }
+  closeQEditor();
+}
+
+function openEventEditor(){
+  document.getElementById('evTitle').value = EV.title||'';
+  document.getElementById('evProgram').value = EV.program||'';
+  document.getElementById('evSub').value = EV.subtitle||'';
+  document.getElementById('evOrg').value = EV.org||'';
+  document.getElementById('evDate').value = EV.dateText||'';
+  document.getElementById('evIntro').value =
+    (Array.isArray(EV.intro)?EV.intro:[EV.intro||'']).join('\n\n');
+  document.getElementById('evNote').value = EV.note||'';
+  document.getElementById('maskEv').classList.add('on');
+  document.body.style.overflow='hidden';
+}
+function closeEventEditor(){
+  document.getElementById('maskEv').classList.remove('on');
+  document.body.style.overflow='';
+}
+async function saveEvent(){
+  const introRaw = document.getElementById('evIntro').value;
+  // 빈 줄로 문단을 나눈다. 문단이 없으면 한 덩어리로 저장.
+  const intro = introRaw.split(/\n\s*\n/).map(s=>s.trim()).filter(x=>x);
+  try{
+    const r = await fetch(api('event'),{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({
+        id: EID,
+        title:   document.getElementById('evTitle').value.trim(),
+        program: document.getElementById('evProgram').value.trim(),
+        subtitle:document.getElementById('evSub').value.trim(),
+        org:     document.getElementById('evOrg').value.trim(),
+        dateText:document.getElementById('evDate').value.trim(),
+        intro: intro.length?intro:[''],
+        note:    document.getElementById('evNote').value.trim()
+      })
+    });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'fail');
+    EV = j.event || EV;
+    closeEventEditor();
+    applyEvent();
+    toast('소개문을 저장했습니다');
+  }catch(e){ toast('실패: '+(e.message||e)); }
+}
+
+// ── 시작 ──────────────────────────────────────────────────────
+//  openAns 에서 질문 id 를 잡아두도록 감싼다(saveAnswer 가 참조).
+const _origOpenAns = openAns;
+openAns = function(qid, answerId){
+  _openQid = qid;
+  _origOpenAns(qid, answerId);
+};
+
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  ['maskAns','maskQ','maskEv','maskAd'].forEach(id=>{
+    document.getElementById(id).classList.remove('on');
+  });
+  document.body.style.overflow='';
+});
+
+load();
+</script>
+</body>
+</html>
