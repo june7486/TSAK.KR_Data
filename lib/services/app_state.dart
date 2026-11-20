@@ -1714,7 +1714,8 @@ class AppState extends ChangeNotifier {
   }
 
   /// 배지 '확인(읽음)' 처리 — 해당 아이디 기준으로 지금까지 항목을 확인 처리.
-  /// [kind] = 'approval' | 'board' | 'all'
+  /// [kind] = 'approval' | 'board' | 'order' | 'all'
+  /// [요구 2026-11-20] 'order' 추가 — "주문을 확인하면 버튼 숫자는 없어져야 함"
   Future<bool> markBadgeSeen({String kind = 'all'}) async {
     if (!repo.isNasMode || !(isApp || isMaster)) return false;
     try {

@@ -581,8 +581,9 @@ class NasApi {
   }
 
   /// 배지 '확인(읽음)' 처리(관리자·마스터).
-  /// [kind] = 'approval'(통합 승인) | 'board'(게시판) | 'all'.
+  /// [kind] = 'approval'(통합 승인) | 'board'(게시판) | 'order'(수품 주문) | 'all'.
   /// 해당 아이디 기준으로 지금까지의 항목을 '확인함'으로 기록한다.
+  /// [요구 2026-11-20] 'order' 추가 — "주문을 확인하면 버튼 숫자는 없어져야 함"
   Future<bool> badgeSeen({String kind = 'all'}) async {
     try {
       final r = await http

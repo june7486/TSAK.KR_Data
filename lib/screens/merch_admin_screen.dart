@@ -113,10 +113,43 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // [요구 2026-11-20] "주문을 확인하면 버튼 숫자는 없어져야 함"
+    //  주문관리 탭이 바뀔 때마다 확인 여부를 판단한다.
+    _tab.addListener(_onTabChanged);
+  }
+
+  /// 주문관리 탭(=1)에 들어오면 주문 알림을 '확인함'으로 처리한다.
+  ///
+  /// ## 설계 판단
+  ///  · 화면에 들어오기만 해도 끄면, 목록을 못 본 채 숫자만 사라져
+  ///    주문을 놓칠 수 있다. 그래서 **주문 목록 로드가 끝난 뒤** 처리한다.
+  ///  · `unseen` 은 폴링 타이머(15초)가 다시 채우지 않도록 한 번만 호출한다.
+  ///    (새 주문이 또 들어오면 워터마크 이후 시각이라 자동으로 다시 켜진다)
+  void _onTabChanged() {
+    if (_tab.index == _kOrdersTab && !_orderSeenMarked) {
+      _markOrdersSeen();
+    }
+  }
+
+  /// 주문관리 탭 인덱스 — `_tabLabels` 의 '주문관리'.
+  static const int _kOrdersTab = 1;
+
+  bool _orderSeenMarked = false;
+
+  Future<void> _markOrdersSeen() async {
+    if (_orderSeenMarked) return;
+    // 주문 목록이 실제로 화면에 올라온 뒤에만 확인 처리한다.
+    if (_loading || _orders.isEmpty) return;
+    _orderSeenMarked = true;
+    try {
+      final st = context.read<AppState>();
+      await st.markBadgeSeen(kind: 'order');
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _tab.removeListener(_onTabChanged);
     _tab.dispose();
     _ledgerYearCtl.dispose();
     super.dispose();
@@ -162,6 +195,9 @@ class _MerchAdminScreenState extends State<MerchAdminScreen>
         _stats = stats;
         _loading = false;
       });
+      // [요구 2026-11-20] 주문관리 탭이 이미 열려 있는 상태로 진입한 경우
+      //  (홈 배지 → 탭1 딥링크 등) listener 가 울리지 않으므로 여기서도 확인.
+      if (_tab.index == _kOrdersTab) _markOrdersSeen();
     } catch (e) {
       if (!mounted) return;
       setState(() {

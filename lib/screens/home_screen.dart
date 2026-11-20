@@ -2689,10 +2689,14 @@ class _HomeScreenState extends State<HomeScreen> {
       child: GestureDetector(
         onTap: () {
           if (tab == -2) {
+            // [요구 2026-11-20] 수품판매관리에서 돌아오면 주문 배지를 즉시 갱신.
+            //  안에서 주문을 확인했다면 숫자가 사라져야 한다.
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MerchAdminScreen()),
-            );
+            ).then((_) {
+              if (mounted) _loadOrderBadge();
+            });
           } else if (tab == -3) {
             Navigator.push(
               context,
