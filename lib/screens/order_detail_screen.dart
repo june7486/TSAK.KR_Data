@@ -1530,6 +1530,117 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
+  /// 상품 이미지 **전체화면 팝업**.
+  ///
+  /// ## 요구 (2026-11-20)
+  ///   "주문상세에서 주문 상품을 클릭하면 해당 이미지가 팝업창에서 보여지면 좋겠어"
+  ///
+  /// ## 설계
+  ///  · 핀치줌/드래그 가능(`InteractiveViewer`) — 작은 각인·로고를 확인하려면
+  ///    확대가 필요하다.
+  ///  · 닫기 버튼을 **항상** 띄운다(배경 탭이 안 먹는 상황에서도 탈출 가능).
+  ///  · 원본을 그대로 요청한다(`crop` 없이). 크롭본은 상·하단 텍스트가 잘려
+  ///    있어 상세 확인용으로 부적절하다.
+  void _openImageFullscreen(String url, String title) {
+    if (url.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 6,
+                child: Center(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (c, child, progress) {
+                      if (progress == null) return child;
+                      return const Center(
+                        child: SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.image_not_supported_outlined,
+                              color: Colors.white54,
+                              size: 56,
+                            ),
+                            SizedBox(height: 12),
+                            Text(
+                              '이미지를 불러오지 못했습니다',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // 상단 바 — 제목 + 닫기(항상 노출)
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          shadows: [Shadow(blurRadius: 6)],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white24,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('닫기'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _itemRow(Map<String, dynamic> o, int idx, bool canManage) {
     final img = _nas.merchImageUrl('${o['image'] ?? ''}');
     final qty = _i(o, 'qty') == 0 ? 1 : _i(o, 'qty');
@@ -1575,22 +1686,40 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
             ),
+          // 상품 이미지 — **탭하면 전체화면 팝업**으로 확대해서 본다.
+          //  · 54×54 썸네일은 상품을 식별하기에 너무 작다(요구 2026-11-20).
+          //  · 이미지가 없으면 탭 대상이 아니므로 안내 아이콘만 둔다.
+          //  · InkWell 을 ClipRRect **안쪽**에 두면 잉크가 잘리지 않는다.
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 54,
-              height: 54,
+            child: Material(
               color: Colors.white,
-              child: img.isEmpty
-                  ? const Icon(Icons.image_outlined, color: AppColors.textGray)
-                  : Image.network(
-                      img,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: AppColors.textGray,
+              child: InkWell(
+                onTap: img.isEmpty
+                    ? null
+                    : () => _openImageFullscreen(
+                        img,
+                        _s(o, 'product').isEmpty ? '상품 이미지' : _s(o, 'product'),
                       ),
-                    ),
+                child: Container(
+                  width: 54,
+                  height: 54,
+                  color: Colors.white,
+                  child: img.isEmpty
+                      ? const Icon(
+                          Icons.image_outlined,
+                          color: AppColors.textGray,
+                        )
+                      : Image.network(
+                          img,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.broken_image_outlined,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 10),
