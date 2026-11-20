@@ -94,6 +94,16 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _donationCollapsed = false;
   // 게시판/주문 등 관리자 이상 알림 배지
   int _boardUnread = 0;
+
+  /// [요구 2026-11-20] "수품 주문이 들어오면 관리자/마스터에게 알림주고
+  ///  단추에 표시해줘" — 수품 주문 미확인 건수.
+  ///  종전에는 주문도 `_boardUnread` 에 섞여 **게시판 단추**만 올라갔다.
+  int _orderUnread = 0;
+
+  /// 주문 알림 폴링 타이머 — 관리자·마스터가 홈에 머무는 동안
+  ///  15초마다 숫자만 확인한다. 새 주문이 보이면 스낵바로 안내.
+  Timer? _orderTimer;
+  int _prevOrderUnread = 0;
   // 승인관리 대기 배지(비인가회원·행사·연회비·평생 등 통합)
   int _approvalUnread = 0;
 
@@ -124,6 +134,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     // 게시판 새 글 알림 배지 로드(관리자 이상).
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBoardUnread());
+    // [요구 2026-11-20] 수품 주문 알림 배지 로드 + 실시간 감시 시작.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startOrderWatch());
     // 승인관리 대기 배지 로드(관리자 이상) + 실시간 감시 시작.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startApprovalWatch());
     // 은하스카우트 명단을 미리 로드 — 통합검색(범+은하)에 노출하기 위함(관리자·마스터).
@@ -238,7 +250,70 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final r = await context.read<NasApi>().notifyList();
       if (!mounted) return;
-      setState(() => _boardUnread = (r['unread'] as num?)?.toInt() ?? 0);
+      // [요구 2026-11-20] 게시판 단추에는 **게시판 글**만 센다.
+      //  종전에는 주문·가입·IP경고까지 전부 이 숫자에 섞여서,
+      //  수품 주문이 와도 '게시판' 단추가 올라가는 이상한 상태였다.
+      final nb = (r['unreadBoard'] as num?)?.toInt();
+      setState(() => _boardUnread =
+          nb ?? (r['unread'] as num?)?.toInt() ?? 0);
+    } catch (_) {}
+  }
+
+  /// [요구 2026-11-20] 수품 주문 알림 감시 시작 — 관리자·마스터 전용.
+  ///
+  /// "수품 주문이 들어오면 관리자/마스터에게 알림주고 단추에 표시해줘"
+  ///
+  /// 15초 간격. `/api/notify/badge` 는 **숫자만** 돌려주므로 부담이 적다.
+  /// 새 주문이 늘면 단추 숫자를 갱신하고 스낵바로 알린다.
+  void _startOrderWatch() {
+    _loadOrderBadge();
+    _orderTimer?.cancel();
+    _orderTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _loadOrderBadge(poll: true),
+    );
+  }
+
+  /// 수품 주문 미확인 건수 로드. `poll=true` 면 새 주문 도착을 스낵바로 알린다.
+  Future<void> _loadOrderBadge({bool poll = false}) async {
+    final state = context.read<AppState>();
+    if (!(state.isApp || state.isMaster)) return;
+    try {
+      final r = await context.read<NasApi>().notifyBadge();
+      if (!mounted) return;
+      final n = (r['order'] as num?)?.toInt() ?? 0;
+      // 새 주문 도착 → 조용히 안내(팝업 대신 스낵바: 작업을 방해하지 않는다).
+      if (poll && n > _prevOrderUnread) {
+        final latest = r['latest'];
+        final buyer = (latest is Map)
+            ? '${latest['buyerName'] ?? ''}'.trim()
+            : '';
+        final msg = buyer.isNotEmpty
+            ? '새 수품 주문 — $buyer'
+            : '새 수품 주문이 도착했습니다.';
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text('$msg (미확인 $n건)'),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: '보기',
+              onPressed: () {
+                if (!mounted) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const MerchAdminScreen()),
+                ).then((_) => _loadOrderBadge());
+              },
+            ),
+          ),
+        );
+      }
+      setState(() {
+        _orderUnread = n;
+        _boardUnread = (r['board'] as num?)?.toInt() ?? _boardUnread;
+        _prevOrderUnread = n;
+      });
     } catch (_) {}
   }
 
@@ -373,6 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _approvalTimer?.cancel();
+    _orderTimer?.cancel();
     _selfRetry?.cancel();
     _searchCtrl.dispose();
     _scroll.dispose();
@@ -542,6 +618,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(builder: (_) => const MemberDraftsScreen()),
                 );
                 if (!context.mounted || res == null) break;
+                // [수정] `context.mounted` 는 위젯이 살아있는지만 본다.
+                //  이 화면(State)이 실제로 마운트돼 있는지는 `mounted` 로
+                //  확인해야 analyzer 의 use_build_context_synchronously 가
+                //  해소된다(비동기 갭 뒤 BuildContext 사용).
+                if (!mounted) break;
                 if (res.isNew) {
                   await Navigator.push(
                     context,
@@ -1589,13 +1670,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.can('events')) _eventButton(),
                 // (3) 통합승인관리
                 if (state.isApp || state.isMaster) _approvalButton(),
-                // (4) 수품판매관리
+                // (4) 수품판매관리 — 새 주문 배지
                 if (state.can('merchMgmt'))
                   _finButton(
                     '수품판매관리',
                     Icons.shopping_bag,
                     AppColors.taegeukBlue,
                     -2,
+                    badge: _orderUnread,
                   ),
                 // (5) 수품 구매
                 if (state.can('merchBuy'))
@@ -2600,7 +2682,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _finButton(String label, IconData icon, Color color, int tab) {
+  Widget _finButton(String label, IconData icon, Color color, int tab,
+      {int badge = 0}) {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: GestureDetector(
@@ -2651,6 +2734,29 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              // [요구 2026-11-20] "수품 주문이 들어오면 … 단추에 표시해줘"
+              //  주문 미확인 건수를 단추 안에 붉은 원형 숫자로 붙인다.
+              //  (단추 바깥으로 튀어나가면 옆 단추와 겹치므로 Row 안에 넣는다)
+              if (badge > 0) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD32F2F),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    badge > 99 ? '99+' : '$badge',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      height: 1.2,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

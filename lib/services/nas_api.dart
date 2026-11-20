@@ -3504,11 +3504,26 @@ class NasApi {
     } catch (_) {}
   }
 
-  /// 알림 목록(관리자 이상). 반환: {ok, items, unread}
+  /// 알림 목록(관리자 이상). 반환: {ok, items, unread, unreadOrder, unreadBoard}
   Future<Map<String, dynamic>> notifyList() async {
     final r = await http
         .get(_uri('/api/notify/list'), headers: _authHeaders)
         .timeout(const Duration(seconds: 40));
+    return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// [요구 2026-11-20] 종류별 미확인 건수만 가볍게 조회(관리자 이상).
+  ///
+  /// "수품 주문이 들어오면 관리자/마스터에게 알림주고 단추에 표시해줘"
+  ///
+  /// `notifyList()` 는 항목 100건을 통째로 받아 무겁다. 배지 숫자 하나
+  /// 갱신하려고 폴링하기엔 나스 RPC 부담이 크므로 숫자만 받는 전용 경로를
+  /// 쓴다. 반환: `{ok, order, board, total, latest}` — `latest` 는 가장 최근
+  /// 미확인 주문 1건(스낵바 안내용, 없으면 null).
+  Future<Map<String, dynamic>> notifyBadge() async {
+    final r = await http
+        .get(_uri('/api/notify/badge'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 20));
     return json.decode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
